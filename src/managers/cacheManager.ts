@@ -2,12 +2,6 @@ import fs from "fs";
 import path from "path";
 import zlib from "zlib";
 
-import { promisify } from "util";
-
-const gzip = promisify(zlib.gzip);
-
-const llogger = logger || console;
-
 // TODO: 使用 zlib 进行压缩
 export class CacheManager<T> {
   private cache: Map<string, T>; // 内存缓存
@@ -26,9 +20,9 @@ export class CacheManager<T> {
 
     // 监听退出事件，确保退出前保存数据
     process.on("exit", this.commit.bind(this));
+    process.on("beforeExit", this.commit.bind(this));
     process.on("SIGINT", this.handleExit.bind(this));
     process.on("SIGTERM", this.handleExit.bind(this));
-    process.on("beforeExit", this.commit.bind(this));
   }
 
   private serialize(value: T): string {
@@ -73,27 +67,23 @@ export class CacheManager<T> {
    * 序列化并存储数据到文件
    * @returns
    */
-  private async saveCache(): Promise<void> {
+  private saveCache(): void {
     try {
       // 确保目标目录存在
-      await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
-
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
       let serializedData = JSON.stringify(
         Array.from(this.cache.entries()).map(([key, value]) => [key, this.serialize(value)]),
         null,
         2
       );
-
       if (this.enableCompression) {
-        const compressed = await gzip(serializedData);
-        await fs.promises.writeFile(this.filePath, compressed);
+        const compressed = zlib.gzipSync(serializedData);
+        fs.writeFileSync(this.filePath, compressed);
         return;
       }
-
-      await fs.promises.writeFile(this.filePath, serializedData, "utf-8");
+      fs.writeFileSync(this.filePath, serializedData, "utf-8");
     } catch (error) {
-      const llogger = logger || console;
-      llogger.error("Failed to save cache:", error);
+      logger.error("Failed to save cache:", error);
     }
   }
 
@@ -130,7 +120,11 @@ export class CacheManager<T> {
         this.cache.set(key, this.deserialize(value));
       });
     } catch (error) {
-      llogger.warn("加载缓存失败:", error);
+      if (error.code === "Z_DATA_ERROR") {
+        logger.warn("缓存文件已损坏，将删除并重新创建。");
+      }
+      fs.unlinkSync(this.filePath);
+      this.loadCache();
     }
   }
 
@@ -156,10 +150,10 @@ export class CacheManager<T> {
   }
 
   // 添加数据到缓存
-  public async set(key: string, value: T): Promise<void> {
+  public set(key: string, value: T): Promise<void> {
     this.cache.set(key, value);
     if (this.saveImmediately) {
-      await this.saveCache();
+      this.saveCache();
       return;
     }
     this.markDirty(key, value);
@@ -193,13 +187,13 @@ export class CacheManager<T> {
   }
 
   // 统一提交缓存到文件
-  public async commit(): Promise<void> {
+  public commit(): void {
     if (this.isDirty) {
       // 将内存缓存合并到文件缓存
       this.dirtyCache.forEach((value, key) => {
         this.cache.set(key, value);
       });
-      await this.saveCache();
+      this.saveCache();
       this.dirtyCache.clear();
       this.isDirty = false;
     }
@@ -219,9 +213,9 @@ export class CacheManager<T> {
 
     this.saveImmediately = false;
 
-    const autoSave = async () => {
+    const autoSave = () => {
       if (this.isDirty) {
-        await this.commit(); // 异步保存缓存
+        this.commit(); // 异步保存缓存
       }
       this.timer = setTimeout(autoSave, interval); // 递归调用自身
     };
@@ -231,9 +225,8 @@ export class CacheManager<T> {
   }
 
   private handleExit(): void {
-    this.commit().then(() => {
-      clearTimeout(this.timer);
-      process.exit(); // 确保进程退出
-    });
+    this.commit();
+    clearTimeout(this.timer);
+    process.exit(); // 确保进程退出
   }
 }
