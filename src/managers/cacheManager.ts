@@ -1,9 +1,13 @@
 import fs from "fs";
 import path from "path";
+import zlib from "zlib";
 
-import BSON from "bson";
+import { promisify } from "util";
 
-// TODO: 允许自己指定缓存路径
+const gzip = promisify(zlib.gzip);
+
+const llogger = logger || console;
+
 // TODO: 使用 zlib 进行压缩
 export class CacheManager<T> {
   private cache: Map<string, T>; // 内存缓存
@@ -12,10 +16,7 @@ export class CacheManager<T> {
   private saveImmediately: boolean;
   private timer: NodeJS.Timeout;
 
-  constructor(
-    private filePath: string,
-    private enableBson = false
-  ) {
+  constructor(private filePath: string, private enableCompression = false) {
     this.cache = new Map<string, T>();
     this.dirtyCache = new Map<string, T>();
     this.isDirty = false;
@@ -77,58 +78,58 @@ export class CacheManager<T> {
       // 确保目标目录存在
       await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
 
-      if (this.enableBson) {
-        const serializedData = BSON.serialize(Object.fromEntries(this.cache));
-        await fs.promises.writeFile(this.filePath, serializedData);
-        return;
-      }
-
-      const serializedData = JSON.stringify(
+      let serializedData = JSON.stringify(
         Array.from(this.cache.entries()).map(([key, value]) => [key, this.serialize(value)]),
         null,
         2
       );
+
+      if (this.enableCompression) {
+        const compressed = await gzip(serializedData);
+        await fs.promises.writeFile(this.filePath, compressed);
+        return;
+      }
+
       await fs.promises.writeFile(this.filePath, serializedData, "utf-8");
     } catch (error) {
       const llogger = logger || console;
       llogger.error("Failed to save cache:", error);
-      // 不抛出错误，避免中断定时器
-      // 下次保存时会重试
     }
   }
+
 
   /**
    * 反序列化并加载缓存数据
    * @returns
    */
-  private async loadCache(): Promise<void> {
+  private loadCache(): void {
     try {
+      // 如果文件不存在，创建文件并写入空数组
       if (!fs.existsSync(this.filePath)) {
-        await fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });
-        if (this.enableBson) {
-          await fs.promises.writeFile(this.filePath, BSON.serialize(this.cache));
-        } else {
-          await fs.promises.writeFile(this.filePath, "[]", "utf-8");
-        }
+        fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+        fs.writeFileSync(this.filePath, this.enableCompression ? zlib.gzipSync("[]") : "[]", "utf-8");
         return;
       }
 
-      if (this.enableBson) {
-        const serializedData = await fs.promises.readFile(this.filePath);
-        const entries: { [key: string]: T } = BSON.deserialize(serializedData);
-        Object.entries(entries).forEach(([key, value]) => {
-          this.cache.set(key, value);
-        });
-        return;
+      let serializedData: string;
+
+      // 如果启用了压缩
+      if (this.enableCompression) {
+        const compressed = fs.readFileSync(this.filePath); // 读取压缩文件
+        const decompressed = zlib.unzipSync(compressed);   // 解压缩
+        serializedData = decompressed.toString("utf-8");   // 转换为字符串
+      } else {
+        serializedData = fs.readFileSync(this.filePath, "utf-8"); // 直接读取文件内容
       }
 
-      const serializedData = await fs.promises.readFile(this.filePath, "utf-8");
-      const entries: [string, string][] = JSON.parse(serializedData);
+      // 解析 JSON 数据
+      const entries: [string, string][] = JSON.parse(serializedData || "[]");
+
+      // 反序列化并加载到缓存中
       entries.forEach(([key, value]) => {
         this.cache.set(key, this.deserialize(value));
       });
     } catch (error) {
-      const llogger = logger || console;
       llogger.warn("加载缓存失败:", error);
     }
   }
@@ -139,6 +140,10 @@ export class CacheManager<T> {
 
   public keys(): string[] {
     return Array.from(this.cache.keys());
+  }
+
+  public values(): T[] {
+    return Array.from(this.cache.values());
   }
 
   public entries(): [string, T][] {
@@ -227,7 +232,7 @@ export class CacheManager<T> {
 
   private handleExit(): void {
     this.commit().then(() => {
-      clearTimeout(this.timer!);
+      clearTimeout(this.timer);
       process.exit(); // 确保进程退出
     });
   }
