@@ -101,9 +101,7 @@ export class Bot {
 
     this.imageViewer = new ImageViewer(config);
 
-    this.messageQueue = new SendQueue(ctx, config);
-
-    for (const extension of getExtensions()) {
+    for (const extension of getExtensions(ctx, this)) {
       this.extensions[extension.name] = extension;
       this.toolsSchema.push(getToolSchema(extension));
     }

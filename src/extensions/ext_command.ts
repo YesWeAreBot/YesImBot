@@ -13,10 +13,8 @@ import { Description, Extension, Name, Param } from "./base";
   这个函数没有返回值。
   请务必将此处可以运行的命令与你允许调用的函数区分开来。`)
 @Param("cmd", "要运行的命令")
-class Execute extends Extension {
+export class Execute extends Extension {
   async apply(cmd: string) {
     return h("execute", {}, cmd);
   }
 }
-
-export default new Execute();

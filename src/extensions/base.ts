@@ -1,12 +1,17 @@
 import fs from "fs";
 import { SchemaNode, ToolSchema } from "../adapters/creators/schema";
+import { Context } from "koishi";
+import { Bot } from "../bot";
 
 export abstract class Extension {
   readonly name: string;
   readonly description: string;
   readonly params: { [key: string]: SchemaNode };
 
-  constructor() {
+  constructor(
+    protected readonly ctx: Context,
+    protected readonly bot: Bot
+  ) {
     // 读取类的静态属性来初始化实例属性
     const funcName = (this.constructor as any)["funcName"];
     const description = (this.constructor as any)["description"];
@@ -23,7 +28,7 @@ export abstract class Extension {
   abstract apply(...args: any[]): any;
 }
 
-export function getExtensions(): Extension[] {
+export function getExtensions(ctx: Context, bot: Bot): Extension[] {
   let extensions: Extension[] = [];
 
   fs.readdirSync(__dirname)
@@ -31,11 +36,8 @@ export function getExtensions(): Extension[] {
     .forEach((file) => {
       try {
         const extension = require(`./${file}`);
-        if (typeof extension?.default === "function") {
-          extensions.push(extension.default);
-        } else {
-          // @ts-ignore
-          extensions.push(...Object.values(extension));
+        for (const key in extension) {
+          extensions.push(new extension[key](ctx, bot));
         }
         logger.info(`Loaded extension: ${file}`);
       } catch (e) {
