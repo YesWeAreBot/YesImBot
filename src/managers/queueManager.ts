@@ -10,27 +10,24 @@ export class QueueManager {
     this.ctx = ctx;
   }
 
-  async getQueue(channelId: string, limit: number): Promise<ChatMessage[]> {
+  async getQueue(channelId: string, limit?: number): Promise<ChatMessage[]> {
     let chatMessages = await this.ctx.database
       .select(DATABASE_NAME)
       .where({ channelId })
-      .orderBy("sendTime", "desc") // 逆序
-      .limit(limit)
+      .orderBy("sendTime", "desc")
+      .limit(limit || 100)
       .execute();
     return chatMessages.reverse();
   }
 
-  async getMixedQueue(
-    channels: Set<string>,
-    limit: number
-  ): Promise<ChatMessage[]> {
+  async getMixedQueue(channels: Set<string>, limit?: number): Promise<ChatMessage[]> {
     const selectQuery = async (query: Query) => {
-      let chatMessages = await this.ctx.database
+      let select = this.ctx.database
         .select(DATABASE_NAME)
         .where(query)
-        .orderBy("sendTime", "desc") // 逆序
-        .limit(limit)
-        .execute();
+        .orderBy("sendTime", "desc")
+      if (limit) select = select.limit(limit);
+      let chatMessages = await select.execute();
       return chatMessages.reverse();
     };
 

@@ -1,46 +1,45 @@
-import path from "path";
+import { describe, it } from "@jest/globals";
 import assert from "assert";
 import { readFileSync } from "fs";
-import { beforeAll, afterAll, jest, it, describe } from "@jest/globals";
+import { Context } from "koishi";
+import path from "path";
 
 import { Memory } from "../src/memory/memory";
 import { isEmpty } from "../src/utils/string";
 
-describe("vectorStore", () => {
-  const memory = new Memory({
+globalThis.logger = console;
+
+const memory = new Memory(
+  new Context(),
+  {
+    APIType: "Ollama",
+    BaseURL: "http://localhost:11434",
+    AIModel: "deepseek-coder-v2:latest",
+    APIKey: "",
+  },
+  {
     APIType: "Ollama",
     BaseURL: "http://localhost:11434",
     EmbeddingModel: "nomic-embed-text",
-  });
+  }
+);
 
-
+describe("vectorStore", () => {
   it("addMessage", async () => {
-
-    const tasks: (() => Promise<void>)[] = [];
-    readFileSync(path.join(__dirname, "./article.txt"), "utf-8")
+    const tasks: (() => Promise<any>)[] = [];
+    readFileSync(path.join(__dirname, "../data/cache/article.txt"), "utf-8")
       .split(/[\n\.\。\；]/)
       .filter((line) => !isEmpty(line))
       .forEach(async (line) => {
-        tasks.push(() => memory.addMessage(line.trim(), "user"));
+        tasks.push(() => memory.addText(line.trim()));
       });
-
-    readFileSync(path.join(__dirname, "./test.txt"), "utf-8")
-      .split(/[\w\s]*[\n]/)
-      .filter((line) => !isEmpty(line))
-      .forEach(async (line) => {
-        const [s1, s2, score] = line.split("\t");
-        tasks.push(() => memory.addMessage(s1, "system"));
-        tasks.push(() => memory.addMessage(s2, "system"));
-      })
 
     console.log(`tasks length: ${tasks.length}`);
 
-    await parallelLimit(tasks, 32);
-
-    console.log("memory length: ", (await memory.getHistory()).length);
+    await parallelLimit(tasks, 16);
 
     console.time("getSimilarMessages");
-    const data = await memory.getSimilarMessages("what fruit is my favorite", 3);
+    const data = await memory.search("what fruit is my favorite", 3);
     console.timeEnd("getSimilarMessages");
     console.log(data);
 
@@ -51,7 +50,6 @@ describe("vectorStore", () => {
     ]);
   });
 });
-
 
 async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
   const results: T[] = [];

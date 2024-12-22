@@ -1,21 +1,20 @@
-import { Context, Random } from "koishi";
 import JSON5 from "json5";
+import { Context, Random } from "koishi";
 
-import { Memory } from "./memory/memory";
-import { Config } from "./config";
-import { Template } from "./utils/string";
-import { escapeUnicodeCharacters, isEmpty } from "./utils/string";
-import { EmojiManager } from "./managers/emojiManager";
-import { BaseAdapter, Usage } from "./adapters/base";
-import { EmbeddingsBase } from "./embeddings/base";
 import { AdapterSwitcher } from "./adapters";
-import { getEmbedding } from "./utils/factory";
-import { Message, SystemMessage, AssistantMessage, TextComponent, ImageComponent, UserMessage, ToolMessage } from "./adapters/creators/component";
-import { ResponseVerifier } from "./utils/verifier";
-import { SendQueue } from "./services/sendQueue";
-import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
-import { ImageViewer } from "./services/imageViewer";
+import { Usage } from "./adapters/base";
+import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolMessage, UserMessage } from "./adapters/creators/component";
 import { functionPrompt, ToolSchema } from "./adapters/creators/schema";
+import { Config } from "./config";
+import { EmbeddingsBase } from "./embeddings/base";
+import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
+import { EmojiManager } from "./managers/emojiManager";
+import { Memory } from "./memory/memory";
+import { ImageViewer } from "./services/imageViewer";
+import { getEmbedding } from "./utils/factory";
+import { escapeUnicodeCharacters, isEmpty, Template } from "./utils/string";
+import { getFormatDateTime, tiktokenizer } from "./utils/toolkit";
+import { ResponseVerifier } from "./utils/verifier";
 
 export interface Function {
   name: string;
@@ -56,24 +55,25 @@ export interface FailedResponse {
 }
 
 export class Bot {
-  private memory: Memory;
+  readonly memory: Memory;
   private memorySize: number;
 
-  private summarySize: number; // 上下文达到多少时进行总结
-  private contextSize: number; // 以对话形式给出的上下文长度
+  private summarySize: number;         // 上下文达到多少时进行总结
+  private contextSize: number = 20;    // 以对话形式给出的上下文长度
   private retainedContextSize: number; // 进行总结时保留的上下文长度，用于保持记忆连贯性
+  private maxSelfMemoryCharacters: 5000; //
 
   private minTriggerCount: number;
   private maxTriggerCount: number;
   private allowErrorFormat: boolean;
 
-  private history: Message[] = [];
-  private prompt: string; // 系统提示词
+  private context: Message[] = []; // 对话上下文
+  private recall: Message[] = [];  //
+  private prompt: string;          // 系统提示词
   private template: Template;
   private extensions: { [key: string]: Extension & Function } = {};
   private toolsSchema: ToolSchema[] = [];
-  private messageQueue: SendQueue;
-  private lastModified: number = 0;
+  private lastModified: Date = new Date();
 
   private emojiManager: EmojiManager;
   private embedder: EmbeddingsBase;
@@ -116,10 +116,19 @@ export class Bot {
     this.prompt = content;
   }
 
+  addContext(message: Message) {
+    while (this.context.length >= this.contextSize) {
+      this.recall.push(this.context.shift());
+    }
+    this.context.push(message);
+  }
+
   setChatHistory(chatHistory: Message[]) {
-    this.history = [];
+    this.context = [];
     if (this.config.Settings.MultiTurn) {
-      this.history = [...chatHistory];
+      for (const message of chatHistory) {
+        this.addContext(message);
+      }
     } else {
       let components: (TextComponent | ImageComponent)[] = [];
       chatHistory.forEach(message => {
@@ -141,13 +150,9 @@ export class Bot {
         }
         return [...acc, curr];
       }, []);
-      this.history.push(AssistantMessage("Resolve OK"));
-      this.history.push(UserMessage(...components));
+      this.addContext(AssistantMessage("Resolve OK"));
+      this.addContext(UserMessage(...components));
     }
-  }
-
-  getChatHistory() {
-    return this.history;
   }
 
   getAdapter() {
@@ -161,7 +166,9 @@ export class Bot {
       throw new Error("没有可用的适配器");
     }
 
-    this.history.push(...messages);
+    for (const message of messages) {
+      this.addContext(message);
+    }
 
     if (!adapter.ability.includes("原生工具调用")) {
       let str = Object.values(this.extensions)
@@ -170,7 +177,7 @@ export class Bot {
       this.prompt += functionPrompt + `${isEmpty(str) ? "No functions available." : str}`;
     }
 
-    const response = await adapter.chat([SystemMessage(this.prompt), ...this.history], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
+    const response = await adapter.chat([SystemMessage(this.prompt), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
     let content = response.message.content;
     if (debug) logger.info(`Adapter: ${current}, Response: \n${content}`);
 
@@ -199,7 +206,7 @@ export class Bot {
     }
 
     if (this.config.Settings.MultiTurn && this.config.Settings.MultiTurnFormat === "CUSTOM") {
-      this.history.push(AssistantMessage(TextComponent(content)));
+      this.addContext(AssistantMessage(TextComponent(content)));
       const result = this.template.unrender(content);
       const channelIdfromChannelInfo = result.channelInfo?.includes(':') ? result.channelInfo.split(':')[1] : '';
       const channelId = result.channelId || channelIdfromChannelInfo;
@@ -253,7 +260,7 @@ export class Bot {
     if (jsonMatch) {
       try {
         LLMResponse = JSON5.parse(escapeUnicodeCharacters(jsonMatch[0]));
-        this.history.push(AssistantMessage(JSON.stringify(LLMResponse)));
+        this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
       } catch (e) {
         reason = `JSON 解析失败: ${e.message}`;
         if (debug) logger.warn(reason);
@@ -420,27 +427,30 @@ export class Bot {
     return await func(...args);
   }
 
-  async getCoreMemory(): Promise<string> {
-    const userIds = this.collectUserID();
+  async getCoreMemory(selfId: string): Promise<string> {
     const recallSize = 0;
     const archivalSize = 0;
 
-    const humanMemories = Array.from(userIds.entries()).map(
-      ([userId, nickname]) =>
-        `<user id="${userId}" nickname="${nickname}">
-        ${this.memory.getUserMemory(userId).join("\n")}
-        </user>`
+    let selfMemory = this.memory.filterMemory(metadata => {
+      return metadata.userId === selfId || !metadata.userId;
+    }).join("\n");
+
+    const userIds = this.collectUserID();
+    const humanMemories = Array.from(userIds.entries()).map(([userId, nickname]) => `
+      <user id="${userId}" nickname="${nickname}">
+      ${this.memory.getUserMemory(userId).join("\n")}
+      </user>`
     );
 
-    return `### Memory [last modified: ${this.lastModified}]
+    return `### Memory [last modified: ${getFormatDateTime(this.lastModified)}]
 ${recallSize} previous messages between you and the user are stored in recall memory (use functions to access them)
 ${archivalSize} total memories you created are stored in archival memory (use functions to access them)
 
 Core memory shown below (limited in size, additional information stored in archival / recall memory):
 
-<persona>
-${this.memory.getSelfMemory().join("\n")}
-</persona>
+<selfMemory character="${tiktokenizer(selfMemory)}/${this.maxSelfMemoryCharacters}">
+${selfMemory}
+</selfMemory>
 
 ${humanMemories.join("\n")}
 `.trim();
@@ -474,12 +484,10 @@ ${humanMemories.join("\n")}
     const users: Map<string, string> = new Map();
     const stringTemplate = this.template;
 
-    for (const history of this.history) {
-      const contentType = typeof history.content;
-      let content: string;
-      switch (contentType) {
+    for (const history of this.context) {
+      let content = history.content;
+      switch (typeof content) {
         case "string":
-          content = history.content as string;
           break;
         case "object":
           content = (history.content as (TextComponent | ImageComponent)[])

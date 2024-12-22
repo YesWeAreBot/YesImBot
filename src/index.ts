@@ -13,6 +13,7 @@ import { foldText, isEmpty } from "./utils/string";
 import { ChannelType, createMessage } from "./models/ChatMessage";
 import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
+import { apply as applyMemoryCommands } from "./commands/memory";
 
 export const name = "yesimbot";
 
@@ -95,6 +96,8 @@ export function apply(ctx: Context, config: Config) {
       if (await maxTriggerTimeHandlers.get(channelId)(session)) return;
     }
   });
+
+  applyMemoryCommands(ctx, bot);
 
   ctx
     .command("清除记忆", "清除 BOT 对会话的记忆")
@@ -259,7 +262,7 @@ export function apply(ctx: Context, config: Config) {
 
     try {
       // 处理内容
-      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer);
+      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId, 100), bot.imageViewer);
 
       // 生成响应
       if (!chatHistory || (Array.isArray(chatHistory) && chatHistory.length === 0)) {
@@ -267,9 +270,9 @@ export function apply(ctx: Context, config: Config) {
         return false;
       }
 
-      bot.setChatHistory(chatHistory);
+      if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + JSON.stringify(chatHistory, null, 2));
 
-      if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + JSON.stringify(bot.getChatHistory(), null, 2));
+      bot.setChatHistory(chatHistory);
 
       let botName = await getBotName(config.Bot, session);
 
@@ -283,7 +286,7 @@ export function apply(ctx: Context, config: Config) {
             BotName: botName,
             BotSelfId: session.bot.selfId,
             outputSchema,
-            coreMemory: await bot.getCoreMemory(),
+            coreMemory: await bot.getCoreMemory(session.selfId),
           }
         )
       );
