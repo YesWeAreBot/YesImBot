@@ -118,9 +118,9 @@ export class Bot {
     this.prompt = content;
   }
 
-  setChatHistory(chatHistory: Message[], isMultiTurn: boolean) {
+  setChatHistory(chatHistory: Message[]) {
     this.history = [];
-    if (isMultiTurn) {
+    if (this.config.Settings.MultiTurn) {
       this.history = [...chatHistory];
     } else {
       let components: (TextComponent | ImageComponent)[] = [];
@@ -200,7 +200,7 @@ export class Bot {
       }
     }
 
-    if (this.config.Settings.MultiTurn) {
+    if (this.config.Settings.MultiTurn && this.config.Settings.MultiTurnFormat === "CUSTOM") {
       this.history.push(AssistantMessage(TextComponent(content)));
       const result = this.template.unrender(content);
       const channelIdfromChannelInfo = result.channelInfo?.includes(':') ? result.channelInfo.split(':')[1] : '';
@@ -242,169 +242,170 @@ export class Bot {
           };
         }
       }
+    }
+
+    // MultiTurnFormat === JSON
+    if (typeof content !== "string") {
+      content = JSON5.stringify(content, null, 2);
+    }
+    // 提取JSON部分
+    const jsonMatch = content.match(/{.*}/s);
+    let LLMResponse: any = {};
+
+    if (jsonMatch) {
+      try {
+        LLMResponse = JSON5.parse(escapeUnicodeCharacters(jsonMatch[0]));
+        this.history.push(AssistantMessage(JSON.stringify(LLMResponse)));
+      } catch (e) {
+        reason = `JSON 解析失败: ${e.message}`;
+        if (debug) logger.warn(reason);
+        return {
+          status: "fail",
+          raw: content,
+          usage: response.usage,
+          reason,
+          adapterIndex: current,
+        };
+      }
     } else {
-      if (typeof content !== "string") {
-        content = JSON5.stringify(content, null, 2);
-      }
-      // 提取JSON部分
-      const jsonMatch = content.match(/{.*}/s);
-      let LLMResponse: any = {};
-
-      if (jsonMatch) {
-        try {
-          LLMResponse = JSON5.parse(escapeUnicodeCharacters(jsonMatch[0]));
-          this.history.push(AssistantMessage(JSON.stringify(LLMResponse)));
-        } catch (e) {
-          reason = `JSON 解析失败: ${e.message}`;
-          if (debug) logger.warn(reason);
-          return {
-            status: "fail",
-            raw: content,
-            usage: response.usage,
-            reason,
-            adapterIndex: current,
-          };
-        }
-      } else {
-        reason = `没有找到 JSON: ${content}`;
-        if (debug) logger.warn(reason);
-        return {
-          status: "fail",
-          raw: content,
-          usage: response.usage,
-          reason,
-          adapterIndex: current,
-        };
-      }
-
-      // 规范化 nextTriggerCount，确保在设置的范围内
-      const nextTriggerCountbyLLM = Math.max(
-        this.minTriggerCount,
-        Math.min(Number(LLMResponse.nextReplyIn) ?? this.minTriggerCount, this.maxTriggerCount)
-      );
-      nextTriggerCount = Number(nextTriggerCountbyLLM) || nextTriggerCount;
-      finalLogic = LLMResponse.logic || "";
-
-      if (LLMResponse.functions && Array.isArray(LLMResponse.functions)) {
-        functions = LLMResponse.functions;
-      } else {
-        functions = [];
-      }
-
-      // 检查 status 字段
-      if (LLMResponse.status === "success") {}
-      else if (LLMResponse.status === "skip") {
-        return {
-          status: "skip",
-          raw: content,
-          nextTriggerCount,
-          logic: finalLogic,
-          usage: response.usage,
-          functions: LLMResponse.functions,
-          adapterIndex: current,
-        };
-      } else if (LLMResponse.status === "function") {
-        let funcReturns: Message[] = [];
-        for (const func of LLMResponse.functions as Function[]) {
-          const { name, params } = func;
-          try {
-            let returnValue = await this.callFunction(name, params);
-            funcReturns.push({
-              role: "tool",
-              content: JSON.stringify({
-                status: "success",
-                name: name,
-                result: returnValue || "null",
-              }),
-            });
-          } catch (e) {
-            funcReturns.push({
-              role: "tool",
-              content: JSON.stringify({
-                status: "failed",
-                name: name,
-                reason: e.message,
-              }),
-            });
-          }
-        }
-        // 递归调用
-        // TODO: 指定最大调用深度
-        // TODO: 上报函数调用信息
-        return await this.generateResponse(funcReturns, debug);
-      } else {
-        reason = `status 不是一个有效值: ${content}`;
-        if (debug) logger.warn(reason);
-        return {
-          status: "fail",
-          raw: content,
-          usage: response.usage,
-          reason,
-          adapterIndex: current,
-        };
-      }
-
-      // 构建 finalResponse
-      if (!this.allowErrorFormat) {
-        if (LLMResponse.finalReply || LLMResponse.reply) {
-          finalResponse += LLMResponse.finalReply || LLMResponse.reply || "";
-        } else {
-          reason = `回复格式错误: ${content}`;
-          if (debug) logger.warn(reason);
-          return {
-            status: "fail",
-            raw: content,
-            usage: response.usage,
-            reason,
-            adapterIndex: current,
-          };
-        }
-      } else {
-        finalResponse += LLMResponse.finalReply || LLMResponse.reply || "";
-        // 兼容弱智模型的错误回复
-        const possibleResponse = [
-          LLMResponse.msg,
-          LLMResponse.text,
-          LLMResponse.message,
-          LLMResponse.answer,
-        ];
-        for (const resp of possibleResponse) {
-          if (resp) {
-            finalResponse += resp || "";
-            break;
-          }
-        }
-      }
-
-      // 提取其他字段
-      replyTo = LLMResponse.replyTo || "";
-      // 如果 replyTo 不是私聊会话，只保留数字部分
-      if (replyTo && !replyTo.startsWith("private:")) {
-        const numericMatch = replyTo.match(/\d+/);
-        if (numericMatch) {
-          replyTo = numericMatch[0].replace(/\s/g, "");
-        }
-        // 不合法的 channelId
-        if (replyTo.match(/\{.+\}/)) {
-          replyTo = "";
-        }
-      }
-
-      finalResponse = await this.unparseFaceMessage(finalResponse);
-
+      reason = `没有找到 JSON: ${content}`;
+      if (debug) logger.warn(reason);
       return {
-        status: "success",
+        status: "fail",
         raw: content,
-        finalReply: finalResponse,
-        replyTo,
-        quote: LLMResponse.quote || "",
-        nextTriggerCount,
-        logic: finalLogic,
-        functions,
         usage: response.usage,
+        reason,
         adapterIndex: current,
       };
     }
+
+    // 规范化 nextTriggerCount，确保在设置的范围内
+    const nextTriggerCountbyLLM = Math.max(
+      this.minTriggerCount,
+      Math.min(Number(LLMResponse.nextReplyIn) ?? this.minTriggerCount, this.maxTriggerCount)
+    );
+    nextTriggerCount = Number(nextTriggerCountbyLLM) || nextTriggerCount;
+    finalLogic = LLMResponse.logic || "";
+
+    if (LLMResponse.functions && Array.isArray(LLMResponse.functions)) {
+      functions = LLMResponse.functions;
+    } else {
+      functions = [];
+    }
+
+    // 检查 status 字段
+    if (LLMResponse.status === "success") {}
+    else if (LLMResponse.status === "skip") {
+      return {
+        status: "skip",
+        raw: content,
+        nextTriggerCount,
+        logic: finalLogic,
+        usage: response.usage,
+        functions: LLMResponse.functions,
+        adapterIndex: current,
+      };
+    } else if (LLMResponse.status === "function") {
+      let funcReturns: Message[] = [];
+      for (const func of LLMResponse.functions as Function[]) {
+        const { name, params } = func;
+        try {
+          let returnValue = await this.callFunction(name, params);
+          funcReturns.push({
+            role: "tool",
+            content: JSON.stringify({
+              status: "success",
+              name: name,
+              result: returnValue || "null",
+            }),
+          });
+        } catch (e) {
+          funcReturns.push({
+            role: "tool",
+            content: JSON.stringify({
+              status: "failed",
+              name: name,
+              reason: e.message,
+            }),
+          });
+        }
+      }
+      // 递归调用
+      // TODO: 指定最大调用深度
+      // TODO: 上报函数调用信息
+      return await this.generateResponse(funcReturns, debug);
+    } else {
+      reason = `status 不是一个有效值: ${content}`;
+      if (debug) logger.warn(reason);
+      return {
+        status: "fail",
+        raw: content,
+        usage: response.usage,
+        reason,
+        adapterIndex: current,
+      };
+    }
+
+    // 构建 finalResponse
+    if (!this.allowErrorFormat) {
+      if (LLMResponse.finalReply || LLMResponse.reply) {
+        finalResponse += LLMResponse.finalReply || LLMResponse.reply || "";
+      } else {
+        reason = `回复格式错误：未提供 finalReply 或 reply`;
+        if (debug) logger.warn(reason);
+        return {
+          status: "fail",
+          raw: content,
+          usage: response.usage,
+          reason,
+          adapterIndex: current,
+        };
+      }
+    } else {
+      finalResponse += LLMResponse.finalReply || LLMResponse.reply || "";
+      // 兼容弱智模型的错误回复
+      const possibleResponse = [
+        LLMResponse.msg,
+        LLMResponse.text,
+        LLMResponse.message,
+        LLMResponse.answer,
+      ];
+      for (const resp of possibleResponse) {
+        if (resp) {
+          finalResponse += resp || "";
+          break;
+        }
+      }
+    }
+
+    // 提取其他字段
+    replyTo = LLMResponse.replyTo || "";
+    // 如果 replyTo 不是私聊会话，只保留数字部分
+    if (replyTo && !replyTo.startsWith("private:")) {
+      const numericMatch = replyTo.match(/\d+/);
+      if (numericMatch) {
+        replyTo = numericMatch[0].replace(/\s/g, "");
+      }
+      // 不合法的 channelId
+      if (replyTo.match(/\{.+\}/)) {
+        replyTo = "";
+      }
+    }
+
+    finalResponse = await this.unparseFaceMessage(finalResponse);
+
+    return {
+      status: "success",
+      raw: content,
+      finalReply: finalResponse,
+      replyTo,
+      quote: LLMResponse.quote || "",
+      nextTriggerCount,
+      logic: finalLogic,
+      functions,
+      usage: response.usage,
+      adapterIndex: current,
+    };
   }
 
   async summarize(channelId, userId, content) { }

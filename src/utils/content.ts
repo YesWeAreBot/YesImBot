@@ -17,6 +17,113 @@ import { Message, AssistantMessage, ImageComponent, SystemMessage, TextComponent
  * @returns
  */
 export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer): Promise<Message[]> {
+  if (config.ImageViewer.How === "LLM API 自带的多模态能力") {
+    return await processContentWithVisionAbility(config, session, messages, imageViewer);
+  }
+  const processedMessage: Message[] = [];
+
+  for (let chatMessage of messages) {
+    if (!isEmpty(chatMessage.raw)) {
+      // TODO: role === tool
+      processedMessage.push(AssistantMessage(chatMessage.raw));
+      continue;
+    }
+
+    // 2024年12月3日星期二17:34:00
+    const timeString = getFormatDateTime(chatMessage.sendTime);
+    let senderName: string;
+    switch (config.Bot.NickorName) {
+      case "群昵称":
+        senderName = chatMessage.senderNick;
+        break;
+      case "用户昵称":
+      default:
+        senderName = chatMessage.senderName;
+        break;
+    }
+    const template = config.Settings.SingleMessageStrctureTemplate;
+    const elements = h.parse(chatMessage.content);
+    let userContent: string[] = [];
+    for (let elem of elements) {
+      switch (elem.type) {
+        case "text":
+          userContent.push(elem.attrs.content);
+          break;
+        case "at":
+          const attrs = { ...elem.attrs };
+          let userName: string;
+          switch (config.Bot.NickorName) {
+            case "群昵称":
+              userName = messages.filter((m) => m.senderId === attrs.id)[0]?.senderNick;
+              break;
+            case "用户昵称":
+            default:
+              userName = messages.filter((m) => m.senderId === attrs.id)[0]?.senderName;
+              break;
+          }
+          if (attrs.id === session.selfId && config.Bot.SelfAwareness === "此页面设置的名字") {
+            userName = config.Bot.BotName;
+          }
+          // 似乎getMemberName的实现有问题，无法正确获取到群昵称，总是获取到用户昵称。修复后，取消注释下面的代码
+          attrs.name = userName || attrs.name || await getMemberName(config, session, attrs.id, chatMessage.channelId);
+          const safeAttrs = Object.entries(attrs)
+            .map(([key, value]) => {
+              // 确保value是字符串
+              const strValue = String(value);
+              // 转义单引号和其他潜在的危险字符
+              const safeValue = strValue
+                .replace(/'/g, "&#39;")
+                .replace(/"/g, "&quot;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+              return `${key}='${safeValue}'`;
+            })
+            .join(' ');
+          const atMessage = `<at ${safeAttrs}/>`;
+          userContent.push(atMessage);
+          break;
+        case "quote":
+          chatMessage.quoteMessageId = elem.attrs.id;
+          break;
+        case "img":
+          let cacheKey = getFileUnique(elem, session.bot.platform);
+          userContent.push(await imageViewer.getImageDescription(elem.attrs.src, cacheKey, elem.attrs.summary, config.Debug.DebugAsInfo));
+          break;
+        case "face":
+          userContent.push(`[表情:${elem.attrs.name}]`);
+          break;
+        case "mface":
+          userContent.push(`[表情:${elem.attrs.summary?.replace(/^\[|\]$/g, '')}]`);
+          break;
+        default:
+      }
+    }
+
+
+    let messageText = new Template(template, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g).render({
+      messageId: chatMessage.messageId,
+      date: timeString,
+      channelType: chatMessage.channelType,
+      channelInfo: (chatMessage.channelType === ChannelType.Guild) ? `from_guild:${chatMessage.channelId}` : `${ chatMessage.channelType === ChannelType.Private ? "from_private" : "from_sandbox" }`,
+      channelId: chatMessage.channelId,
+      senderName,
+      senderId: chatMessage.senderId,
+      userContent: userContent.join(""),
+      quoteMessageId: chatMessage.quoteMessageId || "",
+      hasQuote: !!chatMessage.quoteMessageId,
+      isPrivate: chatMessage.channelType === ChannelType.Private,
+    });
+
+    if (chatMessage.senderId === session.bot.selfId) {
+      processedMessage.push(AssistantMessage(messageText));
+    } else {
+      processedMessage.push(UserMessage(messageText));
+    }
+  }
+  return processedMessage;
+}
+
+async function processContentWithVisionAbility(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer) {
   const processedMessage: Message[] = [];
   let pendingProcessImgCount = 0;
 
@@ -173,9 +280,6 @@ export async function processContent(config: Config, session: Session, messages:
   }
   return processedMessage;
 }
-
-
-
 
 export function processText(splitRule: Config["Bot"]["BotReplySpiltRegex"], replaceRules: Config["Bot"]["BotSentencePostProcess"], text: string): string[] {
   const replacements = replaceRules.map(item => ({

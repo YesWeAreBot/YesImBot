@@ -181,7 +181,8 @@ export function apply(ctx: Context, config: Config) {
     const parsedElements = h.parse(session.content);
 
     // 提前下载图片，防止链接过期
-    h.select(parsedElements, "img").forEach((element) => {
+    parsedElements.forEach((element) => {
+      if (element.type !== "img") return;
       const cacheKey = getFileUnique(element, session.bot.platform);
       convertUrltoBase64(
         element.attrs.src,
@@ -266,7 +267,7 @@ export function apply(ctx: Context, config: Config) {
         return false;
       }
 
-      bot.setChatHistory(chatHistory, config.Settings.MultiTurn);
+      bot.setChatHistory(chatHistory);
 
       if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + JSON.stringify(bot.getChatHistory(), null, 2));
 
@@ -290,8 +291,6 @@ export function apply(ctx: Context, config: Config) {
       if (config.Debug.DebugAsInfo) ctx.logger.info(`Request sent, awaiting for response...`);
 
       const chatResponse = await bot.generateResponse([], config.Debug.DebugAsInfo);
-
-      if (config.Debug.DebugAsInfo) ctx.logger.info(foldText(JSON.stringify(chatResponse, null, 2), 3500));
 
       // 处理响应
       let { status, raw, adapterIndex: current, usage } = chatResponse;
