@@ -185,15 +185,18 @@ export class Bot {
 
     if (adapter.ability.includes("原生工具调用")) {
 
-      let toolCalls = response.message.tool_calls;
+      let toolCalls = response.message.tool_calls || [];
       let returns: ToolMessage[] = [];
-      toolCalls?.forEach(async toolCall => {
-        let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
-        if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
-      })
+      for (let toolCall of toolCalls) {
+        try {
+          let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
+          if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
+        } catch (e) {
+          returns.push(ToolMessage(e.message, toolCall.id));
+        }
+      }
       if (returns.length > 0) {
-        this.history.push(...returns);
-        return this.generateResponse(this.history, debug);
+        return this.generateResponse(returns, debug);
       }
     }
 
