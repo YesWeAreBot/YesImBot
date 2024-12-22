@@ -1,12 +1,11 @@
 import { Context } from "koishi";
 
 import { BaseAdapter } from "../adapters/base";
-import { Message } from "../adapters/creators/component";
 import { Config } from "../config";
 import { EmbeddingsBase } from "../embeddings/base";
 import { getAdapter, getEmbedding } from "../utils/factory";
-import { MemoryVectorStore } from "./vectorStore";
-import { LLM} from "../adapters/config";
+import { MemoryVectorStore, Metadata, Vector } from "./vectorStore";
+import { LLMConfig } from "../adapters";
 import { EmbeddingsConfig } from "../embeddings";
 
 export class Memory {
@@ -17,7 +16,7 @@ export class Memory {
 
   constructor(
     ctx: Context,
-    adapterConfig: LLM,
+    adapterConfig: LLMConfig,
     embedderConfig: EmbeddingsConfig,
     parameters?: Config["Parameters"]
   ) {
@@ -26,34 +25,50 @@ export class Memory {
     this.embedder = getEmbedding(embedderConfig);
   }
 
-  async add(messages: string | Message[], userId?: string) {}
+  async addText(content: string, userId?: string): Promise<string> {
+    let embedding = await this.embedder.embed(content);
+
+    return await this.vectorStore.addVector(embedding, {
+      content,
+      createdAt: Date.now(),
+      userId,
+    });
+  }
+
+  async search(query: string, limit: number, userId?: string): Promise<string[]>
+  async search(query: string, limit: number, filter?: (metadata: Metadata) => boolean): Promise<string[]>
 
   async search(
     query: string,
     limit: number = 5,
-    userId?: string
+    filter?: string | ((metadata: Metadata) => boolean)
   ): Promise<string[]> {
     const embedding = await this.embedder.embed(query);
 
-    const result = await this.vectorStore.similaritySearchVectorWithScore(
+    const result = await this.vectorStore.similaritySearch(
       embedding,
       limit,
-      userId ? (metadata) => metadata.userId === userId : undefined
+      filter ? typeof filter === "string" ? (metadata: Metadata) => metadata.userId === filter : filter : undefined
     );
-    const response = result.map((item) => item[0].content);
-    return response;
+    return result.map((item) => item.content);
   }
+
+
 
   getUserMemory(userId: string): string[] {
     let vectors = this.vectorStore.filterVectors(
       (vector) => vector.userId === userId
     );
-    return vectors.map((vector) => {
-      return vector.content;
-    });
+    return vectors.map((vector) => vector.content);
   }
-  getSelfMemory() {
-    return this.getUserMemory("self");
+
+  filterMemory(filter: (metadata: Metadata) => boolean): string[] {
+    let vectors = this.vectorStore.filterVectors(filter);
+    return vectors.map((vector) => vector.content);
+  }
+
+  async getMemoryById(id: string): Promise<Vector> {
+    let vector = this.vectorStore.getVector(id);
+    return vector;
   }
 }
-
