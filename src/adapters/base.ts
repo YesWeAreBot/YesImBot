@@ -37,10 +37,9 @@ export abstract class BaseAdapter {
     // 解析其他参数
     this.otherParams = {};
     if (this.parameters?.OtherParameters) {
-      this.parameters.OtherParameters.forEach(
-        (param: { key: string; value: string }) => {
-          const key = param.key.trim();
-          let value = param.value.trim();
+      Object.entries(this.parameters?.OtherParameters).forEach(([key, value]) => {
+          key = key.trim();
+          value = value.trim();
           // 尝试解析 JSON 字符串
           try {
             value = JSON.parse(value);

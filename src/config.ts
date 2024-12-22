@@ -17,15 +17,15 @@ export interface Config {
   API: AdapterConfig;
   Parameters: {
     Temperature?: number;
+    ContextSize?: number;
     MaxTokens?: number;
     TopP?: number;
     FrequencyPenalty?: number;
     PresencePenalty?: number;
     Stop?: string[];
-    OtherParameters: {
-      key: string;
-      value: string;
-    }[];
+    OtherParameters?: {
+      [key: string]: string;
+    }
   };
   Verifier: {
     Enabled?: boolean;
@@ -95,11 +95,11 @@ export interface Config {
     UpdatePromptOnLoad: boolean;
     AllowErrorFormat: boolean;
     MultiTurn: boolean;
+    MultiTurnFormat: "JSON" | "CUSTOM";
   };
   Debug: {
     DebugAsInfo: boolean;
     TestMode: boolean;
-    FileUniqueField: string;
     IgnoreImgCache: boolean;
   };
 }
@@ -157,12 +157,18 @@ export const Config: Schema<Config> = Schema.object({
       .step(0.01)
       .role("slider")
       .description("采样器的温度。数值越大，回复越随机；数值越小，回复越确定"),
+    ContextSize: Schema.number()
+      .default(8192)
+      .min(2048)
+      .max(32768)
+      .step(1)
+      .description("一次会话的最大 Token 数量"),
     MaxTokens: Schema.number()
       .default(4096)
       .min(1)
       .max(20480)
       .step(1)
-      .description("一次生成的最大 Token 数量。请注意，此参数对于 o1 系列等自带思考的模型已经过时。对于 o1-preview 和 o1-mini 模型，请留空此参数，并在自定义参数中使用 max_completion_tokens 来指定一次生成消耗的最大 Token 数"),
+      .description("一次生成的最大 Token 数量。更大的 Token 数量可能会导致生成更长的回复"),
     TopP: Schema.number()
       .default(0.64)
       .min(0)
@@ -188,13 +194,13 @@ export const Config: Schema<Config> = Schema.object({
       .default(["<|endoftext|>"])
       .role("table")
       .description("自定义停止词。对于 OpenAI 官方的 API，最多可以设置4个自定义停止词。生成会在遇到这些停止词时停止"),
-    OtherParameters: Schema.array(
-      Schema.object({
-        key: Schema.string().description("键名"),
-        value: Schema.string().description("键值"),
-      })
+    OtherParameters: Schema.dict(
+      Schema.string().required(),
+      Schema.any().required()
     )
-      .default([{ key: "do_sample", value: "true" }])
+      .default({
+        do_sample: "true",
+      })
       .role("table")
       .description(
         `自定义请求体中的其他参数。有些api可能包含一些特别有用的功能，例如 dry_base 和 response_format。<br/>
@@ -463,7 +469,11 @@ export const Config: Schema<Config> = Schema.object({
       .description("兼容几种较为常见的大模型错误输出格式"),
     MultiTurn: Schema.boolean()
       .default(false)
-      .description("将历史消息以多轮对话格式传递给LLM，这会使得LLM更好地理解哪些消息是自己曾发出的，但会将期望的LLM输出格式从json改为单条消息的结构模板的格式，因此将无法使用某些功能"),
+      .description("将历史消息以多轮对话格式传递给LLM，这会使得LLM更好地理解哪些消息是自己曾发出的"),
+    MultiTurnFormat: Schema.union([
+      Schema.const("JSON").description("JSON 格式"),
+      Schema.const("CUSTOM").description("自定义格式"),
+    ]).default("CUSTOM").description("开启多轮对话时，期待LLM回复的格式。选择自定义格式时，将无法使用某些功能")
   }).description("插件设置"),
 
   Debug: Schema.object({
@@ -473,9 +483,6 @@ export const Config: Schema<Config> = Schema.object({
     TestMode: Schema.boolean()
       .default(false)
       .description("测试模式。如果你不知道这是什么，不要开启"),
-    FileUniqueField: Schema.string()
-      .default("file")
-      .description("图片的唯一标识字段"),
     IgnoreImgCache: Schema.boolean()
       .default(false)
       .description("忽略图片缓存"),

@@ -54,7 +54,7 @@ export class OllamaAdapter extends BaseAdapter {
       messages,
       tools: toolsSchema,
       options: {
-        num_ctx: this.parameters?.MaxTokens,
+        num_ctx: this.parameters?.ContextSize,
         temperature: this.parameters?.Temperature,
         presence_penalty: this.parameters?.PresencePenalty,
         frequency_penalty: this.parameters?.FrequencyPenalty,
