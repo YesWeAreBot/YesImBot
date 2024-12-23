@@ -1,6 +1,5 @@
 import path from "path";
 import axios from "axios";
-import JSON5 from "json5";
 import { createHash } from "crypto";
 import { h } from "koishi";
 
@@ -49,7 +48,7 @@ class BaiduService extends ImageDescriptionService {
       // 提交请求
       const submitResponse = await axios.post(
         submitUrl,
-        JSON5.stringify(submitData),
+        JSON.stringify(submitData),
         { headers }
       );
       const taskId = submitResponse.data.result.task_id;
@@ -64,7 +63,7 @@ class BaiduService extends ImageDescriptionService {
       do {
         resultResponse = await axios.post(
           resultUrl,
-          JSON5.stringify(resultData),
+          JSON.stringify(resultData),
           { headers }
         );
         retCode = resultResponse.data.result.ret_code;
@@ -113,7 +112,7 @@ class MyOwnService extends ImageDescriptionService {
     try {
       const response = await axios.post(
         baseURL,
-        JSON5.parse(requestBodyParsed),
+        JSON.parse(requestBodyParsed),
         {
           headers: {
             "Content-Type": "application/json",
@@ -123,7 +122,7 @@ class MyOwnService extends ImageDescriptionService {
 
       const responseData = response.data;
       const regex = new RegExp(getResponseRegex);
-      const match = regex.exec(JSON5.stringify(responseData));
+      const match = regex.exec(JSON.stringify(responseData));
 
       if (match && match[1]) {
         return match[1];

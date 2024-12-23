@@ -1,6 +1,5 @@
 import path from "path";
 import { readFileSync } from "fs";
-import JSON5 from "json5";
 
 import { calculateCosineSimilarity, EmbeddingsBase } from "../embeddings/base";
 import { getEmbedding } from "../utils/factory";
@@ -22,7 +21,7 @@ export class EmojiManager {
 
   constructor(private embeddingConfig: EmbeddingsConfig) {
     const emojisFile = path.join(__dirname, "../../data/emojis.json");
-    const emojis: Emoji[] = JSON5.parse(readFileSync(emojisFile, "utf-8"));
+    const emojis: Emoji[] = JSON.parse(readFileSync(emojisFile, "utf-8"));
 
     emojis.forEach((emoji) => {
       this.idToName[emoji.id] = emoji.name;

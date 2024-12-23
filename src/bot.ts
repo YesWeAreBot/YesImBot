@@ -1,4 +1,3 @@
-import JSON5 from "json5";
 import { Context, Random } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
@@ -251,7 +250,7 @@ export class Bot {
 
     // MultiTurnFormat === JSON
     if (typeof content !== "string") {
-      content = JSON5.stringify(content, null, 2);
+      content = JSON.stringify(content, null, 2);
     }
     // 提取JSON部分
     const jsonMatch = content.match(/{.*}/s);
@@ -259,7 +258,7 @@ export class Bot {
 
     if (jsonMatch) {
       try {
-        LLMResponse = JSON5.parse(escapeUnicodeCharacters(jsonMatch[0]));
+        LLMResponse = JSON.parse(escapeUnicodeCharacters(jsonMatch[0]));
         this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
       } catch (e) {
         reason = `JSON 解析失败: ${e.message}`;
