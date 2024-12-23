@@ -56,7 +56,7 @@ export function apply(ctx: Context, bot: Bot) {
   ctx
     .command("memory.getAll", "获取全部记忆")
     .action(async ({ session }) => {
-      const memory = await bot.memory.getAll();
+      const memory = bot.memory.getAll();
       if (memory.length === 0) {
         await session.send(`没有找到任何记忆`);
       } else {

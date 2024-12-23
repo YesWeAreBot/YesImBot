@@ -14,6 +14,7 @@ import { ChannelType, createMessage } from "./models/ChatMessage";
 import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
 import { apply as applyMemoryCommands } from "./commands/memory";
+import { apply as applySendQueneCommands } from "./commands/sendQuene";
 
 export const name = "yesimbot";
 
@@ -77,7 +78,8 @@ export function apply(ctx: Context, config: Config) {
     // 等待1毫秒
     await sleep(1)
     const channelId = session.channelId;
-    await sendQueue.addMessage(await createMessage(session));
+    //这里不添加消息，这样就不用过滤指令了
+    //await sendQueue.addMessage(await createMessage(session));
     if (!isChannelAllowed(config.MemorySlot.SlotContains, channelId) || session.author.id == session.selfId || channelId === config.Settings.LogicRedirect.Target) {
       return;
     }
@@ -98,73 +100,7 @@ export function apply(ctx: Context, config: Config) {
   });
 
   applyMemoryCommands(ctx, bot);
-
-  ctx
-    .command("清除记忆", "清除 BOT 对会话的记忆")
-    .option("target", "-t <target:string> 指定要清除记忆的会话。使用 private:指定私聊会话，使用 all 或 private:all 分别清除所有群聊或私聊记忆", { authority: 3 })
-    .option("person", "-p <person:string> 从所有会话中清除指定用户的记忆", { authority: 3 })
-    .usage("注意：如果使用 清除记忆 <target> 来清除记忆而不带 -t 参数，将会清除当前会话的记忆！")
-    .example([
-      "清除记忆",
-      "清除记忆 -t private:1234567890",
-      "清除记忆 -t 987654321",
-      "清除记忆 -t all",
-      "清除记忆 -t private:all",
-      "清除记忆 -p 1234567890",
-    ].join("\n"))
-    .action(async ({ session, options }) => {
-      sendQueue.processingLock.start(session.messageId);
-
-      sendQueue.setMark(session.messageId, MarkType.Command);
-
-      const msgDestination = session.guildId || session.channelId;
-      let result = "";
-      // 私聊时，ctx.on先于ctx.command执行，所以这里不需要等待。这是什么奇怪的特性，不知道会不会和版本和适配器类型有关？或许应该强制让ctx.on先于ctx.command执行，然后这里的等待删掉？但是这样咱们的setMark就不能及时标记了；让ctx.command先于ctx.on执行的话，调用指令的那条消息就清除不到了。现在选择让ctx.command等待1毫秒。
-      //if (!msgDestination.startsWith("private:")) {
-        await sendQueue.processingLock.waitForProcess(session.messageId);
-      //}
-
-      if (options.person) {
-        // 按用户ID清除记忆
-        const cleared = await sendQueue.clearBySenderId(options.person);
-        result = `${cleared ? "✅" : "❌"} 用户 ${options.person}`;
-      } else {
-        const clearGroupId = options.target || msgDestination;
-        // 要清除的会话集合
-        const targetGroups = clearGroupId
-          .split(",")
-          .map(g => g.trim())
-          .filter(Boolean);
-
-        const messages = [];
-
-        if (targetGroups.includes("private:all")) {
-          const success = await sendQueue.clearPrivateAll();
-          messages.push(`${success ? "✅" : "❌"} 全部私聊记忆`);
-        }
-
-        if (targetGroups.includes("all")) {
-          const success = await sendQueue.clearAll();
-          messages.push(`${success ? "✅" : "❌"} 全部群组记忆`);
-        }
-
-        for (const id of targetGroups) {
-          if (id === 'all' || id === 'private:all') continue;
-          const success = await sendQueue.clearChannel(id);
-          messages.push(`${success ? "✅" : "❌"} ${id}`);
-        }
-
-        result = messages.join('\n');
-      }
-      if (isEmpty(result)) return;
-
-      const messageIds = await session.sendQueued(result);
-
-      for (const messageId of messageIds) {
-        sendQueue.setMark(messageId, MarkType.Command);
-      }
-      return;
-    });
+  applySendQueneCommands(ctx, sendQueue);
 
   ctx.middleware(async (session: Session, next: Next) => {
     const channelId = session.channelId;
