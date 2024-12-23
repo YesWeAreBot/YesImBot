@@ -115,6 +115,11 @@ export class Bot {
     this.prompt = content;
   }
 
+  /**
+   * 
+   * @TODO 对旧记忆进行总结
+   * @param message The message to add to the context.
+   */
   addContext(message: Message) {
     while (this.context.length >= this.contextSize) {
       this.recall.push(this.context.shift());

@@ -272,6 +272,11 @@ export function downloadFile(url, filePath, debug) {
   });
 };
 
+/**
+ * 
+ * @param date
+ * @returns 2024年12月3日星期二17:34:00
+ */
 export function getFormatDateTime(date?: Date): string {
   const targetDate = date || new Date();
   const dateTime = targetDate.toLocaleString("zh-CN", {

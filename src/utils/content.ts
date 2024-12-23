@@ -6,7 +6,7 @@ import { isEmpty, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
 import { ImageViewer } from '../services/imageViewer';
 import { convertUrltoBase64 } from "../utils/imageUtils";
-import { Message, AssistantMessage, ImageComponent, SystemMessage, TextComponent, UserMessage } from "../adapters/creators/component";
+import { Message, AssistantMessage, ImageComponent, TextComponent, UserMessage } from "../adapters/creators/component";
 
 
 /**
@@ -23,13 +23,15 @@ export async function processContent(config: Config, session: Session, messages:
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
-    if (!isEmpty(chatMessage.raw)) {
+    if (config.Settings.MultiTurnFormat === "JSON") {
+      if (isEmpty(chatMessage.raw)) {
+        chatMessage.raw = convertChatMessageToRaw(chatMessage);
+      }
       // TODO: role === tool
       processedMessage.push(AssistantMessage(chatMessage.raw));
       continue;
     }
 
-    // 2024年12月3日星期二17:34:00
     const timeString = getFormatDateTime(chatMessage.sendTime);
     let senderName: string;
     switch (config.Bot.NickorName) {
@@ -128,11 +130,14 @@ async function processContentWithVisionAbility(config: Config, session: Session,
   let pendingProcessImgCount = 0;
 
   for (let chatMessage of messages) {
-    if (!isEmpty(chatMessage.raw)) {
+    if (config.Settings.MultiTurnFormat === "JSON") {
+      if (isEmpty(chatMessage.raw)) {
+        chatMessage.raw = convertChatMessageToRaw(chatMessage);
+      }
+      // TODO: role === tool
       processedMessage.push(AssistantMessage(chatMessage.raw));
       continue;
     }
-    // 2024年12月3日星期二17:34:00
     const timeString = getFormatDateTime(chatMessage.sendTime);
     let senderName: string;
     switch (config.Bot.NickorName) {
@@ -313,4 +318,13 @@ export function processText(splitRule: Config["Bot"]["BotReplySpiltRegex"], repl
   });
   if (quoteMessageId) sentences[0] = h.quote(quoteMessageId).toString() + sentences[0];
   return sentences;
+}
+
+function convertChatMessageToRaw(chatMessage: ChatMessage): string {
+  return JSON.stringify({
+    status: "success",
+    reply: chatMessage.content,
+    replyTo: chatMessage.channelId,
+    quote: chatMessage.quoteMessageId,
+  });
 }
