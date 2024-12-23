@@ -1,12 +1,12 @@
 import { Context } from "koishi";
 
+import { LLMConfig } from "../adapters";
 import { BaseAdapter } from "../adapters/base";
 import { Config } from "../config";
+import { EmbeddingsConfig } from "../embeddings";
 import { EmbeddingsBase } from "../embeddings/base";
 import { getAdapter, getEmbedding } from "../utils/factory";
 import { MemoryVectorStore, Metadata, Vector } from "./vectorStore";
-import { LLMConfig } from "../adapters";
-import { EmbeddingsConfig } from "../embeddings";
 
 export class Memory {
   private vectorStore: MemoryVectorStore;
@@ -23,6 +23,27 @@ export class Memory {
     this.vectorStore = new MemoryVectorStore(ctx);
     this.llm = getAdapter(adapterConfig, parameters);
     this.embedder = getEmbedding(embedderConfig);
+  }
+
+  get(memoryId: string): Metadata {
+    return this.vectorStore.get(memoryId);
+  }
+
+  getAll(): Vector[] {
+    return this.vectorStore.getAll();
+  }
+
+  delete(memoryId: string) {
+    return this.vectorStore.delete(memoryId);
+  }
+
+  async update(memoryId: string, data: any): Promise<void> {
+    const embedding = await this.embedder.embed(data);
+    return this.vectorStore.update(memoryId, embedding, data);
+  }
+
+  clear() {
+    this.vectorStore.clear();
   }
 
   async addText(content: string, userId?: string): Promise<string> {
@@ -53,8 +74,6 @@ export class Memory {
     return result.map((item) => item.content);
   }
 
-
-
   getUserMemory(userId: string): string[] {
     let vectors = this.vectorStore.filterVectors(
       (vector) => vector.userId === userId
@@ -65,10 +84,5 @@ export class Memory {
   filterMemory(filter: (metadata: Metadata) => boolean): string[] {
     let vectors = this.vectorStore.filterVectors(filter);
     return vectors.map((vector) => vector.content);
-  }
-
-  async getMemoryById(id: string): Promise<Vector> {
-    let vector = this.vectorStore.getVector(id);
-    return vector;
   }
 }

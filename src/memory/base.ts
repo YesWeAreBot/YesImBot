@@ -14,6 +14,4 @@ export abstract class MemoryBase {
   abstract update(memoryId: string, data: any): Promise<void>;
 
   abstract delete(memoryId: string): Promise<void>;
-
-  abstract history(memoryId: string): Promise<void>;
 }

@@ -27,16 +27,56 @@ export interface Metadata {
 }
 
 export class MemoryVectorStore {
-  private vectorStore: CacheManager<Vector>;
+  readonly store: CacheManager<Vector>;
 
   constructor(private ctx: Context) {
     const vectorsFilePath = path.join(__dirname, "../../data/.vector_cache/memory.bin");
-    this.vectorStore = new CacheManager(vectorsFilePath, true);
+    this.store = new CacheManager(vectorsFilePath, true);
+  }
+
+  get(id: string): Metadata | undefined {
+    return this.store.get(id);
+  }
+
+  getAll(): Vector[] {
+    let vectors = this.store.values();
+    return vectors;
+  }
+
+  delete(id: string) {
+    return this.store.remove(id);
+  }
+
+  update(id: string, vector: number[], content: string) {
+    if (!this.store.has(id)) {
+      return;
+    }
+
+    let oldVector = this.store.get(id);
+
+    oldVector.content = content;
+    oldVector.updatedAt = Date.now();
+    oldVector.vector = vector;
+    oldVector.magnitude = getMagnitude(vector);
+    this.store.set(id, oldVector);
+  }
+
+  clear() {
+    this.store.clear();
+    this.store.commit();
+  }
+
+  /**
+   * 将向量库持久化
+   * 保存本地或者提交到数据库
+   */
+  commit() {
+    this.store.commit();
   }
 
   async addVector(vector: number[], metadata: Metadata): Promise<string> {
     const id = randomUUID();
-    this.vectorStore.set(id, {
+    this.store.set(id, {
       id,
       vector,
       magnitude: getMagnitude(vector),
@@ -49,7 +89,7 @@ export class MemoryVectorStore {
   async addVectors(vectors: number[][], metadatas: Metadata[]): Promise<void> {
     vectors.forEach((vector, index) => {
       const id = randomUUID();
-      this.vectorStore.set(id, {
+      this.store.set(id, {
         id,
         vector,
         magnitude: getMagnitude(vector),
@@ -59,34 +99,8 @@ export class MemoryVectorStore {
     });
   }
 
-  removeVector(id: string) {
-    this.vectorStore.remove(id);
-  }
-
-  getVector(id: string): Vector | undefined {
-    return this.vectorStore.get(id);
-  }
-
-  updateVector(id: string, vector: number[], metadata: Metadata) {
-    this.vectorStore.set(id, {
-      id,
-      vector,
-      magnitude: getMagnitude(vector),
-
-      ...metadata,
-    })
-  }
-
-  /**
-   * 将向量库持久化
-   * 保存本地或者提交到数据库
-   */
-  commit() {
-    this.vectorStore.commit();
-  }
-
   filterVectors(filter: (metadata: Metadata) => boolean): Vector[] {
-    return this.vectorStore.values().filter(filter);
+    return this.store.values().filter(filter);
   }
 
   /**
@@ -107,7 +121,7 @@ export class MemoryVectorStore {
     const magnitude = getMagnitude(query);
     let results: [Vector, number][] = [];
 
-    for (const vector of this.vectorStore.values()) {
+    for (const vector of this.store.values()) {
       const similarity = calculateCosineSimilarity(query, vector.vector, magnitude, vector.magnitude);
       if (!filter || filter(vector)) {
         results.push([vector, similarity]);
