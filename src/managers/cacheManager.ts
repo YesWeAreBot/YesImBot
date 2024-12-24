@@ -2,17 +2,17 @@ import fs from "fs";
 import path from "path";
 import zlib from "zlib";
 
-// TODO: 使用 zlib 进行压缩
+import { Context } from "koishi";
+
 export class CacheManager<T> {
+  private ctx = new Context();
   private cache: Map<string, T>; // 内存缓存
-  private dirtyCache: Map<string, T>; // 临时缓存
   private isDirty: boolean; // 标记是否有需要保存的数据
   private saveImmediately: boolean;
-  private timer: NodeJS.Timeout;
+  private throttledCommit: (() => void) & { dispose: () => void } | undefined;
 
   constructor(private filePath: string, private enableCompression = false) {
     this.cache = new Map<string, T>();
-    this.dirtyCache = new Map<string, T>();
     this.isDirty = false;
     this.saveImmediately = true;
 
@@ -25,41 +25,36 @@ export class CacheManager<T> {
     process.on("SIGTERM", this.handleExit.bind(this));
   }
 
-  private serialize(value: T): string {
+  serialize(value: T): string {
     if (value instanceof Map) {
       // 序列化 Map
-      return JSON.stringify({
-        type: "Map",
-        value: Array.from(value.entries()),
-      });
+      return JSON.stringify({ type: "Map", value: Array.from(value.entries()) });
     } else if (value instanceof Set) {
       // 序列化 Set
-      return JSON.stringify({
-        type: "Set",
-        value: Array.from(value),
-      });
+      return JSON.stringify({ type: "Set", value: Array.from(value) });
     } else if (value instanceof Date) {
       // 序列化 Date
-      return JSON.stringify({
-        type: "Date",
-        value: value.toISOString(),
-      });
+      return JSON.stringify({ type: "Date", value: value.toISOString() });
     } else {
       // 默认使用 JSON 序列化
       return JSON.stringify(value);
     }
   }
 
-  private deserialize(serialized: string): T {
+  deserialize(serialized: string): T {
     const parsed = JSON.parse(serialized);
     if (parsed && parsed.type === "Map") {
-      return new Map(parsed.value) as unknown as T; // 恢复 Map
+      // 恢复 Map
+      return new Map(parsed.value) as unknown as T;
     } else if (parsed && parsed.type === "Set") {
-      return new Set(parsed.value) as unknown as T; // 恢复 Set
+      // 恢复 Set
+      return new Set(parsed.value) as unknown as T;
     } else if (parsed && parsed.type === "Date") {
-      return new Date(parsed.value) as unknown as T; // 恢复 Date
+      // 恢复 Date
+      return new Date(parsed.value) as unknown as T;
     } else {
-      return parsed as T; // 默认返回原始对象
+      // 默认返回原始对象
+      return parsed as T;
     }
   }
 
@@ -67,11 +62,11 @@ export class CacheManager<T> {
    * 序列化并存储数据到文件
    * @returns
    */
-  private saveCache(): void {
+  saveCache(): void {
     try {
       // 确保目标目录存在
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-      let serializedData = JSON.stringify(
+      const serializedData = JSON.stringify(
         Array.from(this.cache.entries()).map(([key, value]) => [key, this.serialize(value)]),
         null,
         2
@@ -79,9 +74,9 @@ export class CacheManager<T> {
       if (this.enableCompression) {
         const compressed = zlib.gzipSync(serializedData);
         fs.writeFileSync(this.filePath, compressed);
-        return;
+      } else {
+        fs.writeFileSync(this.filePath, serializedData, "utf-8");
       }
-      fs.writeFileSync(this.filePath, serializedData, "utf-8");
     } catch (error) {
       logger.error("Failed to save cache:", error);
     }
@@ -144,19 +139,15 @@ export class CacheManager<T> {
     return Array.from(this.cache.entries());
   }
 
-  private markDirty(key: string, value: T): void {
-    this.dirtyCache.set(key, value);
-    this.isDirty = true;
-  }
-
   // 添加数据到缓存
-  public set(key: string, value: T): Promise<void> {
+  public set(key: string, value: T): void {
     this.cache.set(key, value);
     if (this.saveImmediately) {
       this.saveCache();
-      return;
+    } else {
+      this.isDirty = true;
+      this.throttledCommit?.();
     }
-    this.markDirty(key, value);
   }
 
   // 从缓存中获取数据
@@ -169,10 +160,10 @@ export class CacheManager<T> {
     this.cache.delete(key);
     if (this.saveImmediately) {
       this.saveCache();
-      return;
+    } else {
+      this.isDirty = true;
+      this.throttledCommit?.();
     }
-    this.dirtyCache.delete(key);
-    this.isDirty = true;
   }
 
   // 清空缓存
@@ -180,53 +171,35 @@ export class CacheManager<T> {
     this.cache.clear();
     if (this.saveImmediately) {
       this.saveCache();
-      return;
+    } else {
+      this.isDirty = true;
+      this.throttledCommit?.();
     }
-    this.dirtyCache.clear();
-    this.isDirty = true;
   }
 
   // 统一提交缓存到文件
   public commit(): void {
     if (this.isDirty) {
-      // 将内存缓存合并到文件缓存
-      this.dirtyCache.forEach((value, key) => {
-        this.cache.set(key, value);
-      });
       this.saveCache();
-      this.dirtyCache.clear();
       this.isDirty = false;
     }
   }
 
-  /**
-   * 在定时器中定期保存缓存
-   * @param interval
-   * @returns
-   */
+  // 使用throttle来替代定时器
   public setAutoSave(interval: number = 5000): void {
     if (interval <= 0) {
       this.saveImmediately = true;
-      this.timer && clearTimeout(this.timer); // 清除现有的定时器
+      this.throttledCommit?.dispose();
       return;
     }
 
     this.saveImmediately = false;
-
-    const autoSave = () => {
-      if (this.isDirty) {
-        this.commit(); // 异步保存缓存
-      }
-      this.timer = setTimeout(autoSave, interval); // 递归调用自身
-    };
-
-    this.timer && clearTimeout(this.timer); // 清除现有的定时器
-    this.timer = setTimeout(autoSave, interval); // 启动新的定时器
+    this.throttledCommit = this.ctx.throttle(this.commit.bind(this), interval);
   }
 
   private handleExit(): void {
     this.commit();
-    clearTimeout(this.timer);
+    this.throttledCommit?.dispose();
     process.exit(); // 确保进程退出
   }
 }
