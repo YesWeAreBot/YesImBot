@@ -2,7 +2,7 @@ import { Context, Random } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
 import { Usage } from "./adapters/base";
-import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolMessage, UserMessage } from "./adapters/creators/component";
+import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolCall, ToolMessage, UserMessage } from "./adapters/creators/component";
 import { functionPrompt, ToolSchema } from "./adapters/creators/schema";
 import { Config } from "./config";
 import { EmbeddingsBase } from "./embeddings/base";
@@ -17,9 +17,7 @@ import { ResponseVerifier } from "./utils/verifier";
 
 export interface Function {
   name: string;
-  params: {
-    [key: string]: any;
-  }
+  params: Record<string, any>;
 }
 
 export interface SuccessResponse {
@@ -52,6 +50,8 @@ export interface FailedResponse {
   usage: Usage;
   adapterIndex: number;
 }
+
+type Response = SuccessResponse | SkipResponse | FailedResponse;
 
 export class Bot {
   readonly memory: Memory;
@@ -116,7 +116,7 @@ export class Bot {
   }
 
   /**
-   * 
+   *
    * @TODO 对旧记忆进行总结
    * @param message The message to add to the context.
    */
@@ -163,7 +163,7 @@ export class Bot {
     return this.adapterSwitcher.getAdapter();
   }
 
-  async generateResponse(messages: Message[], debug = false): Promise<SuccessResponse | SkipResponse | FailedResponse> {
+  async generateResponse(messages: Message[], debug = false): Promise<Response> {
     let { current, adapter } = this.getAdapter();
 
     if (!adapter) {
@@ -175,6 +175,7 @@ export class Bot {
     }
 
     if (!adapter.ability.includes("原生工具调用")) {
+      // appendFunctionPrompt
       let str = Object.values(this.extensions)
         .map((extension) => getFunctionPrompt(extension))
         .join("\n");
@@ -185,79 +186,109 @@ export class Bot {
     let content = response.message.content;
     if (debug) logger.info(`Adapter: ${current}, Response: \n${content}`);
 
-    let finalResponse: string = "";
-    let finalLogic: string = "";
-    let replyTo: string = "";
-    let nextTriggerCount: number = Random.int(this.minTriggerCount, this.maxTriggerCount + 1); // 双闭区间
-    let functions: Function[] = [];
-    let reason: string;
-
     if (adapter.ability.includes("原生工具调用")) {
-
-      let toolCalls = response.message.tool_calls || [];
-      let returns: ToolMessage[] = [];
-      for (let toolCall of toolCalls) {
-        try {
-          let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
-          if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
-        } catch (e) {
-          returns.push(ToolMessage(e.message, toolCall.id));
-        }
-      }
-      if (returns.length > 0) {
-        return this.generateResponse(returns, debug);
-      }
+      const toolResponse = await this.handleToolCalls(response.message.tool_calls || [], debug);
+      if (toolResponse) return toolResponse;
     }
 
     if (this.config.Settings.MultiTurn && this.config.Settings.MultiTurnFormat === "CUSTOM") {
-      this.addContext(AssistantMessage(TextComponent(content)));
-      const result = this.template.unrender(content);
-      const channelIdfromChannelInfo = result.channelInfo?.includes(':') ? result.channelInfo.split(':')[1] : '';
-      const channelId = result.channelId || channelIdfromChannelInfo;
+      return this.handleCustomMultiTurnResponse(content, response, current, debug);
+    }
 
-      if (result.userContent === undefined || !channelId) {
+    return this.handleJsonResponse(content, response, current, debug);
+  }
+
+  // 或许可以将这两个函数整合到一起
+  // 递归调用
+  // TODO: 指定最大调用深度
+  // TODO: 上报函数调用信息
+  private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<Response | null> {
+    let returns: ToolMessage[] = [];
+    for (let toolCall of toolCalls) {
+      try {
+        let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
+        if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
+      } catch (e) {
+        returns.push(ToolMessage(e.message, toolCall.id));
+      }
+    }
+    if (returns.length > 0) {
+      return this.generateResponse(returns, debug);
+    }
+    return null;
+  }
+
+  private async handleFunctionCalls(functions: Function[], debug: boolean): Promise<Response | null> {
+    const Success = (func: string, message: string) => {
+      return ToolMessage(JSON.stringify({ function: func, status: "success", result: message }), null);
+    }
+    const Failed = (func: string,  message: string) => {
+      return ToolMessage(JSON.stringify({ function: func, status: "failed", reason: message }), null);
+    }
+    let returns: Message[] = [];
+    for (const func of functions) {
+      const { name, params } = func;
+      try {
+        let returnValue = await this.callFunction(name, params);
+        if (!isEmpty(returnValue)) returns.push(Success(name, returnValue));
+      } catch (e) {
+        returns.push(Failed(name, e.message));
+      }
+    }
+    if (returns.length > 0) {
+      return this.generateResponse(returns, debug);
+    }
+    return null;
+  }
+
+  private async handleCustomMultiTurnResponse(content: string, response: any, current: number, debug: boolean): Promise<Response> {
+    this.addContext(AssistantMessage(TextComponent(content)));
+    const result = this.template.unrender(content);
+    const channelIdfromChannelInfo = result.channelInfo?.includes(':') ? result.channelInfo.split(':')[1] : '';
+    const channelId = result.channelId || channelIdfromChannelInfo;
+
+    if (result.userContent === undefined || !channelId) {
+      return {
+        status: "fail",
+        raw: content,
+        usage: response.usage,
+        reason: "解析失败",
+        adapterIndex: current,
+      };
+    } else {
+      const finalResponse = result.userContent.trim();
+      if (finalResponse === "") {
         return {
-          status: "fail",
+          status: "skip",
           raw: content,
+          nextTriggerCount: Random.int(this.minTriggerCount, this.maxTriggerCount + 1),
+          logic: "",
           usage: response.usage,
-          reason: "解析失败",
+          functions: [],
           adapterIndex: current,
         };
       } else {
-        finalResponse = result.userContent;
-        replyTo = channelId;
-        if (finalResponse.trim() === "") {
-          return {
-            status: "skip",
-            raw: content,
-            nextTriggerCount,
-            logic: finalLogic,
-            usage: response.usage,
-            functions: functions,
-            adapterIndex: current,
-          }
-        } else {
-          return {
-            status: "success",
-            raw: content,
-            finalReply: await this.unparseFaceMessage(finalResponse),
-            replyTo,
-            quote: result.quoteMessageId || "",
-            nextTriggerCount,
-            logic: finalLogic,
-            functions,
-            usage: response.usage,
-            adapterIndex: current,
-          };
-        }
+        return {
+          status: "success",
+          raw: content,
+          finalReply: await this.unparseFaceMessage(finalResponse),
+          replyTo: channelId,
+          quote: result.quoteMessageId || "",
+          nextTriggerCount: Random.int(this.minTriggerCount, this.maxTriggerCount + 1),
+          logic: "",
+          functions: [],
+          usage: response.usage,
+          adapterIndex: current,
+        };
       }
     }
+  }
 
-    // MultiTurnFormat === JSON
+  private async handleJsonResponse(content: string, response: any, current: number, debug: boolean): Promise<Response> {
     if (typeof content !== "string") {
       content = JSON.stringify(content, null, 2);
     }
-    // 提取JSON部分
+
     const jsonMatch = content.match(/{.*}/s);
     let LLMResponse: any = {};
 
@@ -266,7 +297,7 @@ export class Bot {
         LLMResponse = JSON.parse(escapeUnicodeCharacters(jsonMatch[0]));
         this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
       } catch (e) {
-        reason = `JSON 解析失败: ${e.message}`;
+        const reason = `JSON 解析失败: ${e.message}`;
         if (debug) logger.warn(reason);
         return {
           status: "fail",
@@ -277,7 +308,7 @@ export class Bot {
         };
       }
     } else {
-      reason = `没有找到 JSON: ${content}`;
+      const reason = `没有找到 JSON: ${content}`;
       if (debug) logger.warn(reason);
       return {
         status: "fail",
@@ -289,78 +320,19 @@ export class Bot {
     }
 
     // 规范化 nextTriggerCount，确保在设置的范围内
-    const nextTriggerCountbyLLM = Math.max(
-      this.minTriggerCount,
-      Math.min(Number(LLMResponse.nextReplyIn) ?? this.minTriggerCount, this.maxTriggerCount)
-    );
-    nextTriggerCount = Number(nextTriggerCountbyLLM) || nextTriggerCount;
-    finalLogic = LLMResponse.logic || "";
+    const nextTriggerCount = Math.max(this.minTriggerCount, Math.min(Number(LLMResponse.nextTriggerCount) ?? this.minTriggerCount, this.maxTriggerCount));
+    const finalLogic = LLMResponse.logic || "";
+    const functions = Array.isArray(LLMResponse.functions) ? LLMResponse.functions : [];
 
-    if (LLMResponse.functions && Array.isArray(LLMResponse.functions)) {
-      functions = LLMResponse.functions;
-    } else {
-      functions = [];
-    }
-
-    // 检查 status 字段
-    if (LLMResponse.status === "success") {}
-    else if (LLMResponse.status === "skip") {
-      return {
-        status: "skip",
-        raw: content,
-        nextTriggerCount,
-        logic: finalLogic,
-        usage: response.usage,
-        functions: LLMResponse.functions,
-        adapterIndex: current,
-      };
-    } else if (LLMResponse.status === "function") {
-      let funcReturns: Message[] = [];
-      for (const func of LLMResponse.functions as Function[]) {
-        const { name, params } = func;
-        try {
-          let returnValue = await this.callFunction(name, params);
-          funcReturns.push({
-            role: "tool",
-            content: JSON.stringify({
-              status: "success",
-              name: name,
-              result: returnValue || "null",
-            }),
-          });
-        } catch (e) {
-          funcReturns.push({
-            role: "tool",
-            content: JSON.stringify({
-              status: "failed",
-              name: name,
-              reason: e.message,
-            }),
-          });
-        }
+    if (LLMResponse.status === "success") {
+      let finalResponse = LLMResponse.finalReply || LLMResponse.reply || "";
+      if (this.allowErrorFormat) {
+        // 兼容弱智模型的错误回复
+        finalResponse += LLMResponse.msg || LLMResponse.text || LLMResponse.message || LLMResponse.answer || "";
       }
-      // 递归调用
-      // TODO: 指定最大调用深度
-      // TODO: 上报函数调用信息
-      return await this.generateResponse(funcReturns, debug);
-    } else {
-      reason = `status 不是一个有效值: ${content}`;
-      if (debug) logger.warn(reason);
-      return {
-        status: "fail",
-        raw: content,
-        usage: response.usage,
-        reason,
-        adapterIndex: current,
-      };
-    }
 
-    // 构建 finalResponse
-    if (!this.allowErrorFormat) {
-      if (LLMResponse.finalReply || LLMResponse.reply) {
-        finalResponse += LLMResponse.finalReply || LLMResponse.reply || "";
-      } else {
-        reason = `回复格式错误：未提供 finalReply 或 reply`;
+      if (isEmpty(finalResponse)) {
+        const reason = `回复为空: ${content}`;
         if (debug) logger.warn(reason);
         return {
           status: "fail",
@@ -370,26 +342,49 @@ export class Bot {
           adapterIndex: current,
         };
       }
-    } else {
-      finalResponse += LLMResponse.finalReply || LLMResponse.reply || "";
-      // 兼容弱智模型的错误回复
-      const possibleResponse = [
-        LLMResponse.msg,
-        LLMResponse.text,
-        LLMResponse.message,
-        LLMResponse.answer,
-      ];
-      for (const resp of possibleResponse) {
-        if (resp) {
-          finalResponse += resp || "";
-          break;
-        }
-      }
-    }
 
-    // 提取其他字段
-    replyTo = LLMResponse.replyTo || "";
-    // 如果 replyTo 不是私聊会话，只保留数字部分
+      const replyTo = this.extractReplyTo(LLMResponse.replyTo);
+      finalResponse = await this.unparseFaceMessage(finalResponse);
+
+      return {
+        status: "success",
+        raw: content,
+        finalReply: finalResponse,
+        replyTo,
+        quote: LLMResponse.quote || "",
+        nextTriggerCount,
+        logic: finalLogic,
+        functions,
+        usage: response.usage,
+        adapterIndex: current,
+      };
+    } else if (LLMResponse.status === "skip") {
+      return {
+        status: "skip",
+        raw: content,
+        nextTriggerCount,
+        logic: finalLogic,
+        usage: response.usage,
+        functions,
+        adapterIndex: current,
+      };
+    } else if (LLMResponse.status === "function") {
+      return this.handleFunctionCalls(LLMResponse.functions, debug);
+    } else {
+      const reason = `status 不是一个有效值: ${content}`;
+      if (debug) logger.warn(reason);
+      return {
+        status: "fail",
+        raw: content,
+        usage: response.usage,
+        reason,
+        adapterIndex: current,
+      };
+    }
+  }
+
+  // 如果 replyTo 不是私聊会话，只保留数字部分
+  private extractReplyTo(replyTo: string): string {
     if (replyTo && !replyTo.startsWith("private:")) {
       const numericMatch = replyTo.match(/\d+/);
       if (numericMatch) {
@@ -400,26 +395,14 @@ export class Bot {
         replyTo = "";
       }
     }
-
-    finalResponse = await this.unparseFaceMessage(finalResponse);
-
-    return {
-      status: "success",
-      raw: content,
-      finalReply: finalResponse,
-      replyTo,
-      quote: LLMResponse.quote || "",
-      nextTriggerCount,
-      logic: finalLogic,
-      functions,
-      usage: response.usage,
-      adapterIndex: current,
-    };
+    return replyTo;
   }
 
   async summarize(channelId, userId, content) { }
 
-  async callFunction(name: string, params: { [key: string]: any }): Promise<any> {
+  // TODO: 规范化params
+  // OpenAI和Ollama提供的参数不一致
+  async callFunction(name: string, params: Record<string, any>): Promise<any> {
 
     let func = this.extensions[name];
     const args = Object.values(params || {});
