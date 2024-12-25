@@ -23,7 +23,7 @@ export async function processContent(config: Config, session: Session, messages:
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
-    if (config.Settings.MultiTurnFormat === "JSON") {
+    if (chatMessage.senderId === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage);
       }
@@ -130,7 +130,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
   let pendingProcessImgCount = 0;
 
   for (let chatMessage of messages) {
-    if (config.Settings.MultiTurnFormat === "JSON") {
+    if (chatMessage.senderId === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage);
       }
