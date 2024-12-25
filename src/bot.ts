@@ -324,8 +324,10 @@ export class Bot {
       };
     }
 
+    let nextTriggerCount: number = Random.int(this.minTriggerCount, this.maxTriggerCount + 1); // 双闭区间
     // 规范化 nextTriggerCount，确保在设置的范围内
-    const nextTriggerCount = Math.max(this.minTriggerCount, Math.min(Number(LLMResponse.nextTriggerCount) ?? this.minTriggerCount, this.maxTriggerCount));
+    const nextTriggerCountbyLLM = Math.max(this.minTriggerCount, Math.min(Number(LLMResponse.nextReplyIn) ?? this.minTriggerCount, this.maxTriggerCount));
+    nextTriggerCount = Number(nextTriggerCountbyLLM) || nextTriggerCount;
     const finalLogic = LLMResponse.logic || "";
     const functions = Array.isArray(LLMResponse.functions) ? LLMResponse.functions : [];
 
@@ -397,6 +399,9 @@ export class Bot {
       }
       // 不合法的 channelId
       if (replyTo.match(/\{.+\}/)) {
+        replyTo = "";
+      }
+      if (replyTo.indexOf("sandbox") > -1) {
         replyTo = "";
       }
     }
