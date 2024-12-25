@@ -249,7 +249,7 @@ export class ImageViewer {
 
             if (isEmpty(base64)) throw new Error("Failed to convert image to base64");
 
-            const description = await service.getDescription(imgUrl, base64);
+            const description = await service.getDescription(imgUrl, cacheKey, base64);
 
             let descriptions = this.cacheManager.get(cacheKey) || {};
             descriptions[questionHash] = description;
