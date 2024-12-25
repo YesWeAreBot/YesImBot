@@ -1,4 +1,4 @@
-import { Context, Random } from "koishi";
+import { Context, Random, Session } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
 import { Usage } from "./adapters/base";
@@ -80,6 +80,7 @@ export class Bot {
   readonly imageViewer: ImageViewer;
 
   private adapterSwitcher: AdapterSwitcher;
+  public session: Session;
 
   constructor(private ctx: Context, private config: Config) {
     this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
@@ -113,6 +114,10 @@ export class Bot {
 
   setSystemPrompt(content: string) {
     this.prompt = content;
+  }
+
+  setSession(session: Session) {
+    this.session = session;
   }
 
   /**
@@ -297,7 +302,7 @@ export class Bot {
         LLMResponse = JSON.parse(escapeUnicodeCharacters(jsonMatch[0]));
         this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
       } catch (e) {
-        const reason = `JSON 解析失败: ${e.message}`;
+        const reason = `JSON 解析失败。请上报此消息给开发者: ${e.message}`;
         if (debug) logger.warn(reason);
         return {
           status: "fail",

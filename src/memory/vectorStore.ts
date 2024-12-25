@@ -5,6 +5,12 @@ import { Context } from "koishi";
 import { calculateCosineSimilarity } from "../embeddings/base";
 import { CacheManager } from "../managers/cacheManager";
 
+// TODO: 如何让Bot添加记忆时正确选择标签
+enum MemoryTag {
+  User,   // 用户记忆。包含userId
+  Self,   // Bot自身记忆。对应userId==selfId
+  General // 通用记忆。没有userId
+}
 
 export interface Vector {
   id: string;        // 随机生成的id
@@ -16,6 +22,7 @@ export interface Vector {
   updatedAt?: number; // 更新时间，用于计算时间权重
 
   userId?: string;    // 记忆关联的用户ID
+  tags?: MemoryTag[]; // 记忆标签。将记忆分类，便于查找
 }
 
 export interface Metadata {
@@ -24,6 +31,7 @@ export interface Metadata {
   updatedAt?: number; // 更新时间，用于计算时间权重
 
   userId?: string;    // 记忆关联的用户ID
+  tags?: MemoryTag[]; // 记忆标签
 }
 
 export class MemoryVectorStore {

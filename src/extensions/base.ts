@@ -26,6 +26,10 @@ export abstract class Extension {
   }
 
   abstract apply(...args: any[]): any;
+
+  get session() {
+    return this.bot.session;
+  }
 }
 
 export function getExtensions(ctx: Context, bot: Bot): Extension[] {

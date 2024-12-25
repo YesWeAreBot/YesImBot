@@ -78,8 +78,11 @@ export function apply(ctx: Context, config: Config) {
     // 等待1毫秒
     await sleep(1)
     const channelId = session.channelId;
-    //这里不添加消息，这样就不用过滤指令了
-    //await sendQueue.addMessage(await createMessage(session));
+
+    // 添加自身消息。可能会先于middleware执行导致bot的消息不带raw
+    if (session.author.id == session.selfId && channelId != config.Settings.LogicRedirect.Target) {
+      await sendQueue.addMessage(await createMessage(session));
+    }
     if (!isChannelAllowed(config.MemorySlot.SlotContains, channelId) || session.author.id == session.selfId || channelId === config.Settings.LogicRedirect.Target) {
       return;
     }
@@ -208,6 +211,7 @@ export function apply(ctx: Context, config: Config) {
 
       if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + JSON.stringify(chatHistory, null, 2));
 
+      bot.setSession(session);
       bot.setChatHistory(chatHistory);
 
       let botName = await getBotName(config.Bot, session);
