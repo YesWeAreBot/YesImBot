@@ -59,6 +59,10 @@ export function apply(ctx: Context, config: Config) {
     );
   });
 
+  ctx.on("command/before-execute", async ({ session, command }) => {
+    sendQueue.setMark(session.messageId, MarkType.Command);
+  })
+
   ctx.on("dispose", async () => {
     for (let [channelId, handler] of [
       ...minTriggerTimeHandlers,
@@ -79,13 +83,23 @@ export function apply(ctx: Context, config: Config) {
     await sleep(1)
     const channelId = session.channelId;
 
-    // 添加自身消息。可能会先于middleware执行导致bot的消息不带raw
-    if (session.author.id == session.selfId && channelId != config.Settings.LogicRedirect.Target) {
-      await sendQueue.addMessage(await createMessage(session));
-    }
-    if (!isChannelAllowed(config.MemorySlot.SlotContains, channelId) || session.author.id == session.selfId || channelId === config.Settings.LogicRedirect.Target) {
+    if (!isChannelAllowed(config.MemorySlot.SlotContains, channelId)) {
       return;
     }
+
+    if (channelId === config.Settings.LogicRedirect.Target) {
+      sendQueue.setMark(session.messageId, MarkType.LogicRedirect);
+      return;
+    }
+
+    if (session.author.id == session.selfId) {
+      // 添加自身消息。可能会先于middleware执行导致bot的消息不带raw
+      // 不是由LLM生成的消息
+      await sendQueue.processingLock.waitForProcess(session.messageId);
+      await sendQueue.addMessage(await createMessage(session));
+      return;
+    }
+
     if (config.MemorySlot.MaxTriggerTime > 0) {
       if (!maxTriggerTimeHandlers.has(channelId)) {
         maxTriggerTimeHandlers.set(
@@ -331,7 +345,10 @@ ${botName}想要跳过此次回复，来自 API ${current}
           let arr = (replyTo === session.channelId)
             ? await session.sendQueued(sentence)
             : await session.bot.sendMessage(replyTo, sentence);
-          messageIds = messageIds.concat(arr);
+          arr.forEach((id) => {
+            sendQueue.processingLock.start(id);
+            messageIds.push(id);
+          });
         }
 
         await sendQueue.addMessage({
@@ -349,13 +366,14 @@ ${botName}想要跳过此次回复，来自 API ${current}
 
         for (const messageId of messageIds) {
           sendQueue.setMark(messageId, MarkType.Added);
+          sendQueue.processingLock.end(messageId);
         }
       }
       return true;
     }
 
     catch (error) {
-      ctx.logger.error(`处理消息时出错: ${error.stack}`);
+      ctx.logger.error(`处理消息时出错: ${error.message}`);
       return false;
     }
 
