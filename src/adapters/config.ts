@@ -50,6 +50,9 @@ export const API: Schema<LLM> = Schema.intersect([
       UID: Schema.string().required().description("Cloudflare UID"),
     }),
     Schema.object({
+      APIType: Schema.const("Custom URL"),
+    }),
+    Schema.object({
       APIType: Schema.const("Ollama"),
       NUMA: Schema.boolean()
         .default(false)
