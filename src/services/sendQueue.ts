@@ -62,7 +62,7 @@ export class SendQueue {
     return false;
   }
 
-  async getMixedQueue(channelId: string, limit: number): Promise<ChatMessage[]> {
+  async getMixedQueue(channelId: string, limit?: number): Promise<ChatMessage[]> {
     for (let slotContain of this.slotContains) {
       if (slotContain.has(channelId) || channelId.startsWith("private:") && slotContain.has("private:all") || !channelId.startsWith("private:") && slotContain.has("all")) {
         return await this.queueManager.getMixedQueue(

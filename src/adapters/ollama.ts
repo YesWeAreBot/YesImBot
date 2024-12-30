@@ -27,9 +27,11 @@ function ToolMessage(content: string): ToolMessage {
 }
 
 export class OllamaAdapter extends BaseAdapter {
+  private config: LLM;
   constructor(config: LLM, parameters?: Config["Parameters"]) {
     super(config, parameters);
     this.url = `${config.BaseURL}/api/chat`;
+    this.config = config;
   }
 
   async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
@@ -54,12 +56,27 @@ export class OllamaAdapter extends BaseAdapter {
       messages,
       tools: toolsSchema,
       options: {
-        num_ctx: this.parameters?.ContextSize,
+        numa: this.config.NUMA,
+        num_ctx: this.config.NumCtx,
+        num_batch: this.config.NumBatch,
+        num_gpu: this.config.NumGPU,
+        main_gpu: this.config.MainGPU,
+        low_vram: this.config.LowVRAM,
+        logits_all: this.config.LogitsAll,
+        vocab_only: this.config.VocabOnly,
+        use_mmap: this.config.UseMMap,
+        use_mlock: this.config.UseMLock,
+        num_thread: this.config.NumThread,
+        // 以上是加载模型时要用到的参数
+        // 以下是推理时要用到的参数
+        num_predict: this.parameters?.MaxTokens,
         temperature: this.parameters?.Temperature,
+        top_p: this.parameters?.TopP,
         presence_penalty: this.parameters?.PresencePenalty,
         frequency_penalty: this.parameters?.FrequencyPenalty,
+        stop: this.parameters?.Stop,
+        ...this.otherParams,
       },
-      ...this.otherParams,
     };
     let response = await sendRequest(this.url, this.apiKey, requestBody, debug);
 

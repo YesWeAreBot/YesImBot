@@ -215,7 +215,7 @@ export function apply(ctx: Context, config: Config) {
 
     try {
       // 处理内容
-      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId, 100), bot.imageViewer);
+      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer);
 
       // 生成响应
       if (!chatHistory || (Array.isArray(chatHistory) && chatHistory.length === 0)) {

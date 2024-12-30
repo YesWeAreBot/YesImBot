@@ -17,7 +17,7 @@ export interface Config {
   API: AdapterConfig;
   Parameters: {
     Temperature?: number;
-    ContextSize?: number;
+    // ContextSize?: number;
     MaxTokens?: number;
     TopP?: number;
     FrequencyPenalty?: number;
@@ -157,12 +157,11 @@ export const Config: Schema<Config> = Schema.object({
       .step(0.01)
       .role("slider")
       .description("采样器的温度。数值越大，回复越随机；数值越小，回复越确定"),
-    ContextSize: Schema.number()
-      .default(8192)
-      .min(2048)
-      .max(32768)
-      .step(1)
-      .description("一次会话的最大 Token 数量"),
+    // ContextSize: Schema.number()
+    //   .default(8192)
+    //   .min(2048)
+    //   .step(1)
+    //   .description("上下文的最大 Token 数量。如果上下文长度超过此值，最久远的消息会被从消息队列中移除"),
     MaxTokens: Schema.number()
       .default(4096)
       .min(1)

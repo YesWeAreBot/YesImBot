@@ -15,7 +15,7 @@ export class OpenAIAdapter extends BaseAdapter {
     const requestBody = {
       model: this.model,
       messages,
-      tools: toolsSchema,
+      ...(toolsSchema ? { tools: toolsSchema } : {}),
       temperature: this.parameters?.Temperature,
       max_tokens: this.parameters?.MaxTokens,
       frequency_penalty: this.parameters?.FrequencyPenalty,
