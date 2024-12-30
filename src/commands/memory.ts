@@ -4,9 +4,9 @@ import { Metadata } from "../memory/vectorStore";
 
 export function apply(ctx: Context, bot: Bot) {
   ctx
-    .command("memory.add <content:string> [userId:string]", "添加记忆")
-    .option("content", "-c <content:string>; 记忆内容")
-    .option("userId", "-u <userId:string>; 用户ID")
+    .command("memory.add <content:string> [userId:string]", "添加记忆", { authority: 3 })
+    .option("content", "-c <content:string>; 记忆内容", { authority: 3 })
+    .option("userId", "-u <userId:string>; 用户ID", { authority: 3 })
     .action(async ({ session }, content, userId) => {
       if (!content) {
         return session.send(`请输入记忆内容`);
@@ -54,7 +54,7 @@ export function apply(ctx: Context, bot: Bot) {
     });
 
   ctx
-    .command("memory.getAll", "获取全部记忆")
+    .command("memory.getAll", "获取全部记忆", { authority: 3 })
     .action(async ({ session }) => {
       const memory = bot.memory.getAll();
       if (memory.length === 0) {
@@ -65,21 +65,21 @@ export function apply(ctx: Context, bot: Bot) {
     });
 
   ctx
-    .command("memory.update <id:string> <content:string>", "更新记忆")
+    .command("memory.update <id:string> <content:string>", "更新记忆", { authority: 3 })
     .action(async ({ session }, id, content) => {
       await bot.memory.update(id, content);
       await session.send(`记忆更新成功`);
     });
 
   ctx
-    .command("memory.delete <id:string>", "删除记忆")
+    .command("memory.delete <id:string>", "删除记忆", { authority: 3 })
     .action(async ({ session }, id) => {
       bot.memory.delete(id);
       await session.send(`记忆删除成功`);
     });
 
   ctx
-    .command("memory.clear", "清空所有记忆")
+    .command("memory.clear", "清空所有记忆", { authority: 3 })
     .action(async ({ session }) => {
       bot.memory.clear();
       await session.send(`记忆清空成功`);

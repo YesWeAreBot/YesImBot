@@ -264,7 +264,7 @@ export class ImageViewer {
           logger.error(`Error getting image description: ${error.message}`);
           // 返回降级结果
           // @ts-ignore
-          return config.ImageViewer.How === "替换成[图片:summary]" && summary
+          return this.config.ImageViewer.How === "替换成[图片:summary]" && summary
             ? `[图片:${summary}]`
             : "[图片]";
         }
