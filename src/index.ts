@@ -18,6 +18,8 @@ import { apply as applySendQueneCommands } from "./commands/sendQuene";
 
 export const name = "yesimbot";
 
+export const reusable = true;
+
 export const usage = `
 "Yes! I'm Bot!" 是一个能让你的机器人激活灵魂的插件。\n
 使用请阅读 [Github README](https://github.com/HydroGest/YesImBot/blob/main/readme.md)，推荐使用 [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r) 提供的 GPT-4o-mini 模型以获得最高性价比。\n
@@ -30,15 +32,23 @@ export const DATABASE_NAME = name;
 
 export const inject = {
   required: ["database"],
-  optional: ["censor", "qmanager", "interactions"]
+  optional: [
+    "memory",
+    "qmanager",
+    "interactions",
+    "censor",
+  ],
 }
 
 declare global {
   var logger: LoggerService;
+  var baseDir: string;
 }
 
 export function apply(ctx: Context, config: Config) {
   globalThis.logger = ctx.logger;
+  globalThis.baseDir = ctx.baseDir;
+
   let shouldReTrigger = false;
   let bot = new Bot(ctx, config);
 
@@ -395,3 +405,10 @@ export async function redirectLogicMessage(
     sendQueue.setMark(messageId, MarkType.LogicRedirect);
   }
 }
+
+export * from "./adapters";
+export * from "./database";
+export * from "./embeddings";
+export * from "./managers/cacheManager";
+export * from "./models/ChatMessage";
+export * from "./utils/factory";

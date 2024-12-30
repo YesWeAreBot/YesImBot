@@ -10,7 +10,7 @@ import { AssistantMessage, ImageComponent, SystemMessage, TextComponent, UserMes
 import { isEmpty } from "../utils/string";
 import { getAdapter } from "../utils/factory";
 import { ProcessingLock } from "../utils/toolkit";
-import { foldText } from "../utils/string";
+import { name } from "..";
 
 const processingLock = new ProcessingLock();
 
@@ -196,7 +196,7 @@ export class ImageViewer {
       另一个LLM: new AnotherLLMService(config),
     };
     this.cacheManager = new CacheManager<Record<string, string>>(
-      path.join(__dirname, "../../data/cache/downloadImage/ImageDescription.json")
+      path.join(baseDir, "data", name, "downloadImage/ImageDescription.json")
     );
   }
 

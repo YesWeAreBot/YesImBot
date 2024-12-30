@@ -6,7 +6,7 @@ import { OpenAIAdapter } from "./openai";
 import { getAdapter } from "../utils/factory";
 import { BaseAdapter } from "./base";
 
-export { CloudflareAdapter, CustomAdapter, OllamaAdapter, OpenAIAdapter };
+export { BaseAdapter, CloudflareAdapter, CustomAdapter, OllamaAdapter, OpenAIAdapter };
 
 export class AdapterSwitcher {
   private adapters: BaseAdapter[];
