@@ -1,13 +1,13 @@
 import { BaseAdapter } from "../adapters/base";
 import { AssistantMessage, SystemMessage, UserMessage } from "../adapters/creators/component";
 import { Config } from "../config";
-import { calculateCosineSimilarity, EmbeddingsBase } from "../embeddings/base";
+import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
 import { getAdapter, getEmbedding } from "./factory";
 
 export class ResponseVerifier {
   private previousResponse = new Map<string, string>();
   private config: Config;
-  private client: EmbeddingsBase | BaseAdapter;
+  private client: EmbeddingBase | BaseAdapter;
 
   constructor(config: Config) {
     this.config = config;
@@ -36,7 +36,7 @@ export class ResponseVerifier {
     }
 
     try {
-      if (this.client instanceof EmbeddingsBase) {
+      if (this.client instanceof EmbeddingBase) {
         // 使用 embedding 模型验证相似度
         const previousEmbedding = await this.client._embed(this.previousResponse.get(channelId));
 

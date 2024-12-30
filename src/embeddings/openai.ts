@@ -1,9 +1,9 @@
 import { CacheManager } from "../managers/cacheManager";
 import { sendRequest } from "../utils/http";
-import { EmbeddingsBase } from "./base";
+import { EmbeddingBase } from "./base";
 import { Config } from "./config";
 
-export class OpenAIEmbedding extends EmbeddingsBase {
+export class OpenAIEmbedding extends EmbeddingBase {
   protected model: string;
   readonly embedding_dims: number;
   private apiKey: string;

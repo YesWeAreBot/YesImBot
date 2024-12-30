@@ -1,9 +1,9 @@
 import { CacheManager } from "../managers/cacheManager";
 import { sendRequest } from "../utils/http";
-import { EmbeddingsBase } from "./base";
+import { EmbeddingBase } from "./base";
 import { Config } from "./config";
 
-export class CustomEmbedding extends EmbeddingsBase {
+export class CustomEmbedding extends EmbeddingBase {
   protected model: string;
   readonly embedding_dims: number;
   private apiKey: string;

@@ -1,5 +1,5 @@
 import { Schema } from "koishi";
-import { Config as EmbeddingsConfig } from "./embeddings/config";
+import { Config as EmbeddingConfig } from "./embeddings/config";
 import { Config as AdapterConfig } from "./adapters/config";
 
 export interface Config {
@@ -40,7 +40,7 @@ export interface Config {
       AIModel: string;
     };
   };
-  Embedding: EmbeddingsConfig;
+  Embedding: EmbeddingConfig;
   ImageViewer: {
     How?:
       | "LLM API 自带的多模态能力"
@@ -294,7 +294,7 @@ export const Config: Schema<Config> = Schema.object({
   //     ])
   // ]),
 
-  Embedding: EmbeddingsConfig,
+  Embedding: EmbeddingConfig,
 
   ImageViewer: Schema.intersect([
     Schema.object({

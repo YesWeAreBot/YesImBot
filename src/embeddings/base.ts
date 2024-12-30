@@ -1,8 +1,8 @@
 import { CacheManager } from "../managers/cacheManager";
 import { Config } from "./config";
 
-export abstract class EmbeddingsBase {
-  protected readonly cache: CacheManager<number[]>;
+export abstract class EmbeddingBase {
+  protected readonly cache: CacheManager<number[]> | undefined;
 
   constructor(protected config: Config, manager?: CacheManager<number[]>) {
     this.cache = manager;
@@ -22,7 +22,7 @@ export abstract class EmbeddingsBase {
     } else {
       let result = await this._embed(text);
       if (toFixed) result = result.map(x => Number(x.toFixed(toFixed)));
-      await this.cache?.set(text, result);
+      this.cache?.set(text, result);
       return result;
     }
   }

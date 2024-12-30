@@ -5,10 +5,9 @@ import { Usage } from "./adapters/base";
 import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolCall, ToolMessage, UserMessage } from "./adapters/creators/component";
 import { functionPrompt, ToolSchema } from "./adapters/creators/schema";
 import { Config } from "./config";
-import { EmbeddingsBase } from "./embeddings/base";
+import { EmbeddingBase } from "./embeddings/base";
 import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
-import { Memory } from "./memory/memory";
 import { ImageViewer } from "./services/imageViewer";
 import { getEmbedding } from "./utils/factory";
 import { escapeUnicodeCharacters, isEmpty, Template } from "./utils/string";
@@ -54,7 +53,6 @@ export interface FailedResponse {
 type Response = SuccessResponse | SkipResponse | FailedResponse;
 
 export class Bot {
-  readonly memory: Memory;
   private memorySize: number;
 
   private summarySize: number;         // 上下文达到多少时进行总结
@@ -75,7 +73,7 @@ export class Bot {
   private lastModified: Date = new Date();
 
   private emojiManager: EmojiManager;
-  private embedder: EmbeddingsBase;
+  private embedder: EmbeddingBase;
   readonly verifier: ResponseVerifier;
   readonly imageViewer: ImageViewer;
 
@@ -93,7 +91,6 @@ export class Bot {
     if (config.Embedding.Enabled) {
       this.emojiManager = new EmojiManager(config.Embedding);
       this.embedder = getEmbedding(config.Embedding);
-      this.memory = new Memory(ctx, config.API.APIList[0], config.Embedding, config.Parameters);
     };
     if (config.Verifier.Enabled) this.verifier = new ResponseVerifier(config);
 
@@ -428,14 +425,14 @@ export class Bot {
     const recallSize = 0;
     const archivalSize = 0;
 
-    let selfMemory = this.memory.filterMemory(metadata => {
+    let selfMemory = this.ctx.memory.filterMemory(metadata => {
       return metadata.userId === selfId || !metadata.userId;
     }).join("\n");
 
     const userIds = this.collectUserID();
     const humanMemories = Array.from(userIds.entries()).map(([userId, nickname]) => `
       <user id="${userId}" nickname="${nickname}">
-      ${this.memory.getUserMemory(userId).join("\n")}
+      ${this.ctx.memory.getUserMemory(userId).join("\n")}
       </user>`
     );
 

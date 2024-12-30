@@ -1,10 +1,10 @@
 import path from "path";
 import { readFileSync } from "fs";
 
-import { calculateCosineSimilarity, EmbeddingsBase } from "../embeddings/base";
+import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
 import { getEmbedding } from "../utils/factory";
 import { CacheManager } from "./cacheManager";
-import { Config as EmbeddingsConfig } from "../embeddings/config";
+import { Config as EmbeddingConfig } from "../embeddings/config";
 
 
 interface Emoji {
@@ -17,9 +17,9 @@ export class EmojiManager {
   private nameToId: { [key: string]: string } = {};
   private nameEmbeddings: { [key: string]: number[] } = {};
   private lastEmbeddingModel: string | null = null;
-  private client: EmbeddingsBase;
+  private client: EmbeddingBase;
 
-  constructor(private embeddingConfig: EmbeddingsConfig) {
+  constructor(private embeddingConfig: EmbeddingConfig) {
     const emojisFile = path.join(__dirname, "../../data/emojis.json");
     const emojis: Emoji[] = JSON.parse(readFileSync(emojisFile, "utf-8"));
 
@@ -29,7 +29,7 @@ export class EmojiManager {
     });
 
     const modelName = embeddingConfig.EmbeddingModel;
-    const cacheFile = path.join(__dirname, `../../data/.vector_cache/emoji_${modelName}.bin`);
+    const cacheFile = path.join(baseDir, `data/vector_cache/emoji_${modelName}.bin`);
     const cacheManager = new CacheManager<number[]>(cacheFile, true);
     this.client = getEmbedding(embeddingConfig, cacheManager);
   }
