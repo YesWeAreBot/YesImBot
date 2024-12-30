@@ -77,8 +77,12 @@ export class Template {
     });
 
     return result.replace(this.conditionRegex, (match, condition, trueValue, falseValue) => {
-      const conditionValue = this.getValue(model, condition.split('.'));
-      return conditionValue ? trueValue : falseValue;
+      try {
+        const conditionValue = Function('"use strict"; return (' + condition + ')').call(model);
+        return Boolean(conditionValue) ? trueValue : falseValue;
+      } catch (e) {
+        return falseValue || '';
+      }
     });
   }
 

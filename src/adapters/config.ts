@@ -43,8 +43,11 @@ export const API: Schema<LLM> = Schema.intersect([
   }),
   Schema.union([
     Schema.object({
+      APIType: Schema.const("OpenAI"),
+    }),
+    Schema.object({
       APIType: Schema.const("Cloudflare"),
-      UID: Schema.string().description("Cloudflare UID"),
+      UID: Schema.string().required().description("Cloudflare UID"),
     }),
     Schema.object({
       APIType: Schema.const("Ollama"),
