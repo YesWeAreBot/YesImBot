@@ -1,28 +1,26 @@
-import { Context } from "koishi";
-
-import { LLMConfig } from "../adapters";
-import { BaseAdapter } from "../adapters/base";
-import { Config } from "../config";
-import { EmbeddingsConfig } from "../embeddings";
-import { EmbeddingsBase } from "../embeddings/base";
-import { getAdapter, getEmbedding } from "../utils/factory";
+import { Context, Schema, Service } from "koishi";
+import { EmbeddingBase } from "koishi-plugin-yesimbot/embeddings";
+import { getEmbedding } from "koishi-plugin-yesimbot/utils";
 import { MemoryVectorStore, Metadata, Vector } from "./vectorStore";
+import { EmbeddingConfig } from "./config";
 
-export class Memory {
+declare module "koishi" {
+  interface Context {
+    memory: Memory;
+  }
+}
+
+export { Config } from "./config";
+
+class Memory extends Service {
   private vectorStore: MemoryVectorStore;
 
-  private llm: BaseAdapter;
-  private embedder: EmbeddingsBase;
+  private embedder: EmbeddingBase;
 
-  constructor(
-    ctx: Context,
-    adapterConfig: LLMConfig,
-    embedderConfig: EmbeddingsConfig,
-    parameters?: Config["Parameters"]
-  ) {
+  constructor(ctx: Context, config: Memory.Config) {
+    super(ctx, "memory");
     this.vectorStore = new MemoryVectorStore(ctx);
-    this.llm = getAdapter(adapterConfig, parameters);
-    this.embedder = getEmbedding(embedderConfig);
+    this.embedder = getEmbedding(config.embedding);
   }
 
   get(memoryId: string): Metadata {
@@ -86,3 +84,16 @@ export class Memory {
     return vectors.map((vector) => vector.content);
   }
 }
+
+namespace Memory {
+  export interface Config {
+    embedding: EmbeddingConfig
+  }
+  export const Config: Schema<Config> = Schema.object({
+    embedding: EmbeddingConfig,
+  });
+}
+
+export default Memory;
+
+export * from "./vectorStore";

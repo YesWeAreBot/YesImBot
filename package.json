@@ -29,13 +29,39 @@
         "type": "git",
         "url": "git+https://github.com/HydroGest/YesImBot.git"
     },
-    "peerDependencies": {
-        "koishi": "^4.17.9"
-    },
     "dependencies": {
         "async-mutex": "^0.5.0",
-        "axios": "^1.7.7",
+        "axios": "^1.7.9",
         "sharp": "^0.33.5"
+    },
+    "peerDependencies": {
+        "koishi": "^4.18.4"
+    },
+    "devDependencies": {
+        "@koishijs/plugin-mock": "^2.6.6"
+    },
+    "exports": {
+        ".": {
+            "types": "./lib/index.d.ts",
+            "default": "./lib/index.js"
+        },
+        "./package.json": "./package.json",
+        "./adapters": {
+            "types": "./lib/adapters/index.d.ts",
+            "default": "./lib/adapters/index.js"
+        },
+        "./embeddings": {
+            "types": "./lib/embeddings/index.d.ts",
+            "default": "./lib/embeddings/index.js"
+        },
+        "./managers": {
+            "types": "./lib/managers/index.d.ts",
+            "default": "./lib/managers/index.js"
+        },
+        "./utils": {
+            "types": "./lib/utils/index.d.ts",
+            "default": "./lib/utils/index.js"
+        }
     },
     "koishi": {
         "description": {
@@ -48,12 +74,12 @@
                 "axios",
                 "database"
             ],
+            "optional": [
+                "memory"
+            ],
             "implements": [
                 "yesimbot"
             ]
         }
-    },
-    "devDependencies": {
-        "@koishijs/plugin-mock": "^2.6.6"
     }
 }

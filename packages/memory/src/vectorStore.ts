@@ -2,8 +2,8 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { Context } from "koishi";
 
-import { calculateCosineSimilarity } from "../embeddings/base";
-import { CacheManager } from "../managers/cacheManager";
+import { CacheManager } from "koishi-plugin-yesimbot";
+import { calculateCosineSimilarity } from "koishi-plugin-yesimbot/embeddings";
 
 // TODO: 如何让Bot添加记忆时正确选择标签
 enum MemoryTag {
@@ -38,7 +38,7 @@ export class MemoryVectorStore {
   readonly store: CacheManager<Vector>;
 
   constructor(private ctx: Context) {
-    const vectorsFilePath = path.join(__dirname, "../../data/.vector_cache/memory.bin");
+    const vectorsFilePath = path.join(ctx.baseDir, "data", "yesimbot", ".vector_cache/memory.bin");
     this.store = new CacheManager(vectorsFilePath, true);
   }
 

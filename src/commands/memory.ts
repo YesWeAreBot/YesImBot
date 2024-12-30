@@ -1,6 +1,7 @@
 import { Context } from "koishi";
+import { Metadata } from "koishi-plugin-yesimbot-memory";
+
 import { Bot } from "../bot";
-import { Metadata } from "../memory/vectorStore";
 
 export function apply(ctx: Context, bot: Bot) {
   ctx
@@ -11,7 +12,7 @@ export function apply(ctx: Context, bot: Bot) {
       if (!content) {
         return session.send(`请输入记忆内容`);
       }
-      let id = await bot.memory.addText(content, userId);
+      let id = await ctx.memory.addText(content, userId);
       await session.send(`记忆添加成功\nID: ${id}\n内容: ${content}`);
     });
 
@@ -20,7 +21,7 @@ export function apply(ctx: Context, bot: Bot) {
     .option("query", "-q <query>; 查询关键词")
     .option("limit", "-l <limit:number>; 查询数量")
     .action(async ({ session }, query, limit) => {
-      const results = await bot.memory.search(query, limit);
+      const results = await ctx.memory.search(query, limit);
       if (results.length === 0) {
         await session.send(`没有找到与 ${query} 相关的记忆`);
       } else {
@@ -34,7 +35,7 @@ export function apply(ctx: Context, bot: Bot) {
     .option("id", "-i <id:string>; 记忆ID")
     .action(async ({ session, options }, userId) => {
       if (options.userId) {
-        const memory = bot.memory.getUserMemory(userId);
+        const memory = ctx.memory.getUserMemory(userId);
         if (memory.length === 0) {
           await session.send(`没有找到与 ${userId} 相关的记忆`);
         } else {
@@ -43,7 +44,7 @@ export function apply(ctx: Context, bot: Bot) {
         return;
       }
       if (options.id) {
-        const memory = await bot.memory.get(options.id);
+        const memory = await ctx.memory.get(options.id);
         if (!memory) {
           await session.send(`没有找到与 ${options.id} 相关的记忆`);
         } else {
@@ -56,7 +57,7 @@ export function apply(ctx: Context, bot: Bot) {
   ctx
     .command("memory.getAll", "获取全部记忆", { authority: 3 })
     .action(async ({ session }) => {
-      const memory = bot.memory.getAll();
+      const memory = ctx.memory.getAll();
       if (memory.length === 0) {
         await session.send(`没有找到任何记忆`);
       } else {
@@ -67,21 +68,21 @@ export function apply(ctx: Context, bot: Bot) {
   ctx
     .command("memory.update <id:string> <content:string>", "更新记忆", { authority: 3 })
     .action(async ({ session }, id, content) => {
-      await bot.memory.update(id, content);
+      await ctx.memory.update(id, content);
       await session.send(`记忆更新成功`);
     });
 
   ctx
     .command("memory.delete <id:string>", "删除记忆", { authority: 3 })
     .action(async ({ session }, id) => {
-      bot.memory.delete(id);
+      ctx.memory.delete(id);
       await session.send(`记忆删除成功`);
     });
 
   ctx
     .command("memory.clear", "清空所有记忆", { authority: 3 })
     .action(async ({ session }) => {
-      bot.memory.clear();
+      ctx.memory.clear();
       await session.send(`记忆清空成功`);
     });
 }
