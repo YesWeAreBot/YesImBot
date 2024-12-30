@@ -10,6 +10,7 @@ import { AssistantMessage, ImageComponent, SystemMessage, TextComponent, UserMes
 import { isEmpty } from "../utils/string";
 import { getAdapter } from "../utils/factory";
 import { ProcessingLock } from "../utils/toolkit";
+import { foldText } from "../utils/string";
 
 const processingLock = new ProcessingLock();
 
@@ -253,7 +254,7 @@ export class ImageViewer {
 
             let descriptions = this.cacheManager.get(cacheKey) || {};
             descriptions[questionHash] = description;
-            await this.cacheManager.set(cacheKey, descriptions);
+            this.cacheManager.set(cacheKey, descriptions);
 
             logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${description}`);
             return `[图片: ${description}]`;

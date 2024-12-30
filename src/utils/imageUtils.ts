@@ -170,7 +170,7 @@ export async function convertUrltoBase64(url: string, cacheKey?: string, ignoreC
     if (debug) {
       logger.info(`Image loaded from cache: ${cacheKey.substring(0, 7)}. file-size: ${formatSize(metadata?.size || 0)}.`);
     }
-    return `data:${metadata?.contentType};base64,${base64}`;
+    return base64;
   }
   try {
     const response = await axios.get(url, {
@@ -189,7 +189,7 @@ export async function convertUrltoBase64(url: string, cacheKey?: string, ignoreC
     const hash = createHash('md5').update(buffer).digest('hex');
     imageCache.set(url, buffer, contentType, hash, cacheKey || hash);
     if (debug) {
-      logger.info(`Image downloaded: ${url.substring(0, 7)}. file-size: ${formatSize(buffer.length)}.`);
+      logger.info(`Image downloaded: ${url}. file-size: ${formatSize(buffer.length)}.`);
     }
     return `data:${contentType};base64,${buffer.toString("base64")}`;
   } catch (error) {
