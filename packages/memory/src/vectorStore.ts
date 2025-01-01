@@ -38,7 +38,7 @@ export class MemoryVectorStore {
   readonly store: CacheManager<Vector>;
 
   constructor(private ctx: Context) {
-    const vectorsFilePath = path.join(ctx.baseDir, "data", "yesimbot", ".vector_cache/memory.bin");
+    const vectorsFilePath = path.join(ctx.baseDir, "data/yesimbot/.vector_cache/memory.bin");
     this.store = new CacheManager(vectorsFilePath, true);
   }
 

@@ -37,6 +37,8 @@ class ImageCache {
     return this.metadata[key];
   }
 
+  static instance: ImageCache | null = null;
+
   constructor(private savePath: string) {
     // 确保目录存在
     if (!fs.existsSync(this.savePath)) {
@@ -152,8 +154,6 @@ class ImageCache {
   }
 }
 
-const imageCache = new ImageCache(path.join(__dirname, "../../data/cache/downloadImage"));
-
 /**
  * 从URL获取图片的base64编码
  * @param url 图片的URL
@@ -163,6 +163,13 @@ const imageCache = new ImageCache(path.join(__dirname, "../../data/cache/downloa
  */
 export async function convertUrltoBase64(url: string, cacheKey?: string, ignoreCache = false, debug = false): Promise<string> {
   url = decodeURIComponent(url);
+
+  let imageCache = ImageCache.instance
+
+  if (!imageCache) {
+    imageCache = new ImageCache(path.join(baseDir, "data/yesimbot/cache/downloadImage"));
+    ImageCache.instance = imageCache;
+  }
 
   if (!ignoreCache && imageCache.has(cacheKey)) {
     const base64 = imageCache.getBase64(cacheKey);
