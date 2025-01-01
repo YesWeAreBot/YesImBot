@@ -20,7 +20,7 @@ export class EmojiManager {
   private client: EmbeddingBase;
 
   constructor(private embeddingConfig: EmbeddingConfig) {
-    const emojisFile = path.join(__dirname, "../../data/emojis.json");
+    const emojisFile = path.join(__dirname, "../../resources/emojis.json");
     const emojis: Emoji[] = JSON.parse(readFileSync(emojisFile, "utf-8"));
 
     emojis.forEach((emoji) => {
@@ -29,7 +29,7 @@ export class EmojiManager {
     });
 
     const modelName = embeddingConfig.EmbeddingModel;
-    const cacheFile = path.join(baseDir, `data/vector_cache/emoji_${modelName}.bin`);
+    const cacheFile = path.join(baseDir, `data/yesimbot/.vector_cache/emoji_${modelName}.bin`);
     const cacheManager = new CacheManager<number[]>(cacheFile, true);
     this.client = getEmbedding(embeddingConfig, cacheManager);
   }
