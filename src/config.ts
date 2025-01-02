@@ -208,6 +208,62 @@ export const Config: Schema<Config> = Schema.object({
       ),
   }).description("API 参数"),
 
+  Bot: Schema.object({
+    PromptFileUrl: Schema.array(Schema.string())
+      .default([
+        "https://fastly.jsdelivr.net/gh/HydroGest/promptHosting@main/src/prompt-legacy.mdt",
+        "https://fastly.jsdelivr.net/gh/HydroGest/promptHosting@main/src/prompt-next.mdt",
+        "https://fastly.jsdelivr.net/gh/HydroGest/promptHosting@main/src/prompt-next-short.mdt",
+      ])
+      .description("Prompt 文件下载链接。一般情况下不需要修改。"),
+    PromptFileSelected: Schema.number()
+      .default(2)
+      .description("Prompt 文件编号，从 0 开始。请阅读 readme 再修改!"),
+    NickorName: Schema.union(["群昵称", "用户昵称"])
+      .default("群昵称")
+      .description("Bot 将看到其他人的..."),
+    SelfAwareness: Schema.union(["此页面设置的名字", "群昵称", "用户昵称"])
+      .default("群昵称")
+      .description("Bot 将认为自己叫..."),
+    BotName: Schema.string().default("Athena").description("Bot 的名字"),
+    WhoAmI: Schema.string()
+      .default("一个普通的群友")
+      .description("Bot 的简要设定"),
+    BotHometown: Schema.string().default("广州").description("Bot 的家乡"),
+    SendDirectly: Schema.boolean()
+      .default(false)
+      .description("运行时屏蔽其他指令"),
+    BotYearold: Schema.string().default("16").description("Bot 的年龄"),
+    BotPersonality: Schema.string()
+      .default("外向/有爱")
+      .description("Bot 性格"),
+    BotGender: Schema.string().default("女").description("Bot 的性别"),
+    BotHabbits: Schema.string().default("").description("Bot 的爱好"),
+    BotBackground: Schema.string()
+      .default("高中女生")
+      .description("Bot 的背景"),
+    WordsPerSecond: Schema.number()
+      .default(2)
+      .min(0)
+      .max(360)
+      .step(0.1)
+      .role("slider")
+      .description("Bot 的打字速度（每秒字数）。设为 0 取消打字间隔。"),
+    BotReplySpiltRegex: Schema.string()
+      .default("(?<=[。?!？！])\s*")
+      .description("分割 Bot 生成的句子时所用的正则表达式。如果要关闭分割，请设为`(?!)`而不是空字符串"),
+    BotSentencePostProcess: Schema.array(
+      Schema.object({
+        replacethis: Schema.string().description("需要替换的文本"),
+        tothis: Schema.string().description("替换为的文本"),
+      })
+    )
+      .default([{ replacethis: "。$", tothis: "" }])
+      .role("table")
+      .description("Bot 生成的句子后处理，用于替换文本。每行一个替换规则，从上往下依次替换，支持正则表达式"),
+    CuteMode: Schema.boolean().default(false).description("原神模式（迫真"),
+  }).description("机器人设定"),
+
   Verifier: Schema.intersect([
     Schema.object({
       Enabled: Schema.boolean()
@@ -374,62 +430,6 @@ export const Config: Schema<Config> = Schema.object({
       Schema.object({}),
     ]),
   ]),
-
-  Bot: Schema.object({
-    PromptFileUrl: Schema.array(Schema.string())
-      .default([
-        "https://fastly.jsdelivr.net/gh/HydroGest/promptHosting@main/src/prompt-legacy.mdt",
-        "https://fastly.jsdelivr.net/gh/HydroGest/promptHosting@main/src/prompt-next.mdt",
-        "https://fastly.jsdelivr.net/gh/HydroGest/promptHosting@main/src/prompt-next-short.mdt",
-      ])
-      .description("Prompt 文件下载链接。一般情况下不需要修改。"),
-    PromptFileSelected: Schema.number()
-      .default(2)
-      .description("Prompt 文件编号，从 0 开始。请阅读 readme 再修改!"),
-    NickorName: Schema.union(["群昵称", "用户昵称"])
-      .default("群昵称")
-      .description("Bot 将看到其他人的..."),
-    SelfAwareness: Schema.union(["此页面设置的名字", "群昵称", "用户昵称"])
-      .default("群昵称")
-      .description("Bot 将认为自己叫..."),
-    BotName: Schema.string().default("Athena").description("Bot 的名字"),
-    WhoAmI: Schema.string()
-      .default("一个普通的群友")
-      .description("Bot 的简要设定"),
-    BotHometown: Schema.string().default("广州").description("Bot 的家乡"),
-    SendDirectly: Schema.boolean()
-      .default(false)
-      .description("运行时屏蔽其他指令"),
-    BotYearold: Schema.string().default("16").description("Bot 的年龄"),
-    BotPersonality: Schema.string()
-      .default("外向/有爱")
-      .description("Bot 性格"),
-    BotGender: Schema.string().default("女").description("Bot 的性别"),
-    BotHabbits: Schema.string().default("").description("Bot 的爱好"),
-    BotBackground: Schema.string()
-      .default("高中女生")
-      .description("Bot 的背景"),
-    WordsPerSecond: Schema.number()
-      .default(2)
-      .min(0)
-      .max(360)
-      .step(0.1)
-      .role("slider")
-      .description("Bot 的打字速度（每秒字数）。设为 0 取消打字间隔。"),
-    BotReplySpiltRegex: Schema.string()
-      .default("(?<=[。?!？！])\s*")
-      .description("分割 Bot 生成的句子时所用的正则表达式。如果要关闭分割，请设为`(?!)`而不是空字符串"),
-    BotSentencePostProcess: Schema.array(
-      Schema.object({
-        replacethis: Schema.string().description("需要替换的文本"),
-        tothis: Schema.string().description("替换为的文本"),
-      })
-    )
-      .default([{ replacethis: "。$", tothis: "" }])
-      .role("table")
-      .description("Bot 生成的句子后处理，用于替换文本。每行一个替换规则，从上往下依次替换，支持正则表达式"),
-    CuteMode: Schema.boolean().default(false).description("原神模式（迫真"),
-  }).description("机器人设定"),
 
   Settings: Schema.object({
     SingleMessageStrctureTemplate: Schema.string()
