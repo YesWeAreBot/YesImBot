@@ -250,7 +250,8 @@ export function apply(ctx: Context, config: Config) {
             BotName: botName,
             BotSelfId: session.bot.selfId,
             outputSchema,
-            coreMemory: await bot.getCoreMemory(session.selfId),
+            // 记忆模块还未完成，等完成后取消注释
+            // coreMemory: await bot.getCoreMemory(session.selfId),
           }
         )
       );
