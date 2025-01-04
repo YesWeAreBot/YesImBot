@@ -1,9 +1,9 @@
+import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
+import { BaseAdapter } from "../adapters/base";
+import { LLM } from "../adapters/config";
 import { Config } from "../config";
-import { CloudflareAdapter, CustomAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
 import { CustomEmbedding, OllamaEmbedding, OpenAIEmbedding } from "../embeddings";
 import { CacheManager } from "../managers/cacheManager";
-import { LLM } from "../adapters/config";
-import { BaseAdapter } from "../adapters/base";
 
 export function getAdapter(config: LLM, parameters?: Config["Parameters"]): BaseAdapter {
   switch (config.APIType) {
@@ -15,6 +15,8 @@ export function getAdapter(config: LLM, parameters?: Config["Parameters"]): Base
       return new OllamaAdapter(config, parameters);
     case "OpenAI":
       return new OpenAIAdapter(config, parameters);
+    case "Gemini":
+      return new GeminiAdapter(config, parameters);
     default:
       throw new Error(`不支持的 API 类型: ${config.APIType}`);
   }

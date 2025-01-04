@@ -1,8 +1,8 @@
 import axios from "axios";
 
-import { foldText } from "./string";
+import { foldText, isNotEmpty } from "./string";
 
-export async function sendRequest(url: string, APIKey: string, requestBody: any, debug: boolean = false): Promise<any> {
+export async function sendRequest<T = any>(url: string, APIKey: string, requestBody: any, debug: boolean = false): Promise<T> {
     if (debug) {
       logger.info(`Request URL: ${url}`);
       logger.info(`Request body: \n${foldText(JSON.stringify(requestBody, null, 2), 2100)}`);
@@ -11,7 +11,7 @@ export async function sendRequest(url: string, APIKey: string, requestBody: any,
     try {
       const response = await axios.post(url, requestBody, {
         headers: {
-          'Authorization': `Bearer ${APIKey}`,
+          'Authorization': isNotEmpty(APIKey) ? `Bearer ${APIKey}` : undefined,
           'Content-Type': "application/json",
         },
       });
