@@ -1,12 +1,13 @@
 import { Config } from "../config";
-import { CloudflareAdapter } from "./cloudflare";
-import { CustomAdapter } from "./custom";
-import { OllamaAdapter } from "./ollama";
-import { OpenAIAdapter } from "./openai";
 import { getAdapter } from "../utils/factory";
 import { BaseAdapter } from "./base";
+import { CloudflareAdapter } from "./cloudflare";
+import { CustomAdapter } from "./custom";
+import { GeminiAdapter } from "./gemini";
+import { OllamaAdapter } from "./ollama";
+import { OpenAIAdapter } from "./openai";
 
-export { BaseAdapter, CloudflareAdapter, CustomAdapter, OllamaAdapter, OpenAIAdapter };
+export { BaseAdapter, CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter };
 
 export class AdapterSwitcher {
   private adapters: BaseAdapter[];

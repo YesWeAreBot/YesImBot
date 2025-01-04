@@ -1,7 +1,7 @@
 import { Schema } from "koishi";
 
 export interface LLM {
-  APIType: "OpenAI" | "Cloudflare" | "Ollama" | "Custom URL";
+  APIType: "OpenAI" | "Cloudflare" | "Ollama" | "Custom URL" | "Gemini";
   BaseURL: string;
   UID?: string;
   APIKey: string;
@@ -26,7 +26,7 @@ export interface Config {
 
 export const API: Schema<LLM> = Schema.intersect([
   Schema.object({
-    APIType: Schema.union(["OpenAI", "Cloudflare", "Ollama", "Custom URL"])
+    APIType: Schema.union(["OpenAI", "Cloudflare", "Ollama", "Custom URL", "Gemini"])
       .default("OpenAI")
       .description("API 类型"),
     BaseURL: Schema.string()
@@ -97,6 +97,9 @@ export const API: Schema<LLM> = Schema.intersect([
         .step(1)
         .default(0)
         .description("线程数"),
+    }),
+    Schema.object({
+      APIType: Schema.const("Gemini"),
     }),
   ]),
 ]);

@@ -209,3 +209,8 @@ export async function convertUrltoBase64(url: string, cacheKey?: string, ignoreC
 export function removeBase64Prefix(base64: string): string {
   return base64.replace(/^data:image\/(jpg|jpeg|png|webp|gif|bmp|tiff|ico|avif|webm|apng|svg);base64,/, "");
 }
+
+export function getMimeTypeFromBase64(base64: string): string {
+  const contentType = base64.match(/^data:([^;]+);/)[1];
+  return contentType;
+}
