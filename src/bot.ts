@@ -10,8 +10,7 @@ import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./ex
 import { EmojiManager } from "./managers/emojiManager";
 import { ImageViewer } from "./services/imageViewer";
 import { getEmbedding } from "./utils/factory";
-import { escapeUnicodeCharacters, isEmpty, Template } from "./utils/string";
-import { getFormatDateTime, tiktokenizer } from "./utils/toolkit";
+import { escapeUnicodeCharacters, isEmpty, isNotEmpty, Template } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
 
 export interface Function {
@@ -389,20 +388,25 @@ export class Bot {
 
   // 如果 replyTo 不是私聊会话，只保留数字部分
   private extractReplyTo(replyTo: string): string {
-    if (replyTo && !replyTo.startsWith("private:")) {
-      const numericMatch = replyTo.match(/\d+/);
-      if (numericMatch) {
-        replyTo = numericMatch[0].replace(/\s/g, "");
+    try {
+      replyTo = replyTo.toString().trim();
+      if (isNotEmpty(replyTo) && !replyTo.startsWith("private:")) {
+        const numericMatch = replyTo.match(/\d+/);
+        if (numericMatch) {
+          replyTo = numericMatch[0].replace(/\s/g, "");
+        }
+        // 不合法的 channelId
+        if (replyTo.match(/\{.+\}/)) {
+          replyTo = "";
+        }
+        if (replyTo.indexOf("sandbox") > -1) {
+          replyTo = "";
+        }
       }
-      // 不合法的 channelId
-      if (replyTo.match(/\{.+\}/)) {
-        replyTo = "";
-      }
-      if (replyTo.indexOf("sandbox") > -1) {
-        replyTo = "";
-      }
+      return replyTo;
+    } catch (e) {
+      return "";
     }
-    return replyTo;
   }
 
   // async summarize(channelId, userId, content) { }
