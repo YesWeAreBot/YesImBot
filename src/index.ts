@@ -126,7 +126,7 @@ export function apply(ctx: Context, config: Config) {
     }
   });
 
-  applyMemoryCommands(ctx, bot);
+  //applyMemoryCommands(ctx, bot);
   applySendQueneCommands(ctx, sendQueue);
 
   ctx.middleware(async (session: Session, next: Next) => {

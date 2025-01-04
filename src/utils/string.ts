@@ -47,6 +47,10 @@ export function isEmpty(str: string) {
   return !str || String(str) == ""
 }
 
+export function isNotEmpty(str: string) {
+  return !isEmpty(str)
+}
+
 /**
  * 模板引擎
  *

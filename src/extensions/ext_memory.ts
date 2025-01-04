@@ -6,7 +6,7 @@ import { Description, Extension, Name, Param } from "./base";
 @Param("content", "Content to write to the memory.")
 export class InsertArchivalMemory extends Extension {
   async apply(content: string) {
-    await this.ctx.memory.addText(content);
+    throw new Error("Method not implemented.");
   }
 }
 

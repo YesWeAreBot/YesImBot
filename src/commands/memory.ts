@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Context } from "koishi";
 import { Metadata } from "koishi-plugin-yesimbot-memory";
 
