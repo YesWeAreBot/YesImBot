@@ -36,7 +36,7 @@ export function getExtensions(ctx: Context, bot: Bot): Extension[] {
   let extensions: Extension[] = [];
 
   fs.readdirSync(__dirname)
-    .filter((file) => file.startsWith("ext_"))
+    .filter((file) => file.startsWith("ext_") && !file.endsWith(".d.ts")) // 不指定 .js 是为了兼容dev模式
     .forEach((file) => {
       try {
         const extension = require(`./${file}`);
