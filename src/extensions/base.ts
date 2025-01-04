@@ -39,13 +39,19 @@ export function getExtensions(ctx: Context, bot: Bot): Extension[] {
     .filter((file) => file.startsWith("ext_") && !file.endsWith(".d.ts")) // 不指定 .js 是为了兼容dev模式
     .forEach((file) => {
       try {
+        // @ts-ignore
+        if (!ctx?.memory && file.startsWith("ext_memory")) {
+          ctx.logger.warn(`当前未启用 Memory 模块，跳过扩展：${file}`)
+          return
+        }
         const extension = require(`./${file}`);
         for (const key in extension) {
           extensions.push(new extension[key](ctx, bot));
         }
         logger.info(`Loaded extension: ${file}`);
       } catch (e) {
-        logger.error(`Failed to load extension: ${file}`, e);
+        logger.error(`Failed to load extension: ${file}`);
+        logger.error(e.stack);
       }
     });
   return extensions;
