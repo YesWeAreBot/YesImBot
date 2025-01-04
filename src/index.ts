@@ -385,6 +385,7 @@ ${botName}想要跳过此次回复，来自 API ${current}
 
     catch (error) {
       ctx.logger.error(`处理消息时出错: ${error.message}`);
+      if (config.Debug.DebugAsInfo) ctx.logger.error(error.stack);
       return false;
     }
 
