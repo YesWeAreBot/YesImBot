@@ -1,85 +1,36 @@
 {
-    "name": "koishi-plugin-yesimbot",
-    "description": "Yes! I'm Bot! 机械壳，人类心",
-    "version": "2.0.0",
-    "main": "lib/index.js",
-    "typings": "lib/index.d.ts",
+    "name": "@root/yesimbot",
+    "version": "0.0.0",
+    "private": true,
     "homepage": "https://github.com/HydroGest/YesImBot",
-    "files": [
-        "lib",
-        "dist",
-        "resources"
-    ],
     "contributors": [
         "HydroGest <2445691453@qq.com>",
         "Dispure <3116716016@qq.com>"
     ],
     "license": "MIT",
-    "scripts": {
-        "test": "jest",
-        "generate": "ts-node scripts/generateSchema.ts"
-    },
-    "keywords": [
-        "chatbot",
-        "koishi",
-        "plugin",
-        "ai"
+    "workspaces": [
+        "packages/*"
     ],
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/HydroGest/YesImBot.git"
+    "scripts": {
+        "clean": "yakumo clean",
+        "build": "yakumo build",
+        "bump": "yakumo version",
+        "dep": "yakumo upgrade",
+        "pub": "yakumo publish",
+        "lint": "eslint --ext .ts --ext .tsx . && prettier --check .",
+        "lint:fix": "eslint --ext .ts --ext .tsx . --fix && prettier --write .",
+        "format": "prettier --write .",
+        "test": "yakumo mocha -r esbuild-register -r yml-register",
+        "test:text": "shx rm -rf coverage && c8 -r text yarn test",
+        "test:json": "shx rm -rf coverage && c8 -r json yarn test",
+        "test:html": "shx rm -rf coverage && c8 -r html yarn test"
     },
-    "dependencies": {
-        "async-mutex": "^0.5.0",
-        "axios": "^1.7.9",
-        "sharp": "^0.33.5"
-    },
-    "peerDependencies": {
-        "koishi": "^4.18.5"
-    },
+    "prettier": "@hamster-bot/prettier-config",
     "devDependencies": {
-        "@koishijs/plugin-mock": "^2.6.6"
-    },
-    "exports": {
-        ".": {
-            "types": "./lib/index.d.ts",
-            "default": "./lib/index.js"
-        },
-        "./package.json": "./package.json",
-        "./adapters": {
-            "types": "./lib/adapters/index.d.ts",
-            "default": "./lib/adapters/index.js"
-        },
-        "./embeddings": {
-            "types": "./lib/embeddings/index.d.ts",
-            "default": "./lib/embeddings/index.js"
-        },
-        "./managers": {
-            "types": "./lib/managers/index.d.ts",
-            "default": "./lib/managers/index.js"
-        },
-        "./utils": {
-            "types": "./lib/utils/index.d.ts",
-            "default": "./lib/utils/index.js"
-        }
-    },
-    "koishi": {
-        "description": {
-            "zh": "让语言大模型机器人假装群友并和群友聊天！",
-            "en": "A Koishi plugin that allows LLM chat in your guild."
-        },
-        "browser": true,
-        "service": {
-            "required": [
-                "axios",
-                "database"
-            ],
-            "optional": [
-                "memory"
-            ],
-            "implements": [
-                "yesimbot"
-            ]
-        }
+        "typescript": "^5.7.2",
+        "yakumo": "^1.0.0-beta.20",
+        "yakumo-esbuild": "^1.0.0-beta.7",
+        "yakumo-tsc": "^1.0.0-beta.5",
+        "yml-register": "^1.2.5"
     }
 }

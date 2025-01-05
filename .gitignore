@@ -10,6 +10,7 @@ yarn-error.log
 tsconfig.tsbuildinfo
 package-lock.json
 yarn.lock
+package.tgz
 
 .eslintcache
 .DS_Store

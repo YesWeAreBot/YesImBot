@@ -4,49 +4,27 @@ import { Context } from "koishi";
 
 import { CacheManager } from "koishi-plugin-yesimbot";
 import { calculateCosineSimilarity } from "koishi-plugin-yesimbot/embeddings";
-
-// TODO: 如何让Bot添加记忆时正确选择标签
-enum MemoryTag {
-  User,   // 用户记忆。包含userId
-  Self,   // Bot自身记忆。对应userId==selfId
-  General // 通用记忆。没有userId
-}
-
-export interface Vector {
-  id: string;        // 随机生成的id
-  vector: number[];  // 向量
-  magnitude: number; // 向量的模
-
-  content: string;    // 记忆内容
-  createdAt: number;  // 创建时间
-  updatedAt?: number; // 更新时间，用于计算时间权重
-
-  userId?: string;    // 记忆关联的用户ID
-  tags?: MemoryTag[]; // 记忆标签。将记忆分类，便于查找
-}
+import { MemoryItem } from "./model";
 
 export interface Metadata {
-  content: string;    // 记忆内容
-  createdAt: number;  // 创建时间
-  updatedAt?: number; // 更新时间，用于计算时间权重
-
-  userId?: string;    // 记忆关联的用户ID
-  tags?: MemoryTag[]; // 记忆标签
+  content: string;
+  topic: string;
+  keywords: string[];
 }
 
 export class MemoryVectorStore {
-  readonly store: CacheManager<Vector>;
+  readonly store: CacheManager<MemoryItem>;
 
   constructor(private ctx: Context) {
     const vectorsFilePath = path.join(ctx.baseDir, "data/yesimbot/.vector_cache/memory.bin");
     this.store = new CacheManager(vectorsFilePath, true);
   }
 
-  get(id: string): Metadata | undefined {
+  get(id: string): MemoryItem | undefined {
     return this.store.get(id);
   }
 
-  getAll(): Vector[] {
+  getAll(): MemoryItem[] {
     let vectors = this.store.values();
     return vectors;
   }
@@ -55,17 +33,18 @@ export class MemoryVectorStore {
     return this.store.remove(id);
   }
 
-  update(id: string, vector: number[], content: string) {
+  update(id: string, embedding: number[], metadata: Metadata) {
     if (!this.store.has(id)) {
       return;
     }
 
     let oldVector = this.store.get(id);
 
-    oldVector.content = content;
-    oldVector.updatedAt = Date.now();
-    oldVector.vector = vector;
-    oldVector.magnitude = getMagnitude(vector);
+    oldVector.embedding = embedding;
+    oldVector.magnitude = getMagnitude(embedding);
+    oldVector.content = metadata.content;
+    oldVector.topic = metadata.topic || oldVector.topic;
+    oldVector.keywords = metadata.keywords || oldVector.keywords;
     this.store.set(id, oldVector);
   }
 
@@ -82,32 +61,32 @@ export class MemoryVectorStore {
     this.store.commit();
   }
 
-  async addVector(vector: number[], metadata: Metadata): Promise<string> {
+  async addVector(embedding: number[], metadata: Metadata): Promise<string> {
     const id = randomUUID();
     this.store.set(id, {
       id,
-      vector,
-      magnitude: getMagnitude(vector),
+      embedding,
+      magnitude: getMagnitude(embedding),
 
       ...metadata,
     });
     return id;
   }
 
-  async addVectors(vectors: number[][], metadatas: Metadata[]): Promise<void> {
-    vectors.forEach((vector, index) => {
+  async addVectors(embeddings: number[][], metadatas: Metadata[]): Promise<void> {
+    embeddings.forEach((embedding, index) => {
       const id = randomUUID();
       this.store.set(id, {
         id,
-        vector,
-        magnitude: getMagnitude(vector),
+        embedding,
+        magnitude: getMagnitude(embedding),
 
         ...metadatas[index],
       })
     });
   }
 
-  filterVectors(filter: (metadata: Metadata) => boolean): Vector[] {
+  filterVectors(filter: (metadata: Metadata) => boolean): MemoryItem[] {
     return this.store.values().filter(filter);
   }
 
@@ -125,12 +104,13 @@ export class MemoryVectorStore {
    *          vector and the second element is the similarity score. The array is
    *          sorted in descending order of similarity score.
    */
-  async similaritySearchVectorWithScore(query: number[], k: number, filter?: (metadata: Metadata) => boolean): Promise<[Vector, number][]> {
+  async similaritySearchVectorWithScore(query: number[], k: number, filter?: (metadata: Metadata) => boolean): Promise<[MemoryItem, number][]> {
     const magnitude = getMagnitude(query);
-    let results: [Vector, number][] = [];
+    let results: [MemoryItem, number][] = [];
 
     for (const vector of this.store.values()) {
-      const similarity = calculateCosineSimilarity(query, vector.vector, magnitude, vector.magnitude);
+      if (!vector.magnitude) vector.magnitude = getMagnitude(vector.embedding);
+      const similarity = calculateCosineSimilarity(query, vector.embedding, magnitude, vector.magnitude);
       if (!filter || filter(vector)) {
         results.push([vector, similarity]);
       }
@@ -140,7 +120,7 @@ export class MemoryVectorStore {
     return results.slice(0, k);
   }
 
-  async similaritySearch(query: number[], k: number, filter?: (vector: Vector) => boolean): Promise<Vector[]> {
+  async similaritySearch(query: number[], k: number, filter?: (vector: MemoryItem) => boolean): Promise<MemoryItem[]> {
     const results = await this.similaritySearchVectorWithScore(query, k, filter);
     return results.map((result) => result[0]);
   }

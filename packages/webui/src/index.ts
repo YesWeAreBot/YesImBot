@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { resolve } from "path";
 import { Context } from "koishi";
 import {} from "@koishijs/plugin-console";
