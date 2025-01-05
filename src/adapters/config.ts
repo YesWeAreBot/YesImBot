@@ -1,12 +1,14 @@
 import { Schema } from "koishi";
 
 export interface LLM {
+  Enabled?: boolean;
   APIType: "OpenAI" | "Cloudflare" | "Ollama" | "Custom URL" | "Gemini";
   BaseURL: string;
   UID?: string;
   APIKey: string;
   AIModel: string;
   Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出">;
+  
   NUMA?: boolean;
   NumCtx?: number;
   NumBatch?: number;
@@ -26,12 +28,13 @@ export interface Config {
 
 export const API: Schema<LLM> = Schema.intersect([
   Schema.object({
+    Enabled: Schema.boolean().default(true).description("是否启用"),
     APIType: Schema.union(["OpenAI", "Cloudflare", "Ollama", "Custom URL", "Gemini"])
       .default("OpenAI")
       .description("API 类型"),
-    BaseURL: Schema.string()
-      .default("https://api.openai.com")
-      .description("API 基础 URL, 设置为\"Custom URL\"需要填写完整的 URL"),
+    // BaseURL: Schema.string()
+    //   .default("https://api.openai.com")
+    //   .description("API 基础 URL, 设置为\"Custom URL\"需要填写完整的 URL"),
     APIKey: Schema.string().required().description("你的 API 令牌"),
     AIModel: Schema.string()
       .description("模型 ID"),
@@ -44,16 +47,20 @@ export const API: Schema<LLM> = Schema.intersect([
   Schema.union([
     Schema.object({
       APIType: Schema.const("OpenAI"),
+      BaseURL: Schema.string().default("https://api.openai.com"),
     }),
     Schema.object({
       APIType: Schema.const("Cloudflare"),
+      BaseURL: Schema.string().default("https://api.cloudflare.com/client/v4"),
       UID: Schema.string().required().description("Cloudflare UID"),
     }),
     Schema.object({
       APIType: Schema.const("Custom URL"),
+      BaseURL: Schema.string().required().description("自定义 URL"),
     }),
     Schema.object({
       APIType: Schema.const("Ollama"),
+      BaseURL: Schema.string().default("http://127.0.0.1:11434"),
       NUMA: Schema.boolean()
         .default(false)
         .description("是否使用 NUMA"),
@@ -100,6 +107,7 @@ export const API: Schema<LLM> = Schema.intersect([
     }),
     Schema.object({
       APIType: Schema.const("Gemini"),
+      BaseURL: Schema.string().default("https://generativelanguage.googleapis.com"),
     }),
   ]),
 ]);

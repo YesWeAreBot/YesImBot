@@ -61,7 +61,13 @@ export class GeminiAdapter extends BaseAdapter {
   }
 
   async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
+    const system = messages.find((message) => message.role === "system");
+    if (system) {
+      messages = messages.filter((message) => message.role !== "system");
+
+    }
     const requestBody = {
+      system_instruction: convert(system),
       contents: messages.map(convert),
       generationConfig: {
         stopSequences: this.parameters?.Stop,
@@ -98,6 +104,8 @@ export class GeminiAdapter extends BaseAdapter {
 }
 
 function convert(message: Message): Content {
+  // @ts-ignore
+  message.role = message.role == "assistant" ? "model" : message.role;
   if (typeof message.content === "string") {
     return {
       role: message.role,

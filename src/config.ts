@@ -144,7 +144,7 @@ export const Config: Schema<Config> = Schema.object({
       .description("立即回复 @ 消息的概率"),
     Filter: Schema.array(Schema.string())
       .default(["你是", "You are", "吧", "呢"])
-      .description("过滤的词汇（防止被调皮群友/机器人自己搞傻）"),
+      .description("过滤的词汇（防止被调皮群友/机器人自己搞傻）可以使用正则表达式"),
   }).description("记忆槽位设置"),
 
   API: AdapterConfig,

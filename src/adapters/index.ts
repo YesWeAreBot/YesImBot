@@ -34,6 +34,7 @@ export class AdapterSwitcher {
   ) {
     this.adapters = [];
     for (const adapter of adapterConfig) {
+      if (!adapter.Enabled) continue;
       this.adapters.push(getAdapter(adapter, parameters));
     }
   }
