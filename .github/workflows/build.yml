@@ -1,0 +1,14 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  build:
+    uses: cordiverse/workflows/.github/workflows/build.yml@main
+    with:
+      lint: true
+      test: false

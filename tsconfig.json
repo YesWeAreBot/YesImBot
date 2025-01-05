@@ -1,15 +1,10 @@
 {
-  "extends": "./tsconfig.base",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "rootDir": "src",
-    "outDir": "lib",
-    "emitDeclarationOnly": false,
-    "moduleResolution": "node",
-    "module": "CommonJS",
-    "experimentalDecorators": true
-  },
-  "include": [
-    "src"
-  ]
-}
+    "extends": "./tsconfig.base",
+    "compilerOptions": {
+      "baseUrl": ".",
+      "paths": {
+        "koishi-plugin-yesimbot": ["packages/core/src"],
+        "koishi-plugin-yesimbot-*": ["packages/*/src"]
+      }
+    }
+  }

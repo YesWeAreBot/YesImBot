@@ -42,7 +42,7 @@ export const EmbeddingConfig: Schema<EmbeddingConfig> = Schema.object({
 });
 
 export interface Config {
-  embedding: EmbeddingConfig
+  embedding: EmbeddingConfig;
 }
 
 export const Config: Schema<Config> = Schema.object({

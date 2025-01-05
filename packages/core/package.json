@@ -1,0 +1,82 @@
+{
+    "name": "koishi-plugin-yesimbot",
+    "description": "Yes! I'm Bot! 机械壳，人类心",
+    "version": "2.0.0",
+    "main": "lib/index.js",
+    "typings": "lib/index.d.ts",
+    "homepage": "https://github.com/HydroGest/YesImBot",
+    "files": [
+        "lib",
+        "dist",
+        "resources"
+    ],
+    "contributors": [
+        "HydroGest <2445691453@qq.com>",
+        "Dispure <3116716016@qq.com>"
+    ],
+    "license": "MIT",
+    "keywords": [
+        "chatbot",
+        "koishi",
+        "plugin",
+        "ai"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/HydroGest/YesImBot.git",
+        "directory": "packages/core"
+    },
+    "dependencies": {
+        "async-mutex": "^0.5.0",
+        "axios": "^1.7.9",
+        "sharp": "^0.33.5"
+    },
+    "peerDependencies": {
+        "koishi": "^4.18.5"
+    },
+    "devDependencies": {
+        "@koishijs/plugin-mock": "^2.6.6"
+    },
+    "exports": {
+        ".": {
+            "types": "./lib/index.d.ts",
+            "default": "./lib/index.js"
+        },
+        "./package.json": "./package.json",
+        "./adapters": {
+            "types": "./lib/adapters/index.d.ts",
+            "default": "./lib/adapters/index.js"
+        },
+        "./embeddings": {
+            "types": "./lib/embeddings/index.d.ts",
+            "default": "./lib/embeddings/index.js"
+        },
+        "./managers": {
+            "types": "./lib/managers/index.d.ts",
+            "default": "./lib/managers/index.js"
+        },
+        "./utils": {
+            "types": "./lib/utils/index.d.ts",
+            "default": "./lib/utils/index.js"
+        }
+    },
+    "koishi": {
+        "description": {
+            "zh": "让语言大模型机器人假装群友并和群友聊天！",
+            "en": "A Koishi plugin that allows LLM chat in your guild."
+        },
+        "browser": true,
+        "service": {
+            "required": [
+                "axios",
+                "database"
+            ],
+            "optional": [
+                "memory"
+            ],
+            "implements": [
+                "yesimbot"
+            ]
+        }
+    }
+}
