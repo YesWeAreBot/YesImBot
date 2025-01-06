@@ -32,11 +32,13 @@
         "sharp": "^0.33.5"
     },
     "peerDependencies": {
-        "koishi": "^4.18.5"
+        "koishi": "^4.18.5",
+        "koishi-plugin-adapter-onebot": "^6.7.4"
     },
     "devDependencies": {
         "@koishijs/plugin-mock": "^2.6.6",
-        "koishi": "^4.18.5"
+        "koishi": "^4.18.5",
+        "koishi-plugin-adapter-onebot": "^6.7.4"
     },
     "exports": {
         ".": {

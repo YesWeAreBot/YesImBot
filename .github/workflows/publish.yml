@@ -26,7 +26,10 @@ jobs:
         run: yarn
 
       - name: Build
-        run: yarn build
+        run: |
+         yarn build core &&
+         yarn build memory &&
+         yarn build webui
 
       - name: Set npm token
         run: |
