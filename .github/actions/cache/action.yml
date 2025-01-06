@@ -1,0 +1,26 @@
+name: Yarn Cache
+author: Maiko Tan
+description: Cache Yarn dependencies
+
+inputs:
+  os:
+    description: |
+      The operating system to cache dependencies for. This should almost always be `runner.os`.
+    required: true
+    default: ${{ runner.os }}
+
+runs:
+  using: composite
+  steps:
+    - name: Get yarn cache directory path
+      id: yarn-cache-dir-path
+      shell: bash
+      run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
+
+    - uses: actions/cache@v3
+      id: yarn-cache
+      with:
+        path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+        key: ${{ inputs.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+        restore-keys: |
+          ${{ inputs.os }}-yarn-

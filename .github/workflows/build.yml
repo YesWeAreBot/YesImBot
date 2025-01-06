@@ -8,7 +8,23 @@ on:
 
 jobs:
   build:
-    uses: cordiverse/workflows/.github/workflows/build.yml@main
-    with:
-      lint: true
-      test: false
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn dependencies
+        uses: ./.github/actions/cache
+        with:
+          os: ${{ runner.os }}
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Lint JavaScript
+        run: yarn build
+
