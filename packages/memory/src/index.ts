@@ -24,7 +24,7 @@ class Memory extends Service {
   constructor(ctx: Context, config: Memory.Config) {
     super(ctx, "memory");
     this.vectorStore = new MemoryVectorStore(ctx);
-    this.embedder = getEmbedding(config.embedding);
+    this.embedder = getEmbedding({Enabled: true, ...config.embedding});
   }
 
   // 获取单个记忆条目

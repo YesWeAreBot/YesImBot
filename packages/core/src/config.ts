@@ -1,5 +1,5 @@
 import { Schema } from "koishi";
-import { Config as EmbeddingConfig } from "./embeddings/config";
+import { EmbeddingConfig } from "./embeddings/config";
 import { Config as AdapterConfig } from "./adapters/config";
 
 export interface Config {

@@ -2,6 +2,7 @@ import { BaseAdapter } from "../adapters/base";
 import { AssistantMessage, SystemMessage, UserMessage } from "../adapters/creators/component";
 import { Config } from "../config";
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
+import { EnabledEmbeddingConfig } from "../embeddings/config";
 import { getAdapter, getEmbedding } from "./factory";
 
 export class ResponseVerifier {
@@ -13,9 +14,10 @@ export class ResponseVerifier {
     this.config = config;
     if (this.config.Verifier.Method.Type === "Embedding") {
       if (this.config.Embedding.Enabled) {
-        this.client = getEmbedding(config.Embedding);
+        this.client = getEmbedding(config.Embedding as EnabledEmbeddingConfig);
       } else {
-        throw new Error("Embedding 模型未启用，请检查配置");
+        logger.error("Embedding 模型未启用，相似度验证已被禁用");
+        this.config.Verifier.Enabled = false;
       }
     } else {
       this.client = getAdapter(

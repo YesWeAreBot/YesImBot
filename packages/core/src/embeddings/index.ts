@@ -5,4 +5,4 @@ export { CustomEmbedding } from "./custom";
 export { OllamaEmbedding } from "./ollama";
 export { OpenAIEmbedding } from "./openai";
 
-export { Config as EmbeddingConfig } from "./config";
+export { EmbeddingConfig } from "./config";

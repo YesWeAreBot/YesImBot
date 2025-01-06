@@ -1,7 +1,7 @@
 import { CacheManager } from "../managers/cacheManager";
 import { sendRequest } from "../utils/http";
 import { EmbeddingBase } from "./base";
-import { Config } from "./config";
+import { EnabledEmbeddingConfig } from "./config";
 
 export class OllamaEmbedding extends EmbeddingBase {
   protected model: string;
@@ -9,7 +9,7 @@ export class OllamaEmbedding extends EmbeddingBase {
   private apiKey: string;
   private baseUrl: string;
 
-  constructor(config: Config, manager?: CacheManager<number[]>) {
+  constructor(config: EnabledEmbeddingConfig, manager?: CacheManager<number[]>) {
     super(config, manager);
 
     this.model = this.config.EmbeddingModel || "nomic-embed-text";

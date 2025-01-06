@@ -3,6 +3,7 @@ import { BaseAdapter } from "../adapters/base";
 import { LLM } from "../adapters/config";
 import { Config } from "../config";
 import { CustomEmbedding, OllamaEmbedding, OpenAIEmbedding } from "../embeddings";
+import { EnabledEmbeddingConfig } from "../embeddings/config";
 import { CacheManager } from "../managers/cacheManager";
 
 export function getAdapter(config: LLM, parameters?: Config["Parameters"]): BaseAdapter {
@@ -22,7 +23,7 @@ export function getAdapter(config: LLM, parameters?: Config["Parameters"]): Base
   }
 }
 
-export function getEmbedding(config: Config["Embedding"], manager?: CacheManager<number[]>) {
+export function getEmbedding(config: EnabledEmbeddingConfig, manager?: CacheManager<number[]>) {
   switch (config.APIType) {
     case "OpenAI":
       return new OpenAIEmbedding(config, manager);

@@ -14,9 +14,11 @@
     "scripts": {
         "clean": "yakumo clean",
         "build": "yakumo build",
+        "build:core": "yakumo build core",
         "bump": "yakumo version",
         "dep": "yakumo upgrade",
         "pub": "yakumo publish",
+        "pub:core": "yakumo publish core",
         "lint": "eslint --ext .ts --ext .tsx . && prettier --check .",
         "lint:fix": "eslint --ext .ts --ext .tsx . --fix && prettier --write .",
         "format": "prettier --write .",

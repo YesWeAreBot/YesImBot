@@ -1,10 +1,10 @@
 import { CacheManager } from "../managers/cacheManager";
-import { Config } from "./config";
+import { EnabledEmbeddingConfig } from "./config";
 
 export abstract class EmbeddingBase {
   protected readonly cache: CacheManager<number[]> | undefined;
 
-  constructor(protected config: Config, manager?: CacheManager<number[]>) {
+  constructor(protected config: EnabledEmbeddingConfig, manager?: CacheManager<number[]>) {
     this.cache = manager;
   }
 
