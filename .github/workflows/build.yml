@@ -26,5 +26,9 @@ jobs:
         run: yarn install
 
       - name: Lint JavaScript
-        run: yarn build
+        # 这里要按顺序执行
+        run: |
+         yarn build core &&
+         yarn build memory &&
+         yarn build webui
 

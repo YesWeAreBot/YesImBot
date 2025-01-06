@@ -16,7 +16,6 @@ export function initDatabase(ctx: Context) {
       senderNick: "string",
       messageId: "string",
       channelId: "string",
-      channelType: "integer",
       sendTime: "timestamp",
       content: "string",
       quoteMessageId: "string",
