@@ -216,16 +216,32 @@ ${coreMemory} -> 要附加给LLM的记忆
 - [ ] 读取文件
 - [x] 工具调用
 
+## 🚩 Build
+
+请务必按照此顺序依次构建每个模块，确保可以正确处理依赖关系。
+
+多次构建同一个模块会产生报错 `error TS5055: Cannot write file 'xxx' because it would overwrite input file.`，请先运行 `yarn clean` 后再次构建。
+
+```bash
+# Install dependencies
+yarn install
+
+# Build
+yarn build core # or yarn build:core
+yarn build memory
+yarn build webui
+```
+
 ## 💫 贡献者
 
 感谢贡献者们, 是你们让 Athena 成为可能。
 
 ![contributors](https://contrib.rocks/image?repo=HydroGest/YesImBot)
 
-## 💡反馈
+## 💡 反馈
 
 欢迎发布 issue，或是直接加入 Athena 官方交流 & 测试群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)，我们随时欢迎你的来访！
 
-## ⭐Star History
+## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Hydrogest/Yesimbot&type=Date)](https://star-history.com/#Hydrogest/Yesimbot&Date)
