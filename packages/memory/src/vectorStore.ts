@@ -1,15 +1,27 @@
 import path from "path";
 import { randomUUID } from "crypto";
 import { Context } from "koishi";
+import { defineAccessor } from "@satorijs/core";
 
 import { CacheManager } from "koishi-plugin-yesimbot";
 import { calculateCosineSimilarity } from "koishi-plugin-yesimbot/embeddings";
 import { MemoryItem } from "./model";
 
-export interface Metadata {
+export interface MemoryMetadata {
   content: string;
   topic: string;
   keywords: string[];
+
+  type: "核心记忆" | "用户记忆" | "群成员记忆" | "通用知识";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+
+export interface  MemoryVectorStore {
+  get(id: string): MemoryItem;
+  delete(id: string): boolean;
+  clear(): void;
 }
 
 export class MemoryVectorStore {
@@ -26,42 +38,40 @@ export class MemoryVectorStore {
 
   getAll(): MemoryItem[] {
     let vectors = this.store.values();
-    return vectors;
+    return Array.from(vectors);
   }
 
-  delete(id: string) {
-    return this.store.remove(id);
+  find(filter: (metadata: MemoryMetadata) => boolean): MemoryItem {
+    return this.getAll().find(filter);
   }
 
-  update(id: string, embedding: number[], metadata: Metadata) {
-    if (!this.store.has(id)) {
-      return;
-    }
+  update(id: string, embedding: number[], metadata: MemoryMetadata): void {
+    if (!this.store.has(id)) return;
 
-    let oldVector = this.store.get(id);
+    const oldVector = this.store.get(id);
+    if (!oldVector) return;
 
-    oldVector.embedding = embedding;
-    oldVector.magnitude = getMagnitude(embedding);
-    oldVector.content = metadata.content;
-    oldVector.topic = metadata.topic || oldVector.topic;
-    oldVector.keywords = metadata.keywords || oldVector.keywords;
-    this.store.set(id, oldVector);
-  }
+    const updatedVector: MemoryItem = {
+      ...oldVector,
+      embedding,
+      magnitude: getMagnitude(embedding),
+      content: metadata.content,
+      topic: metadata.topic || oldVector.topic,
+      keywords: metadata.keywords || oldVector.keywords,
+      type: metadata.type || oldVector.type,
+      updatedAt: new Date(),
+    };
 
-  clear() {
-    this.store.clear();
-    this.store.commit();
+    this.store.set(id, updatedVector);
   }
 
   /**
-   * 将向量库持久化
-   * 保存本地或者提交到数据库
+   *
+   * @param embedding
+   * @param metadata
+   * @returns memoryId
    */
-  commit() {
-    this.store.commit();
-  }
-
-  async addVector(embedding: number[], metadata: Metadata): Promise<string> {
+  async addVector(embedding: number[], metadata: MemoryMetadata): Promise<string> {
     const id = randomUUID();
     this.store.set(id, {
       id,
@@ -73,7 +83,7 @@ export class MemoryVectorStore {
     return id;
   }
 
-  async addVectors(embeddings: number[][], metadatas: Metadata[]): Promise<void> {
+  async addVectors(embeddings: number[][], metadatas: MemoryMetadata[]): Promise<void> {
     embeddings.forEach((embedding, index) => {
       const id = randomUUID();
       this.store.set(id, {
@@ -86,8 +96,8 @@ export class MemoryVectorStore {
     });
   }
 
-  filterVectors(filter: (metadata: Metadata) => boolean): MemoryItem[] {
-    return this.store.values().filter(filter);
+  filter(filter: (metadata: MemoryMetadata) => boolean): MemoryItem[] {
+    return this.getAll().filter(filter);
   }
 
   /**
@@ -104,7 +114,7 @@ export class MemoryVectorStore {
    *          vector and the second element is the similarity score. The array is
    *          sorted in descending order of similarity score.
    */
-  async similaritySearchVectorWithScore(query: number[], k: number, filter?: (metadata: Metadata) => boolean): Promise<[MemoryItem, number][]> {
+  async similaritySearchVectorWithScore(query: number[], k: number, filter?: (metadata: MemoryMetadata) => boolean): Promise<[MemoryItem, number][]> {
     const magnitude = getMagnitude(query);
     let results: [MemoryItem, number][] = [];
 
@@ -125,6 +135,10 @@ export class MemoryVectorStore {
     return results.map((result) => result[0]);
   }
 }
+
+defineAccessor(MemoryVectorStore.prototype, "get", ["store", "get"]);
+defineAccessor(MemoryVectorStore.prototype, "clear", ["store", "clear"]);
+defineAccessor(MemoryVectorStore.prototype, "delete", ["store", "delete"]);
 
 /**
  * 获取向量的模

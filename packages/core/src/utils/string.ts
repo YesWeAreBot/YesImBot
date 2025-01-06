@@ -139,9 +139,32 @@ export function parseJSON(text: string) {
     try {
       return JSON.parse(match[0]);
     } catch (e) {
-      return null;
+      logger.warn("Error decoding faulty json, attempting repair")
+      return repairJSON(text);
     }
   }
+}
+
+export function repairJSON(text: string) {
+  text = text.replace(/,”/g, ',"')
+    .replace(/, ”/g, ', "')
+    .replace(/“/g, '"')
+
+    .replace(/\{\{/g, "{")
+    .replace(/\}\}/g, "}")
+    .replace(/\\\\/, " ")
+    .replace(/\\\n/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\r/, "")
+    .replace(/,[\s\n]\}/g, "}")
+    .trim();
+
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      logger.warn("Error decoding faulty json. " + e.message)
+      throw e;
+    }
 }
 
 export function formatSize(size: number): string {

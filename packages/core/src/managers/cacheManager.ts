@@ -4,7 +4,7 @@ import zlib from "zlib";
 
 import { Context } from "koishi";
 
-export class CacheManager<T> {
+export class CacheManager<T> implements Map<string, T> {
   private ctx = new Context();
   private cache: Map<string, T>; // 内存缓存
   private isDirty: boolean; // 标记是否有需要保存的数据
@@ -123,24 +123,34 @@ export class CacheManager<T> {
     }
   }
 
+  get size(): number {
+    return this.cache.size;
+  }
+
+  [Symbol.iterator](): MapIterator<[string, T]> {
+    return this.cache[Symbol.iterator]();
+  }
+
+  [Symbol.toStringTag]: string;
+
   public has(key: string): boolean {
     return this.cache.has(key);
   }
 
-  public keys(): string[] {
-    return Array.from(this.cache.keys());
+  public keys(): MapIterator<string> {
+    return this.cache.keys();
   }
 
-  public values(): T[] {
-    return Array.from(this.cache.values());
+  public values(): MapIterator<T> {
+    return this.cache.values();
   }
 
-  public entries(): [string, T][] {
-    return Array.from(this.cache.entries());
+  public entries():  MapIterator<[string, T]> {
+    return this.cache.entries();
   }
 
   // 添加数据到缓存
-  public set(key: string, value: T): void {
+  public set(key: string, value: T): this {
     this.cache.set(key, value);
     if (this.saveImmediately) {
       this.saveCache();
@@ -148,6 +158,7 @@ export class CacheManager<T> {
       this.isDirty = true;
       this.throttledCommit?.();
     }
+    return this;
   }
 
   // 从缓存中获取数据
@@ -155,15 +166,17 @@ export class CacheManager<T> {
     return this.cache.get(key);
   }
 
-  // 移除缓存中的数据
-  public remove(key: string): void {
-    this.cache.delete(key);
-    if (this.saveImmediately) {
-      this.saveCache();
-    } else {
-      this.isDirty = true;
-      this.throttledCommit?.();
+  public delete(key: string): boolean {
+    const deleted = this.cache.delete(key);
+    if (deleted) {
+      if (this.saveImmediately) {
+        this.saveCache();
+      } else {
+        this.isDirty = true;
+        this.throttledCommit?.();
+      }
     }
+    return deleted;
   }
 
   // 清空缓存
@@ -175,6 +188,10 @@ export class CacheManager<T> {
       this.isDirty = true;
       this.throttledCommit?.();
     }
+  }
+
+  forEach(callbackfn: (value: T, key: string, map: Map<string, T>) => void, thisArg?: any): void {
+    this.cache.forEach(callbackfn, thisArg);
   }
 
   // 统一提交缓存到文件

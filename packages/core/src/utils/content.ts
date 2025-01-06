@@ -1,7 +1,7 @@
 import { h, Session } from 'koishi';
 
 import { Config } from '../config';
-import { ChannelType, ChatMessage } from '../models/ChatMessage';
+import { ChatMessage, getChannelType } from '../models/ChatMessage';
 import { isEmpty, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
 import { ImageViewer } from '../services/imageViewer';
@@ -23,7 +23,7 @@ export async function processContent(config: Config, session: Session, messages:
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
-    if (!isEmpty(chatMessage.raw) || chatMessage.senderId === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
+    if (chatMessage.senderId === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage);
       }
@@ -101,19 +101,20 @@ export async function processContent(config: Config, session: Session, messages:
       }
     }
 
-
+    let channelType = getChannelType(chatMessage.channelId);
+    let channelInfo = channelType === "guild" ? `guild:${chatMessage.channelId}` : `${chatMessage.channelId}`;
     let messageText = new Template(template, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g).render({
       messageId: chatMessage.messageId,
       date: timeString,
-      channelType: chatMessage.channelType,
-      channelInfo: (chatMessage.channelType === ChannelType.Guild) ? `from_guild:${chatMessage.channelId}` : `${ chatMessage.channelType === ChannelType.Private ? "from_private" : "from_sandbox" }`,
+      channelType,
+      channelInfo,
       channelId: chatMessage.channelId,
       senderName,
       senderId: chatMessage.senderId,
       userContent: userContent.join(""),
       quoteMessageId: chatMessage.quoteMessageId || "",
       hasQuote: !!chatMessage.quoteMessageId,
-      isPrivate: chatMessage.channelType === ChannelType.Private,
+      isPrivate: channelType === "private",
     });
 
     if (chatMessage.senderId === session.bot.selfId) {
@@ -213,23 +214,22 @@ async function processContentWithVisionAbility(config: Config, session: Session,
         default:
       }
     }
-    // [messageId][{date} from_guild:{channelId}] {senderName}<{senderId}> 说: {userContent}
-    // [messageId][{date} from_guild:{channelId}] {senderName}<{senderId}> 回复({quoteMessageId}): {userContent}
-    // [messageId][{date} from_private] {senderName}<{senderId}> 说: {userContent}
-    // [messageId][{date} from_private] {senderName}<{senderId}> 回复({quoteMessageId}): {userContent}
+    let channelType = getChannelType(chatMessage.channelId);
+    let channelInfo = channelType === "guild" ? `guild:${chatMessage.channelId}` : `${chatMessage.channelId}`;
     let messageText = new Template(template, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g).render({
       messageId: chatMessage.messageId,
       date: timeString,
-      channelType: chatMessage.channelType,
-      channelInfo: (chatMessage.channelType === ChannelType.Guild) ? `from_guild:${chatMessage.channelId}` : `${ chatMessage.channelType === ChannelType.Private ? "from_private" : "from_sandbox" }`,
+      channelType,
+      channelInfo,
       channelId: chatMessage.channelId,
       senderName,
       senderId: chatMessage.senderId,
       userContent: "{{userContent}}",
       quoteMessageId: chatMessage.quoteMessageId || "",
       hasQuote: !!chatMessage.quoteMessageId,
-      isPrivate: chatMessage.channelType === ChannelType.Private,
+      isPrivate: channelType === "private",
     });
+
     const parts = messageText.split(/({{userContent}})/);
     components = parts.flatMap(part => {
       if (part === '{{userContent}}') {

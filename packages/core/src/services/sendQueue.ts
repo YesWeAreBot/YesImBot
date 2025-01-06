@@ -98,7 +98,6 @@ export class SendQueue {
       senderName: null,
       senderNick: null,
       channelId: session.channelId,
-      channelType: null,
       sendTime: new Date(),
       content: null,
       messageId: randomString(16),

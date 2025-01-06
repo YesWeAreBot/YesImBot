@@ -2,12 +2,6 @@ import { Session } from "koishi";
 
 import {} from "koishi-plugin-adapter-onebot";
 
-export enum ChannelType {
-  Guild,
-  Private,
-  Sandbox
-}
-
 export interface ChatMessage {
     senderId: string;    // 发送者平台 ID
     senderName: string;  // 发送者原始昵称
@@ -16,7 +10,6 @@ export interface ChatMessage {
     messageId: string;   // 消息 ID
 
     channelId: string;   // 消息来源 ID
-    channelType: ChannelType; // 消息类型
 
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
@@ -27,9 +20,9 @@ export interface ChatMessage {
 }
 
 export async function createMessage(session: Session, content?: string): Promise<ChatMessage> {
-    const channelType = session.channelId.startsWith("private:") ? ChannelType.Private : (session.channelId === "#" ? ChannelType.Sandbox : ChannelType.Guild);
+    const channelType = getChannelType(session.channelId);
     let senderNick = session.author.name;
-    if (channelType === ChannelType.Guild) {
+    if (channelType === "guild") {
         if (session.onebot) {
             const memberInfo = await session.onebot.getGroupMemberInfo(session.channelId, session.userId);
             senderNick = memberInfo.card || memberInfo.nickname;
@@ -41,9 +34,18 @@ export async function createMessage(session: Session, content?: string): Promise
         senderNick,
         messageId: session.messageId,
         channelId: session.channelId,
-        channelType,
         sendTime: new Date(session.event.timestamp),
         content: session.content || content,
         quoteMessageId: session.quote?.id
     };
+}
+
+export function getChannelType(channelId: string): "private" | "guild" | "sandbox" {
+    if (channelId.startsWith("private:")) {
+        return "private";
+    } else if (channelId === "#") {
+        return "sandbox";
+    } else {
+        return "guild";
+    }
 }

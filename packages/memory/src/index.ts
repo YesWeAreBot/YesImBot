@@ -1,10 +1,9 @@
 import { Context, Schema, Service } from "koishi";
-import { EmbeddingBase } from "koishi-plugin-yesimbot/embeddings";
+import { EmbeddingBase, calculateCosineSimilarity } from "koishi-plugin-yesimbot/embeddings";
 import { getEmbedding } from "koishi-plugin-yesimbot/utils";
 import { EmbeddingConfig } from "./config";
-import { initDatabase } from "./database";
-import { GroupActivity, GuildMemory, MemoryItem, UserMemory } from "./model";
-import { MemoryVectorStore, Metadata } from "./vectorStore";
+import { MemoryItem } from "./model";
+import { MemoryMetadata, MemoryVectorStore } from "./vectorStore";
 
 declare module "koishi" {
   interface Context {
@@ -24,13 +23,12 @@ class Memory extends Service {
 
   constructor(ctx: Context, config: Memory.Config) {
     super(ctx, "memory");
-    initDatabase(ctx);
     this.vectorStore = new MemoryVectorStore(ctx);
     this.embedder = getEmbedding(config.embedding);
   }
 
   // 获取单个记忆条目
-  get(memoryId: string): Metadata {
+  get(memoryId: string): MemoryItem {
     return this.vectorStore.get(memoryId);
   }
 
@@ -49,80 +47,91 @@ class Memory extends Service {
     this.vectorStore.clear();
   }
 
-  async update(memoryId: string, content: string, topic?: string, keywords?: string[]): Promise<void> {
-    const embedding = await this.embedder.embed(content);
+  async searchMemory(
+    context: string,
+    options: { type?: "核心记忆" | "用户记忆" | "群成员记忆" | "通用知识", topic?: string; keywords?: string[]; limit?: number }
+  ): Promise<MemoryItem[]> {
+    const contextEmbedding = await this.embedder.embed(context);
 
-    if (!topic || !keywords) {
-      // TODO: 通过文本内容推断 topic 和 keywords（调用 LLM 或语义匹配）
-    }
-
-    this.vectorStore.update(memoryId, embedding, {
-      content: content,
-      topic: topic,
-      keywords: keywords,
-    });
-  }
-
-  // 添加一条新的记忆
-  async addMemory(content: string, topic: string, keywords: string[]): Promise<string> {
-    const embedding = await this.embedder.embed(content);
-
-    const memoryId = await this.vectorStore.addVector(embedding, {
-      content: content,
-      topic: topic,
-      keywords: keywords,
+    // 1. 主题与关键词过滤
+    let filteredMemory = this.vectorStore.filter(item => {
+      const topicMatch = options.topic ? item.topic === options.topic : true;
+      const keywordMatch = options.keywords
+        ? options.keywords.some(keyword => item.keywords.includes(keyword))
+        : true;
+      return topicMatch && keywordMatch;
     });
 
-    return memoryId;
+    // 2. 语义相似度计算
+    const scoredMemory = filteredMemory.map(item => {
+      const similarity = calculateCosineSimilarity(contextEmbedding, item.embedding);
+      return { ...item, similarity };
+    });
+
+    // 3. 排序并限制结果数
+    const sortedMemory = scoredMemory
+      .sort((a, b) => b.similarity - a.similarity) // 按相似度降序排序
+      .slice(0, options.limit || 5); // 限制返回结果数
+
+    return sortedMemory;
   }
 
-  async addUserMemory(userId: string, guildId: string, content: string, role: string): Promise<void> {
+  async addCoreMemory(content: string) {
     const embedding = await this.embedder.embed(content);
-
-    const { topic, keywords } = await this.extractTopicAndKeywords(content);
-
-    await this.vectorStore.addVector(embedding, {
+    const metadata: MemoryMetadata = {
       content,
-      topic,
-      keywords: [...keywords, `user:${userId}`, `guild:${guildId}`], // 将用户和群聊的ID作为关键词
-    });
-
-    await this.updateUserMemory(userId, guildId, content, role);
-    await this.updateGuildMemory(guildId, content, role);
+      topic: "核心记忆",
+      keywords: [],
+      type: "核心记忆",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    return this.vectorStore.addVector(embedding, metadata);
   }
 
-  private async updateUserMemory(userId: string, guildId: string, content: string, role: string): Promise<void> {
-    let result = this.getUserMemory(userId);
-
-
-  }
-
-  private async updateGuildMemory(guildId: string, content: string, role: string): Promise<void> {
-
-  }
-
-  private async getUserMemory(userId: string): Promise<UserMemory | undefined> {
-    let result = await this.ctx.model.get("yesimbot.memory.user", { userId });
-
-    if (result.length > 0) {
-      return result[0];
+  async updateCoreMemoryByContent(oldContent: string, newContent: string) {
+    const memory = this.vectorStore.find(item => item.content === oldContent);
+    if (memory) {
+      const embedding = await this.embedder.embed(newContent);
+      const metadata: MemoryMetadata = {
+        content: newContent,
+        topic: memory.topic,
+        keywords: memory.keywords,
+        type: memory.type,
+        createdAt: memory.createdAt,
+        updatedAt: new Date(),
+      };
+      this.vectorStore.update(memory.id, embedding, metadata);
     }
   }
 
-  // 获取群聊记忆（示例）
-  private async getGuildMemory(guildId: string): Promise<GuildMemory | undefined> {
-    let result = await this.ctx.model.get("yesimbot.memory.guild", { guildId });
-
-    if (result.length > 0) {
-      return result[0];
+  async updateCoreMemoryById(memoryId: string, newContent: string) {
+    const memory = this.vectorStore.get(memoryId);
+    if (memory) {
+      const embedding = await this.embedder.embed(newContent);
+      const metadata: MemoryMetadata = {
+        content: newContent,
+        topic: memory.topic,
+        keywords: memory.keywords,
+        type: memory.type,
+        createdAt: memory.createdAt,
+        updatedAt: new Date(),
+      };
+      this.vectorStore.update(memory.id, embedding, metadata);
     }
   }
 
-  // 提取 Topic 和 Keywords
-  private async extractTopicAndKeywords(text: string): Promise<{ topic: string; keywords: string[] }> {
-    const topic = "群聊讨论"; // 模拟提取话题
-    const keywords = ["讨论", "游戏", "技术"]; // 模拟提取关键词
-    return { topic, keywords };
+  async addUserMemory(content: string, userId: string) {
+    const embedding = await this.embedder.embed(content);
+    const metadata: MemoryMetadata = {
+      content,
+      topic: "user",
+      keywords: [`User:${userId}`],
+      type: "用户记忆",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await this.vectorStore.addVector(embedding, metadata)
   }
 }
 

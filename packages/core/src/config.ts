@@ -472,7 +472,7 @@ export const Config: Schema<Config> = Schema.object({
     MultiTurnFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("CUSTOM").description("自定义格式"),
-    ]).default("CUSTOM").description("开启多轮对话时，期待LLM回复的格式。选择自定义格式时，将无法使用某些功能")
+    ]).default("CUSTOM").description("开启多轮对话时，传递给LLM的消息格式。")
   }).description("插件设置"),
 
   Debug: Schema.object({

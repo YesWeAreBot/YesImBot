@@ -10,7 +10,7 @@ import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./ex
 import { EmojiManager } from "./managers/emojiManager";
 import { ImageViewer } from "./services/imageViewer";
 import { getEmbedding } from "./utils/factory";
-import { escapeUnicodeCharacters, isEmpty, isNotEmpty, Template } from "./utils/string";
+import { escapeUnicodeCharacters, isEmpty, isNotEmpty, parseJSON, Template } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
 
 export interface Function {
@@ -183,17 +183,13 @@ export class Bot {
       this.prompt += functionPrompt + `${isEmpty(str) ? "No functions available." : str}`;
     }
 
-    const response = await adapter.chat([SystemMessage(this.prompt), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
+    const response = await adapter.chat([SystemMessage(this.prompt), AssistantMessage("Resolve OK"), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
     let content = response.message.content;
     if (debug) logger.info(`Adapter: ${current}, Response: \n${content}`);
 
     if (adapter.ability.includes("原生工具调用")) {
       const toolResponse = await this.handleToolCalls(response.message.tool_calls || [], debug);
       if (toolResponse) return toolResponse;
-    }
-
-    if (this.config.Settings.MultiTurn && this.config.Settings.MultiTurnFormat === "CUSTOM") {
-      return this.handleCustomMultiTurnResponse(content, response, current, debug);
     }
 
     return this.handleJsonResponse(content, response, current, debug);
@@ -242,49 +238,6 @@ export class Bot {
     return null;
   }
 
-  private async handleCustomMultiTurnResponse(content: string, response: any, current: number, debug: boolean): Promise<Response> {
-    this.addContext(AssistantMessage(TextComponent(content)));
-    const result = this.template.unrender(content);
-    const channelIdfromChannelInfo = result.channelInfo?.includes(':') ? result.channelInfo.split(':')[1] : '';
-    const channelId = result.channelId || channelIdfromChannelInfo;
-
-    if (result.userContent === undefined || !channelId) {
-      return {
-        status: "fail",
-        raw: content,
-        usage: response.usage,
-        reason: "解析失败",
-        adapterIndex: current,
-      };
-    } else {
-      const finalResponse = result.userContent.trim();
-      if (finalResponse === "") {
-        return {
-          status: "skip",
-          raw: content,
-          nextTriggerCount: Random.int(this.minTriggerCount, this.maxTriggerCount + 1),
-          logic: "",
-          usage: response.usage,
-          functions: [],
-          adapterIndex: current,
-        };
-      } else {
-        return {
-          status: "success",
-          raw: content,
-          finalReply: await this.unparseFaceMessage(finalResponse),
-          replyTo: channelId,
-          quote: result.quoteMessageId || "",
-          nextTriggerCount: Random.int(this.minTriggerCount, this.maxTriggerCount + 1),
-          logic: "",
-          functions: [],
-          usage: response.usage,
-          adapterIndex: current,
-        };
-      }
-    }
-  }
-
   private async handleJsonResponse(content: string, response: any, current: number, debug: boolean): Promise<Response> {
     if (typeof content !== "string") {
       content = JSON.stringify(content, null, 2);
@@ -295,7 +248,7 @@ export class Bot {
 
     if (jsonMatch) {
       try {
-        LLMResponse = JSON.parse(escapeUnicodeCharacters(jsonMatch[0]));
+        LLMResponse = parseJSON(escapeUnicodeCharacters(jsonMatch[0]));
         this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
       } catch (e) {
         const reason = `JSON 解析失败。请上报此消息给开发者: ${e.message}`;
@@ -335,7 +288,7 @@ export class Bot {
       }
 
       if (isEmpty(finalResponse)) {
-        const reason = `回复为空: ${content}`;
+        const reason = `回复内容为空`;
         if (debug) logger.warn(reason);
         return {
           status: "fail",

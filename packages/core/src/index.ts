@@ -10,7 +10,7 @@ import { outputSchema } from "./adapters/creators/schema";
 import { initDatabase } from "./database";
 import { processContent, processText } from "./utils/content";
 import { foldText, isEmpty } from "./utils/string";
-import { ChannelType, createMessage } from "./models/ChatMessage";
+import { createMessage } from "./models/ChatMessage";
 import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
 import { apply as applyMemoryCommands } from "./commands/memory";
@@ -269,13 +269,14 @@ export function apply(ctx: Context, config: Config) {
         const { reason } = chatResponse as FailedResponse;
         template = `
 LLM 的响应无法正确解析，来自 API ${current}
-${reason}
-原始响应:
-${raw}
+---
+原因: ${reason}
+原始响应: ${raw}
 ---
 消耗: 输入 ${usage?.prompt_tokens}, 输出 ${usage?.completion_tokens}`;
 
-        ctx.logger.error(`LLM provides unexpected response:\n${raw}`);
+        ctx.logger.error(`LLM 的响应无法正确解析: ${raw}`);
+        if (config.Debug.DebugAsInfo) ctx.logger.info(template);
         return false;
       } else if (status === "skip") {
         const { nextTriggerCount, logic, functions } = chatResponse as SkipResponse;
@@ -368,7 +369,6 @@ ${botName}想要跳过此次回复，来自 API ${current}
           senderNick: botName,
           messageId: messageIds[0],
           channelId: replyTo,
-          channelType: replyTo.startsWith("private:") ? ChannelType.Private : (replyTo === "#" ? ChannelType.Sandbox : ChannelType.Guild),
           sendTime: new Date(),
           content: finalReply,
           quoteMessageId: quote,
