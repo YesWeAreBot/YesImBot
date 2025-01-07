@@ -15,6 +15,7 @@
         "clean": "yakumo clean",
         "build": "yakumo build",
         "build:core": "yakumo build core",
+        "build:all": "yarn clean && yakumo build core && yakumo build memory && yakumo build webui",
         "bump": "yakumo version",
         "dep": "yakumo upgrade",
         "pub": "yakumo publish",

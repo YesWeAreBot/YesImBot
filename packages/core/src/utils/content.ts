@@ -2,7 +2,7 @@ import { h, Session } from 'koishi';
 
 import { Config } from '../config';
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
-import { isEmpty, Template } from './string';
+import { isEmpty, parseJSON, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
 import { ImageViewer } from '../services/imageViewer';
 import { convertUrltoBase64 } from "../utils/imageUtils";
@@ -27,6 +27,18 @@ export async function processContent(config: Config, session: Session, messages:
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage);
       }
+      try {
+        let raw = parseJSON(chatMessage.raw);
+        let excludeKeys = ["nextReplyIn", "reply", "check"];
+        for (let key of excludeKeys) {
+          delete raw[key];
+        }
+
+        chatMessage.raw = JSON.stringify(raw);
+      } catch (e) {
+
+      }
+
       // TODO: role === tool
       processedMessage.push(AssistantMessage(chatMessage.raw));
       continue;
@@ -289,7 +301,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
 export function processText(splitRule: Config["Bot"]["BotReplySpiltRegex"], replaceRules: Config["Bot"]["BotSentencePostProcess"], text: string): string[] {
   const replacements = replaceRules.map(item => ({
     regex: new RegExp(item.replacethis, 'g'),
-    replacement: item.tothis
+    replacement: item.tothis || "",
   }));
   let quoteMessageId;
   let splitRegex = new RegExp(splitRule);

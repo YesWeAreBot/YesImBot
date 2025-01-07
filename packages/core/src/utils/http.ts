@@ -25,7 +25,7 @@ export async function sendRequest<T = any>(url: string, APIKey: string, requestB
       return result;
     } catch (error) {
       if (error.response) {
-        throw new Error(`请求失败: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        throw new Error(`API 请求失败: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
       }
       throw error;
     }

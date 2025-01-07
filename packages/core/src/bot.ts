@@ -180,7 +180,7 @@ export class Bot {
       let str = Object.values(this.extensions)
         .map((extension) => getFunctionPrompt(extension))
         .join("\n");
-      this.prompt += functionPrompt + `${isEmpty(str) ? "No functions available." : str}`;
+        this.prompt = this.prompt.replace("{{functionPrompt}}", functionPrompt + `${isEmpty(str) ? "No functions available." : str}`);
     }
 
     const response = await adapter.chat([SystemMessage(this.prompt), AssistantMessage("Resolve OK"), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
@@ -200,6 +200,10 @@ export class Bot {
   // TODO: 指定最大调用深度
   // TODO: 上报函数调用信息
   private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<Response | null> {
+    if (debug) {
+      logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
+      logger.info(toolCalls.map(toolCall => `Name: ${toolCall.function.name}\nArgs: ${JSON.stringify(toolCall.function.arguments)})}`).join('\n'));
+    }
     let returns: ToolMessage[] = [];
     for (let toolCall of toolCalls) {
       try {
@@ -221,6 +225,10 @@ export class Bot {
     }
     const Failed = (func: string,  message: string) => {
       return ToolMessage(JSON.stringify({ function: func, status: "failed", reason: message }), null);
+    }
+    if (debug) {
+      logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
+      logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)})}`).join('\n'));
     }
     let returns: Message[] = [];
     for (const func of functions) {
@@ -376,6 +384,12 @@ export class Bot {
 
     // @ts-ignore
     return await func(...args);
+  }
+
+  getMemory(selfId: string) {
+    // @ts-ignore
+    if (this.ctx.memory) return this.ctx.memory.MEMORY_PROMPT
+    return "";
   }
 
 //   async getCoreMemory(selfId: string): Promise<string> {

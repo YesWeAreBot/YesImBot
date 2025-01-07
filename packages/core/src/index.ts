@@ -250,8 +250,10 @@ export function apply(ctx: Context, config: Config) {
             BotName: botName,
             BotSelfId: session.bot.selfId,
             outputSchema,
+            functionPrompt: "{{functionPrompt}}",
             // 记忆模块还未完成，等完成后取消注释
             // coreMemory: await bot.getCoreMemory(session.selfId),
+            memory: await bot.getMemory(session.selfId),
           }
         )
       );
@@ -275,8 +277,8 @@ LLM 的响应无法正确解析，来自 API ${current}
 ---
 消耗: 输入 ${usage?.prompt_tokens}, 输出 ${usage?.completion_tokens}`;
 
-        ctx.logger.error(`LLM 的响应无法正确解析: ${raw}`);
-        if (config.Debug.DebugAsInfo) ctx.logger.info(template);
+        ctx.logger.error(`LLM 的响应无法正确解析。如果经常出现此问题，请开启DebugAsInfo并上报下一条消息给开发者。原始响应: ${raw}`);
+        if (config.Debug.DebugAsInfo) ctx.logger.info(reason);
         return false;
       } else if (status === "skip") {
         const { nextTriggerCount, logic, functions } = chatResponse as SkipResponse;

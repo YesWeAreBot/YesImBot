@@ -5,14 +5,14 @@ import { defineAccessor } from "@satorijs/core";
 
 import { CacheManager } from "koishi-plugin-yesimbot";
 import { calculateCosineSimilarity } from "koishi-plugin-yesimbot/embeddings";
-import { MemoryItem } from "./model";
+import { MemoryItem, MemoryType } from "./model";
 
 export interface MemoryMetadata {
   content: string;
   topic: string;
   keywords: string[];
 
-  type: "核心记忆" | "用户记忆" | "群成员记忆" | "通用知识";
+  type: MemoryType;
   createdAt: Date;
   updatedAt: Date;
 }

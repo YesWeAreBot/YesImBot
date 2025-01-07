@@ -20,10 +20,14 @@ export abstract class EmbeddingBase {
     if (this.cache && this.cache.has(text)) {
       return this.cache.get(text);
     } else {
-      let result = await this._embed(text);
-      if (toFixed) result = result.map(x => Number(x.toFixed(toFixed)));
-      this.cache?.set(text, result);
-      return result;
+      try {
+        let result = await this._embed(text);
+        if (toFixed) result = result.map(x => Number(x.toFixed(toFixed)));
+        this.cache?.set(text, result);
+        return result;
+      } catch (error) {
+        throw new Error(`获取文本向量失败`);
+      }
     }
   }
 }
