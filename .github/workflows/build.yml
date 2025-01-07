@@ -11,24 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Cache Yarn dependencies
-        uses: ./.github/actions/cache
-        with:
-          os: ${{ runner.os }}
-
-      - name: Install dependencies
-        run: yarn install
+      - name: Setup
+        uses: cordiverse/workflows/.github/actions/setup@main
 
       - name: Lint JavaScript
-        # 这里要按顺序执行
-        run: |
-         yarn build core &&
-         yarn build memory &&
-         yarn build webui
+        run: yarn build:all
 
