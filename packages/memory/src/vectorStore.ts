@@ -4,7 +4,7 @@ import { Context } from "koishi";
 import { defineAccessor } from "@satorijs/core";
 
 import { CacheManager } from "koishi-plugin-yesimbot";
-import { calculateCosineSimilarity } from "koishi-plugin-yesimbot/embeddings";
+import { calculateCosineSimilarity } from "koishi-plugin-yesimbot";
 import { MemoryItem, MemoryType } from "./model";
 
 export interface MemoryMetadata {
@@ -17,19 +17,20 @@ export interface MemoryMetadata {
   updatedAt: Date;
 }
 
-
-export interface  MemoryVectorStore {
-  get(id: string): MemoryItem;
-  delete(id: string): boolean;
-  clear(): void;
-}
-
 export class MemoryVectorStore {
   readonly store: CacheManager<MemoryItem>;
 
   constructor(private ctx: Context) {
     const vectorsFilePath = path.join(ctx.baseDir, "data/yesimbot/.vector_cache/memory.bin");
     this.store = new CacheManager(vectorsFilePath, true);
+  }
+
+  delete(id: string): boolean {
+    return this.store.delete(id);
+  }
+
+  clear(): void {
+    this.store.clear();
   }
 
   get(id: string): MemoryItem | undefined {
@@ -135,10 +136,6 @@ export class MemoryVectorStore {
     return results.map((result) => result[0]);
   }
 }
-
-defineAccessor(MemoryVectorStore.prototype, "get", ["store", "get"]);
-defineAccessor(MemoryVectorStore.prototype, "clear", ["store", "clear"]);
-defineAccessor(MemoryVectorStore.prototype, "delete", ["store", "delete"]);
 
 /**
  * 获取向量的模

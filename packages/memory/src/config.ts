@@ -28,8 +28,7 @@ export const EmbeddingConfig: Schema<EmbeddingConfig> = Schema.intersect([
       .default(300)
       .experimental()
       .description("文本分词长度"),
-
-  }),
+  }).description("Embedding API 配置"),
   Schema.union([
     Schema.object({
       APIType: Schema.const("OpenAI"),
@@ -58,12 +57,3 @@ export const EmbeddingConfig: Schema<EmbeddingConfig> = Schema.intersect([
     }),
   ])
 ])
-
-
-export interface Config {
-  embedding: EmbeddingConfig;
-}
-
-export const Config: Schema<Config> = Schema.object({
-  embedding: EmbeddingConfig,
-});

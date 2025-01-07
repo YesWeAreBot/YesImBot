@@ -5,9 +5,11 @@ import { Description, Extension, Name, Param } from "./base";
 @Name("addCoreMemory")
 @Description("Append to the contents of core memory.")
 @Param("content", SchemaNode.String("Content to write to the memory. All unicode (including emojis) are supported."))
+@Param("topic", SchemaNode.String("The topic of the memory.", ""))
+@Param("keywords", SchemaNode.Array("The keywords of the memory.", ""))
 export class AddCoreMemory extends Extension {
-  async apply(content: string) {
-    return await this.ctx.memory.addCoreMemory(content);
+  async apply(content: string, topic?: string, keywords?: string[]) {
+    return await this.ctx.memory.addCoreMemory(content, topic, keywords);
   }
 }
 

@@ -52,12 +52,7 @@ export interface FailedResponse {
 type Response = SuccessResponse | SkipResponse | FailedResponse;
 
 export class Bot {
-  private memorySize: number;
-
-  private summarySize: number;         // 上下文达到多少时进行总结
   private contextSize: number = 20;    // 以对话形式给出的上下文长度
-  private retainedContextSize: number; // 进行总结时保留的上下文长度，用于保持记忆连贯性
-  private maxSelfMemoryCharacters: 5000; //
 
   private minTriggerCount: number;
   private maxTriggerCount: number;
@@ -69,10 +64,8 @@ export class Bot {
   private template: Template;
   private extensions: { [key: string]: Extension & Function } = {};
   private toolsSchema: ToolSchema[] = [];
-  private lastModified: Date = new Date();
 
   private emojiManager: EmojiManager;
-  private embedder: EmbeddingBase;
   readonly verifier: ResponseVerifier;
   readonly imageViewer: ImageViewer;
 
@@ -89,7 +82,6 @@ export class Bot {
     );
     if (config.Embedding.Enabled) {
       this.emojiManager = new EmojiManager(config.Embedding);
-      this.embedder = getEmbedding(config.Embedding);
     };
     if (config.Verifier.Enabled) this.verifier = new ResponseVerifier(config);
 
@@ -101,11 +93,6 @@ export class Bot {
       this.extensions[extension.name] = extension;
       this.toolsSchema.push(getToolSchema(extension));
     }
-  }
-
-  updateConfig(config: Config) {
-    this.config = config;
-    this.adapterSwitcher.updateConfig(config.API.APIList, config.Parameters);
   }
 
   setSystemPrompt(content: string) {
