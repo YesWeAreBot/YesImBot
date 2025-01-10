@@ -28,7 +28,6 @@
         "test:json": "shx rm -rf coverage && c8 -r json yarn test",
         "test:html": "shx rm -rf coverage && c8 -r html yarn test"
     },
-    "prettier": "@hamster-bot/prettier-config",
     "devDependencies": {
         "@types/node": "^22.10.5",
         "typescript": "^5.8.0-dev.20250107",

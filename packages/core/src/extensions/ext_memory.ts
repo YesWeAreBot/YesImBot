@@ -1,14 +1,17 @@
-// @ts-nocheck
+import type { MemoryType } from "koishi-plugin-yesimbot-memory";
 import { SchemaNode } from "../adapters/creators/schema";
+import { isEmpty } from "../utils";
 import { Description, Extension, Name, Param } from "./base";
 
 @Name("addCoreMemory")
 @Description("Append to the contents of core memory.")
 @Param("content", SchemaNode.String("Content to write to the memory. All unicode (including emojis) are supported."))
-@Param("topic", SchemaNode.String("The topic of the memory.", ""))
-@Param("keywords", SchemaNode.Array("The keywords of the memory.", ""))
+@Param("topic", SchemaNode.String("The topic of the memory."))
+@Param("keywords", SchemaNode.Array("The keywords of the memory."))
 export class AddCoreMemory extends Extension {
-  async apply(content: string, topic?: string, keywords?: string[]) {
+  async apply(args: { content: string; topic?: string; keywords?: string[] }) {
+    const { content, topic, keywords } = args;
+    if (content) throw new Error("content is required");
     return await this.ctx.memory.addCoreMemory(content, topic, keywords);
   }
 }
@@ -18,8 +21,11 @@ export class AddCoreMemory extends Extension {
 @Param("oldContent", SchemaNode.String("The current content of the memory."))
 @Param("newContent", SchemaNode.String("The new content of the memory. All unicode (including emojis) are supported."))
 export class ModifyCoreMemory extends Extension {
-  async apply(oldContent: string, newContent: string) {
-   return await this.ctx.memory.modifyCoreMemory(oldContent, newContent);
+  async apply(args: { oldContent: string; newContent: string }) {
+    const { oldContent, newContent } = args;
+    if (isEmpty(oldContent)) throw new Error("oldContent is required");
+    if (isEmpty(newContent)) throw new Error("newContent is required");
+    return await this.ctx.memory.modifyCoreMemory(oldContent, newContent);
   }
 }
 
@@ -28,8 +34,11 @@ export class ModifyCoreMemory extends Extension {
 @Param("userId", SchemaNode.String("The user ID of the memory."))
 @Param("content", SchemaNode.String("Content to write to the memory. All unicode (including emojis) are supported."))
 export class AddUserMemory extends Extension {
-  async apply(userId: string, content: string) {
-   return await this.ctx.memory.addUserMemory(userId, content);
+  async apply(args: { userId: string; content: string }) {
+    const { userId, content } = args;
+    if (isEmpty(userId)) throw new Error("userId is required");
+    if (isEmpty(content)) throw new Error("content is required");
+    return await this.ctx.memory.addUserMemory(userId, content);
   }
 }
 
@@ -39,7 +48,11 @@ export class AddUserMemory extends Extension {
 @Param("oldContent", SchemaNode.String("The current content of the memory."))
 @Param("newContent", SchemaNode.String("The new content of the memory. All unicode (including emojis) are supported."))
 export class ModifyUserMemory extends Extension {
-  async apply(userId: string, oldContent: string, newContent: string) {
+  async apply(args: { userId: string; oldContent: string; newContent: string }) {
+    const { userId, oldContent, newContent } = args;
+    if (isEmpty(userId)) throw new Error("userId is required");
+    if (isEmpty(oldContent)) throw new Error("oldContent is required");
+    if (isEmpty(newContent)) throw new Error("newContent is required");
     return await this.ctx.memory.modifyUserMemory(userId, oldContent, newContent);
   }
 }
@@ -51,7 +64,12 @@ export class ModifyUserMemory extends Extension {
 @Param("topic", SchemaNode.String("The topic of the memory."))
 @Param("keywords", SchemaNode.Array("Keywords to associate with the memory."))
 export class AddArchivalMemory extends Extension {
-  async apply(content: string, type: MemoryType, topic: string, keywords: string[]) {
+  async apply(args: { content: string; type: MemoryType; topic: string; keywords: string[] }) {
+    const { content, type, topic, keywords } = args;
+    if (isEmpty(content)) throw new Error("content is required");
+    if (isEmpty(type)) throw new Error("type is required");
+    if (isEmpty(topic)) throw new Error("topic is required");
+    if (keywords.length === 0) throw new Error("keywords is required");
     return await this.ctx.memory.addArchivalMemory(content, type, topic, keywords);
   }
 }
@@ -64,14 +82,13 @@ export class AddArchivalMemory extends Extension {
 @Param("keywords", SchemaNode.Array("Keywords to associate with the memory."))
 @Param("limit", SchemaNode.Integer("Number of results to return. Defaults to 10.", 10))
 export class SearchArchivalMemory extends Extension {
-  async apply(query: string, type: MemoryType, topic: string, keywords: string[], limit: number = 10) {
-    const options = {
-      type,
-      topic,
-      keywords,
-      limit,
-    };
-    return await this.ctx.memory.searchArchivalMemory(query, options);
+  async apply(args: { query: string; type: MemoryType; topic: string; keywords: string[]; limit?: number }) {
+    const { query, type, topic, keywords, limit } = args;
+    if (isEmpty(query)) throw new Error("query is required");
+    if (isEmpty(type)) throw new Error("type is required");
+    if (isEmpty(topic)) throw new Error("topic is required");
+    if (keywords.length === 0) throw new Error("keywords is required");
+    return await this.ctx.memory.searchArchivalMemory(query, type, topic, keywords, limit || 10);
   }
 }
 
@@ -81,7 +98,10 @@ export class SearchArchivalMemory extends Extension {
 @Param("userId", SchemaNode.String("User ID to search for."))
 @Param("count", SchemaNode.Integer("Number of results to return. Defaults to 10.", 10))
 export class SearchConversation extends Extension {
-  async apply(query: string, userId: string, count: number = 10) {
-    return await this.ctx.memory.searchConversation(query, userId, count);
+  async apply(args: { query: string; userId: string; count: number }) {
+    const { query, userId, count } = args;
+    if (isEmpty(query)) throw new Error("query is required");
+    if (isEmpty(userId)) throw new Error("userId is required");
+    return await this.ctx.memory.searchConversation(query, userId, count || 10);
   }
 }

@@ -6,7 +6,7 @@ import { Bot } from "../bot";
 export abstract class Extension {
   readonly name: string;
   readonly description: string;
-  readonly params: { [key: string]: SchemaNode };
+  readonly params: Record<string, SchemaNode>;
 
   constructor(
     protected readonly ctx: Context,

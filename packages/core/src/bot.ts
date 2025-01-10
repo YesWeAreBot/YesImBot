@@ -1,3 +1,4 @@
+import { XMLParser } from "fast-xml-parser";
 import { Context, Random, Session } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
@@ -5,15 +6,13 @@ import { Usage } from "./adapters/base";
 import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolCall, ToolMessage, UserMessage } from "./adapters/creators/component";
 import { functionPrompt, ToolSchema } from "./adapters/creators/schema";
 import { Config } from "./config";
-import { EmbeddingBase } from "./embeddings/base";
 import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
 import { ImageViewer } from "./services/imageViewer";
-import { getEmbedding } from "./utils/factory";
-import { escapeUnicodeCharacters, isEmpty, isNotEmpty, parseJSON, Template } from "./utils/string";
+import { isEmpty, isNotEmpty, Template } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
 
-export interface Function {
+export interface Tool extends Function {
   name: string;
   params: Record<string, any>;
 }
@@ -26,7 +25,7 @@ export interface SuccessResponse {
   quote?: string;
   nextTriggerCount: number;
   logic: string;
-  functions: Array<Function>;
+  functions: Array<Tool>;
   usage: Usage;
   adapterIndex: number;
 }
@@ -36,7 +35,7 @@ export interface SkipResponse {
   raw: string;
   nextTriggerCount: number;
   logic: string;
-  functions: Array<Function>;
+  functions: Array<Tool>;
   usage: Usage;
   adapterIndex: number;
 }
@@ -52,7 +51,7 @@ export interface FailedResponse {
 type Response = SuccessResponse | SkipResponse | FailedResponse;
 
 export class Bot {
-  private contextSize: number = 20;    // 以对话形式给出的上下文长度
+  private contextSize: number;    // 以对话形式给出的上下文长度
 
   private minTriggerCount: number;
   private maxTriggerCount: number;
@@ -73,6 +72,7 @@ export class Bot {
   public session: Session;
 
   constructor(private ctx: Context, private config: Config) {
+    this.contextSize = config.MemorySlot.SlotSize;
     this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
     this.maxTriggerCount = Math.max(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
     this.allowErrorFormat = config.Settings.AllowErrorFormat;
@@ -90,7 +90,7 @@ export class Bot {
     this.imageViewer = new ImageViewer(config);
 
     for (const extension of getExtensions(ctx, this)) {
-      this.extensions[extension.name] = extension;
+      this.extensions[extension.name] = extension as any;
       this.toolsSchema.push(getToolSchema(extension));
     }
   }
@@ -154,13 +154,9 @@ export class Bot {
   async generateResponse(messages: Message[], debug = false): Promise<Response> {
     let { current, adapter } = this.getAdapter();
 
-    if (!adapter) {
-      throw new Error("没有可用的适配器");
-    }
+    if (!adapter) throw new Error("没有可用的适配器");
 
-    for (const message of messages) {
-      this.addContext(message);
-    }
+    for (const message of messages) this.addContext(message);
 
     if (!adapter.ability.includes("原生工具调用")) {
       // appendFunctionPrompt
@@ -206,7 +202,7 @@ export class Bot {
     return null;
   }
 
-  private async handleFunctionCalls(functions: Function[], debug: boolean): Promise<Response | null> {
+  private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<Response | null> {
     const Success = (func: string, message: string) => {
       return ToolMessage(JSON.stringify({ function: func, status: "success", result: message }), null);
     }
@@ -215,7 +211,7 @@ export class Bot {
     }
     if (debug) {
       logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
-      logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)})}`).join('\n'));
+      logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
     }
     let returns: Message[] = [];
     for (const func of functions) {
@@ -234,20 +230,16 @@ export class Bot {
   }
 
   private async handleJsonResponse(content: string, response: any, current: number, debug: boolean): Promise<Response> {
-    if (typeof content !== "string") {
-      content = JSON.stringify(content, null, 2);
-    }
-
-    const jsonMatch = content.match(/{.*}/s);
+    const jsonMatch = content.match(/<.*\/.+>/s);
     let LLMResponse: any = {};
 
     if (jsonMatch) {
       try {
-        LLMResponse = parseJSON(escapeUnicodeCharacters(jsonMatch[0]));
+        const parser = new XMLParser();
+        LLMResponse = parser.parse(content);
         this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
       } catch (e) {
         const reason = `JSON 解析失败。请上报此消息给开发者: ${e.message}`;
-        if (debug) logger.warn(reason);
         return {
           status: "fail",
           raw: content,
@@ -258,7 +250,6 @@ export class Bot {
       }
     } else {
       const reason = `没有找到 JSON: ${content}`;
-      if (debug) logger.warn(reason);
       return {
         status: "fail",
         raw: content,
@@ -273,7 +264,7 @@ export class Bot {
     const nextTriggerCountbyLLM = Math.max(this.minTriggerCount, Math.min(Number(LLMResponse.nextReplyIn) ?? this.minTriggerCount, this.maxTriggerCount));
     nextTriggerCount = Number(nextTriggerCountbyLLM) || nextTriggerCount;
     const finalLogic = LLMResponse.logic || "";
-    const functions = Array.isArray(LLMResponse.functions) ? LLMResponse.functions : [];
+    const functions = Array.isArray(LLMResponse.functions) ? LLMResponse.functions : (isNotEmpty(LLMResponse.functions?.name) ? [LLMResponse.functions] : []);
 
     if (LLMResponse.status === "success") {
       let finalResponse = LLMResponse.finalReply || LLMResponse.reply || "";
@@ -284,7 +275,6 @@ export class Bot {
 
       if (isEmpty(finalResponse)) {
         const reason = `回复内容为空`;
-        if (debug) logger.warn(reason);
         return {
           status: "fail",
           raw: content,
@@ -322,8 +312,7 @@ export class Bot {
     } else if (LLMResponse.status === "function") {
       return this.handleFunctionCalls(LLMResponse.functions, debug);
     } else {
-      const reason = `status 不是一个有效值: ${content}`;
-      if (debug) logger.warn(reason);
+      const reason = `Status 不是一个有效值: ${LLMResponse.status}`;
       return {
         status: "fail",
         raw: content,
@@ -362,15 +351,12 @@ export class Bot {
   // TODO: 规范化params
   // OpenAI和Ollama提供的参数不一致
   async callFunction(name: string, params: Record<string, any>): Promise<any> {
-
-    let func = this.extensions[name];
-    const args = Object.values(params || {});
+    let func = this.extensions[name] as Function;
     if (!func) {
       throw new Error(`Function not found: ${name}`);
     }
 
-    // @ts-ignore
-    return await func(...args);
+    return await func(params);
   }
 
   getMemory(selfId: string) {
@@ -409,6 +395,7 @@ export class Bot {
 //   }
 
   async unparseFaceMessage(message: string) {
+    message = message.toString();
     // 反转义 <face> 消息
     const faceRegex = /\[表情[:：]\s*([^\]]+)\]/g;
     const matches = Array.from(message.matchAll(faceRegex));

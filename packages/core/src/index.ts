@@ -9,7 +9,7 @@ import { MarkType, SendQueue } from "./services/sendQueue";
 import { outputSchema } from "./adapters/creators/schema";
 import { initDatabase } from "./database";
 import { processContent, processText } from "./utils/content";
-import { foldText, isEmpty } from "./utils/string";
+import { foldText, isEmpty, isNotEmpty } from "./utils/string";
 import { createMessage } from "./models/ChatMessage";
 import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
@@ -233,7 +233,7 @@ export function apply(ctx: Context, config: Config) {
         return false;
       }
 
-      if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + JSON.stringify(chatHistory, null, 2));
+      if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + chatHistory.map(item => `[${item.role}] ${item.content}`).join("\n"));
 
       bot.setSession(session);
       bot.setChatHistory(chatHistory);
@@ -276,12 +276,10 @@ LLM 的响应无法正确解析，来自 API ${current}
 原始响应: ${raw}
 ---
 消耗: 输入 ${usage?.prompt_tokens}, 输出 ${usage?.completion_tokens}`;
-
-        ctx.logger.error(`LLM 的响应无法正确解析。如果经常出现此问题，请开启DebugAsInfo并上报下一条消息给开发者。原始响应: ${raw}`);
-        if (config.Debug.DebugAsInfo) ctx.logger.info(reason);
+        ctx.logger.error(`LLM 的响应无法正确解析。\n原因: ${reason} \n原始响应: ${raw}`);
         return false;
       } else if (status === "skip") {
-        const { nextTriggerCount, logic, functions } = chatResponse as SkipResponse;
+        let { nextTriggerCount, logic, functions } = chatResponse as SkipResponse;
         template = `
 ${botName}想要跳过此次回复，来自 API ${current}
 ---
@@ -294,6 +292,24 @@ ${botName}想要跳过此次回复，来自 API ${current}
 消耗：输入 ${usage?.prompt_tokens}，输出 ${usage?.completion_tokens}`
         ctx.logger.info(`${botName}想要跳过此次回复`);
         await sendQueue.addRawMessage(session, raw);
+
+        //如果 AI 使用了指令
+        if (functions.length > 0) {
+          if (config.Debug.DebugAsInfo) {
+            logger.info(`Bot[${session.selfId}] 想要调用工具`)
+            logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
+          }
+          for (const func of functions) {
+            const { name, params } = func;
+            try {
+              let returnValue = await bot.callFunction(name, params);
+              ctx.logger.info(`已执行指令：${func.name}`);
+            } catch (error) {
+              ctx.logger.error(`执行指令<${func.name}>时出错: ${error}`);
+            }
+          }
+        }
+
         sendQueue.setTriggerCount(channelId, nextTriggerCount);
         return true
       }
@@ -319,19 +335,23 @@ ${botName}想要跳过此次回复，来自 API ${current}
       await redirectLogicMessage(config, session, sendQueue, template);
 
       //如果 AI 使用了指令
-      if (Array.isArray(functions) && functions.length > 0) {
-        functions.forEach(async (func) => {
+      if (functions.length > 0) {
+        if (config.Debug.DebugAsInfo) {
+          logger.info(`Bot[${session.selfId}] 想要调用工具`)
+          logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
+        }
+        for (const func of functions) {
+          const { name, params } = func;
           try {
-            await bot.callFunction(func.name, func.params);
+            let returnValue = await bot.callFunction(name, params);
             ctx.logger.info(`已执行指令：${func.name}`);
           } catch (error) {
             ctx.logger.error(`执行指令<${func.name}>时出错: ${error}`);
           }
-        });
+        }
       }
 
       if (!isEmpty(finalReply)) {
-
         if (config.Verifier.Enabled && !bot.verifier.verifyResponse(replyTo, finalReply)) {
           if (config.Verifier.Action === "丢弃") {
             return true;

@@ -1,3 +1,5 @@
+import {  XMLBuilder } from "fast-xml-parser";
+
 export interface ToolSchema {
   type: "function";
   function: {
@@ -114,12 +116,16 @@ const schema = {
   }
 };
 
-export const outputSchema = `You should generate output in JSON observing the schema provided. If the schema shows a type of integer or number, you must only show a integer for that field. A string should always be a valid string. If a value is unknown, leave it empty.
-Only add data to the mostly appropriate field. Don't make up fields that aren't in the schema. If there isn't a value for a field, use null. Output should be in JSON.
+const builder = new XMLBuilder();
+const xmlContent = builder.build(schema);
+
+export const outputSchema = `You should generate output in XML observing the schema provided. If the schema shows a type of integer or number, you must only show a integer for that field. A string should always be a valid string. If a value is unknown, leave it empty.
+Only add data to the mostly appropriate field. Don't make up fields that aren't in the schema. Output should be in XML.
 
 Schema:
-${JSON.stringify(schema, null, 2)}`;
+${xmlContent}`;
 
 export const functionPrompt = `Please select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. You can run multiple functions in a single response.
-Provide your response in JSON format: [{ "name": "<function name>", "params": { "<param name>": "<param value>", ... } }].
+Provide your response in XML format and add it to the functions array in your output: <functions><name>FUNCTION_NAME</name><params><PARAM_NAME>value1</PARAM_NAME><PARAM_NAME>value2</PARAM_NAME></params></functions><functions><name>function2</name><params><param1>value1</param1></params></functions>.
+Replace FUNCTION_NAME with the name of the function and PARAM_NAME with the name of the parameter.
 Available functions:\n`;

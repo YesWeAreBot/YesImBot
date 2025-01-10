@@ -24,8 +24,9 @@ import { isEmpty } from "../utils/string";
 @Param("cmd", "要运行的指令")
 @Param("channel", SchemaNode.String("要在哪个频道运行，不填默认为当前频道", ""))
 export class Execute extends Extension {
-  async apply(cmd: string, channel: string) {
-    cmd = cmd.trim();
+  async apply(args: { cmd: string; channel?: string }) {
+    const { cmd, channel } = args;
+    if (isEmpty(cmd)) throw new Error("cmd is required");
     try {
       if (isEmpty(channel) || channel == this.session.channelId) {
         await this.session.execute(cmd);

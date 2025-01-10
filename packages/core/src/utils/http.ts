@@ -32,11 +32,6 @@ export class HttpError extends Error {
 }
 
 export async function sendRequest<T = any>(url: string, APIKey: string, requestBody: any, debug: boolean = false): Promise<T> {
-    if (debug) {
-      logger.info(`Request URL: ${url}`);
-      logger.info(`Request body: \n${foldText(JSON.stringify(requestBody, null, 2), 2100)}`);
-    }
-
     try {
       const response = await axios.post(url, requestBody, {
         headers: {
