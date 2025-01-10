@@ -66,11 +66,3 @@ export abstract class BaseAdapter {
 
   abstract chat(messages: Message[], tools?: ToolSchema[], debug?: Boolean): Promise<Response>;
 }
-
-
-export class AdapterError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AdapterError";
-  }
-}
