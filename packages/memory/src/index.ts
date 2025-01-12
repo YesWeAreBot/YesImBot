@@ -182,8 +182,8 @@ class Memory extends Service {
     let embedding = await this.embedder.embed(query);
 
     let chatMessages = await this.ctx.database
-      .select("yesimbot")
-      .where({ senderId: userId })
+      .select("yesimbot.message")
+      .where({ "sender.id": userId })
       .orderBy("sendTime", "desc")
       .execute()
 

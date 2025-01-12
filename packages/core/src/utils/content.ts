@@ -23,7 +23,7 @@ export async function processContent(config: Config, session: Session, messages:
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
-    if (chatMessage.senderId === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
+    if (chatMessage.sender.id === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage);
       }
@@ -48,11 +48,11 @@ export async function processContent(config: Config, session: Session, messages:
     let senderName: string;
     switch (config.Bot.NickorName) {
       case "群昵称":
-        senderName = chatMessage.senderNick;
+        senderName = chatMessage.sender.nick;
         break;
       case "用户昵称":
       default:
-        senderName = chatMessage.senderName;
+        senderName = chatMessage.sender.name;
         break;
     }
     const template = config.Settings.SingleMessageStrctureTemplate;
@@ -68,11 +68,11 @@ export async function processContent(config: Config, session: Session, messages:
           let userName: string;
           switch (config.Bot.NickorName) {
             case "群昵称":
-              userName = messages.filter((m) => m.senderId === attrs.id)[0]?.senderNick;
+              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.nick
               break;
             case "用户昵称":
             default:
-              userName = messages.filter((m) => m.senderId === attrs.id)[0]?.senderName;
+              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.name;
               break;
           }
           if (attrs.id === session.selfId && config.Bot.SelfAwareness === "此页面设置的名字") {
@@ -122,14 +122,14 @@ export async function processContent(config: Config, session: Session, messages:
       channelInfo,
       channelId: chatMessage.channelId,
       senderName,
-      senderId: chatMessage.senderId,
+      senderId: chatMessage.sender.id,
       userContent: userContent.join(""),
       // quoteMessageId: chatMessage.quoteMessageId || "",
       // hasQuote: !!chatMessage.quoteMessageId,
       isPrivate: channelType === "private",
     });
 
-    if (chatMessage.senderId === session.bot.selfId) {
+    if (chatMessage.sender.id === session.bot.selfId) {
       processedMessage.push(AssistantMessage(messageText));
     } else {
       processedMessage.push(UserMessage(messageText));
@@ -143,7 +143,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
   let pendingProcessImgCount = 0;
 
   for (let chatMessage of messages) {
-    if (!isEmpty(chatMessage.raw) || chatMessage.senderId === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
+    if (!isEmpty(chatMessage.raw) || chatMessage.sender.id === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage);
       }
@@ -155,11 +155,11 @@ async function processContentWithVisionAbility(config: Config, session: Session,
     let senderName: string;
     switch (config.Bot.NickorName) {
       case "群昵称":
-        senderName = chatMessage.senderNick;
+        senderName = chatMessage.sender.nick;
         break;
       case "用户昵称":
       default:
-        senderName = chatMessage.senderName;
+        senderName = chatMessage.sender.name;
         break;
     }
     const template = config.Settings.SingleMessageStrctureTemplate;
@@ -176,11 +176,11 @@ async function processContentWithVisionAbility(config: Config, session: Session,
           let userName: string;
           switch (config.Bot.NickorName) {
             case "群昵称":
-              userName = messages.filter((m) => m.senderId === attrs.id)[0]?.senderNick;
+              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.nick;
               break;
             case "用户昵称":
             default:
-              userName = messages.filter((m) => m.senderId === attrs.id)[0]?.senderName;
+              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.name;
               break;
           }
           if (attrs.id === session.selfId && config.Bot.SelfAwareness === "此页面设置的名字") {
@@ -235,7 +235,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
       channelInfo,
       channelId: chatMessage.channelId,
       senderName,
-      senderId: chatMessage.senderId,
+      senderId: chatMessage.sender.id,
       userContent: "{{userContent}}",
       // quoteMessageId: chatMessage.quoteMessageId || "",
       // hasQuote: !!chatMessage.quoteMessageId,
@@ -249,7 +249,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
       }
       return [TextComponent(part)];
     });
-    if (chatMessage.senderId === session.bot.selfId) {
+    if (chatMessage.sender.id === session.bot.selfId) {
       processedMessage.push(AssistantMessage(...components));
     } else {
       processedMessage.push(UserMessage(...components));

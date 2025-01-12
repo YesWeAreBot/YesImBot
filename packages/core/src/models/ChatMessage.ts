@@ -3,13 +3,16 @@ import { Session } from "koishi";
 import {} from "koishi-plugin-adapter-onebot";
 
 export interface ChatMessage {
-    senderId: string;    // 发送者平台 ID
-    senderName: string;  // 发送者原始昵称
-    senderNick: string;  // 发送者会话昵称
+    sender: {
+      id: string;   // 发送者平台 ID
+      name: string; // 发送者原始昵称
+      nick: string; // 发送者会话昵称
+    }
 
     messageId: string;   // 消息 ID
 
     channelId: string;   // 消息来源 ID
+    channelType: "private" | "guild" | "sandbox"; // 消息来源类型
 
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
@@ -27,11 +30,14 @@ export async function createMessage(session: Session, content?: string): Promise
         }
     };
     return {
-        senderId: session.userId,
-        senderName: session.author.name,
-        senderNick,
+        sender: {
+          id: session.userId,
+          name: session.author.name,
+          nick: senderNick
+        },
         messageId: session.messageId,
         channelId: session.channelId,
+        channelType: getChannelType(session.channelId),
         sendTime: new Date(session.event.timestamp),
         content: session.content || content
     };

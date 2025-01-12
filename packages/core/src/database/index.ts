@@ -1,7 +1,8 @@
 import { Context } from "koishi";
 
-import { DATABASE_NAME } from "..";
 import { ChatMessage } from "../models/ChatMessage";
+
+export const DATABASE_NAME = "yesimbot.message";
 
 declare module "koishi" {
   interface Tables {
@@ -11,14 +12,12 @@ declare module "koishi" {
 
 export function initDatabase(ctx: Context) {
   ctx.model.extend(DATABASE_NAME, {
-      senderId: "string",
-      senderName: "string",
-      senderNick: "string",
+      sender: "object",
       messageId: "string",
       channelId: "string",
+      channelType: "string",
       sendTime: "timestamp",
       content: "string",
-      // quoteMessageId: "string",
       raw: {
         type: "string",
         nullable: true,

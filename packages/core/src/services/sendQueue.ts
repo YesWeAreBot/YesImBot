@@ -3,7 +3,7 @@ import { defineAccessor } from "@satorijs/core";
 import { Mutex } from "async-mutex";
 import { Config } from "../config";
 import { QueueManager } from "../managers/queueManager";
-import { ChatMessage } from "../models/ChatMessage";
+import { ChatMessage, getChannelType } from "../models/ChatMessage";
 import { foldText, randomString } from "../utils/string";
 import { isChannelAllowed, ProcessingLock } from "../utils/toolkit";
 
@@ -94,10 +94,13 @@ export class SendQueue {
 
   async addRawMessage(session: Session, raw: string) {
     await this.queueManager.enqueue({
-      senderId: session.selfId,
-      senderName: null,
-      senderNick: null,
+      sender: {
+        id: session.selfId,
+        name: null,
+        nick: null,
+      },
       channelId: session.channelId,
+      channelType: getChannelType(session.cid),
       sendTime: new Date(),
       content: null,
       messageId: randomString(16),

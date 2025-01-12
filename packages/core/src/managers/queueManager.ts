@@ -1,7 +1,7 @@
 import { Context, Query } from "koishi";
 
+import { DATABASE_NAME } from "../database";
 import { ChatMessage } from "../models/ChatMessage";
-import { DATABASE_NAME } from "..";
 
 export class QueueManager {
   private ctx: Context;
@@ -72,7 +72,7 @@ export class QueueManager {
 
   public async clearBySenderId(senderId: string): Promise<boolean> {
     const result = await this.ctx.database.remove(DATABASE_NAME, {
-      senderId,
+      "sender.id": senderId,
     });
     return result.removed > 0;
   }

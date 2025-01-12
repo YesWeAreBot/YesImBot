@@ -10,7 +10,7 @@ import { outputSchema } from "./adapters/creators/schema";
 import { initDatabase } from "./database";
 import { processContent, processText } from "./utils/content";
 import { foldText, isEmpty, isNotEmpty } from "./utils/string";
-import { createMessage } from "./models/ChatMessage";
+import { createMessage, getChannelType } from "./models/ChatMessage";
 import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
 import { apply as applyMemoryCommands } from "./commands/memory";
@@ -386,11 +386,14 @@ ${botName}想要跳过此次回复，来自 API ${current}
         }
 
         await sendQueue.addMessage({
-          senderId: session.selfId,
-          senderName: session.bot.user.name,
-          senderNick: botName,
+          sender: {
+            id: session.selfId,
+            name: session.bot.user.name,
+            nick: botName,
+          },
           messageId: messageIds[0],
           channelId: replyTo,
+          channelType: getChannelType(session.channelId),
           sendTime: new Date(),
           content: finalReply,
           raw,
