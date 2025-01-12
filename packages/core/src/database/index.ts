@@ -18,7 +18,7 @@ export function initDatabase(ctx: Context) {
       channelId: "string",
       sendTime: "timestamp",
       content: "string",
-      quoteMessageId: "string",
+      // quoteMessageId: "string",
       raw: {
         type: "string",
         nullable: true,

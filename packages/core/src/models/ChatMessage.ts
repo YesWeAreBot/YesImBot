@@ -14,8 +14,6 @@ export interface ChatMessage {
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
 
-    quoteMessageId?: string; // 被引用消息
-
     raw?: string;        // 原始消息，可能是LLM输出或者客户端上报数据
 }
 
@@ -35,8 +33,7 @@ export async function createMessage(session: Session, content?: string): Promise
         messageId: session.messageId,
         channelId: session.channelId,
         sendTime: new Date(session.event.timestamp),
-        content: session.content || content,
-        quoteMessageId: session.quote?.id
+        content: session.content || content
     };
 }
 

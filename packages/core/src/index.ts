@@ -130,6 +130,7 @@ export function apply(ctx: Context, config: Config) {
   applySendQueneCommands(ctx, sendQueue);
 
   ctx.middleware(async (session: Session, next: Next) => {
+    const platform = session.platform;
     const channelId = session.channelId;
     if (!isChannelAllowed(config.MemorySlot.SlotContains, channelId) || session.author.id == session.selfId) {
       return next();
@@ -315,7 +316,7 @@ ${botName}想要跳过此次回复，来自 API ${current}
       }
 
       // status === "success"
-      let { replyTo, finalReply, nextTriggerCount, logic, functions, quote } = chatResponse as SuccessResponse;
+      let { replyTo, finalReply, nextTriggerCount, logic, functions } = chatResponse as SuccessResponse;
 
       if (isEmpty(replyTo)) replyTo = session.channelId;
 
@@ -363,7 +364,6 @@ ${botName}想要跳过此次回复，来自 API ${current}
 
         let messageIds = [];
         let sentences = processText(config["Bot"]["BotReplySpiltRegex"], config["Bot"]["BotSentencePostProcess"], finalReply);
-        if (!isEmpty(quote)) sentences[0] = h.quote(quote).toString() + sentences[0];
         for (let sentence of sentences) {
           if (isEmpty(sentence)) continue;
 
@@ -393,7 +393,6 @@ ${botName}想要跳过此次回复，来自 API ${current}
           channelId: replyTo,
           sendTime: new Date(),
           content: finalReply,
-          quoteMessageId: quote,
           raw,
         });
 

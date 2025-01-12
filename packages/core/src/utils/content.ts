@@ -97,7 +97,7 @@ export async function processContent(config: Config, session: Session, messages:
           userContent.push(atMessage);
           break;
         case "quote":
-          chatMessage.quoteMessageId = elem.attrs.id;
+          //chatMessage.quoteMessageId = elem.attrs.id;
           break;
         case "img":
           let cacheKey = getFileUnique(elem, session.bot.platform);
@@ -124,8 +124,8 @@ export async function processContent(config: Config, session: Session, messages:
       senderName,
       senderId: chatMessage.senderId,
       userContent: userContent.join(""),
-      quoteMessageId: chatMessage.quoteMessageId || "",
-      hasQuote: !!chatMessage.quoteMessageId,
+      // quoteMessageId: chatMessage.quoteMessageId || "",
+      // hasQuote: !!chatMessage.quoteMessageId,
       isPrivate: channelType === "private",
     });
 
@@ -206,7 +206,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
           break;
         case "quote":
           // const { id } = elem.attrs;
-          chatMessage.quoteMessageId = elem.attrs.id;
+          // chatMessage.quoteMessageId = elem.attrs.id;
           break;
         case "img":
           // const { src, summary, fileUnique } = elem.attrs;
@@ -237,8 +237,8 @@ async function processContentWithVisionAbility(config: Config, session: Session,
       senderName,
       senderId: chatMessage.senderId,
       userContent: "{{userContent}}",
-      quoteMessageId: chatMessage.quoteMessageId || "",
-      hasQuote: !!chatMessage.quoteMessageId,
+      // quoteMessageId: chatMessage.quoteMessageId || "",
+      // hasQuote: !!chatMessage.quoteMessageId,
       isPrivate: channelType === "private",
     });
 
@@ -337,6 +337,5 @@ function convertChatMessageToRaw(chatMessage: ChatMessage): string {
     status: "success",
     reply: chatMessage.content,
     replyTo: chatMessage.channelId,
-    quote: chatMessage.quoteMessageId,
   });
 }

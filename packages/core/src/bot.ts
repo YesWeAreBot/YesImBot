@@ -22,7 +22,6 @@ export interface SuccessResponse {
   raw: string;
   finalReply: string;
   replyTo?: string;
-  quote?: string;
   nextTriggerCount: number;
   logic: string;
   functions: Array<Tool>;
@@ -276,10 +275,12 @@ export class Bot {
       if (isEmpty(finalResponse)) {
         const reason = `回复内容为空`;
         return {
-          status: "fail",
+          status: "skip",
           raw: content,
           usage: response.usage,
-          reason,
+          nextTriggerCount,
+          functions,
+          logic: finalLogic,
           adapterIndex: current,
         };
       }
@@ -292,7 +293,6 @@ export class Bot {
         raw: content,
         finalReply: finalResponse,
         replyTo,
-        quote: LLMResponse.quote || "",
         nextTriggerCount,
         logic: finalLogic,
         functions,
@@ -346,8 +346,6 @@ export class Bot {
     }
   }
 
-  // async summarize(channelId, userId, content) { }
-
   // TODO: 规范化params
   // OpenAI和Ollama提供的参数不一致
   async callFunction(name: string, params: Record<string, any>): Promise<any> {
@@ -364,35 +362,6 @@ export class Bot {
     if (this.ctx.memory) return this.ctx.memory.MEMORY_PROMPT
     return "";
   }
-
-//   async getCoreMemory(selfId: string): Promise<string> {
-//     const recallSize = 0;
-//     const archivalSize = 0;
-
-//     let selfMemory = this.ctx.memory.filterMemory(metadata => {
-//       return metadata.userId === selfId || !metadata.userId;
-//     }).join("\n");
-
-//     const userIds = this.collectUserID();
-//     const humanMemories = Array.from(userIds.entries()).map(([userId, nickname]) => `
-//       <user id="${userId}" nickname="${nickname}">
-//       ${this.ctx.memory.getUserMemory(userId).join("\n")}
-//       </user>`
-//     );
-
-//     return `### Memory [last modified: ${getFormatDateTime(this.lastModified)}]
-// ${recallSize} previous messages between you and the user are stored in recall memory (use functions to access them)
-// ${archivalSize} total memories you created are stored in archival memory (use functions to access them)
-
-// Core memory shown below (limited in size, additional information stored in archival / recall memory):
-
-// <selfMemory character="${tiktokenizer(selfMemory)}/${this.maxSelfMemoryCharacters}">
-// ${selfMemory}
-// </selfMemory>
-
-// ${humanMemories.join("\n")}
-// `.trim();
-//   }
 
   async unparseFaceMessage(message: string) {
     message = message.toString();

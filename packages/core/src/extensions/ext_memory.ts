@@ -1,4 +1,4 @@
-import type { MemoryType } from "koishi-plugin-yesimbot-memory";
+// @ts-nocheck
 import { SchemaNode } from "../adapters/creators/schema";
 import { isEmpty } from "../utils";
 import { Description, Extension, Name, Param } from "./base";
