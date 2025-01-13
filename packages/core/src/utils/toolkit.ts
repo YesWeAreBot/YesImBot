@@ -4,12 +4,12 @@ import { Element, Session } from "koishi";
 import { Mutex } from 'async-mutex';
 
 import { Config } from "../config";
-import { isEmpty } from "./string";
+import { isEmpty, isNotEmpty } from "./string";
 
 
-export function isChannelAllowed(slotContains: string[], channelId: string): boolean {
+export function isChannelAllowed(slotContains: string[][], channelId: string): boolean {
   for (let slot of slotContains) {
-    for (let channel of slot.split(",")) {
+    for (let channel of slot.filter(isNotEmpty)) {
       channel = channel.trim();
       if (channelId === channel) {
         return true;
@@ -110,6 +110,7 @@ export async function getBotName(botConfig: Config["Bot"], session: Session): Pr
   switch (botConfig.SelfAwareness) {
     case "群昵称":
       if (session.guildId) {
+        // @ts-ignore
         const memberInfo = await session.onebot?.getGroupMemberInfo(session.guildId, session.bot.userId);
         return memberInfo?.card || memberInfo?.nickname || session.bot.user.name;
       } else {

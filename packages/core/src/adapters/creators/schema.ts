@@ -126,6 +126,6 @@ Schema:
 ${xmlContent}`;
 
 export const functionPrompt = `Please select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. You can run multiple functions in a single response.
-Provide your response in XML format and add it to the functions array in your output: <functions><name>FUNCTION_NAME</name><params><PARAM_NAME>value1</PARAM_NAME><PARAM_NAME>value2</PARAM_NAME></params></functions><functions><name>function2</name><params><param1>value1</param1></params></functions>.
+Provide your response in XML format and add it to the functions array in your output: <functions><name>FUNCTION_NAME</name><params><PARAM_NAME>value1</PARAM_NAME><PARAM_NAME>value2</PARAM_NAME></params></functions> <functions><name>function2</name><params><param1>value1</param1></params></functions> <functions>...</functions>.
 Replace FUNCTION_NAME with the name of the function and PARAM_NAME with the name of the parameter.
 Available functions:\n`;

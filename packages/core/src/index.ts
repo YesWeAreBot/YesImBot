@@ -126,8 +126,14 @@ export function apply(ctx: Context, config: Config) {
     }
   });
 
-  //applyMemoryCommands(ctx, bot);
-  applySendQueneCommands(ctx, sendQueue);
+  // 注册指令
+  try {
+    //applyMemoryCommands(ctx, bot);
+    applySendQueneCommands(ctx, sendQueue);
+  } catch (error) {
+
+  }
+
 
   ctx.middleware(async (session: Session, next: Next) => {
     const platform = session.platform;

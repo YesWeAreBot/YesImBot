@@ -61,6 +61,8 @@ class ImageCache {
       // 如果读取失败，创建一个新的空metadata文件
       fs.writeFileSync(this.metadataFile, "{}", "utf-8");
     }
+
+    console.debug("ImageCache initialized.")
   }
 
   get(key: string): Buffer {

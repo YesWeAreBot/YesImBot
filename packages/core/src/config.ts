@@ -4,7 +4,7 @@ import { Config as AdapterConfig } from "./adapters/config";
 
 export interface Config {
   MemorySlot: {
-    SlotContains: string[];
+    SlotContains: string[][];
     SlotSize: number;
     FirstTriggerCount: number;
     MaxTriggerCount: number;
@@ -106,10 +106,10 @@ export interface Config {
 
 export const Config: Schema<Config> = Schema.object({
   MemorySlot: Schema.object({
-    SlotContains: Schema.array(Schema.string())
+    SlotContains: Schema.array(Schema.array(Schema.string()).role("table"))
       .required()
       .role("table")
-      .description("记忆槽位。填入一个或多个会话ID，用半角逗号分隔。群聊的会话ID是群号，私聊的会话ID是带有\"private:\" + 用户账号。用\"all\"指定所有群聊，用\"private:all\"指定所有私聊。同一个槽位的聊天将共用同一份记忆。如果多个槽位都包含同一会话ID，第一个包含该会话ID的槽位将被应用"),
+      .description("记忆槽位。填入一个或多个会话ID，每行一个。群聊的会话ID是群号，私聊的会话ID是带有\"private:\" + 用户账号。用\"all\"指定所有群聊，用\"private:all\"指定所有私聊。同一个槽位的聊天将共用同一份记忆。如果多个槽位都包含同一会话ID，第一个包含该会话ID的槽位将被应用"),
     SlotSize: Schema.number()
       .default(20)
       .min(1)

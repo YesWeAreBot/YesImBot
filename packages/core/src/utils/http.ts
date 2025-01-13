@@ -66,27 +66,27 @@ export async function sendRequest<T = any>(url: string, APIKey: string, requestB
           switch (status) {
             case 400:
               errorCode = HttpErrorCode.BadRequest;
-              message = `请求参数错误: ${JSON.stringify(data)}`;
+              message = `400 - 请求参数错误: ${JSON.stringify(data)}`;
               break;
             case 401:
               errorCode = HttpErrorCode.Unauthorized;
-              message = `认证失败: 请检查API Key`;
+              message = `401 - 认证失败，请检查API Key`;
               break;
             case 403:
               errorCode = HttpErrorCode.Forbidden;
-              message = `权限不足: ${JSON.stringify(data)}`;
+              message = `403 - 权限不足: ${JSON.stringify(data)}`;
               break;
             case 404:
               errorCode = HttpErrorCode.NotFound;
-              message = `资源未找到: ${url}`;
+              message = `404 - 资源未找到: ${url}`;
               break;
             case 429:
               errorCode = HttpErrorCode.ServerError;
-              message = `请求过于频繁: 请稍后重试`;
+              message = `429 - 请求过于频繁，请稍后重试`;
               break;
             case 500:
               errorCode = HttpErrorCode.ServerError;
-              message = `服务器内部错误: ${JSON.stringify(data)}`;
+              message = `500 - 服务器内部错误: ${JSON.stringify(data)}`;
               break;
           }
 

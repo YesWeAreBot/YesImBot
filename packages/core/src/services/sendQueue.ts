@@ -1,10 +1,10 @@
-import { Context, Session } from "koishi";
 import { defineAccessor } from "@satorijs/core";
 import { Mutex } from "async-mutex";
+import { Context, Session } from "koishi";
 import { Config } from "../config";
 import { QueueManager } from "../managers/queueManager";
 import { ChatMessage, getChannelType } from "../models/ChatMessage";
-import { foldText, randomString } from "../utils/string";
+import { foldText, isNotEmpty, randomString } from "../utils/string";
 import { isChannelAllowed, ProcessingLock } from "../utils/toolkit";
 
 export enum MarkType {
@@ -36,30 +36,11 @@ export class SendQueue {
   constructor(private ctx: Context, private config: Config) {
     for (let slotContain of config.MemorySlot.SlotContains) {
       this.slotContains.push(
-        new Set(slotContain.split(",").map((slot) => slot.trim()))
+        new Set(slotContain.filter(isNotEmpty).map((slot) => slot.trim()))
       );
     }
     this.slotSize = config.MemorySlot.SlotSize;
     this.queueManager = new QueueManager(ctx);
-  }
-
-  async checkQueueSize(channelId: string): Promise<boolean> {
-    return (
-      (await this.queueManager.getQueue(channelId, this.slotSize)).length >
-      this.slotSize
-    );
-  }
-
-  async checkMixedQueueSize(channelId: string): Promise<boolean> {
-    for (let slotContain of this.slotContains) {
-      if (slotContain.has(channelId)) {
-        return (
-          (await this.queueManager.getMixedQueue(slotContain, this.slotSize))
-            .length > this.slotSize
-        );
-      }
-    }
-    return false;
   }
 
   async getMixedQueue(channelId: string, limit?: number): Promise<ChatMessage[]> {

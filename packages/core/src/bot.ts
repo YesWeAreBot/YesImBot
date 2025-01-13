@@ -263,7 +263,15 @@ export class Bot {
     const nextTriggerCountbyLLM = Math.max(this.minTriggerCount, Math.min(Number(LLMResponse.nextReplyIn) ?? this.minTriggerCount, this.maxTriggerCount));
     nextTriggerCount = Number(nextTriggerCountbyLLM) || nextTriggerCount;
     const finalLogic = LLMResponse.logic || "";
-    const functions = Array.isArray(LLMResponse.functions) ? LLMResponse.functions : (isNotEmpty(LLMResponse.functions?.name) ? [LLMResponse.functions] : []);
+
+    let functions: Tool[] = [];
+    if (Array.isArray(LLMResponse.functions)) {
+      functions = LLMResponse.functions;
+    } else if (isNotEmpty(LLMResponse.functions?.name)) {
+      functions = [LLMResponse.functions];
+    } else if (Array.isArray(LLMResponse.functions?.function)) {
+      functions = LLMResponse.functions.function;
+    }
 
     if (LLMResponse.status === "success") {
       let finalResponse = LLMResponse.finalReply || LLMResponse.reply || "";
