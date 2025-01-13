@@ -1,6 +1,6 @@
 import { Session } from "koishi";
 
-import {} from "koishi-plugin-adapter-onebot";
+// import {} from "koishi-plugin-adapter-onebot";
 
 export interface ChatMessage {
     sender: {
@@ -24,7 +24,9 @@ export async function createMessage(session: Session, content?: string): Promise
     const channelType = getChannelType(session.channelId);
     let senderNick = session.author.name;
     if (channelType === "guild") {
+      // @ts-ignore
         if (session.onebot) {
+          // @ts-ignore
             const memberInfo = await session.onebot.getGroupMemberInfo(session.channelId, session.userId);
             senderNick = memberInfo.card || memberInfo.nickname;
         }

@@ -133,6 +133,7 @@ export async function getMemberName(config: Config, session: Session, userId?: s
     userId = session.userId;
   }
   try {
+    // @ts-ignore
     const memberInfo = await session.onebot.getGroupMemberInfo(groupId, userId);
     switch (config.Bot.NickorName) {
       case "用户昵称":
