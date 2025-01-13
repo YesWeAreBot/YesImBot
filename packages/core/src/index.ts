@@ -41,12 +41,10 @@ export const inject = {
 }
 
 declare global {
-  var logger: LoggerService;
   var baseDir: string;
 }
 
 export function apply(ctx: Context, config: Config) {
-  globalThis.logger = ctx.logger;
   globalThis.baseDir = ctx.baseDir;
 
   let shouldReTrigger = false;
@@ -303,8 +301,8 @@ ${botName}想要跳过此次回复，来自 API ${current}
         //如果 AI 使用了指令
         if (functions.length > 0) {
           if (config.Debug.DebugAsInfo) {
-            logger.info(`Bot[${session.selfId}] 想要调用工具`)
-            logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
+            ctx.logger.info(`Bot[${session.selfId}] 想要调用工具`)
+            ctx.logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
           }
           for (const func of functions) {
             const { name, params } = func;
@@ -344,8 +342,8 @@ ${botName}想要跳过此次回复，来自 API ${current}
       //如果 AI 使用了指令
       if (functions.length > 0) {
         if (config.Debug.DebugAsInfo) {
-          logger.info(`Bot[${session.selfId}] 想要调用工具`)
-          logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
+          ctx.logger.info(`Bot[${session.selfId}] 想要调用工具`)
+          ctx.logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
         }
         for (const func of functions) {
           const { name, params } = func;

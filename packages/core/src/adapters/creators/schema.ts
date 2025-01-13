@@ -90,10 +90,6 @@ const schema = {
     type: "integer",
     description: "Messages before next reply.",
   },
-  quote: {
-    type: "string",
-    description: "Message ID to reference. Don't fill this field if you send a private message. Don't abuse this",
-  },
   logic: {
     type: "string",
     description: "Response logic explanation.",

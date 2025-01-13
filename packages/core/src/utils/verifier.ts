@@ -1,3 +1,4 @@
+import { Context } from "koishi";
 import { BaseAdapter } from "../adapters/base";
 import { AssistantMessage, SystemMessage, UserMessage } from "../adapters/creators/component";
 import { Config } from "../config";
@@ -10,13 +11,13 @@ export class ResponseVerifier {
   private config: Config;
   private client: EmbeddingBase | BaseAdapter;
 
-  constructor(config: Config) {
+  constructor(ctx: Context, config: Config) {
     this.config = config;
     if (this.config.Verifier.Method.Type === "Embedding") {
       if (this.config.Embedding.Enabled) {
         this.client = getEmbedding(config.Embedding as EnabledEmbeddingConfig);
       } else {
-        logger.error("Embedding 模型未启用，相似度验证已被禁用");
+        ctx.logger.error("Embedding 模型未启用，相似度验证已被禁用");
         this.config.Verifier.Enabled = false;
       }
     } else {

@@ -1,9 +1,10 @@
+import { Mutex } from 'async-mutex';
 import fs from "fs";
 import https from "https";
 import { Element, Session } from "koishi";
-import { Mutex } from 'async-mutex';
 
 import { Config } from "../config";
+import logger from "./logger";
 import { isEmpty, isNotEmpty } from "./string";
 
 
@@ -146,7 +147,8 @@ export async function getMemberName(config: Config, session: Session, userId?: s
     try {
       return (await session.bot.getUser(userId, groupId)).name;
     } catch (error) {
-      throw new Error(`Failed to fetch user from backup API`);
+      logger.warn(`Failed to fetch user from backup API`);
+      return "UserNotFound"
     }
   }
 }

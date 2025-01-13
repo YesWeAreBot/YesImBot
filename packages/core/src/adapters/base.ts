@@ -1,6 +1,7 @@
 import { Config } from "../config";
-import { AssistantMessage, Message } from "./creators/component";
+import logger from "../utils/logger";
 import { LLM } from "./config";
+import { AssistantMessage, Message } from "./creators/component";
 import { ToolSchema } from "./creators/schema";
 
 export interface Usage {

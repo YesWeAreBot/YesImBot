@@ -1,6 +1,6 @@
 import fs from "fs";
-import { SchemaNode, ToolSchema } from "../adapters/creators/schema";
 import { Context } from "koishi";
+import { SchemaNode, ToolSchema } from "../adapters/creators/schema";
 import { Bot } from "../bot";
 
 export abstract class Extension {
@@ -48,10 +48,10 @@ export function getExtensions(ctx: Context, bot: Bot): Extension[] {
         for (const key in extension) {
           extensions.push(new extension[key](ctx, bot));
         }
-        logger.info(`Loaded extension: ${file}`);
+        ctx.logger.info(`Loaded extension: ${file}`);
       } catch (e) {
-        logger.error(`Failed to load extension: ${file}`);
-        logger.error(e.stack);
+        ctx.logger.error(`Failed to load extension: ${file}`);
+        ctx.logger.error(e.stack);
       }
     });
   return extensions;

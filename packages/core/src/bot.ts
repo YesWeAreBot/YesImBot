@@ -82,11 +82,11 @@ export class Bot {
     if (config.Embedding.Enabled) {
       this.emojiManager = new EmojiManager(config.Embedding);
     };
-    if (config.Verifier.Enabled) this.verifier = new ResponseVerifier(config);
+    if (config.Verifier.Enabled) this.verifier = new ResponseVerifier(ctx, config);
 
     this.template = new Template(config.Settings.SingleMessageStrctureTemplate, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g);
 
-    this.imageViewer = new ImageViewer(config);
+    this.imageViewer = new ImageViewer(ctx, config);
 
     for (const extension of getExtensions(ctx, this)) {
       this.extensions[extension.name] = extension as any;
@@ -167,68 +167,14 @@ export class Bot {
 
     const response = await adapter.chat([SystemMessage(this.prompt), AssistantMessage("Resolve OK"), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
     let content = response.message.content;
-    if (debug) logger.info(`Adapter: ${current}, Response: \n${content}`);
+    if (debug) this.ctx.logger.info(`Adapter: ${current}, Response: \n${content}`);
 
     if (adapter.ability.includes("原生工具调用")) {
       const toolResponse = await this.handleToolCalls(response.message.tool_calls || [], debug);
       if (toolResponse) return toolResponse;
     }
 
-    return this.handleJsonResponse(content, response, current, debug);
-  }
-
-  // 或许可以将这两个函数整合到一起
-  // 递归调用
-  // TODO: 指定最大调用深度
-  // TODO: 上报函数调用信息
-  private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<Response | null> {
-    if (debug) {
-      logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
-      logger.info(toolCalls.map(toolCall => `Name: ${toolCall.function.name}\nArgs: ${JSON.stringify(toolCall.function.arguments)})}`).join('\n'));
-    }
-    let returns: ToolMessage[] = [];
-    for (let toolCall of toolCalls) {
-      try {
-        let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
-        if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
-      } catch (e) {
-        returns.push(ToolMessage(e.message, toolCall.id));
-      }
-    }
-    if (returns.length > 0) {
-      return this.generateResponse(returns, debug);
-    }
-    return null;
-  }
-
-  private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<Response | null> {
-    const Success = (func: string, message: string) => {
-      return ToolMessage(JSON.stringify({ function: func, status: "success", result: message }), null);
-    }
-    const Failed = (func: string,  message: string) => {
-      return ToolMessage(JSON.stringify({ function: func, status: "failed", reason: message }), null);
-    }
-    if (debug) {
-      logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
-      logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
-    }
-    let returns: Message[] = [];
-    for (const func of functions) {
-      const { name, params } = func;
-      try {
-        let returnValue = await this.callFunction(name, params);
-        if (!isEmpty(returnValue)) returns.push(Success(name, returnValue));
-      } catch (e) {
-        returns.push(Failed(name, e.message));
-      }
-    }
-    if (returns.length > 0) {
-      return this.generateResponse(returns, debug);
-    }
-    return null;
-  }
-
-  private async handleJsonResponse(content: string, response: any, current: number, debug: boolean): Promise<Response> {
+    // handle response
     const jsonMatch = content.match(/<.*\/.+>/s);
     let LLMResponse: any = {};
 
@@ -329,6 +275,57 @@ export class Bot {
         adapterIndex: current,
       };
     }
+  }
+
+  // 或许可以将这两个函数整合到一起
+  // 递归调用
+  // TODO: 指定最大调用深度
+  // TODO: 上报函数调用信息
+  private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<Response | null> {
+    if (debug) {
+      this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
+      this.ctx.logger.info(toolCalls.map(toolCall => `Name: ${toolCall.function.name}\nArgs: ${JSON.stringify(toolCall.function.arguments)})}`).join('\n'));
+    }
+    let returns: ToolMessage[] = [];
+    for (let toolCall of toolCalls) {
+      try {
+        let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
+        if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
+      } catch (e) {
+        returns.push(ToolMessage(e.message, toolCall.id));
+      }
+    }
+    if (returns.length > 0) {
+      return this.generateResponse(returns, debug);
+    }
+    return null;
+  }
+
+  private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<Response | null> {
+    const Success = (func: string, message: string) => {
+      return ToolMessage(JSON.stringify({ function: func, status: "success", result: message }), null);
+    }
+    const Failed = (func: string,  message: string) => {
+      return ToolMessage(JSON.stringify({ function: func, status: "failed", reason: message }), null);
+    }
+    if (debug) {
+      this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
+      this.ctx.logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
+    }
+    let returns: Message[] = [];
+    for (const func of functions) {
+      const { name, params } = func;
+      try {
+        let returnValue = await this.callFunction(name, params);
+        if (!isEmpty(returnValue)) returns.push(Success(name, returnValue));
+      } catch (e) {
+        returns.push(Failed(name, e.message));
+      }
+    }
+    if (returns.length > 0) {
+      return this.generateResponse(returns, debug);
+    }
+    return null;
   }
 
   // 如果 replyTo 不是私聊会话，只保留数字部分

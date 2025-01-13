@@ -1,6 +1,7 @@
 import fs from "fs";
 import { promisify } from "util";
 
+import logger from "./logger";
 import { Template } from "./string";
 import { downloadFile, getFileNameFromUrl } from "./toolkit";
 

@@ -1,16 +1,15 @@
-import path from "path";
 import axios from "axios";
 import { createHash } from "crypto";
-import { h } from "koishi";
+import { Context, h } from "koishi";
+import path from "path";
 
-import { Config } from "../config";
-import { convertUrltoBase64, removeBase64Prefix } from "../utils/imageUtils";
-import { CacheManager } from "../managers/cacheManager";
 import { AssistantMessage, ImageComponent, SystemMessage, TextComponent, UserMessage } from "../adapters/creators/component";
-import { isEmpty } from "../utils/string";
+import { Config } from "../config";
+import { CacheManager } from "../managers/cacheManager";
 import { getAdapter } from "../utils/factory";
+import { convertUrltoBase64, removeBase64Prefix } from "../utils/imageUtils";
+import { isEmpty } from "../utils/string";
 import { ProcessingLock } from "../utils/toolkit";
-import { name } from "..";
 
 const processingLock = new ProcessingLock();
 
@@ -185,7 +184,7 @@ export class ImageViewer {
   private serviceMap: Record<string, ImageDescriptionService>;
   private cacheManager: CacheManager<Record<string, string>>;
 
-  constructor(private config: Config) {
+  constructor(private ctx: Context, private config: Config) {
     this.question = config.ImageViewer.Question;
     this.ignoreCache = config.Debug.IgnoreImgCache;
     this.method = config.ImageViewer.How;
@@ -196,7 +195,7 @@ export class ImageViewer {
       另一个LLM: new AnotherLLMService(config),
     };
     this.cacheManager = new CacheManager<Record<string, string>>(
-      path.join(baseDir, "data", name, "downloadImage/ImageDescription.json")
+      path.join(baseDir, "data/yesimbot/downloadImage/ImageDescription.json")
     );
   }
 
@@ -227,7 +226,7 @@ export class ImageViewer {
             if (this.cacheManager.has(cacheKey)) {
               const descriptions = this.cacheManager.get(cacheKey);
               if (descriptions[questionHash]) {
-                logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${descriptions[questionHash]}`);
+                this.ctx.logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${descriptions[questionHash]}`);
                 return `[图片: ${descriptions[questionHash]}]`;
               }
             }
@@ -243,7 +242,7 @@ export class ImageViewer {
             if (this.cacheManager.has(cacheKey)) {
               const descriptions = this.cacheManager.get(cacheKey);
               if (descriptions[questionHash]) {
-                logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${descriptions[questionHash]}`);
+                this.ctx.logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${descriptions[questionHash]}`);
                 return `[图片: ${descriptions[questionHash]}]`;
               }
             }
@@ -256,13 +255,13 @@ export class ImageViewer {
             descriptions[questionHash] = description;
             this.cacheManager.set(cacheKey, descriptions);
 
-            logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${description}`);
+            this.ctx.logger.info(`Image[${cacheKey?.substring(0, 7)}] described with question "${this.question}". Description: ${description}`);
             return `[图片: ${description}]`;
           } finally {
             await processingLock.end(cacheKey);
           }
         } catch (error) {
-          logger.error(`Error getting image description: ${error.message}`);
+          this.ctx.logger.error(`Error getting image description: ${error.message}`);
           // 返回降级结果
           // @ts-ignore
           return this.config.ImageViewer.How === "替换成[图片:summary]" && summary

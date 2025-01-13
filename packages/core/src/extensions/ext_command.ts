@@ -1,8 +1,8 @@
 import { h } from "koishi";
 
-import { Description, Extension, Name, Param } from "./base";
 import { SchemaNode } from "../adapters/creators/schema";
 import { isEmpty } from "../utils/string";
+import { Description, Extension, Name, Param } from "./base";
 
 // TODO: 增加一个配置，允许用户自己填入让Bot运行的指令
 // TODO: 可以内置一些常用的指令
@@ -33,9 +33,9 @@ export class Execute extends Extension {
       } else {
         await this.session.bot.sendMessage(channel, h("execute", {}, cmd));
       }
-      logger.info(`Bot[${this.session.selfId}]执行了指令: ${cmd}`);
+      this.ctx.logger.info(`Bot[${this.session.selfId}]执行了指令: ${cmd}`);
     } catch (e) {
-      logger.error(`Bot[${this.session.selfId}]执行指令失败: ${cmd} - `, e.message);
+      this.ctx.logger.error(`Bot[${this.session.selfId}]执行指令失败: ${cmd} - `, e.message);
     }
   }
 }

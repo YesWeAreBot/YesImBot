@@ -3,6 +3,7 @@ import path from "path";
 import zlib from "zlib";
 
 import { Context } from "koishi";
+import logger from "../utils/logger";
 
 export class CacheManager<T> implements Map<string, T> {
   private ctx = new Context();

@@ -96,6 +96,7 @@ export interface Config {
     AllowErrorFormat: boolean;
     MultiTurn: boolean;
     MultiTurnFormat: "JSON" | "CUSTOM";
+    LLMResponseFormat: "JSON" | "XML";
   };
   Debug: {
     DebugAsInfo: boolean;
@@ -472,7 +473,11 @@ export const Config: Schema<Config> = Schema.object({
     MultiTurnFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("CUSTOM").description("自定义格式"),
-    ]).default("CUSTOM").description("开启多轮对话时，传递给LLM的消息格式。")
+    ]).default("CUSTOM").description("开启多轮对话时，传递给LLM的消息格式。"),
+    LLMResponseFormat: Schema.union([
+      Schema.const("JSON").description("JSON 格式"),
+      Schema.const("XML").description("XML 格式"),
+    ]).default("XML").description("LLM 返回的消息格式。"),
   }).description("插件设置"),
 
   Debug: Schema.object({

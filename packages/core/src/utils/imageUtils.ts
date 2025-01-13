@@ -1,10 +1,11 @@
-import path from "path";
-import https from "https";
-import fs from "fs";
 import { createHash } from "crypto";
+import fs from "fs";
+import https from "https";
+import path from "path";
 
 import axios from "axios";
 import sharp from "sharp";
+import logger from "./logger";
 import { formatSize } from "./string";
 
 

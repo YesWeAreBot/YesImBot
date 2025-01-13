@@ -1,3 +1,5 @@
+import logger from "./logger";
+
 // 折叠文本中间部分
 export function foldText(text: string, maxLength: number): string {
   if (!text) return "";

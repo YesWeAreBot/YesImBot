@@ -4,11 +4,7 @@ import { DATABASE_NAME } from "../database";
 import { ChatMessage } from "../models/ChatMessage";
 
 export class QueueManager {
-  private ctx: Context;
-
-  constructor(ctx: Context) {
-    this.ctx = ctx;
-  }
+  constructor(private ctx: Context) {}
 
   async getQueue(channelId: string, limit?: number): Promise<ChatMessage[]> {
     let chatMessages = await this.ctx.database
@@ -62,7 +58,7 @@ export class QueueManager {
       if (error.message.includes('UNIQUE constraint failed')) {
         // 更新已存在的记录
         const { messageId, ...updateData } = chatMessage;
-        logger.warn(`存在重复的数据库条目：${messageId}，先前的数据将被覆盖`)
+        this.ctx.logger.warn(`存在重复的数据库条目：${messageId}，先前的数据将被覆盖`)
         await this.ctx.database.set(DATABASE_NAME, { messageId }, updateData);
       } else {
         throw error; // 重新抛出其他类型的错误

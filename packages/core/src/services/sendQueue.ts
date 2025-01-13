@@ -68,7 +68,7 @@ export class SendQueue {
       // 这是ctx.command先于addMessage执行完毕的原因，导致ctx.command未能清除新添加的消息
       this.setMark(message.messageId, MarkType.Added);
       await this.queueManager.enqueue(message);
-      logger.info(`New message received, guildId = ${message.channelId}, content = ${foldText(message.content, 1000)}`);
+      this.ctx.logger.info(`New message received, guildId = ${message.channelId}, content = ${foldText(message.content, 1000)}`);
     }
     this.processingLock.end(message.messageId);
   }
@@ -108,7 +108,7 @@ export class SendQueue {
 
   setTriggerCount(channelId: string, nextTriggerCount: number) {
     this.triggerCount.set(channelId, nextTriggerCount);
-    logger.info(`触发次数已被设置为 ${nextTriggerCount}`)
+    this.ctx.logger.info(`触发次数已被设置为 ${nextTriggerCount}`)
   }
 
   // 如果没有触发，将触发次数-1
@@ -119,7 +119,7 @@ export class SendQueue {
     let triggerCount = this.triggerCount.get(channelId) ?? this.config.MemorySlot.FirstTriggerCount;
     if (triggerCount > 1) {
       this.triggerCount.set(channelId, --triggerCount);
-      logger.info(`距离下次回复还剩 ${triggerCount} 次`);
+      this.ctx.logger.info(`距离下次回复还剩 ${triggerCount} 次`);
       return false;
     }
     // 触发后删除对应条目，这样即使没有更新计数，也会使用默认值

@@ -1,10 +1,11 @@
-import path from "path";
 import { readFileSync } from "fs";
+import path from "path";
 
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
+import { EnabledEmbeddingConfig } from "../embeddings/config";
 import { getEmbedding } from "../utils/factory";
+import logger from "../utils/logger";
 import { CacheManager } from "./cacheManager";
-import { EmbeddingConfig, EnabledEmbeddingConfig } from "../embeddings/config";
 
 
 interface Emoji {
