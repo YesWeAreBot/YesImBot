@@ -6,7 +6,7 @@ import { Config } from "./config";
 import { containsFilter, getBotName, isChannelAllowed, getFileUnique, getFormatDateTime } from "./utils/toolkit";
 import { ensurePromptFileExists, genSysPrompt } from "./utils/prompt";
 import { MarkType, SendQueue } from "./services/sendQueue";
-import { outputSchema } from "./adapters/creators/schema";
+import { getOutputSchema } from "./adapters/creators/schema";
 import { initDatabase } from "./database";
 import { processContent, processText } from "./utils/content";
 import { foldText, isEmpty, isNotEmpty } from "./utils/string";
@@ -254,7 +254,7 @@ export function apply(ctx: Context, config: Config) {
             curGroupId: channelId,
             BotName: botName,
             BotSelfId: session.bot.selfId,
-            outputSchema,
+            outputSchema: getOutputSchema(config.Settings.LLMResponseFormat),
             functionPrompt: "{{functionPrompt}}",
             // 记忆模块还未完成，等完成后取消注释
             // coreMemory: await bot.getCoreMemory(session.selfId),
@@ -413,6 +413,7 @@ ${botName}想要跳过此次回复，来自 API ${current}
 
     catch (error) {
       ctx.logger.error(`处理消息时出错: ${error.message}`);
+      if (config.Debug.DebugAsInfo) ctx.logger.error(error.stack);
       if (config.Debug.DebugAsInfo) ctx.logger.error(error.stack);
       return false;
     }

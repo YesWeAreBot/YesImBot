@@ -1,6 +1,5 @@
-import axios from "axios";
 import { Config } from "../config";
-import { foldText, getMimeTypeFromBase64, sendRequest } from "../utils";
+import { getMimeTypeFromBase64, sendRequest } from "../utils";
 import { BaseAdapter, Response } from "./base";
 import { LLM } from "./config";
 import { Message } from "./creators/component";

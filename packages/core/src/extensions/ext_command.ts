@@ -1,3 +1,10 @@
+// ==Extension==
+// @name         Command Run
+// @version      1.0.0
+// @description  允许大模型调用自身指令
+// @author       MiaowFISH
+// ==/Extension==
+
 import { h } from "koishi";
 
 import { SchemaNode } from "../adapters/creators/schema";
@@ -12,10 +19,9 @@ import { Description, Extension, Name, Param } from "./base";
   你可以运行一些只有在IM平台才能运行的指令，下面是你可以运行的指令列表。
   - ban <用户ID> <时长>: 将用户禁言。单位为秒。
   - delmsg <消息ID>: 撤回用户的消息。当你认为别人刷屏或发表不当内容时，运行这条指令
-  - reaction-create <消息ID> <表态编号>: 对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)。
   请将指令字符串添加到 cmd 参数上来执行指令。
   将channel设置为你要执行指令的频道，不填默认为当前频道。
-  比如 \`execute("ban 1234567 600")\` 是将用户 1234567 禁言10分钟。
+  比如 \`execute("ban 1234567 600")\` 是将用户 1234567 禁言 10 分钟。
   这个函数**不能**在 "status" 为 function 的时候使用。DO NOT USE THIS FUNCTION WHEN "status" IS "function".
   你只能在 "status" 为 "success" 或 "skip" 的时候使用这个函数。YOU CAN ONLY USE THIS FUNCTION WHEN "status" IS "success" OR "skip".
   这个函数没有返回值。
