@@ -4,7 +4,7 @@ import { Context, Random, Session } from "koishi";
 import { AdapterSwitcher } from "./adapters";
 import { Usage } from "./adapters/base";
 import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolCall, ToolMessage, UserMessage } from "./adapters/creators/component";
-import { functionPrompt, ToolSchema } from "./adapters/creators/schema";
+import { getFunctionSchema, ToolSchema } from "./adapters/creators/schema";
 import { Config } from "./config";
 import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
@@ -162,7 +162,7 @@ export class Bot {
       let str = Object.values(this.extensions)
         .map((extension) => getFunctionPrompt(extension))
         .join("\n");
-        this.prompt = this.prompt.replace("{{functionPrompt}}", functionPrompt + `${isEmpty(str) ? "No functions available." : str}`);
+      this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.config.Settings.LLMResponseFormat) + `${isEmpty(str) ? "No functions available." : str}`);
     }
 
     const response = await adapter.chat([SystemMessage(this.prompt), AssistantMessage("Resolve OK"), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
