@@ -439,7 +439,7 @@ export const Config: Schema<Config> = Schema.object({
       .description("单条消息的结构模板"),
     SendResolveOK: Schema.boolean()
       .default(true)
-      .description("在 System Prompt 后发送 Assistant 的 'Resolve OK' 回复。");
+      .description("在 System Prompt 后发送 Assistant 的 'Resolve OK' 回复。"),
     LogicRedirect: Schema.intersect([
       Schema.object({
         Enabled: Schema.boolean()
