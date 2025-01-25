@@ -37,8 +37,14 @@ export function getExtensions(ctx: Context, bot: Bot): Extension[] {
 
   fs.readdirSync(__dirname)
     .filter((file) => file.startsWith("ext_") && !file.endsWith(".d.ts")) // 不指定 .js 是为了兼容dev模式
+    .filter((file) => file.startsWith("ext_") && !file.endsWith(".d.ts")) // 不指定 .js 是为了兼容dev模式
     .forEach((file) => {
       try {
+        // @ts-ignore
+        if (!ctx?.memory && file.startsWith("ext_memory")) {
+          ctx.logger.warn(`当前未启用 Memory 模块，跳过扩展：${file}`)
+          return
+        }
         // @ts-ignore
         if (!ctx?.memory && file.startsWith("ext_memory")) {
           ctx.logger.warn(`当前未启用 Memory 模块，跳过扩展：${file}`)
