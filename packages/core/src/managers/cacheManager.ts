@@ -128,25 +128,19 @@ export class CacheManager<T> implements Map<string, T> {
     return this.cache.size;
   }
 
-  [Symbol.iterator](): MapIterator<[string, T]> {
+  [Symbol.iterator](): IterableIterator<[string, T]> {
     return this.cache[Symbol.iterator]();
   }
 
-  [Symbol.toStringTag]: string;
-
-  public has(key: string): boolean {
-    return this.cache.has(key);
-  }
-
-  public keys(): MapIterator<string> {
+  public keys(): IterableIterator<string> {
     return this.cache.keys();
   }
 
-  public values(): MapIterator<T> {
+  public values(): IterableIterator<T> {
     return this.cache.values();
   }
 
-  public entries():  MapIterator<[string, T]> {
+  public entries(): IterableIterator<[string, T]> {
     return this.cache.entries();
   }
 
