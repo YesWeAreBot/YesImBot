@@ -39,7 +39,6 @@ export function containsFilter(content: string, FilterList: string[]): boolean {
 
   for (const filter of FilterList) {
     if (isEmpty(filter)) continue;
-    if (isEmpty(filter)) continue;
     let regex = new RegExp(filter, "gi");
     if (regex.test(content))
       return true;
@@ -280,7 +279,6 @@ export function downloadFile(url, filePath, debug) {
 };
 
 /**
- *
  *
  * @param date
  * @returns 2024年12月3日星期二17:34:00

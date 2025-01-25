@@ -1,9 +1,6 @@
 import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
 import { BaseAdapter } from "../adapters/base";
 import { LLM } from "../adapters/config";
-import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
-import { BaseAdapter } from "../adapters/base";
-import { LLM } from "../adapters/config";
 import { Config } from "../config";
 import { CustomEmbedding, OllamaEmbedding, OpenAIEmbedding } from "../embeddings";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
@@ -19,8 +16,6 @@ export function getAdapter(config: LLM, parameters?: Config["Parameters"]): Base
       return new OllamaAdapter(config, parameters);
     case "OpenAI":
       return new OpenAIAdapter(config, parameters);
-    case "Gemini":
-      return new GeminiAdapter(config, parameters);
     case "Gemini":
       return new GeminiAdapter(config, parameters);
     default:
