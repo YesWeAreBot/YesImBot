@@ -132,6 +132,12 @@ export class CacheManager<T> implements Map<string, T> {
     return this.cache[Symbol.iterator]();
   }
 
+  [Symbol.toStringTag]: string;
+
+  public has(key: string): boolean {
+    return this.cache.has(key);
+  }
+  
   public keys(): IterableIterator<string> {
     return this.cache.keys();
   }
