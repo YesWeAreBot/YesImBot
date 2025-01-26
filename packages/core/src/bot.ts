@@ -349,25 +349,6 @@ export class Bot {
     } catch (e) {
       return "";
     }
-    try {
-      replyTo = replyTo.toString().trim();
-      if (isNotEmpty(replyTo) && !replyTo.startsWith("private:")) {
-        const numericMatch = replyTo.match(/\d+/);
-        if (numericMatch) {
-          replyTo = numericMatch[0].replace(/\s/g, "");
-        }
-        // 不合法的 channelId
-        if (replyTo.match(/\{.+\}/)) {
-          replyTo = "";
-        }
-        if (replyTo.indexOf("sandbox") > -1) {
-          replyTo = "";
-        }
-      }
-      return replyTo;
-    } catch (e) {
-      return "";
-    }
   }
 
   // TODO: 规范化params

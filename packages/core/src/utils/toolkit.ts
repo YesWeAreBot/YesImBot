@@ -7,6 +7,7 @@ import { Config } from "../config";
 import logger from "./logger";
 import { isEmpty, isNotEmpty } from "./string";
 
+import { Tool } from "../bot"
 
 export function isChannelAllowed(slotContains: string[][], channelId: string): boolean {
   for (let slot of slotContains) {
@@ -309,4 +310,17 @@ export function tiktokenizer(text: string): number {
   const tokenPattern = /(\w+)|([\u4e00-\u9fa5])|([^\w\s])/g;
   const tokens = text.match(tokenPattern);
   return tokens ? tokens.length : 0;
+}
+
+/**
+ * 将工具列表转换为格式化字符串
+ * @param tools
+ */
+export function toolsToString(tools: Tool[]): string {
+    if (!tools?.length) return "无";
+    return tools.map(tool =>
+        `▸ ${tool.name}\n  ${Object.entries(tool.params)
+            .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+            .join("\n  ")}`
+    ).join("\n\n");
 }

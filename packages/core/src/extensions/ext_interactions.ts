@@ -7,6 +7,8 @@
 
 import { Description, Extension, Name, Param } from "./base";
 
+import { isEmpty } from "../utils/string";
+
 @Name("reaction-create")
 @Description(`
   在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)
@@ -41,3 +43,31 @@ export class Essence extends Extension {
     }
   }
 }
+
+@Name("send-poke")
+@Description(`
+  发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。
+`)
+@Param("channel", "要在哪个频道运行，不填默认为当前频道")
+@Param("user_id", "用户名称")
+export class Poke extends Extension {
+    async apply(user_id: string, channel?: string) {
+        try {
+            let channelId: string;
+            if (isEmpty(channel)) {
+                channelId = this.session.channelId;
+            }
+            if (!channelId.startsWith("private:")) {
+                // @ts-ignore
+                await this.session.onebot._request("send_poke", { channel: channelId, user_id: user_id });
+            } else {
+                // @ts-ignore
+                await this.session.onebot._request("send_poke", { user_id: user_id });
+            }
+            this.ctx.logger.info(`Bot[${this.session.selfId}]戳了戳 ${user_id}`);
+        } catch (e) {
+            this.ctx.logger.error(`Bot[${this.session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
+        }
+    }
+}
+

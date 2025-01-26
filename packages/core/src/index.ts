@@ -3,7 +3,7 @@ import { LoggerService } from "@cordisjs/logger";
 import { h, sleep } from "koishi";
 
 import { Config } from "./config";
-import { containsFilter, getBotName, isChannelAllowed, getFileUnique, getFormatDateTime } from "./utils/toolkit";
+import { containsFilter, getBotName, isChannelAllowed, getFileUnique, getFormatDateTime, toolsToString } from "./utils/toolkit";
 import { ensurePromptFileExists, genSysPrompt } from "./utils/prompt";
 import { MarkType, SendQueue } from "./services/sendQueue";
 import { getOutputSchema } from "./adapters/creators/schema";
@@ -22,7 +22,7 @@ export const reusable = true;
 
 export const usage = `
 "Yes! I'm Bot!" 是一个能让你的机器人激活灵魂的插件。\n
-使用请阅读 [Github README](https://github.com/HydroGest/YesImBot/blob/main/readme.md)，推荐使用 [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r) 提供的 GPT-4o-mini 模型以获得最高性价比。\n
+使用请阅读 [Github README](https://github.com/HydroGest/YesImBot/blob/main/readme.md)，推荐使用 [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r) 提供的 llama-3.1-405b 模型以获得最高性价比。\n
 官方交流 & 测试群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)
 `;
 
@@ -290,7 +290,8 @@ ${botName}想要跳过此次回复，来自 API ${current}
 ---
 逻辑：${logic}
 ---
-指令：${functions?.length ? functions : "无"}
+指令：
+${toolsToString(functions)}
 ---
 距离下次：${nextTriggerCount}
 ---
@@ -332,7 +333,8 @@ ${botName}想要跳过此次回复，来自 API ${current}
 ---
 逻辑：${logic}
 ---
-指令：${functions?.length ? functions : "无"}
+指令：
+${toolsToString(functions)}
 ---
 距离下次：${nextTriggerCount}
 ---
