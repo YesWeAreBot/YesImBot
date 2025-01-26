@@ -86,6 +86,7 @@ export interface Config {
   };
   Settings: {
     SingleMessageStrctureTemplate: string;
+    SendResolveOK: boolean;
     LogicRedirect: {
       Enabled?: boolean;
       Target?: string;
@@ -436,6 +437,9 @@ export const Config: Schema<Config> = Schema.object({
     SingleMessageStrctureTemplate: Schema.string()
       .default("[{{messageId}}][{{date}} {{channelInfo}}] {{senderName}}<{{senderId}}> {{hasQuote,回复[{{quoteMessageId}}]: ,说: }}{{userContent}}")
       .description("单条消息的结构模板"),
+    SendResolveOK: Schema.boolean()
+      .default(true)
+      .description("在 System Prompt 后发送 Assistant 的 'Resolve OK' 回复。"),
     LogicRedirect: Schema.intersect([
       Schema.object({
         Enabled: Schema.boolean()

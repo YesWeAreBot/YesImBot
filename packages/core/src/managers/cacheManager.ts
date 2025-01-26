@@ -137,16 +137,16 @@ export class CacheManager<T> implements Map<string, T> {
   public has(key: string): boolean {
     return this.cache.has(key);
   }
-
-    public keys(): IterableIterator<string> {
+  
+  public keys(): IterableIterator<string> {
     return this.cache.keys();
   }
 
-    public values(): IterableIterator<T> {
+  public values(): IterableIterator<T> {
     return this.cache.values();
   }
 
-    public entries(): IterableIterator<[string, T]> {
+  public entries(): IterableIterator<[string, T]> {
     return this.cache.entries();
   }
 

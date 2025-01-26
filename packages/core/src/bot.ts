@@ -60,6 +60,9 @@ export class Bot {
   private recall: Message[] = [];  //
   private prompt: string;          // 系统提示词
   private template: Template;
+
+  private sendResolveOK: boolean;
+
   private extensions: { [key: string]: Extension & Function } = {};
   private toolsSchema: ToolSchema[] = [];
 
@@ -71,6 +74,7 @@ export class Bot {
   public session: Session;
 
   constructor(private ctx: Context, private config: Config) {
+    this.sendResolveOK = config.Settings.SendResolveOK;
     this.contextSize = config.MemorySlot.SlotSize;
     this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
     this.maxTriggerCount = Math.max(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
@@ -141,7 +145,7 @@ export class Bot {
         }
         return [...acc, curr];
       }, []);
-      this.addContext(AssistantMessage("Resolve OK"));
+      if (this.sendResolveOK) this.addContext(AssistantMessage("Resolve OK"));
       this.addContext(UserMessage(...components));
     }
   }
@@ -165,7 +169,7 @@ export class Bot {
       this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.config.Settings.LLMResponseFormat) + `${isEmpty(str) ? "No functions available." : str}`);
     }
 
-    const response = await adapter.chat([SystemMessage(this.prompt), AssistantMessage("Resolve OK"), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
+    const response = await adapter.chat([SystemMessage(this.prompt), ...(this.sendResolveOK ? [AssistantMessage("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
     let content = response.message.content;
     if (debug) this.ctx.logger.info(`Adapter: ${current}, Response: \n${content}`);
 

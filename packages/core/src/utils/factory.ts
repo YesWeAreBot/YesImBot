@@ -18,8 +18,6 @@ export function getAdapter(config: LLM, parameters?: Config["Parameters"]): Base
       return new OpenAIAdapter(config, parameters);
     case "Gemini":
       return new GeminiAdapter(config, parameters);
-    case "Gemini":
-      return new GeminiAdapter(config, parameters);
     default:
       throw new Error(`不支持的 API 类型: ${config.APIType}`);
   }
