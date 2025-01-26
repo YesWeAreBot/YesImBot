@@ -17,11 +17,12 @@ import { Description, Extension, Name, Param } from "./base";
 @Name("execute")
 @Description(`
   你可以运行一些只有在IM平台才能运行的指令，下面是你可以运行的指令列表。
-  - ban <用户ID> <时长>: 将用户禁言。单位为秒。时长设为 0 表示解禁。
-  - delmsg <消息ID>: 撤回用户的消息。当你认为别人刷屏或发表不当内容时，运行这条指令
+  - fufu表情包
+  - 男娘武器库表情包
+  - 永雏小菲表情包
   请将指令字符串添加到 cmd 参数上来执行指令。
   将channel设置为你要执行指令的频道，不填默认为当前频道。
-  比如 \`execute("ban 1234567 600")\` 是将用户 1234567 禁言 10 分钟，
+  比如 \`execute("fufu表情包)\` 是发送 fufu 的表情包。
   这个函数**不能**在 "status" 为 function 的时候使用。DO NOT USE THIS FUNCTION WHEN "status" IS "function".
   你只能在 "status" 为 "success" 或 "skip" 的时候使用这个函数。YOU CAN ONLY USE THIS FUNCTION WHEN "status" IS "success" OR "skip".
   这个函数没有返回值。
