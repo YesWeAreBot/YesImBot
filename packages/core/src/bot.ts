@@ -184,9 +184,7 @@ export class Bot {
 
         if (jsonMatch) {
             try {
-                const parser = new XMLParser({
-                    preserveOrder: true
-                });
+                const parser = new XMLParser();
                 LLMResponse = parser.parse(content);
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
             } catch (e) {
