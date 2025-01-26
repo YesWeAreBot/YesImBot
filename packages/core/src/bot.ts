@@ -270,7 +270,7 @@ export class Bot {
     } else if (LLMResponse.status === "function") {
       return this.handleFunctionCalls(LLMResponse.functions, debug);
     } else {
-      const reason = `Status 不是一个有效值: ${LLMResponse.status}`;
+      const reason = `status 不是一个有效值: ${LLMResponse.status}`;
       return {
         status: "fail",
         raw: content,

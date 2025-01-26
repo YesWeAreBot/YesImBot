@@ -324,6 +324,11 @@ ${toolsToString(functions)}
       let { replyTo, finalReply, nextTriggerCount, logic, functions } = chatResponse as SuccessResponse;
 
       if (isEmpty(replyTo)) replyTo = session.channelId;
+        
+      finalReply = Array.isArray(finalReply)
+            ? finalReply.join('')  // 如果是数组，拼接成字符串。场景: 当使用 XML 格式时，此处中可能包含 <at/>、<quote> 等无法被正确解析成字符串。
+            : finalReply;          // 如果是字符串，直接使用
+    
 
       sendQueue.setTriggerCount(channelId, nextTriggerCount);
       template = `
