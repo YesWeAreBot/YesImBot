@@ -185,11 +185,7 @@ export class Bot {
         if (jsonMatch) {
             try {
                 const parser = new XMLParser({
-                    ignoreAttributes: false,        // 保留属性
-                    parseTagValue: false,           // 不自动转换标签值类型
-                    parseAttributeValue: false,     // 不自动转换属性值类型
-                    preserveOrder: true,            // 保留节点顺序
-                    trimValues: false               // 保留空格
+                    preserveOrder: true
                 });
                 LLMResponse = parser.parse(content);
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
