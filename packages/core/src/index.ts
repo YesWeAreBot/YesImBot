@@ -34,9 +34,7 @@ export const inject = {
   required: ["database"],
   optional: [
     "memory",
-    "qmanager",
-    "interactions",
-    "censor",
+    "censor"
   ],
 }
 
