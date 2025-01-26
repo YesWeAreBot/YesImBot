@@ -1,9 +1,6 @@
 import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
 import { BaseAdapter } from "../adapters/base";
 import { LLM } from "../adapters/config";
-import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
-import { BaseAdapter } from "../adapters/base";
-import { LLM } from "../adapters/config";
 import { Config } from "../config";
 import { CustomEmbedding, OllamaEmbedding, OpenAIEmbedding } from "../embeddings";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
