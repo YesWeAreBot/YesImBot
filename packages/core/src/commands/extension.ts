@@ -2,6 +2,7 @@ import { Context } from "koishi";
 import path from 'path';
 import fs from 'fs/promises';
 import { downloadFile, readMetadata } from "../utils";
+import { Bot } from "../bot";
 
 // 文件名标准化函数
 function normalizeFilename(original: string): string {
@@ -14,7 +15,142 @@ function normalizeFilename(original: string): string {
     return `ext_${baseName}`;
 }
 
+// 扩展信息类型
+interface ExtensionInfo {
+    fileName: string
+    name: string
+    version: string
+    author: string
+    description?: string
+}
+
+// 获取扩展目录路径
+function getExtensionPath(ctx: Context) {
+    const isDevMode = process.env.NODE_ENV === 'development'
+    return path.join(
+        ctx.baseDir,
+        isDevMode
+            ? 'external/yesimbot/packages/core/lib/extensions'
+            : 'node_modules/koishi-plugin-yesimbot/lib/extensions'
+    )
+}
+
+// 获取有效扩展文件列表
+async function getExtensionFiles(ctx: Context): Promise<string[]> {
+    const extensionPath = getExtensionPath(ctx)
+    try {
+        const files = await fs.readdir(extensionPath)
+        return files.filter(file =>
+            file.startsWith('ext_') &&
+            file.endsWith('.js') &&
+            !file.endsWith('.map') &&
+            !file.endsWith('.d.js')
+        )
+    } catch (error) {
+        ctx.logger.error('读取扩展目录失败:', error)
+        return []
+    }
+}
+
 export function apply(ctx: Context) {
+
+    // 扩展列表指令
+    ctx.command('扩展列表', '显示已安装的扩展列表', { authority: 3 })
+        .action(async ({ session }) => {
+            try {
+                const extFiles = await getExtensionFiles(ctx)
+                if (extFiles.length === 0) {
+                    return '当前没有安装任何扩展。'
+                }
+
+                const extensions: ExtensionInfo[] = []
+                for (const file of extFiles) {
+                    try {
+                        const filePath = path.join(getExtensionPath(ctx), file)
+                        const metadata = readMetadata(filePath)
+                        if (!metadata) continue
+
+                        extensions.push({
+                            fileName: file,
+                            name: metadata.name || '未命名扩展',
+                            version: metadata.version || '0.0.0',
+                            author: metadata.author || '未知作者',
+                            description: metadata.description
+                        })
+                    } catch (error) {
+                        ctx.logger.warn(`[${file}] 元数据读取失败:`, error)
+                    }
+                }
+
+                if (extensions.length === 0) {
+                    return '没有找到有效的扩展。'
+                }
+
+                // 格式化输出
+                let message = '📦 已安装扩展列表：\n\n'
+                message += extensions.map((ext, index) =>
+                    `【${index + 1}】${ext.name}
+  - 文件：${ext.fileName}
+  - 版本：v${ext.version}
+  - 作者：${ext.author}
+  ${ext.description ? `- 描述：${ext.description}` : ''}`
+                ).join('\n\n')
+
+                return session?.sendQueued(message)
+            } catch (error) {
+                ctx.logger.error('扩展列表获取失败:', error)
+                return '❌ 获取扩展列表失败，请查看日志。'
+            }
+        })
+
+    // 删除扩展指令
+    ctx.command('删除扩展 <fileName>', '删除指定扩展文件', { authority: 3 })
+        .option('force', '-f  强制删除（跳过确认）')
+        .usage([
+            '注意：',
+            '1. 文件名不需要输入 ext_ 前缀和 .js 后缀',
+            '2. 实际删除时会自动补全前缀和后缀',
+            '示例：删除扩展 example → 实际删除 ext_example.js'
+        ].join('\n'))
+        .example('删除扩展 example -f')
+        .action(async ({ session, options }, fileName) => {
+            try {
+                if (!fileName) return '请输入要删除的扩展名称。'
+
+                // 文件名标准化处理
+                let processedName = fileName.trim()
+                // 补充扩展名
+                if (!processedName.endsWith('.js')) processedName += '.js'
+                // 强制前缀处理
+                processedName = normalizeFilename(processedName)
+
+                const filePath = path.join(getExtensionPath(ctx), processedName)
+
+                try {
+                    await fs.access(filePath)
+                } catch {
+                    return `❌ 扩展文件 ${processedName} 不存在。`
+                }
+
+                if (!options.force) {
+                    await session?.send(`⚠️ 确认要删除扩展 ${processedName} 吗？(y/N)`)
+                    const confirm = await session?.prompt(5000)
+                    if (!confirm || !confirm.toLowerCase().startsWith('y')) {
+                        return '🗑️ 删除操作已取消。'
+                    }
+                }
+
+                await fs.unlink(filePath)
+                ctx.logger.success(`扩展删除成功: ${processedName}`)
+
+                return `✅ 扩展 ${processedName} 已删除。\n` +
+                    '请使用 "重载插件" 命令使更改生效。'
+            } catch (error) {
+                ctx.logger.error('扩展删除失败:', error)
+                return `❌ 删除失败：${error.message}`
+            }
+        })
+
     ctx.command("重载插件", { authority: 3 })
         .usage("重载 Athena，用于生效扩展变更。")
         .action(({ session }) => {
