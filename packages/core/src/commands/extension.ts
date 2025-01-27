@@ -17,7 +17,8 @@ function normalizeFilename(original: string): string {
 export function apply(ctx: Context) {
     ctx.command("重载插件", { authority: 3 })
         .usage("重载 Athena，用于生效扩展变更。")
-        .action((_) => {
+        .action(({ session }) => {
+            session.send("✅ 已进行重载操作。")
             ctx.scope.restart();
         })
 
@@ -95,19 +96,18 @@ export function apply(ctx: Context) {
                     throw new Error('无法读取扩展元数据');
                 }
 
-                // 校验元数据中的名称一致性
-                if (metadata.name && !metadata.name.startsWith('ext_')) {
-                    ctx.logger.warn('[元数据警告] 扩展名称建议以 ext_ 开头');
-                }
-
-                // 格式化日志输出
                 ctx.logger.info(`[扩展信息] 安装详情：
   - 文件名称：${filename}
   - 显示名称：${metadata.name || '未命名扩展'}
   - 版本号：${metadata.version || '0.0.0'}
   - 作者：${metadata.author || '匿名'}`);
 
-                return `✅ 扩展 ${metadata.name || filename} 安装完成。输入 "重载插件" 以生效。`;
+                return `✅ 扩展 ${metadata.name || filename} 安装完成。输入 "重载插件" 以生效。
+详情：
+- 文件名称：${ filename }
+- 显示名称：${ metadata.name || '未命名扩展' }
+- 版本号：${ metadata.version || '0.0.0' }
+- 作者：${ metadata.author || '匿名' }`;
 
             } catch (error) {
                 ctx.logger.error('[扩展安装] 失败原因：', error);
