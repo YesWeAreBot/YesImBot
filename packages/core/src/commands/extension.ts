@@ -2,7 +2,6 @@ import { Context } from "koishi";
 import path from 'path';
 import fs from 'fs/promises';
 import { downloadFile, readMetadata } from "../utils";
-import { Bot } from "../bot";
 
 // 文件名标准化函数
 function normalizeFilename(original: string): string {
