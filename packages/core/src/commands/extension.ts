@@ -93,7 +93,7 @@ export function apply(ctx: Context) {
   - 文件：${ext.fileName}
   - 版本：v${ext.version}
   - 作者：${ext.author}
-  ${ext.description ? `- 描述：${ext.description}` : ''}`
+  ${ext.description ? `- 描述：${ext.description}` : '- 请联系扩展作者添加详细信息。'}`
                 ).join('\n\n')
 
                 return message;
