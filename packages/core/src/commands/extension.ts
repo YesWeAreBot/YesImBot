@@ -29,11 +29,9 @@ export function apply(ctx: Context) {
             try {
                 ctx.logger.info(`[扩展安装] 开始从 ${url} 安装扩展...`);
 
-                // 环境模式检测
                 const isDevMode = process.env.NODE_ENV === 'development';
                 ctx.logger.info(`[环境模式] ${isDevMode ? '开发环境 🛠️' : '生产环境 🚀'}`);
 
-                // 动态生成存储路径
                 const extensionPath = path.join(
                     ctx.baseDir,
                     isDevMode
@@ -71,6 +69,7 @@ export function apply(ctx: Context) {
                 // 交互式覆盖确认
                 try {
                     await fs.access(filePath);
+                    ctx.logger.warn("[文件下载] 文件已存在，等待用户操作");
                     await session?.send(`文件 ${ filename } 已存在，是否覆盖？(y / N)`);
                     const confirm = await session?.prompt();
                     if (!confirm?.toLowerCase().startsWith('y')) {
