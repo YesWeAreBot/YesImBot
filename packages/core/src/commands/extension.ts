@@ -36,7 +36,7 @@ export function apply(ctx: Context) {
                     ctx.baseDir,
                     isDevMode
                         ? 'external/yesimbot/packages/core/lib/extensions'
-                        : 'node_modules/koishi-plugins-yesimbot/lib/extensions'
+                        : 'node_modules/koishi-plugin-yesimbot/lib/extensions'
                 );
                 ctx.logger.info(`[路径配置] 扩展存储目录：${extensionPath}`);
                 await fs.mkdir(extensionPath, { recursive: true });
