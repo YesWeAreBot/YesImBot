@@ -15,6 +15,7 @@ import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
 import { apply as applyMemoryCommands } from "./commands/memory";
 import { apply as applySendQueneCommands } from "./commands/sendQuene";
+import { apply as applyExtensionCommands } from "./commands/extension";
 
 export const name = "yesimbot";
 
@@ -126,6 +127,7 @@ export function apply(ctx: Context, config: Config) {
   try {
     //applyMemoryCommands(ctx, bot);
     applySendQueneCommands(ctx, sendQueue);
+    applyExtensionCommands(ctx);
   } catch (error) {
 
   }
