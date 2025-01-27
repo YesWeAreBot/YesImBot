@@ -161,7 +161,7 @@ class AnotherLLMService extends ImageDescriptionService {
           SystemMessage(sysPrompt),
           AssistantMessage("Resolve OK"),
           UserMessage(
-            ImageComponent(base64, this.config.ImageViewer.Server.Detail),
+            ImageComponent(base64, this.config.ImageViewer.Server?.Detail),
             TextComponent(question)
           )
         ],

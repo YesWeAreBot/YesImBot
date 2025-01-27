@@ -275,7 +275,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
       } else {
         // 转换为base64
         const base64 = await convertUrltoBase64(src);
-        message.content[i] = ImageComponent(base64, config.ImageViewer.Server.Detail || "auto");
+        message.content[i] = ImageComponent(base64, config.ImageViewer.Server?.Detail || "auto");
       }
 
       pendingProcessImgCount--;

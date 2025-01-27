@@ -21,7 +21,7 @@ export interface ImageComponent {
 
 export function ImageComponent(
   url: string,
-  detail?: "low" | "high" | "auto"
+  detail: "low" | "high" | "auto" = "auto"
 ): ImageComponent {
   return { type: "image_url", image_url: { url, detail } };
 }
