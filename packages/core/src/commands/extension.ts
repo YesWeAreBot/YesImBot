@@ -96,7 +96,7 @@ export function apply(ctx: Context) {
   ${ext.description ? `- 描述：${ext.description}` : ''}`
                 ).join('\n\n')
 
-                return session?.sendQueued(message)
+                return message;
             } catch (error) {
                 ctx.logger.error('扩展列表获取失败:', error)
                 return '❌ 获取扩展列表失败，请查看日志。'
