@@ -1,4 +1,4 @@
-import { h, Session } from 'koishi';
+import { h, Session, Element } from 'koishi';
 
 import { Config } from '../config';
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
@@ -56,7 +56,14 @@ export async function processContent(config: Config, session: Session, messages:
         break;
     }
     const template = config.Settings.SingleMessageStrctureTemplate;
-    const elements = h.parse(chatMessage.content);
+    let elements: Element[];
+    try {
+       elements = h.parse(chatMessage.content);
+    } catch(e) {
+      console.warn(e);
+      console.warn(chatMessage.content)
+      continue;
+    }
     let userContent: string[] = [];
     for (let elem of elements) {
       switch (elem.type) {
