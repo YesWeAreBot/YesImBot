@@ -1,4 +1,4 @@
-import { XMLParser, XMLBuilder } from "fast-xml-parser";
+import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import { Context, Random, Session } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
@@ -9,6 +9,7 @@ import { Config } from "./config";
 import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
 import { ImageViewer } from "./services/imageViewer";
+import { toolsToString } from "./utils";
 import { isEmpty, isNotEmpty, Template } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
 
@@ -179,16 +180,19 @@ export class Bot {
         }
 
         // handle response
-        const jsonMatch = content.match(/<.*\/.+>/s);
         let LLMResponse: any = {};
-
-        if (jsonMatch) {
+        const matched = content.match(/```(json|xml)\s*\n(.*?)\n```|({.*}|<.*>.*<\/.*>)/gs);
+        if (matched) {
             try {
-                const parser = new XMLParser();
-                LLMResponse = parser.parse(content);
+                if (this.config.Settings.LLMResponseFormat === "JSON") {
+                    LLMResponse = JSON.parse(matched[0]);
+                } else if (this.config.Settings.LLMResponseFormat === "XML") {
+                    const parser = new XMLParser();
+                    LLMResponse = parser.parse(matched[0]);
+                }
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
             } catch (e) {
-                const reason = `JSON 解析失败。请上报此消息给开发者: ${e.message}`;
+                const reason = `${this.config.Settings.LLMResponseFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
                 return {
                     status: "fail",
                     raw: content,
@@ -198,7 +202,7 @@ export class Bot {
                 };
             }
         } else {
-            const reason = `没有找到 JSON: ${content}`;
+            const reason = `没有找到 ${this.config.Settings.LLMResponseFormat}: ${content}`;
             return {
                 status: "fail",
                 raw: content,
@@ -234,7 +238,6 @@ export class Bot {
 
             let finalResponse: string = "";
             let unsafeResponse: any = LLMResponse.finalReply || LLMResponse.reply || "";
-            
 
             if (typeof unsafeResponse === "string") {
                 finalResponse = unsafeResponse;
@@ -249,6 +252,7 @@ export class Bot {
 
             if (isEmpty(finalResponse)) {
                 const reason = `回复内容为空`;
+                this.ctx.logger.info(reason);
                 return {
                     status: "skip",
                     raw: content,
@@ -331,7 +335,7 @@ export class Bot {
         }
         if (debug) {
             this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
-            this.ctx.logger.info(functions.map(func => `Name: ${func.name}\nArgs: ${JSON.stringify(func.params)}`).join('\n'));
+            this.ctx.logger.info(toolsToString(functions));
         }
         let returns: Message[] = [];
         for (const func of functions) {

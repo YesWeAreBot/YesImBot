@@ -53,6 +53,8 @@ export async function genSysPrompt(
   extra: any
 ): Promise<string> {
   let content = fs.readFileSync(getFileNameFromUrl(PromptFileUrl),"utf-8");
+  if (!content.includes("${outputSchema}"))
+    logger.warn("WARN: 提示词不包含 `${outputSchema}`，可能会导致输出错误的格式")
   let template = new Template(content);
   return template.render({
     ...extra

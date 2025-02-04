@@ -104,7 +104,7 @@ export async function processContent(config: Config, session: Session, messages:
           userContent.push(atMessage);
           break;
         case "quote":
-          //chatMessage.quoteMessageId = elem.attrs.id;
+          userContent.push(`[引用:${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}]`);
           break;
         case "img":
           let cacheKey = getFileUnique(elem, session.bot.platform);
@@ -282,7 +282,7 @@ async function processContentWithVisionAbility(config: Config, session: Session,
       } else {
         // 转换为base64
         const base64 = await convertUrltoBase64(src);
-        message.content[i] = ImageComponent(base64, config.ImageViewer.Server.Detail || "auto");
+        message.content[i] = ImageComponent(base64, config.ImageViewer.Server?.Detail || "auto");
       }
 
       pendingProcessImgCount--;
