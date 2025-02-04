@@ -97,17 +97,7 @@ export async function processContent(config: Config, session: Session, messages:
           userContent.push(atMessage);
           break;
         case "quote":
-          const quoteAttrs = { ...(elem.attrs || {}) }; // 确保attrs存在
-          const processedAttrs = {
-             id: quoteAttrs.id || chatMessage.quoteMessageId || '',
-             // 可扩展其他需要保留的属性
-          };
-
-          const safeAttrs = Object.entries(processedAttrs)
-            .map(([key, value]) => `${key}="${safeStringify(value)}"`)
-            .join(' ');
-
-          userContent.push(`<quote ${safeAttrs}/>`);
+          userContent.push(`[引用:${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}]`);
           break;
         case "img":
           let cacheKey = getFileUnique(elem, session.bot.platform);
