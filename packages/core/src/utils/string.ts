@@ -169,6 +169,33 @@ export function repairJSON(text: string) {
     }
 }
 
+export function extractJSON(str: string): string | null {
+    let startIndex = -1;
+    // 正向查找第一个 '{' 的索引
+    for (let i = 0; i < str.length; i++) {
+        if (str[i] === '{') {
+            startIndex = i;
+            break;
+        }
+    }
+    if (startIndex === -1) {
+        return null; // 没有找到 '{'
+    }
+    let endIndex = -1;
+    // 反向查找第一个 '}' 的索引
+    for (let i = str.length - 1; i >= 0; i--) {
+        if (str[i] === '}') {
+            endIndex = i;
+            break;
+        }
+    }
+    if (endIndex === -1 || endIndex < startIndex) {
+        return null; // 没有找到 '}' 或者 '}' 在 '{' 之前
+    }
+
+    return str.slice(startIndex, endIndex + 1);
+}
+
 export function formatSize(size: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   let index = 0;
