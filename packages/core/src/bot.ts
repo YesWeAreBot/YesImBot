@@ -1,4 +1,5 @@
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { JSDOM } from 'jsdom';
 import { Context, Random, Session } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
@@ -229,20 +230,13 @@ export class Bot {
 
         if (LLMResponse.status === "success") {
 
-            const builder = new XMLBuilder({
-                ignoreAttributes: false,
-                suppressEmptyNode: true,    // 生成自闭合标签（如 <at/>）
-                preserveOrder: true,        // 保持解析后的顺序
-                format: false,              // 禁用格式化（避免添加换行/空格）
-            });
-
             let finalResponse: string = "";
             let unsafeResponse: any = LLMResponse.finalReply || LLMResponse.reply || "";
 
             if (typeof unsafeResponse === "string") {
                 finalResponse = unsafeResponse;
             } else {
-                finalResponse = builder.build(unsafeResponse[0]);
+                finalResponse = this.getInnerContentOfElement(matched[0], "finalReply") || unsafeResponse.text;
             }
 
             if (this.allowErrorFormat) {
@@ -299,6 +293,24 @@ export class Bot {
                 reason,
                 adapterIndex: current,
             };
+        }
+    }
+
+    private getInnerContentOfElement(xmlString: string, elementName: string): string | null {
+        try {
+            const dom = new JSDOM(`<root>${xmlString}</root>`, { contentType: 'text/xml' });
+            const document = dom.window.document;
+            const targetElement = document.querySelector(elementName);
+
+            if (!targetElement) {
+                console.warn(`未找到名为 ${elementName} 的元素`);
+                return null;
+            }
+
+            return targetElement.innerHTML;
+        } catch (error) {
+            console.error('解析出错:', error);
+            return null;
         }
     }
 
