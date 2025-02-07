@@ -1,6 +1,7 @@
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import { JSDOM } from 'jsdom';
 import { Context, Random, Session } from "koishi";
+import { jsonrepair } from 'jsonrepair'
 
 import { AdapterSwitcher } from "./adapters";
 import { Usage } from "./adapters/base";
@@ -203,15 +204,19 @@ export class Bot {
                 };
             }
         } else {
-            const reason = `没有找到 ${this.config.Settings.LLMResponseFormat}: ${content}`;
-            return {
-                status: "fail",
-                raw: content,
-                usage: response.usage,
-                reason,
-                adapterIndex: current,
-            };
-        }
+            try {
+              const repaired = jsonrepair(json);
+              LLMResponse = JSON.parse(repaired);
+            } catch(err) {
+               const reason = `没有找到 ${this.config.Settings.LLMResponseFormat}: ${content}`;
+               return {
+                   status: "fail",
+                   raw: content,
+                   usage: response.usage,
+                   reason,
+                   adapterIndex: current,
+               };
+            }
 
         let nextTriggerCount: number = Random.int(this.minTriggerCount, this.maxTriggerCount + 1); // 双闭区间
         // 规范化 nextTriggerCount，确保在设置的范围内
