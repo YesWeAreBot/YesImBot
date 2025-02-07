@@ -182,42 +182,75 @@ export class Bot {
         }
 
         // handle response
-        let LLMResponse: any = {};
-        const matched = content.match(/```(json|xml)\s*\n(.*?)\n```|({.*}|<.*>.*<\/.*>)/gs);
-        if (matched) {
-            try {
-                if (this.config.Settings.LLMResponseFormat === "JSON") {
-                    LLMResponse = JSON.parse(matched[0]);
-                } else if (this.config.Settings.LLMResponseFormat === "XML") {
-                    const parser = new XMLParser();
-                    LLMResponse = parser.parse(matched[0]);
-                }
-                this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
-            } catch (e) {
-                const reason = `${this.config.Settings.LLMResponseFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
-                return {
-                    status: "fail",
-                    raw: content,
-                    usage: response.usage,
-                    reason,
-                    adapterIndex: current,
-                };
-            }
-        } else {
-            try {
-              const repaired = jsonrepair(content);
-              LLMResponse = JSON.parse(repaired);
-            } catch(err) {
-               const reason = `没有找到 ${this.config.Settings.LLMResponseFormat}: ${content}`;
-               return {
-                   status: "fail",
-                   raw: content,
-                   usage: response.usage,
-                   reason,
-                   adapterIndex: current,
-               };
-            }
+let LLMResponse: any = {};
+const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*?<\\/[\\s\\S]*?>)`, 'gis');
+let contentToParse = null;
+let match;
+
+while ((match = regex.exec(content)) !== null) {
+    const lang = match[1];
+    const codeContent = match[2];
+    const directContent = match[3];
+
+    // 优先匹配与配置格式一致的代码块
+    if (lang && lang.toUpperCase() === this.config.Settings.LLMResponseFormat) {
+        contentToParse = codeContent;
+        break; // 找到匹配的代码块，停止搜索
+    }
+
+    // 检查直接内容是否符合当前格式
+    if (directContent) {
+        if (
+            (this.config.Settings.LLMResponseFormat === 'JSON' && directContent.trim().startsWith('{')) ||
+            (this.config.Settings.LLMResponseFormat === 'XML' && directContent.trim().startsWith('<'))
+        ) {
+            contentToParse = directContent;
+            break; // 找到匹配的直接内容，停止搜索
         }
+    }
+}
+
+if (contentToParse) {
+    try {
+        if (this.config.Settings.LLMResponseFormat === "JSON") {
+            LLMResponse = JSON.parse(contentToParse);
+        } else if (this.config.Settings.LLMResponseFormat === "XML") {
+            const parser = new XMLParser();
+            LLMResponse = parser.parse(contentToParse);
+        }
+        this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
+    } catch (e) {
+        const reason = `${this.config.Settings.LLMResponseFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
+        return {
+            status: "fail",
+            raw: content,
+            usage: response.usage,
+            reason,
+            adapterIndex: current,
+        };
+    }
+} else {
+    // 未找到匹配内容，尝试直接解析或修复
+    try {
+        if (this.config.Settings.LLMResponseFormat === "JSON") {
+            const repaired = jsonrepair(content);
+            LLMResponse = JSON.parse(repaired);
+        } else {
+            const parser = new XMLParser();
+            LLMResponse = parser.parse(content);
+        }
+        this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
+    } catch (err) {
+        const reason = `没有找到有效的 ${this.config.Settings.LLMResponseFormat} 结构: ${content}`;
+        return {
+            status: "fail",
+            raw: content,
+            usage: response.usage,
+            reason,
+            adapterIndex: current,
+        };
+    }
+}
 
         let nextTriggerCount: number = Random.int(this.minTriggerCount, this.maxTriggerCount + 1); // 双闭区间
         // 规范化 nextTriggerCount，确保在设置的范围内
@@ -242,7 +275,7 @@ export class Bot {
             if (typeof unsafeResponse === "string") {
                 finalResponse = unsafeResponse;
             } else {
-                finalResponse = this.getInnerContentOfElement(matched[0], "finalReply") || unsafeResponse.text;
+                finalResponse = this.getInnerContentOfElement(content, "finalReply") || unsafeResponse.text;
             }
 
             if (this.allowErrorFormat) {
