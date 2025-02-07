@@ -217,6 +217,7 @@ export class Bot {
                    adapterIndex: current,
                };
             }
+        }
 
         let nextTriggerCount: number = Random.int(this.minTriggerCount, this.maxTriggerCount + 1); // 双闭区间
         // 规范化 nextTriggerCount，确保在设置的范围内
