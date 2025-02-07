@@ -205,7 +205,7 @@ export class Bot {
             }
         } else {
             try {
-              const repaired = jsonrepair(json);
+              const repaired = jsonrepair(content);
               LLMResponse = JSON.parse(repaired);
             } catch(err) {
                const reason = `没有找到 ${this.config.Settings.LLMResponseFormat}: ${content}`;
