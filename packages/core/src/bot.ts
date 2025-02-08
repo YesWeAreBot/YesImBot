@@ -1,56 +1,19 @@
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { XMLParser } from "fast-xml-parser";
 import { JSDOM } from 'jsdom';
+import { jsonrepair } from 'jsonrepair';
 import { Context, Random, Session } from "koishi";
-import { jsonrepair } from 'jsonrepair'
 
 import { AdapterSwitcher } from "./adapters";
-import { Usage } from "./adapters/base";
 import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolCall, ToolMessage, UserMessage } from "./adapters/creators/component";
 import { getFunctionSchema, ToolSchema } from "./adapters/creators/schema";
 import { Config } from "./config";
 import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
+import { LLMResponse, Tool } from "./models/LLMResponse";
 import { ImageViewer } from "./services/imageViewer";
 import { toolsToString } from "./utils";
 import { isEmpty, isNotEmpty, Template } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
-
-export interface Tool extends Function {
-    name: string;
-    params: Record<string, any>;
-}
-
-export interface SuccessResponse {
-    status: "success";
-    raw: string;
-    finalReply: string;
-    replyTo?: string;
-    nextTriggerCount: number;
-    logic: string;
-    functions: Array<Tool>;
-    usage: Usage;
-    adapterIndex: number;
-}
-
-export interface SkipResponse {
-    status: "skip";
-    raw: string;
-    nextTriggerCount: number;
-    logic: string;
-    functions: Array<Tool>;
-    usage: Usage;
-    adapterIndex: number;
-}
-
-export interface FailedResponse {
-    status: "fail";
-    raw: string;
-    reason: string;
-    usage: Usage;
-    adapterIndex: number;
-}
-
-type Response = SuccessResponse | SkipResponse | FailedResponse;
 
 export class Bot {
     private contextSize: number;    // 以对话形式给出的上下文长度
@@ -157,7 +120,7 @@ export class Bot {
         return this.adapterSwitcher.getAdapter();
     }
 
-    async generateResponse(messages: Message[], debug = false): Promise<Response> {
+    async generateResponse(messages: Message[], debug = false): Promise<LLMResponse> {
         let { current, adapter } = this.getAdapter();
 
         if (!adapter) throw new Error("没有可用的适配器");
@@ -182,75 +145,75 @@ export class Bot {
         }
 
         // handle response
-let LLMResponse: any = {};
-const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*?<\\/[\\s\\S]*?>)`, 'gis');
-let contentToParse = null;
-let match;
+        let LLMResponse: any = {};
+        const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*?<\\/[\\s\\S]*?>)`, 'gis');
+        let contentToParse = null;
+        let match;
 
-while ((match = regex.exec(content)) !== null) {
-    const lang = match[1];
-    const codeContent = match[2];
-    const directContent = match[3];
+        while ((match = regex.exec(content)) !== null) {
+            const lang = match[1];
+            const codeContent = match[2];
+            const directContent = match[3];
 
-    // 优先匹配与配置格式一致的代码块
-    if (lang && lang.toUpperCase() === this.config.Settings.LLMResponseFormat) {
-        contentToParse = codeContent;
-        break; // 找到匹配的代码块，停止搜索
-    }
+            // 优先匹配与配置格式一致的代码块
+            if (lang && lang.toUpperCase() === this.config.Settings.LLMResponseFormat) {
+                contentToParse = codeContent;
+                break; // 找到匹配的代码块，停止搜索
+            }
 
-    // 检查直接内容是否符合当前格式
-    if (directContent) {
-        if (
-            (this.config.Settings.LLMResponseFormat === 'JSON' && directContent.trim().startsWith('{')) ||
-            (this.config.Settings.LLMResponseFormat === 'XML' && directContent.trim().startsWith('<'))
-        ) {
-            contentToParse = directContent;
-            break; // 找到匹配的直接内容，停止搜索
+            // 检查直接内容是否符合当前格式
+            if (directContent) {
+                if (
+                    (this.config.Settings.LLMResponseFormat === 'JSON' && directContent.trim().startsWith('{')) ||
+                    (this.config.Settings.LLMResponseFormat === 'XML' && directContent.trim().startsWith('<'))
+                ) {
+                    contentToParse = directContent;
+                    break; // 找到匹配的直接内容，停止搜索
+                }
+            }
         }
-    }
-}
 
-if (contentToParse) {
-    try {
-        if (this.config.Settings.LLMResponseFormat === "JSON") {
-            LLMResponse = JSON.parse(contentToParse);
-        } else if (this.config.Settings.LLMResponseFormat === "XML") {
-            const parser = new XMLParser();
-            LLMResponse = parser.parse(contentToParse);
-        }
-        this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
-    } catch (e) {
-        const reason = `${this.config.Settings.LLMResponseFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
-        return {
-            status: "fail",
-            raw: content,
-            usage: response.usage,
-            reason,
-            adapterIndex: current,
-        };
-    }
-} else {
-    // 未找到匹配内容，尝试直接解析或修复
-    try {
-        if (this.config.Settings.LLMResponseFormat === "JSON") {
-            const repaired = jsonrepair(content);
-            LLMResponse = JSON.parse(repaired);
+        if (contentToParse) {
+            try {
+                if (this.config.Settings.LLMResponseFormat === "JSON") {
+                    LLMResponse = JSON.parse(contentToParse);
+                } else if (this.config.Settings.LLMResponseFormat === "XML") {
+                    const parser = new XMLParser();
+                    LLMResponse = parser.parse(contentToParse);
+                }
+                this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
+            } catch (e) {
+                const reason = `${this.config.Settings.LLMResponseFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
+                return {
+                    status: "fail",
+                    raw: content,
+                    usage: response.usage,
+                    reason,
+                    adapterIndex: current,
+                };
+            }
         } else {
-            const parser = new XMLParser();
-            LLMResponse = parser.parse(content);
+            // 未找到匹配内容，尝试直接解析或修复
+            try {
+                if (this.config.Settings.LLMResponseFormat === "JSON") {
+                    const repaired = jsonrepair(content);
+                    LLMResponse = JSON.parse(repaired);
+                } else {
+                    const parser = new XMLParser();
+                    LLMResponse = parser.parse(content);
+                }
+                this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
+            } catch (err) {
+                const reason = `没有找到有效的 ${this.config.Settings.LLMResponseFormat} 结构: ${content}`;
+                return {
+                    status: "fail",
+                    raw: content,
+                    usage: response.usage,
+                    reason,
+                    adapterIndex: current,
+                };
+            }
         }
-        this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
-    } catch (err) {
-        const reason = `没有找到有效的 ${this.config.Settings.LLMResponseFormat} 结构: ${content}`;
-        return {
-            status: "fail",
-            raw: content,
-            usage: response.usage,
-            reason,
-            adapterIndex: current,
-        };
-    }
-}
 
         let nextTriggerCount: number = Random.int(this.minTriggerCount, this.maxTriggerCount + 1); // 双闭区间
         // 规范化 nextTriggerCount，确保在设置的范围内
@@ -268,7 +231,6 @@ if (contentToParse) {
         }
 
         if (LLMResponse.status === "success") {
-
             let finalResponse: string = "";
             let unsafeResponse: any = LLMResponse.finalReply || LLMResponse.reply || "";
 
@@ -357,7 +319,7 @@ if (contentToParse) {
     // 递归调用
     // TODO: 指定最大调用深度
     // TODO: 上报函数调用信息
-    private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<Response | null> {
+    private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<LLMResponse | null> {
         if (debug) {
             this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
             this.ctx.logger.info(toolCalls.map(toolCall => `Name: ${toolCall.function.name}\nArgs: ${JSON.stringify(toolCall.function.arguments)})}`).join('\n'));
@@ -377,7 +339,7 @@ if (contentToParse) {
         return null;
     }
 
-    private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<Response | null> {
+    private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<LLMResponse | null> {
         const Success = (func: string, message: string) => {
             return ToolMessage(JSON.stringify({ function: func, status: "success", result: message }), null);
         }

@@ -1,5 +1,4 @@
 import { Context, Next, Random, Session } from "koishi";
-import { LoggerService } from "@cordisjs/logger";
 import { h, sleep } from "koishi";
 
 import { Config } from "./config";
@@ -12,10 +11,11 @@ import { processContent, processText } from "./utils/content";
 import { foldText, isEmpty, isNotEmpty } from "./utils/string";
 import { createMessage, getChannelType } from "./models/ChatMessage";
 import { convertUrltoBase64 } from "./utils/imageUtils";
-import { Bot, FailedResponse, SkipResponse, SuccessResponse } from "./bot";
+import { Bot } from "./bot";
 import { apply as applyMemoryCommands } from "./commands/memory";
-import { apply as applySendQueneCommands } from "./commands/sendQuene";
+import { apply as applySendQueueCommands } from "./commands/sendQueue";
 import { apply as applyExtensionCommands } from "./commands/extension";
+import { FailedResponse, SkipResponse, SuccessResponse } from "./models/LLMResponse";
 
 export const name = "yesimbot";
 
@@ -34,7 +34,6 @@ export const DATABASE_NAME = name;
 export const inject = {
   required: ["database"],
   optional: [
-    "memory",
     "censor"
   ],
 }
@@ -126,7 +125,7 @@ export function apply(ctx: Context, config: Config) {
   // 注册指令
   try {
     //applyMemoryCommands(ctx, bot);
-    applySendQueneCommands(ctx, sendQueue);
+    applySendQueueCommands(ctx, sendQueue);
     applyExtensionCommands(ctx);
   } catch (error) {
 
@@ -324,7 +323,7 @@ ${toolsToString(functions)}
       let { replyTo, finalReply, nextTriggerCount, logic, functions } = chatResponse as SuccessResponse;
 
       if (isEmpty(replyTo)) replyTo = session.channelId;
-    
+
 
       sendQueue.setTriggerCount(channelId, nextTriggerCount);
       template = `
