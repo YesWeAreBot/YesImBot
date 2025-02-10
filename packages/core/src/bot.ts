@@ -176,7 +176,7 @@ export class Bot {
         if (contentToParse) {
             try {
                 if (this.config.Settings.LLMResponseFormat === "JSON") {
-                    LLMResponse = JSON.parse(contentToParse);
+                    LLMResponse = JSON.parse(jsonrepair(contentToParse));
                 } else if (this.config.Settings.LLMResponseFormat === "XML") {
                     const parser = new XMLParser();
                     LLMResponse = parser.parse(contentToParse);
