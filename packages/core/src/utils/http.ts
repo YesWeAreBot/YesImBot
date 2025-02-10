@@ -38,7 +38,7 @@ export async function sendRequest<T = any>(url: string, APIKey: string, requestB
           'Authorization': isNotEmpty(APIKey) ? `Bearer ${APIKey}` : undefined,
           'Content-Type': "application/json",
         },
-        timeout: 30000,
+        timeout: 114514,
       });
 
       if (response.status !== 200) {
