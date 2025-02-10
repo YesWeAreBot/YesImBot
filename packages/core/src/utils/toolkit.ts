@@ -7,7 +7,7 @@ import { Config } from "../config";
 import logger from "./logger";
 import { isEmpty, isNotEmpty } from "./string";
 
-import { Tool } from "../bot"
+import { Tool } from "../models/LLMResponse"
 
 export function isChannelAllowed(slotContains: string[][], channelId: string): boolean {
   for (let slot of slotContains) {
