@@ -33,10 +33,8 @@ export async function processContent(config: Config, session: Session, messages:
         for (let key of excludeKeys) {
           delete raw[key];
         }
-
         chatMessage.raw = JSON.stringify(raw);
       } catch (e) {
-
       }
 
       // TODO: role === tool
@@ -58,10 +56,9 @@ export async function processContent(config: Config, session: Session, messages:
     const template = config.Settings.SingleMessageStrctureTemplate;
     let elements: Element[];
     try {
+      if (isEmpty(chatMessage.content)) continue;
        elements = h.parse(chatMessage.content);
     } catch(e) {
-      console.warn(e);
-      console.warn(chatMessage.content)
       continue;
     }
     let userContent: string[] = [];

@@ -51,7 +51,6 @@ export class OllamaAdapter extends BaseAdapter {
     }
     const requestBody = {
       model: this.model,
-      stream: false,
       format: this.ability.includes("结构化输出") ? "json" : undefined,
       messages,
       tools: toolsSchema,
@@ -78,7 +77,7 @@ export class OllamaAdapter extends BaseAdapter {
         ...this.otherParams,
       },
     };
-    let response = await sendRequest(this.url, this.apiKey, requestBody, debug);
+    let response = await sendRequest(this.url, this.apiKey, requestBody, this.adapterConfig.Timeout, debug);
 
     try {
       return {

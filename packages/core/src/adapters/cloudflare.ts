@@ -23,7 +23,7 @@ export class CloudflareAdapter extends BaseAdapter {
       presence_penalty: this.parameters?.PresencePenalty,
       ...this.otherParams,
     };
-    let response = await sendRequest(this.url, this.apiKey, requestBody, debug);
+    let response = await sendRequest(this.url, this.apiKey, requestBody, this.adapterConfig.Timeout, debug);
     try {
       return {
         model: this.model,

@@ -172,7 +172,7 @@ ${coreMemory} -> 要附加给LLM的记忆
       "status": "success",    // "success" 或 "skip" (跳过回复) 或 "function" (运行工具)
       "replyTo": "123456789", // 要把finReply发送到的会话id
       "nextReplyIn": 2,       // 下次回复的冷却条数，让LLM参与控制发言频率
-      "quote": "". // 要引用回复的消息ID
+      "quote": "", // 要引用回复的消息ID
       "logic": "", // LLM思考过程
       "reply": "", // 初版回复
       "check": "", // 检查初版回复是否符合 "消息生成条例" 过程中的检查逻辑。

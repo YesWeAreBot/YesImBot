@@ -25,7 +25,7 @@ export class CustomAdapter extends BaseAdapter {
         : undefined,
       ...this.otherParams,
     };
-    let response = await sendRequest(this.url, this.apiKey, requestBody, debug);
+    let response = await sendRequest(this.url, this.apiKey, requestBody, this.adapterConfig.Timeout, debug);
 
     try {
       return {

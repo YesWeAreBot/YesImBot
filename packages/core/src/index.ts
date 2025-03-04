@@ -34,7 +34,8 @@ export const DATABASE_NAME = name;
 export const inject = {
   required: ["database"],
   optional: [
-    "censor"
+    "censor",
+    "memory"
   ],
 }
 

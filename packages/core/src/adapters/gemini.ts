@@ -79,7 +79,7 @@ export class GeminiAdapter extends BaseAdapter {
       },
     };
 
-    let response = await sendRequest<GenerateContentResponse>(this.url, "", requestBody, debug);
+    let response = await sendRequest<GenerateContentResponse>(this.url, "", requestBody, this.adapterConfig.Timeout, debug);
     try {
       return {
         model: response.modelVersion,

@@ -8,6 +8,7 @@ export interface LLM {
   APIKey: string;
   AIModel: string;
   Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出">;
+  Timeout?: number;
   
   NUMA?: boolean;
   NumCtx?: number;
@@ -43,6 +44,7 @@ export const API: Schema<LLM> = Schema.intersect([
       .experimental()
       .default([])
       .description("模型支持的功能。如果你不知道这是什么，请不要勾选"),
+    Timeout: Schema.number().default(60000).description("API请求超时时间（毫秒）"),
   }),
   Schema.union([
     Schema.object({
