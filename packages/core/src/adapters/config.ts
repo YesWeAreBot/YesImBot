@@ -7,7 +7,7 @@ export interface LLM {
   UID?: string;
   APIKey: string;
   AIModel: string;
-  Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出">;
+  Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出" | "流式输出">;
   Timeout?: number;
   
   NUMA?: boolean;
@@ -39,7 +39,7 @@ export const API: Schema<LLM> = Schema.intersect([
     APIKey: Schema.string().required().description("你的 API 令牌"),
     AIModel: Schema.string()
       .description("模型 ID"),
-    Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出"]))
+    Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出"]))
       .role("checkbox")
       .experimental()
       .default([])

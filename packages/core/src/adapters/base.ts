@@ -22,7 +22,7 @@ export abstract class BaseAdapter {
   protected readonly apiKey: string;
   protected readonly model: string;
   protected readonly otherParams: Record<string, any>;
-  readonly ability: ("原生工具调用" | "识图功能" | "结构化输出")[];
+  readonly ability: ("原生工具调用" | "识图功能" | "结构化输出" | "流式输出")[];
 
   protected history: Message[] = [];
 
