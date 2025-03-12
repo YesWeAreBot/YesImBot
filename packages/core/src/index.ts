@@ -238,8 +238,14 @@ export function apply(ctx: Context, config: Config) {
         return false;
       }
 
-      if (config.Debug.DebugAsInfo) ctx.logger.info("ChatHistory:\n" + chatHistory.map(item => `[${item.role}] ${item.content}`).join("\n"));
-
+      if (config.Debug.DebugAsInfo) {
+        ctx.logger.info("ChatHistory:\n" + chatHistory.map(item => {
+            const content = typeof item.content === 'object' ?
+                JSON.stringify(item.content, null, 2) :
+                item.content;
+            return `[${item.role}] ${content}`;
+        }).join("\n"));
+    }
       bot.setSession(session);
       bot.setChatHistory(chatHistory);
 
