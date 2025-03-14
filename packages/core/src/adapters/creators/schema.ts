@@ -92,6 +92,11 @@ const schema = {
     type: "integer",
     description: "Messages before next reply.",
   },
+  // 移除 quote 的原因是什么？是要使用functions来统一实现quote的功能吗？
+  // quote: {
+  //   type: "string",
+  //   description: "Message ID to quote. Leave empty if not quoting. Quoting a message means replying to a specific message.",
+  // },
   logic: {
     type: "string",
     description: "Response logic explanation.",

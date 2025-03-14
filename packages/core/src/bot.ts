@@ -146,7 +146,7 @@ export class Bot {
 
         // handle response
         let LLMResponse: any = {};
-        const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*?<\\/[\\s\\S]*?>)`, 'gis');
+        const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`,'gis');
         let contentToParse = null;
         let match;
 

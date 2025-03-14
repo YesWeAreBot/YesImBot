@@ -96,7 +96,6 @@ export interface Config {
     UpdatePromptOnLoad: boolean;
     AllowErrorFormat: boolean;
     MultiTurn: boolean;
-    MultiTurnFormat: "JSON" | "CUSTOM";
     LLMResponseFormat: "JSON" | "XML";
   };
   Debug: {
@@ -474,10 +473,6 @@ export const Config: Schema<Config> = Schema.object({
     MultiTurn: Schema.boolean()
       .default(false)
       .description("将历史消息以多轮对话格式传递给LLM，这会使得LLM更好地理解哪些消息是自己曾发出的"),
-    MultiTurnFormat: Schema.union([
-      Schema.const("JSON").description("JSON 格式"),
-      Schema.const("CUSTOM").description("自定义格式"),
-    ]).default("CUSTOM").description("开启多轮对话时，传递给LLM的消息格式。"),
     LLMResponseFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("XML").description("XML 格式"),

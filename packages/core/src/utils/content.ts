@@ -1,4 +1,5 @@
 import { h, Session, Element } from 'koishi';
+import { XMLParser } from "fast-xml-parser";
 
 import { Config } from '../config';
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
@@ -23,18 +24,13 @@ export async function processContent(config: Config, session: Session, messages:
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
-    if (chatMessage.sender.id === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
+    if (chatMessage.sender.id === session.selfId) {
       if (isEmpty(chatMessage.raw)) {
-        chatMessage.raw = convertChatMessageToRaw(chatMessage);
+        chatMessage.raw = convertChatMessageToRaw(chatMessage, config.Settings.LLMResponseFormat);
       }
       try {
-        let raw = parseJSON(chatMessage.raw);
-        // 此处在传递给LLM的历史消息中移除键的话，会导致LLM在新生成的消息中不包含这些键，使得自动控制频率、初版回复、检查初版回复功能失效
-        // let excludeKeys = ["nextReplyIn", "reply", "check"];
-        // for (let key of excludeKeys) {
-        //   delete raw[key];
-        // }
-        chatMessage.raw = JSON.stringify(raw);
+        // 判断chatMessage.raw是JSON格式还是XML格式，再根据config.Settings.LLMResponseFormat进行转换
+        chatMessage.raw = convertFormat(chatMessage.raw, config.Settings.LLMResponseFormat);
       } catch (e) {
       }
 
@@ -148,11 +144,12 @@ async function processContentWithVisionAbility(config: Config, session: Session,
   let pendingProcessImgCount = 0;
 
   for (let chatMessage of messages) {
-    if (!isEmpty(chatMessage.raw) || chatMessage.sender.id === session.selfId && config.Settings.MultiTurnFormat === "JSON") {
+    if (!isEmpty(chatMessage.raw) || chatMessage.sender.id === session.selfId) {
       if (isEmpty(chatMessage.raw)) {
-        chatMessage.raw = convertChatMessageToRaw(chatMessage);
+        chatMessage.raw = convertChatMessageToRaw(chatMessage, config.Settings.LLMResponseFormat);
       }
       // TODO: role === tool
+      chatMessage.raw = convertFormat(chatMessage.raw, config.Settings.LLMResponseFormat);
       processedMessage.push(AssistantMessage(chatMessage.raw));
       continue;
     }
@@ -337,10 +334,88 @@ export function processText(splitRule: Config["Bot"]["BotReplySpiltRegex"], repl
   return sentences;
 }
 
-function convertChatMessageToRaw(chatMessage: ChatMessage): string {
-  return JSON.stringify({
-    status: "success",
-    reply: chatMessage.content,
-    replyTo: chatMessage.channelId,
-  });
+function convertChatMessageToRaw(chatMessage: ChatMessage, format: "JSON" | "XML"): string {
+  if (format === "JSON") {
+    return JSON.stringify({
+      status: "success",
+      replyTo: chatMessage.channelId,
+      nextReplyIn: 1,
+      logic: `突然好想说：${chatMessage.content}`,
+      reply: chatMessage.content,
+      check: "检查无误",
+      finalReply: chatMessage.content,
+      functions: [],
+    });
+  } else if (format === "XML") {
+    return `<status>success</status><replyTo>${chatMessage.channelId}</replyTo><nextReplyIn>1</nextReplyIn><logic>突然好想说：${chatMessage.content}</logic><reply>${chatMessage.content}</reply><check>检查无误</check><finalReply>${chatMessage.content}</finalReply><functions></functions>`;
+  }
+}
+
+function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
+  function detectFormat(str) {
+    str = str.trim();
+    if (str.startsWith("{") && str.endsWith("}")) {
+      return "JSON";
+    } else if (str.startsWith("<") && str.endsWith(">")) {
+      return "XML";
+    }
+    return "UNKNOWN";
+  }
+
+  // JSON 转 XML
+  function json2xml(obj) {
+    let xml = '';
+    for (let key in obj) {
+      if (key === 'functions') {
+        // 特殊处理 functions 数组
+        obj[key].forEach(func => {
+          xml += '<functions>';
+          xml += `<name>${func.name}</name>`;
+          if (func.params) {
+            xml += '<params>';
+            for (let param in func.params) {
+              xml += `<${param}>${func.params[param]}</${param}>`;
+            }
+            xml += '</params>';
+          }
+          xml += '</functions>';
+        });
+      } else if (Array.isArray(obj[key])) {
+        xml += `<${key}>`;
+        obj[key].forEach(item => {
+          if (typeof item === 'object') {
+            xml += json2xml(item);
+          } else {
+            xml += `<item>${item}</item>`;
+          }
+        });
+        xml += `</${key}>`;
+      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        xml += `<${key}>${json2xml(obj[key])}</${key}>`;
+      } else {
+        xml += `<${key}>${obj[key]}</${key}>`;
+      }
+    }
+    return xml;
+  }
+
+  // XML 转 JSON
+  function xml2json(xmlStr: string) {
+    const parser = new XMLParser();
+    return parser.parse(xmlStr);
+  }
+
+  const inputFormat = detectFormat(input);
+
+  if (inputFormat === targetFormat) {
+    return input;
+  }
+
+  if (inputFormat === "JSON" && targetFormat === "XML") {
+    return json2xml(JSON.parse(input));
+  } else if (inputFormat === "XML" && targetFormat === "JSON") {
+    return JSON.stringify(xml2json(input));
+  }
+
+  throw new Error(`Unsupported conversion from ${inputFormat} to ${targetFormat}`);
 }
