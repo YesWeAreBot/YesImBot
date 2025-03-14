@@ -29,10 +29,11 @@ export async function processContent(config: Config, session: Session, messages:
       }
       try {
         let raw = parseJSON(chatMessage.raw);
-        let excludeKeys = ["nextReplyIn", "reply", "check"];
-        for (let key of excludeKeys) {
-          delete raw[key];
-        }
+        // 此处在传递给LLM的历史消息中移除键的话，会导致LLM在新生成的消息中不包含这些键，使得自动控制频率、初版回复、检查初版回复功能失效
+        // let excludeKeys = ["nextReplyIn", "reply", "check"];
+        // for (let key of excludeKeys) {
+        //   delete raw[key];
+        // }
         chatMessage.raw = JSON.stringify(raw);
       } catch (e) {
       }
