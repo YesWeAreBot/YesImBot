@@ -19,8 +19,10 @@ export class CustomAdapter extends BaseAdapter {
       toolsSchema,
       temperature: this.parameters?.Temperature,
       max_tokens: this.parameters?.MaxTokens,
+      top_p: this.parameters?.TopP,
       frequency_penalty: this.parameters?.FrequencyPenalty,
       presence_penalty: this.parameters?.PresencePenalty,
+      stop: this.parameters?.Stop,
       response_format: this.ability.includes("结构化输出")
         ? { type: "json_object" }
         : undefined,
