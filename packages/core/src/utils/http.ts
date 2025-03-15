@@ -40,12 +40,12 @@ export async function sendRequest<T = any>(
   debug: boolean = false
 ): Promise<T> {
   try {
-    // if (debug) {
-    //   logger.info(`
-    //     Request Body:
-    //     ${JSON.stringify(requestBody, null, 2)}
-    //   `);
-    // }
+    if (debug) {
+      logger.info(`
+        Request Body:
+        ${JSON.stringify(requestBody, null, 2)}
+      `);
+    }
     const response = await axios.post(url, requestBody, {
       headers: {
         'Authorization': isNotEmpty(APIKey) ? `Bearer ${APIKey}` : undefined,
@@ -64,12 +64,12 @@ export async function sendRequest<T = any>(
       );
     }
 
-    // if (debug) {
-    //   logger.info(`
-    //     Response:
-    //     ${JSON.stringify(response.data, null, 2)}
-    //   `);
-    // }
+    if (debug) {
+      logger.info(`
+        Response:
+        ${JSON.stringify(response.data, null, 2)}
+      `);
+    }
 
     return response.data;
   } catch (error) {

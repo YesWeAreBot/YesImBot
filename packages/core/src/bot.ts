@@ -46,7 +46,6 @@ export class Bot {
         this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.maxTriggerCount = Math.max(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.allowErrorFormat = config.Settings.AllowErrorFormat;
-        this.finalFormat = this.adapterSwitcher.getAdapter().adapter.ability.includes("结构化输出") ? "JSON" : config.Settings.LLMResponseFormat;
         this.adapterSwitcher = new AdapterSwitcher(
             config.API.APIList,
             config.Parameters
@@ -64,6 +63,7 @@ export class Bot {
             this.extensions[extension.name] = extension as any;
             this.toolsSchema.push(getToolSchema(extension));
         }
+        this.finalFormat = this.adapterSwitcher.getAdapter().adapter.ability.includes("结构化输出") ? "JSON" : config.Settings.LLMResponseFormat;
     }
 
     setSystemPrompt(content: string) {
@@ -139,6 +139,16 @@ export class Bot {
 
         const response = await adapter.chat([SystemMessage(this.prompt), ...(this.sendResolveOK ? [AssistantMessage("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
         let content = response.message.content;
+        if (adapter.ability.includes("深度思考")) {
+            // 移除adapter.reasoningStart和adapter.reasoningEnd之间的内容
+            // adapter.reasoningStart和adapter.reasoningEnd本身也可能是正则表达式，例如adapter.reasoningEnd可能是Reasoned for (?:a second|[^\n]* seconds)
+            const contentWithoutReasoning = content.replace(
+                new RegExp(`${adapter.reasoningStart}[\\s\\S]*?${adapter.reasoningEnd}`, 'g'),
+                ''
+            );
+
+            content = contentWithoutReasoning.trim();
+        }
         if (debug) this.ctx.logger.info(`Adapter: ${current}, Response: \n${content}`);
 
         if (adapter.ability.includes("原生工具调用")) {

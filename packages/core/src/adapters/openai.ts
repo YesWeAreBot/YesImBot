@@ -14,6 +14,7 @@ export class OpenAIAdapter extends BaseAdapter {
   async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
     const requestBody: any = {
       model: this.model,
+      reasoning_effort: this.ability.includes("深度思考") ? this.reasoningEffort : undefined,
       messages,
       ...(toolsSchema ? { tools: toolsSchema } : {}),
       temperature: this.parameters?.Temperature,

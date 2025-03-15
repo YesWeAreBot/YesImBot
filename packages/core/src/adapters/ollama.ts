@@ -52,6 +52,7 @@ export class OllamaAdapter extends BaseAdapter {
     const requestBody = {
       model: this.model,
       format: this.ability.includes("结构化输出") ? "json" : undefined,
+      // reasoning_effort: this.ability.includes("深度思考") ? this.reasoningEffort : undefined,
       messages,
       tools: toolsSchema,
       options: {

@@ -343,12 +343,12 @@ function convertChatMessageToRaw(chatMessage: ChatMessage, format: "JSON" | "XML
       nextReplyIn: 1,
       logic: `突然好想说：${chatMessage.content}`,
       reply: chatMessage.content,
-      check: "检查无误",
+      check: "",
       finalReply: chatMessage.content,
       functions: [],
     });
   } else if (format === "XML") {
-    return `<status>success</status><replyTo>${chatMessage.channelId}</replyTo><nextReplyIn>1</nextReplyIn><logic>突然好想说：${chatMessage.content}</logic><reply>${chatMessage.content}</reply><check>检查无误</check><finalReply>${chatMessage.content}</finalReply><functions></functions>`;
+    return `<status>success</status><replyTo>${chatMessage.channelId}</replyTo><nextReplyIn>1</nextReplyIn><logic>突然好想说：${chatMessage.content}</logic><reply>${chatMessage.content}</reply><check></check><finalReply>${chatMessage.content}</finalReply><functions></functions>`;
   }
 }
 
