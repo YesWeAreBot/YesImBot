@@ -230,7 +230,7 @@ export function apply(ctx: Context, config: Config) {
 
     try {
       // 处理内容
-      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer);
+      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer, bot.getAdapter().adapter, bot.finalFormat);
 
       // 生成响应
       if (!chatHistory || (Array.isArray(chatHistory) && chatHistory.length === 0)) {
@@ -260,7 +260,7 @@ export function apply(ctx: Context, config: Config) {
             curGroupId: channelId,
             BotName: botName,
             BotSelfId: session.bot.selfId,
-            outputSchema: getOutputSchema(config.Settings.LLMResponseFormat),
+            outputSchema: getOutputSchema(bot.finalFormat),
             functionPrompt: "{{functionPrompt}}",
             // 记忆模块还未完成，等完成后取消注释
             // coreMemory: await bot.getCoreMemory(session.selfId),

@@ -21,6 +21,7 @@ export class Bot {
     private minTriggerCount: number;
     private maxTriggerCount: number;
     private allowErrorFormat: boolean;
+    readonly finalFormat: "JSON" | "XML";
 
     private context: Message[] = []; // 对话上下文
     private recall: Message[] = [];  //
@@ -45,6 +46,7 @@ export class Bot {
         this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.maxTriggerCount = Math.max(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.allowErrorFormat = config.Settings.AllowErrorFormat;
+        this.finalFormat = this.adapterSwitcher.getAdapter().adapter.ability.includes("结构化输出") ? "JSON" : config.Settings.LLMResponseFormat;
         this.adapterSwitcher = new AdapterSwitcher(
             config.API.APIList,
             config.Parameters
@@ -132,7 +134,7 @@ export class Bot {
             let str = Object.values(this.extensions)
                 .map((extension) => getFunctionPrompt(extension))
                 .join("\n");
-            this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.config.Settings.LLMResponseFormat) + `${isEmpty(str) ? "No functions available." : str}`);
+            this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.finalFormat) + `${isEmpty(str) ? "No functions available." : str}`);
         }
 
         const response = await adapter.chat([SystemMessage(this.prompt), ...(this.sendResolveOK ? [AssistantMessage("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
@@ -156,7 +158,7 @@ export class Bot {
             const directContent = match[3];
 
             // 优先匹配与配置格式一致的代码块
-            if (lang && lang.toUpperCase() === this.config.Settings.LLMResponseFormat) {
+            if (lang && lang.toUpperCase() === this.finalFormat) {
                 contentToParse = codeContent;
                 break; // 找到匹配的代码块，停止搜索
             }
@@ -164,8 +166,8 @@ export class Bot {
             // 检查直接内容是否符合当前格式
             if (directContent) {
                 if (
-                    (this.config.Settings.LLMResponseFormat === 'JSON' && directContent.trim().startsWith('{')) ||
-                    (this.config.Settings.LLMResponseFormat === 'XML' && directContent.trim().startsWith('<'))
+                    (this.finalFormat === 'JSON' && directContent.trim().startsWith('{')) ||
+                    (this.finalFormat === 'XML' && directContent.trim().startsWith('<'))
                 ) {
                     contentToParse = directContent;
                     break; // 找到匹配的直接内容，停止搜索
@@ -175,15 +177,15 @@ export class Bot {
 
         if (contentToParse) {
             try {
-                if (this.config.Settings.LLMResponseFormat === "JSON") {
+                if (this.finalFormat === "JSON") {
                     LLMResponse = JSON.parse(jsonrepair(contentToParse));
-                } else if (this.config.Settings.LLMResponseFormat === "XML") {
+                } else if (this.finalFormat === "XML") {
                     const parser = new XMLParser();
                     LLMResponse = parser.parse(contentToParse);
                 }
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
             } catch (e) {
-                const reason = `${this.config.Settings.LLMResponseFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
+                const reason = `${this.finalFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
                 return {
                     status: "fail",
                     raw: content,
@@ -195,7 +197,7 @@ export class Bot {
         } else {
             // 未找到匹配内容，尝试直接解析或修复
             try {
-                if (this.config.Settings.LLMResponseFormat === "JSON") {
+                if (this.finalFormat === "JSON") {
                     const repaired = jsonrepair(content);
                     LLMResponse = JSON.parse(repaired);
                 } else {
@@ -204,7 +206,7 @@ export class Bot {
                 }
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
             } catch (err) {
-                const reason = `没有找到有效的 ${this.config.Settings.LLMResponseFormat} 结构: ${content}`;
+                const reason = `没有找到有效的 ${this.finalFormat} 结构: ${content}`;
                 return {
                     status: "fail",
                     raw: content,

@@ -2,6 +2,7 @@ import { h, Session, Element } from 'koishi';
 import { XMLParser } from "fast-xml-parser";
 
 import { Config } from '../config';
+import { BaseAdapter } from "../adapters/base";
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
 import { isEmpty, parseJSON, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
@@ -17,20 +18,20 @@ import { Message, AssistantMessage, ImageComponent, TextComponent, UserMessage }
  * @param messages
  * @returns
  */
-export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer): Promise<Message[]> {
-  if (config.ImageViewer.How === "LLM API 自带的多模态能力") {
-    return await processContentWithVisionAbility(config, session, messages, imageViewer);
+export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, adapter: BaseAdapter, format: "JSON"|"XML"): Promise<Message[]> {
+  if (config.ImageViewer.How === "LLM API 自带的多模态能力" && adapter.ability.includes("识图功能")) {
+    return await processContentWithVisionAbility(config, session, messages, imageViewer, format);
   }
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
     if (chatMessage.sender.id === session.selfId) {
       if (isEmpty(chatMessage.raw)) {
-        chatMessage.raw = convertChatMessageToRaw(chatMessage, config.Settings.LLMResponseFormat);
+        chatMessage.raw = convertChatMessageToRaw(chatMessage, format);
       }
       try {
-        // 判断chatMessage.raw是JSON格式还是XML格式，再根据config.Settings.LLMResponseFormat进行转换
-        chatMessage.raw = convertFormat(chatMessage.raw, config.Settings.LLMResponseFormat);
+        // 判断chatMessage.raw是JSON格式还是XML格式，再根据format进行转换
+        chatMessage.raw = convertFormat(chatMessage.raw, format);
       } catch (e) {
       }
 
@@ -139,17 +140,17 @@ export async function processContent(config: Config, session: Session, messages:
   return processedMessage;
 }
 
-async function processContentWithVisionAbility(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer) {
+async function processContentWithVisionAbility(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, format: "JSON"|"XML"): Promise<Message[]> {
   const processedMessage: Message[] = [];
   let pendingProcessImgCount = 0;
 
   for (let chatMessage of messages) {
     if (!isEmpty(chatMessage.raw) || chatMessage.sender.id === session.selfId) {
       if (isEmpty(chatMessage.raw)) {
-        chatMessage.raw = convertChatMessageToRaw(chatMessage, config.Settings.LLMResponseFormat);
+        chatMessage.raw = convertChatMessageToRaw(chatMessage, format);
       }
       // TODO: role === tool
-      chatMessage.raw = convertFormat(chatMessage.raw, config.Settings.LLMResponseFormat);
+      chatMessage.raw = convertFormat(chatMessage.raw, format);
       processedMessage.push(AssistantMessage(chatMessage.raw));
       continue;
     }

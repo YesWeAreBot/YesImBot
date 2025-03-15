@@ -9,7 +9,7 @@ export interface LLM {
   AIModel: string;
   Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出" | "流式输出">;
   Timeout?: number;
-  
+
   NUMA?: boolean;
   NumCtx?: number;
   NumBatch?: number;
@@ -43,7 +43,7 @@ export const API: Schema<LLM> = Schema.intersect([
       .role("checkbox")
       .experimental()
       .default([])
-      .description("模型支持的功能。如果你不知道这是什么，请不要勾选"),
+      .description("模型支持的功能。请查阅[文档](https://github.com/HydroGest/AthenaDocsNG/blob/main/docs/user-guide/configuration/main-api.md)了解其作用。如果你不知道这是什么，请不要勾选。"),
     Timeout: Schema.number().default(60000).description("API请求超时时间（毫秒）"),
   }),
   Schema.union([

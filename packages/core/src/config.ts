@@ -476,7 +476,7 @@ export const Config: Schema<Config> = Schema.object({
     LLMResponseFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("XML").description("XML 格式"),
-    ]).default("XML").description("LLM 返回的消息格式。"),
+    ]).default("XML").description("LLM 返回的消息格式。如勾选了“结构化输出”，消息格式将为“JSON”，此处设置将被忽略"),
   }).description("插件设置"),
 
   Debug: Schema.object({
