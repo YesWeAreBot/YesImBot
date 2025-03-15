@@ -12,6 +12,9 @@ export class CustomAdapter extends BaseAdapter {
   }
 
   async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
+    if (this.ability.includes("对话前缀续写") && this.startWith) {
+      messages.push({"role": "assistant", "content": this.startWith, "prefix": true})
+    }
     const requestBody = {
       model: this.model,
       reasoning_effort: this.ability.includes("深度思考") ? this.reasoningEffort : undefined,

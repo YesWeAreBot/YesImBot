@@ -29,6 +29,7 @@ export function ImageComponent(
 export interface Message {
   role: "system" | "assistant" | "user" | "tool";
   content: string | Component[];
+  prefix?: boolean;
 }
 
 export interface SystemMessage extends Message {
@@ -43,6 +44,7 @@ export interface AssistantMessage extends Message {
   role: "assistant";
   content: string;
   tool_calls?: ToolCall[];
+  prefix?: boolean;
 }
 
 export interface ToolMessage extends Message {

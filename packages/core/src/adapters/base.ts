@@ -22,10 +22,11 @@ export abstract class BaseAdapter {
   protected readonly apiKey: string;
   protected readonly model: string;
   protected readonly otherParams: Record<string, any>;
-  readonly ability: ("原生工具调用" | "识图功能" | "结构化输出" | "流式输出" | "深度思考")[];
+  readonly ability: ("原生工具调用" | "识图功能" | "结构化输出" | "流式输出" | "深度思考" | "对话前缀续写")[];
   readonly reasoningStart?: string;
   readonly reasoningEnd?: string;
   readonly reasoningEffort?: "low" | "medium" | "high";
+  readonly startWith?: string;
 
   protected history: Message[] = [];
 
@@ -33,13 +34,14 @@ export abstract class BaseAdapter {
     protected adapterConfig: LLM,
     protected parameters?: Config["Parameters"]
   ) {
-    const { APIKey, APIType, AIModel, Ability, ReasoningStart, ReasoningEnd, ReasoningEffort } = adapterConfig;
+    const { APIKey, APIType, AIModel, Ability, ReasoningStart, ReasoningEnd, ReasoningEffort, StartWith } = adapterConfig;
     this.apiKey = APIKey;
     this.model = AIModel;
     this.ability = Ability || [];
     this.reasoningStart = ReasoningStart;
     this.reasoningEnd = ReasoningEnd;
     this.reasoningEffort = ReasoningEffort;
+    this.startWith = StartWith;
 
     // 解析其他参数
     this.otherParams = {};

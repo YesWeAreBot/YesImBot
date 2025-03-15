@@ -7,10 +7,11 @@ export interface LLM {
   UID?: string;
   APIKey: string;
   AIModel: string;
-  Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出" | "流式输出" | "深度思考">;
+  Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出" | "流式输出" | "深度思考" | "对话前缀续写">;
   ReasoningStart?: string;
   ReasoningEnd?: string;
   ReasoningEffort?: "low" | "medium" | "high";
+  StartWith?: string;
   Timeout?: number;
 
   NUMA?: boolean;
@@ -42,7 +43,7 @@ export const API: Schema<LLM> = Schema.intersect([
     APIKey: Schema.string().required().description("你的 API 令牌"),
     AIModel: Schema.string()
       .description("模型 ID"),
-    Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出", "深度思考"]))
+    Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出", "深度思考", "对话前缀续写"]))
       .role("checkbox")
       .experimental()
       .default([])
@@ -50,6 +51,7 @@ export const API: Schema<LLM> = Schema.intersect([
     ReasoningStart: Schema.string().default("<think>").description("深度思考开始标识。<br/>对于DeepSeek的r系列模型，为`<think>`；<br/>对于OpenAI的o系列模型，为`> Reasoning`"),
     ReasoningEnd: Schema.string().default("</think>").description("深度思考结束标识。<br/>对于DeepSeek的r系列模型，为`</think>`；<br/>对于OpenAI的o系列模型，为`Reasoned for (?:a second|[^\\n]* seconds)`"),
     ReasoningEffort: Schema.union(["low", "medium", "high"]).default("medium").description("深度思考程度，即思维链的长度。<br/>DeepSeek的r系列模型暂不支持此功能，但将在近期上线；<br/>OpenAI的o系列模型支持此功能，可选项为`low`、`medium`、`high`。"),
+    StartWith: Schema.string().description("对话前缀续写中使用的前缀，意味着 LLM 的输出总是以此前缀开头。当前仅DeepSeek Beta支持此功能。").default("```xml\n").experimental(),
     Timeout: Schema.number().default(60000).description("API请求超时时间（毫秒）"),
   }),
   Schema.union([
