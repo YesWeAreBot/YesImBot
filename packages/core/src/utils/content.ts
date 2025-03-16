@@ -353,6 +353,32 @@ function convertChatMessageToRaw(chatMessage: ChatMessage, format: "JSON" | "XML
 }
 
 function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
+  // 从字符串中提取JSON或XML格式的内容
+  function strip(original: string): string {
+    const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`,'gis');
+    let contentToParse = null;
+    let match;
+
+    while ((match = regex.exec(original)) !== null) {
+      const lang = match[1];
+      const codeContent = match[2];
+      const directContent = match[3];
+      if (lang && (lang.toUpperCase() === "JSON" || lang.toUpperCase() === "XML")) {
+        contentToParse = codeContent;
+        break;
+      }
+      if (directContent) {
+        const trimmed = directContent.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('<')) {
+            contentToParse = directContent;
+            break;
+        }
+      }
+    }
+    return contentToParse;
+  }
+
+  // 检测输入的格式
   function detectFormat(str) {
     str = str.trim();
     if (str.startsWith("{") && str.endsWith("}")) {
@@ -405,6 +431,8 @@ function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
     const parser = new XMLParser();
     return parser.parse(xmlStr);
   }
+
+  input = strip(input);
 
   const inputFormat = detectFormat(input);
 
