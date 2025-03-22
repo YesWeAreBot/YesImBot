@@ -1,5 +1,4 @@
 import { XMLParser } from "fast-xml-parser";
-import { JSDOM } from 'jsdom';
 import { jsonrepair } from 'jsonrepair';
 import { Context, Random, Session } from "koishi";
 
@@ -74,11 +73,6 @@ export class Bot {
         this.session = session;
     }
 
-    /**
-     *
-     * @TODO 对旧记忆进行总结
-     * @param message The message to add to the context.
-     */
     addContext(message: Message) {
         while (this.context.length >= this.contextSize) {
             this.recall.push(this.context.shift());
@@ -88,34 +82,28 @@ export class Bot {
 
     setChatHistory(chatHistory: Message[]) {
         this.context = [];
-        if (this.config.Settings.MultiTurn) {
-            for (const message of chatHistory) {
-                this.addContext(message);
+        let components: (TextComponent | ImageComponent)[] = [];
+        chatHistory.forEach(message => {
+            if (typeof message.content === 'string') {
+                components.push(TextComponent(message.content));
+            } else if (Array.isArray(message.content)) {
+                const validComponents = message.content.filter((comp): comp is TextComponent | ImageComponent =>
+                    comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp));
+                components.push(...validComponents);
             }
-        } else {
-            let components: (TextComponent | ImageComponent)[] = [];
-            chatHistory.forEach(message => {
-                if (typeof message.content === 'string') {
-                    components.push(TextComponent(message.content));
-                } else if (Array.isArray(message.content)) {
-                    const validComponents = message.content.filter((comp): comp is TextComponent | ImageComponent =>
-                        comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp));
-                    components.push(...validComponents);
-                }
-            });
-            // 合并components中相邻的 TextComponent
-            components = components.reduce((acc, curr, i) => {
-                if (i === 0) return [curr];
-                const prev = acc[acc.length - 1];
-                if (prev.type === 'text' && curr.type === 'text') {
-                    prev.text += '\n' + (curr as TextComponent).text;
-                    return acc;
-                }
-                return [...acc, curr];
-            }, []);
-            if (this.sendResolveOK) this.addContext(AssistantMessage("Resolve OK"));
-            this.addContext(UserMessage(...components));
-        }
+        });
+        // 合并components中相邻的 TextComponent
+        components = components.reduce((acc, curr, i) => {
+            if (i === 0) return [curr];
+            const prev = acc[acc.length - 1];
+            if (prev.type === 'text' && curr.type === 'text') {
+                prev.text += '\n' + (curr as TextComponent).text;
+                return acc;
+            }
+            return [...acc, curr];
+        }, []);
+        if (this.sendResolveOK) this.addContext(AssistantMessage("Resolve OK"));
+        this.addContext(UserMessage(...components));
     }
 
     getAdapter() {
@@ -137,7 +125,7 @@ export class Bot {
             this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.finalFormat) + `${isEmpty(str) ? "No functions available." : str}`);
         }
 
-        const response = await adapter.chat([SystemMessage(this.prompt), ...(this.sendResolveOK ? [AssistantMessage("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
+        const response = await adapter.chat([SystemMessage(this.prompt), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
         let content = response.message.content;
         if (adapter.ability.includes("深度思考")) {
             // 移除adapter.reasoningStart和adapter.reasoningEnd之间的内容
@@ -240,17 +228,15 @@ export class Bot {
             functions = [LLMResponse.functions];
         } else if (Array.isArray(LLMResponse.functions?.function)) {
             functions = LLMResponse.functions.function;
+        } else if (isNotEmpty(LLMResponse.functions?.function?.name)) {
+            functions = [LLMResponse.functions.function];
         }
 
         if (LLMResponse.status === "success") {
             let finalResponse: string = "";
             let unsafeResponse: any = LLMResponse.finalReply || LLMResponse.reply || "";
 
-            if (typeof unsafeResponse === "string") {
-                finalResponse = unsafeResponse;
-            } else {
-                finalResponse = this.getInnerContentOfElement(content, "finalReply") || unsafeResponse.text;
-            }
+            finalResponse = unsafeResponse.toString();
 
             if (this.allowErrorFormat) {
                 // 兼容弱智模型的错误回复
@@ -295,8 +281,8 @@ export class Bot {
                 functions,
                 adapterIndex: current,
             };
-        } else if (LLMResponse.status === "function") {
-            return this.handleFunctionCalls(LLMResponse.functions, debug);
+        } else if (LLMResponse.status === "interaction") {
+            return this.handleFunctionCalls(functions, debug);
         } else {
             const reason = `status 不是一个有效值: ${LLMResponse.status}`;
             return {
@@ -306,24 +292,6 @@ export class Bot {
                 reason,
                 adapterIndex: current,
             };
-        }
-    }
-
-    private getInnerContentOfElement(xmlString: string, elementName: string): string | null {
-        try {
-            const dom = new JSDOM(`<root>${xmlString}</root>`, { contentType: 'text/xml' });
-            const document = dom.window.document;
-            const targetElement = document.querySelector(elementName);
-
-            if (!targetElement) {
-                console.warn(`未找到名为 ${elementName} 的元素`);
-                return null;
-            }
-
-            return targetElement.innerHTML;
-        } catch (error) {
-            console.error('解析出错:', error);
-            return null;
         }
     }
 
@@ -352,12 +320,6 @@ export class Bot {
     }
 
     private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<LLMResponse | null> {
-        const Success = (func: string, message: string) => {
-            return ToolMessage(JSON.stringify({ function: func, status: "success", result: message }), null);
-        }
-        const Failed = (func: string, message: string) => {
-            return ToolMessage(JSON.stringify({ function: func, status: "failed", reason: message }), null);
-        }
         if (debug) {
             this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
             this.ctx.logger.info(toolsToString(functions));
@@ -366,10 +328,11 @@ export class Bot {
         for (const func of functions) {
             const { name, params } = func;
             try {
+                returns.push(UserMessage(`[assistant] CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
                 let returnValue = await this.callFunction(name, params);
-                if (!isEmpty(returnValue)) returns.push(Success(name, returnValue));
+                if (!isEmpty(returnValue)) returns.push(UserMessage(`[tool_call] FUNCTION RESULT: ${returnValue}`));
             } catch (e) {
-                returns.push(Failed(name, e.message));
+                returns.push(UserMessage(`[tool_call] FUNCTION ERROR: ${e.message}`));
             }
         }
         if (returns.length > 0) {

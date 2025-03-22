@@ -4,9 +4,9 @@ import { Session } from "koishi";
 
 export interface ChatMessage {
     sender: {
-      id: string;   // 发送者平台 ID
-      name: string; // 发送者原始昵称
-      nick: string; // 发送者会话昵称
+        id: string;   // 发送者平台 ID
+        name: string; // 发送者原始昵称
+        nick: string; // 发送者会话昵称
     }
 
     messageId: string;   // 消息 ID
@@ -16,35 +16,45 @@ export interface ChatMessage {
 
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
-
-    raw?: string;        // 原始消息，可能是LLM输出或者客户端上报数据
 }
 
+/**
+ * 从 Session 中创建 ChatMessage
+ * @param session 
+ * @param content 
+ * @returns 
+ */
 export async function createMessage(session: Session, content?: string): Promise<ChatMessage> {
     const channelType = getChannelType(session.channelId);
     let senderNick = session.author.name;
     if (channelType === "guild") {
-      // @ts-ignore
+        // @ts-ignore
         if (session.onebot) {
-          // @ts-ignore
+            // @ts-ignore
             const memberInfo = await session.onebot.getGroupMemberInfo(session.channelId, session.userId);
             senderNick = memberInfo.card || memberInfo.nickname;
         }
     };
     return {
         sender: {
-          id: session.userId,
-          name: session.author.name,
-          nick: senderNick
+            id: session.userId,
+            name: session.author.name,
+            nick: senderNick
         },
         messageId: session.messageId,
         channelId: session.channelId,
         channelType: getChannelType(session.channelId),
-        sendTime: new Date(session.event.timestamp),
+        // sendTime: new Date(session.event.timestamp),
+        sendTime: new Date(), // 采用接收到消息时的本地时间。某些平台上报的时间可能不准确。
         content: session.content || content
     };
 }
 
+/**
+ * 根据 channelId 判断 channelType
+ * @param channelId 
+ * @returns 
+ */
 export function getChannelType(channelId: string): "private" | "guild" | "sandbox" {
     if (channelId.startsWith("private:")) {
         return "private";
