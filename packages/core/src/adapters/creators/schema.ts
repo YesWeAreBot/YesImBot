@@ -1,81 +1,113 @@
 export interface ToolSchema {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: ParameterSchema;
-  };
+    type: "function";
+    function: {
+        name: string;
+        description: string;
+        parameters: ParameterSchema;
+    };
 }
 
 export interface ParameterSchema {
-  type: "object";
-  properties: {
-    [key: string]: {
-      type: string;
-      description: string;
+    type: "object";
+    properties: {
+        [key: string]: {
+            type: string;
+            description: string;
+        };
     };
-  };
-  required: string[];
+    required: string[];
 }
 
+// 基础类型定义
 export interface SchemaNode {
-  type: string;
-  description: string;
-  default?: any;
+    type: string;
+    description: string;
+    default?: any;
 }
 
+// 增强类型定义
+export interface StringSchemaNode extends SchemaNode {
+    type: "string";
+}
+
+export interface IntegerSchemaNode extends SchemaNode {
+    type: "integer";
+}
+
+export interface ArraySchemaNode<T extends SchemaNode = SchemaNode> extends SchemaNode {
+    type: "array";
+    items: T;
+}
+
+export interface BooleanSchemaNode extends SchemaNode {
+    type: "boolean";
+}
+
+export interface EnumSchemaNode extends SchemaNode {
+    type: "enum";
+    values: readonly string[];
+}
+
+export interface UnionSchemaNode extends SchemaNode {
+    type: "union";
+    values: readonly string[];
+}
+
+// 优化工厂函数
 export namespace SchemaNode {
-  export function String(desc: string, defaultValue?: string): SchemaNode {
-    return {
-      type: "string",
-      description: desc,
-      default: defaultValue,
-    };
-  }
+    export function String(desc: string, defaultValue?: string): StringSchemaNode {
+        return {
+            type: "string",
+            description: desc,
+            default: defaultValue,
+        };
+    }
 
-  export function Integer(desc: string, defaultValue?: number): SchemaNode {
-    return {
-      type: "integer",
-      description: desc,
-    };
-  }
+    export function Integer(desc: string, defaultValue?: number): IntegerSchemaNode {
+        return {
+            type: "integer",
+            description: desc,
+            default: defaultValue,
+        };
+    }
 
-  export function Array(desc: string, defaultValue?: string[]): SchemaNode & { items: { type: "string" } } {
-    return {
-      type: "array",
-      items: {
-        type: "string",
-      },
-      description: desc,
-    };
-  }
+    export function Array<T extends SchemaNode>(desc: string, items: T): ArraySchemaNode<T> {
+        return {
+            type: "array",
+            description: desc,
+            items,
+        };
+    }
 
-  export function Boolean(desc: string, defaultValue?: boolean): SchemaNode {
-    return {
-      type: "boolean",
-      description: desc,
-    };
-  }
+    export function Boolean(desc: string, defaultValue?: boolean): BooleanSchemaNode {
+        return {
+            type: "boolean",
+            description: desc,
+            default: defaultValue,
+        };
+    }
 
-  export function Enum(desc: string, values: string[], defaultValue?: string): SchemaNode & { values: string[] } {
-    return {
-      type: "enum",
-      values,
-      description: desc,
-    };
-  }
+    export function Enum(desc: string, values: readonly string[], defaultValue?: string): EnumSchemaNode {
+        return {
+            type: "enum",
+            values,
+            description: desc,
+            default: defaultValue,
+        };
+    }
 
-  export function Union(desc: string, values: string[], defaultValue?: string): SchemaNode & { values: string[] } {
-    return {
-      type: "union",
-      values,
-      description: desc,
-    };
-  }
+    export function Union(desc: string, values: readonly string[], defaultValue?: string): UnionSchemaNode {
+        return {
+            type: "union",
+            values,
+            description: desc,
+            default: defaultValue,
+        };
+    }
 }
 
 export function getOutputSchema(format: "JSON" | "XML") {
-  return `You should generate output in ${format} observing the schema provided. Strictly follow these ${format} requirements:
+    return `You should generate output in ${format} observing the schema provided. Strictly follow these ${format} requirements:
 
 - All elements MUST be properly nested and closed
 - Do not include any subelements in <reply> and <finalReply>
@@ -115,11 +147,11 @@ functions
 }
 
 export function getFunctionSchema(format: "JSON" | "XML") {
-  let example = "";
-  if (format === "JSON") {
-    example = `[{"name": "FUNCTION_NAME", "params": {"PARAM_NAME": "value1", "PARAM_NAME": "value2"}}, {"name": "function2", "params": {"param1": "value1"}}]`;
-  } else if (format === "XML") {
-    example = `<functions>
+    let example = "";
+    if (format === "JSON") {
+        example = `[{"name": "FUNCTION_NAME", "params": {"PARAM_NAME": "value1", "PARAM_NAME": "value2"}}, {"name": "function2", "params": {"param1": "value1"}}]`;
+    } else if (format === "XML") {
+        example = `<functions>
   <function>
     <name>FUNCTION_NAME</name>
     <params>
@@ -127,9 +159,9 @@ export function getFunctionSchema(format: "JSON" | "XML") {
     </params>
   </function>
 </functions>`;
-  }
+    }
 
-  return `Please select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. You can run multiple functions in a single response.
+    return `Please select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. You can run multiple functions in a single response.
 Provide your response in ${format} format and add it to the functions array in your output: ${example}.
 Replace FUNCTION_NAME with the name of the function and PARAM_NAME with the name of the parameter.
 Available functions:\n`;

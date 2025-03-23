@@ -195,7 +195,7 @@ export class ImageViewer {
       另一个LLM: new AnotherLLMService(config),
     };
     this.cacheManager = new CacheManager<Record<string, string>>(
-      path.join(baseDir, "data/yesimbot/downloadImage/ImageDescription.json")
+      path.join(ctx.baseDir, "data/yesimbot/downloadImage/ImageDescription.json")
     );
   }
 

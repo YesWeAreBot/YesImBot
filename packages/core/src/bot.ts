@@ -14,6 +14,14 @@ import { toolsToString } from "./utils";
 import { isEmpty, isNotEmpty, Template } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
 
+interface Dependencies {
+    readonly ctx: Context;
+    readonly config: Config;
+    readonly imageViewer: ImageViewer;
+    readonly emojiManager?: EmojiManager;
+    readonly verifier?: ResponseVerifier;
+}
+
 export class Bot {
     private contextSize: number;    // 以对话形式给出的上下文长度
 
@@ -38,8 +46,11 @@ export class Bot {
 
     private adapterSwitcher: AdapterSwitcher;
     public session: Session;
+    private ctx: Context;
 
-    constructor(private ctx: Context, private config: Config) {
+    constructor(private deps: Dependencies) {
+        const { ctx, config } = this.deps;
+        this.ctx = ctx;
         this.sendResolveOK = config.Settings.SendResolveOK;
         this.contextSize = config.MemorySlot.SlotSize;
         this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
@@ -49,14 +60,10 @@ export class Bot {
             config.API.APIList,
             config.Parameters
         );
-        if (config.Embedding.Enabled) {
-            this.emojiManager = new EmojiManager(config.Embedding);
-        };
-        if (config.Verifier.Enabled) this.verifier = new ResponseVerifier(ctx, config);
-
         this.template = new Template(config.Settings.SingleMessageStrctureTemplate, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g);
-
-        this.imageViewer = new ImageViewer(ctx, config);
+        this.emojiManager = this.deps.emojiManager;
+        this.verifier = this.deps.verifier;
+        this.imageViewer = this.deps.imageViewer;
 
         for (const extension of getExtensions(ctx, this)) {
             this.extensions[extension.name] = extension as any;

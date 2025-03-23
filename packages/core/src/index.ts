@@ -1,21 +1,23 @@
-import { Context, Next, Random, Session } from "koishi";
-import { h, sleep } from "koishi";
+import { Context, h, Next, Random, Session, sleep } from "koishi";
 
-import { Config } from "./config";
-import { containsFilter, getBotName, isChannelAllowed, getFileUnique, getFormatDateTime, toolsToString } from "./utils/toolkit";
-import { ensurePromptFileExists, genSysPrompt } from "./utils/prompt";
-import { MarkType, SendQueue } from "./services/sendQueue";
+import path from "path";
 import { getOutputSchema } from "./adapters/creators/schema";
-import { initDatabase } from "./database";
-import { processContent, processText } from "./utils/content";
-import { foldText, isEmpty, isNotEmpty } from "./utils/string";
-import { createMessage, getChannelType } from "./models/ChatMessage";
-import { convertUrltoBase64 } from "./utils/imageUtils";
 import { Bot } from "./bot";
-import { apply as applyMemoryCommands } from "./commands/memory";
-import { apply as applySendQueueCommands } from "./commands/sendQueue";
 import { apply as applyExtensionCommands } from "./commands/extension";
+import { apply as applySendQueueCommands } from "./commands/sendQueue";
+import { Config } from "./config";
+import { initDatabase } from "./database";
+import { EmojiManager } from "./managers/emojiManager";
+import { createMessage, getChannelType } from "./models/ChatMessage";
 import { FailedResponse, SkipResponse, SuccessResponse } from "./models/LLMResponse";
+import { ImageViewer } from "./services/imageViewer";
+import { MarkType, SendQueue } from "./services/sendQueue";
+import { ResponseVerifier } from "./utils/verifier";
+import { processContent, processText } from "./utils/content";
+import { convertUrltoBase64, ImageCache } from "./utils/imageUtils";
+import { ensurePromptFileExists, genSysPrompt } from "./utils/prompt";
+import { foldText, isEmpty } from "./utils/string";
+import { containsFilter, getBotName, getFileUnique, getFormatDateTime, isChannelAllowed, toolsToString } from "./utils/toolkit";
 
 export const name = "yesimbot";
 
@@ -37,15 +39,22 @@ export const inject = {
   ],
 }
 
-declare global {
-  var baseDir: string;
-}
-
 export function apply(ctx: Context, config: Config) {
-  globalThis.baseDir = ctx.baseDir;
-
   let shouldReTrigger = false;
-  let bot = new Bot(ctx, config);
+  
+  const emojiManager = config.Embedding.Enabled ? new EmojiManager(config.Embedding) : null;
+  const verifier = config.Verifier.Enabled ? new ResponseVerifier(ctx, config) : null;
+  const imageViewer = new ImageViewer(ctx, config);
+
+  ImageCache.instance = new ImageCache(path.join(ctx.baseDir, "data/yesimbot/cache/downloadImage"));;
+
+  const bot = new Bot({
+    ctx,
+    config,
+    emojiManager,
+    verifier,
+    imageViewer
+  });
 
   initDatabase(ctx);
   const sendQueue = new SendQueue(ctx, config);
@@ -204,7 +213,7 @@ export function apply(ctx: Context, config: Config) {
         }, config.MemorySlot.MinTriggerTime)
       );
     }
-    if(await minTriggerTimeHandlers.get(channelId)(session)) return next();
+    if (await minTriggerTimeHandlers.get(channelId)(session)) return next();
   });
 
   /**
@@ -228,7 +237,7 @@ export function apply(ctx: Context, config: Config) {
 
     try {
       // 处理内容
-      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer, bot.getAdapter().adapter);
+      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer);
 
       // 生成响应
       if (!chatHistory || (Array.isArray(chatHistory) && chatHistory.length === 0)) {
@@ -238,12 +247,12 @@ export function apply(ctx: Context, config: Config) {
 
       if (config.Debug.DebugAsInfo) {
         ctx.logger.info("ChatHistory:\n" + chatHistory.map(item => {
-            const content = typeof item.content === 'object' ?
-                JSON.stringify(item.content, null, 2) :
-                item.content;
-            return `${content}`;
+          const content = typeof item.content === 'object' ?
+            JSON.stringify(item.content, null, 2) :
+            item.content;
+          return `${content}`;
         }).join("\n"));
-    }
+      }
       bot.setSession(session);
       bot.setChatHistory(chatHistory);
 
@@ -449,3 +458,4 @@ export * from "./embeddings";
 export * from "./managers/cacheManager";
 export * from "./models/ChatMessage";
 export * from "./utils/factory";
+

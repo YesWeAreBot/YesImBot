@@ -30,7 +30,7 @@ interface Metadata {
   fileUnique?: string;
 }
 
-class ImageCache {
+export class ImageCache {
   private metadata: { [key: string]: Metadata };
   private metadataFile: string;
 
@@ -164,14 +164,18 @@ class ImageCache {
  * @param [ignoreCache=false] 是否忽略缓存
  * @returns 图片的base64编码
  */
-export async function convertUrltoBase64(url: string, cacheKey?: string, ignoreCache = false, debug = false): Promise<string> {
+export async function convertUrltoBase64(
+  url: string,
+  cacheKey?: string,
+  ignoreCache = false,
+  debug = false
+): Promise<string> {
   url = decodeURIComponent(url);
 
   let imageCache = ImageCache.instance
 
   if (!imageCache) {
-    imageCache = new ImageCache(path.join(baseDir, "data/yesimbot/cache/downloadImage"));
-    ImageCache.instance = imageCache;
+    throw new Error("ImageCache not initialized");
   }
 
   if (!ignoreCache && imageCache.has(cacheKey)) {

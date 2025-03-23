@@ -2,7 +2,7 @@ import { Config } from "../config";
 import { sendRequest } from "../utils/http";
 import { BaseAdapter, Response } from "./base";
 import { LLM } from "./config";
-import { Message, ToolCall, ToolMessage } from "./creators/component";
+import { AssistantMessage, Message } from "./creators/component";
 import { ToolSchema } from "./creators/schema";
 
 export class CustomAdapter extends BaseAdapter {
@@ -13,7 +13,7 @@ export class CustomAdapter extends BaseAdapter {
 
   async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
     if (this.ability.includes("对话前缀续写") && this.startWith) {
-      messages.push({"role": "assistant", "content": this.startWith, "prefix": true})
+      messages.push({ "role": "assistant", "content": this.startWith, "prefix": true } as AssistantMessage)
     }
     const requestBody = {
       model: this.model,
