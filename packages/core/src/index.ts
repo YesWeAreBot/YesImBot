@@ -41,7 +41,7 @@ export const inject = {
 
 export function apply(ctx: Context, config: Config) {
   let shouldReTrigger = false;
-  
+
   const emojiManager = config.Embedding.Enabled ? new EmojiManager(config.Embedding, ctx.baseDir) : null;
   const verifier = config.Verifier.Enabled ? new ResponseVerifier(ctx, config) : null;
   const imageViewer = new ImageViewer(ctx, config);
@@ -64,13 +64,14 @@ export function apply(ctx: Context, config: Config) {
   ctx.on("ready", async () => {
     process.setMaxListeners(20);
 
-    if (!config.Settings.UpdatePromptOnLoad) return;
-    ctx.logger.info("正在尝试更新 Prompt 文件...");
-    await ensurePromptFileExists(
-      config.Bot.PromptFileUrl[config.Bot.PromptFileSelected],
-      true,
-      config.Debug.DebugAsInfo
-    );
+    if (config.Settings.UpdatePromptOnLoad) {
+      ctx.logger.info("正在尝试更新 Prompt 文件...");
+      await ensurePromptFileExists(
+        config.Bot.PromptFileUrl[config.Bot.PromptFileSelected],
+        true,
+        config.Debug.DebugAsInfo
+      );
+    }
   });
 
   ctx.on("command/before-execute", async ({ session, command }) => {
@@ -94,7 +95,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.on("message-created", async (session) => {
     // 等待1毫秒
-    await sleep(1)
+    await sleep(1);
     const channelId = session.channelId;
 
     if (!isChannelAllowed(config.MemorySlot.SlotContains, channelId)) {

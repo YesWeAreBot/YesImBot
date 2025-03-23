@@ -22,7 +22,6 @@ export function isChannelAllowed(slotContains: string[][], channelId: string): b
       }
     }
   }
-
   return false;
 }
 
@@ -33,11 +32,6 @@ export function isChannelAllowed(slotContains: string[][], channelId: string): b
  * @returns
  */
 export function containsFilter(content: string, FilterList: string[]): boolean {
-
-  // 这样好像不能保证正则的正确性
-  //let re = new RegExp(FilterList.join("|"), "gi");
-  //return re.test(content);
-
   for (const filter of FilterList) {
     if (isEmpty(filter)) continue;
     let regex = new RegExp(filter, "gi");
@@ -221,16 +215,24 @@ export function getFileUnique(element: Element, platform: string): string {
       let keys: string[] = [
         element.attrs.file,
         element.attrs.fileId,
-        element.attrs.fileUnique
+        element.attrs.fileUnique,
+        element.attrs.filename
       ].filter(Boolean);
 
       let shortest = keys.reduce((shortestItem, currentItem) => {
         return currentItem.length < shortestItem.length ? currentItem : shortestItem;
       });
 
-      shortest = removeFileSuffix(shortest).slice(-32).toLowerCase();
+      shortest = removeFileSuffix(shortest)
+        .replaceAll("-", "")
+        .slice(-32)
+        .toLowerCase();
 
-      return shortest;
+      if (shortest.match(/^[0-9a-f]{32}$/)) {
+        return shortest;
+      } else {
+        return undefined;
+      }
     // 其他平台有待添加
     default:
       return undefined;
@@ -315,10 +317,10 @@ export function tiktokenizer(text: string): number {
  * @param tools
  */
 export function toolsToString(tools: Tool[]): string {
-    if (!tools?.length) return "无";
-    return tools.map(tool =>
-        `▸ ${tool.name}\n  ${Object.entries(tool.params)
-            .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
-            .join("\n  ")}`
-    ).join("\n\n");
+  if (!tools?.length) return "无";
+  return tools.map(tool =>
+    `▸ ${tool.name}\n  ${Object.entries(tool.params)
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+      .join("\n  ")}`
+  ).join("\n\n");
 }

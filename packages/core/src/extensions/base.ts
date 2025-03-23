@@ -39,9 +39,11 @@ export function getExtensions(ctx: Context, bot: Bot): Extension[] {
     .filter((file) => file.startsWith("ext_") && !file.endsWith(".d.ts")) // 不指定 .js 是为了兼容dev模式
     .forEach((file) => {
       try {
+        // 应该在 Metadata 中加入模块所需依赖
+        // 并通过某种手段安装或加载这些依赖
         // @ts-ignore
         if (!ctx?.memory && file.startsWith("ext_memory")) {
-          ctx.logger.warn(`当前未启用 Memory 模块，跳过扩展：${file}`)
+          ctx.logger.warn(`Skip load extension: ${file}`)
           return
         }
         const extension = require(`./${file}`);
