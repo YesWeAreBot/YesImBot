@@ -72,23 +72,7 @@ export class SendQueue {
     }
     this.processingLock.end(message.messageId);
   }
-
-  async addRawMessage(session: Session, raw: string) {
-    await this.queueManager.enqueue({
-      sender: {
-        id: session.selfId,
-        name: null,
-        nick: null,
-      },
-      channelId: session.channelId,
-      channelType: getChannelType(session.cid),
-      sendTime: new Date(),
-      content: null,
-      messageId: randomString(16),
-      raw: raw,
-    });
-  }
-
+  
   getChannelMutex(channelId: string): Mutex {
     let mutex = this.channelMutexes.get(channelId);
     if (!mutex) {

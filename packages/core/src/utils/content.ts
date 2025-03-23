@@ -115,6 +115,13 @@ export async function processContent(config: Config, session: Session, messages:
   return processedMessage;
 }
 
+/**
+ * 文本分割和关键词替换
+ * @param splitRule 用于分割文本的正则表达式规则
+ * @param replaceRules 用于替换文本中关键词的规则数组
+ * @param text 待处理的原始文本
+ * @returns 处理后的句子数组
+ */
 export function processText(splitRule: Config["Bot"]["BotReplySpiltRegex"], replaceRules: Config["Bot"]["BotSentencePostProcess"], text: string): string[] {
   const replacements = replaceRules.map(item => ({
     regex: new RegExp(item.replacethis, 'g'),
