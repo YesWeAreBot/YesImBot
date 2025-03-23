@@ -79,7 +79,8 @@ export async function processContent(config: Config, session: Session, messages:
           userContent.push(atMessage);
           break;
         case "quote":
-          userContent.push(`[引用:${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}]`);
+          // 不转义，让LLM自己生成quote标签来使用引用功能
+          userContent.push(`<quote id='${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}'/>`);
           break;
         case "img":
           let cacheKey = getFileUnique(elem, session.bot.platform);
@@ -106,8 +107,6 @@ export async function processContent(config: Config, session: Session, messages:
       senderName,
       senderId: chatMessage.sender.id,
       userContent: userContent.join(""),
-      // quoteMessageId: chatMessage.quoteMessageId || "",
-      // hasQuote: !!chatMessage.quoteMessageId,
       isPrivate: channelType === "private",
     });
     messageText = `${chatMessage.sender.id === session.bot.selfId ? "[assistant] " : "[user] "}${messageText}`;
