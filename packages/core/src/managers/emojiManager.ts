@@ -20,7 +20,7 @@ export class EmojiManager {
   private lastEmbeddingModel: string | null = null;
   private client: EmbeddingBase;
 
-  constructor(private embeddingConfig: EnabledEmbeddingConfig) {
+  constructor(private embeddingConfig: EnabledEmbeddingConfig, baseDir: string) {
     const emojisFile = path.join(__dirname, "../../resources/emojis.json");
     const emojis: Emoji[] = JSON.parse(readFileSync(emojisFile, "utf-8"));
 

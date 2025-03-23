@@ -42,7 +42,7 @@ export const inject = {
 export function apply(ctx: Context, config: Config) {
   let shouldReTrigger = false;
   
-  const emojiManager = config.Embedding.Enabled ? new EmojiManager(config.Embedding) : null;
+  const emojiManager = config.Embedding.Enabled ? new EmojiManager(config.Embedding, ctx.baseDir) : null;
   const verifier = config.Verifier.Enabled ? new ResponseVerifier(ctx, config) : null;
   const imageViewer = new ImageViewer(ctx, config);
 
