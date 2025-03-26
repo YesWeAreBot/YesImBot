@@ -249,12 +249,12 @@ export function apply(ctx: Context, config: Config) {
       }
 
       if (config.Debug.DebugAsInfo) {
-        ctx.logger.info("ChatHistory:\n" + chatHistory.map(item => {
+        ctx.logger.info("ChatHistory:\n" + foldText(chatHistory.map(item => {
           const content = typeof item.content === 'object' ?
             JSON.stringify(item.content, null, 2) :
             item.content;
           return `${content}`;
-        }).join("\n"));
+        }).join("\n"), 1000));
       }
       bot.setSession(session);
       bot.setChatHistory(chatHistory);
@@ -399,7 +399,6 @@ ${toolsToString(functions)}
             await sleep(waitTime * 1000);
           }
 
-          console.log(`发送消息: ${sentence}`);
           let arr = (replyTo === session.channelId)
             ? await session.sendQueued(sentence)
             : await session.bot.sendMessage(replyTo, sentence);
@@ -451,7 +450,7 @@ export async function redirectLogicMessage(
   message: string,
 ) {
   if (!config.Settings.LogicRedirect.Enabled) return;
-  const messageIds = await session.bot.sendMessage(config.Settings.LogicRedirect.Target, message);
+  const messageIds = await session.bot.sendMessage(config.Settings.LogicRedirect.Target, h.escape(message));
   for (const messageId of messageIds) {
     sendQueue.setMark(messageId, MarkType.LogicRedirect);
   }

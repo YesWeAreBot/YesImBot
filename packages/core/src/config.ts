@@ -490,7 +490,7 @@ export const Config: Schema<Config> = Schema.object({
       .description("在构建请求中的messages数组时，Bot历史消息的呈现格式"),
     RemoveTheseFromRAW: Schema.array(
       Schema.union([
-        Schema.const("status").description("status: 状态信息，Athena能够处理的值有两种，为`success`、`skip`，其余值会被置为`fail`"),
+        Schema.const("status").description("status: 状态信息，Athena能够处理的值有三种，为`success`、`skip`、`interaction`，其余值会被置为`fail`"),
         Schema.const("replyTo").description("replyTo: 消息发送的目的地，群聊的话就是群号，私聊的话就是带有`private:`的用户账号"),
         Schema.const("nextReplyIn").description("nextReplyIn: Bot 还需要收到这么多条消息才会看一眼聊天内容"),
         Schema.const("logic").description("logic: Bot 的思考逻辑，在上下文中，它可能引起复读问题，推荐勾选"),

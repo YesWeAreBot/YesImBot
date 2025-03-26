@@ -419,7 +419,11 @@ function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
 
   // XML 转 JSON
   function xml2json(xmlStr: string) {
-    const parser = new XMLParser();
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      processEntities: false,
+      stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+    });
     return parser.parse(xmlStr);
   }
 

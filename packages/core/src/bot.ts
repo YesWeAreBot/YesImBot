@@ -191,7 +191,11 @@ export class Bot {
                 if (this.finalFormat === "JSON") {
                     LLMResponse = JSON.parse(jsonrepair(contentToParse));
                 } else if (this.finalFormat === "XML") {
-                    const parser = new XMLParser();
+                    const parser = new XMLParser({
+                      ignoreAttributes: false,
+                      processEntities: false,
+                      stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+                    });
                     LLMResponse = parser.parse(contentToParse);
                 }
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
@@ -212,7 +216,11 @@ export class Bot {
                     const repaired = jsonrepair(content);
                     LLMResponse = JSON.parse(repaired);
                 } else {
-                    const parser = new XMLParser();
+                    const parser = new XMLParser({
+                      ignoreAttributes: false,
+                      processEntities: false,
+                      stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+                    });
                     LLMResponse = parser.parse(content);
                 }
                 this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
