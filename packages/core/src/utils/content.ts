@@ -238,6 +238,41 @@ export async function processContent(config: Config, session: Session, messages:
       }, []);
     }
   }
+
+  // 合并连续的 UserMessage 和 AssistantMessage，使得User或Assistant消息不连续出现。如果最后一个消息是AssistantMessage，那么在最后添加一个空UserMessage
+  if (config.Settings.MergeConsecutiveMessages) {
+    const mergedMessages: Message[] = [];
+    let lastMessageType: 'user' | 'assistant' | 'system' | 'tool' | null = null;
+
+    for (const message of processedMessage) {
+      const currentMessageType = message.role;
+
+      if (currentMessageType === lastMessageType && (currentMessageType === 'user' || currentMessageType === 'assistant')) {
+        // 与前一条相同role的消息合并
+        const lastMessage = mergedMessages[mergedMessages.length - 1];
+
+        if (typeof lastMessage.content === 'string' && typeof message.content === 'string') {
+          lastMessage.content += '\n' + message.content;
+        } else if (Array.isArray(lastMessage.content) && Array.isArray(message.content)) {
+          lastMessage.content.push(...message.content);
+        } else {
+          mergedMessages.push(message);
+          lastMessageType = currentMessageType;
+        }
+      } else {
+        mergedMessages.push(message);
+        lastMessageType = currentMessageType;
+      }
+    }
+
+    // 如果最后一条消息是AssistantMessage，那么在最后添加一个空UserMessage
+    if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === 'assistant') {
+      mergedMessages.push(UserMessage(''));
+    }
+
+    return mergedMessages;
+  }
+
   return processedMessage;
 }
 

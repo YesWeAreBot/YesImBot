@@ -100,6 +100,7 @@ export interface Config {
     AssistantFormat: "RAW" | "CONTENT";
     RemoveTheseFromRAW: Array<"status" | "replyTo" | "nextReplyIn" | "logic" | "reply" | "check" | "finalReply" | "functions">;
     SendAssistantMessageAs: "USER" | "ASSISTANT";
+    MergeConsecutiveMessages: boolean;
     LLMResponseFormat: "JSON" | "XML";
   };
   Debug: {
@@ -110,11 +111,12 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
+  // TODO: 给每个记忆槽位单独的设置
   MemorySlot: Schema.object({
     SlotContains: Schema.array(Schema.array(Schema.string()).role("table"))
       .required()
       .role("table")
-      .description("记忆槽位。填入一个或多个会话ID，每行一个。群聊的会话ID是群号，私聊的会话ID是带有\"private:\" + 用户账号。用\"all\"指定所有群聊，用\"private:all\"指定所有私聊。同一个槽位的聊天将共用同一份记忆。如果多个槽位都包含同一会话ID，第一个包含该会话ID的槽位将被应用"),
+      .description("记忆槽位。填入一个或多个会话ID，每行一个。群聊的会话ID是群号，私聊的会话ID是\"private:\" + 用户账号。用\"all\"指定所有群聊，用\"private:all\"指定所有私聊。同一个槽位的聊天将共用同一份记忆。如果多个槽位都包含同一会话ID，第一个包含该会话ID的槽位将被应用"),
     SlotSize: Schema.number()
       .default(20)
       .min(1)
@@ -504,6 +506,10 @@ export const Config: Schema<Config> = Schema.object({
     SendAssistantMessageAs: Schema.union(["USER", "ASSISTANT"])
       .default("ASSISTANT")
       .description("在构建请求中的messages数组时，把 Bot 的历史消息按照此角色呈现"),
+    MergeConsecutiveMessages: Schema.boolean()
+      .default(false)
+      .description
+      ("合并连续的USER或ASSISTANT消息。如果最后一条消息是ASSISTANT消息，在其后添加一条空的USER消息。某些模型可能需要开启此设置"),
     LLMResponseFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("XML").description("XML 格式"),
