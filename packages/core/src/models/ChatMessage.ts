@@ -16,13 +16,14 @@ export interface ChatMessage {
 
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
+    raw?: string;        // 原始消息，可能是LLM输出或者客户端上报数据
 }
 
 /**
  * 从 Session 中创建 ChatMessage
- * @param session 
- * @param content 
- * @returns 
+ * @param session
+ * @param content
+ * @returns
  */
 export async function createMessage(session: Session, content?: string): Promise<ChatMessage> {
     const channelType = getChannelType(session.channelId);
@@ -52,8 +53,8 @@ export async function createMessage(session: Session, content?: string): Promise
 
 /**
  * 根据 channelId 判断 channelType
- * @param channelId 
- * @returns 
+ * @param channelId
+ * @returns
  */
 export function getChannelType(channelId: string): "private" | "guild" | "sandbox" {
     if (channelId.startsWith("private:")) {

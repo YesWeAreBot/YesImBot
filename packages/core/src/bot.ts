@@ -88,29 +88,35 @@ export class Bot {
     }
 
     setChatHistory(chatHistory: Message[]) {
-        this.context = [];
-        let components: (TextComponent | ImageComponent)[] = [];
-        chatHistory.forEach(message => {
-            if (typeof message.content === 'string') {
-                components.push(TextComponent(message.content));
-            } else if (Array.isArray(message.content)) {
-                const validComponents = message.content.filter((comp): comp is TextComponent | ImageComponent =>
-                    comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp));
-                components.push(...validComponents);
-            }
-        });
-        // 合并components中相邻的 TextComponent
-        components = components.reduce((acc, curr, i) => {
-            if (i === 0) return [curr];
-            const prev = acc[acc.length - 1];
-            if (prev.type === 'text' && curr.type === 'text') {
-                prev.text += '\n' + (curr as TextComponent).text;
-                return acc;
-            }
-            return [...acc, curr];
-        }, []);
-        if (this.sendResolveOK) this.addContext(AssistantMessage("Resolve OK"));
-        this.addContext(UserMessage(...components));
+      this.context = [];
+      if (this.deps.config.Settings.MultiTurn) {
+          for (const message of chatHistory) {
+              this.addContext(message);
+          }
+      } else {
+          let components: (TextComponent | ImageComponent)[] = [];
+          chatHistory.forEach(message => {
+              if (typeof message.content === 'string') {
+                  components.push(TextComponent(message.content));
+              } else if (Array.isArray(message.content)) {
+                  const validComponents = message.content.filter((comp): comp is TextComponent | ImageComponent =>
+                      comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp));
+                  components.push(...validComponents);
+              }
+          });
+          // 合并components中相邻的 TextComponent
+          components = components.reduce((acc, curr, i) => {
+              if (i === 0) return [curr];
+              const prev = acc[acc.length - 1];
+              if (prev.type === 'text' && curr.type === 'text') {
+                  prev.text += '\n' + (curr as TextComponent).text;
+                  return acc;
+              }
+              return [...acc, curr];
+          }, []);
+          if (this.sendResolveOK) this.addContext(AssistantMessage("Resolve OK"));
+          this.addContext(UserMessage(...components));
+      }
     }
 
     getAdapter() {

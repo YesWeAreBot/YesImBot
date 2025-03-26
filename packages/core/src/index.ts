@@ -31,6 +31,8 @@ export const usage = `
 
 export { Config } from "./config";
 
+export const DATABASE_NAME = name;
+
 export const inject = {
   required: ["database"],
   optional: [
@@ -238,7 +240,7 @@ export function apply(ctx: Context, config: Config) {
 
     try {
       // 处理内容
-      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer);
+      const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer, bot.getAdapter().adapter, bot.finalFormat);
 
       // 生成响应
       if (!chatHistory || (Array.isArray(chatHistory) && chatHistory.length === 0)) {
@@ -311,7 +313,7 @@ ${toolsToString(functions)}
 ---
 消耗：输入 ${usage?.prompt_tokens}，输出 ${usage?.completion_tokens}`
         ctx.logger.info(`${botName}想要跳过此次回复`);
-        //await sendQueue.addRawMessage(session, raw);
+      await sendQueue.addRawMessage(session, raw);
 
         //如果 AI 使用了指令
         if (functions.length > 0) {
@@ -417,6 +419,7 @@ ${toolsToString(functions)}
           channelType: getChannelType(session.channelId),
           sendTime: new Date(),
           content: finalReply,
+          raw,
         });
 
         for (const messageId of messageIds) {

@@ -18,6 +18,11 @@ export function initDatabase(ctx: Context) {
         channelType: "string",
         sendTime: "timestamp",
         content: "string",
+        raw: {
+          type: "string",
+          nullable: true,
+          initial: null,
+        },
     }, {
         primary: "messageId", // 主键名
         autoInc: false,       // 不使用自增主键

@@ -3,10 +3,12 @@ import { XMLParser } from "fast-xml-parser";
 
 import { Config } from '../config';
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
+import { BaseAdapter } from "../adapters/base";
 import { isEmpty, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
 import { ImageViewer } from '../services/imageViewer';
-import { Message, UserMessage } from "../adapters/creators/component";
+import { convertUrltoBase64 } from "../utils/imageUtils";
+import { Message, AssistantMessage, ImageComponent, TextComponent, UserMessage } from "../adapters/creators/component";
 
 
 /**
@@ -16,10 +18,27 @@ import { Message, UserMessage } from "../adapters/creators/component";
  * @param messages
  * @returns
  */
-export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer): Promise<Message[]> {
+export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, adapter: BaseAdapter, format: "JSON"|"XML"): Promise<Message[]> {
+  if (config.ImageViewer.How === "LLM API 自带的多模态能力" && adapter.ability.includes("识图功能")) {
+    return await processContentWithVisionAbility(config, session, messages, imageViewer, format);
+  }
   const processedMessage: Message[] = [];
 
   for (let chatMessage of messages) {
+    if (chatMessage.sender.id === session.selfId) {
+      if (isEmpty(chatMessage.raw)) {
+        chatMessage.raw = convertChatMessageToRaw(chatMessage, format);
+      }
+      try {
+        // 判断chatMessage.raw是JSON格式还是XML格式，再根据format进行转换
+        chatMessage.raw = convertFormat(chatMessage.raw, format);
+      } catch (e) {
+      }
+
+      // TODO: role === tool
+      processedMessage.push(AssistantMessage(chatMessage.raw));
+      continue;
+    }
     const timeString = getFormatDateTime(chatMessage.sendTime);
     let senderName: string;
     switch (config.Bot.NickorName) {
@@ -111,6 +130,167 @@ export async function processContent(config: Config, session: Session, messages:
     });
     messageText = `${chatMessage.sender.id === session.bot.selfId ? "[assistant] " : "[user] "}${messageText}`;
     processedMessage.push(UserMessage(messageText));
+  }
+  return processedMessage;
+}
+
+async function processContentWithVisionAbility(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, format: "JSON"|"XML"): Promise<Message[]> {
+  const processedMessage: Message[] = [];
+  let pendingProcessImgCount = 0;
+
+  for (let chatMessage of messages) {
+    if (!isEmpty(chatMessage.raw) || chatMessage.sender.id === session.selfId) {
+      if (isEmpty(chatMessage.raw)) {
+        chatMessage.raw = convertChatMessageToRaw(chatMessage, format);
+      }
+      // TODO: role === tool
+      chatMessage.raw = convertFormat(chatMessage.raw, format);
+      processedMessage.push(AssistantMessage(chatMessage.raw));
+      continue;
+    }
+    const timeString = getFormatDateTime(chatMessage.sendTime);
+    let senderName: string;
+    switch (config.Bot.NickorName) {
+      case "群昵称":
+        senderName = chatMessage.sender.nick;
+        break;
+      case "用户昵称":
+      default:
+        senderName = chatMessage.sender.name;
+        break;
+    }
+    const template = config.Settings.SingleMessageStrctureTemplate;
+    const elements = h.parse(chatMessage.content);
+    let components: (TextComponent | ImageComponent)[] = [];
+    for (let elem of elements) {
+      switch (elem.type) {
+        case "text":
+          // const { content } = elem.attrs;
+          components.push(TextComponent(elem.attrs.content));
+          break;
+        case "at":
+          const attrs = { ...elem.attrs };
+          let userName: string;
+          switch (config.Bot.NickorName) {
+            case "群昵称":
+              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.nick;
+              break;
+            case "用户昵称":
+            default:
+              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.name;
+              break;
+          }
+          if (attrs.id === session.selfId && config.Bot.SelfAwareness === "此页面设置的名字") {
+            userName = config.Bot.BotName;
+          }
+          // 似乎getMemberName的实现有问题，无法正确获取到群昵称，总是获取到用户昵称。修复后，取消注释下面的代码
+          attrs.name = userName || attrs.name || await getMemberName(config, session, attrs.id, chatMessage.channelId);
+          const safeAttrs = Object.entries(attrs)
+            .map(([key, value]) => {
+              // 确保value是字符串
+              const strValue = String(value);
+              // 转义单引号和其他潜在的危险字符
+              const safeValue = strValue
+                .replace(/'/g, "&#39;")
+                .replace(/"/g, "&quot;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+              return `${key}='${safeValue}'`;
+            })
+            .join(' ');
+          const atMessage = `<at ${safeAttrs}/>`;
+          components.push(TextComponent(atMessage));
+          break;
+        case "quote":
+          // const { id } = elem.attrs;
+          // chatMessage.quoteMessageId = elem.attrs.id;
+          break;
+        case "img":
+          // const { src, summary, fileUnique } = elem.attrs;
+          let cacheKey = getFileUnique(elem, session.bot.platform);
+          elem.attrs.cachekey = cacheKey;
+          components.push(ImageComponent(h.img(elem.attrs.src, { cachekey: elem.attrs.cachekey, summary: elem.attrs.summary }).toString()));
+          pendingProcessImgCount++;
+          break;
+        case "face":
+          // const { id, name } = elem.attrs;
+          components.push(TextComponent(`[表情:${elem.attrs.name}]`));
+          break;
+        case "mface":
+          // const { url, summary } = elem.attrs;
+          components.push(TextComponent(`[表情:${elem.attrs.summary?.replace(/^\[|\]$/g, '')}]`));
+          break;
+        default:
+      }
+    }
+    let channelType = getChannelType(chatMessage.channelId);
+    let channelInfo = channelType === "guild" ? `guild:${chatMessage.channelId}` : `${chatMessage.channelId}`;
+    let messageText = new Template(template, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g).render({
+      messageId: chatMessage.messageId,
+      date: timeString,
+      channelType,
+      channelInfo,
+      channelId: chatMessage.channelId,
+      senderName,
+      senderId: chatMessage.sender.id,
+      userContent: "{{userContent}}",
+      // quoteMessageId: chatMessage.quoteMessageId || "",
+      // hasQuote: !!chatMessage.quoteMessageId,
+      isPrivate: channelType === "private",
+    });
+
+    const parts = messageText.split(/({{userContent}})/);
+    components = parts.flatMap(part => {
+      if (part === '{{userContent}}') {
+        return components;
+      }
+      return [TextComponent(part)];
+    });
+    if (chatMessage.sender.id === session.bot.selfId) {
+      processedMessage.push(AssistantMessage(...components));
+    } else {
+      processedMessage.push(UserMessage(...components));
+    }
+  }
+  // 处理图片组件
+  for (const message of processedMessage) {
+    if (typeof message.content === 'string') continue;
+
+    for (let i = 0; i < message.content.length; i++) {
+      const component = message.content[i];
+      if (component.type !== 'image_url') continue;
+      // 解析图片URL中的属性
+      const elem = h.parse((component as ImageComponent).image_url.url)[0];
+      const cacheKey = elem.attrs.cachekey;
+      const src = elem.attrs.src;
+      const summary = elem.attrs.summary;
+
+      if (pendingProcessImgCount > config.ImageViewer.Memory && config.ImageViewer.Memory !== -1) {
+        // 获取图片描述
+        const description = await imageViewer.getImageDescription(src, cacheKey, summary);
+        message.content[i] = TextComponent(description);
+      } else {
+        // 转换为base64
+        const base64 = await convertUrltoBase64(src);
+        message.content[i] = ImageComponent(base64, config.ImageViewer.Server?.Detail || "auto");
+      }
+
+      pendingProcessImgCount--;
+    }
+
+    // 合并每条message中相邻的 TextComponent
+    message.content = message.content.reduce((acc, curr, i) => {
+      if (i === 0) return [curr];
+
+      const prev = acc[acc.length - 1];
+      if (prev.type === 'text' && curr.type === 'text') {
+        // 合并相邻的 TextComponent
+        prev.text += (curr as TextComponent).text;
+        return acc;
+      }
+
+      return [...acc, curr];
+    }, []);
   }
   return processedMessage;
 }

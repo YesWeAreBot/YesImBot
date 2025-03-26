@@ -95,6 +95,7 @@ export interface Config {
     SelfReport: Array<"指令消息" | "逻辑重定向" | "和LLM交互的消息">;
     UpdatePromptOnLoad: boolean;
     AllowErrorFormat: boolean;
+    MultiTurn: boolean;
     LLMResponseFormat: "JSON" | "XML";
   };
   Debug: {
@@ -469,6 +470,9 @@ export const Config: Schema<Config> = Schema.object({
     AllowErrorFormat: Schema.boolean()
       .default(false)
       .description("兼容几种较为常见的大模型错误输出格式"),
+    MultiTurn: Schema.boolean()
+     .default(false)
+     .description("将历史消息以多轮对话格式传递给LLM"),
     LLMResponseFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("XML").description("XML 格式"),
