@@ -16,6 +16,7 @@ export interface ChatMessage {
 
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
+    quote?: string | null // 引用消息 ID
     raw?: string;        // 原始消息，可能是LLM输出或者客户端上报数据
 }
 
@@ -26,29 +27,35 @@ export interface ChatMessage {
  * @returns
  */
 export async function createMessage(session: Session, content?: string): Promise<ChatMessage> {
-    const channelType = getChannelType(session.channelId);
-    let senderNick = session.author.name;
-    if (channelType === "guild") {
-        // @ts-ignore
-        if (session.onebot) {
-            // @ts-ignore
-            const memberInfo = await session.onebot.getGroupMemberInfo(session.channelId, session.userId);
-            senderNick = memberInfo.card || memberInfo.nickname;
-        }
-    };
-    return {
-        sender: {
-            id: session.userId,
-            name: session.author.name,
-            nick: senderNick
-        },
-        messageId: session.messageId,
-        channelId: session.channelId,
-        channelType: getChannelType(session.channelId),
-        // sendTime: new Date(session.event.timestamp),
-        sendTime: new Date(), // 采用接收到消息时的本地时间。某些平台上报的时间可能不准确。
-        content: session.content || content
-    };
+  const channelType = getChannelType(session.channelId);
+  let senderNick = session.author.name;
+
+  if (channelType === "guild") {
+      // @ts-ignore
+      if (session.onebot) {
+          // @ts-ignore
+          const memberInfo = await session.onebot.getGroupMemberInfo(session.channelId, session.userId);
+          senderNick = memberInfo.card || memberInfo.nickname;
+      }
+  }
+
+  // 提取被引用消息的 messageId
+  const quotedMessageId = session.event.message?.quote?.id || null;
+
+  const chatMessage = {
+    sender: {
+      id: session.userId,
+      name: session.author.name,
+      nick: senderNick
+    },
+    messageId: session.messageId,
+    channelId: session.channelId,
+    channelType: getChannelType(session.channelId),
+    sendTime: new Date(), // 采用接收到消息时的本地时间
+    content: session.content || content,
+    quote: quotedMessageId  // 仅返回被引用消息的 ID，没有则为 null
+  };
+  return chatMessage;
 }
 
 /**

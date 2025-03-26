@@ -440,7 +440,7 @@ export const Config: Schema<Config> = Schema.object({
 
   Settings: Schema.object({
     SingleMessageStrctureTemplate: Schema.string()
-      .default("[{{messageId}}][{{date}} {{channelInfo}}] {{senderName}}<{{senderId}}> {{hasQuote,回复[{{quoteMessageId}}]: ,说: }}{{userContent}}")
+      .default("[{{messageId}}][{{date}} {{channelInfo}}] {{senderName}}<{{senderId}}>: {{userContent}}")
       .description("单条消息的结构模板"),
     SendResolveOK: Schema.boolean()
       .default(true)
@@ -480,7 +480,7 @@ export const Config: Schema<Config> = Schema.object({
      .default(true)
      .description("将历史消息以多轮对话格式传递给LLM"),
     AddRoleTagBeforeContent: Schema.boolean()
-      .default(true)
+      .default(false)
       .description("在消息内容前添加发送者的角色标签，格式为[role]"),
     AssistantFormat: Schema.union([
       Schema.const("RAW").description("原始消息（完整JSON或者XML）"),

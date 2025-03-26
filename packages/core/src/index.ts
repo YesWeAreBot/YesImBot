@@ -399,6 +399,7 @@ ${toolsToString(functions)}
             await sleep(waitTime * 1000);
           }
 
+          console.log(`发送消息: ${sentence}`);
           let arr = (replyTo === session.channelId)
             ? await session.sendQueued(sentence)
             : await session.bot.sendMessage(replyTo, sentence);
