@@ -375,34 +375,44 @@ function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
   function json2xml(obj) {
     let xml = '';
     for (let key in obj) {
+      // 处理空值
+      if (obj[key] === null || obj[key] === undefined) {
+        xml += `<${key}></${key}>`;
+        continue;
+      }
+
       if (key === 'functions') {
         // 特殊处理 functions 数组
-        obj[key].forEach(func => {
-          xml += '<functions>';
-          xml += `<name>${func.name}</name>`;
-          if (func.params) {
-            xml += '<params>';
-            for (let param in func.params) {
-              xml += `<${param}>${func.params[param]}</${param}>`;
+        if (Array.isArray(obj[key])) {
+          obj[key].forEach(func => {
+            xml += '<functions>';
+            xml += `<name>${func.name || ''}</name>`;
+            if (func.params) {
+              xml += '<params>';
+              for (let param in func.params) {
+                xml += `<${param}>${func.params[param] || ''}</${param}>`;
+              }
+              xml += '</params>';
             }
-            xml += '</params>';
-          }
-          xml += '</functions>';
-        });
+            xml += '</functions>';
+          });
+        } else {
+          xml += `<functions></functions>`;
+        }
       } else if (Array.isArray(obj[key])) {
         xml += `<${key}>`;
         obj[key].forEach(item => {
-          if (typeof item === 'object') {
+          if (typeof item === 'object' && item !== null) {
             xml += json2xml(item);
           } else {
-            xml += `<item>${item}</item>`;
+            xml += `<item>${item || ''}</item>`;
           }
         });
         xml += `</${key}>`;
       } else if (typeof obj[key] === 'object' && obj[key] !== null) {
         xml += `<${key}>${json2xml(obj[key])}</${key}>`;
       } else {
-        xml += `<${key}>${obj[key]}</${key}>`;
+        xml += `<${key}>${obj[key] || ''}</${key}>`;
       }
     }
     return xml;
