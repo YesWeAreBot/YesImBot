@@ -1,4 +1,4 @@
-import { Session } from "koishi";
+import { h, Session } from "koishi";
 
 // import {} from "koishi-plugin-adapter-onebot";
 
@@ -16,7 +16,6 @@ export interface ChatMessage {
 
     sendTime: Date;      // 发送时间
     content: string;     // 消息内容
-    quote?: string | null // 引用消息 ID
     raw?: string;        // 原始消息，可能是LLM输出或者客户端上报数据
 }
 
@@ -52,8 +51,7 @@ export async function createMessage(session: Session, content?: string): Promise
     channelId: session.channelId,
     channelType: getChannelType(session.channelId),
     sendTime: new Date(), // 采用接收到消息时的本地时间
-    content: session.content || content,
-    quote: quotedMessageId  // 仅返回被引用消息的 ID，没有则为 null
+    content: (quotedMessageId ? h.quote(quotedMessageId).toString() : "") + (session.content || content),
   };
   return chatMessage;
 }

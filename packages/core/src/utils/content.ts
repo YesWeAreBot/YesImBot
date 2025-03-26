@@ -66,14 +66,6 @@ export async function processContent(config: Config, session: Session, messages:
 
     let components: (TextComponent | ImageComponent)[] = [];
     let userContent: string[] = [];
-    if (chatMessage.quote && chatMessage.quote.trim() !== '') {
-      const quoteMessage = `<quote id='${chatMessage.quote}'/>`;
-      if (useVisionAbility) {
-        components.push(TextComponent(quoteMessage));
-      } else {
-        userContent.push(quoteMessage);
-      }
-    }
     for (let elem of elements) {
       switch (elem.type) {
         case "text":
@@ -118,6 +110,15 @@ export async function processContent(config: Config, session: Session, messages:
             components.push(TextComponent(atMessage));
           } else {
             userContent.push(atMessage);
+          }
+          break;
+        case "quote":
+          // 不转义，让LLM自己生成quote标签来使用引用功能
+          const quoteMessage = `<quote id='${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}'/>`;
+          if (useVisionAbility) {
+            components.push(TextComponent(quoteMessage));
+          } else {
+            userContent.push(quoteMessage);
           }
           break;
         case "img":
