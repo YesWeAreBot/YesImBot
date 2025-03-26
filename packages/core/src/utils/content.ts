@@ -19,25 +19,30 @@ import { Message, AssistantMessage, ImageComponent, TextComponent, UserMessage }
  * @returns
  */
 export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, adapter: BaseAdapter, format: "JSON"|"XML"): Promise<Message[]> {
-  if (config.ImageViewer.How === "LLM API 自带的多模态能力" && adapter.ability.includes("识图功能")) {
-    return await processContentWithVisionAbility(config, session, messages, imageViewer, format);
-  }
+  const useVisionAbility = config.ImageViewer.How === "LLM API 自带的多模态能力" && adapter.ability.includes("识图功能");
   const processedMessage: Message[] = [];
+  let pendingProcessImgCount = 0;
 
   for (let chatMessage of messages) {
-    if (chatMessage.sender.id === session.selfId) {
+    if (chatMessage.sender.id === session.selfId || !isEmpty(chatMessage.raw)) {
       if (isEmpty(chatMessage.raw)) {
         chatMessage.raw = convertChatMessageToRaw(chatMessage, format);
       }
       try {
-        // 判断chatMessage.raw是JSON格式还是XML格式，再根据format进行转换
-        chatMessage.raw = convertFormat(chatMessage.raw, format);
+        // 先转换为JSON格式
+        chatMessage.raw = convertFormat(chatMessage.raw, "JSON");
       } catch (e) {
       }
-
-      // TODO: role === tool
-      processedMessage.push(AssistantMessage(chatMessage.raw));
-      continue;
+      // 把它转换成一个JSON对象，然后
+      // 按照config.Settings.RemoveTheseFromRAW数组移除对应键的值
+      // 再转换成字符串
+      const rawObj = JSON.parse(chatMessage.raw);
+      for (let key of config.Settings.RemoveTheseFromRAW) {
+        rawObj[key] = "";
+      }
+      chatMessage.raw = JSON.stringify(rawObj);
+      // 再转换为format格式
+      chatMessage.raw = convertFormat(chatMessage.raw, format);
     }
     const timeString = getFormatDateTime(chatMessage.sendTime);
     let senderName: string;
@@ -58,11 +63,17 @@ export async function processContent(config: Config, session: Session, messages:
     } catch(e) {
       continue;
     }
+
+    let components: (TextComponent | ImageComponent)[] = [];
     let userContent: string[] = [];
     for (let elem of elements) {
       switch (elem.type) {
         case "text":
-          userContent.push(elem.attrs.content);
+          if (useVisionAbility) {
+            components.push(TextComponent(elem.attrs.content));
+          } else {
+            userContent.push(elem.attrs.content);
+          }
           break;
         case "at":
           const attrs = { ...elem.attrs };
@@ -95,23 +106,49 @@ export async function processContent(config: Config, session: Session, messages:
             })
             .join(' ');
           const atMessage = `<at ${safeAttrs}/>`;
-          userContent.push(atMessage);
+          if (useVisionAbility) {
+            components.push(TextComponent(atMessage));
+          } else {
+            userContent.push(atMessage);
+          }
           break;
         case "quote":
           // 不转义，让LLM自己生成quote标签来使用引用功能
-          userContent.push(`<quote id='${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}'/>`);
+          const quoteMessage = `<quote id='${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}'/>`;
+          if (useVisionAbility) {
+            components.push(TextComponent(quoteMessage));
+          } else {
+            userContent.push(quoteMessage);
+          }
           break;
         case "img":
           let cacheKey = getFileUnique(elem, session.bot.platform);
-          userContent.push(await imageViewer.getImageDescription(elem.attrs.src, cacheKey, elem.attrs.summary, config.Debug.DebugAsInfo));
+          if (useVisionAbility) {
+            elem.attrs.cachekey = cacheKey;
+            components.push(ImageComponent(h.img(elem.attrs.src, { cachekey: elem.attrs.cachekey, summary: elem.attrs.summary }).toString()));
+            pendingProcessImgCount++;
+          } else {
+            userContent.push(await imageViewer.getImageDescription(elem.attrs.src, cacheKey, elem.attrs.summary, config.Debug.DebugAsInfo));
+          }
           break;
         case "face":
-          userContent.push(`[表情:${elem.attrs.name}]`);
+          const faceMessage = `[表情:${elem.attrs.name}]`;
+          if (useVisionAbility) {
+            components.push(TextComponent(faceMessage));
+          } else {
+            userContent.push(faceMessage);
+          }
           break;
         case "mface":
-          userContent.push(`[表情:${elem.attrs.summary?.replace(/^\[|\]$/g, '')}]`);
+          const mfaceMessage = `[表情:${elem.attrs.summary?.replace(/^\[|\]$/g, '')}]`;
+          if (useVisionAbility) {
+            components.push(TextComponent(mfaceMessage));
+          } else {
+            userContent.push(mfaceMessage);
+          }
           break;
         default:
+          break;
       }
     }
 
@@ -125,172 +162,81 @@ export async function processContent(config: Config, session: Session, messages:
       channelId: chatMessage.channelId,
       senderName,
       senderId: chatMessage.sender.id,
-      userContent: userContent.join(""),
-      isPrivate: channelType === "private",
-    });
-    messageText = `${chatMessage.sender.id === session.bot.selfId ? "[assistant] " : "[user] "}${messageText}`;
-    processedMessage.push(UserMessage(messageText));
-  }
-  return processedMessage;
-}
-
-async function processContentWithVisionAbility(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, format: "JSON"|"XML"): Promise<Message[]> {
-  const processedMessage: Message[] = [];
-  let pendingProcessImgCount = 0;
-
-  for (let chatMessage of messages) {
-    if (!isEmpty(chatMessage.raw) || chatMessage.sender.id === session.selfId) {
-      if (isEmpty(chatMessage.raw)) {
-        chatMessage.raw = convertChatMessageToRaw(chatMessage, format);
-      }
-      // TODO: role === tool
-      chatMessage.raw = convertFormat(chatMessage.raw, format);
-      processedMessage.push(AssistantMessage(chatMessage.raw));
-      continue;
-    }
-    const timeString = getFormatDateTime(chatMessage.sendTime);
-    let senderName: string;
-    switch (config.Bot.NickorName) {
-      case "群昵称":
-        senderName = chatMessage.sender.nick;
-        break;
-      case "用户昵称":
-      default:
-        senderName = chatMessage.sender.name;
-        break;
-    }
-    const template = config.Settings.SingleMessageStrctureTemplate;
-    const elements = h.parse(chatMessage.content);
-    let components: (TextComponent | ImageComponent)[] = [];
-    for (let elem of elements) {
-      switch (elem.type) {
-        case "text":
-          // const { content } = elem.attrs;
-          components.push(TextComponent(elem.attrs.content));
-          break;
-        case "at":
-          const attrs = { ...elem.attrs };
-          let userName: string;
-          switch (config.Bot.NickorName) {
-            case "群昵称":
-              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.nick;
-              break;
-            case "用户昵称":
-            default:
-              userName = messages.filter((m) => m.sender.id === attrs.id)[0]?.sender.name;
-              break;
-          }
-          if (attrs.id === session.selfId && config.Bot.SelfAwareness === "此页面设置的名字") {
-            userName = config.Bot.BotName;
-          }
-          // 似乎getMemberName的实现有问题，无法正确获取到群昵称，总是获取到用户昵称。修复后，取消注释下面的代码
-          attrs.name = userName || attrs.name || await getMemberName(config, session, attrs.id, chatMessage.channelId);
-          const safeAttrs = Object.entries(attrs)
-            .map(([key, value]) => {
-              // 确保value是字符串
-              const strValue = String(value);
-              // 转义单引号和其他潜在的危险字符
-              const safeValue = strValue
-                .replace(/'/g, "&#39;")
-                .replace(/"/g, "&quot;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-              return `${key}='${safeValue}'`;
-            })
-            .join(' ');
-          const atMessage = `<at ${safeAttrs}/>`;
-          components.push(TextComponent(atMessage));
-          break;
-        case "quote":
-          // const { id } = elem.attrs;
-          // chatMessage.quoteMessageId = elem.attrs.id;
-          break;
-        case "img":
-          // const { src, summary, fileUnique } = elem.attrs;
-          let cacheKey = getFileUnique(elem, session.bot.platform);
-          elem.attrs.cachekey = cacheKey;
-          components.push(ImageComponent(h.img(elem.attrs.src, { cachekey: elem.attrs.cachekey, summary: elem.attrs.summary }).toString()));
-          pendingProcessImgCount++;
-          break;
-        case "face":
-          // const { id, name } = elem.attrs;
-          components.push(TextComponent(`[表情:${elem.attrs.name}]`));
-          break;
-        case "mface":
-          // const { url, summary } = elem.attrs;
-          components.push(TextComponent(`[表情:${elem.attrs.summary?.replace(/^\[|\]$/g, '')}]`));
-          break;
-        default:
-      }
-    }
-    let channelType = getChannelType(chatMessage.channelId);
-    let channelInfo = channelType === "guild" ? `guild:${chatMessage.channelId}` : `${chatMessage.channelId}`;
-    let messageText = new Template(template, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g).render({
-      messageId: chatMessage.messageId,
-      date: timeString,
-      channelType,
-      channelInfo,
-      channelId: chatMessage.channelId,
-      senderName,
-      senderId: chatMessage.sender.id,
-      userContent: "{{userContent}}",
-      // quoteMessageId: chatMessage.quoteMessageId || "",
-      // hasQuote: !!chatMessage.quoteMessageId,
+      userContent: useVisionAbility ? "{{userContent}}" : userContent.join(""),
       isPrivate: channelType === "private",
     });
 
-    const parts = messageText.split(/({{userContent}})/);
-    components = parts.flatMap(part => {
-      if (part === '{{userContent}}') {
-        return components;
-      }
-      return [TextComponent(part)];
-    });
+    if (useVisionAbility) {
+      const parts = messageText.split(/({{userContent}})/);
+      components = parts.flatMap(part => {
+        if (part === '{{userContent}}') {
+          return components;
+        }
+        return [TextComponent(part)];
+      });
+    }
+
     if (chatMessage.sender.id === session.bot.selfId) {
-      processedMessage.push(AssistantMessage(...components));
+      if (config.Settings.AssistantFormat === "RAW") {
+        messageText = chatMessage.raw;
+      }
+      if (config.Settings.AddRoleTagBeforeContent) {
+        messageText = `[assistant] ${messageText}`;
+      }
+      if (config.Settings.SendAssistantMessageAs === "USER") {
+        processedMessage.push(useVisionAbility ? UserMessage(...components) : UserMessage(messageText));
+      } else {
+        processedMessage.push(useVisionAbility ? AssistantMessage(...components) : AssistantMessage(messageText));
+      }
     } else {
-      processedMessage.push(UserMessage(...components));
+      if (config.Settings.AddRoleTagBeforeContent) {
+        messageText = `[user] ${messageText}`;
+      }
+      processedMessage.push(useVisionAbility ? UserMessage(...components) : UserMessage(messageText));
     }
   }
-  // 处理图片组件
-  for (const message of processedMessage) {
-    if (typeof message.content === 'string') continue;
 
-    for (let i = 0; i < message.content.length; i++) {
-      const component = message.content[i];
-      if (component.type !== 'image_url') continue;
-      // 解析图片URL中的属性
-      const elem = h.parse((component as ImageComponent).image_url.url)[0];
-      const cacheKey = elem.attrs.cachekey;
-      const src = elem.attrs.src;
-      const summary = elem.attrs.summary;
+  if (useVisionAbility) {
+    // 处理图片组件
+    for (const message of processedMessage) {
+      if (typeof message.content === 'string') continue;
 
-      if (pendingProcessImgCount > config.ImageViewer.Memory && config.ImageViewer.Memory !== -1) {
-        // 获取图片描述
-        const description = await imageViewer.getImageDescription(src, cacheKey, summary);
-        message.content[i] = TextComponent(description);
-      } else {
-        // 转换为base64
-        const base64 = await convertUrltoBase64(src);
-        message.content[i] = ImageComponent(base64, config.ImageViewer.Server?.Detail || "auto");
+      for (let i = 0; i < message.content.length; i++) {
+        const component = message.content[i];
+        if (component.type !== 'image_url') continue;
+        // 解析图片URL中的属性
+        const elem = h.parse((component as ImageComponent).image_url.url)[0];
+        const cacheKey = elem.attrs.cachekey;
+        const src = elem.attrs.src;
+        const summary = elem.attrs.summary;
+
+        if (pendingProcessImgCount > config.ImageViewer.Memory && config.ImageViewer.Memory !== -1) {
+          // 获取图片描述
+          const description = await imageViewer.getImageDescription(src, cacheKey, summary);
+          message.content[i] = TextComponent(description);
+        } else {
+          // 转换为base64
+          const base64 = await convertUrltoBase64(src);
+          message.content[i] = ImageComponent(base64, config.ImageViewer.Server?.Detail || "auto");
+        }
+
+        pendingProcessImgCount--;
       }
 
-      pendingProcessImgCount--;
+      // 合并每条message中相邻的 TextComponent
+      message.content = message.content.reduce((acc, curr, i) => {
+        if (i === 0) return [curr];
+
+        const prev = acc[acc.length - 1];
+        if (prev.type === 'text' && curr.type === 'text') {
+          // 合并相邻的 TextComponent
+          prev.text += (curr as TextComponent).text;
+          return acc;
+        }
+
+        return [...acc, curr];
+      }, []);
     }
-
-    // 合并每条message中相邻的 TextComponent
-    message.content = message.content.reduce((acc, curr, i) => {
-      if (i === 0) return [curr];
-
-      const prev = acc[acc.length - 1];
-      if (prev.type === 'text' && curr.type === 'text') {
-        // 合并相邻的 TextComponent
-        prev.text += (curr as TextComponent).text;
-        return acc;
-      }
-
-      return [...acc, curr];
-    }, []);
   }
   return processedMessage;
 }

@@ -96,6 +96,10 @@ export interface Config {
     UpdatePromptOnLoad: boolean;
     AllowErrorFormat: boolean;
     MultiTurn: boolean;
+    AddRoleTagBeforeContent: boolean;
+    AssistantFormat: "RAW" | "CONTENT";
+    RemoveTheseFromRAW: Array<"status" | "replyTo" | "nextReplyIn" | "logic" | "reply" | "check" | "finalReply" | "functions">;
+    SendAssistantMessageAs: "USER" | "ASSISTANT";
     LLMResponseFormat: "JSON" | "XML";
   };
   Debug: {
@@ -471,8 +475,35 @@ export const Config: Schema<Config> = Schema.object({
       .default(false)
       .description("兼容几种较为常见的大模型错误输出格式"),
     MultiTurn: Schema.boolean()
-     .default(false)
+     .default(true)
      .description("将历史消息以多轮对话格式传递给LLM"),
+    AddRoleTagBeforeContent: Schema.boolean()
+      .default(true)
+      .description("在消息内容前添加发送者的角色标签，格式为[role]"),
+    AssistantFormat: Schema.union([
+      Schema.const("RAW").description("原始消息（完整JSON或者XML）"),
+      Schema.const("CONTENT").description("消息内容（经单条消息模板处理的finalReply）"),
+    ])
+      .default("RAW")
+      .description("在构建请求中的messages数组时，Bot历史消息的呈现格式"),
+    RemoveTheseFromRAW: Schema.array(
+      Schema.union([
+        Schema.const("status").description("status: 状态信息，Athena能够处理的值有两种，为`success`、`skip`，其余值会被置为`fail`"),
+        Schema.const("replyTo").description("replyTo: 消息发送的目的地，群聊的话就是群号，私聊的话就是带有`private:`的用户账号"),
+        Schema.const("nextReplyIn").description("nextReplyIn: Bot 还需要收到这么多条消息才会看一眼聊天内容"),
+        Schema.const("logic").description("logic: Bot 的思考逻辑，在上下文中，它可能引起复读问题，推荐勾选"),
+        Schema.const("reply").description("reply: Bot 的初版回复，可能会引起复读问题，推荐勾选"),
+        Schema.const("check").description("check: Bot 的对消息生成条例的检查结果，可能会引起复读问题，推荐勾选"),
+        Schema.const("finalReply").description("finalReply: Bot 的最终回复，如果勾选了，Bot就不知道自己之前发的消息是什么啦，所以不要勾选哦"),
+        Schema.const("functions").description("functions: Bot 的功能调用，勾不勾问题都不大"),
+      ])
+    )
+      .role("checkbox")
+      .default(["nextReplyIn", "logic", "reply", "check"])
+      .description("从 Bot 的原始消息中移除这些字段的值"),
+    SendAssistantMessageAs: Schema.union(["USER", "ASSISTANT"])
+      .default("ASSISTANT")
+      .description("在构建请求中的messages数组时，把 Bot 的历史消息按照此角色呈现"),
     LLMResponseFormat: Schema.union([
       Schema.const("JSON").description("JSON 格式"),
       Schema.const("XML").description("XML 格式"),
