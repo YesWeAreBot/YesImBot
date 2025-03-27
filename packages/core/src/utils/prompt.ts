@@ -55,6 +55,8 @@ export async function genSysPrompt(
   let content = fs.readFileSync(getFileNameFromUrl(PromptFileUrl),"utf-8");
   if (!content.includes("${outputSchema}"))
     logger.warn("WARN: 提示词不包含 `${outputSchema}`，可能会导致输出错误的格式")
+  if (!content.includes("${functionPrompt}"))
+    logger.warn("WARN: 提示词不包含 `${functionPrompt}`，如果在此基础上模型不支持原生工具调用或未勾选原生工具调用，Bot将无法调用函数")
   let template = new Template(content);
   return template.render({
     ...extra
