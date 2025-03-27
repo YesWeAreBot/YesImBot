@@ -55,10 +55,12 @@ export class Poke extends Extension {
             let channelId: string;
             if (isEmpty(channel)) {
                 channelId = this.session.channelId;
+            } else {
+                channelId = channel;
             }
             if (!channelId.startsWith("private:")) {
                 // @ts-ignore
-                await this.session.onebot._request("send_poke", { channel: channelId, user_id: user_id });
+                await this.session.onebot._request("send_poke", { channel: channelId, channelId: channelId, group_id: channelId, user_id: user_id }); // group_id✔
             } else {
                 // @ts-ignore
                 await this.session.onebot._request("send_poke", { user_id: user_id });
