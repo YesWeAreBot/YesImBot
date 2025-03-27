@@ -382,23 +382,20 @@ function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
       }
 
       if (key === 'functions') {
-        // 特殊处理 functions 数组
-        if (Array.isArray(obj[key])) {
-          obj[key].forEach(func => {
-            xml += '<functions>';
-            xml += `<name>${func.name || ''}</name>`;
-            if (func.params) {
-              xml += '<params>';
-              for (let param in func.params) {
-                xml += `<${param}>${func.params[param] || ''}</${param}>`;
-              }
-              xml += '</params>';
-            }
-            xml += '</functions>';
+        // 特殊处理 functions 对象或数组
+        xml += `<${key}>`;
+        const functionsObj = obj[key];
+        if (Array.isArray(functionsObj)) {
+          functionsObj.forEach(func => {
+            xml += `<function>${json2xml(func)}</function>`;  // 包裹数组元素
           });
-        } else {
-          xml += `<functions></functions>`;
+        } else if (typeof functionsObj === 'object' && functionsObj.function) {
+          const funcList = Array.isArray(functionsObj.function) ? functionsObj.function : [functionsObj.function];
+          funcList.forEach(func => {
+            xml += `<function>${json2xml(func)}</function>`;  // 包裹数组元素
+          });
         }
+        xml += `</${key}>`;
       } else if (Array.isArray(obj[key])) {
         xml += `<${key}>`;
         obj[key].forEach(item => {
@@ -424,8 +421,17 @@ function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
       ignoreAttributes: false,
       processEntities: false,
       stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+      isArray: (name, jPath) => {
+        return jPath === 'functions.function' || name === 'function';
+      },
     });
-    return parser.parse(xmlStr);
+
+    const parsed = parser.parse(xmlStr);
+
+    if (parsed.functions?.function) {
+      parsed.functions = parsed.functions.function;
+    }
+    return parsed
   }
 
   input = strip(input);
