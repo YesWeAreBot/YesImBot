@@ -114,7 +114,6 @@ export class Bot {
               }
               return [...acc, curr];
           }, []);
-          if (this.sendResolveOK) this.addContext(AssistantMessage("Resolve OK"));
           this.addContext(UserMessage(...components));
       }
     }
@@ -138,7 +137,7 @@ export class Bot {
             this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.finalFormat) + `${isEmpty(str) ? "No functions available." : str}`);
         }
 
-        const response = await adapter.chat([SystemMessage(this.prompt), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
+        const response = await adapter.chat([SystemMessage(this.prompt), ...(this.sendResolveOK ? [AssistantMessage("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
         let content = response.message.content;
         if (adapter.ability.includes("深度思考")) {
             // 移除adapter.reasoningStart和adapter.reasoningEnd之间的内容

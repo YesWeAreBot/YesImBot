@@ -242,7 +242,7 @@ export function apply(ctx: Context, config: Config) {
       // 处理内容
       const chatHistory = await processContent(config, session, await sendQueue.getMixedQueue(channelId), bot.imageViewer, bot.getAdapter().adapter, bot.finalFormat);
 
-      // 生成响应
+      // 生成messages数组
       if (!chatHistory || (Array.isArray(chatHistory) && chatHistory.length === 0)) {
         if (config.Debug.DebugAsInfo) ctx.logger.info(`未获取到${channelId}的聊天记录`);
         return false;
@@ -279,6 +279,7 @@ export function apply(ctx: Context, config: Config) {
         )
       );
 
+      // 生成响应
       if (config.Debug.DebugAsInfo) ctx.logger.info(`Request sent, awaiting for response...`);
 
       const chatResponse = await bot.generateResponse([], config.Debug.DebugAsInfo);
