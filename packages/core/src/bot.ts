@@ -36,6 +36,8 @@ export class Bot {
     private template: Template;
 
     private sendResolveOK: boolean;
+    private sendAssistantMessageAs: "USER" | "ASSISTANT";
+    private addRoleTagBeforeContent: boolean;
 
     private extensions: { [key: string]: Extension & Function } = {};
     private toolsSchema: ToolSchema[] = [];
@@ -52,6 +54,8 @@ export class Bot {
         const { ctx, config } = this.deps;
         this.ctx = ctx;
         this.sendResolveOK = config.Settings.SendResolveOK;
+        this.sendAssistantMessageAs = config.Settings.SendAssistantMessageAs;
+        this.addRoleTagBeforeContent = config.Settings.AddRoleTagBeforeContent
         this.contextSize = config.MemorySlot.SlotSize;
         this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.maxTriggerCount = Math.max(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
@@ -348,11 +352,22 @@ export class Bot {
         for (const func of functions) {
             const { name, params } = func;
             try {
-                returns.push(UserMessage(`[assistant] CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
-                let returnValue = await this.callFunction(name, params);
-                if (!isEmpty(returnValue)) returns.push(UserMessage(`[tool_call] FUNCTION RESULT: ${returnValue}`));
+                if (this.sendAssistantMessageAs === "USER") {
+                  returns.push(UserMessage(this.addRoleTagBeforeContent ? "[assistant] " : ""  + `CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
+                  let returnValue = await this.callFunction(name, params);
+                  if (!isEmpty(returnValue)) returns.push(UserMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION RESULT: ${returnValue}`));
+                } else {
+                  returns.push(AssistantMessage(this.addRoleTagBeforeContent ? "[assistant] " : ""  + `CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
+                  let returnValue = await this.callFunction(name, params);
+                  if (!isEmpty(returnValue)) returns.push(AssistantMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION RESULT: ${returnValue}`));
+                }
             } catch (e) {
-                returns.push(UserMessage(`[tool_call] FUNCTION ERROR: ${e.message}`));
+                if (this.sendAssistantMessageAs === "USER") {
+                  returns.push(UserMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION ERROR: ${e.message}`));
+                }
+                else {
+                  returns.push(AssistantMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION ERROR: ${e.message}`));
+                }
             }
         }
         if (returns.length > 0) {

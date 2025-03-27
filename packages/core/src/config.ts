@@ -505,7 +505,7 @@ export const Config: Schema<Config> = Schema.object({
       .description("从 Bot 的原始消息中移除这些字段的值"),
     SendAssistantMessageAs: Schema.union(["USER", "ASSISTANT"])
       .default("ASSISTANT")
-      .description("在构建请求中的messages数组时，把 Bot 的历史消息按照此角色呈现"),
+      .description("在构建请求中的messages数组时，把 Bot 的历史消息或工具调用消息按照此角色呈现"),
     MergeConsecutiveMessages: Schema.boolean()
       .default(false)
       .description
