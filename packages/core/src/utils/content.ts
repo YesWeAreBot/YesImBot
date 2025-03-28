@@ -212,7 +212,7 @@ export async function processContent(config: Config, session: Session, messages:
 
         if (pendingProcessImgCount > config.ImageViewer.Memory && config.ImageViewer.Memory !== -1) {
           // 获取图片描述
-          const description = await imageViewer.getImageDescription(src, cacheKey, summary);
+          const description = await imageViewer.getImageDescription(src, cacheKey, summary, config.Debug.DebugAsInfo);
           message.content[i] = TextComponent(description);
         } else {
           // 转换为base64
