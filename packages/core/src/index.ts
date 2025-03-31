@@ -1,7 +1,6 @@
 import { Context, h, Next, Random, Session, sleep } from "koishi";
 
 import path from "path";
-import { getOutputSchema } from "./adapters/creators/schema";
 import { Bot } from "./bot";
 import { apply as applyExtensionCommands } from "./commands/extension";
 import { apply as applySendQueueCommands } from "./commands/sendQueue";
@@ -18,6 +17,7 @@ import { convertUrltoBase64, ImageCache } from "./utils/imageUtils";
 import { ensurePromptFileExists, genSysPrompt } from "./utils/prompt";
 import { foldText, isEmpty } from "./utils/string";
 import { containsFilter, getBotName, getFileUnique, getFormatDateTime, isChannelAllowed, toolsToString } from "./utils/toolkit";
+import { getOutputSchema } from "./adapters/schema";
 
 export const name = "yesimbot";
 
@@ -272,9 +272,6 @@ export function apply(ctx: Context, config: Config) {
             BotSelfId: session.bot.selfId,
             outputSchema: getOutputSchema(bot.finalFormat),
             functionPrompt: "{{functionPrompt}}",
-            // 记忆模块还未完成，等完成后取消注释
-            // coreMemory: await bot.getCoreMemory(session.selfId),
-            memory: await bot.getMemory(session.selfId),
           }
         )
       );

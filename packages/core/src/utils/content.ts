@@ -1,5 +1,9 @@
 import { h, Session, Element } from 'koishi';
 import { XMLParser } from "fast-xml-parser";
+import { ImagePart, Message, TextPart } from '@xsai/shared-chat';
+import { message } from '@xsai/utils-chat';
+
+const { assistant, user, textPart, imagePart } = message;
 
 import { Config } from '../config';
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
@@ -8,7 +12,6 @@ import { isEmpty, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
 import { ImageViewer } from '../services/imageViewer';
 import { convertUrltoBase64 } from "../utils/imageUtils";
-import { Message, AssistantMessage, ImageComponent, TextComponent, UserMessage } from "../adapters/creators/component";
 
 
 /**
@@ -64,13 +67,13 @@ export async function processContent(config: Config, session: Session, messages:
       continue;
     }
 
-    let components: (TextComponent | ImageComponent)[] = [];
+    let components: (TextPart | ImagePart)[] = [];
     let userContent: string[] = [];
     for (let elem of elements) {
       switch (elem.type) {
         case "text":
           if (useVisionAbility) {
-            components.push(TextComponent(elem.attrs.content));
+            components.push(textPart(elem.attrs.content));
           } else {
             userContent.push(elem.attrs.content);
           }
@@ -107,7 +110,7 @@ export async function processContent(config: Config, session: Session, messages:
             .join(' ');
           const atMessage = `<at ${safeAttrs}/>`;
           if (useVisionAbility) {
-            components.push(TextComponent(atMessage));
+            components.push(textPart(atMessage));
           } else {
             userContent.push(atMessage);
           }
@@ -116,7 +119,7 @@ export async function processContent(config: Config, session: Session, messages:
           // 不转义，让LLM自己生成quote标签来使用引用功能
           const quoteMessage = `<quote id='${elem.attrs.quoteMessageId || elem.attrs.id || '未知'}'/>`;
           if (useVisionAbility) {
-            components.push(TextComponent(quoteMessage));
+            components.push(textPart(quoteMessage));
           } else {
             userContent.push(quoteMessage);
           }
@@ -125,7 +128,7 @@ export async function processContent(config: Config, session: Session, messages:
           let cacheKey = getFileUnique(elem, session.bot.platform);
           if (useVisionAbility) {
             elem.attrs.cachekey = cacheKey;
-            components.push(ImageComponent(h.img(elem.attrs.src, { cachekey: elem.attrs.cachekey, summary: elem.attrs.summary }).toString()));
+            components.push(imagePart(h.img(elem.attrs.src, { cachekey: elem.attrs.cachekey, summary: elem.attrs.summary }).toString()));
             pendingProcessImgCount++;
           } else {
             userContent.push(await imageViewer.getImageDescription(elem.attrs.src, cacheKey, elem.attrs.summary, config.Debug.DebugAsInfo));
@@ -134,7 +137,7 @@ export async function processContent(config: Config, session: Session, messages:
         case "face":
           const faceMessage = `[表情:${elem.attrs.name}]`;
           if (useVisionAbility) {
-            components.push(TextComponent(faceMessage));
+            components.push(textPart(faceMessage));
           } else {
             userContent.push(faceMessage);
           }
@@ -142,7 +145,7 @@ export async function processContent(config: Config, session: Session, messages:
         case "mface":
           const mfaceMessage = `[表情:${elem.attrs.summary?.replace(/^\[|\]$/g, '')}]`;
           if (useVisionAbility) {
-            components.push(TextComponent(mfaceMessage));
+            components.push(textPart(mfaceMessage));
           } else {
             userContent.push(mfaceMessage);
           }
@@ -172,7 +175,7 @@ export async function processContent(config: Config, session: Session, messages:
         if (part === '{{userContent}}') {
           return components;
         }
-        return [TextComponent(part)];
+        return [textPart(part)];
       });
     }
 
@@ -184,15 +187,15 @@ export async function processContent(config: Config, session: Session, messages:
         messageText = `[assistant] ${messageText}`;
       }
       if (config.Settings.SendAssistantMessageAs === "USER") {
-        processedMessage.push(useVisionAbility ? UserMessage(...components) : UserMessage(messageText));
+        processedMessage.push(useVisionAbility ? user(components) : user(messageText));
       } else {
-        processedMessage.push(useVisionAbility ? AssistantMessage(...components) : AssistantMessage(messageText));
+        processedMessage.push(useVisionAbility ? assistant(components as TextPart[]) : assistant(messageText));
       }
     } else {
       if (config.Settings.AddRoleTagBeforeContent) {
         messageText = `[user] ${messageText}`;
       }
-      processedMessage.push(useVisionAbility ? UserMessage(...components) : UserMessage(messageText));
+      processedMessage.push(useVisionAbility ? user(components) : user(messageText));
     }
   }
 
@@ -205,7 +208,7 @@ export async function processContent(config: Config, session: Session, messages:
         const component = message.content[i];
         if (component.type !== 'image_url') continue;
         // 解析图片URL中的属性
-        const elem = h.parse((component as ImageComponent).image_url.url)[0];
+        const elem = h.parse((component as ImagePart).image_url.url)[0];
         const cacheKey = elem.attrs.cachekey;
         const src = elem.attrs.src;
         const summary = elem.attrs.summary;
@@ -213,29 +216,29 @@ export async function processContent(config: Config, session: Session, messages:
         if (pendingProcessImgCount > config.ImageViewer.Memory && config.ImageViewer.Memory !== -1) {
           // 获取图片描述
           const description = await imageViewer.getImageDescription(src, cacheKey, summary, config.Debug.DebugAsInfo);
-          message.content[i] = TextComponent(description);
+          message.content[i] = textPart(description);
         } else {
           // 转换为base64
           const base64 = await convertUrltoBase64(src);
-          message.content[i] = ImageComponent(base64, config.ImageViewer.Server?.Detail || "auto");
+          message.content[i] = { type: "image_url", image_url: { url: base64, detail: config.ImageViewer.Server?.Detail || "auto" } };
         }
 
         pendingProcessImgCount--;
       }
 
       // 合并每条message中相邻的 TextComponent
-      message.content = message.content.reduce((acc, curr, i) => {
-        if (i === 0) return [curr];
+      // message.content = message.content.reduce((acc, curr, i) => {
+      //   if (i === 0) return [curr];
 
-        const prev = acc[acc.length - 1];
-        if (prev.type === 'text' && curr.type === 'text') {
-          // 合并相邻的 TextComponent
-          prev.text += (curr as TextComponent).text;
-          return acc;
-        }
+      //   const prev = acc[acc.length - 1];
+      //   if (prev.type === 'text' && curr.type === 'text') {
+      //     // 合并相邻的 TextComponent
+      //     prev.text += (curr as TextPart).text;
+      //     return acc;
+      //   }
 
-        return [...acc, curr];
-      }, []);
+      //   return [...acc, curr];
+      // }, []);
     }
   }
 
@@ -254,7 +257,7 @@ export async function processContent(config: Config, session: Session, messages:
         if (typeof lastMessage.content === 'string' && typeof message.content === 'string') {
           lastMessage.content += '\n' + message.content;
         } else if (Array.isArray(lastMessage.content) && Array.isArray(message.content)) {
-          lastMessage.content.push(...message.content);
+          lastMessage.content.push(...message.content as TextPart[]);
         } else {
           mergedMessages.push(message);
           lastMessageType = currentMessageType;
@@ -267,7 +270,7 @@ export async function processContent(config: Config, session: Session, messages:
 
     // 如果最后一条消息是AssistantMessage，那么在最后添加一个空UserMessage
     if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === 'assistant') {
-      mergedMessages.push(UserMessage(''));
+      mergedMessages.push(user(''));
     }
 
     return mergedMessages;

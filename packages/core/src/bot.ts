@@ -1,18 +1,23 @@
 import { XMLParser } from "fast-xml-parser";
 import { jsonrepair } from 'jsonrepair';
 import { Context, Random, Session } from "koishi";
+import { Message, TextPart, ImagePart } from '@xsai/shared-chat';
+import { ToolResult } from '@xsai/tool';
+import { message } from '@xsai/utils-chat';
+
+const { assistant, user, system, textPart } = message;
 
 import { AdapterSwitcher } from "./adapters";
-import { AssistantMessage, ImageComponent, Message, SystemMessage, TextComponent, ToolCall, ToolMessage, UserMessage } from "./adapters/creators/component";
-import { getFunctionSchema, ToolSchema } from "./adapters/creators/schema";
 import { Config } from "./config";
-import { Extension, getExtensions, getFunctionPrompt, getToolSchema } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
 import { LLMResponse, Tool } from "./models/LLMResponse";
 import { ImageViewer } from "./services/imageViewer";
 import { toolsToString } from "./utils";
-import { isEmpty, isNotEmpty, Template } from "./utils/string";
+import { isEmpty, isNotEmpty } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
+import { getFunctionSchema } from "./adapters/schema";
+import { ToolManager } from "./extensions/base";
+
 
 interface Dependencies {
     readonly ctx: Context;
@@ -33,26 +38,27 @@ export class Bot {
     private context: Message[] = []; // 对话上下文
     private recall: Message[] = [];  //
     private prompt: string;          // 系统提示词
-    private template: Template;
+    private toolList: ToolResult[] = [];
 
     private sendResolveOK: boolean;
     private sendAssistantMessageAs: "USER" | "ASSISTANT";
     private addRoleTagBeforeContent: boolean;
 
-    private extensions: { [key: string]: Extension & Function } = {};
-    private toolsSchema: ToolSchema[] = [];
-
     private emojiManager: EmojiManager;
     readonly verifier: ResponseVerifier;
     readonly imageViewer: ImageViewer;
+    readonly toolManager: ToolManager;
 
     private adapterSwitcher: AdapterSwitcher;
     public session: Session;
     private ctx: Context;
 
+
     constructor(private deps: Dependencies) {
         const { ctx, config } = this.deps;
         this.ctx = ctx;
+
+        // 初始化配置
         this.sendResolveOK = config.Settings.SendResolveOK;
         this.sendAssistantMessageAs = config.Settings.SendAssistantMessageAs;
         this.addRoleTagBeforeContent = config.Settings.AddRoleTagBeforeContent
@@ -60,19 +66,18 @@ export class Bot {
         this.minTriggerCount = Math.min(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.maxTriggerCount = Math.max(config.MemorySlot.MinTriggerCount, config.MemorySlot.MaxTriggerCount);
         this.allowErrorFormat = config.Settings.AllowErrorFormat;
+
         this.adapterSwitcher = new AdapterSwitcher(
             config.API.APIList,
             config.Parameters
         );
-        this.template = new Template(config.Settings.SingleMessageStrctureTemplate, /\{\{(\w+(?:\.\w+)*)\}\}/g, /\{\{(\w+(?:\.\w+)*),([^,]*),([^}]*)\}\}/g);
+
+        // 初始化依赖
         this.emojiManager = this.deps.emojiManager;
         this.verifier = this.deps.verifier;
         this.imageViewer = this.deps.imageViewer;
+        this.toolManager = ToolManager.getInstance(ctx);
 
-        for (const extension of getExtensions(ctx, this)) {
-            this.extensions[extension.name] = extension as any;
-            this.toolsSchema.push(getToolSchema(extension));
-        }
         this.finalFormat = this.adapterSwitcher.getAdapter().adapter.ability.includes("结构化输出") ? "JSON" : config.Settings.LLMResponseFormat;
     }
 
@@ -84,6 +89,7 @@ export class Bot {
         this.session = session;
     }
 
+
     addContext(message: Message) {
         while (this.context.length >= this.contextSize) {
             this.recall.push(this.context.shift());
@@ -92,34 +98,55 @@ export class Bot {
     }
 
     setChatHistory(chatHistory: Message[]) {
-      this.context = [];
-      if (this.deps.config.Settings.MultiTurn) {
-          for (const message of chatHistory) {
-              this.addContext(message);
-          }
-      } else {
-          let components: (TextComponent | ImageComponent)[] = [];
-          chatHistory.forEach(message => {
-              if (typeof message.content === 'string') {
-                  components.push(TextComponent(message.content));
-              } else if (Array.isArray(message.content)) {
-                  const validComponents = message.content.filter((comp): comp is TextComponent | ImageComponent =>
-                      comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp));
-                  components.push(...validComponents);
-              }
-          });
-          // 合并components中相邻的 TextComponent
-          components = components.reduce((acc, curr, i) => {
-              if (i === 0) return [curr];
-              const prev = acc[acc.length - 1];
-              if (prev.type === 'text' && curr.type === 'text') {
-                  prev.text += '\n' + (curr as TextComponent).text;
-                  return acc;
-              }
-              return [...acc, curr];
-          }, []);
-          this.addContext(UserMessage(...components));
-      }
+        this.context = [];
+        let components: Array<TextPart | ImagePart> = [];
+        chatHistory.forEach(message => {
+            if (typeof message.content === 'string') {
+                components.push(textPart(message.content));
+            } else if (Array.isArray(message.content)) {
+                const validComponents = message.content.filter((comp) => comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp)) as Array<TextPart | ImagePart>;
+                components.push(...validComponents);
+            }
+        });
+        // 合并components中相邻的 TextComponent
+        components = components.reduce((acc, curr, i) => {
+            if (i === 0) return [curr];
+            const prev = acc[acc.length - 1];
+            if (prev.type === 'text' && curr.type === 'text') {
+                prev.text += '\n' + (curr as TextPart).text;
+                return acc;
+            }
+            return [...acc, curr];
+        }, []);
+        if (this.sendResolveOK) this.addContext(assistant("Resolve OK"));
+        this.addContext(user(components));
+        this.context = [];
+        if (this.deps.config.Settings.MultiTurn) {
+            for (const message of chatHistory) {
+                this.addContext(message);
+            }
+        } else {
+            let components: Array<TextPart | ImagePart> = [];
+            chatHistory.forEach(message => {
+                if (typeof message.content === 'string') {
+                    components.push(textPart(message.content));
+                } else if (Array.isArray(message.content)) {
+                    const validComponents = message.content.filter((comp) => comp.type === 'text' || (comp.type === 'image_url' && 'image_url' in comp)) as Array<TextPart | ImagePart>;
+                    components.push(...validComponents);
+                }
+            });
+            // 合并components中相邻的 TextComponent
+            components = components.reduce((acc, curr, i) => {
+                if (i === 0) return [curr];
+                const prev = acc[acc.length - 1];
+                if (prev.type === 'text' && curr.type === 'text') {
+                    prev.text += '\n' + (curr as TextPart).text;
+                    return acc;
+                }
+                return [...acc, curr];
+            }, []);
+            this.addContext(user(components));
+        }
     }
 
     getAdapter() {
@@ -133,36 +160,42 @@ export class Bot {
 
         for (const message of messages) this.addContext(message);
 
+        this.toolList = await this.toolManager.getTools({ "session": this.session });
+
+        // appendFunctionPrompt
         if (!adapter.ability.includes("原生工具调用")) {
-            // appendFunctionPrompt
-            let str = Object.values(this.extensions)
-                .map((extension) => getFunctionPrompt(extension))
+            let str = this.toolList.map(tool => {
+                let lines = [];
+                lines.push(tool.function.name);
+                lines.push(`  description: ${tool.function.description || "No description provided."}`);
+                lines.push(`  params:`);
+                Object.entries(tool.function.parameters).forEach(([key, value]) => {
+                    lines.push(`    ${key}: ${value}`);
+                })
+                return lines.join("\n");
+            })
                 .join("\n");
             this.prompt = this.prompt.replace("{{functionPrompt}}", getFunctionSchema(this.finalFormat) + `${isEmpty(str) ? "No functions available." : str}`);
         }
 
-        const response = await adapter.chat([SystemMessage(this.prompt), ...(this.sendResolveOK ? [AssistantMessage("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolsSchema : undefined, debug);
-        let content = response.message.content;
-        if (adapter.ability.includes("深度思考")) {
-            // 移除adapter.reasoningStart和adapter.reasoningEnd之间的内容
-            // adapter.reasoningStart和adapter.reasoningEnd本身也可能是正则表达式，例如adapter.reasoningEnd可能是Reasoned for (?:a second|[^\n]* seconds)
-            const contentWithoutReasoning = content.replace(
-                new RegExp(`${adapter.reasoningStart}[\\s\\S]*?${adapter.reasoningEnd}`, 'g'),
-                ''
-            );
+        const { usage, text: content } = await adapter.chat([system(this.prompt), ...(this.sendResolveOK ? [assistant("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolList : undefined, debug);
 
-            content = contentWithoutReasoning.trim();
-        }
+        // if (adapter.ability.includes("深度思考")) {
+        //     // 移除adapter.reasoningStart和adapter.reasoningEnd之间的内容
+        //     // adapter.reasoningStart和adapter.reasoningEnd本身也可能是正则表达式，例如adapter.reasoningEnd可能是Reasoned for (?:a second|[^\n]* seconds)
+        //     const contentWithoutReasoning = content.replace(
+        //         new RegExp(`${adapter.reasoningStart}[\\s\\S]*?${adapter.reasoningEnd}`, 'g'),
+        //         ''
+        //     );
+
+        //     content = contentWithoutReasoning.trim();
+        // }
+
         if (debug) this.ctx.logger.info(`Adapter: ${current}, Response: \n${content}`);
-
-        if (adapter.ability.includes("原生工具调用")) {
-            const toolResponse = await this.handleToolCalls(response.message.tool_calls || [], debug);
-            if (toolResponse) return toolResponse;
-        }
 
         // handle response
         let LLMResponse: any = {};
-        const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`,'gis');
+        const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`, 'gis');
         let contentToParse = null;
         let match;
 
@@ -195,19 +228,19 @@ export class Bot {
                     LLMResponse = JSON.parse(jsonrepair(contentToParse));
                 } else if (this.finalFormat === "XML") {
                     const parser = new XMLParser({
-                      ignoreAttributes: false,
-                      processEntities: false,
-                      stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+                        ignoreAttributes: false,
+                        processEntities: false,
+                        stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
                     });
                     LLMResponse = parser.parse(contentToParse);
                 }
-                this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
+                this.addContext(assistant(JSON.stringify(LLMResponse)));
             } catch (e) {
                 const reason = `${this.finalFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
                 return {
                     status: "fail",
                     raw: content,
-                    usage: response.usage,
+                    usage,
                     reason,
                     adapterIndex: current,
                 };
@@ -220,19 +253,19 @@ export class Bot {
                     LLMResponse = JSON.parse(repaired);
                 } else {
                     const parser = new XMLParser({
-                      ignoreAttributes: false,
-                      processEntities: false,
-                      stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+                        ignoreAttributes: false,
+                        processEntities: false,
+                        stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
                     });
                     LLMResponse = parser.parse(content);
                 }
-                this.addContext(AssistantMessage(JSON.stringify(LLMResponse)));
+                this.addContext(assistant(JSON.stringify(LLMResponse)));
             } catch (err) {
                 const reason = `没有找到有效的 ${this.finalFormat} 结构: ${content}`;
                 return {
                     status: "fail",
                     raw: content,
-                    usage: response.usage,
+                    usage,
                     reason,
                     adapterIndex: current,
                 };
@@ -273,7 +306,7 @@ export class Bot {
                 return {
                     status: "skip",
                     raw: content,
-                    usage: response.usage,
+                    usage,
                     nextTriggerCount,
                     functions,
                     logic: finalLogic,
@@ -292,7 +325,7 @@ export class Bot {
                 nextTriggerCount,
                 logic: finalLogic,
                 functions,
-                usage: response.usage,
+                usage,
                 adapterIndex: current,
             };
         } else if (LLMResponse.status === "skip") {
@@ -301,7 +334,7 @@ export class Bot {
                 raw: content,
                 nextTriggerCount,
                 logic: finalLogic,
-                usage: response.usage,
+                usage,
                 functions,
                 adapterIndex: current,
             };
@@ -312,29 +345,45 @@ export class Bot {
             return {
                 status: "fail",
                 raw: content,
-                usage: response.usage,
+                usage,
                 reason,
                 adapterIndex: current,
             };
         }
     }
 
-    // 或许可以将这两个函数整合到一起
-    // 递归调用
-    // TODO: 指定最大调用深度
-    // TODO: 上报函数调用信息
-    private async handleToolCalls(toolCalls: ToolCall[], debug: boolean): Promise<LLMResponse | null> {
+    /**
+     * 
+     * @param toolList 
+     * @param functionsToCall 
+     * @param debug 
+     * @returns 
+     */
+    private async handleFunctionCalls(functionsToCall: Tool[], debug = false): Promise<LLMResponse | null> {
         if (debug) {
             this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
-            this.ctx.logger.info(toolCalls.map(toolCall => `Name: ${toolCall.function.name}\nArgs: ${JSON.stringify(toolCall.function.arguments)})}`).join('\n'));
+            this.ctx.logger.info(toolsToString(functionsToCall));
         }
-        let returns: ToolMessage[] = [];
-        for (let toolCall of toolCalls) {
+        let returns: Message[] = [];
+        for (const func of functionsToCall) {
+            const { name, params } = func;
             try {
-                let result = await this.callFunction(toolCall.function.name, toolCall.function.arguments);
-                if (!isEmpty(result)) returns.push(ToolMessage(result, toolCall.id));
+                if (this.sendAssistantMessageAs === "USER") {
+                    returns.push(user(this.addRoleTagBeforeContent ? "[assistant] " : "" + `CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
+                    let returnValue = await this.callFunction(name, params);
+                    if (!isEmpty(returnValue)) returns.push(user(this.addRoleTagBeforeContent ? "[tool] " : "" + `FUNCTION RESULT: ${returnValue}`));
+                } else {
+                    returns.push(assistant(this.addRoleTagBeforeContent ? "[assistant] " : "" + `CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
+                    let returnValue = await this.callFunction(name, params);
+                    if (!isEmpty(returnValue)) returns.push(assistant(this.addRoleTagBeforeContent ? "[tool] " : "" + `FUNCTION RESULT: ${returnValue}`));
+                }
             } catch (e) {
-                returns.push(ToolMessage(e.message, toolCall.id));
+                if (this.sendAssistantMessageAs === "USER") {
+                    returns.push(user(this.addRoleTagBeforeContent ? "[tool] " : "" + `FUNCTION ERROR: ${e.message}`));
+                }
+                else {
+                    returns.push(user(this.addRoleTagBeforeContent ? "[tool] " : "" + `FUNCTION ERROR: ${e.message}`));
+                }
             }
         }
         if (returns.length > 0) {
@@ -343,37 +392,14 @@ export class Bot {
         return null;
     }
 
-    private async handleFunctionCalls(functions: Tool[], debug: boolean): Promise<LLMResponse | null> {
-        if (debug) {
-            this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
-            this.ctx.logger.info(toolsToString(functions));
+    async callFunction(name: string, params: Record<string, any>): Promise<string> {
+        let tool = this.toolList.find(tool => tool.function.name === name);
+        if (!tool) {
+            throw new Error(`Tool ${name} not found`);
         }
-        let returns: Message[] = [];
-        for (const func of functions) {
-            const { name, params } = func;
-            try {
-                if (this.sendAssistantMessageAs === "USER") {
-                  returns.push(UserMessage(this.addRoleTagBeforeContent ? "[assistant] " : ""  + `CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
-                  let returnValue = await this.callFunction(name, params);
-                  if (!isEmpty(returnValue)) returns.push(UserMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION RESULT: ${returnValue}`));
-                } else {
-                  returns.push(AssistantMessage(this.addRoleTagBeforeContent ? "[assistant] " : ""  + `CALLING FUNCTION: ${name} PARAMS: ${JSON.stringify(params)}`));
-                  let returnValue = await this.callFunction(name, params);
-                  if (!isEmpty(returnValue)) returns.push(AssistantMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION RESULT: ${returnValue}`));
-                }
-            } catch (e) {
-                if (this.sendAssistantMessageAs === "USER") {
-                  returns.push(UserMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION ERROR: ${e.message}`));
-                }
-                else {
-                  returns.push(AssistantMessage(this.addRoleTagBeforeContent ? "[tool] " : ""  + `FUNCTION ERROR: ${e.message}`));
-                }
-            }
-        }
-        if (returns.length > 0) {
-            return this.generateResponse(returns, debug);
-        }
-        return null;
+        //@ts-ignore
+        let result = await tool.execute(params);
+        return result as string;
     }
 
     // 如果 replyTo 不是私聊会话，只保留数字部分
@@ -399,23 +425,6 @@ export class Bot {
         }
     }
 
-    // TODO: 规范化params
-    // OpenAI和Ollama提供的参数不一致
-    async callFunction(name: string, params: Record<string, any>): Promise<any> {
-        let func = this.extensions[name] as Function;
-        if (!func) {
-            throw new Error(`Function not found: ${name}`);
-        }
-
-        return await func(params);
-    }
-
-    getMemory(selfId: string) {
-        // @ts-ignore
-        if (this.ctx.memory) return this.ctx.memory.MEMORY_PROMPT
-        return "";
-    }
-
     async unparseFaceMessage(message: string) {
         message = message.toString();
         // 反转义 <face> 消息
@@ -439,34 +448,5 @@ export class Bot {
             message = message.replace(match, replacement);
         });
         return message;
-    }
-
-    private collectUserID() {
-        const users: Map<string, string> = new Map();
-        const stringTemplate = this.template;
-
-        for (const history of this.context) {
-            let content = history.content;
-            switch (typeof content) {
-                case "string":
-                    break;
-                case "object":
-                    content = (history.content as (TextComponent | ImageComponent)[])
-                        .filter((comp): comp is TextComponent => comp.type === 'text')
-                        .map(comp => comp.text)
-                        .join('');
-                    break;
-                default:
-                    content = "";
-                    break;
-            }
-            const result = stringTemplate.unrender(content);
-
-            if (result.senderId && result.senderName) {
-                users.set(result.senderId, result.senderName);
-            }
-        }
-
-        return users;
     }
 }
