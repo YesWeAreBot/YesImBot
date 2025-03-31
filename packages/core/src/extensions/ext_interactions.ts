@@ -5,56 +5,59 @@
 // @author       HydroGest
 // ==/Extension==
 
-import { Description, Extension, Name, Param } from "./base";
+import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
+import { defineTool } from "./base";
 
-@Name("reaction-create")
-@Description(`在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`)
-@Param("message", "消息 ID")
-@Param("emoji_id", "表态编号")
-export class Reaction extends Extension {
-    async apply(args: { message: number, emoji_id: number }) {
-        const { message, emoji_id } = args;
+
+export const Reaction = defineTool({
+    name: "reaction-create",
+    description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
+    parameters: z.object({
+        message: z.string().describe("消息 ID"),
+        emoji_id: z.number().describe("表态编号")
+    }),
+    execute: async ({ message, emoji_id }, context) => {
         try {
             // @ts-ignore
             await this.session.onebot._request("set_msg_emoji_like", { message_id: message, emoji_id: emoji_id });
-            this.ctx.logger.info(`Bot[${this.session.selfId}]对消息 ${message} 进行了表态： ${emoji_id}`);
+            context.ctx.logger.info(`Bot[${context.session.selfId}]对消息 ${message} 进行了表态： ${emoji_id}`);
         } catch (e) {
-            this.ctx.logger.error(`Bot[${this.session.selfId}]执行表态失败: ${message}, ${emoji_id} - `, e.message);
+            context.ctx.logger.error(`Bot[${context.session.selfId}]执行表态失败: ${message}, ${emoji_id} - `, e.message);
         }
     }
-}
+})
 
-@Name("essence-create")
-@Description(`在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`)
-@Param("message", "消息 ID")
-export class Essence extends Extension {
-    async apply(args: { message: number }) {
-        const { message } = args;
+export const Essence = defineTool({
+    name: "essence-create",
+    description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
+    parameters: z.object({
+        message: z.number().describe("消息 ID")
+    }),
+    execute: async ({ message }, context) => {
         try {
             // @ts-ignore
             await this.session.onebot._request("set_essence_msg", { message_id: message })
-            this.ctx.logger.info(`Bot[${this.session.selfId}]将消息 ${message} 设置为精华`);
+            context.ctx.logger.info(`Bot[${context.session.selfId}]将消息 ${message} 设置为精华`);
         } catch (e) {
-            this.ctx.logger.error(`Bot[${this.session.selfId}]设置精华消息失败: ${message} - `, e.message);
+            context.ctx.logger.error(`Bot[${context.session.selfId}]设置精华消息失败: ${message} - `, e.message);
         }
     }
-}
+})
 
-@Name("send-poke")
-@Description(`
-  发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。
-`)
-@Param("channel", "要在哪个频道运行，不填默认为当前频道")
-@Param("user_id", "用户名称")
-export class Poke extends Extension {
-    async apply(args: { user_id: string, channel?: string }) {
-        const { user_id, channel } = args;
+export const Poke = defineTool({
+    name: "send-poke",
+    description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
+    parameters: z.object({
+        user_id: z.string().describe("用户名称"),
+        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道")
+    }),
+    execute: async ({ user_id, channel }, context) => {
         try {
             let channelId: string;
             if (isEmpty(channel)) {
-                channelId = this.session.channelId;
+                channelId = context.session.channelId;
             } else {
                 channelId = channel;
             }
@@ -65,10 +68,9 @@ export class Poke extends Extension {
                 // @ts-ignore
                 await this.session.onebot._request("send_poke", { user_id: user_id });
             }
-            this.ctx.logger.info(`Bot[${this.session.selfId}]戳了戳 ${user_id}`);
+            context.ctx.logger.info(`Bot[${context.session.selfId}]戳了戳 ${user_id}`);
         } catch (e) {
-            this.ctx.logger.error(`Bot[${this.session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
+            context.ctx.logger.error(`Bot[${context.session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
         }
     }
-}
-
+})
