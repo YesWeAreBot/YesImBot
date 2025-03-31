@@ -1,6 +1,5 @@
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Message } from '@xsai/shared-chat';
-import { StreamTextResult } from "@xsai/stream-text";
 import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";

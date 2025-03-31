@@ -1,13 +1,12 @@
 import { createWorkersAI } from '@xsai-ext/providers-cloud';
 import { generateText, GenerateTextResult } from '@xsai/generate-text';
 import { AssistantMessage, ChatOptions, Message } from '@xsai/shared-chat';
-import { streamText, StreamTextResult } from '@xsai/stream-text';
+import { streamText } from '@xsai/stream-text';
 import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";
 import { BaseAdapter } from "./base";
 import { LLM } from "./config";
-
 
 
 export class CloudflareAdapter extends BaseAdapter {
