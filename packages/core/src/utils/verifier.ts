@@ -1,6 +1,9 @@
+import { message } from '@xsai/utils-chat';
 import { Context } from "koishi";
+
+const { assistant, user, system, textPart, imagePart } = message;
+
 import { BaseAdapter } from "../adapters/base";
-import { AssistantMessage, SystemMessage, UserMessage } from "../adapters/creators/component";
 import { Config } from "../config";
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
@@ -64,9 +67,9 @@ export class ResponseVerifier {
         const promptInput = `A: ${this.previousResponse.get(channelId)}\nB: ${currentResponse}`;
         const response = await this.client.chat(
           [
-            SystemMessage(sysPrompt),
-            AssistantMessage("Resolve OK"),
-            UserMessage(promptInput)
+            system(sysPrompt),
+            assistant("Resolve OK"),
+            user(promptInput)
           ],
           null,
           this.config.Debug.DebugAsInfo

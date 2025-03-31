@@ -22,7 +22,7 @@ export interface Config {
     TopP?: number;
     FrequencyPenalty?: number;
     PresencePenalty?: number;
-    Stop?: string[];
+    Stop?: string | string[];
     OtherParameters?: {
       [key: string]: string;
     }
@@ -43,11 +43,11 @@ export interface Config {
   Embedding: EmbeddingConfig;
   ImageViewer: {
     How?:
-      | "LLM API 自带的多模态能力"
-      | "图片描述服务"
-      | "替换成[图片:summary]"
-      | "替换成[图片]"
-      | "不做处理，以<img>标签形式呈现";
+    | "LLM API 自带的多模态能力"
+    | "图片描述服务"
+    | "替换成[图片:summary]"
+    | "替换成[图片]"
+    | "不做处理，以<img>标签形式呈现";
     Memory?: number;
     DescribeImmidately?: boolean;
     Question?: string;
@@ -196,10 +196,12 @@ export const Config: Schema<Config> = Schema.object({
       .step(0.01)
       .role("slider")
       .description("数值为正时，如果 Token 在前文出现过，就对其进行惩罚，降低它再次出现的概率，提高模型谈论新话题的可能性。这是一个加数"),
-    Stop: Schema.array(Schema.string())
-      .default(["<|endoftext|>"])
-      .role("table")
-      .description("自定义停止词。对于 OpenAI 官方的 API，最多可以设置4个自定义停止词。生成会在遇到这些停止词时停止"),
+    Stop: Schema.union([
+      Schema.string().description("单例模式"),
+      Schema.array(Schema.string()).max(4).role("table").description("数组模式"),
+    ])
+    .description("自定义停止词。对于 OpenAI 官方的 API，最多可以设置4个自定义停止词。生成会在遇到这些停止词时停止")
+    .default(["<|endoftext|>"]),
     OtherParameters: Schema.dict(
       Schema.string().required(),
       Schema.any().required()
