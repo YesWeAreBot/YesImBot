@@ -1,52 +1,85 @@
+
+import { generateText, GenerateTextResult } from '@xsai/generate-text';
+import { AssistantMessage, ChatOptions, Message } from '@xsai/shared-chat';
+import { streamText } from '@xsai/stream-text';
+import { ToolResult } from '@xsai/tool';
+
 import { Config } from "../config";
-import { sendRequest } from "../utils/http";
-import { BaseAdapter, Response } from "./base";
+import { BaseAdapter } from "./base";
 import { LLM } from "./config";
-import { AssistantMessage, Message } from "./creators/component";
-import { ToolSchema } from "./creators/schema";
+
 
 export class CustomAdapter extends BaseAdapter {
-  constructor(config: LLM, parameters?: Config["Parameters"]) {
-    super(config, parameters);
-    this.url = config.BaseURL;
-  }
-
-  async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
-    if (this.ability.includes("对话前缀续写") && this.startWith) {
-      messages.push({ "role": "assistant", "content": this.startWith, "prefix": true } as AssistantMessage)
+    constructor(config: LLM, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        if (!this.baseURL) {
+            throw new Error('BaseURL is required for OpenAIAdapter');
+        }
     }
-    const requestBody = {
-      model: this.model,
-      reasoning_effort: this.ability.includes("深度思考") ? this.reasoningEffort : undefined,
-      messages,
-      toolsSchema,
-      temperature: this.parameters?.Temperature,
-      max_tokens: this.parameters?.MaxTokens,
-      top_p: this.parameters?.TopP,
-      frequency_penalty: this.parameters?.FrequencyPenalty,
-      presence_penalty: this.parameters?.PresencePenalty,
-      stop: this.parameters?.Stop,
-      response_format: this.ability.includes("结构化输出")
-        ? { type: "json_object" }
-        : undefined,
-      ...this.otherParams,
-    };
-    let response = await sendRequest(this.url, this.apiKey, requestBody, this.adapterConfig.Timeout, debug);
 
-    try {
-      return {
-        model: response.model,
-        created: response.created,
-        message: {
-          role: response.choices[0].message.role,
-          content: response.choices[0].message.content,
-          tool_calls: response.choices[0].message.tool_calls,
-        },
-        usage: response.usage,
-      };
-    } catch (error) {
-      console.error("Error parsing response:", error);
-      console.error("Response:", response);
+    async chat(messages: Message[], toolsSchema?: ToolResult[], debug = false): Promise<GenerateTextResult> {
+        if (this.ability.includes("对话前缀续写") && this.startWith) {
+            messages.push({ "role": "assistant", "content": this.startWith, "prefix": true } as AssistantMessage)
+        }
+
+        // 公共参数
+        const chatOptions: ChatOptions = {
+            baseURL: this.baseURL,
+            apiKey: this.apiKey,
+            model: this.model,
+
+            frequencyPenalty: this.parameters.FrequencyPenalty,
+            messages,
+            presencePenalty: this.parameters.PresencePenalty,
+            // seed
+            //@ts-ignore
+            stop: this.parameters.Stop,
+            temperature: this.parameters.Temperature,
+            // toolChoice
+            topP: this.parameters.TopP,
+        }
+
+        if (this.ability.includes("流式输出")) {
+            const result = await streamText({
+                ...chatOptions,
+                ...(toolsSchema ? { tools: toolsSchema } : {}),
+                // maxSteps
+                ...this.otherParams,
+                streamOptions: {
+                    usage: true,
+                }
+            })
+            let fullContent = "";
+            let currentLineBuffer = "";
+            for await (const textPart of result["textStream"]) {
+                fullContent += textPart;
+                currentLineBuffer += textPart;
+                if (debug) {
+                    if (currentLineBuffer.includes("\n")) {
+                        // 清除当前行并将光标移动到行首
+                        process.stdout.write('\x1B[K\r');
+                        // 输出新的文本
+                        process.stdout.write(currentLineBuffer);
+                        // 重置当前行缓冲区
+                        currentLineBuffer = "";
+                    }
+                }
+            }
+            for await (const step of result["stepStream"]) {
+                return {
+                    ...step,
+                    text: fullContent,
+                } as unknown as GenerateTextResult;
+            }
+        }
+
+        // 非流式输出
+        const result = await generateText({
+            ...chatOptions,
+            ...(toolsSchema ? { tools: toolsSchema } : {}),
+            // reasoning_effort: this.ability.includes("深度思考")? this.reasoningEffort : undefined, 这部分可以通过 OtherParameters 实现
+            ...this.otherParams,
+        });
+        return result;
     }
-  }
 }

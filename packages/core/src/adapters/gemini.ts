@@ -1,130 +1,87 @@
+import { createGoogleGenerativeAI } from '@xsai-ext/providers-cloud';
+import { generateText, GenerateTextResult } from '@xsai/generate-text';
+import { AssistantMessage, ChatOptions, Message } from '@xsai/shared-chat';
+import { streamText, StreamTextResult } from '@xsai/stream-text';
+import { ToolResult } from '@xsai/tool';
+
 import { Config } from "../config";
-import { getMimeTypeFromBase64, sendRequest } from "../utils";
-import { BaseAdapter, Response } from "./base";
+import { BaseAdapter } from "./base";
 import { LLM } from "./config";
-import { Message } from "./creators/component";
-import { ToolSchema } from "./creators/schema";
-
-interface Content {
-  role: string;
-  parts: Part[];
-}
-
-export type Part = TextPart | InlineDataPart;
-// | FunctionCallPart
-// | FunctionResponsePart
-// | FileDataPart
-// | ExecutableCodePart
-// | CodeExecutionResultPart;
-
-interface TextPart {
-  text: string;
-  inlineData?: never;
-  functionCall?: never;
-  functionResponse?: never;
-  fileData?: never;
-  executableCode?: never;
-  codeExecutionResult?: never;
-}
-
-interface InlineDataPart {
-  mime_type: string;
-  data: string;
-}
-
-interface GenerateContentResponse {
-  candidates?: GenerateContentCandidate[];
-  usageMetadata?: {
-    promptTokenCount: number;
-    candidatesTokenCount: number;
-    totalTokenCount: number;
-    cachedContentTokenCount?: number;
-  };
-  modelVersion?: string;
-}
-
-export interface GenerateContentCandidate {
-  index: number;
-  content: Content;
-  finishMessage?: string;
-}
 
 export class GeminiAdapter extends BaseAdapter {
-  constructor(config: LLM, parameters?: Config["Parameters"]) {
-    super(config, parameters);
-    // base url: https://generativelanguage.googleapis.com
-    if (config.BaseURL.endsWith("/")) {
-      config.BaseURL = config.BaseURL.slice(0, -1);
+    private provider: any;
+    constructor(config: LLM, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        if (!this.baseURL) {
+            throw new Error('BaseURL is required for GeminiAdapter');
+        }
+
+        this.provider = createGoogleGenerativeAI(
+            config.APIKey,
+            config.BaseURL
+        );
     }
-    this.url = `${config.BaseURL}/v1beta/models/${config.AIModel}:generateContent?key=${config.APIKey}`;
-  }
 
-  async chat(messages: Message[], toolsSchema?: ToolSchema[], debug = false): Promise<Response> {
-    const system = messages.find((message) => message.role === "system");
-    if (system) {
-      messages = messages.filter((message) => message.role !== "system");
+    async chat(messages: Message[], toolsSchema?: ToolResult[], debug = false): Promise<GenerateTextResult> {
+        if (this.ability.includes("对话前缀续写") && this.startWith) {
+            messages.push({ "role": "assistant", "content": this.startWith, "prefix": true } as AssistantMessage)
+        }
 
+        // 公共参数
+        const chatOptions: ChatOptions = {
+            ...this.provider.chat(this.model),
+            frequencyPenalty: this.parameters.FrequencyPenalty,
+            messages,
+            presencePenalty: this.parameters.PresencePenalty,
+            // seed
+            //@ts-ignore
+            stop: this.parameters.Stop,
+            temperature: this.parameters.Temperature,
+            // toolChoice
+            topP: this.parameters.TopP,
+        }
+
+        if (this.ability.includes("流式输出")) {
+            const result = await streamText({
+                ...chatOptions,
+                ...(toolsSchema ? { tools: toolsSchema } : {}),
+                // maxSteps
+                ...this.otherParams,
+                streamOptions: {
+                    usage: true,
+                }
+            })
+            let fullContent = "";
+            let currentLineBuffer = "";
+            for await (const textPart of result["textStream"]) {
+                fullContent += textPart;
+                currentLineBuffer += textPart;
+                if (debug) {
+                    if (currentLineBuffer.includes("\n")) {
+                        // 清除当前行并将光标移动到行首
+                        process.stdout.write('\x1B[K\r');
+                        // 输出新的文本
+                        process.stdout.write(currentLineBuffer);
+                        // 重置当前行缓冲区
+                        currentLineBuffer = "";
+                    }
+                }
+            }
+            for await (const step of result["stepStream"]) {
+                return {
+                    ...step,
+                    text: fullContent,
+                } as unknown as GenerateTextResult;
+            }
+        }
+
+        // 非流式输出
+        const result = await generateText({
+            ...chatOptions,
+            ...(toolsSchema ? { tools: toolsSchema } : {}),
+            // reasoning_effort: this.ability.includes("深度思考")? this.reasoningEffort : undefined, 这部分可以通过 OtherParameters 实现
+            ...this.otherParams,
+        });
+        return result;
     }
-    const requestBody = {
-      system_instruction: convert(system),
-      contents: messages.map(convert),
-      generationConfig: {
-        stopSequences: this.parameters?.Stop,
-        temperature: this.parameters?.Temperature,
-        maxOutputTokens: this.parameters?.MaxTokens,
-        topP: this.parameters?.TopP,
-        response_mime_type: this.ability.includes("结构化输出")
-          ? "application/json"
-          : undefined,
-      },
-    };
-
-    let response = await sendRequest<GenerateContentResponse>(this.url, "", requestBody, this.adapterConfig.Timeout, debug);
-    try {
-      return {
-        model: response.modelVersion,
-        created: Date.now().toLocaleString(),
-        message: {
-          role: "assistant",
-          // @ts-ignore
-          content: response.candidates[0].content.parts.map((part) => part.text).join(""),
-        },
-        usage: {
-          prompt_tokens: response.usageMetadata.promptTokenCount,
-          completion_tokens: response.usageMetadata.candidatesTokenCount,
-          total_tokens: response.usageMetadata.totalTokenCount,
-        },
-      };
-    } catch (error) {
-      console.error("Error parsing response:", error);
-      console.error("Response:", response);
-    }
-  }
-}
-
-function convert(message: Message): Content {
-  // @ts-ignore
-  message.role = message.role == "assistant" ? "model" : message.role;
-  if (typeof message.content === "string") {
-    return {
-      role: message.role,
-      parts: [{ text: message.content }],
-    };
-  }
-
-  return {
-    role: message.role,
-    parts: message.content.map((component) => {
-      if (typeof component === "string") {
-        return { text: component };
-      } else if (component.type === "image_url") {
-        return {
-          mime_type: getMimeTypeFromBase64(component["image_url"]["url"]),
-          data: component["image_url"]["url"],
-        };
-      } else if (component.type === "text") {
-        return { text: component["text"] };
-      }
-    }),
-  };
 }
