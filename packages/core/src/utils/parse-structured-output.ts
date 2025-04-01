@@ -1,8 +1,14 @@
 // from https://github.com/transitive-bullshit/agentic/blob/main/packages/core/src/parse-structured-output.ts
 
-import type { JsonObject, JsonValue } from 'type-fest'
+// import type { JsonObject, JsonValue } from 'type-fest'
 import { jsonrepair, JSONRepairError } from 'jsonrepair'
 import { z, type ZodType } from 'zod'
+
+// type-fest types
+export type JsonObject = {[Key in string]: JsonValue} & {[Key in string]?: JsonValue | undefined};
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonArray = JsonValue[] | readonly JsonValue[];
 
 export type SafeParseResult<TData> =
   | {

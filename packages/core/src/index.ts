@@ -48,7 +48,9 @@ export function apply(ctx: Context, config: Config) {
   const verifier = config.Verifier.Enabled ? new ResponseVerifier(ctx, config) : null;
   const imageViewer = new ImageViewer(ctx, config);
 
-  ImageCache.instance = new ImageCache(path.join(ctx.baseDir, "data/yesimbot/cache/downloadImage"));;
+  if (!ImageCache.instance) {
+    ImageCache.instance = new ImageCache(path.join(ctx.baseDir, "data/yesimbot/cache/downloadImage"));;
+  }
 
   const bot = new Bot({
     ctx,
@@ -430,7 +432,6 @@ ${toolsToString(functions)}
 
     catch (error) {
       ctx.logger.error(`处理消息时出错: ${error.message}`);
-      if (config.Debug.DebugAsInfo) ctx.logger.error(error.stack);
       if (config.Debug.DebugAsInfo) ctx.logger.error(error.stack);
       return false;
     }

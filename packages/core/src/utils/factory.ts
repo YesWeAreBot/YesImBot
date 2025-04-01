@@ -1,15 +1,15 @@
 import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
 import { BaseAdapter } from "../adapters/base";
-import { LLM } from "../adapters/config";
+import { LLMConfig } from "../adapters/config";
 import { Config } from "../config";
 import { CustomEmbedding, OllamaEmbedding, OpenAIEmbedding } from "../embeddings";
 import { EmbeddingBase } from "../embeddings/base";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
 import { CacheManager } from "../managers/cacheManager";
 
-export function getAdapter(config: LLM, parameters?: Config["Parameters"]): BaseAdapter {
+export function getAdapter(config: LLMConfig, parameters?: Config["Parameters"]): BaseAdapter {
     // 将 APIType 映射到对应的 Adapter 类
-    const adapterMap: { [key: string]: new (config: LLM, parameters?: Config["Parameters"]) => BaseAdapter } = {
+    const adapterMap: { [key: string]: new (config: LLMConfig, parameters?: Config["Parameters"]) => BaseAdapter } = {
         "Cloudflare": CloudflareAdapter,
         "Custom URL": CustomAdapter,
         "Ollama": OllamaAdapter,

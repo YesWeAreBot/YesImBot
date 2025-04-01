@@ -6,12 +6,12 @@ import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";
 import { BaseAdapter } from "./base";
-import { LLM } from "./config";
+import { LLMConfig } from "./config";
 
 
 export class OllamaAdapter extends BaseAdapter {
     private provider: any;
-    constructor(private config: LLM, parameters?: Config["Parameters"]) {
+    constructor(private config: LLMConfig, parameters?: Config["Parameters"]) {
         super(config, parameters);
         if (!this.baseURL) {
             throw new Error('BaseURL is required for OllamaAdapter');
