@@ -1,3 +1,5 @@
+///<reference types="bun-types" />
+
 import { describe, expect, test } from "bun:test";
 import { h } from "koishi";
 import { getFileUnique } from "../src/utils/toolkit";

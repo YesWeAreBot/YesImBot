@@ -1,22 +1,22 @@
-import { XMLParser } from "fast-xml-parser";
-import { jsonrepair } from 'jsonrepair';
-import { Context, Random, Session } from "koishi";
-import { Message, TextPart, ImagePart } from '@xsai/shared-chat';
+import { ImagePart, Message, TextPart } from '@xsai/shared-chat';
 import { ToolResult } from '@xsai/tool';
 import { message } from '@xsai/utils-chat';
+import { XMLParser } from "fast-xml-parser";
+import { Context, Random, Session } from "koishi";
 
 const { assistant, user, system, textPart } = message;
 
 import { AdapterSwitcher } from "./adapters";
+import { getFunctionSchema } from "./adapters/schema";
 import { Config } from "./config";
+import { ToolManager } from "./extensions/base";
 import { EmojiManager } from "./managers/emojiManager";
 import { LLMResponse, Tool } from "./models/LLMResponse";
 import { ImageViewer } from "./services/imageViewer";
 import { toolsToString } from "./utils";
+import { extractJSONFromString } from "./utils/parse-structured-output";
 import { isEmpty, isNotEmpty } from "./utils/string";
 import { ResponseVerifier } from "./utils/verifier";
-import { getFunctionSchema } from "./adapters/schema";
-import { ToolManager } from "./extensions/base";
 
 
 interface Dependencies {
@@ -88,7 +88,6 @@ export class Bot {
     setSession(session: Session) {
         this.session = session;
     }
-
 
     addContext(message: Message) {
         while (this.context.length >= this.contextSize) {
@@ -195,72 +194,16 @@ export class Bot {
 
         // handle response
         let LLMResponse: any = {};
-        const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`, 'gis');
-        let contentToParse = null;
-        let match;
 
-        while ((match = regex.exec(content)) !== null) {
-            const lang = match[1];
-            const codeContent = match[2];
-            const directContent = match[3];
-
-            // 优先匹配与配置格式一致的代码块
-            if (lang && lang.toUpperCase() === this.finalFormat) {
-                contentToParse = codeContent;
-                break; // 找到匹配的代码块，停止搜索
-            }
-
-            // 检查直接内容是否符合当前格式
-            if (directContent) {
-                if (
-                    (this.finalFormat === 'JSON' && directContent.trim().startsWith('{')) ||
-                    (this.finalFormat === 'XML' && directContent.trim().startsWith('<'))
-                ) {
-                    contentToParse = directContent;
-                    break; // 找到匹配的直接内容，停止搜索
+        if (this.finalFormat === "JSON") {
+            const objs = extractJSONFromString(content, "object");
+            for (const obj of objs) {
+                if (obj && (obj as object)["status"]) {
+                    LLMResponse = obj;
+                    break;
                 }
             }
-        }
-
-        if (contentToParse) {
-            try {
-                if (this.finalFormat === "JSON") {
-                    LLMResponse = JSON.parse(jsonrepair(contentToParse));
-                } else if (this.finalFormat === "XML") {
-                    const parser = new XMLParser({
-                        ignoreAttributes: false,
-                        processEntities: false,
-                        stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
-                    });
-                    LLMResponse = parser.parse(contentToParse);
-                }
-                this.addContext(assistant(JSON.stringify(LLMResponse)));
-            } catch (e) {
-                const reason = `${this.finalFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
-                return {
-                    status: "fail",
-                    raw: content,
-                    usage,
-                    reason,
-                    adapterIndex: current,
-                };
-            }
-        } else {
-            // 未找到匹配内容，尝试直接解析或修复
-            try {
-                if (this.finalFormat === "JSON") {
-                    const repaired = jsonrepair(content);
-                    LLMResponse = JSON.parse(repaired);
-                } else {
-                    const parser = new XMLParser({
-                        ignoreAttributes: false,
-                        processEntities: false,
-                        stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
-                    });
-                    LLMResponse = parser.parse(content);
-                }
-                this.addContext(assistant(JSON.stringify(LLMResponse)));
-            } catch (err) {
+            if (!LLMResponse || !LLMResponse["status"]) {
                 const reason = `没有找到有效的 ${this.finalFormat} 结构: ${content}`;
                 return {
                     status: "fail",
@@ -268,7 +211,69 @@ export class Bot {
                     usage,
                     reason,
                     adapterIndex: current,
-                };
+                }
+            }
+        } else if (this.finalFormat === "XML") {
+            const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*?}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`, 'gis');
+            let contentToParse = null;
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                const lang = match[1];
+                const codeContent = match[2];
+                const directContent = match[3];
+
+                // 优先匹配与配置格式一致的代码块
+                if (lang && lang.toUpperCase() === this.finalFormat) {
+                    contentToParse = codeContent;
+                    break; // 找到匹配的代码块，停止搜索
+                }
+
+                // 检查直接内容是否符合当前格式
+                if (directContent && directContent.trim().startsWith('<')) {
+                    contentToParse = directContent;
+                    break; // 找到匹配的直接内容，停止搜索
+                }
+            }
+
+            if (contentToParse) {
+                try {
+                    const parser = new XMLParser({
+                        ignoreAttributes: false,
+                        processEntities: false,
+                        stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+                    });
+                    LLMResponse = parser.parse(contentToParse);
+                    this.addContext(assistant(JSON.stringify(LLMResponse)));
+                } catch (e) {
+                    const reason = `${this.finalFormat} 解析失败。请上报此消息给开发者: ${e.message}`;
+                    return {
+                        status: "fail",
+                        raw: content,
+                        usage,
+                        reason,
+                        adapterIndex: current,
+                    };
+                }
+            } else {
+                // 未找到匹配内容，尝试直接解析或修复
+                try {
+                    const parser = new XMLParser({
+                        ignoreAttributes: false,
+                        processEntities: false,
+                        stopNodes: ['*.logic', '*.reply', '*.check', '*.finalReply'],
+                    });
+                    LLMResponse = parser.parse(content);
+                    this.addContext(assistant(JSON.stringify(LLMResponse)));
+                } catch (err) {
+                    const reason = `没有找到有效的 ${this.finalFormat} 结构: ${content}`;
+                    return {
+                        status: "fail",
+                        raw: content,
+                        usage,
+                        reason,
+                        adapterIndex: current,
+                    };
+                }
             }
         }
 
@@ -352,13 +357,6 @@ export class Bot {
         }
     }
 
-    /**
-     * 
-     * @param toolList 
-     * @param functionsToCall 
-     * @param debug 
-     * @returns 
-     */
     private async handleFunctionCalls(functionsToCall: Tool[], debug = false): Promise<LLMResponse | null> {
         if (debug) {
             this.ctx.logger.info(`Bot[${this.session.selfId}] 想要调用工具`)
