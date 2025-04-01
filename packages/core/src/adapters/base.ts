@@ -4,7 +4,7 @@ import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";
 import logger from "../utils/logger";
-import { LLM } from "./config";
+import { LLMConfig } from "./config";
 
 
 export abstract class BaseAdapter {
@@ -17,7 +17,7 @@ export abstract class BaseAdapter {
     protected startWith?: string;
 
     constructor(
-        protected adapterConfig: LLM,
+        protected adapterConfig: LLMConfig,
         protected parameters?: Config["Parameters"]
     ) {
         const { APIKey, APIType, AIModel, Ability } = adapterConfig;

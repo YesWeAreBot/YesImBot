@@ -40,4 +40,4 @@ export class AdapterSwitcher {
     }
 }
 
-export { LLM as LLMConfig } from "./config";
+export type { LLMConfig } from "./config";

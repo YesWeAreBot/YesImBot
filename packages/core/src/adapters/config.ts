@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
 
-export interface LLM {
+export interface LLMConfig {
   Enabled?: boolean;
   APIType: "OpenAI" | "Cloudflare" | "Ollama" | "Custom URL" | "Gemini";
   BaseURL: string;
@@ -28,10 +28,10 @@ export interface LLM {
 }
 
 export interface Config {
-  APIList: LLM[];
+  APIList: LLMConfig[];
 }
 
-export const API: Schema<LLM> = Schema.intersect([
+export const API: Schema<LLMConfig> = Schema.intersect([
   Schema.object({
     Enabled: Schema.boolean().default(true).description("是否启用"),
     APIType: Schema.union(["OpenAI", "Cloudflare", "Ollama", "Custom URL", "Gemini"])

@@ -6,12 +6,12 @@ import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";
 import { BaseAdapter } from "./base";
-import { LLM } from "./config";
+import { LLMConfig } from "./config";
 
 
 export class CloudflareAdapter extends BaseAdapter {
     private provider: any;
-    constructor(config: LLM, parameters?: Config["Parameters"]) {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
         super(config, parameters);
         if (!this.baseURL) {
             throw new Error('BaseURL is required for OpenAIAdapter');

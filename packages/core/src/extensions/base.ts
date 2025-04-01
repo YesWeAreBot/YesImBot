@@ -6,7 +6,7 @@ import { z } from "zod";
 // 定义上下文类型
 export interface LLMContext {
     // ctx: Context;       // Koishi 上下文对象
-    session: Session;   // Koishi 会话对象
+    session?: Session;   // Koishi 会话对象
     [key: string]: any; // 允许扩展上下文
 }
 
