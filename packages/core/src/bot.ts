@@ -179,17 +179,6 @@ export class Bot {
 
         const { usage, text: content } = await adapter.chat([system(this.prompt), ...(this.sendResolveOK ? [assistant("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolList : undefined, debug);
 
-        // if (adapter.ability.includes("深度思考")) {
-        //     // 移除adapter.reasoningStart和adapter.reasoningEnd之间的内容
-        //     // adapter.reasoningStart和adapter.reasoningEnd本身也可能是正则表达式，例如adapter.reasoningEnd可能是Reasoned for (?:a second|[^\n]* seconds)
-        //     const contentWithoutReasoning = content.replace(
-        //         new RegExp(`${adapter.reasoningStart}[\\s\\S]*?${adapter.reasoningEnd}`, 'g'),
-        //         ''
-        //     );
-
-        //     content = contentWithoutReasoning.trim();
-        // }
-
         if (debug) this.ctx.logger.info(`Adapter: ${current}, Response: \n${content}`);
 
         // handle response
