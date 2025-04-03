@@ -183,6 +183,36 @@ export function extractJSONFromString(
   return extractedJSONValues
 }
 
+
+/**
+ * Extracts XML content from a string.
+ *
+ * @param input - string to extract XML from
+ * @returns extracted XML content
+ */
+export function extractXMLFromString(input: string): string {
+  const regex = new RegExp(`\\\`\\\`\\\`xml\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|(<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`, 'gis');
+  let contentToParse = null;
+  let match;
+  while ((match = regex.exec(input)) !== null) {
+      const codeContent = match[1];
+      const directContent = match[2];
+
+    // 优先匹配与配置格式一致的代码块
+    if (codeContent && codeContent.trim().startsWith('<')) {
+        contentToParse = codeContent;
+        break; // 找到匹配的代码块，停止搜索
+    }
+
+    // 检查直接内容是否符合当前格式
+    if (directContent && directContent.trim().startsWith('<')) {
+        contentToParse = directContent;
+        break; // 找到匹配的直接内容，停止搜索
+    }
+  }
+  return contentToParse;
+}
+
 const BOOLEAN_OUTPUTS: Record<string, boolean> = {
   true: true,
   false: false,
