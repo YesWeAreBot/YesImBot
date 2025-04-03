@@ -10,6 +10,7 @@ import { ChatMessage, getChannelType } from '../models/ChatMessage';
 import { BaseAdapter } from "../adapters/base";
 import { isEmpty, Template } from './string';
 import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
+import { extractJSONFromString, extractXMLFromString } from "../utils/parse-structured-output";
 import { ImageViewer } from '../services/imageViewer';
 import { convertUrltoBase64 } from "../utils/imageUtils";
 
@@ -41,7 +42,23 @@ export async function processContent(config: Config, session: Session, messages:
       // 再转换成字符串
       const rawObj = JSON.parse(chatMessage.raw);
       for (let key of config.Settings.RemoveTheseFromRAW) {
-        rawObj[key] = "";
+        if (key === "functions") {
+          // 特殊处理 functions 对象或数组
+          if (rawObj[key]) {
+            if (Array.isArray(rawObj[key])) {
+              rawObj[key].forEach((func: any) => {
+                delete func.function;
+              });
+            } else if (typeof rawObj[key] === 'object' && rawObj[key].function) {
+              const funcList = Array.isArray(rawObj[key].function) ? rawObj[key].function : [rawObj[key].function];
+              funcList.forEach((func: any) => {
+                delete func.function;
+              });
+            }
+          }
+        } else {
+          rawObj[key] = "";
+        }
       }
       chatMessage.raw = JSON.stringify(rawObj);
       // 再转换为format格式
@@ -340,27 +357,21 @@ function convertChatMessageToRaw(chatMessage: ChatMessage, format: "JSON" | "XML
 function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
   // 从字符串中提取JSON或XML格式的内容
   function strip(original: string): string {
-    const regex = new RegExp(`\\\`\\\`\\\`(json|xml)\\s*\\n([\\s\\S]*?)\\n\\\`\\\`\\\`|({[\\s\\S]*}|<[\\s\\S]*?>[\\s\\S]*<\\/[\\s\\S]*?>)`,'gis');
-    let contentToParse = null;
-    let match;
-
-    while ((match = regex.exec(original)) !== null) {
-      const lang = match[1];
-      const codeContent = match[2];
-      const directContent = match[3];
-      if (lang && (lang.toUpperCase() === "JSON" || lang.toUpperCase() === "XML")) {
-        contentToParse = codeContent;
-        break;
-      }
-      if (directContent) {
-        const trimmed = directContent.trim();
-        if (trimmed.startsWith('{') || trimmed.startsWith('<')) {
-            contentToParse = directContent;
-            break;
-        }
+    // 先看看有没有JSON
+    let raw = null;
+    const rawObjs = extractJSONFromString(original, "object");
+    for (const obj of rawObjs) {
+      if (obj && (obj as object)["status"]) {
+          raw = obj;
+          break;
       }
     }
-    return contentToParse;
+    if (raw) {
+      return JSON.stringify(raw);
+    } else {
+      // 如果没有JSON，看看有没有XML
+      return extractXMLFromString(original);
+    }
   }
 
   // 检测输入的格式

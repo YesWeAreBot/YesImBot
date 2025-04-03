@@ -28,9 +28,15 @@ export class OpenAIAdapter extends BaseAdapter {
             this.reasoningEnd = config.ReasoningEnd || "</think>";
         }
 
+        // 兼容旧版配置
+        let baseURL = this.baseURL.endsWith('/') ? this.baseURL.slice(0, -1) : this.baseURL;
+        if (!baseURL.endsWith('/v1')) {
+            baseURL += '/v1';
+        }
+
         this.provider = createOpenAI(
-            config.APIKey,
-            config.BaseURL
+            this.apiKey,
+            baseURL,
         );
     }
 
@@ -130,6 +136,7 @@ export class OpenAIAdapter extends BaseAdapter {
                 ...chatOptions,
                 ...(toolsSchema ? { tools: toolsSchema } : {}),
                 reasoning_effort: this.ability.includes("深度思考") ? this.reasoningEffort : undefined, // 这部分可以通过 OtherParameters 实现
+                // 确实，但既然已经有加深度思考复选框，所有的相关参数都应该包含在内，而不是让用户自己加。如果xsai内置了方便的提取与移除思维链的方法，那么就可以移除这堆配置项。
                 ...this.otherParams,
             });
             if (this.ability.includes("深度思考")) {
