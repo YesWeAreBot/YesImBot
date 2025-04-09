@@ -3,7 +3,6 @@ import path from "path";
 
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
-import { getEmbedding } from "../utils/factory";
 import logger from "../utils/logger";
 import { CacheManager } from "./cacheManager";
 
@@ -29,14 +28,14 @@ export class EmojiManager {
       this.nameToId[emoji.name] = emoji.id;
     });
 
-    const modelName = embeddingConfig.EmbeddingModel;
+    const modelName = embeddingConfig.Model;
     const cacheFile = path.join(baseDir, `data/yesimbot/.vector_cache/emoji_${modelName}.bin`);
     const cacheManager = new CacheManager<number[]>(cacheFile, true);
-    this.client = getEmbedding(embeddingConfig, cacheManager);
+    this.client = new EmbeddingBase(embeddingConfig, cacheManager);
   }
 
   private async initializeEmbeddings(): Promise<void> {
-    const currentModel = this.embeddingConfig.EmbeddingModel;
+    const currentModel = this.embeddingConfig.Model;
     const needsRecompute =
       Object.keys(this.nameEmbeddings).length === 0 ||
       this.lastEmbeddingModel !== currentModel;
@@ -75,7 +74,7 @@ export class EmojiManager {
       await this.initializeEmbeddings();
 
       // 获取输入文本的嵌入向量
-      const inputEmbedding = await this.client._embed(name);
+      const {embedding: inputEmbedding} = await this.client._embed(name);
 
       let maxSimilarity = 0;
       let mostSimilarName: string | undefined;

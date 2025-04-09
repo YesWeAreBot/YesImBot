@@ -1,13 +1,13 @@
 import { message } from '@xsai/utils-chat';
 import { Context } from "koishi";
 
-const { assistant, user, system, textPart, imagePart } = message;
+const { assistant, user, system } = message;
 
 import { BaseAdapter } from "../adapters/base";
 import { Config } from "../config";
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
-import { getAdapter, getEmbedding } from "./factory";
+import { getAdapter } from "./factory";
 
 export class ResponseVerifier {
   private previousResponse = new Map<string, string>();
@@ -18,7 +18,7 @@ export class ResponseVerifier {
     this.config = config;
     if (this.config.Verifier.Method.Type === "Embedding") {
       if (this.config.Embedding.Enabled) {
-        this.client = getEmbedding(config.Embedding as EnabledEmbeddingConfig);
+        this.client = new EmbeddingBase(config.Embedding as EnabledEmbeddingConfig);
       } else {
         ctx.logger.error("Embedding 模型未启用，相似度验证已被禁用");
         this.config.Verifier.Enabled = false;
@@ -44,9 +44,9 @@ export class ResponseVerifier {
     try {
       if (this.client instanceof EmbeddingBase) {
         // 使用 embedding 模型验证相似度
-        const previousEmbedding = await this.client._embed(this.previousResponse.get(channelId));
+        const { embedding: previousEmbedding} = await this.client._embed(this.previousResponse.get(channelId));
 
-        const currentEmbedding = await this.client._embed(currentResponse);
+        const { embedding: currentEmbedding} = await this.client._embed(currentResponse);
 
         const similarityScore = calculateCosineSimilarity(
           previousEmbedding,
