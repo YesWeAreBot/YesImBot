@@ -1,5 +1,7 @@
 import { Context, Schema, Service } from "koishi";
-import { ChatMessage, EmbeddingBase, calculateCosineSimilarity, getEmbedding } from "koishi-plugin-yesimbot";
+import { ChatMessage, EmbeddingBase, calculateCosineSimilarity } from "koishi-plugin-yesimbot";
+
+import { EnabledEmbeddingConfig } from "../../core/lib/embeddings/config";
 import { EmbeddingConfig } from "./config";
 import { MemoryItem, MemoryType } from "./model";
 import { MEMORY_PROMPT } from "./prompt";
@@ -24,7 +26,7 @@ class Memory extends Service {
   constructor(ctx: Context, config: Memory.Config) {
     super(ctx, "memory");
     this.vectorStore = new MemoryVectorStore(ctx);
-    this.embedder = getEmbedding({Enabled: true, ...config.embedding});
+    this.embedder = new EmbeddingBase({Enabled: true, ...config.embedding as unknown as EnabledEmbeddingConfig});
   }
 
   // 获取单个记忆条目

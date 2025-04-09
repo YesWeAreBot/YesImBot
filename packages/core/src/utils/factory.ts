@@ -2,10 +2,6 @@ import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIA
 import { BaseAdapter } from "../adapters/base";
 import { LLMConfig } from "../adapters/config";
 import { Config } from "../config";
-import { CustomEmbedding, OllamaEmbedding, OpenAIEmbedding } from "../embeddings";
-import { EmbeddingBase } from "../embeddings/base";
-import { EnabledEmbeddingConfig } from "../embeddings/config";
-import { CacheManager } from "../managers/cacheManager";
 
 export function getAdapter(config: LLMConfig, parameters?: Config["Parameters"]): BaseAdapter {
     // 将 APIType 映射到对应的 Adapter 类
@@ -21,18 +17,4 @@ export function getAdapter(config: LLMConfig, parameters?: Config["Parameters"])
         return new AdapterClass(config, parameters);
     }
     throw new Error(`不支持的 API 类型: ${config.APIType}`);
-}
-
-export function getEmbedding(config: EnabledEmbeddingConfig, manager?: CacheManager<number[]>) {
-    // 将 APIType 映射到对应的 Embedding 类
-    const embeddingMap: { [key: string]: new (config: EnabledEmbeddingConfig, manager?: CacheManager<number[]>) => EmbeddingBase } = {
-        "OpenAI": OpenAIEmbedding,
-        "Ollama": OllamaEmbedding,
-        "Custom": CustomEmbedding,
-    };
-    const EmbeddingClass = embeddingMap[config.APIType];
-    if (EmbeddingClass) {
-        return new EmbeddingClass(config, manager);
-    }
-    throw new Error(`不支持的 Embedding 类型: ${config.APIType}`);
 }
