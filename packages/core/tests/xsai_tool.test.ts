@@ -1,30 +1,12 @@
 ///<reference types="bun-types" />
-
-import { env } from "process";
-import { OpenAIAdapter } from "../src/adapters";
-
-import { LLMConfig } from "../src/adapters/config";
-import { Config } from "../src/config";
-import { defineTool, LLMContext } from "../src/extensions/base";
 import { z } from "zod";
 
-const adapterConfig: LLMConfig = {
-    APIKey: env.OPENAI_API_KEY || "",
-    APIType: "OpenAI",
-    AIModel: "deepseek-chat",
-    BaseURL: "https://api.deepseek.com",
+import { OpenAIAdapter } from "../src/adapters";
+import { defineTool, LLMContext } from "../src/extensions/base";
+import { adapterConfig } from "./config";
 
-    Ability: ["原生工具调用", "流式输出"]
-}
 
-const parameters: Config["Parameters"] = {
-
-}
-
-const context: LLMContext = {
-
-}
-
+const context: LLMContext = {};
 const adapter = new OpenAIAdapter(adapterConfig);
 
 const calc = defineTool({
