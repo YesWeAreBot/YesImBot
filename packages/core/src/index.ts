@@ -1,6 +1,8 @@
 import { Context, h, Next, Random, Session, sleep } from "koishi";
 
 import path from "path";
+import { getOutputSchema } from "./adapters/schema";
+import { Agent } from "./agent";
 import { Bot } from "./bot";
 import { apply as applyExtensionCommands } from "./commands/extension";
 import { apply as applySendQueueCommands } from "./commands/sendQueue";
@@ -11,13 +13,12 @@ import { createMessage, getChannelType } from "./models/ChatMessage";
 import { FailedResponse, SkipResponse, SuccessResponse } from "./models/LLMResponse";
 import { ImageViewer } from "./services/imageViewer";
 import { MarkType, SendQueue } from "./services/sendQueue";
-import { ResponseVerifier } from "./utils/verifier";
 import { processContent, processText } from "./utils/content";
 import { convertUrltoBase64, ImageCache } from "./utils/imageUtils";
 import { ensurePromptFileExists, genSysPrompt } from "./utils/prompt";
 import { foldText, isEmpty } from "./utils/string";
 import { containsFilter, getBotName, getFileUnique, getFormatDateTime, isChannelAllowed, toolsToString } from "./utils/toolkit";
-import { getOutputSchema } from "./adapters/schema";
+import { ResponseVerifier } from "./utils/verifier";
 
 export const name = "yesimbot";
 
@@ -41,7 +42,14 @@ export const inject = {
   ],
 }
 
-export function apply(ctx: Context, config: Config) {
+export async function apply(ctx: Context, config: Config) {
+
+  if (config.Settings.AgentMode) {
+    const agent = new Agent(ctx, config);
+    await agent.register();
+    return;
+  }
+
   let shouldReTrigger = false;
 
   const emojiManager = config.Embedding.Enabled ? new EmojiManager(config.Embedding, ctx.baseDir) : null;
