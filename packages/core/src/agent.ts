@@ -50,9 +50,9 @@ export class Agent {
             sendTime: "timestamp",
             content: "string",
             raw: {
-              type: "string",
-              nullable: true,
-              initial: null,
+                type: "string",
+                nullable: true,
+                initial: null,
             },
         }, {
             primary: "messageId", // 主键名
@@ -112,7 +112,7 @@ export class Agent {
      * @param text 
      */
     async handle(
-        session: Session, 
+        session: Session,
         scenario: Scenario,
         text: string
     ) {
@@ -161,32 +161,25 @@ export class Agent {
      * @param channelId 
      */
     async sendMessage(session: Session, messages: string[], channelId?: string) {
+        let delay = messages.length == 0 ? false: true;
         if (!channelId) {
-            let messageIds = [];
-
-            for (const message of messages) {
-                messageIds.push(await session.sendQueued(message));
-            }
-
-            for (const messageId of messageIds.flat()) {
-                try {
-                    const message = await session.bot.getMessage(session.channelId, messageId);
-                    await sleep(50);
-                    await addMessage(this.ctx, {
-                        sender: {
-                            id: message.user.id,
-                            name: message.user.name,
-                            nick: message.user.nick,
-                        },
-                        messageId,
-                        channelId: session.channelId,
-                        channelType: getChannelType(session.channelId),
-                        sendTime: new Date(message.timestamp),
-                        content: message.content,
-                    })
-                } catch (error) {
-                    this.ctx.logger.error(error);
+            for await (const message of messages) {
+                let messageIds = await session.sendQueued(message)
+                if (delay && this.config.Bot.WordsPerSecond > 0) {
+                    await sleep(message.length / this.config.Bot.WordsPerSecond * 1000);
                 }
+                await addMessage(this.ctx, {
+                    sender: {
+                        id: session.author.id,
+                        name: session.author.name,
+                        nick: session.author.nick,
+                    },
+                    messageId: messageIds[0],
+                    channelId: session.channelId,
+                    channelType: getChannelType(session.channelId),
+                    sendTime: new Date(),
+                    content: message,
+                });
             }
         }
     }
