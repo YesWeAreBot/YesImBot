@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
-import { EmbeddingConfig } from "./embeddings/config";
 import { Config as AdapterConfig } from "./adapters/config";
+import { EmbeddingConfig } from "./embeddings/config";
 
 export interface Config {
   MemorySlot: {
@@ -85,6 +85,7 @@ export interface Config {
     }>;
   };
   Settings: {
+    AgentMode: boolean;
     SingleMessageStrctureTemplate: string;
     SendResolveOK: boolean;
     LogicRedirect: {
@@ -441,6 +442,7 @@ export const Config: Schema<Config> = Schema.object({
   ]),
 
   Settings: Schema.object({
+    AgentMode: Schema.boolean().default(false).experimental().description("是否启用Agent模式"),
     SingleMessageStrctureTemplate: Schema.string()
       .default("[{{messageId}}][{{date}} {{channelInfo}}] {{senderName}}<{{senderId}}>: {{userContent}}")
       .description("单条消息的结构模板"),
