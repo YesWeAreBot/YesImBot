@@ -1,4 +1,41 @@
 export function getOutputSchema(format: "JSON" | "XML") {
+    let example = "";
+    if (format === "JSON") {
+        example = `{
+    "status": "success",
+    "replyTo": "123456789",
+    "nextReplyIn": 2,
+    "logic": "",
+    "reply": "",
+    "check": "",
+    "finalReply": "",
+    "functions": [
+        {
+            "name": "FUNCTION_NAME",
+            "params": {
+                "PARAM_NAME": "value1"
+            }
+        }
+    ]
+}`;
+    } else if (format === "XML") {
+        example = `<status>success</status>
+<replyTo>123456789</replyTo>
+<nextReplyIn>2</nextReplyIn>
+<logic></logic>
+<reply></reply>
+<check></check>
+<finalReply></finalReply>
+<functions>
+  <function>
+    <name>FUNCTION_NAME</name>
+    <params>
+      <PARAM_NAME>value1</PARAM_NAME>
+    </params>
+  </function>
+</functions>
+`;
+    }
     return `You should generate output in ${format} observing the schema provided. Strictly follow these ${format} requirements:
 
 - All elements MUST be properly nested and closed
@@ -32,7 +69,8 @@ finalReply
 functions
   type: array
   description: Functions to execute. You must set status to interaction to get the return value of functions. You can also run functions when the status is skip or success, depending on your needs. If you use the interaction tag, only fill in the status, logic and functions field, don't fill in the other fields.
-`;
+
+Example: ${example}`;
 }
 
 export function getFunctionSchema(format: "JSON" | "XML") {
