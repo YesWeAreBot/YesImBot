@@ -1,5 +1,10 @@
+import fs from "fs";
+import { Context } from "koishi";
+import { readFile, stat, writeFile } from "fs/promises";
+
 import { Scenario } from "./Scenario";
 import { isEmpty } from "./utils/string";
+
 
 export class Memory {
     // 记忆块列表
@@ -9,7 +14,7 @@ export class Memory {
     // 最后修改时间
     lastModified: Date;
 
-    constructor() {
+    constructor(private ctx: Context) {
         this.coreMemory = [];
         this.recallMemory = [];
         this.archivalMemory = [];
@@ -66,7 +71,7 @@ export class Memory {
      * <human characters="100/5000">
      * </human>
      */
-    render() {
+    async render(): Promise<string> {
         return [
             `### Memory [last modified: ${this.lastModified.toLocaleString()}]`,
             `${this.recallMemory.length} previous messages between you and the user are stored in recall memory (use functions to access them)`,
@@ -74,105 +79,207 @@ export class Memory {
             '',
             'Core memory shown below (limited in size, additional information stored in archival / recall memory):',
             '',
-            ...this.coreMemory.map(memoryBlock => memoryBlock.render())
+            ...await Promise.all(this.coreMemory.map(async memoryBlock => await memoryBlock.render()))
         ].join('\n');
     }
 }
 
 export class MemoryBlock {
-    static EXISTING_LABELS = [];
+    static DATABASE_NAME = "yesimbot.agent.memory_block";
     // 记忆块ID
     readonly id: string;
     // 记忆块标签
     readonly label: string;
     // 记忆块内容
-    private value: string[];
-    // 记忆块大小，以字符串长度计算
-    public get size(): number {
-        return this.value.join("")?.length || 0;
-    }
+    readonly value: string[];
     // 长度限制
     readonly limit: number;
 
-    /**
-     * 从数据库中获取记忆块，如果不存在则创建一个新的记忆块
-     * @param id
-     */
-    static async getMemoryBlock(id: string) {
-        throw new Error("Not implemented");
+    private ctx: Context;
+    private filePath?: string;
+
+    private watcher?: fs.FSWatcher;
+    private lastModified = 0;
+
+    static async getOrCreate(ctx: Context, identifier: string | { id?: string; label?: string }): Promise<MemoryBlock> {
+        const condition = typeof identifier === 'string'
+            ? { label: identifier }
+            : identifier;
+
+        const [result] = await ctx.database.get("yesimbot.agent.memory_block", condition);
+        if (result) return new MemoryBlock(ctx, result.id, result.label, result.limit);
+
+        if (typeof identifier !== 'string') {
+            throw new Error('Memory block not found');
+        }
+
+        const id = `block-${Math.random().toString(36).substring(2)}`;
+        await ctx.database.create("yesimbot.agent.memory_block", {
+            id,
+            label: identifier,
+            value: [],
+            limit: 5000
+        });
+        return new MemoryBlock(ctx, id, identifier);
     }
 
-    static async createMemoryBlock(label: string) {
-        if (MemoryBlock.EXISTING_LABELS.includes(label)) {
-            throw new Error("Label already exists");
-        }
-        else {
-            MemoryBlock.EXISTING_LABELS.push(label);
-            return new MemoryBlock(label, label, []);
-        }
-    }
-
-    constructor(id: string, label: string, value: string[], limit = 5000) {
+    constructor(ctx: Context, id: string, label: string, limit = 5000) {
+        this.ctx = ctx;
         this.id = id;
         this.label = label;
-        this.value = value;
         this.limit = limit;
     }
 
-    /**
-     * 序列化记忆块
-     */
-    serialize() {
-        return {
+    private async startWatching() {
+        if (!this.filePath) return;
+
+        await this.stopWatching();
+
+        try {
+            const fstat = await stat(this.filePath);
+            this.lastModified = fstat.mtimeMs;
+        } catch {
+            this.lastModified = 0;
+        }
+
+        this.watcher = fs.watch(this.filePath, async (eventType) => {
+            if (eventType === 'change') {
+                const fstat = await stat(this.filePath);
+                if (fstat.mtimeMs > this.lastModified) {
+                    this.ctx.logger.info(`File ${this.filePath} has been modified. Syncing to memory block.`);
+                    this.lastModified = fstat.mtimeMs;
+                    await this.syncFromFile();
+                }
+            }
+        });
+    }
+
+    private async stopWatching() {
+        if (this.watcher) {
+            this.watcher.close();
+            this.watcher = undefined;
+        }
+    }
+
+    private async syncFromFile() {
+        const fileContent = await this.loadFromFile();
+        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
             id: this.id,
             label: this.label,
-            value: this.value,
-            size: this.size,
-            limit: this.limit,
-        };
+            value: fileContent,
+            limit: this.limit
+        }]);
     }
 
     /**
-     * 从序列化数据中恢复记忆块
-     * @param data
+     * 同步策略：
+     * 1. 实例化后从本地文件加载内容，覆盖数据库
+     * 2. 监听文件变化，同步到数据库
+     * 3. 数据库内容变更，同步到文件
+     * 
+     * 只有通过 append、replace 方法修改内容，才会同步到文件（没人会直接修改数据库吧？）
+     * 
+     * 也许根本不需要数据库
      */
-    static deserialize(data: any) {
-        const memoryBlock = new MemoryBlock(data.id, data.label, data.value, data.limit);
-        return memoryBlock;
+    async bindFile(filePath: string) {
+        this.filePath = filePath;
+        const value = await readFile(filePath, 'utf-8');
+        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
+            id: this.id,
+            label: this.label,
+            value: value.split('\n').filter(line => line.trim()),
+        }])
+
+        await this.syncFromFile();
+        await this.startWatching();
+    }
+
+    async dispose() {
+        await this.stopWatching();
+    }
+
+    private async loadFromFile(): Promise<string[]> {
+        if (!this.filePath) return [];
+        try {
+            const content = await readFile(this.filePath, 'utf-8');
+            return content.split('\n').filter(line => line.trim());
+        } catch {
+            return [];
+        }
+    }
+
+    private async saveToFile(value: string[]) {
+        if (!this.filePath) return;
+        await writeFile(this.filePath, value.join('\n'));
+    }
+
+    private async getValue(): Promise<string[]> {
+        const [result] = await this.ctx.database.get("yesimbot.agent.memory_block", {
+            id: this.id,
+            label: this.label,
+        });
+        return result?.value || [];
+    }
+
+    // 记忆块大小，以字符串长度计算
+    async size(): Promise<number> {
+        const value = await this.getValue();
+        return value.join("").length;
     }
 
     /**
      * 检查添加内容后是否超过长度限制
      * @param contentLength 
      */
-    private checkMemoryLimit(contentLength: number) {
-        if (this.size + contentLength > this.limit) {
+    private async checkMemoryLimit(contentLength: number) {
+        if (await this.size() + contentLength > this.limit) {
             throw new Error("Memory limit exceeded");
         }
     }
 
-    append(content: string) {
-        this.checkMemoryLimit(content.length);
-        this.value.push(content);
-    }
-
-    replace(old_content: string, new_content: string) {
-        // 从记忆内容中搜索
-        const index = this.value.findIndex((item) => item === old_content);
-        if (index === -1) throw new Error("Memory not found");
-
-        if (isEmpty(new_content)) {
-            this.value.splice(index, 1);
-        } else {
-            this.checkMemoryLimit(new_content.length - (this.value[index]?.length || 0));
-            this.value[index] = new_content;
+    async append(content: string) {
+        await this.checkMemoryLimit(content.length);
+        const value = await this.getValue();
+        value.push(content);
+        if (this.filePath) {
+            await this.saveToFile(value);
         }
+        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
+            id: this.id,
+            label: this.label,
+            value,
+            limit: this.limit
+        }]);
     }
 
-    render(): string {
+    async replace(old_content: string, new_content: string) {
+        // 从记忆内容中搜索
+        const value = await this.getValue();
+        const index = value.findIndex((item) => item === old_content);
+        if (index === -1) throw new Error("Memory not found");
+        if (isEmpty(new_content)) {
+            value.splice(index, 1);
+        } else {
+            await this.checkMemoryLimit(new_content.length - (this.value[index]?.length || 0));
+            value[index] = new_content;
+        }
+        if (this.filePath) {
+            await this.saveToFile(value);
+        }
+        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
+            id: this.id,
+            label: this.label,
+            value,
+            limit: this.limit
+        }]);
+    }
+
+    async render(): Promise<string> {
+        const value = await this.getValue();
+        const currentSize = await this.size();
         return [
-            `<${this.label} characters="${this.size}/${this.limit}">`,
-            ...this.value,
+            `<${this.label} characters="${currentSize}/${this.limit}">`,
+            ...value,
             `</${this.label}>`
         ].join('\n');
     }

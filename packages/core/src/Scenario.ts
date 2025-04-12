@@ -1,5 +1,8 @@
 import { Session } from "koishi";
+//import { } from "koishi-plugin-adapter-onebot";
+
 import { ChatMessage } from "./models/ChatMessage";
+
 
 /**
  * 对话场景
@@ -22,24 +25,46 @@ export class Scenario {
     constructor(session: Session, context: string[] = []) {
         if (!session) throw new Error("Session is required");
         this.session = session;
-        this.id = session.channelId || "unknown";
+        this.id = session.channelId;
         this.type = this.getType();
-        this.initNameAndDescription();
         this.context = context;
+    }
+
+    static async create(session: Session, context: string[] = []): Promise<Scenario> {
+        const instance = new Scenario(session, context);
+        await instance.init();
+        return instance;
     }
 
     private getType() {
         return this.session.guildId ? "guild" : this.session.channelId === "#" ? "sandbox" : "private";
     }
 
-    private async getName() {
-        
+    private async getName(): Promise<string> {
         if (this.type === "private") {
+            //@ts-ignore
+            if (this.session.onebot) {
+                try {
+                    //@ts-ignore
+                    let info = await this.session.onebot.getStrangerInfo(this.session.userId);
+                    return info.nickname || String(info.user_id);
+                } catch (error) {
+                }
+            }
             return this.session.username;
         }
         else if (this.type === "guild") {
+            //@ts-ignore
+            if (this.session.onebot) {
+                try {
+                    //@ts-ignore
+                    let info = await this.session.onebot.getGroupInfo(this.session.guildId);
+                    return info.group_name
+                } catch (error) {
+                }
+            }
             const guild = await this.session.bot.getGuild(this.session.guildId);
-            return this.session.event.guild.name || "Unknown Group";
+            return guild.name || "Unknown Group";
         }
         else if (this.type === "sandbox") {
             return "Sandbox";
@@ -52,7 +77,7 @@ export class Scenario {
      * 
      * 私聊为用户签名，群聊为群介绍
      */
-    private getDescription() {
+    private async getDescription() {
         try {
             if (this.type === "private") {
                 return this.session.author.name || "No description";
@@ -68,9 +93,9 @@ export class Scenario {
     /**
      * 异步初始化
      */
-    private async initNameAndDescription() {
+    private async init() {
         this.name = await this.getName() || "Unnamed";
-        this.description = this.getDescription();
+        this.description = await this.getDescription();
     }
 
     /**
@@ -85,7 +110,7 @@ export class Scenario {
      * [<time> <sender>] <content>
      * ...
      */
-    render(includeMetadata = true) {
+    render(includeMetadata = true): string {
         let output = '';
         if (includeMetadata) {
             output += `Scenario ID: ${this.id}
@@ -97,12 +122,11 @@ Description: ${this.description}\n\n`;
         return output;
     }
 
-        // 添加上下文操作方法
-        addContext(message: string) {
-            this.context.push(message);
-        }
-    
-        clearContext() {
-            this.context = [];
-        }
+    addContext(message: string) {
+        this.context.push(message);
+    }
+
+    clearContext() {
+        this.context = [];
+    }
 }
