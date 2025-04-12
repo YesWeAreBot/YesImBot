@@ -15,5 +15,5 @@ jobs:
         uses: cordiverse/workflows/.github/actions/setup@main
 
       - name: Lint JavaScript
-        run: yarn build:all
+        run: yarn build:core
 
