@@ -1,7 +1,7 @@
 import { ToolResult } from "@xsai/tool";
 import { message } from "@xsai/utils-chat";
 import fs from "fs/promises";
-import { Context, Session, sleep } from "koishi";
+import { Context, h, Random, Session, sleep } from "koishi";
 import path from "path";
 import { z } from "zod";
 
@@ -20,6 +20,11 @@ declare module "koishi" {
         ["yesimbot.agent.memory_block"]: MemoryBlock;
     }
 }
+
+// 未读消息
+let unreadMessages = 0;
+// 上次回复时间
+let lastReplyTime = Date.now();
 
 export class Agent {
     ctx: Context;
@@ -93,6 +98,31 @@ export class Agent {
             // 忽略机器人自身的消息
             if (author.isBot) return next();
 
+            const loginStatus = await session.bot.getLogin();
+            const isBotOnline = loginStatus.status === 1;
+
+            let parsedElements = h.parse(content);
+        
+            const isAtMentioned = parsedElements.some(element =>
+              element.type === 'at' &&
+              (element.attrs.id === session.bot.selfId || element.attrs.type === 'all' || (isBotOnline && element.attrs.type === 'here'))
+            );
+            const shouldReactToAt = Random.bool(this.config.MemorySlot.AtReactPossibility);
+            const isTriggerCountReached = unreadMessages >= Random.int(this.config.MemorySlot.MinTriggerCount, this.config.MemorySlot.MaxTriggerCount);
+            const coldDown = (Date.now() - lastReplyTime) > this.config.MemorySlot.MinTriggerTime;
+            if (!coldDown) {
+                this.ctx.logger.info(`[Agent] 冷却中，跳过回复`);
+                return next();
+            }
+            const shouldReply = (isAtMentioned && shouldReactToAt) || isTriggerCountReached || this.config.Debug.TestMode
+
+            if (!shouldReply) {
+                unreadMessages++;
+                this.ctx.logger.info(`[Agent] 未达到触发条件，跳过回复`);
+                return next();
+            }
+            unreadMessages = 0;
+
             const { adapter } = this.adapterSwitcher.getAdapter();
             if (!adapter) return next();
 
@@ -115,6 +145,7 @@ export class Agent {
             ], null, this.config.Debug.DebugAsInfo);
 
             await this.handle(session, scenario, text);
+            lastReplyTime = Date.now();
         });
 
         // 注册命令
@@ -141,7 +172,6 @@ export class Agent {
         if (functionName === "send_message") {
             const { inner_thoughts, messages, channel_id } = params;
             await this.sendMessage(session, messages, channel_id);
-
         }
         else if (functionName === "core_memory_append") {
             const { inner_thoughts, label, content, request_heartbeat } = params;

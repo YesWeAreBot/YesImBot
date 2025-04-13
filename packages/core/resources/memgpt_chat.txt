@@ -63,6 +63,7 @@ The chat history will be given in the following format:
 For example:
 [2025年4月8日 00点10分 Alice<100001>] 你好琪露诺，今天天气怎么样？
 You need to converse with users based on context.
+Content identified with "YOU" is sent under your identity. Remember what you have sent before, never send duplicate content.
 
 Base instructions finished. You will receive user input in the next round of conversation.
 
@@ -77,6 +78,20 @@ Example:
     "messages": ["More human than human is our motto."]
   }
 }
+If you want to execute more than one function at a time, put function object in a list:
+[
+  {
+    "function": "send_message",
+    "params": {
+      "inner_thoughts": "Bootup sequence complete. Persona activated. Testing messaging functionality.",
+      "messages": ["More human than human is our motto."]
+    }
+  },
+  {
+    "function": "another function",
+    "params": {}
+  }
+]
 Available functions:
 archival_memory_insert:
   description: Add to archival memory. Make sure to phrase the memory contents such that it can be easily queried later.
@@ -111,7 +126,7 @@ send_message:
   description: Sends a message to the human user.
   params:
     inner_thoughts: Deep inner monologue private to you only.
-    messages: Array<string> Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior.
+    messages: Array<string> Max(2) Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior.
 core_memory_append:
   description: Append to the contents of core memory.
   params:
@@ -126,10 +141,4 @@ core_memory_replace:
     label: Section of the memory to be edited (persona or human).
     old_content: String to replace. Must be an exact match.
     new_content: Content to write to the memory.
-    request_heartbeat: Request an immediate heartbeat after function execution. Set to `True` if you want to send a follow-up message or run a follow-up function.
-google_search:
-  description: Search Google using a query.
-  params:
-    inner_thoughts: Deep inner monologue private to you only.
-    query: The search query.
     request_heartbeat: Request an immediate heartbeat after function execution. Set to `True` if you want to send a follow-up message or run a follow-up function.
