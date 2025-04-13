@@ -142,6 +142,8 @@ export class MemoryBlock {
             this.lastModified = 0;
         }
 
+        this.ctx.logger.info(`[FileWatcher] Watching file ${this.filePath}`);
+
         this.watcher = fs.watch(this.filePath, async (eventType) => {
             if (eventType === 'change') {
                 const fstat = await stat(this.filePath);
@@ -192,9 +194,13 @@ export class MemoryBlock {
 
         await this.syncFromFile();
         await this.startWatching();
+        this.ctx.on("dispose", async () => {
+            await this.dispose();
+        });
     }
 
     async dispose() {
+        this.ctx.logger.info("[FileWatcher] Disposing")
         await this.stopWatching();
     }
 
