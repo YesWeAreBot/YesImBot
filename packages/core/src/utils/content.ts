@@ -22,7 +22,7 @@ import { convertUrltoBase64 } from "../utils/imageUtils";
  * @param messages
  * @returns
  */
-export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, adapter: BaseAdapter, format: "JSON"|"XML"): Promise<Message[]> {
+export async function processContent(config: Config, session: Session, messages: ChatMessage[], imageViewer: ImageViewer, adapter: BaseAdapter, format: "JSON" | "XML"): Promise<Message[]> {
   const useVisionAbility = config.ImageViewer.How === "LLM API 自带的多模态能力" && adapter.ability.includes("识图功能");
   const processedMessage: Message[] = [];
   let pendingProcessImgCount = 0;
@@ -40,7 +40,7 @@ export async function processContent(config: Config, session: Session, messages:
       // 把它转换成一个JSON对象，然后
       // 按照config.Settings.RemoveTheseFromRAW数组移除对应键的值
       // 再转换成字符串
-      const rawObj = JSON.parse(chatMessage.raw);
+      const [rawObj] = extractJSONFromString(chatMessage.raw, "object");
       for (let key of config.Settings.RemoveTheseFromRAW) {
         if (key === "functions") {
           // 特殊处理 functions 对象或数组
@@ -79,8 +79,8 @@ export async function processContent(config: Config, session: Session, messages:
     let elements: Element[];
     try {
       if (isEmpty(chatMessage.content)) continue;
-       elements = h.parse(chatMessage.content);
-    } catch(e) {
+      elements = h.parse(chatMessage.content);
+    } catch (e) {
       continue;
     }
 
@@ -354,7 +354,7 @@ function convertChatMessageToRaw(chatMessage: ChatMessage, format: "JSON" | "XML
   }
 }
 
-function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
+function convertFormat(input: string, targetFormat: "JSON" | "XML"): string {
   // 从字符串中提取JSON或XML格式的内容
   function strip(original: string): string {
     // 先看看有没有JSON
@@ -362,8 +362,8 @@ function convertFormat(input:string, targetFormat:"JSON" | "XML"): string {
     const rawObjs = extractJSONFromString(original, "object");
     for (const obj of rawObjs) {
       if (obj && (obj as object)["status"]) {
-          raw = obj;
-          break;
+        raw = obj;
+        break;
       }
     }
     if (raw) {
