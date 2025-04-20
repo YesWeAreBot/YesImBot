@@ -4,6 +4,7 @@ import path from "path";
 import { getOutputSchema } from "./adapters/schema";
 import { Agent } from "./agent";
 import { Bot } from "./bot";
+import { apply as applyCacheCommands } from "./commands/cache";
 import { apply as applyExtensionCommands } from "./commands/extension";
 import { apply as applySendQueueCommands } from "./commands/sendQueue";
 import { Config } from "./config";
@@ -148,6 +149,7 @@ export async function apply(ctx: Context, config: Config) {
     //applyMemoryCommands(ctx, bot);
     applySendQueueCommands(ctx, sendQueue);
     applyExtensionCommands(ctx);
+    applyCacheCommands(ctx);
   } catch (error) {
 
   }
@@ -469,4 +471,3 @@ export * from "./embeddings";
 export * from "./managers/cacheManager";
 export * from "./models/ChatMessage";
 export * from "./utils/factory";
-
