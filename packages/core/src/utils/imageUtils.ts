@@ -153,6 +153,33 @@ export class ImageCache {
     }
   }
 
+  /**
+   * 清理过期缓存
+   * @param maxAge 最大缓存时间(毫秒)，默认7天
+   */
+  cleanExpired(maxAge: number = 7 * 24 * 60 * 60 * 1000): number {
+    const now = Date.now();
+    let count = 0;
+
+    for (const key in this.metadata) {
+      const item = this.metadata[key];
+      if (now - item.createdAt > maxAge) {
+        try {
+          fs.unlinkSync(path.join(this.savePath, item.hash));
+          delete this.metadata[key];
+          count++;
+        } catch (error) {
+          console.error(`Error deleting expired cache ${key}:`, error);
+        }
+      }
+    }
+
+    if (count > 0) {
+      fs.writeFileSync(this.metadataFile, JSON.stringify(this.metadata, null, 2), "utf-8");
+    }
+    return count;
+  }
+
   keys(): string[] {
     return Object.keys(this.metadata);
   }
