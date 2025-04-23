@@ -14,6 +14,15 @@ export class Memory {
     // 最后修改时间
     lastModified: Date;
 
+    static instance: Memory;
+    static DATABASE_NAME = "yesimbot.agent.memory";
+    static getInstance(ctx: Context): Memory {
+        if (!Memory.instance) {
+            Memory.instance = new Memory(ctx);
+        }
+        return Memory.instance;
+    }
+
     constructor(private ctx: Context) {
         this.coreMemory = [];
         this.recallMemory = [];
@@ -35,11 +44,10 @@ export class Memory {
      * @param content Content to write to the memory.
      */
     async appendCoreMemory(label: string, content: string) {
-        if (isEmpty(content)) return;
         const memoryBlock = this.getMemoryBlock(label);
         memoryBlock.append(content);
         this.lastModified = new Date();
-        return "Memory appended successfully.";
+        return `Memory appended successfully. New content: ${content}`;
     }
 
     /**
@@ -49,12 +57,10 @@ export class Memory {
      * @param new_content Content to write to the memory.
      */
     async replaceCoreMemory(label: string, old_content: string, new_content: string) {
-        if (isEmpty(old_content)) {
-            throw new Error("Old content cannot be empty.");
-        }
         const memoryBlock = this.getMemoryBlock(label);
         memoryBlock.replace(old_content, new_content);
         this.lastModified = new Date();
+        return `Memory replaced successfully. New content: ${new_content}`;
     }
 
     /**

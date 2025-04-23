@@ -1,107 +1,93 @@
-// @ts-nocheck
-import { SchemaNode } from "../adapters/creators/schema";
-import { isEmpty } from "../utils";
-import { Description, Extension, Name, Param } from "./base";
+import { z } from "zod";
 
-@Name("addCoreMemory")
-@Description("Append to the contents of core memory.")
-@Param("content", SchemaNode.String("Content to write to the memory. All unicode (including emojis) are supported."))
-@Param("topic", SchemaNode.String("The topic of the memory."))
-@Param("keywords", SchemaNode.Array("The keywords of the memory."))
-export class AddCoreMemory extends Extension {
-  async apply(args: { content: string; topic?: string; keywords?: string[] }) {
-    const { content, topic, keywords } = args;
-    if (content) throw new Error("content is required");
-    return await this.ctx.memory.addCoreMemory(content, topic, keywords);
-  }
-}
+import { defineTool } from "./base";
+import { isEmpty } from "../utils/string";
+import { Memory } from "../Memory";
 
-@Name("modifyCoreMemory")
-@Description("Replace the contents of core memory. To delete memories, use an empty string for newContent.")
-@Param("oldContent", SchemaNode.String("The current content of the memory."))
-@Param("newContent", SchemaNode.String("The new content of the memory. All unicode (including emojis) are supported."))
-export class ModifyCoreMemory extends Extension {
-  async apply(args: { oldContent: string; newContent: string }) {
-    const { oldContent, newContent } = args;
-    if (isEmpty(oldContent)) throw new Error("oldContent is required");
-    if (isEmpty(newContent)) throw new Error("newContent is required");
-    return await this.ctx.memory.modifyCoreMemory(oldContent, newContent);
-  }
-}
-
-@Name("addUserMemory")
-@Description("Append to the contents of user memory.")
-@Param("userId", SchemaNode.String("The user ID of the memory."))
-@Param("content", SchemaNode.String("Content to write to the memory. All unicode (including emojis) are supported."))
-export class AddUserMemory extends Extension {
-  async apply(args: { userId: string; content: string }) {
-    const { userId, content } = args;
-    if (isEmpty(userId)) throw new Error("userId is required");
+export const AppendCoreMemory = defineTool({
+  name: "core_memory_append",
+  description: "Append to the contents of core memory.",
+  parameters: z.object({
+    inner_thought: z.string().describe("The inner thought of the memory."),
+    label: z.string().describe("Section of the memory to be edited (persona or human)."),
+    content: z.string().describe("Content to write to the memory."),
+    request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+  }),
+  execute: async ({ inner_thought, label, content, request_heartbeat }, context) => {
     if (isEmpty(content)) throw new Error("content is required");
-    return await this.ctx.memory.addUserMemory(userId, content);
+    const memory = Memory.instance;
+    if (memory) {
+      return await memory.appendCoreMemory(label, content);
+    } else {
+      return "Memory is not initialized."
+    }
   }
-}
+})
 
-@Name("modifyUserMemory")
-@Description("Replace the contents of user memory. To delete memories, use an empty string for newContent.")
-@Param("userId", SchemaNode.String("The user ID of the memory."))
-@Param("oldContent", SchemaNode.String("The current content of the memory."))
-@Param("newContent", SchemaNode.String("The new content of the memory. All unicode (including emojis) are supported."))
-export class ModifyUserMemory extends Extension {
-  async apply(args: { userId: string; oldContent: string; newContent: string }) {
-    const { userId, oldContent, newContent } = args;
-    if (isEmpty(userId)) throw new Error("userId is required");
-    if (isEmpty(oldContent)) throw new Error("oldContent is required");
-    if (isEmpty(newContent)) throw new Error("newContent is required");
-    return await this.ctx.memory.modifyUserMemory(userId, oldContent, newContent);
+export const ReplaceCoreMemory = defineTool({
+  name: "core_memory_replace",
+  description: "Replace the contents of core memory.",
+  parameters: z.object({
+    inner_thought: z.string().describe("The inner thought of the memory."),
+    label: z.string().describe("Section of the memory to be edited (persona or human)."),
+    old_content: z.string().describe("String to replace. Must be an exact match."),
+    new_content: z.string().describe("Content to write to the memory. To delete memories, use an empty string."),
+    request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+  }),
+  execute: async ({ inner_thought, label, old_content, new_content, request_heartbeat }, context) => {
+    if (isEmpty(old_content)) throw new Error("old_content is required");
+    const memory = Memory.instance;
+    if (memory) {
+      return await memory.replaceCoreMemory(label, old_content, new_content);
+    } else {
+      return "Memory is not initialized."
+    }
   }
-}
+})
 
-@Name("addArchivalMemory")
-@Description("Add to archival memory. Make sure to phrase the memory contents such that it can be easily queried later.")
-@Param("content", "Content to write to the memory.")
-@Param("type", SchemaNode.Enum("The type of memory to add.", ["核心记忆", "用户记忆", "群成员记忆", "通用知识"]))
-@Param("topic", SchemaNode.String("The topic of the memory."))
-@Param("keywords", SchemaNode.Array("Keywords to associate with the memory."))
-export class AddArchivalMemory extends Extension {
-  async apply(args: { content: string; type: MemoryType; topic: string; keywords: string[] }) {
-    const { content, type, topic, keywords } = args;
-    if (isEmpty(content)) throw new Error("content is required");
-    if (isEmpty(type)) throw new Error("type is required");
-    if (isEmpty(topic)) throw new Error("topic is required");
-    if (keywords.length === 0) throw new Error("keywords is required");
-    return await this.ctx.memory.addArchivalMemory(content, type, topic, keywords);
+export const SearchConversation = defineTool({
+  name: "conversation_search",
+  description: "Search prior conversation history using case-insensitive string matching.",
+  parameters: z.object({
+    inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+    query: z.string().describe("String to search for."),
+    page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
+    request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+  }),
+  execute: async ({ inner_thoughts, query, page, request_heartbeat }, context) => {
+    return `conversation_search is not implemented.`
   }
-}
+})
 
-@Name("searchArchivalMemory")
-@Description("Search archival memory using semantic (embedding-based) search.")
-@Param("query", SchemaNode.String("String to search for."))
-@Param("type", SchemaNode.Enum("The type of memory to add.", ["核心记忆", "用户记忆", "群成员记忆", "通用知识"]))
-@Param("topic", SchemaNode.String("The topic of the memory."))
-@Param("keywords", SchemaNode.Array("Keywords to associate with the memory."))
-@Param("limit", SchemaNode.Integer("Number of results to return. Defaults to 10.", 10))
-export class SearchArchivalMemory extends Extension {
-  async apply(args: { query: string; type: MemoryType; topic: string; keywords: string[]; limit?: number }) {
-    const { query, type, topic, keywords, limit } = args;
-    if (isEmpty(query)) throw new Error("query is required");
-    if (isEmpty(type)) throw new Error("type is required");
-    if (isEmpty(topic)) throw new Error("topic is required");
-    if (keywords.length === 0) throw new Error("keywords is required");
-    return await this.ctx.memory.searchArchivalMemory(query, type, topic, keywords, limit || 10);
-  }
-}
+export const SearchConversationWithDate = defineTool({
+  name: "conversation_search_date",
+  description: "Search prior conversation history using a date range.",
+  parameters: z.object({
+    inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+    start_date: z.string().describe("The start of the date range to search, in the format 'YYYY-MM-DD'."),
+    end_date: z.string().describe("The end of the date range to search, in the format 'YYYY-MM-DD'."),
+    page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
+    request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+  }),
+  execute: async ({ inner_thoughts, start_date, end_date, page, request_heartbeat }, context) => {
+    const channel_id = context.session?.channelId;
 
-@Name("searchConversation")
-@Description("Search conversation using semantic (embedding-based) search.")
-@Param("query", SchemaNode.String("String to search for."))
-@Param("userId", SchemaNode.String("User ID to search for."))
-@Param("count", SchemaNode.Integer("Number of results to return. Defaults to 10.", 10))
-export class SearchConversation extends Extension {
-  async apply(args: { query: string; userId: string; count: number }) {
-    const { query, userId, count } = args;
-    if (isEmpty(query)) throw new Error("query is required");
-    if (isEmpty(userId)) throw new Error("userId is required");
-    return await this.ctx.memory.searchConversation(query, userId, count || 10);
+    const start = new Date(start_date);
+    const end = new Date(end_date);
+
+    const messages = await context.ctx.database.get("yesimbot.agent.message", {
+      channelId: channel_id,
+      sendTime: { $gte: start, $lte: end },
+    });
+
+    if (messages.length === 0) {
+      return "No messages found in the specified date range.";
+    }
+    let result = "";
+    for (const message of messages) {
+      result += `[${new Date(message.sendTime).toISOString()} ${message.sender}] ${message.content}\n`;
+    }
+
+    return `Found ${messages.length} messages in the specified date range:\n${result}`
   }
-}
+})
