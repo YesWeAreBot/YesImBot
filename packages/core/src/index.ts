@@ -39,7 +39,7 @@ export const inject = {
   required: ["database"],
   optional: [
     "censor",
-    "memory"
+    // "memory"
   ],
 }
 
