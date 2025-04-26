@@ -111,7 +111,7 @@ export class ToolManager {
         this.tools.set(definition.name, definition);
     }
 
-    getTool(name: string, context: ToolContext): EnhancedToolResult | undefined {
+    getTool(name: string, context: ToolContext = {}): EnhancedToolResult | undefined {
         if (!this.tools.has(name)) {
             return undefined;
         }

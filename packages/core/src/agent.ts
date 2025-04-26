@@ -1,4 +1,3 @@
-import { ToolResult } from "@xsai/tool";
 import { message } from "@xsai/utils-chat";
 import fs from "fs/promises";
 import { Context, h, Random, Session, sleep } from "koishi";
@@ -7,58 +6,81 @@ import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
 import { Config } from "./config";
-import { defineTool, ToolManager } from "./extensions/base";
+import { Tool, ToolManager } from "./extensions/base";
 import { Memory, MemoryBlock } from "./Memory";
-import { ChatMessage, createMessage, getChannelType } from "./models/ChatMessage";
+import { getChannelType } from "./models/ChatMessage";
 import { Scenario } from "./Scenario";
 import { getFormatDateTime, isChannelAllowed } from "./utils/toolkit";
 
 
 declare module "koishi" {
     interface Tables {
-        ["yesimbot.agent.message"]: ChatMessage;
-        ["yesimbot.agent.memory_block"]: MemoryBlock;
+        [Agent.MESSAGE_TABLE]: {
+            messageId: string;
+
+            sender: {
+                id: string;
+                name: string;
+                nick: string;
+            }
+
+            channel: {
+                id: string;
+                type: "private" | "guild" | "sandbox";
+            }
+
+            sendTime: Date;
+            content: string;
+            raw?: string;
+        }
+        [Agent.MEMORY_TABLE]: MemoryBlock;
     }
 }
 
-// 未读消息
-let unreadMessages = 0;
-// 上次回复时间
-let lastReplyTime = Date.now();
 
 export class Agent {
-    ctx: Context;
-    config: Config;
-    adapterSwitcher: AdapterSwitcher;
-    memory: Memory;
-    tools: ToolResult[];
-    toolManager: ToolManager;
+    static readonly MESSAGE_TABLE = "yesimbot.agent.message";
+    static readonly MEMORY_TABLE = "yesimbot.agent.memory_block";
+
+    private ctx: Context;
+    private config: Config;
+    private adapterSwitcher: AdapterSwitcher;
+    private memory: Memory;
+    private toolManager: ToolManager;
+
+    // 未读消息
+    private unreadMessages = 0;
+    // 上次回复时间
+    private lastReplyTime = Date.now();
+
     private _PROMPT: string;
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.config = config;
         this.memory = new Memory(ctx);
         this.adapterSwitcher = new AdapterSwitcher(config.API.APIList, config.Parameters);
+        this.toolManager = ToolManager.getInstance();
+
+        // 注册核心工具
+        this.toolManager.registerTool(createSendMessageTool(config));
     }
 
     async initialize() {
         // 注册数据库
-        this.ctx.model.extend("yesimbot.agent.message", {
-            sender: "object",
+        this.ctx.model.extend(Agent.MESSAGE_TABLE, {
             messageId: "string",
-            channelId: "string",
-            channelType: "string",
+            sender: "object",
+            channel: "object",
             sendTime: "timestamp",
             content: "string",
         }, {
             primary: "messageId", // 主键名
             autoInc: false,       // 不使用自增主键
         });
-        this.ctx.model.extend("yesimbot.agent.memory_block", {
+        this.ctx.model.extend(Agent.MEMORY_TABLE, {
             id: "string",
             label: "string",
-            //@ts-ignore
-            value: "list",
+            value: "array",
             limit: "integer",
         }, {
             primary: ["id", "label"],
@@ -66,37 +88,27 @@ export class Agent {
         })
 
         // 初始化
-        this.ctx.logger.info("Agent initialized.");
-        this._PROMPT = await fs.readFile(path.join(__dirname, "../resources/memgpt_chat.txt"), "utf-8");
+        try {
+            this._PROMPT = await fs.readFile(path.join(__dirname, "../resources/memgpt_chat.txt"), "utf-8");
+            // 加载工具
+            this.ctx.logger.info("[Tool] Loading tools");
+            this.toolManager.loadExtensions(this.ctx.logger);
 
-        // 加载记忆块
-        this.ctx.logger.info("[Memory] Loading memory_blocks");
-        const humanMemory = await MemoryBlock.getOrCreate(this.ctx, "human");
-        const personaMemory = await MemoryBlock.getOrCreate(this.ctx, "persona");
-        personaMemory.bindFile(path.join(__dirname, "../resources/persona.txt"));
-        this.memory.coreMemory.push(personaMemory, humanMemory);
+            this._PROMPT += [
+                `Available functions:`,
+                this.toolManager.getToolPrompts()
+            ].join("\n");
 
-        // 初始化工具
-        this.ctx.logger.info("[Tool] Initializing tools");
-        this.toolManager = new ToolManager(this.ctx);
-        this.toolManager.addTool(defineTool({
-            name: "send_message",
-            description: "Sends a message to the human user.",
-            parameters: z.object({
-                inner_thoughts: z.string().describe("Deep inner monologue private to you only."),
-                messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior."),
-                channel_id: z.string().optional().describe("The channel ID to send the message to. If not provided, the message will be sent to the current channel."),
-            }),
-            execute: async ({ inner_thoughts, messages, channel_id }, context) => {
-                const { session } = context;
-                if (channel_id) {
-                    await session.bot.sendMessage(channel_id, messages.join("\n"));
-                } else {
-                    await session.send(messages.join("\n"));
-                }
-            }
-        }));
-        this.tools = await this.toolManager.getTools({ ctx: this.ctx });
+            // 加载记忆块
+            this.ctx.logger.info("[Memory] Loading memory_blocks");
+            const humanMemory = await MemoryBlock.getOrCreate(this.ctx, "human");
+            const personaMemory = await MemoryBlock.getOrCreate(this.ctx, "persona");
+            personaMemory.bindFile(path.join(__dirname, "../resources/persona.txt"));
+            this.memory.coreMemory.push(personaMemory, humanMemory);
+        } catch (error) {
+            this.ctx.logger.error('Failed to load prompt or memory:', error);
+            throw error;
+        }
     }
 
     async register() {
@@ -106,12 +118,24 @@ export class Agent {
         this.ctx.middleware(async (session, next) => {
             const { content, channelId, author } = session;
             // 添加到数据库
-            const messages = await this.ctx.database.get("yesimbot.agent.message", {
+            const messages = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
                 messageId: session.messageId,
-                channelId: session.channelId,
+                channel: {
+                    id: channelId
+                }
             });
             if (messages.length == 0) {
-                await addMessage(this.ctx, await createMessage(session));
+                await this.ctx.database.create(Agent.MESSAGE_TABLE, {
+                    messageId: session.messageId,
+                    sender: session.author,
+                    channel: {
+                        id: channelId,
+                        type: getChannelType(channelId),
+                    },
+                    sendTime: new Date(),
+                    content: session.content,
+                });
+                this.ctx.logger.info(`Received message: ${session.content}`);
             }
 
             // 检查是否在允许的频道
@@ -126,25 +150,27 @@ export class Agent {
                 (element.attrs.id === session.bot.selfId || element.attrs.type === 'all' || (isBotOnline && element.attrs.type === 'here'))
             );
             const shouldReactToAt = Random.bool(this.config.MemorySlot.AtReactPossibility);
-            const isTriggerCountReached = unreadMessages >= Random.int(this.config.MemorySlot.MinTriggerCount, this.config.MemorySlot.MaxTriggerCount);
-            // const coldDown = (Date.now() - lastReplyTime) > this.config.MemorySlot.MinTriggerTime;
-            // if (!coldDown) {
-            //     this.ctx.logger.info(`[Agent] 冷却中，跳过回复`);
-            //     return next();
-            // }
+            const isTriggerCountReached = this.unreadMessages >= Random.int(this.config.MemorySlot.MinTriggerCount, this.config.MemorySlot.MaxTriggerCount);
+            const coldDown = (Date.now() - this.lastReplyTime) > this.config.MemorySlot.MinTriggerTime;
+            if (!coldDown) {
+                this.ctx.logger.info(`[Agent] 冷却中，跳过回复`);
+                return next();
+            }
             const shouldReply = (isTargetAt && shouldReactToAt) || isTriggerCountReached || this.config.Debug.TestMode
 
             if (!shouldReply) {
-                unreadMessages++;
+                this.unreadMessages++;
                 this.ctx.logger.info(`[Agent] 未达到触发条件，跳过回复`);
                 return next();
             }
-            unreadMessages = 0;
+            this.unreadMessages = 0;
 
             const { adapter } = this.adapterSwitcher.getAdapter();
             if (!adapter) return next();
-            const chatHistory = await this.ctx.database.get("yesimbot.agent.message", {
-                channelId
+            const chatHistory = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
+                channel: {
+                    id: channelId
+                }
             });
             const scenario = await Scenario.create(session);
             for (const chat of chatHistory) {
@@ -162,13 +188,15 @@ export class Agent {
             ], null, this.config.Debug.DebugAsInfo);
 
             await this.handle(session, scenario, text);
-            lastReplyTime = Date.now();
+            this.lastReplyTime = Date.now();
         });
 
         // 注册命令
         this.ctx.command("agent.context.clear", "清空对话").action(async ({ session }) => {
-            await this.ctx.database.remove("yesimbot.agent.message", {
-                channelId: session.channelId,
+            await this.ctx.database.remove(Agent.MESSAGE_TABLE, {
+                channel: {
+                    id: session.channelId
+                }
             });
             await session.sendQueued("对话已清空");
         });
@@ -184,75 +212,112 @@ export class Agent {
         scenario: Scenario,
         text: string
     ) {
-        const obj = JSON.parse(text);
-        const { function: functionName, params } = obj;
-
-        if (functionName == "send_message") {
-            const { messages, channel_id } = params;
-            await this.sendMessage(session, messages, channel_id);
-            return;
+        let obj = JSON.parse(text);
+        let request_heartbeat = false;
+        if (!Array.isArray(obj)) {
+            obj = [obj];
+        }
+        for (const { function: functionName, params } of obj) {
+            const result = await this.executeToolCall(functionName, params, session);
+            if (result.success) {
+                scenario.addContext(`[FUNCTION CALL] ${functionName}(${JSON.stringify(params)})`);
+                scenario.addContext(`[FUNCTION RETURN] ${result.result}`);
+            } else {
+                scenario.addContext(`[ERROR] ${result.error}`);
+            }
+            if (params.request_heartbeat) {
+                request_heartbeat = true;
+            }
         }
 
-        const tool = this.tools.find(tool => tool.function.name === functionName);
-        if (!tool) {
-            scenario.addContext(`FUNCTION ${functionName} NOT FOUND`);
+        // 如果需要继续对话
+        if (request_heartbeat) {
             const { adapter } = this.adapterSwitcher.getAdapter();
             const { text } = await adapter.chat([
                 message.system(this._PROMPT),
                 message.system(await this.memory.render()),
                 message.user(scenario.render())
             ], null, this.config.Debug.DebugAsInfo);
+
             await this.handle(session, scenario, text);
-        } else {
-            //@ts-ignore
-            const returnValue = await tool.execute(params);
-            const { inner_thought, request_heartbeat } = params;
-            if (inner_thought) {
-                this.ctx.logger.info(`[Agent] ${inner_thought}`);
-            }
-            if (request_heartbeat) {
-                scenario.addContext(`[FUNCTION CALL] ${functionName}(${JSON.stringify(params)})`);
-                scenario.addContext(`[FUNCTION RETURN] ${returnValue}`)
-                const { adapter } = this.adapterSwitcher.getAdapter();
-                const { text } = await adapter.chat([
-                    message.system(this._PROMPT),
-                    message.system(await this.memory.render()),
-                    message.user(scenario.render())
-                ], null, this.config.Debug.DebugAsInfo);
-                await this.handle(session, scenario, text);
-            }
         }
+
     }
 
-    async sendMessage(session: Session, messages: string[], channelId?: string) {
-        let delay = messages.length == 0 ? false : true;
-        if (!channelId) {
+    async executeToolCall(
+        functionName: string,
+        params: any,
+        session: Session
+    ): Promise<ToolCallResult> {
+        try {
+            const tool = this.toolManager.getTool(functionName);
+            if (!tool) {
+                return {
+                    success: false,
+                    error: `Tool ${functionName} not found`
+                };
+            }
+            const context = { session, ctx: this.ctx };
+            const result = await tool.execute(params, context);
+            return {
+                success: true,
+                result
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+}
+
+interface ToolCallResult {
+    success: boolean;
+    result?: any;
+    error?: string;
+}
+
+function createSendMessageTool(config: Config) {
+    return Tool({
+        name: "send_message",
+        description: "Sends a message to the human user.",
+        parameters: z.object({
+            inner_thoughts: z.string().describe("Deep inner monologue private to you only."),
+            messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior."),
+            channel_id: z.string().optional().describe("The channel ID to send the message to. If not provided, the message will be sent to the current channel."),
+        }),
+        execute: async ({ inner_thoughts, messages, channel_id }, context) => {
+            const { ctx, session } = context;
+
+            let delay = messages.length == 1 ? false : true;
+            if (!channel_id) {
+                channel_id = context.session.channelId;
+            }
+
             for await (const message of messages) {
                 let messageIds = await session.sendQueued(message)
-                if (delay && this.config.Bot.WordsPerSecond > 0) {
-                    await sleep(message.length / this.config.Bot.WordsPerSecond * 1000);
+                if (delay && config.Bot.WordsPerSecond > 0) {
+                    await sleep(message.length / config.Bot.WordsPerSecond * 1000);
                 }
-                await addMessage(this.ctx, {
+                await ctx.database.create(Agent.MESSAGE_TABLE, {
+                    messageId: messageIds[0],
                     sender: {
                         id: session.bot.selfId,
                         name: session.bot.user.name,
                         nick: session.bot.user.nick,
                     },
-                    messageId: messageIds[0],
-                    channelId: session.channelId,
-                    channelType: getChannelType(session.channelId),
+                    channel: {
+                        id: channel_id,
+                        type: getChannelType(channel_id),
+                    },
                     sendTime: new Date(),
                     content: message,
                 });
+                ctx.logger.info(`Received message: ${message}`);
             }
         }
-    }
-}
-
-
-async function addMessage(ctx: Context, chatMessage: ChatMessage) {
-    ctx.logger.info(`Received message: ${chatMessage.content}`)
-    return await ctx.database.create("yesimbot.agent.message", chatMessage);
+    });
 }
 
 
