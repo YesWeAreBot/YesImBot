@@ -1,9 +1,8 @@
 import type { ChatProvider } from '@xsai-ext/shared-providers';
 import { generateText, GenerateTextResult } from "@xsai/generate-text";
-import { AssistantMessage, ChatOptions, executeTool, Message, ToolCall } from '@xsai/shared-chat';
+import { AssistantMessage, ChatOptions, Message } from '@xsai/shared-chat';
 import { streamText } from '@xsai/stream-text';
 import { ToolResult } from '@xsai/tool';
-import { message } from '@xsai/utils-chat';
 
 import { Config } from "../config";
 import { isNotEmpty } from '../utils';
@@ -137,29 +136,43 @@ export abstract class BaseAdapter {
 
             for await (const step of result["stepStream"]) {
                 if (step.finishReason == "tool_calls") {
-                    console.log(`${this.model} is calling tools...`)
-                    let fn: ToolCall["function"] = {
-                        name: "",
-                        arguments: ""
-                    };
-                    let toolCall: ToolCall = {
-                        id: "",
-                        type: "function",
-                        function: fn
-                    };
-                    for (let tool of step.toolCalls) {
-                        if (tool.toolName) fn["name"] = tool.toolName;
-                        if (tool.args) fn["arguments"] = tool.args;
-                        if (tool.toolCallId) toolCall["id"] = tool.toolCallId
+                    // console.log(`${this.model} is calling tools...`)
+                    // let fn: ToolCall["function"] = {
+                    //     name: "",
+                    //     arguments: ""
+                    // };
+                    // let toolCall: ToolCall = {
+                    //     id: "",
+                    //     type: "function",
+                    //     function: fn
+                    // };
+                    // for (let tool of step.toolCalls) {
+                    //     if (tool.toolName) fn["name"] = tool.toolName;
+                    //     if (tool.args) fn["arguments"] = tool.args;
+                    //     if (tool.toolCallId) toolCall["id"] = tool.toolCallId
+                    // }
+                    // let executeToolResult = await executeTool({
+                    //     messages,
+                    //     toolCall,
+                    //     tools
+                    // });
+                    // messages.push(message.assistant(toolCall));
+                    // messages.push(message.tool(executeToolResult.result, toolCall));
+                    // return this.chat(messages, tools, debug);
+                    function stringify(args: Record<string, unknown>): string {
+                        let result = [];
+                        for (let key in args) {
+                            result.push(`${key}=${args[key]}`);
+                        }
+                        return `${result.join(', ')}`;
                     }
-                    let executeToolResult = await executeTool({
-                        messages,
-                        toolCall,
-                        tools
-                    });
-                    messages.push(message.assistant(toolCall));
-                    messages.push(message.tool(executeToolResult.result, toolCall));
-                    return this.chat(messages, tools, debug);
+                    for (let executeToolResult of step.toolResults) {
+                        if (debug) {
+                            console.log(`→ ${executeToolResult.toolName}(${stringify(executeToolResult.args)})`)
+                            console.log(`← ${executeToolResult.result}`)
+                        }
+                        return this.chat(step.messages, tools, debug);
+                    }
                 } else if (step.finishReason == "stop") {
                     if (this.ability.includes("深度思考")) {
                         fullContent = fullContent.replace(new RegExp(`${this.reasoningStart}[\\s\\S]*?${this.reasoningEnd}`, 'g'), '').trim();
@@ -187,7 +200,7 @@ export abstract class BaseAdapter {
     }
 
     // https://sdk.vercel.ai/docs/reference/ai-sdk-core/extract-reasoning-middleware
-    protected extractReasoning(text: string, options: ReasoningOptions): { text: string; reasoning: string} {
+    protected extractReasoning(text: string, options: ReasoningOptions): { text: string; reasoning: string } {
         const { tagName, separator = "\n", startWithReasoning = false } = options;
         const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, 's');
         const match = text.match(regex);
@@ -195,7 +208,7 @@ export abstract class BaseAdapter {
             const reasoning = match[1].trim();
             const newText = text.replace(regex, '').trim();
             return {
-                text: startWithReasoning? `${reasoning}${separator}${newText}` : `${newText}${separator}${reasoning}`,
+                text: startWithReasoning ? `${reasoning}${separator}${newText}` : `${newText}${separator}${reasoning}`,
                 reasoning
             }
         }

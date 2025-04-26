@@ -8,10 +8,10 @@
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { defineTool } from "./base";
+import { Tool } from "./base";
 
 
-export const Reaction = defineTool({
+export const Reaction = Tool({
     name: "reaction-create",
     description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
     parameters: z.object({
@@ -29,7 +29,7 @@ export const Reaction = defineTool({
     }
 })
 
-export const Essence = defineTool({
+export const Essence = Tool({
     name: "essence-create",
     description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
     parameters: z.object({
@@ -46,7 +46,7 @@ export const Essence = defineTool({
     }
 })
 
-export const Poke = defineTool({
+export const Poke = Tool({
     name: "send-poke",
     description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
     parameters: z.object({

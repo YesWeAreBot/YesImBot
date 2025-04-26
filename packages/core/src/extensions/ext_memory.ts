@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { defineTool } from "./base";
+import { Tool } from "./base";
 import { isEmpty } from "../utils/string";
 import { Memory } from "../Memory";
 
-export const AppendCoreMemory = defineTool({
+export const AppendCoreMemory = Tool({
   name: "core_memory_append",
   description: "Append to the contents of core memory.",
   parameters: z.object({
@@ -24,7 +24,7 @@ export const AppendCoreMemory = defineTool({
   }
 })
 
-export const ReplaceCoreMemory = defineTool({
+export const ReplaceCoreMemory = Tool({
   name: "core_memory_replace",
   description: "Replace the contents of core memory.",
   parameters: z.object({
@@ -45,7 +45,7 @@ export const ReplaceCoreMemory = defineTool({
   }
 })
 
-export const SearchConversation = defineTool({
+export const SearchConversation = Tool({
   name: "conversation_search",
   description: "Search prior conversation history using case-insensitive string matching.",
   parameters: z.object({
@@ -59,7 +59,7 @@ export const SearchConversation = defineTool({
   }
 })
 
-export const SearchConversationWithDate = defineTool({
+export const SearchConversationWithDate = Tool({
   name: "conversation_search_date",
   description: "Search prior conversation history using a date range.",
   parameters: z.object({
@@ -76,7 +76,9 @@ export const SearchConversationWithDate = defineTool({
     const end = new Date(end_date);
 
     const messages = await context.ctx.database.get("yesimbot.agent.message", {
-      channelId: channel_id,
+      channel: {
+        id: channel_id
+      },
       sendTime: { $gte: start, $lte: end },
     });
 
