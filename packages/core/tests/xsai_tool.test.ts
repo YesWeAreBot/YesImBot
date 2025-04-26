@@ -2,11 +2,11 @@
 import { z } from "zod";
 
 import { OpenAIAdapter } from "../src/adapters";
-import { defineTool, LLMContext } from "../src/extensions/base";
+import { defineTool, ToolContext } from "../src/extensions/base";
 import { adapterConfig } from "./config";
 
 
-const context: LLMContext = {};
+const context: ToolContext = {};
 const adapter = new OpenAIAdapter(adapterConfig);
 
 const calc = defineTool({
@@ -62,7 +62,7 @@ const search = defineTool({
     returns: z.string().describe("搜索结果")
 });
 
-const toolList = await Promise.all([calc, weather, search, news].map(async tool => await tool(context)))
+const toolList = [calc, weather, search, news];
 
 const { text } = await adapter.chat([{ role: "user", content: "今天有什么特殊的事吗" }], toolList, true)
 

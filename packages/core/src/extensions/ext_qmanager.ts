@@ -8,9 +8,9 @@
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { defineTool } from "./base";
+import { Tool } from "./base";
 
-export const DeleteMsg = defineTool({
+export const DeleteMsg = Tool({
     name: "delmsg",
     description: `撤回一条消息。撤回用户/你自己的消息。当你认为别人刷屏或发表不当内容时，运行这条指令。`,
     parameters: z.object({
@@ -31,7 +31,7 @@ export const DeleteMsg = defineTool({
         }
     }
 })
-export const BanUser = defineTool({
+export const BanUser = Tool({
     name: "ban",
     description: `禁言用户。`,
     parameters: z.object({

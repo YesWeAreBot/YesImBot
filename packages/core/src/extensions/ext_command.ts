@@ -9,10 +9,10 @@ import { h } from "koishi";
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { defineTool } from "./base";
+import { Tool } from "./base";
 
 
-export const Execute = defineTool({
+export const Execute = Tool({
     name: "execute",
     description: `
 运行一些只有在IM平台才能运行的指令，下面是可以运行的指令列表。

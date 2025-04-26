@@ -1,13 +1,15 @@
 import { tool, ToolResult } from "@xsai/tool";
 import { readdirSync } from "fs";
 import { Context, Session } from "koishi";
+import path from "path";
 import { z } from "zod";
+import zodToJsonSchema from "zod-to-json-schema";
 
 /**
  * LLM 上下文对象
  * 用于传递 Koishi 上下文和会话对象
  */
-export interface LLMContext {
+export interface ToolContext {
     ctx?: Context;       // Koishi 上下文对象
     session?: Session;   // Koishi 会话对象
     [key: string]: any;  // 允许扩展上下文
@@ -24,74 +26,103 @@ export type ToolDefinition<
     name: string;
     description: string;
     parameters: TParams;
-    execute: (params: z.infer<TParams>, context: LLMContext) => Promise<z.infer<TReturns>>;
+    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<z.infer<TReturns>>;
     returns?: TReturns;
 };
+
+export interface EnhancedToolResult extends ToolResult {
+    execute: (params: any, context: ToolContext) => Promise<any>;
+}
 
 /**
  * 定义工具
  * @param definition 
  * @returns 
  */
-export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): (context: LLMContext) => Promise<ToolResult> {
-    return async (context: LLMContext) =>
-       await tool({
+export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>, TContext: ToolContext = {}): EnhancedToolResult {
+    return {
+        type: "function",
+        execute: (params: z.infer<T>, context = TContext) => definition.execute(params, context),
+        function: {
             name: definition.name,
             description: definition.description,
-            parameters: definition.parameters,
-            execute: (params: z.infer<T>) => definition.execute(params, context),
-            returns: definition.returns,
-        });
+            parameters: zodToJsonSchema(definition.parameters) as Record<string, unknown>,
+            // @ts-ignore
+            returns: definition.returns ? zodToJsonSchema(definition.returns) as Record<string, unknown> : undefined,
+        }
+    };
+}
+
+export function Tool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): ToolDefinition<T> {
+    return definition;
 }
 
 export class ToolManager {
-    static instance: Map<Context, ToolManager> = new Map();
-    static getInstance(ctx: Context): ToolManager {
-        if (!ToolManager.instance.has(ctx)) {
-            ToolManager.instance.set(ctx, new ToolManager(ctx));
+    static instance: ToolManager;
+    static getInstance(): ToolManager {
+        if (!ToolManager.instance) {
+            ToolManager.instance = new ToolManager();
         }
-        return ToolManager.instance.get(ctx);
+        return ToolManager.instance;
     }
-    private toolFactories: Array<(ctx: LLMContext) => ReturnType<typeof tool>>;
-    constructor(private ctx: Context) {
-        this.toolFactories = [];
-        readdirSync(__dirname)
-            .filter((file) => file.startsWith("ext_") && !file.endsWith(".d.ts")) // 不指定 .js 是为了兼容dev模式
-            .forEach((file) => {
-                try {
-                    // 应该在 Metadata 中加入模块所需依赖
-                    // 并通过某种手段安装或加载这些依赖
-                    // @ts-ignore
-                    // if (!ctx?.memory && file.startsWith("ext_memory")) {
-                    //     ctx.logger.warn(`[Extension] Skip loading: ${file}`)
-                    //     return
-                    // }
-                    const extension = require(`./${file}`) as { [key: string]: (ctx: LLMContext) => ReturnType<typeof tool> };
-                    for (const key in extension) {
-                        this.toolFactories.push(extension[key]);
-                    }
 
-                    ctx.logger.info(`[Extension] Loaded: ${file}`);
-                } catch (e) {
-                    ctx.logger.error(`[Extension] Failed to load: ${file}`);
-                    ctx.logger.error(e.stack);
+    private loaded = false;
+    private tools: Map<string, ToolDefinition> = new Map();
+
+    constructor() { }
+
+    loadExtensions(logger: Context["logger"]) {
+        if (this.loaded) return;
+        const extensionsDir = path.join(__dirname);
+
+        readdirSync(extensionsDir)
+            .filter(file =>
+                file.startsWith("ext_") &&
+                !file.endsWith(".d.ts")
+            )
+            .forEach(file => {
+                try {
+                    const extension = require(path.join(extensionsDir, file)) as Record<string, ToolDefinition> | { default: ToolDefinition | ToolDefinition[] };
+
+                    if (extension.default) {
+                        if (Array.isArray(extension.default)) {
+                            extension.default.forEach(tool => this.registerTool(tool));
+                        } else {
+                            this.registerTool(extension.default);
+                        }
+                    } else {
+                        Object.entries(extension as Record<string, ToolDefinition>)
+                            .filter(([key]) => key !== 'default')
+                            .forEach(([key, tool]) => {
+                                this.registerTool(tool);
+                            });
+                    }
+                    logger.info(`[Extension] Loaded: ${file}`);
+                } catch (error) {
+                    logger.error(`[Extension] Failed to load: ${file}`);
+                    logger.error(error.stack);
                 }
             });
+
+        this.loaded = true;
     }
 
-    /**
-     * 获取工具列表
-     * @param context 要注入的上下文对象
-     */
-    async getTools(context: LLMContext) {
-        return await Promise.all(this.toolFactories.map((fn) => fn(context)));
+    registerTool(definition: ToolDefinition) {
+        this.tools.set(definition.name, definition);
     }
 
-    /**
-     * 添加工具
-     * @param fn 工具工厂函数
-     */
-    addTool(fn: (ctx: LLMContext) => ReturnType<typeof tool>) {
-        this.toolFactories.push(fn);
+    getTool(name: string, context: ToolContext): EnhancedToolResult | undefined {
+        if (!this.tools.has(name)) {
+            return undefined;
+        }
+        return defineTool(this.tools.get(name), context);
+    }
+
+    getTools(context: ToolContext = {}): EnhancedToolResult[] {
+        let tools: EnhancedToolResult[] = [];
+        for (const [name, definition] of this.tools) {
+            tools.push(defineTool(definition, context));
+        }
+        return tools;
     }
 }
