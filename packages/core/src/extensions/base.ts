@@ -125,4 +125,42 @@ export class ToolManager {
         }
         return tools;
     }
+
+    /**
+     * 获取工具的描述
+     * @param name
+     * @example
+     * send_message:
+     *   description: Sends a message to the human user.
+     *   params:
+     *     inner_thoughts: Deep inner monologue private to you only.
+     *     messages: Array<string> Max(2) Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior.
+     */
+    getToolPrompt(name: string): string {
+        if (!this.tools.has(name)) {
+            return "";
+        }
+        const tool = this.tools.get(name);
+        const stringify = (properties: Record<string, { type: string, description: string }>) => {
+            let result = [];
+            for (const [key, value] of Object.entries(properties)) {
+                result.push(`    ${key}: ${value.type} ${value.description}`);
+            }
+            return result.join("\n");
+        }
+        return [
+            `${name}:`,
+            `  description: ${tool.description}`,
+            `  params:`,
+            stringify(zodToJsonSchema(tool.parameters)["properties"]) || "    No parameters required."
+        ].join("\n");
+    }
+
+    getToolPrompts(): string {
+        let prompts: string[] = [];
+        for (const [name, definition] of this.tools) {
+            prompts.push(this.getToolPrompt(name));
+        }
+        return prompts.join("\n");
+    }
 }
