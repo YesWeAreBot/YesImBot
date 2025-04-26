@@ -76,7 +76,7 @@ export class Bot {
         this.emojiManager = this.deps.emojiManager;
         this.verifier = this.deps.verifier;
         this.imageViewer = this.deps.imageViewer;
-        this.toolManager = ToolManager.getInstance(ctx);
+        this.toolManager = ToolManager.getInstance();
 
         this.finalFormat = this.adapterSwitcher.getAdapter().adapter.ability.includes("结构化输出") ? "JSON" : config.Settings.LLMResponseFormat;
     }

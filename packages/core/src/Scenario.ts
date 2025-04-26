@@ -1,7 +1,9 @@
-import { Session } from "koishi";
+import { Context, Session } from "koishi";
 //import { } from "koishi-plugin-adapter-onebot";
 
+import { Agent } from "./agent";
 import { ChatMessage } from "./models/ChatMessage";
+import { getFormatDateTime } from "./utils";
 
 
 /**
@@ -17,23 +19,49 @@ export class Scenario {
     // 场景描述
     description: string;
     // 场景上下文
-    context: string[];
+    private context: string[] = [];
+    // 未读消息列表
+    private unread: string[] = [];
 
-    // 会话实例
-    session: Session;
-
-    constructor(session: Session, context: string[] = []) {
-        if (!session) throw new Error("Session is required");
-        this.session = session;
+    constructor(private ctx: Context, private session: Session) {
         this.id = session.channelId;
         this.type = this.getType();
-        this.context = context;
     }
 
-    static async create(session: Session, context: string[] = []): Promise<Scenario> {
-        const instance = new Scenario(session, context);
+    static async create(ctx: Context, session: Session): Promise<Scenario> {
+        const instance = new Scenario(ctx, session);
         await instance.init();
         return instance;
+    }
+
+    /**
+     * 异步初始化
+     */
+    private async init() {
+        this.name = await this.getName() || "Unnamed";
+        this.description = await this.getDescription();
+
+        await this.loadHistory();
+    }
+
+    private async loadHistory() {
+        // 从数据库加载历史记录
+        const chatHistory = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
+            channel: { id: this.session.channelId },
+        });
+
+        for (const chat of chatHistory) {
+            if (chat.sender.id == this.session.bot.selfId) {
+                this.addContext(`[${getFormatDateTime(chat.sendTime)} YOU] ${chat.content}`);
+                continue;
+            }
+            this.addContext(`[${getFormatDateTime(chat.sendTime)} ${chat.sender.name}<${chat.sender.id}>] ${chat.content}`);
+        }
+
+        // 加载交互记录
+        const interactions = await this.ctx.database.get(Agent.INTERACTION_TABLE, {
+            channelId: this.id
+        });
     }
 
     private getType() {
@@ -74,7 +102,7 @@ export class Scenario {
     /**
      * 获取场景描述
      * 可能需要配合平台API获取
-     * 
+     *
      * 私聊为用户签名，群聊为群介绍
      */
     private async getDescription() {
@@ -90,23 +118,25 @@ export class Scenario {
         }
     }
 
-    /**
-     * 异步初始化
-     */
-    private async init() {
-        this.name = await this.getName() || "Unnamed";
-        this.description = await this.getDescription();
+    addContext(message: string) {
+        this.unread.push(message);
+    }
+
+    clearContext() {
+        this.context = [];
     }
 
     /**
      * 将场景渲染为字符串
-     * 
+     *
      * @example
      * Scenario ID: <scenario_id>
      * Scenario Name: <scenario_name>
      * Scenario Description: <scenario_description>
      * Your role in this scenario: <your_role>
      * Chat History:
+     * [<time> <sender>] <content>
+     * You have <count> new messages to read:
      * [<time> <sender>] <content>
      * ...
      */
@@ -118,15 +148,14 @@ Type: ${this.type}
 Name: ${this.name}
 Description: ${this.description}\n\n`;
         }
-        output += `Chat History:\n${this.context.join("\n")}`;
+        output += `Chat History:\n${this.context.join("\n")}\n`;
+        output += `You have ${this.unread.length} new messages to read:\n${this.unread.join("\n")}`;
+
+        // 清空未读消息
+        for (const message of this.unread) {
+            this.context.push(message);
+        }
+        this.unread = [];
         return output;
-    }
-
-    addContext(message: string) {
-        this.context.push(message);
-    }
-
-    clearContext() {
-        this.context = [];
     }
 }

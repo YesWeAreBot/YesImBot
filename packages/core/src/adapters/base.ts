@@ -171,8 +171,8 @@ export abstract class BaseAdapter {
                             console.log(`→ ${executeToolResult.toolName}(${stringify(executeToolResult.args)})`)
                             console.log(`← ${executeToolResult.result}`)
                         }
-                        return this.chat(step.messages, tools, debug);
                     }
+                    return this.chat(step.messages, tools, debug);
                 } else if (step.finishReason == "stop") {
                     if (this.ability.includes("深度思考")) {
                         fullContent = fullContent.replace(new RegExp(`${this.reasoningStart}[\\s\\S]*?${this.reasoningEnd}`, 'g'), '').trim();
