@@ -10,30 +10,35 @@ import { Tool, ToolManager } from "./extensions/base";
 import { Memory, MemoryBlock } from "./Memory";
 import { getChannelType } from "./models/ChatMessage";
 import { Scenario } from "./Scenario";
-import { getFormatDateTime, isChannelAllowed } from "./utils/toolkit";
+import { extractJSONFromString } from "./utils/parse-structured-output";
+import { isChannelAllowed } from "./utils/toolkit";
 
 
 declare module "koishi" {
     interface Tables {
         [Agent.MESSAGE_TABLE]: {
             messageId: string;
-
             sender: {
                 id: string;
                 name: string;
                 nick: string;
             }
-
             channel: {
                 id: string;
                 type: "private" | "guild" | "sandbox";
             }
-
             sendTime: Date;
             content: string;
             raw?: string;
-        }
+        };
         [Agent.MEMORY_TABLE]: MemoryBlock;
+        [Agent.INTERACTION_TABLE]: {
+            id: string;
+            channelId: string;
+            type: "tool_call" | "tool_response" | "message" | "llm_response";
+            content: string;
+            timestamp: Date;
+        };
     }
 }
 
@@ -41,6 +46,7 @@ declare module "koishi" {
 export class Agent {
     static readonly MESSAGE_TABLE = "yesimbot.agent.message";
     static readonly MEMORY_TABLE = "yesimbot.agent.memory_block";
+    static readonly INTERACTION_TABLE = "yesimbot.agent.interaction";
 
     private ctx: Context;
     private config: Config;
@@ -77,6 +83,7 @@ export class Agent {
             primary: "messageId", // 主键名
             autoInc: false,       // 不使用自增主键
         });
+
         this.ctx.model.extend(Agent.MEMORY_TABLE, {
             id: "string",
             label: "string",
@@ -85,6 +92,17 @@ export class Agent {
         }, {
             primary: ["id", "label"],
             autoInc: false,
+        })
+
+        // 交互记录表
+        this.ctx.model.extend(Agent.INTERACTION_TABLE, {
+            id: "string",
+            channelId: "string",
+            type: "string",
+            content: "string",
+            timestamp: "timestamp"
+        }, {
+            primary: "id"
         })
 
         // 初始化
@@ -135,6 +153,7 @@ export class Agent {
                     sendTime: new Date(),
                     content: session.content,
                 });
+                this.unreadMessages++;
                 this.ctx.logger.info(`Received message: ${session.content}`);
             }
 
@@ -159,7 +178,6 @@ export class Agent {
             const shouldReply = (isTargetAt && shouldReactToAt) || isTriggerCountReached || this.config.Debug.TestMode
 
             if (!shouldReply) {
-                this.unreadMessages++;
                 this.ctx.logger.info(`[Agent] 未达到触发条件，跳过回复`);
                 return next();
             }
@@ -167,19 +185,8 @@ export class Agent {
 
             const { adapter } = this.adapterSwitcher.getAdapter();
             if (!adapter) return next();
-            const chatHistory = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
-                channel: {
-                    id: channelId
-                }
-            });
-            const scenario = await Scenario.create(session);
-            for (const chat of chatHistory) {
-                if (chat.sender.id == session.bot.selfId) {
-                    scenario.addContext(`[${getFormatDateTime(chat.sendTime)} YOU] ${chat.content}`);
-                    continue;
-                }
-                scenario.context.push(`[${getFormatDateTime(chat.sendTime)} ${chat.sender.name}<${chat.sender.id}>] ${chat.content}`);
-            }
+
+            const scenario = await Scenario.create(this.ctx, session);
 
             const { text } = await adapter.chat([
                 message.system(this._PROMPT),
@@ -212,13 +219,44 @@ export class Agent {
         scenario: Scenario,
         text: string
     ) {
-        let obj = JSON.parse(text);
-        let request_heartbeat = false;
-        if (!Array.isArray(obj)) {
-            obj = [obj];
+        let response;
+        try {
+            [response] = extractJSONFromString(text, "object") as any[];
+        } catch (error) {
+            try {
+                [response] = extractJSONFromString(text, "array") as any[];
+            } catch (error) {
+                this.ctx.logger.error(`[Agent] 解析响应失败: ${error}`);
+                return;
+            }
         }
-        for (const { function: functionName, params } of obj) {
+
+        // 记录LLM响应
+        await this.ctx.database.create(Agent.INTERACTION_TABLE, {
+            id: Random.id(),
+            channelId: session.channelId,
+            type: "llm_response",
+            content: text,
+            timestamp: new Date()
+        });
+
+        let request_heartbeat = false;
+        if (!Array.isArray(response)) {
+            response = [response];
+        }
+        for (const { function: functionName, params } of response) {
             const result = await this.executeToolCall(functionName, params, session);
+
+            // 记录工具调用
+            await this.ctx.database.create("yesimbot.agent.interaction", {
+                id: Random.id(),
+                channelId: session.channelId,
+                type: "tool_call",
+                content: `${functionName}(${JSON.stringify(params)}) => ${result.success ? result.result : `ERROR: ${result.error}`
+                    }`,
+                timestamp: new Date()
+            });
+
             if (result.success) {
                 scenario.addContext(`[FUNCTION CALL] ${functionName}(${JSON.stringify(params)})`);
                 scenario.addContext(`[FUNCTION RETURN] ${result.result}`);
@@ -290,16 +328,18 @@ function createSendMessageTool(config: Config) {
         execute: async ({ inner_thoughts, messages, channel_id }, context) => {
             const { ctx, session } = context;
 
-            let delay = messages.length == 1 ? false : true;
+            let idx = 1;
+            let delay = true;
             if (!channel_id) {
                 channel_id = context.session.channelId;
             }
 
             for await (const message of messages) {
-                let messageIds = await session.sendQueued(message)
-                if (delay && config.Bot.WordsPerSecond > 0) {
-                    await sleep(message.length / config.Bot.WordsPerSecond * 1000);
-                }
+                // 如果是最后一条消息，不延迟
+                if (idx++ >= messages.length) {
+                    delay = false;
+                } 
+                let messageIds = await session.sendQueued(message);
                 await ctx.database.create(Agent.MESSAGE_TABLE, {
                     messageId: messageIds[0],
                     sender: {
@@ -315,6 +355,9 @@ function createSendMessageTool(config: Config) {
                     content: message,
                 });
                 ctx.logger.info(`Received message: ${message}`);
+                if (delay && config.Bot.WordsPerSecond > 0) {
+                    await sleep(message.length / config.Bot.WordsPerSecond * 1000);
+                }
             }
         }
     });
