@@ -5,6 +5,18 @@ import { readFile, stat, writeFile } from "fs/promises";
 import { Scenario } from "./Scenario";
 import { isEmpty } from "./utils/string";
 
+interface MemoryBlockData {
+    id: string;
+    label: string;
+    value: string[];
+    limit: number;
+}
+
+class MemoryError extends Error {
+    constructor(message: string, public readonly context?: Record<string, unknown>) {
+        super(message);
+    }
+}
 
 export class Memory {
     // 记忆块列表
@@ -33,7 +45,7 @@ export class Memory {
     private getMemoryBlock(label: string): MemoryBlock {
         const memoryBlock = this.coreMemory.find((block) => block.label === label);
         if (!memoryBlock) {
-            throw new Error("Memory block not found.");
+            throw new MemoryError("Memory block not found", { label, availableLabels: this.coreMemory.map(b => b.label) });
         }
         return memoryBlock;
     }
@@ -105,6 +117,8 @@ export class MemoryBlock {
     private filePath?: string;
 
     private watcher?: fs.FSWatcher;
+    private debounceTimer?: NodeJS.Timeout;
+
     private lastModified = 0;
 
     static async getOrCreate(ctx: Context, identifier: string | { id?: string; label?: string }): Promise<MemoryBlock> {
@@ -151,14 +165,17 @@ export class MemoryBlock {
         this.ctx.logger.info(`[FileWatcher] Watching file ${this.filePath}`);
 
         this.watcher = fs.watch(this.filePath, async (eventType) => {
-            if (eventType === 'change') {
-                const fstat = await stat(this.filePath);
-                if (fstat.mtimeMs > this.lastModified) {
-                    this.ctx.logger.info(`File ${this.filePath} has been modified. Syncing to memory block.`);
-                    this.lastModified = fstat.mtimeMs;
-                    await this.syncFromFile();
+            if (this.debounceTimer) clearTimeout(this.debounceTimer);
+            this.debounceTimer = setTimeout(async () => {
+                if (eventType === 'change') {
+                    const fstat = await stat(this.filePath);
+                    if (fstat.mtimeMs > this.lastModified) {
+                        this.ctx.logger.info(`[FileWatcher] File ${this.filePath} has been modified. Syncing to memory block.`);
+                        this.lastModified = fstat.mtimeMs;
+                        await this.syncFromFile();
+                    }
                 }
-            }
+            }, 300);
         });
     }
 
@@ -225,18 +242,18 @@ export class MemoryBlock {
         await writeFile(this.filePath, value.join('\n'));
     }
 
-    private async getValue(): Promise<string[]> {
+    private async getValue(): Promise<MemoryBlockData> {
         const [result] = await this.ctx.database.get("yesimbot.agent.memory_block", {
             id: this.id,
             label: this.label,
         });
-        return result?.value || [];
+        return result || { id: this.id, label: this.label, value: [], limit: this.limit };
     }
 
     // 记忆块大小，以字符串长度计算
     async size(): Promise<number> {
-        const value = await this.getValue();
-        return value.join("").length;
+        const { value } = await this.getValue();
+        return value.reduce((sum, item) => sum + item.length, 0);
     }
 
     /**
@@ -251,7 +268,7 @@ export class MemoryBlock {
 
     async append(content: string) {
         await this.checkMemoryLimit(content.length);
-        const value = await this.getValue();
+        const { value } = await this.getValue();
         value.push(content);
         if (this.filePath) {
             await this.saveToFile(value);
@@ -266,7 +283,7 @@ export class MemoryBlock {
 
     async replace(old_content: string, new_content: string) {
         // 从记忆内容中搜索
-        const value = await this.getValue();
+        const { value } = await this.getValue();
         const index = value.findIndex((item) => item === old_content);
         if (index === -1) throw new Error("Memory not found");
         if (isEmpty(new_content)) {
@@ -287,7 +304,7 @@ export class MemoryBlock {
     }
 
     async render(): Promise<string> {
-        const value = await this.getValue();
+        const { value } = await this.getValue();
         const currentSize = await this.size();
         return [
             `<${this.label} characters="${currentSize}/${this.limit}">`,
