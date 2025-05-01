@@ -1,6 +1,7 @@
-import { Context, Session } from "koishi";
+import { $, Context, Session } from "koishi";
 //import { } from "koishi-plugin-adapter-onebot";
 
+import type { Interaction, Message } from "./agent";
 import { Agent } from "./agent";
 import { ChatMessage } from "./models/ChatMessage";
 import { getFormatDateTime } from "./utils";
@@ -40,28 +41,52 @@ export class Scenario {
     private async init() {
         this.name = await this.getName() || "Unnamed";
         this.description = await this.getDescription();
-
-        await this.loadHistory();
+        await this.load();
     }
 
-    private async loadHistory() {
+    async load() {
         // 从数据库加载历史记录
         const chatHistory = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
             channel: { id: this.session.channelId },
         });
-
+        let [lastReplyTime] = await this.ctx.database.get(Agent.LAST_REPLY_TABLE, {
+            channelId: this.session.channelId,
+        });
+        let history: (Interaction | Message)[] = chatHistory;
         for (const chat of chatHistory) {
-            if (chat.sender.id == this.session.bot.selfId) {
-                this.addContext(`[${getFormatDateTime(chat.sendTime)} YOU] ${chat.content}`);
-                continue;
+            const interactions = await this.ctx.database
+                .select(Agent.INTERACTION_TABLE)
+                .where(row => $.eq(row.emitter, chat.messageId))
+                .execute();
+            for (const interaction of interactions) {
+                history.push(interaction);
             }
-            this.addContext(`[${getFormatDateTime(chat.sendTime)} ${chat.sender.name}<${chat.sender.id}>] ${chat.content}`);
+        }
+        history = history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        for (let record of history) {
+            let isRead = true;
+            if (lastReplyTime && record.timestamp.getTime() > lastReplyTime.timestamp.getTime()) {
+                isRead = false;
+            }
+            if (record["messageId"]) {
+                // record is message
+                if (record["sender"].id == this.session.bot.selfId) {
+                    this.addContext(`[${getFormatDateTime(record.timestamp)} YOU] ${record.content}`, isRead);
+                    continue;
+                }
+                this.addContext(`[${getFormatDateTime(record.timestamp)} ${record["sender"].name}<${record["sender"].id}>] ${record.content}`, isRead);
+            }
+            else {
+                // record is interaction
+                if (record["type"] === "tool_result") {
+                    this.addContext(`[FUNCTION RETURN] ${record["content"]}`, isRead)
+                    continue;
+                }
+                this.addContext(record.content, isRead);
+            }
         }
 
-        // 加载交互记录
-        const interactions = await this.ctx.database.get(Agent.INTERACTION_TABLE, {
-            channelId: this.id
-        });
+        await this.ctx.database.set(Agent.LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date(), });
     }
 
     private getType() {
@@ -118,8 +143,12 @@ export class Scenario {
         }
     }
 
-    addContext(message: string) {
-        this.unread.push(message);
+    addContext(message: string, isRead = false) {
+        if (isRead) {
+            this.context.push(message);
+        } else {
+            this.unread.push(message);
+        }
     }
 
     clearContext() {
