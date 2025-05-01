@@ -76,7 +76,7 @@ export class Bot {
         this.imageViewer = this.deps.imageViewer;
         this.toolManager = ToolManager.getInstance();
 
-        this.finalFormat = this.adapterSwitcher.getAdapter().adapter.ability.includes("结构化输出") ? "JSON" : config.Settings.LLMResponseFormat;
+        this.finalFormat = config.Settings.LLMResponseFormat;
     }
 
     setSystemPrompt(content: string) {
@@ -177,7 +177,7 @@ export class Bot {
 
         const { usage, text: content } = await adapter.chat([system(this.prompt), ...(this.sendResolveOK ? [assistant("Resolve OK")] : []), ...this.context], adapter.ability.includes("原生工具调用") ? this.toolList : undefined, debug);
 
-        if (debug) this.ctx.logger.info(`Adapter: ${current}, Response: \n${content}`);
+        if (debug) this.ctx.logger.info(`[Adapter] ${current}, Response: \n${content}`);
 
         // handle response
         let LLMResponse: any = {};

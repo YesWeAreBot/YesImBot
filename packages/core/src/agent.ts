@@ -14,29 +14,36 @@ import { extractJSONFromString } from "./utils/parse-structured-output";
 import { isChannelAllowed } from "./utils/toolkit";
 
 
+export type Message = {
+    messageId: string;
+    sender: {
+        id: string;
+        name: string;
+        nick: string;
+    }
+    channel: {
+        id: string;
+        type: "private" | "guild" | "sandbox";
+    }
+    timestamp: Date;
+    content: string;
+};
+
+export type Interaction = {
+    id: string;
+    emitter: string;  // 由哪条消息触发，为消息ID
+    type: "tool_call" | "tool_result" | "message";
+    content: string;
+    timestamp: Date;
+};
+
 declare module "koishi" {
     interface Tables {
-        [Agent.MESSAGE_TABLE]: {
-            messageId: string;
-            sender: {
-                id: string;
-                name: string;
-                nick: string;
-            }
-            channel: {
-                id: string;
-                type: "private" | "guild" | "sandbox";
-            }
-            sendTime: Date;
-            content: string;
-            raw?: string;
-        };
+        [Agent.MESSAGE_TABLE]: Message;
         [Agent.MEMORY_TABLE]: MemoryBlock;
-        [Agent.INTERACTION_TABLE]: {
-            id: string;
+        [Agent.INTERACTION_TABLE]: Interaction;
+        [Agent.LAST_REPLY_TABLE]: {
             channelId: string;
-            type: "tool_call" | "tool_response" | "message" | "llm_response";
-            content: string;
             timestamp: Date;
         };
     }
@@ -47,6 +54,7 @@ export class Agent {
     static readonly MESSAGE_TABLE = "yesimbot.agent.message";
     static readonly MEMORY_TABLE = "yesimbot.agent.memory_block";
     static readonly INTERACTION_TABLE = "yesimbot.agent.interaction";
+    static readonly LAST_REPLY_TABLE = "yesimbot.agent.last_reply";
 
     private ctx: Context;
     private config: Config;
@@ -77,7 +85,7 @@ export class Agent {
             messageId: "string",
             sender: "object",
             channel: "object",
-            sendTime: "timestamp",
+            timestamp: "timestamp",
             content: "string",
         }, {
             primary: "messageId", // 主键名
@@ -97,12 +105,21 @@ export class Agent {
         // 交互记录表
         this.ctx.model.extend(Agent.INTERACTION_TABLE, {
             id: "string",
-            channelId: "string",
+            emitter: "string",
             type: "string",
             content: "string",
             timestamp: "timestamp"
         }, {
             primary: "id"
+        })
+
+        // 上次回复时间表
+        this.ctx.model.extend(Agent.LAST_REPLY_TABLE, {
+            channelId: "string",
+            timestamp: "timestamp",
+        }, {
+            primary: "channelId",
+            autoInc: false,
         })
 
         // 初始化
@@ -150,11 +167,11 @@ export class Agent {
                         id: channelId,
                         type: getChannelType(channelId),
                     },
-                    sendTime: new Date(),
+                    timestamp: new Date(),
                     content: session.content,
                 });
                 this.unreadMessages++;
-                this.ctx.logger.info(`Received message: ${session.content}`);
+                this.ctx.logger.info(`Message Received: ${session.content}`);
             }
 
             // 检查是否在允许的频道
@@ -195,7 +212,14 @@ export class Agent {
             ], null, this.config.Debug.DebugAsInfo);
 
             await this.handle(session, scenario, text);
+
+            // 更新上次回复时间
             this.lastReplyTime = Date.now();
+            await this.ctx.database.set(Agent.LAST_REPLY_TABLE, {
+                channelId: session.channelId
+            }, {
+                timestamp: new Date()
+            })
         });
 
         // 注册命令
@@ -230,39 +254,44 @@ export class Agent {
                 return;
             }
         }
-
-        // 记录LLM响应
-        await this.ctx.database.create(Agent.INTERACTION_TABLE, {
-            id: Random.id(),
-            channelId: session.channelId,
-            type: "llm_response",
-            content: text,
-            timestamp: new Date()
-        });
+        if (!response || response.length == 0) {
+            this.ctx.logger.error(`[Agent] 未解析到响应`);
+            return;
+        }
 
         let request_heartbeat = false;
         if (!Array.isArray(response)) {
             response = [response];
         }
-        for (const { function: functionName, params } of response) {
-            const result = await this.executeToolCall(functionName, params, session);
+        for (const func of response) {
+            let { function: functionName, params } = func;
+
+            let { channel_id } = params;
+
+            if (!channel_id) {
+                channel_id = session.channelId;
+            }
 
             // 记录工具调用
-            await this.ctx.database.create("yesimbot.agent.interaction", {
+            await this.ctx.database.create(Agent.INTERACTION_TABLE, {
                 id: Random.id(),
-                channelId: session.channelId,
+                emitter: session.messageId,
                 type: "tool_call",
-                content: `${functionName}(${JSON.stringify(params)}) => ${result.success ? result.result : `ERROR: ${result.error}`
-                    }`,
+                content: JSON.stringify(func),
                 timestamp: new Date()
             });
 
-            if (result.success) {
-                scenario.addContext(`[FUNCTION CALL] ${functionName}(${JSON.stringify(params)})`);
-                scenario.addContext(`[FUNCTION RETURN] ${result.result}`);
-            } else {
-                scenario.addContext(`[ERROR] ${result.error}`);
-            }
+            const result = await this.executeToolCall(functionName, params, session);
+
+            // 工具调用结果
+            await this.ctx.database.create(Agent.INTERACTION_TABLE, {
+                id: Random.id(),
+                emitter: session.messageId,
+                type: "tool_result",
+                content: JSON.stringify({ name: functionName, result }),
+                timestamp: new Date()
+            });
+
             if (params.request_heartbeat) {
                 request_heartbeat = true;
             }
@@ -271,6 +300,7 @@ export class Agent {
         // 如果需要继续对话
         if (request_heartbeat) {
             const { adapter } = this.adapterSwitcher.getAdapter();
+            await scenario.load();
             const { text } = await adapter.chat([
                 message.system(this._PROMPT),
                 message.system(await this.memory.render()),
@@ -279,7 +309,6 @@ export class Agent {
 
             await this.handle(session, scenario, text);
         }
-
     }
 
     async executeToolCall(
@@ -338,7 +367,7 @@ function createSendMessageTool(config: Config) {
                 // 如果是最后一条消息，不延迟
                 if (idx++ >= messages.length) {
                     delay = false;
-                } 
+                }
                 let messageIds = await session.sendQueued(message);
                 await ctx.database.create(Agent.MESSAGE_TABLE, {
                     messageId: messageIds[0],
@@ -351,10 +380,10 @@ function createSendMessageTool(config: Config) {
                         id: channel_id,
                         type: getChannelType(channel_id),
                     },
-                    sendTime: new Date(),
+                    timestamp: new Date(),
                     content: message,
                 });
-                ctx.logger.info(`Received message: ${message}`);
+                ctx.logger.info(`Message Sent: ${message}`);
                 if (delay && config.Bot.WordsPerSecond > 0) {
                     await sleep(message.length / config.Bot.WordsPerSecond * 1000);
                 }

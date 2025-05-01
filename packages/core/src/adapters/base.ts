@@ -73,7 +73,7 @@ export abstract class BaseAdapter {
                 }
             });
         }
-        logger.info(`Adapter: ${APIType} registered`);
+        logger.info(`[Adapter] ${APIType} registered`);
     }
 
     async chat(messages: Message[], tools?: ToolResult[], debug = false): Promise<GenerateTextResult> {
