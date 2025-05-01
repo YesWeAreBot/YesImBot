@@ -21,7 +21,7 @@
         "pub:core": "yakumo publish core"
     },
     "devDependencies": {
-        "@types/node": "^22.15.2",
+        "@types/node": "^22.15.3",
         "cross-env": "^7.0.3",
         "typescript": "5.8.3",
         "yakumo": "^1.0.0",
