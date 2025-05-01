@@ -1,8 +1,5 @@
 import type { ChatProvider } from '@xsai-ext/shared-providers';
-import { generateText, GenerateTextResult } from "@xsai/generate-text";
-import { AssistantMessage, ChatOptions, Message } from '@xsai/shared-chat';
-import { streamText } from '@xsai/stream-text';
-import { ToolResult } from '@xsai/tool';
+import { AssistantMessage, ChatOptions, generateText, GenerateTextResult, Message, streamText, ToolResult } from "xsai";
 
 import { Config } from "../config";
 import { isNotEmpty } from '../utils';

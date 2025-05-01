@@ -1,7 +1,7 @@
-import { tool, ToolResult } from "@xsai/tool";
 import { readdirSync } from "fs";
 import { Context, Session } from "koishi";
 import path from "path";
+import { ToolResult } from "xsai";
 import { z } from "zod";
 import zodToJsonSchema from "zod-to-json-schema";
 

@@ -4,10 +4,9 @@ import https from "https";
 import { Element, Session } from "koishi";
 
 import { Config } from "../config";
+import { Tool } from "../models/LLMResponse";
 import logger from "./logger";
 import { isEmpty, isNotEmpty } from "./string";
-
-import { Tool } from "../models/LLMResponse"
 
 export function isChannelAllowed(slotContains: string[][], channelId: string): boolean {
   for (let slot of slotContains) {

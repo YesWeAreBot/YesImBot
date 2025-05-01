@@ -1,4 +1,4 @@
-import { Usage } from '@xsai/shared-chat';
+import { Usage } from "xsai";
 
 export interface Tool extends Function {
   name: string;

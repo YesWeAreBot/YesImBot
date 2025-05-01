@@ -1,8 +1,4 @@
 import { createOllama } from "@xsai-ext/providers-local";
-import { generateText, GenerateTextResult } from '@xsai/generate-text';
-import { ChatOptions, Message } from '@xsai/shared-chat';
-import { streamText, StreamTextResult } from '@xsai/stream-text';
-import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";
 import { BaseAdapter } from "./base";

@@ -1,5 +1,5 @@
-import { message } from '@xsai/utils-chat';
 import { Context } from "koishi";
+import { message } from 'xsai';
 
 const { assistant, user, system } = message;
 

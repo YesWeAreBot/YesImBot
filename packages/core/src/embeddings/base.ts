@@ -1,4 +1,4 @@
-import { embed, embedMany, EmbedManyResult, EmbedResult } from '@xsai/embed';
+import { embed, embedMany, EmbedManyResult, EmbedResult } from 'xsai';
 
 import { CacheManager } from "../managers/cacheManager";
 import { EnabledEmbeddingConfig } from "./config";

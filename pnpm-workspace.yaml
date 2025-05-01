@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+
+catalog:
+  '@xsai/embed': &xsai ^0.2.0-beta.6
+  '@xsai/generate-text': *xsai
+  '@xsai/shared': *xsai
+  '@xsai/shared-chat': *xsai
