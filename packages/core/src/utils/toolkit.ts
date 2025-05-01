@@ -299,6 +299,31 @@ export function getFormatDateTime(date?: Date): string {
   return dateTime.replace(/\s+/g, '');
 }
 
+export function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss") {
+  const pad = (num) => String(num).padStart(2, '0');
+  date.toLocaleString
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const seconds = date.getSeconds();
+  
+  return format
+    .replace(/YYYY/g, year.toString())
+    .replace(/YY/g, String(year).slice(-2))
+    .replace(/MM/g, pad(month))
+    .replace(/M/g, month.toString())
+    .replace(/DD/g, pad(day))
+    .replace(/D/g, day.toString())
+    .replace(/HH/g, pad(hours))
+    .replace(/H/g, hours.toString())
+    .replace(/mm/g, pad(minutes))
+    .replace(/m/g, minutes.toString())
+    .replace(/ss/g, pad(seconds))
+    .replace(/s/g, seconds.toString());
+}
+
 /**
  * 计算文本token数量
  * 英文按单词分，中文按字分

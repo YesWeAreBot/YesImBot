@@ -71,7 +71,7 @@ export class Agent {
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.config = config;
-        this.memory = new Memory(ctx);
+        this.memory = Memory.getInstance(ctx);
         this.adapterSwitcher = new AdapterSwitcher(config.API.APIList, config.Parameters);
         this.toolManager = ToolManager.getInstance();
 
@@ -136,12 +136,16 @@ export class Agent {
 
             // 加载记忆块
             this.ctx.logger.info("[Memory] Loading memory_blocks");
-            const humanMemory = await MemoryBlock.getOrCreate(this.ctx, "human");
-            const personaMemory = await MemoryBlock.getOrCreate(this.ctx, "persona");
-            personaMemory.bindFile(path.join(__dirname, "../resources/persona.txt"));
-            this.memory.coreMemory.push(personaMemory, humanMemory);
+            if (this.config.MemorySlot.StoreFile) {
+                for (const key in this.config.MemorySlot.StoreFile) {
+                    const memoryBlock = await MemoryBlock.getOrCreate(this.ctx, key);
+                    if (this.config.MemorySlot.StoreFile[key]) {
+                        memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
+                    }
+                    this.memory.coreMemory.push(memoryBlock);
+                }
+            }
         } catch (error) {
-            this.ctx.logger.error('Failed to load prompt or memory:', error);
             throw error;
         }
     }
@@ -353,6 +357,7 @@ function createSendMessageTool(config: Config) {
             inner_thoughts: z.string().describe("Deep inner monologue private to you only."),
             messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior."),
             channel_id: z.string().optional().describe("The channel ID to send the message to. If not provided, the message will be sent to the current channel."),
+            request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function. Default: false.")
         }),
         execute: async ({ inner_thoughts, messages, channel_id }, context) => {
             const { ctx, session } = context;

@@ -13,6 +13,7 @@ export interface Config {
     MinTriggerTime: number;
     AtReactPossibility?: number;
     Filter: string[];
+    StoreFile: Record<string, string>;
   };
   API: AdapterConfig;
   Parameters: {
@@ -153,6 +154,16 @@ export const Config: Schema<Config> = Schema.object({
     Filter: Schema.array(Schema.string())
       .default(["你是", "You are", "吧", "呢"])
       .description("过滤的词汇（防止被调皮群友/机器人自己搞傻）可以使用正则表达式"),
+    StoreFile: Schema.dict(
+      String,
+      Schema.path({ allowCreate: true, filters: ['directory', { name: 'text', extensions: ['txt'] }] }).required(),
+    )
+      .role("table")
+      .default({
+        "human": "data/yesimbot/human.txt",
+        "persona": "data/yesimbot/persona.txt"
+      })
+      .description("要绑定的记忆文件")
   }).description("记忆槽位设置"),
 
   API: AdapterConfig,
@@ -201,8 +212,8 @@ export const Config: Schema<Config> = Schema.object({
       Schema.string().description("单例模式"),
       Schema.array(Schema.string()).max(4).role("table").description("数组模式"),
     ])
-    .description("自定义停止词。对于 OpenAI 官方的 API，最多可以设置4个自定义停止词。生成会在遇到这些停止词时停止")
-    .default(["<|endoftext|>"]),
+      .description("自定义停止词。对于 OpenAI 官方的 API，最多可以设置4个自定义停止词。生成会在遇到这些停止词时停止")
+      .default(["<|endoftext|>"]),
     OtherParameters: Schema.dict(
       Schema.string().required(),
       Schema.any().required()
@@ -481,8 +492,8 @@ export const Config: Schema<Config> = Schema.object({
       .default(false)
       .description("兼容几种较为常见的大模型错误输出格式"),
     MultiTurn: Schema.boolean()
-     .default(true)
-     .description("将历史消息以多轮对话格式传递给LLM"),
+      .default(true)
+      .description("将历史消息以多轮对话格式传递给LLM"),
     AddRoleTagBeforeContent: Schema.boolean()
       .default(false)
       .description("在消息内容前添加发送者的角色标签，格式为[role]"),

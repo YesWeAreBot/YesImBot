@@ -1,7 +1,9 @@
 import fs from "fs";
-import { Context } from "koishi";
 import { readFile, stat, writeFile } from "fs/promises";
+import { Context } from "koishi";
+import path from "path";
 
+import { Agent } from "./agent";
 import { Scenario } from "./Scenario";
 import { isEmpty } from "./utils/string";
 
@@ -57,7 +59,7 @@ export class Memory {
      */
     async appendCoreMemory(label: string, content: string) {
         const memoryBlock = this.getMemoryBlock(label);
-        memoryBlock.append(content);
+        await memoryBlock.append(content);
         this.lastModified = new Date();
         return `Memory appended successfully. New content: ${content}`;
     }
@@ -92,7 +94,6 @@ export class Memory {
     async render(): Promise<string> {
         return [
             `### Memory [last modified: ${this.lastModified.toLocaleString()}]`,
-            `${this.recallMemory.length} previous messages between you and the user are stored in recall memory (use functions to access them)`,
             `${this.archivalMemory.length} total memories you created are stored in archival memory (use functions to access them)`,
             '',
             'Core memory shown below (limited in size, additional information stored in archival / recall memory):',
@@ -208,6 +209,10 @@ export class MemoryBlock {
      */
     async bindFile(filePath: string) {
         this.filePath = filePath;
+        if (!fs.existsSync(filePath)) {
+            fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            await writeFile(filePath, '');
+        }
         const value = await readFile(filePath, 'utf-8');
         await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
             id: this.id,
@@ -273,12 +278,7 @@ export class MemoryBlock {
         if (this.filePath) {
             await this.saveToFile(value);
         }
-        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
-            id: this.id,
-            label: this.label,
-            value,
-            limit: this.limit
-        }]);
+        return await this.ctx.database.set(Agent.MEMORY_TABLE, { id: this.id, label: this.label }, { value });
     }
 
     async replace(old_content: string, new_content: string) {
