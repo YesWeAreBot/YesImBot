@@ -79,7 +79,7 @@ export const SearchConversationWithDate = Tool({
       channel: {
         id: channel_id
       },
-      sendTime: { $gte: start, $lte: end },
+      timestamp: { $gte: start, $lte: end },
     });
 
     if (messages.length === 0) {
@@ -87,7 +87,7 @@ export const SearchConversationWithDate = Tool({
     }
     let result = "";
     for (const message of messages) {
-      result += `[${new Date(message.sendTime).toISOString()} ${message.sender}] ${message.content}\n`;
+      result += `[${new Date(message.timestamp).toISOString()} ${message.sender}] ${message.content}\n`;
     }
 
     return `Found ${messages.length} messages in the specified date range:\n${result}`

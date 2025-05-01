@@ -15,8 +15,10 @@ export const Reaction = Tool({
     name: "reaction-create",
     description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
     parameters: z.object({
+        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
         message: z.string().describe("消息 ID"),
-        emoji_id: z.number().describe("表态编号")
+        emoji_id: z.number().describe("表态编号"),
+        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
     }),
     execute: async ({ message, emoji_id }, context) => {
         try {
@@ -33,7 +35,9 @@ export const Essence = Tool({
     name: "essence-create",
     description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
     parameters: z.object({
-        message: z.number().describe("消息 ID")
+        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        message: z.number().describe("消息 ID"),
+        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
     }),
     execute: async ({ message }, context) => {
         try {
@@ -50,8 +54,10 @@ export const Poke = Tool({
     name: "send-poke",
     description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
     parameters: z.object({
+        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
         user_id: z.string().describe("用户名称"),
-        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道")
+        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
+        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
     }),
     execute: async ({ user_id, channel }, context) => {
         try {
