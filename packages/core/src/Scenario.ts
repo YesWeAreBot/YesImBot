@@ -4,7 +4,7 @@ import { $, Context, Session } from "koishi";
 import type { Interaction, Message } from "./agent";
 import { Agent } from "./agent";
 import { ChatMessage } from "./models/ChatMessage";
-import { getFormatDateTime } from "./utils";
+import { formatDate } from "./utils";
 
 
 /**
@@ -23,6 +23,8 @@ export class Scenario {
     private context: string[] = [];
     // 未读消息列表
     private unread: string[] = [];
+    // 超出上下文的记忆
+    private recallSize: number;
 
     constructor(private ctx: Context, private session: Session) {
         this.id = session.channelId;
@@ -44,11 +46,24 @@ export class Scenario {
         await this.load();
     }
 
-    async load() {
+    async load(limit: number = 30) {
         // 从数据库加载历史记录
-        const chatHistory = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
-            channel: { id: this.session.channelId },
-        });
+        // const chatHistory = await this.ctx.database
+        //     .select(Agent.MESSAGE_TABLE)
+        //     .where({ channel: { id: this.session.channelId } })
+        //     .orderBy("timestamp", "desc")
+        //     .limit(limit)
+        //     .execute();
+
+        const recall = await this.ctx.database
+            .select(Agent.MESSAGE_TABLE)
+            .where({ channel: { id: this.session.channelId } })
+            .orderBy("timestamp", "desc")
+            .execute();
+
+        const chatHistory = recall.slice(0, limit);
+        this.recallSize = recall.length - chatHistory.length;
+
         let [lastReplyTime] = await this.ctx.database.get(Agent.LAST_REPLY_TABLE, {
             channelId: this.session.channelId,
         });
@@ -71,10 +86,10 @@ export class Scenario {
             if (record["messageId"]) {
                 // record is message
                 if (record["sender"].id == this.session.bot.selfId) {
-                    this.addContext(`[${getFormatDateTime(record.timestamp)} YOU] ${record.content}`, isRead);
+                    this.addContext(`[${formatDate(record.timestamp, "YYYY-MM-DD HH:mm:ss")} YOU] ${record.content}`, isRead);
                     continue;
                 }
-                this.addContext(`[${getFormatDateTime(record.timestamp)} ${record["sender"].name}<${record["sender"].id}>] ${record.content}`, isRead);
+                this.addContext(`[${formatDate(record.timestamp, "YYYY-MM-DD HH:mm:ss")} ${record["sender"].name}<${record["sender"].id}>] ${record.content}`, isRead);
             }
             else {
                 // record is interaction
@@ -169,16 +184,18 @@ export class Scenario {
      * [<time> <sender>] <content>
      * ...
      */
-    render(includeMetadata = true): string {
-        let output = '';
-        if (includeMetadata) {
-            output += `Scenario ID: ${this.id}
-Type: ${this.type}
-Name: ${this.name}
-Description: ${this.description}\n\n`;
-        }
-        output += `Chat History:\n${this.context.join("\n")}\n`;
-        output += `You have ${this.unread.length} new messages to read:\n${this.unread.join("\n")}`;
+    render(): string {
+        let output = [
+            `Scenario ID: ${this.id}`,
+            `Type: ${this.type}`,
+            `Name: ${this.name}`,
+            `Description: ${this.description}`,
+            `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
+            `Chat History:`,
+            ...this.context,
+            `You have ${this.unread.length} new messages to read:`,
+            ...this.unread,
+        ].join("\n");
 
         // 清空未读消息
         for (const message of this.unread) {
