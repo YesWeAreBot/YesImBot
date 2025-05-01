@@ -35,14 +35,12 @@
         "fast-xml-parser": "^4.5.3",
         "jsonrepair": "^3.12.0",
         "sharp": "^0.33.5",
-        "xsai": "^0.2.0-beta.6",
+        "xsai": "^0.2.0",
         "zod": "^3.24.3",
         "zod-to-json-schema": "^3.24.5"
     },
     "peerDependencies": {
-        "koishi": "^4.18.7",
-        "@satorijs/core": "^4.5.0",
-        "reggol": "^1.7.0"
+        "koishi": "^4.18.7"
     },
     "devDependencies": {
         "@koishijs/plugin-mock": "^2.6.6",
@@ -79,11 +77,7 @@
         "browser": true,
         "service": {
             "required": [
-                "axios",
                 "database"
-            ],
-            "optional": [
-                "memory"
             ],
             "implements": [
                 "yesimbot"

@@ -12,22 +12,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: pnpm/action-setup@v2
-        with:
-          version: 10
-          
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/package.json
+          node-version: "20"
+          cache: "yarn"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: yarn install
 
       - name: Lint JavaScript
         run: pnpm run build
-

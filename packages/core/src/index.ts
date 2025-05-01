@@ -37,10 +37,6 @@ export const DATABASE_NAME = name;
 
 export const inject = {
   required: ["database"],
-  optional: [
-    "censor",
-    // "memory"
-  ],
 }
 
 export async function apply(ctx: Context, config: Config) {
