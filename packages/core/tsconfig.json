@@ -8,5 +8,7 @@
     "module": "CommonJS",
     "experimentalDecorators": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

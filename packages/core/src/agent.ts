@@ -1,4 +1,4 @@
-import { message } from "@xsai/utils-chat";
+import { message } from "xsai";
 import fs from "fs/promises";
 import { Context, h, Random, Session, sleep } from "koishi";
 import path from "path";

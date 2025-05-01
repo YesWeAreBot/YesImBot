@@ -1,8 +1,4 @@
 import { createGoogleGenerativeAI } from '@xsai-ext/providers-cloud';
-import { generateText, GenerateTextResult } from '@xsai/generate-text';
-import { AssistantMessage, ChatOptions, Message } from '@xsai/shared-chat';
-import { streamText } from '@xsai/stream-text';
-import { ToolResult } from '@xsai/tool';
 
 import { Config } from "../config";
 import { BaseAdapter } from "./base";

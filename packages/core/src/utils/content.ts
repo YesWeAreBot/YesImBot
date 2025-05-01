@@ -1,18 +1,17 @@
-import { h, Session, Element } from 'koishi';
 import { XMLParser } from "fast-xml-parser";
-import { ImagePart, Message, TextPart } from '@xsai/shared-chat';
-import { message } from '@xsai/utils-chat';
+import { Element, h, Session } from 'koishi';
+import { ImagePart, Message, message, TextPart } from 'xsai';
 
 const { assistant, user, textPart, imagePart } = message;
 
+import { BaseAdapter } from "../adapters/base";
 import { Config } from '../config';
 import { ChatMessage, getChannelType } from '../models/ChatMessage';
-import { BaseAdapter } from "../adapters/base";
-import { isEmpty, Template } from './string';
-import { getFileUnique, getMemberName, getFormatDateTime } from './toolkit';
-import { extractJSONFromString, extractXMLFromString } from "../utils/parse-structured-output";
 import { ImageViewer } from '../services/imageViewer';
 import { convertUrltoBase64 } from "../utils/imageUtils";
+import { extractJSONFromString, extractXMLFromString } from "../utils/parse-structured-output";
+import { isEmpty, Template } from './string';
+import { getFileUnique, getFormatDateTime, getMemberName } from './toolkit';
 
 
 /**

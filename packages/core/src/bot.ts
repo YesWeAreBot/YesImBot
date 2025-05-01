@@ -1,8 +1,6 @@
-import { ImagePart, Message, TextPart } from '@xsai/shared-chat';
-import { ToolResult } from '@xsai/tool';
-import { message } from '@xsai/utils-chat';
 import { XMLParser } from "fast-xml-parser";
 import { Context, Random, Session } from "koishi";
+import { ImagePart, Message, message, TextPart, ToolResult } from "xsai";
 
 const { assistant, user, system, textPart } = message;
 

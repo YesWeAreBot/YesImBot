@@ -11,9 +11,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup
-        uses: cordiverse/workflows/.github/actions/setup@main
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 10
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/package.json
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Lint JavaScript
-        run: yarn build:core
+        run: pnpm run build
 

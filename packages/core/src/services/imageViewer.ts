@@ -1,8 +1,8 @@
-import { message } from '@xsai/utils-chat';
 import axios from "axios";
 import { createHash } from "crypto";
 import { Context, h } from "koishi";
 import path from "path";
+import { message } from "xsai";
 
 const { assistant, user, system, textPart } = message;
 
