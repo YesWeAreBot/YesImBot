@@ -31,7 +31,7 @@ export type ToolDefinition<
 };
 
 export interface EnhancedToolResult extends ToolResult {
-    execute: (params: any, context: ToolContext) => Promise<any>;
+    execute: (params: Record<string, unknown>, context: ToolContext) => Promise<any>;
 }
 
 /**
@@ -40,13 +40,17 @@ export interface EnhancedToolResult extends ToolResult {
  * @returns 
  */
 export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>, TContext: ToolContext = {}): EnhancedToolResult {
+    let parameters: any = definition.parameters;
+    if (!definition.parameters["properties"]) {
+        parameters = zodToJsonSchema(definition.parameters);
+    }
     return {
         type: "function",
         execute: (params: z.infer<T>, context = TContext) => definition.execute(params, context),
         function: {
             name: definition.name,
             description: definition.description,
-            parameters: zodToJsonSchema(definition.parameters) as Record<string, unknown>,
+            parameters: parameters as Record<string, unknown>,
             // @ts-ignore
             returns: definition.returns ? zodToJsonSchema(definition.returns) as Record<string, unknown> : undefined,
         }
@@ -144,15 +148,18 @@ export class ToolManager {
         const stringify = (properties: Record<string, { type: string, description: string }>) => {
             let result = [];
             for (const [key, value] of Object.entries(properties)) {
-                result.push(`    ${key}: ${value.type} ${value.description}`);
+                result.push(`    ${key}: ${value.description}`);
             }
             return result.join("\n");
+        }
+        if (!tool.parameters["properties"]) {
+            tool.parameters = zodToJsonSchema(tool.parameters);
         }
         return [
             `${name}:`,
             `  description: ${tool.description}`,
             `  params:`,
-            stringify(zodToJsonSchema(tool.parameters)["properties"]) || "    No parameters required."
+            stringify(tool.parameters["properties"]) || "    No parameters required."
         ].join("\n");
     }
 
