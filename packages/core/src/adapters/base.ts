@@ -1,5 +1,7 @@
 import type { ChatProvider } from '@xsai-ext/shared-providers';
 import { AssistantMessage, ChatOptions, generateText, GenerateTextResult, Message, streamText, ToolResult } from "xsai";
+import { extractReasoning } from '@xsai/utils-reasoning'
+import { extractReasoningStream } from '@xsai/utils-reasoning'
 
 import { Config } from "../config";
 import { isNotEmpty } from '../utils';
@@ -16,9 +18,8 @@ export abstract class BaseAdapter {
 
     protected provider?: ChatProvider;
     protected startWith?: string;
-    protected reasoningStart?: any;
-    protected reasoningEnd?: any;
-    protected reasoningEffort?: unknown;
+    protected reasoningTag?: string;
+    protected startWithReasoning: boolean;
 
     constructor(
         protected adapterConfig: LLMConfig,
@@ -31,9 +32,8 @@ export abstract class BaseAdapter {
         this.ability = Ability || [];
 
         if (this.ability.includes("深度思考")) {
-            this.reasoningEffort = adapterConfig.ReasoningEffort || "medium";
-            this.reasoningStart = adapterConfig.ReasoningStart || "<think>";
-            this.reasoningEnd = adapterConfig.ReasoningEnd || "</think>";
+            this.reasoningTag = adapterConfig.ReasoningTag || "think";
+            this.startWithReasoning = adapterConfig.startWithReasoning || false;
         }
 
         // 解析其他参数
@@ -76,7 +76,7 @@ export abstract class BaseAdapter {
         logger.info(`[Adapter] ${APIType} registered`);
     }
 
-    async chat(messages: Message[], tools?: ToolResult[], debug = false): Promise<GenerateTextResult> {
+    async chat(messages: Message[], tools?: ToolResult[], debug = false): Promise<GenerateTextResult & { reasoning: string }> {
         if (this.ability.includes("对话前缀续写") && this.startWith) {
             messages.push({ "role": "assistant", "content": this.startWith, "prefix": true } as AssistantMessage)
         }
@@ -106,18 +106,30 @@ export abstract class BaseAdapter {
                 }
             })
 
-            let fullContent = "";
+            let textStream: ReadableStream<string>
+            let textStreamContent = "";
+            let reasoningStreamContent = "";
             let currentLineBuffer = "";
             if (debug) {
                 console.log(`Receiving text stream from ${this.model}...`);
             }
-            for await (const textPart of result["textStream"]) {
-                fullContent += textPart;
+            if (this.ability.includes("深度思考")) {
+                const { reasoningStream, textStream: text } = extractReasoningStream(result["textStream"], { tagName: this.reasoningTag, startWithReasoning: true });
+                textStream = text;
+                for await (const reasoningPart of reasoningStream) {
+                    reasoningStreamContent += reasoningPart;
+                }
+            } else {
+                textStream = result["textStream"];
+            }
+
+            for await (const textPart of textStream) {
+                textStreamContent += textPart;
                 currentLineBuffer += textPart;
                 if (debug) {
                     if (currentLineBuffer.includes("\n")) {
                         // 清除当前行并将光标移动到行首
-                        process.stdout.write('\x1B[K\r');
+                        //process.stdout.write('\x1B[K\r');
                         // 输出新的文本
                         process.stdout.write(currentLineBuffer);
                         // 重置当前行缓冲区
@@ -133,29 +145,6 @@ export abstract class BaseAdapter {
 
             for await (const step of result["stepStream"]) {
                 if (step.finishReason == "tool_calls") {
-                    // console.log(`${this.model} is calling tools...`)
-                    // let fn: ToolCall["function"] = {
-                    //     name: "",
-                    //     arguments: ""
-                    // };
-                    // let toolCall: ToolCall = {
-                    //     id: "",
-                    //     type: "function",
-                    //     function: fn
-                    // };
-                    // for (let tool of step.toolCalls) {
-                    //     if (tool.toolName) fn["name"] = tool.toolName;
-                    //     if (tool.args) fn["arguments"] = tool.args;
-                    //     if (tool.toolCallId) toolCall["id"] = tool.toolCallId
-                    // }
-                    // let executeToolResult = await executeTool({
-                    //     messages,
-                    //     toolCall,
-                    //     tools
-                    // });
-                    // messages.push(message.assistant(toolCall));
-                    // messages.push(message.tool(executeToolResult.result, toolCall));
-                    // return this.chat(messages, tools, debug);
                     function stringify(args: Record<string, unknown>): string {
                         let result = [];
                         for (let key in args) {
@@ -171,13 +160,11 @@ export abstract class BaseAdapter {
                     }
                     return this.chat(step.messages, tools, debug);
                 } else if (step.finishReason == "stop") {
-                    if (this.ability.includes("深度思考")) {
-                        fullContent = fullContent.replace(new RegExp(`${this.reasoningStart}[\\s\\S]*?${this.reasoningEnd}`, 'g'), '').trim();
-                    }
                     return {
                         ...step,
-                        text: fullContent,
-                    } as unknown as GenerateTextResult;
+                        text: textStreamContent,
+                        reasoning: reasoningStreamContent,
+                    } as unknown as GenerateTextResult & { reasoning: string };
                 }
             }
         } else {
@@ -185,38 +172,20 @@ export abstract class BaseAdapter {
             const result = await generateText({
                 ...chatOptions,
                 ...(tools ? { tools } : {}),
-                reasoning_effort: this.ability.includes("深度思考") ? this.reasoningEffort : undefined, // 这部分可以通过 OtherParameters 实现
-                // 确实，但既然已经有加深度思考复选框，所有的相关参数都应该包含在内，而不是让用户自己加。如果xsai内置了方便的提取与移除思维链的方法，那么就可以移除这堆配置项。
                 ...this.otherParams,
             });
             if (this.ability.includes("深度思考")) {
-                result.text = result.text.replace(new RegExp(`${this.reasoningStart}[\\s\\S]*?${this.reasoningEnd}`, 'g'), '').trim();
+                const { reasoning, text } = extractReasoning(result.text, { tagName: this.reasoningTag, startWithReasoning: this.startWithReasoning })
+                return {
+                    ...result,
+                    reasoning: reasoning || "",
+                    text,
+                };
             }
-            return result;
-        }
-    }
-
-    // https://sdk.vercel.ai/docs/reference/ai-sdk-core/extract-reasoning-middleware
-    protected extractReasoning(text: string, options: ReasoningOptions): { text: string; reasoning: string } {
-        const { tagName, separator = "\n", startWithReasoning = false } = options;
-        const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, 's');
-        const match = text.match(regex);
-        if (match) {
-            const reasoning = match[1].trim();
-            const newText = text.replace(regex, '').trim();
             return {
-                text: startWithReasoning ? `${reasoning}${separator}${newText}` : `${newText}${separator}${reasoning}`,
-                reasoning
-            }
+                ...result,
+                reasoning: "",
+            };
         }
     }
-}
-
-interface ReasoningOptions {
-    // The name of the XML tag to extract reasoning from (without angle brackets)
-    tagName: string;
-    // The separator to use between reasoning and text sections. Defaults to "\n"
-    separator?: string;
-    // Starts with reasoning tokens. Set to true when the response always starts with reasoning and the initial tag is omitted. Defaults to false.
-    startWithReasoning?: boolean;
 }
