@@ -10,12 +10,15 @@ const SERVER_URL = "https://open.bigmodel.cn/api/mcp/web_search/sse";
 
 const transport1 = new SSEClientTransport(new URL(`${SERVER_URL}?Authorization=${API_KEY}`));
 const transport2 = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:3000/mcp`));
-
+const transport3 = new StdioClientTransport({
+    "command": "npx",
+    "args": ["bilibili-mcp"]
+});
 const client = new Client(
     { name: "zhipu-web-search-sse", version: "1.0.0" }
 );
 
-await client.connect(transport1);
+await client.connect(transport3);
 
 let result = await client.listTools();
 
@@ -25,12 +28,15 @@ for (const tool of result["tools"]) {
     console.log("parameters:", tool.inputSchema);
 }
 
-result = await client.callTool({ name: "web_search", arguments: { search_query: "鹿乃" }});
+result = await client.callTool({ name: "bilibili-search", arguments: { keyword: "鹿乃", limit: 1 } });
+let fullContent = "";
+for (const element of result.content as any[]) {
+    if (element.type === "text") {
+        fullContent += element.text;
+    }
+}
+console.log(fullContent);
 
-console.log(result);
-
-await transport1.close();
-await transport2.close();
 await client.close();
 
 

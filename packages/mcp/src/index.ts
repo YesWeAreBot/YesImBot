@@ -8,23 +8,39 @@ import { ToolManager } from "koishi-plugin-yesimbot";
 export interface Config {
     mcpServers: {
         name: string;
-        url: string;
+        type: "sse" | "http" | "stdio";
+        url?: string;
+        command?: string;
+        args?: string[];
         environment: Record<string, string>;
-        connectOptions?: {
-            type: "sse" | "http" | "stdio";
-        }
     }[];
 }
 
 export const Config: Schema<Config> = Schema.object({
-    mcpServers: Schema.array(Schema.object({
-        name: Schema.string().description("服务器名称"),
-        url: Schema.string().description("服务器地址"),
-        environment: Schema.dict(Schema.string()).role("table").description("环境变量").default({}),
-        connectOptions: Schema.object({
-            type: Schema.union(["sse", "http", "stdio"]).description("连接类型").default("sse"),
-        })
-    }))
+    mcpServers: Schema.array(
+        Schema.intersect([
+            Schema.object({
+                name: Schema.string().description("服务器名称"),
+                type: Schema.union(["sse", "http", "stdio"]).description("连接类型").default("sse"),
+                environment: Schema.dict(Schema.string()).role("table").description("环境变量").default({}),
+            }),
+            Schema.union([
+                Schema.object({
+                    type: Schema.const("sse"),
+                    url: Schema.string().description("服务器URL"),
+                }),
+                Schema.object({
+                    type: Schema.const("http"),
+                    url: Schema.string().description("服务器URL"),
+                }),
+                Schema.object({
+                    type: Schema.const("stdio"),
+                    command: Schema.string().description("启动命令"),
+                    args: Schema.array(Schema.string()).role("table").description("启动命令参数").default([]),
+                })
+            ])
+        ])
+    )
         .role("table")
         .description("MCP服务器列表")
 });
@@ -35,18 +51,24 @@ export const inject = {
     // required: ["yesimbot"],
 }
 
-const transportMap = {
-    sse: SSEClientTransport,
-    http: StreamableHTTPClientTransport,
-    // stdio: StdioClientTransport,
-}
-
 export async function apply(ctx: Context, config: Config) {
     const clients: Client[] = [];
     ctx.on("ready", async () => {
         ctx.logger.info(`[MCP] Connecting to ${config.mcpServers.length} servers`);
         for await (const server of config.mcpServers) {
-            const transport = new transportMap[server.connectOptions?.type || "sse"](new URL(server.url));
+            let transport;
+            if (server.type === "sse") {
+                transport = new SSEClientTransport(new URL(server.url));
+            } else if (server.type === "http") {
+                transport = new StreamableHTTPClientTransport(new URL(server.url));
+            } else if (server.type === "stdio") {
+                ctx.logger.info(`[MCP] Starting ${server.name} with command: ${server.command} ${server.args.join(" ")}`);
+                ctx.logger.info(`[MCP] This may take a while, please wait`);
+                transport = new StdioClientTransport({ command: server.command, args: server.args });
+            } else {
+                ctx.logger.error(`[MCP] Unknown transport type: ${server.type}`);
+                continue;
+            }
             const client = new Client({ name: server.name, version: "1.0.0" });
             try {
                 await client.connect(transport);
@@ -78,7 +100,13 @@ export async function apply(ctx: Context, config: Config) {
                             if (result.isError) {
                                 return { error: `${tool.name} is currently unavailable.` };
                             }
-                            return result.content;
+                            let fullContent = "";
+                            for (const element of result.content as any[]) {
+                                if (element.type === "text") {
+                                    fullContent += element.text;
+                                }
+                            }
+                            return fullContent;
                         } catch (error) {
                             return { error: error.message };
                         }
