@@ -70,7 +70,6 @@ export const SearchConversation = Tool({
         }
         let result = [
             `Found ${messages.length} messages:`,
-            "",
             ...messages.map(message => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`)
         ].join("\n");
 

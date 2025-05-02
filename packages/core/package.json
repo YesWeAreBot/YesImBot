@@ -30,6 +30,7 @@
         "@xsai-ext/providers-cloud": "^0.2.0",
         "@xsai-ext/providers-local": "^0.2.0",
         "@xsai-ext/shared-providers": "^0.2.0",
+        "@xsai/utils-reasoning": "^0.2.0",
         "async-mutex": "^0.5.0",
         "axios": "^1.9.0",
         "fast-xml-parser": "^4.5.3",
@@ -59,6 +60,10 @@
         "./embeddings": {
             "types": "./lib/embeddings/index.d.ts",
             "default": "./lib/embeddings/index.js"
+        },
+        "./extensions": {
+            "types": "./lib/extensions/index.d.ts",
+            "default": "./lib/extensions/index.js"
         },
         "./managers": {
             "types": "./lib/managers/index.d.ts",

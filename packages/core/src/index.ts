@@ -464,6 +464,7 @@ export async function redirectLogicMessage(
 export * from "./adapters";
 export * from "./database";
 export * from "./embeddings";
+export * from "./extensions";
 export * from "./managers/cacheManager";
 export * from "./models/ChatMessage";
 export * from "./utils/factory";

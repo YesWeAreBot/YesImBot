@@ -1,7 +1,7 @@
-import { message } from "xsai";
 import fs from "fs/promises";
 import { Context, h, Random, Session, sleep } from "koishi";
 import path from "path";
+import { message } from "xsai";
 import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
@@ -67,7 +67,6 @@ export class Agent {
     // 上次回复时间
     private lastReplyTime = Date.now();
 
-    private _PROMPT: string;
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.config = config;
@@ -124,15 +123,9 @@ export class Agent {
 
         // 初始化
         try {
-            this._PROMPT = await fs.readFile(path.join(__dirname, "../resources/memgpt_chat.txt"), "utf-8");
             // 加载工具
             this.ctx.logger.info("[Tool] Loading tools");
             this.toolManager.loadExtensions(this.ctx.logger);
-
-            this._PROMPT += [
-                `Available functions:`,
-                this.toolManager.getToolPrompts()
-            ].join("\n");
 
             // 加载记忆块
             this.ctx.logger.info("[Memory] Loading memory_blocks");
@@ -210,7 +203,7 @@ export class Agent {
             const scenario = await Scenario.create(this.ctx, session);
 
             const { text } = await adapter.chat([
-                message.system(this._PROMPT),
+                message.system(await this.getSystemPrompt()),
                 message.system(await this.memory.render()),
                 message.user(scenario.render())
             ], null, this.config.Debug.DebugAsInfo);
@@ -228,12 +221,16 @@ export class Agent {
 
         // 注册命令
         this.ctx.command("agent.context.clear", "清空对话").action(async ({ session }) => {
-            await this.ctx.database.remove(Agent.MESSAGE_TABLE, {
+            let result = await this.ctx.database.remove(Agent.MESSAGE_TABLE, {
                 channel: {
                     id: session.channelId
                 }
             });
             await session.sendQueued("对话已清空");
+        });
+        this.ctx.command("agent.memory.clear", "清空记忆").action(async ({ session }) => {
+            let result = await this.ctx.database.remove(Agent.INTERACTION_TABLE, {});
+            await session.sendQueued("记忆已清空");
         });
     }
 
@@ -292,7 +289,7 @@ export class Agent {
                 id: Random.id(),
                 emitter: session.messageId,
                 type: "tool_result",
-                content: JSON.stringify({ name: functionName, result }),
+                content: JSON.stringify({ [functionName]: result }),
                 timestamp: new Date()
             });
 
@@ -306,7 +303,7 @@ export class Agent {
             const { adapter } = this.adapterSwitcher.getAdapter();
             await scenario.load();
             const { text } = await adapter.chat([
-                message.system(this._PROMPT),
+                message.system(await this.getSystemPrompt()),
                 message.system(await this.memory.render()),
                 message.user(scenario.render())
             ], null, this.config.Debug.DebugAsInfo);
@@ -317,9 +314,16 @@ export class Agent {
 
     async executeToolCall(
         functionName: string,
-        params: any,
+        params: Record<string, unknown>,
         session: Session
     ): Promise<ToolCallResult> {
+        function stringify(args: Record<string, unknown>): string {
+            let result = [];
+            for (let key in args) {
+                result.push(`${key}="${args[key]}"`);
+            }
+            return `${result.join(', ')}`;
+        }
         try {
             const tool = this.toolManager.getTool(functionName);
             if (!tool) {
@@ -329,7 +333,9 @@ export class Agent {
                 };
             }
             const context = { session, ctx: this.ctx };
+            this.ctx.logger.info(`→ ${functionName}(${stringify(params)})`)
             const result = await tool.execute(params, context);
+            this.ctx.logger.info(`← ${result ? JSON.stringify(result) : "void"}`)
             return {
                 success: true,
                 result
@@ -340,6 +346,15 @@ export class Agent {
                 error: error.message
             };
         }
+    }
+
+    async getSystemPrompt(): Promise<string> {
+        let content = await fs.readFile(path.join(__dirname, "../resources/memgpt_chat.txt"), "utf-8");
+        content += [
+            `Available functions:`,
+            this.toolManager.getToolPrompts()
+        ].join("\n");
+        return content;
     }
 }
 
