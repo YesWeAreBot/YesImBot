@@ -73,8 +73,23 @@ export class Scenario {
                 .select(Agent.INTERACTION_TABLE)
                 .where(row => $.eq(row.emitter, chat.messageId))
                 .execute();
-            for (const interaction of interactions) {
-                history.push(interaction);
+            for await (const interaction of interactions) {
+                let life = interaction.life;
+                if (life > 0) {
+                    history.push(interaction);
+                    await this.ctx.database
+                        .set(Agent.INTERACTION_TABLE, {
+                            id: interaction.id
+                        }, {
+                            life: $.subtract(life, 1)
+                        });
+                } else {
+                    let result = await this.ctx.database
+                        .remove(Agent.INTERACTION_TABLE, {
+                            id: interaction.id,
+                        });
+                    this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired and has been deleted.`);
+                }
             }
         }
         history = history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
