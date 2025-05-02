@@ -1,0 +1,28 @@
+{
+    "name": "koishi-plugin-yesimbot-extension-mcp",
+    "version": "0.0.1",
+    "description": "Koishi extension for YesimBot that supports ModelContextProtocol",
+    "main": "lib/index.js",
+    "typings": "lib/index.d.ts",
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.11.0"
+    },
+    "devDependencies": {
+        "koishi": "^4.18.7",
+        "koishi-plugin-yesimbot": "^2.2.2"
+    },
+    "peerDependencies": {
+        "koishi": "^4.18.7",
+        "koishi-plugin-yesimbot": "^2.2.2"
+    },
+    "koishi": {
+        "service": {
+            "required": [
+                "yesimbot"
+            ],
+            "implements": [
+                "yesimbot-extension-mcp"
+            ]
+        }
+    }
+}
