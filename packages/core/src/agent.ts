@@ -34,6 +34,7 @@ export type Interaction = {
     emitter: string;  // 由哪条消息触发，为消息ID
     type: "tool_call" | "tool_result" | "message";
     content: string;
+    life: number;     // 生命周期，为添加到上下文的次数，归零时将被删除，避免浪费token
     timestamp: Date;
 };
 
@@ -107,6 +108,7 @@ export class Agent {
             emitter: "string",
             type: "string",
             content: "string",
+            life: "integer",
             timestamp: "timestamp"
         }, {
             primary: "id"
@@ -279,19 +281,23 @@ export class Agent {
                 emitter: session.messageId,
                 type: "tool_call",
                 content: JSON.stringify(func),
+                life: 3,
                 timestamp: new Date()
             });
 
             const result = await this.executeToolCall(functionName, params, session);
 
-            // 工具调用结果
-            await this.ctx.database.create(Agent.INTERACTION_TABLE, {
-                id: Random.id(),
-                emitter: session.messageId,
-                type: "tool_result",
-                content: JSON.stringify({ [functionName]: result }),
-                timestamp: new Date()
-            });
+            if (functionName !== "send_message") {
+                // 工具调用结果，不记录send_message
+                await this.ctx.database.create(Agent.INTERACTION_TABLE, {
+                    id: Random.id(),
+                    emitter: session.messageId,
+                    type: "tool_result",
+                    content: JSON.stringify({ [functionName]: result }),
+                    life: 3,
+                    timestamp: new Date()
+                });
+            }
 
             if (params.request_heartbeat) {
                 request_heartbeat = true;
