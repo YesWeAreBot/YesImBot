@@ -9,7 +9,7 @@ import { h } from "koishi";
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { Tool } from "./base";
+import { Failed, Success, Tool } from "./base";
 
 
 export const Execute = Tool({
@@ -38,8 +38,10 @@ Example:
                 await context.session.bot.sendMessage(channel, h("execute", {}, cmd));
             }
             context.ctx.logger.info(`Bot[${context.session.selfId}]执行了指令: ${cmd}`);
+            return Success(`ok`);
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]执行指令失败: ${cmd} - `, e.message);
+            return Failed(`执行指令失败 - ${e.message}`)
         }
     }
 })

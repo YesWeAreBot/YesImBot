@@ -4,7 +4,7 @@ import { Memory } from "../Memory";
 import { Agent } from "../agent";
 import { formatDate } from "../utils";
 import { isEmpty } from "../utils/string";
-import { Tool } from "./base";
+import { Failed, Success, Tool } from "./base";
 
 export const AppendCoreMemory = Tool({
     name: "core_memory_append",
@@ -19,9 +19,10 @@ export const AppendCoreMemory = Tool({
         if (isEmpty(content)) throw new Error("content is required");
         const memory = Memory.instance;
         if (memory) {
-            return await memory.appendCoreMemory(label, content);
+            let result = await memory.appendCoreMemory(label, content);
+            return Success(result);
         } else {
-            throw new Error("Memory is not initialized.")
+            return Failed("Memory is not initialized.");
         }
     }
 })
@@ -40,9 +41,10 @@ export const ReplaceCoreMemory = Tool({
         if (isEmpty(old_content)) throw new Error("old_content is required");
         const memory = Memory.instance;
         if (memory) {
-            return await memory.replaceCoreMemory(label, old_content, new_content);
+            let result = await memory.replaceCoreMemory(label, old_content, new_content);
+            return Success(result);
         } else {
-            throw new Error("Memory is not initialized.")
+            return Failed("Memory is not initialized.");
         }
     }
 })
@@ -66,14 +68,13 @@ export const SearchConversation = Tool({
             content: { $regex: query },
         });
         if (messages.length === 0) {
-            return "No messages found.";
+            return Failed("No messages found.");
         }
         let result = [
             `Found ${messages.length} messages:`,
             ...messages.map(message => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`)
         ].join("\n");
-
-        return result
+        return Success(result);
     }
 })
 
@@ -101,13 +102,12 @@ export const SearchConversationWithDate = Tool({
         });
 
         if (messages.length === 0) {
-            return "No messages found in the specified date range.";
+            return Failed("No messages found in the specified date range.");
         }
-        let result = "";
-        for (const message of messages) {
-            result += `[${new Date(message.timestamp).toISOString()} ${message.sender}] ${message.content}\n`;
-        }
-
-        return `Found ${messages.length} messages in the specified date range:\n${result}`
+        let result = [
+            "Found ${messages.length} messages in the specified date range:",
+            ...messages.map(message => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`)
+        ].join("\n");
+        return Success(result);
     }
 })

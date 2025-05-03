@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
 import { Config } from "./config";
-import { Tool, ToolManager } from "./extensions/base";
+import { Success, Tool, ToolCallResult, ToolManager } from "./extensions/base";
 import { Memory, MemoryBlock } from "./Memory";
 import { getChannelType } from "./models/ChatMessage";
 import { Scenario } from "./Scenario";
@@ -33,7 +33,7 @@ export type Interaction = {
     id: string;
     emitter: string;  // 由哪条消息触发，为消息ID
     type: "tool_call" | "tool_result" | "message";
-    content: string;
+    content: ToolCallResult | string;
     life: number;     // 生命周期，为添加到上下文的次数，归零时将被删除，避免浪费token
     timestamp: Date;
 };
@@ -107,7 +107,7 @@ export class Agent {
             id: "string",
             emitter: "string",
             type: "string",
-            content: "string",
+            content: "object",
             life: "integer",
             timestamp: "timestamp"
         }, {
@@ -313,11 +313,7 @@ export class Agent {
         }
     }
 
-    async executeToolCall(
-        functionName: string,
-        params: Record<string, unknown>,
-        session: Session
-    ): Promise<ToolCallResult> {
+    async executeToolCall(functionName: string, params: Record<string, unknown>, session: Session): Promise<ToolCallResult> {
         function stringify(args: Record<string, unknown>): string {
             let result = [];
             for (let key in args) {
@@ -357,12 +353,6 @@ export class Agent {
         ].join("\n");
         return content;
     }
-}
-
-interface ToolCallResult {
-    success: boolean;
-    result?: any;
-    error?: string;
 }
 
 function createSendMessageTool(config: Config) {
@@ -409,6 +399,7 @@ function createSendMessageTool(config: Config) {
                     await sleep(message.length / config.Bot.WordsPerSecond * 1000);
                 }
             }
+            return Success("");
         }
     });
 }

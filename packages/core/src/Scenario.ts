@@ -1,4 +1,4 @@
-import { $, Context, Session } from "koishi";
+import { $, Context, h, Session } from "koishi";
 //import { } from "koishi-plugin-adapter-onebot";
 
 import type { Interaction, Message } from "./agent";
@@ -94,20 +94,39 @@ export class Scenario {
                 isRead = false;
             }
             if (record["messageId"]) {
+                let elements = h.parse(record.content as string);
+                let content = "";
+                for (let elem of elements) {
+                    switch (elem.type) {
+                        case "text":
+                            content += elem.attrs.content;
+                            break;
+                        case "img":
+                            content += elem.attrs.summary || `[图片]`;
+                            break;
+                        case "at":
+                            content += `<at id="${elem.attrs.id}" name="@${elem.attrs.name}"/>`
+                        default:
+                            content += `[${elem.type}]`;
+                            break;
+                    }
+                }
                 // record is message
                 if (record["sender"].id == this.session.bot.selfId) {
-                    this.addContext(`[${formatDate(record.timestamp, "YYYY-MM-DD HH:mm:ss")} YOU] ${record.content}`, isRead);
+                    this.addContext(`[${formatDate(record.timestamp)} YOU] ${content}`, isRead);
                     continue;
+                } else {
+                    this.addContext(`[${formatDate(record.timestamp)} ${record["sender"].name}<${record["sender"].id}>] ${content}`, isRead);
                 }
-                this.addContext(`[${formatDate(record.timestamp, "YYYY-MM-DD HH:mm:ss")} ${record["sender"].name}<${record["sender"].id}>] ${record.content}`, isRead);
             }
             else {
                 // record is interaction
                 if (record["type"] === "tool_result") {
-                    this.addContext(`[FUNCTION RETURN] ${record["content"]}`, isRead)
+                    this.addContext(`[FUNCTION RETURN] ${JSON.stringify(record["content"])}`, isRead)
                     continue;
+                } else {
+                    this.addContext(`[FUNCTION CALL] ${JSON.stringify(record["content"])}`, isRead);
                 }
-                this.addContext(record.content, isRead);
             }
         }
 

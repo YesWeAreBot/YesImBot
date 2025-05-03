@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { Tool } from "./base";
+import { Success, Tool } from "./base";
 
 
 export const Reaction = Tool({
@@ -25,8 +25,10 @@ export const Reaction = Tool({
             // @ts-ignore
             await this.session.onebot._request("set_msg_emoji_like", { message_id: message, emoji_id: emoji_id });
             context.ctx.logger.info(`Bot[${context.session.selfId}]对消息 ${message} 进行了表态： ${emoji_id}`);
+            return Success("ok");
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]执行表态失败: ${message}, ${emoji_id} - `, e.message);
+            return Success(`对消息 ${message} 进行表态失败： ${e.message}`)
         }
     }
 })
@@ -44,8 +46,10 @@ export const Essence = Tool({
             // @ts-ignore
             await this.session.onebot._request("set_essence_msg", { message_id: message })
             context.ctx.logger.info(`Bot[${context.session.selfId}]将消息 ${message} 设置为精华`);
+            return Success(`ok`);
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]设置精华消息失败: ${message} - `, e.message);
+            return Success(`设置精华消息失败： ${e.message}`)
         }
     }
 })
@@ -75,8 +79,10 @@ export const Poke = Tool({
                 await this.session.onebot._request("send_poke", { user_id: user_id });
             }
             context.ctx.logger.info(`Bot[${context.session.selfId}]戳了戳 ${user_id}`);
+            return Success(`ok`);
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
+            return Success(`戳了戳 ${user_id} 失败： ${e.message}`)
         }
     }
 })

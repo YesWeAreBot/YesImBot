@@ -26,12 +26,36 @@ export type ToolDefinition<
     name: string;
     description: string;
     parameters: TParams;
-    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<z.infer<TReturns>>;
+    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<z.infer<TReturns>>>;
     returns?: TReturns;
 };
 
 export interface EnhancedToolResult extends ToolResult {
-    execute: (params: Record<string, unknown>, context: ToolContext) => Promise<any>;
+    execute: (params: Record<string, unknown>, context: ToolContext) => Promise<ToolCallResult>;
+}
+
+export interface ToolCallResult<T = any> {
+    success: boolean;
+    result?: T;
+    error?: string;
+}
+
+export function Tool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): ToolDefinition<T> {
+    return definition;
+}
+
+export function Success(result: any): ToolCallResult {
+    return {
+        success: true,
+        result: result,
+    };
+}
+
+export function Failed(error: string): ToolCallResult {
+    return {
+        success: false,
+        error: error,
+    };
 }
 
 /**
@@ -55,10 +79,6 @@ export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>
             returns: definition.returns ? zodToJsonSchema(definition.returns) as Record<string, unknown> : undefined,
         }
     };
-}
-
-export function Tool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): ToolDefinition<T> {
-    return definition;
 }
 
 export class ToolManager {
