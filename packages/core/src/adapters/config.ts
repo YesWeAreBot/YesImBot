@@ -39,7 +39,7 @@ export const API: Schema<LLMConfig> = Schema.intersect([
     // BaseURL: Schema.string()
     //   .default("https://api.openai.com")
     //   .description("API 基础 URL, 设置为\"Custom URL\"需要填写完整的 URL"),
-    APIKey: Schema.string().required().description("你的 API 令牌"),
+    APIKey: Schema.string().role("secret").required().description("你的 API 令牌"),
     AIModel: Schema.string()
       .description("模型 ID"),
     Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出", "深度思考", "对话前缀续写"]))

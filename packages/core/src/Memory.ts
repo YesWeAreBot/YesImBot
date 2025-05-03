@@ -22,7 +22,7 @@ class MemoryError extends Error {
 
 export class Memory {
     // 记忆块列表
-    coreMemory: MemoryBlock[];
+    coreMemory: Map<string, MemoryBlock>;
     recallMemory: Scenario[];
     archivalMemory: MemoryBlock[];
     // 最后修改时间
@@ -38,16 +38,16 @@ export class Memory {
     }
 
     constructor(private ctx: Context) {
-        this.coreMemory = [];
+        this.coreMemory = new Map();
         this.recallMemory = [];
         this.archivalMemory = [];
         this.lastModified = new Date();
     }
 
     private getMemoryBlock(label: string): MemoryBlock {
-        const memoryBlock = this.coreMemory.find((block) => block.label === label);
+        const memoryBlock = this.coreMemory.get(label);
         if (!memoryBlock) {
-            throw new MemoryError("Memory block not found", { label, availableLabels: this.coreMemory.map(b => b.label) });
+            throw new MemoryError("Memory block not found", { label, availableLabels: this.coreMemory.keys() });
         }
         return memoryBlock;
     }
@@ -98,7 +98,7 @@ export class Memory {
             '',
             'Core memory shown below (limited in size, additional information stored in archival / recall memory):',
             '',
-            ...await Promise.all(this.coreMemory.map(async memoryBlock => await memoryBlock.render()))
+            ...await Promise.all(Array.from(this.coreMemory.values()).map(async memoryBlock => await memoryBlock.render()))
         ].join('\n');
     }
 }

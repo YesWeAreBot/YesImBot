@@ -137,7 +137,7 @@ export class Agent {
                     if (this.config.MemorySlot.StoreFile[key]) {
                         memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
                     }
-                    this.memory.coreMemory.push(memoryBlock);
+                    this.memory.coreMemory.set(key, memoryBlock);
                 }
             }
         } catch (error) {
@@ -248,14 +248,9 @@ export class Agent {
     ) {
         let response;
         try {
-            [response] = extractJSONFromString(text, "object") as any[];
+            response = extractJSONFromString(text, "object") as any[];
         } catch (error) {
-            try {
-                [response] = extractJSONFromString(text, "array") as any[];
-            } catch (error) {
-                this.ctx.logger.error(`[Agent] 解析响应失败: ${error}`);
-                return;
-            }
+            this.ctx.logger.error(`[Agent] 解析响应失败: ${error}`);
         }
         if (!response || response.length == 0) {
             this.ctx.logger.error(`[Agent] 未解析到响应`);
@@ -376,9 +371,9 @@ function createSendMessageTool(config: Config) {
         description: "Sends a message to the human user.",
         parameters: z.object({
             inner_thoughts: z.string().describe("Deep inner monologue private to you only."),
-            messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior."),
-            channel_id: z.string().optional().describe("The channel ID to send the message to. If not provided, the message will be sent to the current channel."),
-            request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function. Default: false.")
+            messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."),
+            channel_id: z.string().optional().describe("The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."),
+            request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. The next function call must not be `send_message`.")
         }),
         execute: async ({ inner_thoughts, messages, channel_id }, context) => {
             const { ctx, session } = context;

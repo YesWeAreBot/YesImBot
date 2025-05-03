@@ -54,6 +54,7 @@ export const inject = {
 export async function apply(ctx: Context, config: Config) {
     const clients: Client[] = [];
     ctx.on("ready", async () => {
+        let count = 0;
         ctx.logger.info(`[MCP] Connecting to ${config.mcpServers.length} servers`);
         for await (const server of config.mcpServers) {
             let transport;
@@ -113,13 +114,16 @@ export async function apply(ctx: Context, config: Config) {
                     }
                 });
                 ctx.logger.info(`[MCP] Tool registered: ${tool.name}`);
+                count++;
             }
         }
+        ctx.logger.info(`[MCP] loaded ${clients.length} servers with ${count} tools`);
     })
 
     ctx.on("dispose", async () => {
         for (const client of clients) {
             await client.close();
         }
+        ctx.logger.info(`[MCP] Disconnected from all servers`);
     })
 }
