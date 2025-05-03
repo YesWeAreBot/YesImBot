@@ -3,7 +3,8 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
-import { ToolManager } from "koishi-plugin-yesimbot";
+import { Failed, Success, ToolManager } from "koishi-plugin-yesimbot";
+
 
 export interface Config {
     mcpServers: {
@@ -58,6 +59,11 @@ export async function apply(ctx: Context, config: Config) {
         ctx.logger.info(`[MCP] Connecting to ${config.mcpServers.length} servers`);
         for await (const server of config.mcpServers) {
             let transport;
+            if (server.environment) {
+                for (const [key, value] of Object.entries(server.environment)) {
+                    process.env[key] = value;
+                }
+            }
             if (server.type === "sse") {
                 transport = new SSEClientTransport(new URL(server.url));
             } else if (server.type === "http") {
@@ -99,7 +105,7 @@ export async function apply(ctx: Context, config: Config) {
                         try {
                             let result = await client.callTool({ name: tool.name, arguments: params });
                             if (result.isError) {
-                                return { error: `${tool.name} is currently unavailable.` };
+                                return Failed(result.error as string);
                             }
                             let fullContent = "";
                             for (const element of result.content as any[]) {
@@ -107,9 +113,9 @@ export async function apply(ctx: Context, config: Config) {
                                     fullContent += element.text;
                                 }
                             }
-                            return fullContent;
+                            return Success(fullContent);
                         } catch (error) {
-                            return { error: error.message };
+                            return Failed(error.message);
                         }
                     }
                 });
