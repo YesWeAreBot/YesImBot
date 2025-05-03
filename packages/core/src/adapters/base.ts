@@ -1,10 +1,9 @@
 import type { ChatProvider } from '@xsai-ext/shared-providers';
+import { extractReasoning, extractReasoningStream } from '@xsai/utils-reasoning';
 import { AssistantMessage, ChatOptions, generateText, GenerateTextResult, Message, streamText, ToolResult } from "xsai";
-import { extractReasoning } from '@xsai/utils-reasoning'
-import { extractReasoningStream } from '@xsai/utils-reasoning'
 
 import { Config } from "../config";
-import { isNotEmpty } from '../utils';
+import { isEmpty, isNotEmpty } from '../utils';
 import logger from "../utils/logger";
 import { LLMConfig } from "./config";
 
@@ -96,6 +95,8 @@ export abstract class BaseAdapter {
         }
 
         if (this.ability.includes("流式输出")) {
+            let currentLineBuffer = "";
+            let reasoningStreamContent = "";
             const result = await streamText({
                 ...chatOptions,
                 ...(tools ? { tools } : {}),
@@ -103,13 +104,22 @@ export abstract class BaseAdapter {
                 ...this.otherParams,
                 streamOptions: {
                     includeUsage: true,
-                }
+                },
+                onChunk(chunk) {
+                    if (debug) {
+                        currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
+                        reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
+                        if (currentLineBuffer.includes("\n")) {
+                            process.stdout.write(currentLineBuffer);
+                            currentLineBuffer = "";
+                        }
+                    }
+                },
             })
 
             let textStream: ReadableStream<string>
             let textStreamContent = "";
-            let reasoningStreamContent = "";
-            let currentLineBuffer = "";
+
             if (debug) {
                 console.log(`Receiving text stream from ${this.model}...`);
             }
@@ -124,6 +134,7 @@ export abstract class BaseAdapter {
             }
 
             for await (const textPart of textStream) {
+                if (isEmpty(textPart)) continue;
                 textStreamContent += textPart;
                 currentLineBuffer += textPart;
                 if (debug) {

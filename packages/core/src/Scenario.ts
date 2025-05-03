@@ -47,13 +47,8 @@ export class Scenario {
     }
 
     async load(limit: number = 30) {
-        // 从数据库加载历史记录
-        // const chatHistory = await this.ctx.database
-        //     .select(Agent.MESSAGE_TABLE)
-        //     .where({ channel: { id: this.session.channelId } })
-        //     .orderBy("timestamp", "desc")
-        //     .limit(limit)
-        //     .execute();
+        this.context = [];
+        this.unread = [];
 
         const recall = await this.ctx.database
             .select(Agent.MESSAGE_TABLE)
@@ -88,7 +83,7 @@ export class Scenario {
                         .remove(Agent.INTERACTION_TABLE, {
                             id: interaction.id,
                         });
-                    this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired and has been deleted.`);
+                    this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired`);
                 }
             }
         }
@@ -206,8 +201,10 @@ export class Scenario {
             `Name: ${this.name}`,
             `Description: ${this.description}`,
             `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
+            "",
             `Chat History:`,
             ...this.context,
+            "",
             `You have ${this.unread.length} new messages to read:`,
             ...this.unread,
         ].join("\n");
