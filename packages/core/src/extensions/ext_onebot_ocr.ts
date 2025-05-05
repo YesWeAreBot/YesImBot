@@ -1,8 +1,7 @@
-import { h } from "koishi";
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { Tool, Failed, Success } from "./base";
+import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./base";
 
 
 interface OcrResult {
@@ -25,9 +24,9 @@ export const OneBotOcr = Tool({
     name: "onebot_ocr",
     description: `OCR图像识别`,
     parameters: z.object({
-        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        INNER_THOUGHTS,
         image: z.string().describe("image 链接, 支持 http/https/file/base64"),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT,
     }),
     execute: async ({ image }, context) => {
         if (isEmpty(image)) throw new Error("image is required");

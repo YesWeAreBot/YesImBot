@@ -8,16 +8,17 @@
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { Failed, Success, Tool } from "./base";
+import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./base";
+
 
 export const DeleteMsg = Tool({
     name: "delmsg",
     description: `撤回一条消息。撤回用户/你自己的消息。当你认为别人刷屏或发表不当内容时，运行这条指令。`,
     parameters: z.object({
-        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        INNER_THOUGHTS,
         message: z.string().describe("要撤回的消息编号"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT,
     }),
     execute: async ({ message, channel }, context) => {
         if (isEmpty(message)) throw new Error("message is required");
@@ -35,15 +36,16 @@ export const DeleteMsg = Tool({
         }
     }
 })
+
 export const BanUser = Tool({
     name: "ban",
     description: `禁言用户。`,
     parameters: z.object({
-        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        INNER_THOUGHTS,
         user_id: z.string().describe("要禁言的用户 ID"),
         duration: z.number().optional().describe("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT,
     }),
     execute: async ({ user_id, duration, channel }, context) => {
         if (isEmpty(user_id)) throw new Error("user_id is required");

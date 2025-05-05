@@ -191,3 +191,6 @@ export class ToolManager {
         return prompts.join("\n");
     }
 }
+
+export const INNER_THOUGHTS = z.string().describe("Deep inner monologue private to you only.");
+export const REQUEST_HEARTBEAT = z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.");

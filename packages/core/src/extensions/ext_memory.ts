@@ -4,18 +4,19 @@ import { Memory } from "../Memory";
 import { Agent } from "../agent";
 import { formatDate } from "../utils";
 import { isEmpty } from "../utils/string";
-import { Failed, Success, Tool } from "./base";
+import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./base";
+
 
 export const AppendCoreMemory = Tool({
     name: "core_memory_append",
     description: "Append to the contents of core memory.",
     parameters: z.object({
-        inner_thought: z.string().describe("The inner thought of the memory."),
+        INNER_THOUGHTS,
         label: z.string().describe("Section of the memory to be edited (persona or human)."),
         content: z.string().describe("Content to write to the memory."),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT
     }),
-    execute: async ({ inner_thought, label, content, request_heartbeat }, context) => {
+    execute: async ({ label, content }, context) => {
         if (isEmpty(content)) throw new Error("content is required");
         const memory = Memory.instance;
         if (memory) {
@@ -31,13 +32,13 @@ export const ReplaceCoreMemory = Tool({
     name: "core_memory_replace",
     description: "Replace the contents of core memory.",
     parameters: z.object({
-        inner_thought: z.string().describe("The inner thought of the memory."),
+        INNER_THOUGHTS,
         label: z.string().describe("Section of the memory to be edited (persona or human)."),
         old_content: z.string().describe("String to replace. Must be an exact match."),
         new_content: z.string().describe("Content to write to the memory. To delete memories, use an empty string."),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT
     }),
-    execute: async ({ inner_thought, label, old_content, new_content, request_heartbeat }, context) => {
+    execute: async ({ label, old_content, new_content }, context) => {
         if (isEmpty(old_content)) throw new Error("old_content is required");
         const memory = Memory.instance;
         if (memory) {
@@ -53,12 +54,12 @@ export const SearchConversation = Tool({
     name: "conversation_search",
     description: "Search prior conversation history using case-insensitive string matching.",
     parameters: z.object({
-        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        INNER_THOUGHTS,
         query: z.string().describe("String to search for."),
         page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT
     }),
-    execute: async ({ inner_thoughts, query, page, request_heartbeat }, context) => {
+    execute: async ({ query, page }, context) => {
         const channel_id = context.session?.channelId;
 
         const messages = await context.ctx.database.get(Agent.MESSAGE_TABLE, {
@@ -82,13 +83,13 @@ export const SearchConversationWithDate = Tool({
     name: "conversation_search_date",
     description: "Search prior conversation history using a date range.",
     parameters: z.object({
-        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        INNER_THOUGHTS,
         start_date: z.string().describe("The start of the date range to search, in the format 'YYYY-MM-DD HH:mm:ss'."),
         end_date: z.string().describe("The end of the date range to search, in the format 'YYYY-MM-DD HH:mm:ss'."),
         page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT,
     }),
-    execute: async ({ inner_thoughts, start_date, end_date, page, request_heartbeat }, context) => {
+    execute: async ({ start_date, end_date, page }, context) => {
         const channel_id = context.session?.channelId;
 
         const start = new Date(start_date);
