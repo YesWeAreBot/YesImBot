@@ -9,7 +9,7 @@ import { h } from "koishi";
 import { z } from "zod";
 
 import { isEmpty } from "../utils/string";
-import { Failed, Success, Tool } from "./base";
+import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./base";
 
 
 export const Execute = Tool({
@@ -24,10 +24,10 @@ export const Execute = Tool({
 Example:
   execute("fufu表情包", "123456789")`,
     parameters: z.object({
-        inner_thoughts: z.string().describe("The inner thoughts of the conversation."),
+        INNER_THOUGHTS,
         cmd: z.string().describe("要运行的指令"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.")
+        REQUEST_HEARTBEAT,
     }),
     execute: async ({ cmd, channel }, context) => {
         if (isEmpty(cmd)) throw new Error("cmd is required");

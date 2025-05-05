@@ -160,8 +160,8 @@ export const Config: Schema<Config> = Schema.object({
     )
       .role("table")
       .default({
-        "human": "data/yesimbot/human.txt",
-        "persona": "data/yesimbot/persona.txt"
+        "human": "data/yesimbot/memory/human.txt",
+        "persona": "data/yesimbot/memory/persona.txt"
       })
       .description("要绑定的记忆文件")
   }).description("记忆槽位设置"),
