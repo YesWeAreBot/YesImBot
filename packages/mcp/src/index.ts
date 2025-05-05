@@ -110,7 +110,12 @@ export async function apply(ctx: Context, config: Config) {
                             let fullContent = "";
                             for (const element of result.content as any[]) {
                                 if (element.type === "text") {
-                                    fullContent += element.text;
+                                    try {
+                                        let data = JSON.parse(element.text);
+                                        fullContent += JSON.stringify(data);
+                                    } catch (error) {
+                                        fullContent += element.text;
+                                    }
                                 }
                             }
                             return Success(fullContent);
