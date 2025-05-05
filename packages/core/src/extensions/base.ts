@@ -44,7 +44,7 @@ export function Tool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): Too
     return definition;
 }
 
-export function Success(result: any): ToolCallResult {
+export function Success(result?: any): ToolCallResult {
     return {
         success: true,
         result: result,

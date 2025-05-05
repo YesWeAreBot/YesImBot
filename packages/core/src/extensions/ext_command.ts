@@ -38,7 +38,7 @@ Example:
                 await context.session.bot.sendMessage(channel, h("execute", {}, cmd));
             }
             context.ctx.logger.info(`Bot[${context.session.selfId}]执行了指令: ${cmd}`);
-            return Success(`ok`);
+            return Success();
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]执行指令失败: ${cmd} - `, e.message);
             return Failed(`执行指令失败 - ${e.message}`)

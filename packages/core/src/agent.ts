@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
 import { Config } from "./config";
-import { Success, Tool, ToolCallResult, ToolManager } from "./extensions/base";
+import { Failed, Success, Tool, ToolCallResult, ToolManager } from "./extensions/base";
 import { Memory, MemoryBlock } from "./Memory";
 import { getChannelType } from "./models/ChatMessage";
 import { Scenario } from "./Scenario";
@@ -324,24 +324,22 @@ export class Agent {
         try {
             const tool = this.toolManager.getTool(functionName);
             if (!tool) {
-                return {
-                    success: false,
-                    error: `Tool ${functionName} not found`
-                };
+                return Failed(`Tool ${functionName} not found`);
             }
             const context = { session, ctx: this.ctx };
             this.ctx.logger.info(`→ ${functionName}(${stringify(params)})`)
             const result = await tool.execute(params, context);
             this.ctx.logger.info(`← ${result ? JSON.stringify(result) : "void"}`)
-            return {
-                success: true,
-                result
-            };
+            if (result instanceof String) {
+                return Success(result);
+            }
+            if (result.success) {
+                return Success(result.result);
+            } else {
+                return Failed(result.error);
+            }
         } catch (error) {
-            return {
-                success: false,
-                error: error.message
-            };
+            return Failed(error.message);
         }
     }
 

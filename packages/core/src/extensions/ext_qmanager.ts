@@ -29,7 +29,7 @@ export const DeleteMsg = Tool({
                 await context.session.bot.deleteMessage(channel, message);
             }
             context.ctx.logger.info(`Bot[${context.session.selfId}]撤回了消息: ${message}`);
-            return Success(`撤回消息 ${message} 成功`);
+            return Success();
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]撤回消息失败: ${message} - `, e.message);
             return Failed(`撤回消息失败 - ${e.message}`)
@@ -56,7 +56,7 @@ export const BanUser = Tool({
                 await context.session.bot.muteGuildMember(channel, user_id, (duration ? Number(duration) * 60000 : 10 * 60000));
             }
             context.ctx.logger.info(`Bot[${context.session.selfId}]在频道 ${channel} 禁言用户: ${user_id}`);
-            return Success(`禁言用户 ${user_id} 成功`);
+            return Success();
         } catch (e) {
             context.ctx.logger.error(`Bot[${context.session.selfId}]在频道 ${channel} 禁言用户: ${user_id} 失败 - `, e.message);
             return Failed(`禁言用户 ${user_id} 失败 - ${e.message}`)
