@@ -1,7 +1,7 @@
 import { CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "../adapters";
 import { BaseAdapter } from "../adapters/base";
-import { LLMConfig } from "../adapters/config";
-import { Config } from "../config";
+import { Config, LLMConfig } from "../adapters/config";
+
 
 export function getAdapter(config: LLMConfig, parameters?: Config["Parameters"]): BaseAdapter {
     // 将 APIType 映射到对应的 Adapter 类
@@ -16,5 +16,12 @@ export function getAdapter(config: LLMConfig, parameters?: Config["Parameters"])
     if (AdapterClass) {
         return new AdapterClass(config, parameters);
     }
-    throw new Error(`不支持的 API 类型: ${config.APIType}`);
+    throw new InvalidAdapterTypeError(`不支持的 API 类型: ${config.APIType}`);
+}
+
+class InvalidAdapterTypeError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "InvalidAPITypeError";
+    }
 }

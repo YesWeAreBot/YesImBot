@@ -1,4 +1,4 @@
-import { Config } from "../config";
+import { Config } from "./config";
 import { getAdapter } from "../utils/factory";
 import { BaseAdapter } from "./base";
 import { CloudflareAdapter } from "./cloudflare";
@@ -13,7 +13,7 @@ export class AdapterSwitcher {
     private adapters: BaseAdapter[];
     private current = 0;
     constructor(
-        adapterConfig: Config["API"]["APIList"],
+        adapterConfig: Config["APIList"],
         parameters: Config["Parameters"]
     ) {
         this.updateConfig(adapterConfig, parameters);
@@ -29,7 +29,7 @@ export class AdapterSwitcher {
     }
 
     updateConfig(
-        adapterConfig: Config["API"]["APIList"],
+        adapterConfig: Config["APIList"],
         parameters: Config["Parameters"]
     ) {
         this.adapters = [];
