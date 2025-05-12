@@ -1,11 +1,10 @@
 import type { ChatProvider } from '@xsai-ext/shared-providers';
-import { extractReasoning, extractReasoningStream } from '@xsai/utils-reasoning';
-import { AssistantMessage, ChatOptions, generateText, GenerateTextResult, Message, streamText, ToolResult } from "xsai";
+import type { ChatOptions, GenerateTextResult, Message, ToolResult } from 'xsai';
+import { extractReasoning, extractReasoningStream, generateText, streamText } from '../dependencies/xsai';
+import { Context } from "koishi";
 
-import { Config } from "../config";
 import { isEmpty, isNotEmpty } from '../utils';
-import logger from "../utils/logger";
-import { LLMConfig } from "./config";
+import { Config, LLMConfig } from "./config";
 
 
 export abstract class BaseAdapter {
@@ -31,8 +30,8 @@ export abstract class BaseAdapter {
         this.ability = Ability || [];
 
         if (this.ability.includes("深度思考")) {
-            this.reasoningTag = adapterConfig.ReasoningTag || "think";
-            this.startWithReasoning = adapterConfig.startWithReasoning || false;
+            this.reasoningTag = adapterConfig.TagName || "think";
+            this.startWithReasoning = adapterConfig.StartWithReasoning || false;
         }
 
         // 解析其他参数
@@ -72,14 +71,9 @@ export abstract class BaseAdapter {
                 }
             });
         }
-        logger.info(`[Adapter] ${APIType} registered`);
     }
 
-    async chat(messages: Message[], tools?: ToolResult[], debug = false): Promise<GenerateTextResult & { reasoning: string }> {
-        if (this.ability.includes("对话前缀续写") && this.startWith) {
-            messages.push({ "role": "assistant", "content": this.startWith, "prefix": true } as AssistantMessage)
-        }
-
+    async chat(messages: Message[], tools?: ToolResult[], option?: { logger: Context["logger"], debug?: boolean }): Promise<GenerateTextResult & { reasoning: string }> {
         // 公共参数
         const chatOptions: ChatOptions = {
             ...(this.provider ? this.provider.chat(this.model) : { model: this.model, baseURL: this.baseURL, apiKey: this.apiKey }),
@@ -106,13 +100,12 @@ export abstract class BaseAdapter {
                     includeUsage: true,
                 },
                 onChunk(chunk) {
-                    if (debug) {
-                        currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
-                        reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
-                        if (currentLineBuffer.includes("\n")) {
-                            process.stdout.write(currentLineBuffer);
-                            currentLineBuffer = "";
-                        }
+                    // 兼容 DeepSeek 
+                    currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
+                    reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
+                    if (currentLineBuffer.includes("\n")) {
+                        option?.logger.info(currentLineBuffer.replace(/\n$/, ""));
+                        currentLineBuffer = "";
                     }
                 },
             })
@@ -120,9 +113,8 @@ export abstract class BaseAdapter {
             let textStream: ReadableStream<string>
             let textStreamContent = "";
 
-            if (debug) {
-                console.log(`Receiving text stream from ${this.model}...`);
-            }
+            option?.logger.info(`Receiving text stream from ${this.model}...`);
+
             if (this.ability.includes("深度思考")) {
                 const { reasoningStream, textStream: text } = extractReasoningStream(result["textStream"], { tagName: this.reasoningTag, startWithReasoning: true });
                 textStream = text;
@@ -137,22 +129,15 @@ export abstract class BaseAdapter {
                 if (isEmpty(textPart)) continue;
                 textStreamContent += textPart;
                 currentLineBuffer += textPart;
-                if (debug) {
-                    if (currentLineBuffer.includes("\n")) {
-                        // 清除当前行并将光标移动到行首
-                        //process.stdout.write('\x1B[K\r');
-                        // 输出新的文本
-                        process.stdout.write(currentLineBuffer);
-                        // 重置当前行缓冲区
-                        currentLineBuffer = "";
-                    }
+                if (currentLineBuffer.includes("\n")) {
+                    option?.logger.info(currentLineBuffer.replace(/\n$/, ""));
+                    currentLineBuffer = "";
                 }
             }
-            if (debug) {
-                // 输出最后一行
-                if (isNotEmpty(currentLineBuffer)) console.log(currentLineBuffer);
-                console.log(`Streaming text from ${this.model} completed.`);
-            }
+
+            // 输出最后一行
+            if (isNotEmpty(currentLineBuffer)) option?.logger.info(currentLineBuffer);
+            option?.logger.info(`Streaming text from ${this.model} completed.`);
 
             for await (const step of result["stepStream"]) {
                 if (step.finishReason == "tool_calls") {
@@ -164,12 +149,10 @@ export abstract class BaseAdapter {
                         return `${result.join(', ')}`;
                     }
                     for (let executeToolResult of step.toolResults) {
-                        if (debug) {
-                            console.log(`→ ${executeToolResult.toolName}(${stringify(executeToolResult.args)})`)
-                            console.log(`← ${executeToolResult.result}`)
-                        }
+                        option?.logger.info(`→ ${executeToolResult.toolName}(${stringify(executeToolResult.args)})`)
+                        option?.logger.info(`← ${executeToolResult.result}`)
                     }
-                    return this.chat(step.messages, tools, debug);
+                    return this.chat(step.messages, tools, option);
                 } else if (step.finishReason == "stop") {
                     return {
                         ...step,

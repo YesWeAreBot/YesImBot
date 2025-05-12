@@ -14,6 +14,9 @@
         "HydroGest <2445691453@qq.com>",
         "Dispure <3116716016@qq.com>"
     ],
+    "scripts": {
+        "bundle": "node scripts/bundle.js"
+    },
     "license": "MIT",
     "keywords": [
         "chatbot",
@@ -27,16 +30,8 @@
         "directory": "packages/core"
     },
     "dependencies": {
-        "@xsai-ext/providers-cloud": "^0.2.0",
-        "@xsai-ext/providers-local": "^0.2.0",
-        "@xsai-ext/shared-providers": "^0.2.0",
-        "@xsai/utils-reasoning": "^0.2.0",
-        "async-mutex": "^0.5.0",
-        "axios": "^1.9.0",
-        "fast-xml-parser": "^4.5.3",
         "jsonrepair": "^3.12.0",
         "sharp": "^0.33.5",
-        "xsai": "^0.2.0",
         "zod": "^3.24.3",
         "zod-to-json-schema": "^3.24.5"
     },
@@ -45,7 +40,12 @@
     },
     "devDependencies": {
         "@koishijs/plugin-mock": "^2.6.6",
-        "koishi": "^4.18.7"
+        "@xsai-ext/providers-cloud": "^0.2.0",
+        "@xsai-ext/providers-local": "^0.2.0",
+        "@xsai-ext/shared-providers": "^0.2.0",
+        "@xsai/utils-reasoning": "^0.2.0",
+        "koishi": "^4.18.7",
+        "xsai": "^0.2.0"
     },
     "exports": {
         ".": {

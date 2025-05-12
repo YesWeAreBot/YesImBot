@@ -1,6 +1,6 @@
-import { createOllama } from "@xsai-ext/providers-local";
+import { createOllama } from "../dependencies/xsai";
 
-import { Config } from "../config";
+import { Config } from "./config";
 import { BaseAdapter } from "./base";
 import { LLMConfig } from "./config";
 
@@ -11,11 +11,6 @@ export class OllamaAdapter extends BaseAdapter {
         if (!this.baseURL) {
             throw new Error('BaseURL is required for OllamaAdapter');
         }
-
-        this.provider = createOllama(
-            config.BaseURL
-        );
+        this.provider = createOllama(this.baseURL);
     }
-
-    // async chat(messages: Message[], toolsSchema?: ToolResult[], debug = false): Promise<GenerateTextResult>
 }
