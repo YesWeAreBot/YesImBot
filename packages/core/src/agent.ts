@@ -1,86 +1,161 @@
-import fs from "fs/promises";
-import { Context, h, Random, Session, sleep } from "koishi";
-import path from "path";
-import { message } from "xsai";
-import { z } from "zod";
+import { Context, Service, sleep } from "koishi";
 
 import { AdapterSwitcher } from "./adapters";
 import { Config } from "./config";
-import { Failed, Success, Tool, ToolCallResult, ToolManager } from "./extensions/base";
+import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool, ToolManager } from "./extensions";
+import { MessageContext, MiddlewareManager } from "./middleware/base";
+import { CheckReplyConditionMiddleware } from "./middleware/CheckReplyCondition";
+import { DatabaseStorageMiddleware } from "./middleware/DatabaseStorage";
+import { ErrorHandlingMiddleware } from "./middleware/ErrorHandling";
+import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
+import { ServiceContainer } from "./services/container";
+import { getChannelType } from "./utils";
 import { Memory, MemoryBlock } from "./Memory";
-import { getChannelType } from "./models/ChatMessage";
-import { Scenario } from "./Scenario";
-import { extractJSONFromString } from "./utils/parse-structured-output";
-import { isChannelAllowed } from "./utils/toolkit";
+import { LLMHandlingMiddleware } from "./middleware/LLMHandling";
+import { z } from "zod";
 
 
-export type Message = {
-    messageId: string;
-    sender: {
-        id: string;
-        name: string;
-        nick: string;
-    }
-    channel: {
-        id: string;
-        type: "private" | "guild" | "sandbox";
-    }
-    timestamp: Date;
-    content: string;
-};
-
-export type Interaction = {
-    id: string;
-    emitter: string;  // 由哪条消息触发，为消息ID
-    type: "tool_call" | "tool_result" | "message";
-    content: ToolCallResult | string;
-    life: number;     // 生命周期，为添加到上下文的次数，归零时将被删除，避免浪费token
-    timestamp: Date;
-};
-
-declare module "koishi" {
-    interface Tables {
-        [Agent.MESSAGE_TABLE]: Message;
-        [Agent.MEMORY_TABLE]: MemoryBlock;
-        [Agent.INTERACTION_TABLE]: Interaction;
-        [Agent.LAST_REPLY_TABLE]: {
-            channelId: string;
-            timestamp: Date;
-        };
+declare module 'koishi' {
+    interface Context {
+        agent: Agent;
     }
 }
 
+export class Agent extends Service {
+    private serviceContainer: ServiceContainer;
 
-export class Agent {
+    // 数据库表名
     static readonly MESSAGE_TABLE = "yesimbot.agent.message";
     static readonly MEMORY_TABLE = "yesimbot.agent.memory_block";
     static readonly INTERACTION_TABLE = "yesimbot.agent.interaction";
     static readonly LAST_REPLY_TABLE = "yesimbot.agent.last_reply";
 
-    private ctx: Context;
-    private config: Config;
-    private adapterSwitcher: AdapterSwitcher;
-    private memory: Memory;
-    private toolManager: ToolManager;
-
-    // 未读消息
-    private unreadMessages = 0;
-    // 上次回复时间
-    private lastReplyTime = Date.now();
-
     constructor(ctx: Context, config: Config) {
+        super(ctx, 'agent', true);
+
         this.ctx = ctx;
         this.config = config;
-        this.memory = Memory.getInstance(ctx);
-        this.adapterSwitcher = new AdapterSwitcher(config.API.APIList, config.Parameters);
-        this.toolManager = ToolManager.getInstance();
 
-        // 注册核心工具
-        this.toolManager.registerTool(createSendMessageTool(config));
+        // 初始化服务容器
+        this.serviceContainer = new ServiceContainer();
+
+        // 注册数据库
+        this.registerDatabases();
+
+        // 初始化核心服务
+        this.initializeServices();
+
+        // 注册中间件
+        this.registerMiddleware();
+        this.registerCommands();
     }
 
-    async initialize() {
-        // 注册数据库
+    /**
+     * 初始化核心服务
+     */
+    private initializeServices(): void {
+        // 注册工具管理器
+        const toolManager = ToolManager.getInstance();
+        // 加载工具
+        this.ctx.logger.info("[Tool] Loading tools");
+        toolManager.loadExtensions(this.ctx.logger);
+        this.serviceContainer.register('toolManager', toolManager);
+        // 注册核心工具
+        toolManager.registerTool(this.createSendMessageTool(this.config));
+
+        // 注册适配器切换器
+        const adapterSwitcher = new AdapterSwitcher(this.config.API.APIList, this.config.API.Parameters);
+        this.serviceContainer.register('adapterSwitcher', adapterSwitcher);
+
+        // 加载记忆
+        const memory = Memory.getInstance(this.ctx);
+        this.serviceContainer.register('memory', memory);
+        this.ctx.logger.info("[Memory] Loading memory_blocks");
+        if (this.config.MemorySlot.StoreFile) {
+            for (const key in this.config.MemorySlot.StoreFile) {
+                MemoryBlock.getOrCreate(this.ctx, key)
+                    .then((memoryBlock) => {
+                        if (this.config.MemorySlot.StoreFile[key])
+                            memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
+                        memory.coreMemory.set(key, memoryBlock);
+                    });
+            }
+        }
+
+        // 注册中间件管理器
+        const middlewareManager = new MiddlewareManager();
+
+        // 设置中间件链
+        middlewareManager
+            // 错误处理中间件
+            .use(new ErrorHandlingMiddleware(this.ctx.logger))
+
+            // 数据库存储中间件
+            .use(new DatabaseStorageMiddleware(this.ctx))
+
+            // 检查是否达到回复条件
+            .use(new CheckReplyConditionMiddleware({
+                allowedChannels: this.config.MemorySlot.SlotContains,
+                testMode: this.config.Debug.TestMode,
+                atReactPossibility: this.config.MemorySlot.AtReactPossibility,
+                increaseWillingnessOn: {
+                    message: this.config.MemorySlot.IncreaseWillingnessOn.Message,
+                    at: this.config.MemorySlot.IncreaseWillingnessOn.At,
+                },
+                threshold: this.config.MemorySlot.Threshold,
+            }))
+
+            .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory))
+
+            .use(new LLMHandlingMiddleware(middlewareManager, toolManager))
+
+        this.serviceContainer.register('middlewareManager', middlewareManager);
+    }
+
+    /**
+     * 注册Koishi中间件
+     */
+    private registerMiddleware(): void {
+        this.ctx.middleware(async (session, next) => {
+            try {
+                // 创建消息上下文
+                const messageContext = new MessageContext(
+                    this.ctx,
+                    session,
+                    {
+                        messageId: session.messageId,
+                        content: session.content,
+                        sender: {
+                            id: session.author.id,
+                            name: session.author.name,
+                            nick: session.author.nick,
+                        },
+                        channel: {
+                            id: session.channelId,
+                            type: getChannelType(session.channelId)
+                        },
+                        timestamp: new Date(session.timestamp),
+                    }
+                );
+
+                // 执行中间件链
+                const middlewareManager = this.serviceContainer.get<MiddlewareManager>('middlewareManager');
+                await middlewareManager.execute(messageContext);
+
+                // 继续Koishi中间件链
+                return next();
+            } catch (error) {
+                this.ctx.logger.error('Error processing message:', error);
+                return next();
+            }
+        });
+    }
+
+    /**
+     * 注册数据库表
+     */
+    private registerDatabases(): void {
+        // 消息表
         this.ctx.model.extend(Agent.MESSAGE_TABLE, {
             messageId: "string",
             sender: "object",
@@ -88,19 +163,9 @@ export class Agent {
             timestamp: "timestamp",
             content: "string",
         }, {
-            primary: "messageId", // 主键名
-            autoInc: false,       // 不使用自增主键
-        });
-
-        this.ctx.model.extend(Agent.MEMORY_TABLE, {
-            id: "string",
-            label: "string",
-            value: "array",
-            limit: "integer",
-        }, {
-            primary: ["id", "label"],
+            primary: "messageId",
             autoInc: false,
-        })
+        });
 
         // 交互记录表
         this.ctx.model.extend(Agent.INTERACTION_TABLE, {
@@ -112,7 +177,18 @@ export class Agent {
             timestamp: "timestamp"
         }, {
             primary: "id"
-        })
+        });
+
+        // 记忆块表
+        this.ctx.model.extend(Agent.MEMORY_TABLE, {
+            id: "string",
+            label: "string",
+            value: "array",
+            limit: "integer",
+        }, {
+            primary: ["id", "label"],
+            autoInc: false,
+        });
 
         // 上次回复时间表
         this.ctx.model.extend(Agent.LAST_REPLY_TABLE, {
@@ -121,285 +197,70 @@ export class Agent {
         }, {
             primary: "channelId",
             autoInc: false,
-        })
-
-        // 初始化
-        try {
-            // 加载工具
-            this.ctx.logger.info("[Tool] Loading tools");
-            this.toolManager.loadExtensions(this.ctx.logger);
-
-            // 加载记忆块
-            this.ctx.logger.info("[Memory] Loading memory_blocks");
-            if (this.config.MemorySlot.StoreFile) {
-                for (const key in this.config.MemorySlot.StoreFile) {
-                    const memoryBlock = await MemoryBlock.getOrCreate(this.ctx, key);
-                    if (this.config.MemorySlot.StoreFile[key]) {
-                        memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
-                    }
-                    this.memory.coreMemory.set(key, memoryBlock);
-                }
-            }
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    async register() {
-        await this.initialize();
-
-        // 注册中间件
-        this.ctx.middleware(async (session, next) => {
-            const { content, channelId, author } = session;
-            // 添加到数据库
-            const messages = await this.ctx.database.get(Agent.MESSAGE_TABLE, {
-                messageId: session.messageId,
-                channel: {
-                    id: channelId
-                }
-            });
-            if (messages.length == 0) {
-                await this.ctx.database.create(Agent.MESSAGE_TABLE, {
-                    messageId: session.messageId,
-                    sender: session.author,
-                    channel: {
-                        id: channelId,
-                        type: getChannelType(channelId),
-                    },
-                    timestamp: new Date(),
-                    content: session.content,
-                });
-                this.unreadMessages++;
-                this.ctx.logger.info(`Message Received: ${session.content}`);
-            }
-
-            // 检查是否在允许的频道
-            if (!isChannelAllowed(this.config.MemorySlot.SlotContains, session.channelId)) return next();
-
-            // 忽略机器人自身的消息
-            if (author.isBot) return next();
-            const loginStatus = await session.bot.getLogin();
-            const isBotOnline = loginStatus.status === 1;
-            const isTargetAt = h.parse(content).some(element =>
-                element.type === 'at' &&
-                (element.attrs.id === session.bot.selfId || element.attrs.type === 'all' || (isBotOnline && element.attrs.type === 'here'))
-            );
-            const shouldReactToAt = Random.bool(this.config.MemorySlot.AtReactPossibility);
-            const isTriggerCountReached = this.unreadMessages >= Random.int(this.config.MemorySlot.MinTriggerCount, this.config.MemorySlot.MaxTriggerCount);
-            const coldDown = (Date.now() - this.lastReplyTime) > this.config.MemorySlot.MinTriggerTime;
-            if (!coldDown) {
-                this.ctx.logger.info(`[Agent] 冷却中，跳过回复`);
-                return next();
-            }
-            const shouldReply = (isTargetAt && shouldReactToAt) || isTriggerCountReached || this.config.Debug.TestMode
-
-            if (!shouldReply) {
-                this.ctx.logger.info(`[Agent] 未达到触发条件，跳过回复`);
-                return next();
-            }
-            this.unreadMessages = 0;
-
-            const { adapter } = this.adapterSwitcher.getAdapter();
-            if (!adapter) return next();
-
-            const scenario = await Scenario.create(this.ctx, session);
-
-            const { text } = await adapter.chat([
-                message.system(await this.getSystemPrompt()),
-                message.system(await this.memory.render()),
-                message.user(scenario.render())
-            ], null, this.config.Debug.DebugAsInfo);
-
-            await this.handle(session, scenario, text);
-
-            // 更新上次回复时间
-            this.lastReplyTime = Date.now();
-            await this.ctx.database.set(Agent.LAST_REPLY_TABLE, {
-                channelId: session.channelId
-            }, {
-                timestamp: new Date()
-            })
-        });
-
-        // 注册命令
-        this.ctx.command("agent.context.clear", "清空对话").action(async ({ session }) => {
-            let result = await this.ctx.database.remove(Agent.MESSAGE_TABLE, {
-                channel: {
-                    id: session.channelId
-                }
-            });
-            await session.sendQueued("对话已清空");
-        });
-        this.ctx.command("agent.memory.clear", "清空记忆").action(async ({ session }) => {
-            let result = await this.ctx.database.remove(Agent.INTERACTION_TABLE, {});
-            await session.sendQueued("记忆已清空");
         });
     }
 
     /**
-     *
-     * @param session
-     * @param text
+     * 注册命令
      */
-    async handle(
-        session: Session,
-        scenario: Scenario,
-        text: string
-    ) {
-        let response;
-        try {
-            response = extractJSONFromString(text, "object") as any[];
-        } catch (error) {
-            this.ctx.logger.error(`[Agent] 解析响应失败: ${error}`);
-        }
-        if (!response || response.length == 0) {
-            this.ctx.logger.error(`[Agent] 未解析到响应`);
-            return;
-        }
-
-        let request_heartbeat = false;
-        if (!Array.isArray(response)) {
-            response = [response];
-        }
-        for (const func of response) {
-            let { function: functionName, params } = func;
-
-            let { channel_id } = params;
-
-            if (!channel_id) {
-                channel_id = session.channelId;
-            }
-
-            // 记录工具调用
-            await this.ctx.database.create(Agent.INTERACTION_TABLE, {
-                id: Random.id(),
-                emitter: session.messageId,
-                type: "tool_call",
-                content: JSON.stringify(func),
-                life: 3,
-                timestamp: new Date()
+    private registerCommands(): void {
+        this.ctx.command("agent.context.clear", "清空对话")
+            .alias("清空对话")
+            .action(async ({ session }) => {
+                await this.ctx.database.remove(Agent.MESSAGE_TABLE, {
+                    channel: { id: session.channelId }
+                });
+                await this.ctx.database.remove(Agent.INTERACTION_TABLE, {});
+                await session.sendQueued("对话已清空");
             });
-
-            const result = await this.executeToolCall(functionName, params, session);
-
-            if (functionName !== "send_message") {
-                // 工具调用结果，不记录send_message
-                await this.ctx.database.create(Agent.INTERACTION_TABLE, {
-                    id: Random.id(),
-                    emitter: session.messageId,
-                    type: "tool_result",
-                    content: JSON.stringify({ [functionName]: result }),
-                    life: 3,
-                    timestamp: new Date()
-                });
-            }
-
-            if (params.request_heartbeat) {
-                request_heartbeat = true;
-            }
-        }
-
-        // 如果需要继续对话
-        if (request_heartbeat) {
-            const { adapter } = this.adapterSwitcher.getAdapter();
-            await scenario.load();
-            const { text } = await adapter.chat([
-                message.system(await this.getSystemPrompt()),
-                message.system(await this.memory.render()),
-                message.user(scenario.render())
-            ], null, this.config.Debug.DebugAsInfo);
-
-            await this.handle(session, scenario, text);
-        }
     }
 
-    async executeToolCall(functionName: string, params: Record<string, unknown>, session: Session): Promise<ToolCallResult> {
-        function stringify(args: Record<string, unknown>): string {
-            let result = [];
-            for (let key in args) {
-                result.push(`${key}="${args[key]}"`);
-            }
-            return `${result.join(', ')}`;
-        }
-        try {
-            const tool = this.toolManager.getTool(functionName);
-            if (!tool) {
-                return Failed(`Tool ${functionName} not found`);
-            }
-            const context = { session, ctx: this.ctx };
-            this.ctx.logger.info(`→ ${functionName}(${stringify(params)})`)
-            const result = await tool.execute(params, context);
-            this.ctx.logger.info(`← ${result ? JSON.stringify(result) : "void"}`)
-            if (result instanceof String) {
-                return Success(result);
-            }
-            if (result.success) {
-                return Success(result.result);
-            } else {
-                return Failed(result.error);
-            }
-        } catch (error) {
-            return Failed(error.message);
-        }
-    }
+    private createSendMessageTool(config: Config) {
+        return Tool({
+            name: "send_message",
+            description: "Sends a message to the human user.",
+            parameters: z.object({
+                INNER_THOUGHTS,
+                messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."),
+                channel_id: z.string().optional().describe("The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."),
+                REQUEST_HEARTBEAT,
+            }),
+            execute: async ({ messages, channel_id }, context) => {
+                const { ctx, session } = context;
 
-    async getSystemPrompt(): Promise<string> {
-        let content = await fs.readFile(path.join(__dirname, "../resources/memgpt_chat.txt"), "utf-8");
-        content += [
-            `Available functions:`,
-            this.toolManager.getToolPrompts()
-        ].join("\n");
-        return content;
+                let idx = 1;
+                let delay = true;
+                if (!channel_id) {
+                    channel_id = context.session.channelId;
+                }
+
+                for await (const message of messages) {
+                    // 如果是最后一条消息，不延迟
+                    if (idx++ >= messages.length) {
+                        delay = false;
+                    }
+                    let messageIds = await session.sendQueued(message);
+                    await ctx.database.create(Agent.MESSAGE_TABLE, {
+                        messageId: messageIds[0],
+                        sender: {
+                            id: session.bot.selfId,
+                            name: session.bot.user.name,
+                            nick: session.bot.user.nick,
+                        },
+                        channel: {
+                            id: channel_id,
+                            type: getChannelType(channel_id),
+                        },
+                        timestamp: new Date(),
+                        content: message,
+                    });
+                    ctx.logger.info(`Message Sent: ${message}`);
+                    if (delay && config.Bot.WordsPerSecond > 0) {
+                        await sleep(message.length / config.Bot.WordsPerSecond * 1000);
+                    }
+                }
+                return Success();
+            }
+        });
     }
 }
-
-function createSendMessageTool(config: Config) {
-    return Tool({
-        name: "send_message",
-        description: "Sends a message to the human user.",
-        parameters: z.object({
-            inner_thoughts: z.string().describe("Deep inner monologue private to you only."),
-            messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."),
-            channel_id: z.string().optional().describe("The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."),
-            request_heartbeat: z.boolean().optional().describe("Request an immediate heartbeat after function execution. The next function call must not be `send_message`.")
-        }),
-        execute: async ({ inner_thoughts, messages, channel_id }, context) => {
-            const { ctx, session } = context;
-
-            let idx = 1;
-            let delay = true;
-            if (!channel_id) {
-                channel_id = context.session.channelId;
-            }
-
-            for await (const message of messages) {
-                // 如果是最后一条消息，不延迟
-                if (idx++ >= messages.length) {
-                    delay = false;
-                }
-                let messageIds = await session.sendQueued(message);
-                await ctx.database.create(Agent.MESSAGE_TABLE, {
-                    messageId: messageIds[0],
-                    sender: {
-                        id: session.bot.selfId,
-                        name: session.bot.user.name,
-                        nick: session.bot.user.nick,
-                    },
-                    channel: {
-                        id: channel_id,
-                        type: getChannelType(channel_id),
-                    },
-                    timestamp: new Date(),
-                    content: message,
-                });
-                ctx.logger.info(`Message Sent: ${message}`);
-                if (delay && config.Bot.WordsPerSecond > 0) {
-                    await sleep(message.length / config.Bot.WordsPerSecond * 1000);
-                }
-            }
-            return Success("");
-        }
-    });
-}
-
-

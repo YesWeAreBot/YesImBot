@@ -3,8 +3,7 @@ import path from "path";
 
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
 import { EnabledEmbeddingConfig } from "../embeddings/config";
-import logger from "../utils/logger";
-import { CacheManager } from "./cacheManager";
+import { CacheManager } from "./cache";
 
 
 interface Emoji {
@@ -91,7 +90,7 @@ export class EmojiManager {
       }
       return mostSimilarName;
     } catch (error) {
-      logger.warn("查找相似表情失败:", error);
+      console.warn("查找相似表情失败:", error);
       return undefined;
     }
   }

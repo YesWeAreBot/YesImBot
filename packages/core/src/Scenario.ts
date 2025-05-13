@@ -1,10 +1,9 @@
 import { $, Context, h, Session } from "koishi";
 //import { } from "koishi-plugin-adapter-onebot";
 
-import type { Interaction, Message } from "./agent";
 import { Agent } from "./agent";
-import { ChatMessage } from "./models/ChatMessage";
-import { formatDate } from "./utils";
+import { Interaction, Message } from "./types/model";
+import { formatDate, getChannelType } from "./utils";
 
 
 /**
@@ -14,7 +13,7 @@ export class Scenario {
     // 场景ID
     id: string;
     // 场景类型
-    type: ChatMessage["channelType"];
+    type: Message['channel']['type'];
     // 场景名称
     name: string;
     // 场景描述
@@ -28,7 +27,9 @@ export class Scenario {
 
     constructor(private ctx: Context, private session: Session) {
         this.id = session.channelId;
-        this.type = this.getType();
+        this.type = getChannelType(session.channelId);
+
+        this.ctx = session.app;
     }
 
     static async create(ctx: Context, session: Session): Promise<Scenario> {
@@ -43,10 +44,13 @@ export class Scenario {
     private async init() {
         this.name = await this.getName() || "Unnamed";
         this.description = await this.getDescription();
-        await this.load();
     }
 
-    async load(limit: number = 30) {
+    /**
+     * 
+     * @param limit 
+     */
+    async refresh(limit: number = 30) {
         this.context = [];
         this.unread = [];
 
@@ -131,10 +135,6 @@ export class Scenario {
         }
 
         await this.ctx.database.set(Agent.LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date(), });
-    }
-
-    private getType() {
-        return this.session.guildId ? "guild" : this.session.channelId === "#" ? "sandbox" : "private";
     }
 
     private async getName(): Promise<string> {

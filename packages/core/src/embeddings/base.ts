@@ -1,6 +1,6 @@
 import { embed, embedMany, EmbedManyResult, EmbedResult } from 'xsai';
 
-import { CacheManager } from "../managers/cacheManager";
+import { CacheManager } from "../managers/cache";
 import { EnabledEmbeddingConfig } from "./config";
 
 export class EmbeddingBase {
