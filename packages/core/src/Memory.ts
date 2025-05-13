@@ -7,6 +7,7 @@ import { Agent } from "./agent";
 import { Scenario } from "./Scenario";
 import { isEmpty } from "./utils/string";
 
+
 interface MemoryBlockData {
     id: string;
     label: string;

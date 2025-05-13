@@ -1,13 +1,12 @@
 import { Context, Schema } from "koishi";
-import { ImageCache } from "../utils/imageUtils";
+
+import { ImageCache } from "../managers/image";
+
 
 export const name = "cache";
-
 export interface Config { }
-
 export const Config: Schema<Config> = Schema.object({});
-
-export function apply(ctx: Context) {
+export function apply(ctx: Context, config: Config) {
     ctx.command("cache", "图片缓存管理")
         .alias("图片缓存")
         .action(({ session }) => {
