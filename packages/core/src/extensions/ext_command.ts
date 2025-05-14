@@ -24,10 +24,10 @@ export const Execute = Tool({
 Example:
   execute("fufu表情包", "123456789")`,
     parameters: z.object({
-        INNER_THOUGHTS,
+        inner_thoughts: INNER_THOUGHTS,
         cmd: z.string().describe("要运行的指令"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        REQUEST_HEARTBEAT,
+        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ cmd, channel }, context) => {
         if (isEmpty(cmd)) throw new Error("cmd is required");

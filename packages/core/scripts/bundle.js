@@ -17,15 +17,16 @@ const include = [
 const external = allDeps.filter(dep => !include.includes(dep));
 
 external.push(
-    'effect',
-    '@valibot/to-json-schema',
     '@koishijs/core',
-    'inaba',
+    '@valibot/to-json-schema',
     'cosmokit',
-    'ns-require',
+    'effect',
+    'inaba',
     'koishi',
-    'zod',
+    'ns-require',
+    'sury',
     'zod-to-json-schema',
+    'zod',
 )
 
 build({
