@@ -61,7 +61,7 @@ export class LLMProcessingMiddleware implements Middleware {
         } 
     }
 
-    async getSystemPrompt(): Promise<string> {
+    private async getSystemPrompt(): Promise<string> {
         let content = await fs.readFile(path.join(__dirname, "../../resources/memgpt_chat.txt"), "utf-8");
         content += [
             `Available functions:`,

@@ -1,7 +1,3 @@
-import { Context } from "koishi";
-import { Config } from "../config";
-import { ToolManager } from "../extensions";
-
 export class ServiceContainer {
     private services = new Map<string, any>();
 

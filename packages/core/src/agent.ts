@@ -1,18 +1,18 @@
 import { Context, Service, sleep } from "koishi";
+import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
 import { Config } from "./config";
 import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool, ToolManager } from "./extensions";
+import { Memory, MemoryBlock } from "./Memory";
 import { MessageContext, MiddlewareManager } from "./middleware/base";
 import { CheckReplyConditionMiddleware } from "./middleware/CheckReplyCondition";
 import { DatabaseStorageMiddleware } from "./middleware/DatabaseStorage";
 import { ErrorHandlingMiddleware } from "./middleware/ErrorHandling";
 import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
+import { ResponseHandlingMiddleware } from "./middleware/ResponseHandling";
 import { ServiceContainer } from "./services/container";
 import { getChannelType } from "./utils";
-import { Memory, MemoryBlock } from "./Memory";
-import { LLMHandlingMiddleware } from "./middleware/LLMHandling";
-import { z } from "zod";
 
 
 declare module 'koishi' {
@@ -103,11 +103,13 @@ export class Agent extends Service {
                     at: this.config.MemorySlot.IncreaseWillingnessOn.At,
                 },
                 threshold: this.config.MemorySlot.Threshold,
+                messageWaitTime: this.config.MemorySlot.MessageWaitTime,
+                sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
             }))
 
             .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory))
 
-            .use(new LLMHandlingMiddleware(middlewareManager, toolManager))
+            .use(new ResponseHandlingMiddleware(middlewareManager, toolManager))
 
         this.serviceContainer.register('middlewareManager', middlewareManager);
     }
