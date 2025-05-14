@@ -3,6 +3,7 @@ import { Context } from "koishi";
 import { Config } from "./config";
 import { Agent } from "./agent";
 
+import { registerGlobalErrorHandlers } from "./utils/errorHandler";
 
 export const name = "yesimbot";
 export const usage = `"Yes! I'm Bot!" 是一个能让你的机器人激活灵魂的插件。\n
@@ -15,6 +16,7 @@ export const inject = {
 }
 
 export async function apply(ctx: Context, config: Config) {
+    if (config.Debug.UploadDump) registerGlobalErrorHandlers(ctx);
     // 初始化Agent
     const agent = new Agent(ctx, config);
 }

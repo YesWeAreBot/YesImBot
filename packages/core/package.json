@@ -30,7 +30,11 @@
         "directory": "packages/core"
     },
     "dependencies": {
+        "@koishijs/loader": "^4.6.7",
+        "axios": "^1.9.0",
+        "form-data": "^4.0.2",
         "jsonrepair": "^3.12.0",
+        "koishi-plugin-downloads": "^0.1.3",
         "sharp": "^0.33.5",
         "zod": "^3.24.3",
         "zod-to-json-schema": "^3.24.5"
