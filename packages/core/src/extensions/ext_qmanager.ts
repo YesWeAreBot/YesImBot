@@ -15,10 +15,10 @@ export const DeleteMsg = Tool({
     name: "delmsg",
     description: `撤回一条消息。撤回用户/你自己的消息。当你认为别人刷屏或发表不当内容时，运行这条指令。`,
     parameters: z.object({
-        INNER_THOUGHTS,
+        inner_thoughts: INNER_THOUGHTS,
         message: z.string().describe("要撤回的消息编号"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        REQUEST_HEARTBEAT,
+        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ message, channel }, context) => {
         if (isEmpty(message)) throw new Error("message is required");
@@ -41,11 +41,11 @@ export const BanUser = Tool({
     name: "ban",
     description: `禁言用户。`,
     parameters: z.object({
-        INNER_THOUGHTS,
+        inner_thoughts: INNER_THOUGHTS,
         user_id: z.string().describe("要禁言的用户 ID"),
         duration: z.number().optional().describe("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        REQUEST_HEARTBEAT,
+        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ user_id, duration, channel }, context) => {
         if (isEmpty(user_id)) throw new Error("user_id is required");

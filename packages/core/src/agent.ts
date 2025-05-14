@@ -222,10 +222,10 @@ export class Agent extends Service {
             name: "send_message",
             description: "Sends a message to the human user.",
             parameters: z.object({
-                INNER_THOUGHTS,
+                inner_thoughts: INNER_THOUGHTS,
                 messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."),
                 channel_id: z.string().optional().describe("The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."),
-                REQUEST_HEARTBEAT,
+                request_heartbeat: REQUEST_HEARTBEAT,
             }),
             execute: async ({ messages, channel_id }, context) => {
                 const { ctx, session } = context;

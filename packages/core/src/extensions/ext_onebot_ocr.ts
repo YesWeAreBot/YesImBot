@@ -24,9 +24,9 @@ export const OneBotOcr = Tool({
     name: "onebot_ocr",
     description: `OCR图像识别`,
     parameters: z.object({
-        INNER_THOUGHTS,
+        inner_thoughts: INNER_THOUGHTS,
         image: z.string().describe("image 链接, 支持 http/https/file/base64"),
-        REQUEST_HEARTBEAT,
+        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ image }, context) => {
         if (isEmpty(image)) throw new Error("image is required");
