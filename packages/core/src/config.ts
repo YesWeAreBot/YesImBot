@@ -25,6 +25,7 @@ export interface Config {
     Settings: {};
     Debug: {
         EnableDebug: boolean;
+        UploadDump: boolean;
         TestMode: boolean;
     };
 }
@@ -133,6 +134,9 @@ export const Config: Schema<Config> = Schema.object({
         EnableDebug: Schema.boolean()
             .default(false)
             .description("在控制台显示 Debug 消息"),
+        UploadDump: Schema.boolean()
+            .default(false)
+            .description("在应用出错时自动上报详细日志及信息给开发者，包含您的聊天内容和  LLM 输出"),
         TestMode: Schema.boolean()
             .default(false)
             .description("测试模式。如果你不知道这是什么，不要开启"),
