@@ -12,6 +12,8 @@ export interface Config {
             At: number;
         }
         Threshold: number;
+        MessageWaitTime: number;
+        SameUserThreshold: number;
         StoreFile: Record<string, string>;
     };
     API: AdapterConfig;
@@ -64,6 +66,8 @@ export const Config: Schema<Config> = Schema.object({
             .step(1)
             .role("slider")
             .description("回复意愿阈值"),
+        MessageWaitTime: Schema.number().default(2000).min(0).description("消息等待时间(毫秒)，用于合并连续的消息"),
+        SameUserThreshold: Schema.number().default(5000).min(0).description("判定为同一用户连续消息的时间阈值(毫秒)"),
         StoreFile: Schema.dict(
             String,
             Schema.path({ allowCreate: true, filters: ['directory', { name: 'text', extensions: ['txt'] }] }).required(),
