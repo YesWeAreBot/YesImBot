@@ -3,10 +3,11 @@ import { Failed, Success, ToolCallResult, ToolManager } from "../extensions";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { Agent } from "../agent";
+import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 
 
-export class LLMHandlingMiddleware implements Middleware {
-    name = 'llm-handling';
+export class ResponseHandlingMiddleware implements Middleware {
+    name = 'response-handling';
 
     constructor(
         private middlewareManager: MiddlewareManager,
@@ -26,20 +27,16 @@ export class LLMHandlingMiddleware implements Middleware {
         const { text } = ctx.llmResponse;
 
         let response;
+
         try {
-            response = extractJSONFromString(text, "object") as any[];
+            response = this.parseResponse(text);
         } catch (error) {
-            logger.error(`[Agent] 解析响应失败: ${error}`);
-        }
-        if (!response || response.length == 0) {
-            logger.error(`[Agent] 未解析到响应`);
+            logger.error(error.message);
             return await next();
         }
 
+        // 处理工具调用
         let request_heartbeat = false;
-        if (!Array.isArray(response)) {
-            response = [response];
-        }
         for (const func of response) {
             let { function: functionName, params } = func;
 
@@ -65,6 +62,37 @@ export class LLMHandlingMiddleware implements Middleware {
             await ctx.transitionTo(ConversationState.PROCESSING);
             await this.middlewareManager.executeFrom(ctx, 3);
         }
+
+        // 继续处理链
+        await next();
+
+        // 处理完成后重置状态
+        await ctx.transitionTo(ConversationState.IDLE);
+        // 释放频道处理状态
+        const checkReplyMiddleware = this.middlewareManager.getMiddleware('check-reply-condition') as CheckReplyConditionMiddleware;
+        if (!checkReplyMiddleware) {
+            throw new Error("[Agent] 未找到CheckReplyConditionMiddleware");
+        }
+        checkReplyMiddleware.releaseChannelState(ctx.koishiSession.channelId);
+    }
+
+    // 解析LLM响应
+    private parseResponse(text: string): { function: string; params: Record<string, unknown> }[] {
+        let response: { function: string; params: Record<string, unknown> }[];
+        try {
+            response = extractJSONFromString(text, "object") as any[];
+        } catch (error) {
+            throw new Error(`[Agent] 解析响应失败: ${error.message}`);
+        }
+        if (!response || response.length == 0) {
+            throw new Error("[Agent] 未解析到响应");
+        }
+
+        if (!Array.isArray(response)) {
+            response = [response];
+        }
+
+        return response
     }
 
     async executeToolCall(koishiContext: Context, koishiSession: Session, functionName: string, params: Record<string, unknown>,): Promise<ToolCallResult> {
@@ -97,8 +125,8 @@ export class LLMHandlingMiddleware implements Middleware {
         }
     }
 
-    async recordToolCall(koishiContext: Context, koishiSession: Session, func: { function: string; params: Record<string, unknown> }) {
-        // 记录工具调用
+    // 记录工具调用
+    private async recordToolCall(koishiContext: Context, koishiSession: Session, func: { function: string; params: Record<string, unknown> }) {
         await koishiContext.database.create(Agent.INTERACTION_TABLE, {
             id: Random.id(),
             emitter: koishiSession.messageId,
@@ -109,7 +137,8 @@ export class LLMHandlingMiddleware implements Middleware {
         });
     }
 
-    async recordToolResult(koishiContext: Context, koishiSession: Session, functionName: string, result: ToolCallResult): Promise<void> {
+    // 记录工具结果
+    private async recordToolResult(koishiContext: Context, koishiSession: Session, functionName: string, result: ToolCallResult): Promise<void> {
         await koishiContext.database.create(Agent.INTERACTION_TABLE, {
             id: Random.id(),
             emitter: koishiSession.messageId,
