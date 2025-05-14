@@ -54,10 +54,11 @@ export class CheckReplyConditionMiddleware implements Middleware {
         // 忽略机器人消息
         if (ctx.koishiSession.author.isBot) return;
 
+        // 忽略非指定频道的消息
+        if (!this.options.allowedChannels.includes(ctx.koishiSession.channelId)) return;
+
         // 如果当前频道已有处理任务，则忽略新的触发条件
-        if (this.channelProcessingState.get(channelId)) {
-            return;
-        }
+        if (this.channelProcessingState.get(channelId)) return;
 
         let currentThreshold = this.currentThreshold.get(channelId) || 0;
         // 增加意愿值
@@ -101,7 +102,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const shouldReply = (ctx.isMentioned && shouldReactToAt) ||
             isThresholdReached ||
             this.options.testMode;
-        
+
         ctx.koishiContext.logger.info(`[CheckReplyCondition] channelId: ${channelId}, currentThreshold: ${currentThreshold}, shouldReactToAt: ${shouldReactToAt}, isThresholdReached: ${isThresholdReached}, shouldReply: ${shouldReply}`);
 
         if (shouldReply) {
