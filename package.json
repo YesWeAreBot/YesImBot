@@ -23,6 +23,7 @@
     "devDependencies": {
         "@types/node": "^22.15.3",
         "cross-env": "^7.0.3",
+        "esbuild": "^0.25.4",
         "typescript": "5.8.3",
         "yakumo": "^1.0.0",
         "yakumo-esbuild": "^1.0.0",

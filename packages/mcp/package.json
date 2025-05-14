@@ -1,21 +1,47 @@
 {
     "name": "koishi-plugin-yesimbot-extension-mcp",
-    "version": "0.0.1",
-    "description": "Koishi extension for YesimBot that supports ModelContextProtocol",
+    "version": "0.0.3",
+    "description": "Yes! I'm Bot! MCP 扩展插件",
     "main": "lib/index.js",
     "typings": "lib/index.d.ts",
+    "homepage": "https://github.com/HydroGest/YesImBot",
+    "files": [
+        "lib",
+        "dist",
+        "resources"
+    ],
+    "license": "MIT",
+    "contributors": [
+        "MiaowFISH <miaow233@qq.com>"
+    ],
+    "keywords": [
+        "koishi",
+        "plugin",
+        "mcp",
+        "modelcontextprotocol",
+        "yesimbot"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/HydroGest/YesImBot.git",
+        "directory": "packages/mcp"
+    },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.11.0"
+        "@modelcontextprotocol/sdk": "^1.11.1"
     },
     "devDependencies": {
         "koishi": "^4.18.7",
-        "koishi-plugin-yesimbot": "^2.2.2"
+        "koishi-plugin-yesimbot": "^3.0.0-alpha.4"
     },
     "peerDependencies": {
         "koishi": "^4.18.7",
-        "koishi-plugin-yesimbot": "^2.2.2"
+        "koishi-plugin-yesimbot": "^3.0.0-alpha.4"
     },
     "koishi": {
+        "description": {
+            "zh": "Yes! I'm Bot! MCP 扩展插件",
+            "en": "Yes! I'm Bot! MCP extension plugin"
+        },
         "service": {
             "required": [
                 "yesimbot"

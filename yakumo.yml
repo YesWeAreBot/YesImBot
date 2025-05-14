@@ -4,12 +4,11 @@
     pipeline:
       build:
         - tsc
-        # - esbuild
-        # - client
+        - esbuild
       clean:
         - tsc --clean
-# - id: ajm7mt
-#   name: yakumo-esbuild
+- id: ajm7mt
+  name: yakumo-esbuild
 - id: mduzq8
   name: yakumo-tsc
 - id: rig7vj

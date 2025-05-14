@@ -1,3 +1,13 @@
+### 3d93844
+
+refactor(middleware): 重构响应处理逻辑并优化消息处理流程
+
+- 将 `LLMHandlingMiddleware` 重命名为 `ResponseHandlingMiddleware`，以更清晰地表达其职责
+- 在 `CheckReplyConditionMiddleware` 中引入消息延迟处理和用户连续消息检测逻辑，避免重复处理
+- 新增 `getMiddleware` 方法以支持中间件之间的协作
+- 移除 `container.ts` 中未使用的导入，清理代码
+- 更新版本号至 `3.0.0-alpha.6`
+
 ### d5ffd12
 
 refactor(core): 重构核心模块，优化代码结构和功能
