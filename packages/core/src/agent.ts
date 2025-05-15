@@ -31,7 +31,7 @@ export class Agent extends Service {
     static readonly LAST_REPLY_TABLE = "yesimbot.agent.last_reply";
 
     constructor(ctx: Context, config: Config) {
-        super(ctx, 'agent', true);
+        super(ctx, 'yesimbot', true);
 
         this.ctx = ctx;
         this.config = config;
@@ -88,7 +88,7 @@ export class Agent extends Service {
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
-            .use(new ErrorHandlingMiddleware(this.ctx.logger))
+            .use(new ErrorHandlingMiddleware(this.ctx.logger, middlewareManager))
 
             // 数据库存储中间件
             .use(new DatabaseStorageMiddleware(this.ctx))

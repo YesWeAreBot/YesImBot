@@ -111,10 +111,10 @@ export class CheckReplyConditionMiddleware implements Middleware {
 
             // 设置状态为处理中并继续中间件链
             ctx.state = ConversationState.PROCESSING;
-            await next();
-
-            // 重置意愿值
+            // 提前重置意愿值
             this.currentThreshold.set(channelId, 0);
+
+            await next();
         }
     }
 

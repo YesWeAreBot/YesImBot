@@ -27,7 +27,6 @@ export type ToolDefinition<
     description: string;
     parameters: TParams;
     execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<z.infer<TReturns>>>;
-    returns?: TReturns;
 };
 
 export interface EnhancedToolResult extends ToolResult {
@@ -75,8 +74,6 @@ export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>
             name: definition.name,
             description: definition.description,
             parameters: parameters as Record<string, unknown>,
-            // @ts-ignore
-            returns: definition.returns ? zodToJsonSchema(definition.returns) as Record<string, unknown> : undefined,
         }
     };
 }
