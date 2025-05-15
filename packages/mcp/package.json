@@ -27,15 +27,15 @@
         "directory": "packages/mcp"
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.11.1"
+        "@modelcontextprotocol/sdk": "^1.11.3"
     },
     "devDependencies": {
         "koishi": "^4.18.7",
-        "koishi-plugin-yesimbot": "^3.0.0-alpha.4"
+        "koishi-plugin-yesimbot": "^3.0.0-alpha.7"
     },
     "peerDependencies": {
         "koishi": "^4.18.7",
-        "koishi-plugin-yesimbot": "^3.0.0-alpha.4"
+        "koishi-plugin-yesimbot": "^3.0.0-alpha.7"
     },
     "koishi": {
         "description": {
