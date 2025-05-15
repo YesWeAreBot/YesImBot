@@ -11,6 +11,10 @@
 
 </div>
 
+## 👋 欢迎使用 Athena
+
+欢迎来到 Athena (YesImBot) 项目！这是一个让 AI 大模型自然融入群聊的 Koishi 插件，让你的机器人拥有更加人性化的交流体验。无论你是开发者还是普通用户，我们都希望这个项目能为你带来价值。
+
 ## 🎐 简介
 
 YesImBot / Athena 是一个 [Koishi](https://koishi.chat/zh-CN/) 插件，旨在让人工智能大模型能够自然地参与到群聊讨论中，模拟真实的人类互动体验。插件基于中间件架构设计，具有高度的可扩展性和灵活性。
@@ -113,7 +117,7 @@ Debug:
 你可以根据自己的需求自定义系统提示词。`StoreFile` 的内容将被添加到系统提示词的末尾。
 
 - 消息队列呈现给LLM的格式：
-```
+```text
 [messageId][{date} from_guild:{channelId}] {senderName}<{senderId}> 说: {userContent}
 ```
 
@@ -142,8 +146,8 @@ Debug:
 <details>
   <summary>截图</summary>
 
-  ![](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-1.png)
-  ![](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-2.png)
+  ![截图1](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-1.png)
+  ![截图2](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-2.png)
 </details>
 
 ## 🍧 TODO
@@ -159,13 +163,13 @@ Debug:
 - [ ] 读取文件
 - [x] 工具调用
 
-## 🚩 Build
+## 🚩 构建
 
 ```bash
-# Install dependencies
+# 安装依赖
 yarn install
 
-# Build
+# 构建
 yarn build
 ```
 
@@ -179,6 +183,6 @@ yarn build
 
 欢迎发布issue，或是直接加入Athena官方交流&测试群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)，我们随时欢迎你的来访！
 
-## ⭐ Star History
+## ⭐ Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Hydrogest/Yesimbot&type=Date)](https://star-history.com/#Hydrogest/Yesimbot&Date)
+[![Athena/YesImBot Star 历史图表](https://api.star-history.com/svg?repos=Hydrogest/Yesimbot&type=Date)](https://star-history.com/#Hydrogest/Yesimbot&Date)
