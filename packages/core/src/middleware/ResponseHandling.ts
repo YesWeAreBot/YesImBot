@@ -1,8 +1,9 @@
 import { Context, Random, Session } from "koishi";
-import { Failed, Success, ToolCallResult, ToolManager } from "../extensions";
-import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
-import { extractJSONFromString } from "../utils/parse-structured-output";
+
 import { Agent } from "../agent";
+import { Failed, Success, ToolCallResult, ToolManager } from "../extensions";
+import { extractJSONFromString } from "../utils/parse-structured-output";
+import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 
 
@@ -40,7 +41,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         for (const func of response) {
             let { function: functionName, params } = func;
 
-            let { channel_id } = params;
+            let channel_id = params?.channel_id;
 
             if (!channel_id) {
                 channel_id = session.channelId;
@@ -90,6 +91,12 @@ export class ResponseHandlingMiddleware implements Middleware {
 
         if (!Array.isArray(response)) {
             response = [response];
+        }
+
+        for (const func of response) {
+            if (!func.function || !func.params) {
+                throw new Error("[Agent] 响应格式错误");
+            }
         }
 
         return response
