@@ -4,46 +4,39 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
 import { Failed, Success, ToolManager } from "koishi-plugin-yesimbot";
+import { getVersion } from "./utils";
 
+
+interface MCPServer {
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string;
+}
 
 export interface Config {
-    mcpServers: {
-        name: string;
-        type: "sse" | "http" | "stdio";
-        url?: string;
-        command?: string;
+    mcpServers: Record<string, MCPServer>;
+    uvSettings?: {
+        autoDownload?: boolean;
+        mirror: string;
+        executablePath?: string;
         args?: string[];
-        environment: Record<string, string>;
-    }[];
+    }
 }
 
 export const Config: Schema<Config> = Schema.object({
-    mcpServers: Schema.array(
-        Schema.intersect([
-            Schema.object({
-                name: Schema.string().description("服务器名称"),
-                type: Schema.union(["sse", "http", "stdio"]).description("连接类型").default("sse"),
-                environment: Schema.dict(Schema.string()).role("table").description("环境变量").default({}),
-            }),
-            Schema.union([
-                Schema.object({
-                    type: Schema.const("sse"),
-                    url: Schema.string().description("服务器URL"),
-                }),
-                Schema.object({
-                    type: Schema.const("http"),
-                    url: Schema.string().description("服务器URL"),
-                }),
-                Schema.object({
-                    type: Schema.const("stdio"),
-                    command: Schema.string().description("启动命令"),
-                    args: Schema.array(Schema.string()).role("table").description("启动命令参数").default([]),
-                })
-            ])
-        ])
-    )
-        .role("table")
-        .description("MCP服务器列表")
+    mcpServers: Schema.dict(Schema.object({
+        url: Schema.string().description("MCP 服务器地址"),
+        command: Schema.string().description("MCP 启动命令"),
+        args: Schema.array(Schema.string()).role("table").description("MCP 启动参数"),
+        env: Schema.dict(String).role("table").description("MCP 环境变量"),
+    })).description("MCP服务器列表，可使用 `编辑JSON` 添加或删除服务器"),
+    uvSettings: Schema.object({
+        autoDownload: Schema.boolean().description("是否自动下载 UVX").default(true),
+        mirror: Schema.string().description("Pypi镜像源").default("https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"),
+        executablePath: Schema.string().description("UVX 可执行文件路径").default("uvx"),
+        args: Schema.array(Schema.string()).role("table").description("UV 启动参数").default([]),
+    }).description("UVX 设置"),
 });
 
 export const name = "yesimbot-extension-mcp";
@@ -54,35 +47,49 @@ export const inject = {
 
 export async function apply(ctx: Context, config: Config) {
     const clients: Client[] = [];
+    const transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
     ctx.on("ready", async () => {
+
+        if (config.uvSettings?.autoDownload) {
+            // 检查是否已经安装了 UVX，如果没有安装则安装
+            // if (!config.uvSettings?.executablePath) {
+                
+            // }
+        }
+
         let count = 0;
-        ctx.logger.info(`[MCP] Connecting to ${config.mcpServers.length} servers`);
-        for await (const server of config.mcpServers) {
-            let transport;
-            if (server.environment) {
-                for (const [key, value] of Object.entries(server.environment)) {
-                    process.env[key] = value;
-                }
-            }
-            if (server.type === "sse") {
+        ctx.logger.info(`Connecting to ${Object.keys(config.mcpServers).length} servers`);
+        for await (const serverName of Object.keys(config.mcpServers)) {
+            let transport: SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport;
+            const server = config.mcpServers[serverName];
+
+            if (server.url) {
                 transport = new SSEClientTransport(new URL(server.url));
-            } else if (server.type === "http") {
-                transport = new StreamableHTTPClientTransport(new URL(server.url));
-            } else if (server.type === "stdio") {
-                ctx.logger.info(`[MCP] Starting ${server.name} with command: ${server.command} ${server.args.join(" ")}`);
-                ctx.logger.info(`[MCP] This may take a while, please wait`);
-                transport = new StdioClientTransport({ command: server.command, args: server.args });
+            } else if (server.command) {
+                ctx.logger.info(`Starting ${serverName} with command <${server.command} ${server.args.join(" ")}>`);
+                if (server.command === "uvx" && config.uvSettings?.executablePath) {
+                    server.command = config.uvSettings.executablePath;
+                }
+                try {
+                    transport = installStdio(server.command, server.args, { ...process.env, ...server.env});
+                } catch (error) {
+                    ctx.logger.error(`Failed to start ${serverName}: ${error.message}`);
+                    continue;
+                }
             } else {
-                ctx.logger.error(`[MCP] Unknown transport type: ${server.type}`);
+                ctx.logger.error(`Unknown transport type: ${serverName}`);
+                
                 continue;
             }
-            const client = new Client({ name: server.name, version: "1.0.0" });
+
+            const client = new Client({ name: serverName, version: "1.0.0" });
             try {
                 await client.connect(transport);
-                ctx.logger.info(`[MCP] Connected to ${server.name}`);
+                ctx.logger.info(`Connected to ${serverName}`);
                 clients.push(client);
+                transports.push(transport);
             } catch (error) {
-                ctx.logger.error(`[MCP] Failed to connect to ${server.name}: ${error.message}`);
+                ctx.logger.error(`Failed to connect to ${serverName}. Reason: ${error.message}`);
                 continue;
             }
         }
@@ -91,6 +98,10 @@ export async function apply(ctx: Context, config: Config) {
             const tools = await client.listTools();
             for (const tool of tools["tools"]) {
                 tool.inputSchema["properties"] = {
+                    inner_thoughts: {
+                        type: "string",
+                        description: "Deep inner monologue private to you only.",
+                    },
                     ...tool.inputSchema["properties"],
                     request_heartbeat: {
                         type: "boolean",
@@ -124,17 +135,37 @@ export async function apply(ctx: Context, config: Config) {
                         }
                     }
                 });
-                ctx.logger.info(`[MCP] Tool registered: ${tool.name}`);
+                ctx.logger.info(`Tool registered: ${tool.name}`);
                 count++;
             }
         }
-        ctx.logger.info(`[MCP] loaded ${clients.length} servers with ${count} tools`);
+        if (count === 0) {
+            ctx.logger.error(`No tools found`);
+            return;
+        } else {
+            ctx.logger.info(`Loaded ${clients.length} servers with ${count} tools`);
+        }
     })
 
     ctx.on("dispose", async () => {
-        for (const client of clients) {
+        for await (const client of clients) {
             await client.close();
         }
-        ctx.logger.info(`[MCP] Disconnected from all servers`);
+
+        for await (const transport of transports) {
+            await transport.close();
+        }
+        ctx.logger.info(`Disconnected from all servers`);
     })
+
+    function installStdio(command: string, args: string[], env: Record<string, string>, options?: { cwd?: string; }): StdioClientTransport {
+        try {
+            const version = getVersion(command);
+            if (version) {
+                return new StdioClientTransport({ command, args, env });
+            }
+        } catch (error) {
+            throw new Error(`${command} is not installed`);
+        }
+    }
 }
