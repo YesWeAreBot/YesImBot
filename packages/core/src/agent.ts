@@ -15,13 +15,7 @@ import { ServiceContainer } from "./services/container";
 import { getChannelType } from "./utils";
 
 
-declare module 'koishi' {
-    interface Context {
-        agent: Agent;
-    }
-}
-
-export class Agent extends Service {
+export class Agent {
     private serviceContainer: ServiceContainer;
 
     // 数据库表名
@@ -30,12 +24,7 @@ export class Agent extends Service {
     static readonly INTERACTION_TABLE = "yesimbot.agent.interaction";
     static readonly LAST_REPLY_TABLE = "yesimbot.agent.last_reply";
 
-    constructor(ctx: Context, config: Config) {
-        super(ctx, 'yesimbot', true);
-
-        this.ctx = ctx;
-        this.config = config;
-
+    constructor(private ctx: Context, private config: Config) {
         // 初始化服务容器
         this.serviceContainer = new ServiceContainer();
 
