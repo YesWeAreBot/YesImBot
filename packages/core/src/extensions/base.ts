@@ -94,7 +94,7 @@ export class ToolManager {
 
     loadExtensions(logger: Context["logger"]) {
         if (this.loaded) return;
-        const extensionsDir = path.join(__dirname);
+        const extensionsDir = path.join(__dirname, "builtin");
 
         readdirSync(extensionsDir)
             .filter(file =>

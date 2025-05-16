@@ -7,8 +7,8 @@
 
 import { z } from "zod";
 
-import { isEmpty } from "../utils/string";
-import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./base";
+import { isEmpty } from "../../utils/string";
+import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
 
 
 export const Reaction = Tool({
