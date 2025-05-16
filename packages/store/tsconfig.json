@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "types": [
+      "@koishijs/client/global",
+    ],
+  },
+  "include": [
+    "src"
+  ]
+}
