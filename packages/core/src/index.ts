@@ -1,4 +1,6 @@
+import { } from "@koishijs/plugin-console";
 import { Context, Service } from "koishi";
+import { resolve } from "path";
 
 import { Agent } from "./agent";
 import { Config } from "./config";
@@ -24,9 +26,20 @@ export default class YesImBot extends Service {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
+        // 注册指令
+        ctx.plugin(require('./commands/cache'));
+        ctx.plugin(require('./commands/context'));
+        ctx.plugin(require('./commands/extension'));
+
         ctx.on('ready', () => {
             // 初始化Agent
             new Agent(ctx, config);
+
+            // 注册前端入口
+            ctx.console.addEntry({
+                dev: resolve(__dirname, '../client/index.ts'),
+                prod: resolve(__dirname, '../dist'),
+            })
         });
 
         ctx.on('dispose', () => {
