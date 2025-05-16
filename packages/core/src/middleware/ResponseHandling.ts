@@ -61,7 +61,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         // 如果需要继续对话
         if (request_heartbeat) {
             await ctx.transitionTo(ConversationState.PROCESSING);
-            await this.middlewareManager.executeFrom(ctx, 3);
+            await this.middlewareManager.executeFrom(ctx, this.middlewareManager.findIndex("llm-processing"));
         }
 
         // 继续处理链

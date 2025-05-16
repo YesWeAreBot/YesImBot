@@ -117,4 +117,8 @@ export class MiddlewareManager {
     public getMiddleware(name: string): Middleware | undefined {
         return this.middlewares.find(m => m.name === name);
     }
+
+    public findIndex(name: string): number {
+        return this.middlewares.findIndex(m => m.name === name);
+    }
 }
