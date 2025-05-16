@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { Memory } from "../Memory";
-import { Agent } from "../agent";
-import { formatDate } from "../utils";
-import { isEmpty } from "../utils/string";
-import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./base";
+import { Memory } from "../../Memory";
+import { Agent } from "../../agent";
+import { formatDate } from "../../utils";
+import { isEmpty } from "../../utils/string";
+import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
 
 
 export const AppendCoreMemory = Tool({
