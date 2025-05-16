@@ -2,12 +2,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { execSync } from "child_process";
 import { Context, Schema } from "koishi";
-import { Failed, Success, ToolManager } from "koishi-plugin-yesimbot";
-import { getVersion } from "./utils";
+
+import { } from "koishi-plugin-yesimbot";
 
 
-interface MCPServer {
+interface Server {
     command?: string;
     args?: string[];
     env?: Record<string, string>;
@@ -15,7 +16,8 @@ interface MCPServer {
 }
 
 export interface Config {
-    mcpServers: Record<string, MCPServer>;
+    timeout: number;
+    mcpServers: Record<string, Server>;
     uvSettings?: {
         autoDownload?: boolean;
         mirror: string;
@@ -25,6 +27,7 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
+    timeout: Schema.number().description("请求超时时间").default(5000),
     mcpServers: Schema.dict(Schema.object({
         url: Schema.string().description("MCP 服务器地址"),
         command: Schema.string().description("MCP 启动命令"),
@@ -42,7 +45,7 @@ export const Config: Schema<Config> = Schema.object({
 export const name = "yesimbot-extension-mcp";
 
 export const inject = {
-    // required: ["yesimbot"],
+    required: ["yesimbot"],
 }
 
 export async function apply(ctx: Context, config: Config) {
@@ -53,7 +56,7 @@ export async function apply(ctx: Context, config: Config) {
         if (config.uvSettings?.autoDownload) {
             // 检查是否已经安装了 UVX，如果没有安装则安装
             // if (!config.uvSettings?.executablePath) {
-                
+
             // }
         }
 
@@ -71,14 +74,13 @@ export async function apply(ctx: Context, config: Config) {
                     server.command = config.uvSettings.executablePath;
                 }
                 try {
-                    transport = installStdio(server.command, server.args, { ...process.env, ...server.env});
+                    transport = installStdio(server.command, server.args, { ...process.env, ...server.env });
                 } catch (error) {
                     ctx.logger.error(`Failed to start ${serverName}: ${error.message}`);
                     continue;
                 }
             } else {
                 ctx.logger.error(`Unknown transport type: ${serverName}`);
-                
                 continue;
             }
 
@@ -93,7 +95,7 @@ export async function apply(ctx: Context, config: Config) {
                 continue;
             }
         }
-        const toolManager = ToolManager.getInstance();
+        const toolManager = ctx.yesimbot.toolManager;
         for (const client of clients) {
             const tools = await client.listTools();
             for (const tool of tools["tools"]) {
@@ -114,9 +116,12 @@ export async function apply(ctx: Context, config: Config) {
                     parameters: tool.inputSchema,
                     execute: async (params, context) => {
                         try {
-                            let result = await client.callTool({ name: tool.name, arguments: params });
+                            let result = await client.callTool({ name: tool.name, arguments: params }, null, { timeout: config.timeout, resetTimeoutOnProgress: true });
                             if (result.isError) {
-                                return Failed(result.error as string);
+                                return {
+                                    success: false,
+                                    message: result.error,
+                                };
                             }
                             let fullContent = "";
                             for (const element of result.content as any[]) {
@@ -129,9 +134,15 @@ export async function apply(ctx: Context, config: Config) {
                                     }
                                 }
                             }
-                            return Success(fullContent);
+                            return {
+                                success: true,
+                                message: fullContent,
+                            };
                         } catch (error) {
-                            return Failed(error.message);
+                            return {
+                                success: false,
+                                message: error.message,
+                            };
                         }
                     }
                 });
@@ -167,5 +178,19 @@ export async function apply(ctx: Context, config: Config) {
         } catch (error) {
             throw new Error(`${command} is not installed`);
         }
+    }
+}
+
+function getVersion(executablePath: string) {
+    try {
+        const output = execSync(`${executablePath} --version`, { encoding: "utf-8" });
+        const versionMatch = output.match(/\d+\.\d+\.\d+/);
+        if (versionMatch) {
+            return versionMatch[0];
+        } else {
+            throw new Error("Failed to extract version from output");
+        }
+    } catch (error) {
+        throw new Error("Failed to get version");
     }
 }
