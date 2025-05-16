@@ -1,3 +1,5 @@
+import fs from "fs/promises";
+
 import { isEmpty } from "./string";
 
 
@@ -42,7 +44,6 @@ export function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss") {
         .replace(/s/g, seconds.toString());
 }
 
-
 /**
  * 获取频道类型
  */
@@ -53,5 +54,30 @@ export function getChannelType(channelId: string): 'private' | 'guild' | 'sandbo
         return 'sandbox';
     } else {
         return 'guild';
+    }
+}
+
+/**
+ * 下载文件
+ * @param url 文件URL
+ * @param path 文件路径
+ * @param overwrite 是否覆盖
+ * @returns
+ */
+export async function downloadFile(url: string, path: string, overwrite: boolean = false) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    if (!overwrite) {
+        try {
+            await fs.access(path);
+            throw new Error('文件已存在');
+        } catch {
+            // 文件不存在时忽略错误
+        }
+    } else {
+        await fs.unlink(path).catch(() => { });
+        fs.writeFile(path, Buffer.from(await response.arrayBuffer()));
     }
 }

@@ -1,4 +1,4 @@
-import { Context, Service, sleep } from "koishi";
+import { Context, sleep } from "koishi";
 import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
@@ -36,7 +36,6 @@ export class Agent {
 
         // 注册中间件
         this.registerMiddleware();
-        this.registerCommands();
     }
 
     /**
@@ -189,21 +188,6 @@ export class Agent {
             primary: "channelId",
             autoInc: false,
         });
-    }
-
-    /**
-     * 注册命令
-     */
-    private registerCommands(): void {
-        this.ctx.command("agent.context.clear", "清空对话")
-            .alias("清空对话")
-            .action(async ({ session }) => {
-                await this.ctx.database.remove(Agent.MESSAGE_TABLE, {
-                    channel: { id: session.channelId }
-                });
-                await this.ctx.database.remove(Agent.INTERACTION_TABLE, {});
-                await session.sendQueued("对话已清空");
-            });
     }
 
     private createSendMessageTool(config: Config) {
