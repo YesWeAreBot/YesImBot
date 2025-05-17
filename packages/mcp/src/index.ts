@@ -4,7 +4,6 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { execSync } from "child_process";
 import { Context, Schema } from "koishi";
-
 import { } from "koishi-plugin-yesimbot";
 
 
@@ -35,7 +34,7 @@ export const Config: Schema<Config> = Schema.object({
         env: Schema.dict(String).role("table").description("MCP 环境变量"),
     })).description("MCP服务器列表，可使用 `编辑JSON` 添加或删除服务器"),
     uvSettings: Schema.object({
-        autoDownload: Schema.boolean().description("是否自动下载 UVX").default(true),
+        autoDownload: Schema.boolean().experimental().description("是否自动下载 UVX").default(true),
         mirror: Schema.string().description("Pypi镜像源").default("https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"),
         executablePath: Schema.string().description("UVX 可执行文件路径").default("uvx"),
         args: Schema.array(Schema.string()).role("table").description("UV 启动参数").default([]),
@@ -56,7 +55,7 @@ export async function apply(ctx: Context, config: Config) {
         if (config.uvSettings?.autoDownload) {
             // 检查是否已经安装了 UVX，如果没有安装则安装
             // if (!config.uvSettings?.executablePath) {
-
+            //
             // }
         }
 
