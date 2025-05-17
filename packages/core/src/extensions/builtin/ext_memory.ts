@@ -112,3 +112,44 @@ export const SearchConversationWithDate = Tool({
         return Success(result);
     }
 })
+
+export const InsertArchivalMemory = Tool({
+    name: "archival_memory_insert",
+    description: "Add to archival memory. Make sure to phrase the memory contents such that it can be easily queried later.",
+    parameters: z.object({
+        inner_thoughts: INNER_THOUGHTS,
+        content: z.string().describe("Content to write to the memory."),
+        request_heartbeat: REQUEST_HEARTBEAT,
+    }),
+    execute: async ({ content }, context) => {
+        if (isEmpty(content)) throw new Error("content is required");
+        const memory = Memory.instance;
+        if (memory) {
+            let result = await memory.insertArchivalMemory(content);
+            return Success(result);
+        } else {
+            return Failed("Memory is not initialized.");
+        }
+    }
+})
+
+export const SearchArchivalMemory = Tool({
+    name: "archival_memory_search",
+    description: "Search archival memory using semantic (embedding-based) search.",
+    parameters: z.object({
+        inner_thoughts: INNER_THOUGHTS,
+        query: z.string().describe("String to search for."),
+        page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
+        start: z.number().optional().describe(" Starting index for the search results. Defaults to 0."),
+        request_heartbeat: REQUEST_HEARTBEAT,
+    }),
+    execute: async ({ query, page, start }, context) => {
+        const memory = Memory.instance;
+        if (memory) {
+            let result = await memory.searchArchivalMemory(query, page, start);
+            return Success(result);
+        } else {
+            return Failed("Memory is not initialized.");
+        }
+    }
+})
