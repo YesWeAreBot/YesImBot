@@ -28,8 +28,6 @@ export class Scenario {
     constructor(private ctx: Context, private session: Session) {
         this.id = session.channelId;
         this.type = getChannelType(session.channelId);
-
-        this.ctx = session.app;
     }
 
     static async create(ctx: Context, session: Session): Promise<Scenario> {

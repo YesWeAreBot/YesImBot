@@ -93,7 +93,7 @@ export class Agent {
                 threshold: this.config.MemorySlot.Threshold,
                 messageWaitTime: this.config.MemorySlot.MessageWaitTime,
                 sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
-            }))
+            }, this.ctx, adapterSwitcher))
 
             .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory))
 
@@ -237,5 +237,10 @@ export class Agent {
                 return Success();
             }
         });
+    }
+
+    public async getMemory() {
+        const memory = this.serviceContainer.get<Memory>('memory');
+        return memory
     }
 }

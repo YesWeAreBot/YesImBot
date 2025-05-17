@@ -78,6 +78,17 @@ export class Memory {
         return `Memory replaced successfully. New content: ${new_content}`;
     }
 
+    async insertArchivalMemory(content: string) {
+        const memoryBlock = new MemoryBlock(this.ctx, `archival-${Math.random().toString(36).substring(2)}`, content);
+        this.archivalMemory.push(memoryBlock);
+        this.lastModified = new Date();
+        return `Memory inserted successfully. New content: ${content}`;
+    }
+
+    async searchArchivalMemory(query, page, start) {
+        return "Not implemented."
+    }
+
     /**
      * 渲染记忆
      * 
@@ -105,7 +116,6 @@ export class Memory {
 }
 
 export class MemoryBlock {
-    static DATABASE_NAME = "yesimbot.agent.memory_block";
     // 记忆块ID
     readonly id: string;
     // 记忆块标签
@@ -128,7 +138,7 @@ export class MemoryBlock {
             ? { label: identifier }
             : identifier;
 
-        const [result] = await ctx.database.get("yesimbot.agent.memory_block", condition);
+        const [result] = await ctx.database.get(Agent.MEMORY_TABLE, condition);
         if (result) return new MemoryBlock(ctx, result.id, result.label, result.limit);
 
         if (typeof identifier !== 'string') {
@@ -136,7 +146,7 @@ export class MemoryBlock {
         }
 
         const id = `block-${Math.random().toString(36).substring(2)}`;
-        await ctx.database.create("yesimbot.agent.memory_block", {
+        await ctx.database.create(Agent.MEMORY_TABLE, {
             id,
             label: identifier,
             value: [],
@@ -190,7 +200,7 @@ export class MemoryBlock {
 
     private async syncFromFile() {
         const fileContent = await this.loadFromFile();
-        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
+        await this.ctx.database.upsert(Agent.MEMORY_TABLE, [{
             id: this.id,
             label: this.label,
             value: fileContent,
@@ -215,7 +225,7 @@ export class MemoryBlock {
             await writeFile(filePath, '');
         }
         const value = await readFile(filePath, 'utf-8');
-        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
+        await this.ctx.database.upsert(Agent.MEMORY_TABLE, [{
             id: this.id,
             label: this.label,
             value: value.split('\n').filter(line => line.trim()),
@@ -249,7 +259,7 @@ export class MemoryBlock {
     }
 
     private async getValue(): Promise<MemoryBlockData> {
-        const [result] = await this.ctx.database.get("yesimbot.agent.memory_block", {
+        const [result] = await this.ctx.database.get(Agent.MEMORY_TABLE, {
             id: this.id,
             label: this.label,
         });
@@ -296,7 +306,7 @@ export class MemoryBlock {
         if (this.filePath) {
             await this.saveToFile(value);
         }
-        await this.ctx.database.upsert("yesimbot.agent.memory_block", [{
+        await this.ctx.database.upsert(Agent.MEMORY_TABLE, [{
             id: this.id,
             label: this.label,
             value,
