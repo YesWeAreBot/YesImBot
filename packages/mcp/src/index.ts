@@ -115,8 +115,17 @@ export async function apply(ctx: Context, config: Config) {
                     parameters: tool.inputSchema,
                     execute: async (params, context) => {
                         try {
-                            let result = await client.callTool({ name: tool.name, arguments: params }, null, { timeout: config.timeout, resetTimeoutOnProgress: true });
+                            const timer = setTimeout(() => {
+                                ctx.logger.error(`Request timeout after ${config.timeout}ms`);
+                                return {
+                                    success: false,
+                                    message: `Request timeout after ${config.timeout}ms`,
+                                };
+                            }, config.timeout);
+                            let result = await client.callTool({ name: tool.name, arguments: params });
+                            clearTimeout(timer);
                             if (result.isError) {
+                                ctx.logger.error(`Failed to call tool ${tool.name}: ${result.error}`);
                                 return {
                                     success: false,
                                     message: result.error,

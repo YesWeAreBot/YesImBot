@@ -95,9 +95,14 @@ export class Agent {
                 sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
             }, this.ctx, adapterSwitcher))
 
-            .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory))
+            .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory, {
+                maxRetry: this.config.API.MaxRetry,
+            }))
 
-            .use(new ResponseHandlingMiddleware(middlewareManager, toolManager))
+            .use(new ResponseHandlingMiddleware(middlewareManager, toolManager, {
+                maxRetry: this.config.ToolCall.MaxRetry,
+                life: this.config.ToolCall.Life,
+            }))
 
         this.serviceContainer.register('middlewareManager', middlewareManager);
     }

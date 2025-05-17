@@ -26,6 +26,7 @@ export interface Config {
             [key: string]: string;
         }
     };
+    MaxRetry?: number;
 }
 
 export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
@@ -126,4 +127,10 @@ export const Config: Schema<Config> = Schema.object({
         提示：直接将gbnf内容作为grammar_string的值粘贴至此时，换行符会被转换成空格，需要手动替换为\\n后方可生效`.trim()
             ),
     }).description("API 参数"),
+    MaxRetry: Schema.number()
+        .default(3)
+        .min(1)
+        .max(10)
+        .step(1)
+        .description("API 请求失败时的最大重试次数"),
 }).description("LLM API 相关配置");

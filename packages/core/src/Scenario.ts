@@ -85,7 +85,7 @@ export class Scenario {
                         .remove(Agent.INTERACTION_TABLE, {
                             id: interaction.id,
                         });
-                    this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired`);
+                    // this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired`);
                 }
             }
         }

@@ -13,6 +13,7 @@ export class ResponseHandlingMiddleware implements Middleware {
     constructor(
         private middlewareManager: MiddlewareManager,
         private toolManager: ToolManager,
+        private options?: { maxRetry: number; life: number },
     ) { }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
@@ -49,7 +50,7 @@ export class ResponseHandlingMiddleware implements Middleware {
 
             await this.recordToolCall(ctx.koishiContext, ctx.koishiSession, func)
 
-            const result = await this.executeToolCall(ctx.koishiContext, ctx.koishiSession, functionName, params);
+            const result = await this.executeToolCall(ctx.koishiContext, ctx.koishiSession, functionName, params, this.options?.maxRetry || 0);
 
             await this.recordToolResult(ctx.koishiContext, ctx.koishiSession, functionName, result);
 
@@ -102,7 +103,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         return response
     }
 
-    async executeToolCall(koishiContext: Context, koishiSession: Session, functionName: string, params: Record<string, unknown>,): Promise<ToolCallResult> {
+    async executeToolCall(koishiContext: Context, koishiSession: Session, functionName: string, params: Record<string, unknown>, maxRetry: number): Promise<ToolCallResult> {
         function stringify(args: Record<string, unknown>): string {
             let result = [];
             for (let key in args) {
@@ -118,6 +119,10 @@ export class ResponseHandlingMiddleware implements Middleware {
             const context = { session: koishiSession, ctx: koishiContext };
             koishiContext.logger.info(`→ ${functionName}(${stringify(params)})`)
             const result = await tool.execute(params, context);
+            if (!result.success && maxRetry > 0) {
+                koishiContext.logger.info(`Tool ${functionName} failed, retrying...`);
+                return await this.executeToolCall(koishiContext, koishiSession, functionName, params, maxRetry - 1);
+            }
             koishiContext.logger.info(`← ${result ? JSON.stringify(result) : "void"}`)
             if (result instanceof String) {
                 return Success(result);
@@ -139,7 +144,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             emitter: koishiSession.messageId,
             type: "tool_call",
             content: JSON.stringify(func),
-            life: 3,
+            life: this.options?.life || 3,
             timestamp: new Date()
         });
     }
@@ -151,7 +156,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             emitter: koishiSession.messageId,
             type: "tool_result",
             content: JSON.stringify({ [functionName]: result }),
-            life: 3,
+            life: this.options?.life || 3,
             timestamp: new Date()
         });
     }

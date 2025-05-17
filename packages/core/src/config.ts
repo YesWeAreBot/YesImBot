@@ -20,6 +20,10 @@ export interface Config {
     Bot: {
         WordsPerSecond: number;
     };
+    ToolCall: {
+        MaxRetry: number;
+        Life: number;
+    },
     Embedding: EmbeddingConfig;
     ImageViewer: {};
     Settings: {};
@@ -123,6 +127,17 @@ export const Config: Schema<Config> = Schema.object({
     //         }),
     //     ])
     // ]),
+
+    ToolCall: Schema.object({
+        MaxRetry: Schema.number()
+           .default(3)
+           .min(0)
+           .description("工具调用最大重试次数"),
+        Life: Schema.number()
+           .default(3)
+           .min(0)
+           .description("工具调用生命周期"),
+    }).description("工具调用设置"),
 
     Embedding: EmbeddingConfig,
 
