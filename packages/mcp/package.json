@@ -27,7 +27,7 @@
         "directory": "packages/mcp"
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.11.3"
+        "@modelcontextprotocol/sdk": "^1.11.4"
     },
     "devDependencies": {
         "koishi": "^4.18.7",
