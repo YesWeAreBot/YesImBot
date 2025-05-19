@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import path from "path";
 
 import { calculateCosineSimilarity, EmbeddingBase } from "../embeddings/base";
-import { EnabledEmbeddingConfig } from "../embeddings/config";
+import { EmbeddingConfig } from "../embeddings/config";
 import { CacheManager } from "./cache";
 
 
@@ -18,7 +18,7 @@ export class EmojiManager {
   private lastEmbeddingModel: string | null = null;
   private client: EmbeddingBase;
 
-  constructor(private embeddingConfig: EnabledEmbeddingConfig, baseDir: string) {
+  constructor(private embeddingConfig: EmbeddingConfig, baseDir: string) {
     const emojisFile = path.join(__dirname, "../../resources/emojis.json");
     const emojis: Emoji[] = JSON.parse(readFileSync(emojisFile, "utf-8"));
 
