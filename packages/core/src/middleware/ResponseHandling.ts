@@ -1,7 +1,7 @@
 import { Context, Random, Session } from "koishi";
 
-import { Agent } from "../agent";
 import { Failed, Success, ToolCallResult, ToolManager } from "../extensions";
+import { INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
@@ -139,7 +139,7 @@ export class ResponseHandlingMiddleware implements Middleware {
 
     // 记录工具调用
     private async recordToolCall(koishiContext: Context, koishiSession: Session, func: { function: string; params: Record<string, unknown> }) {
-        await koishiContext.database.create(Agent.INTERACTION_TABLE, {
+        await koishiContext.database.create(INTERACTION_TABLE, {
             id: Random.id(),
             emitter: koishiSession.messageId,
             type: "tool_call",
@@ -151,7 +151,7 @@ export class ResponseHandlingMiddleware implements Middleware {
 
     // 记录工具结果
     private async recordToolResult(koishiContext: Context, koishiSession: Session, functionName: string, result: ToolCallResult): Promise<void> {
-        await koishiContext.database.create(Agent.INTERACTION_TABLE, {
+        await koishiContext.database.create(INTERACTION_TABLE, {
             id: Random.id(),
             emitter: koishiSession.messageId,
             type: "tool_result",
