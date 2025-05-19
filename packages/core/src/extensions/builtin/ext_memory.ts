@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { Memory } from "../../Memory";
-import { Agent } from "../../agent";
+import { MESSAGE_TABLE } from "../../types/model";
 import { formatDate } from "../../utils";
 import { isEmpty } from "../../utils/string";
 import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
@@ -62,7 +62,7 @@ export const SearchConversation = Tool({
     execute: async ({ query, page }, context) => {
         const channel_id = context.session?.channelId;
 
-        const messages = await context.ctx.database.get(Agent.MESSAGE_TABLE, {
+        const messages = await context.ctx.database.get(MESSAGE_TABLE, {
             channel: {
                 id: channel_id
             },
@@ -95,7 +95,7 @@ export const SearchConversationWithDate = Tool({
         const start = new Date(start_date);
         const end = new Date(end_date);
 
-        const messages = await context.ctx.database.get("yesimbot.agent.message", {
+        const messages = await context.ctx.database.get(MESSAGE_TABLE, {
             channel: {
                 id: channel_id
             },

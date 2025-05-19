@@ -53,6 +53,7 @@ export class LLMProcessingMiddleware implements Middleware {
                         debug: true,
                         logger: ctx.koishiContext.logger,
                     });
+                    break; // 成功发送请求，退出循环
                 } catch (error) {
                     retryCount++; // 重试次数加1
                     if (retryCount >= this.config?.maxRetry || 1) {

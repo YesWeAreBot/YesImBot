@@ -73,7 +73,7 @@ export abstract class BaseAdapter {
         }
     }
 
-    async chat(messages: Message[], tools?: ToolResult[], option?: { logger: Context["logger"], debug?: boolean }): Promise<GenerateTextResult & { reasoning: string }> {
+    async chat(messages: Message[], tools?: ToolResult[], option?: { logger: Context["logger"], abortSignal?: AbortSignal, debug?: boolean }): Promise<GenerateTextResult & { reasoning: string }> {
         // 公共参数
         const chatOptions: ChatOptions = {
             ...(this.provider ? this.provider.chat(this.model) : { model: this.model, baseURL: this.baseURL, apiKey: this.apiKey }),
@@ -86,6 +86,7 @@ export abstract class BaseAdapter {
             temperature: this.parameters?.Temperature,
             // toolChoice
             topP: this.parameters?.TopP,
+            abortSignal: option?.abortSignal,
         }
 
         if (this.ability.includes("流式输出")) {

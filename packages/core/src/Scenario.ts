@@ -1,8 +1,7 @@
 import { $, Context, h, Session } from "koishi";
-//import { } from "koishi-plugin-adapter-onebot";
+import type { ImagePart, TextPart } from "xsai";
 
-import { Agent } from "./agent";
-import { Interaction, Message } from "./types/model";
+import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
 import { formatDate, getChannelType } from "./utils";
 
 
@@ -45,15 +44,15 @@ export class Scenario {
     }
 
     /**
-     * 
-     * @param limit 
+     *
+     * @param limit
      */
     async refresh(limit: number = 30) {
         this.context = [];
         this.unread = [];
 
         const recall = await this.ctx.database
-            .select(Agent.MESSAGE_TABLE)
+            .select(MESSAGE_TABLE)
             .where({ channel: { id: this.session.channelId } })
             .orderBy("timestamp", "desc")
             .execute();
@@ -61,13 +60,13 @@ export class Scenario {
         const chatHistory = recall.slice(0, limit);
         this.recallSize = recall.length - chatHistory.length;
 
-        let [lastReplyTime] = await this.ctx.database.get(Agent.LAST_REPLY_TABLE, {
+        let [lastReplyTime] = await this.ctx.database.get(LAST_REPLY_TABLE, {
             channelId: this.session.channelId,
         });
         let history: (Interaction | Message)[] = chatHistory;
         for (const chat of chatHistory) {
             const interactions = await this.ctx.database
-                .select(Agent.INTERACTION_TABLE)
+                .select(INTERACTION_TABLE)
                 .where(row => $.eq(row.emitter, chat.messageId))
                 .execute();
             for await (const interaction of interactions) {
@@ -75,14 +74,14 @@ export class Scenario {
                 if (life > 0) {
                     history.push(interaction);
                     await this.ctx.database
-                        .set(Agent.INTERACTION_TABLE, {
+                        .set(INTERACTION_TABLE, {
                             id: interaction.id
                         }, {
                             life: $.subtract(life, 1)
                         });
                 } else {
                     let result = await this.ctx.database
-                        .remove(Agent.INTERACTION_TABLE, {
+                        .remove(INTERACTION_TABLE, {
                             id: interaction.id,
                         });
                     // this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired`);
@@ -132,7 +131,7 @@ export class Scenario {
             }
         }
 
-        await this.ctx.database.set(Agent.LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date(), });
+        await this.ctx.database.set(LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date(), });
     }
 
     private async getName(): Promise<string> {
@@ -211,7 +210,7 @@ export class Scenario {
      * [<time> <sender>] <content>
      * ...
      */
-    render(): string {
+    render(): string | (TextPart | ImagePart)[] {
         let output = [
             `Scenario ID: ${this.id}`,
             `Type: ${this.type}`,
@@ -233,4 +232,21 @@ export class Scenario {
         this.unread = [];
         return output;
     }
+}
+
+
+interface PlatformAdapter {
+    getStrangerInfo?(userId: string): Promise<{ nickname?: string }>;
+    getGroupInfo?(groupId: string): Promise<{ group_name?: string }>;
+}
+
+interface MessageFormatter<T> {
+    format(message: T): Promise<string>;
+}
+
+interface MultimodalMessageFormatter<T> {
+    format(message: T): Promise<{
+        textContent: string;
+        imageParts: ImagePart[];
+    }>;
 }

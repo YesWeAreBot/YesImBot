@@ -3,8 +3,8 @@ import { readFile, stat, writeFile } from "fs/promises";
 import { Context } from "koishi";
 import path from "path";
 
-import { Agent } from "./agent";
 import { Scenario } from "./Scenario";
+import { MEMORY_TABLE } from "./types/model";
 import { isEmpty } from "./utils/string";
 
 
@@ -30,7 +30,7 @@ export class Memory {
     lastModified: Date;
 
     static instance: Memory;
-    static DATABASE_NAME = "yesimbot.agent.memory";
+    static DATABASE_NAME = "yesimbot.memory";
     static getInstance(ctx: Context): Memory {
         if (!Memory.instance) {
             Memory.instance = new Memory(ctx);
@@ -138,7 +138,7 @@ export class MemoryBlock {
             ? { label: identifier }
             : identifier;
 
-        const [result] = await ctx.database.get(Agent.MEMORY_TABLE, condition);
+        const [result] = await ctx.database.get(MEMORY_TABLE, condition);
         if (result) return new MemoryBlock(ctx, result.id, result.label, result.limit);
 
         if (typeof identifier !== 'string') {
@@ -146,7 +146,7 @@ export class MemoryBlock {
         }
 
         const id = `block-${Math.random().toString(36).substring(2)}`;
-        await ctx.database.create(Agent.MEMORY_TABLE, {
+        await ctx.database.create(MEMORY_TABLE, {
             id,
             label: identifier,
             value: [],
@@ -200,7 +200,7 @@ export class MemoryBlock {
 
     private async syncFromFile() {
         const fileContent = await this.loadFromFile();
-        await this.ctx.database.upsert(Agent.MEMORY_TABLE, [{
+        await this.ctx.database.upsert(MEMORY_TABLE, [{
             id: this.id,
             label: this.label,
             value: fileContent,
@@ -225,7 +225,7 @@ export class MemoryBlock {
             await writeFile(filePath, '');
         }
         const value = await readFile(filePath, 'utf-8');
-        await this.ctx.database.upsert(Agent.MEMORY_TABLE, [{
+        await this.ctx.database.upsert(MEMORY_TABLE, [{
             id: this.id,
             label: this.label,
             value: value.split('\n').filter(line => line.trim()),
@@ -259,7 +259,7 @@ export class MemoryBlock {
     }
 
     private async getValue(): Promise<MemoryBlockData> {
-        const [result] = await this.ctx.database.get(Agent.MEMORY_TABLE, {
+        const [result] = await this.ctx.database.get(MEMORY_TABLE, {
             id: this.id,
             label: this.label,
         });
@@ -289,7 +289,7 @@ export class MemoryBlock {
         if (this.filePath) {
             await this.saveToFile(value);
         }
-        return await this.ctx.database.set(Agent.MEMORY_TABLE, { id: this.id, label: this.label }, { value });
+        return await this.ctx.database.set(MEMORY_TABLE, { id: this.id, label: this.label }, { value });
     }
 
     async replace(old_content: string, new_content: string) {
@@ -306,7 +306,7 @@ export class MemoryBlock {
         if (this.filePath) {
             await this.saveToFile(value);
         }
-        await this.ctx.database.upsert(Agent.MEMORY_TABLE, [{
+        await this.ctx.database.upsert(MEMORY_TABLE, [{
             id: this.id,
             label: this.label,
             value,

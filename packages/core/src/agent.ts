@@ -12,19 +12,22 @@ import { ErrorHandlingMiddleware } from "./middleware/ErrorHandling";
 import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "./middleware/ResponseHandling";
 import { ServiceContainer } from "./services/container";
+import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, MEMORY_TABLE, MESSAGE_TABLE } from "./types/model";
 import { getChannelType } from "./utils";
+import { ImageProcessor } from "./utils/imageProcessor";
 
 
-export class Agent {
+export default class Agent {
     private serviceContainer: ServiceContainer;
+    private ctx: Context;
+    private config: Config;
 
-    // 数据库表名
-    static readonly MESSAGE_TABLE = "yesimbot.agent.message";
-    static readonly MEMORY_TABLE = "yesimbot.agent.memory_block";
-    static readonly INTERACTION_TABLE = "yesimbot.agent.interaction";
-    static readonly LAST_REPLY_TABLE = "yesimbot.agent.last_reply";
+    static name = 'yesimbot';
 
-    constructor(private ctx: Context, private config: Config) {
+    constructor(ctx: Context, config: Config) {
+        this.ctx = ctx;
+        this.config = config;
+
         // 初始化服务容器
         this.serviceContainer = new ServiceContainer();
 
@@ -55,6 +58,9 @@ export class Agent {
         const adapterSwitcher = new AdapterSwitcher(this.config.API.APIList, this.config.API.Parameters);
         this.serviceContainer.register('adapterSwitcher', adapterSwitcher);
 
+        const imageProcessor = new ImageProcessor(this.ctx);
+        this.serviceContainer.register('imageProcessor', imageProcessor);
+
         // 加载记忆
         const memory = Memory.getInstance(this.ctx);
         this.serviceContainer.register('memory', memory);
@@ -79,7 +85,7 @@ export class Agent {
             .use(new ErrorHandlingMiddleware(this.ctx.logger, middlewareManager))
 
             // 数据库存储中间件
-            .use(new DatabaseStorageMiddleware(this.ctx))
+            .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor))
 
             // 检查是否达到回复条件
             .use(new CheckReplyConditionMiddleware({
@@ -151,7 +157,7 @@ export class Agent {
      */
     private registerDatabases(): void {
         // 消息表
-        this.ctx.model.extend(Agent.MESSAGE_TABLE, {
+        this.ctx.model.extend(MESSAGE_TABLE, {
             messageId: "string",
             sender: "object",
             channel: "object",
@@ -163,7 +169,7 @@ export class Agent {
         });
 
         // 交互记录表
-        this.ctx.model.extend(Agent.INTERACTION_TABLE, {
+        this.ctx.model.extend(INTERACTION_TABLE, {
             id: "string",
             emitter: "string",
             type: "string",
@@ -175,7 +181,7 @@ export class Agent {
         });
 
         // 记忆块表
-        this.ctx.model.extend(Agent.MEMORY_TABLE, {
+        this.ctx.model.extend(MEMORY_TABLE, {
             id: "string",
             label: "string",
             value: "array",
@@ -186,13 +192,26 @@ export class Agent {
         });
 
         // 上次回复时间表
-        this.ctx.model.extend(Agent.LAST_REPLY_TABLE, {
+        this.ctx.model.extend(LAST_REPLY_TABLE, {
             channelId: "string",
             timestamp: "timestamp",
         }, {
             primary: "channelId",
             autoInc: false,
         });
+
+        // 图片表
+        this.ctx.model.extend(IMAGE_TABLE, {
+            id: "string",
+            mimeType: "string",
+            base64: "string",
+            summary: "string",
+            desc: "string",
+            size: "integer",
+        }, {
+            primary: "id",
+            autoInc: false,
+        })
     }
 
     private createSendMessageTool(config: Config) {
@@ -220,7 +239,7 @@ export class Agent {
                         delay = false;
                     }
                     let messageIds = await session.sendQueued(message);
-                    await ctx.database.create(Agent.MESSAGE_TABLE, {
+                    await ctx.database.create(MESSAGE_TABLE, {
                         messageId: messageIds[0],
                         sender: {
                             id: session.bot.selfId,

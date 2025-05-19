@@ -1,7 +1,7 @@
 import { embed, embedMany, EmbedManyResult, EmbedResult } from 'xsai';
 
 import { CacheManager } from "../managers/cache";
-import { EnabledEmbeddingConfig } from "./config";
+import { EmbeddingConfig } from "./config";
 
 export class EmbeddingBase {
     protected readonly cache: CacheManager<number[]> | undefined;
@@ -9,7 +9,7 @@ export class EmbeddingBase {
     protected readonly baseURL: string | undefined;
     protected readonly model: string | undefined;
 
-    constructor(protected config: EnabledEmbeddingConfig, manager?: CacheManager<number[]>) {
+    constructor(protected config: EmbeddingConfig, manager?: CacheManager<number[]>) {
         this.cache = manager;
 
         this.apiKey = config.APIKey;

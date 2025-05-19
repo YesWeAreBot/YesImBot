@@ -1,6 +1,6 @@
 import { Context } from "koishi";
 
-import { Agent } from "../agent";
+import { MESSAGE_TABLE } from "../types/model";
 import { isEmpty } from "../utils/string";
 
 
@@ -64,21 +64,21 @@ export function apply(ctx: Context) {
 
 
 async function clearBySenderId(ctx: Context, senderId: string): Promise<boolean> {
-    const result = await ctx.database.remove(Agent.MESSAGE_TABLE, { "sender.id": senderId });
+    const result = await ctx.database.remove(MESSAGE_TABLE, { "sender.id": senderId });
     return result.removed > 0;
 }
 
 async function clearPrivateAll(ctx: Context): Promise<boolean> {
-    const result = await ctx.database.remove(Agent.MESSAGE_TABLE, { "channel.type": "private" });
+    const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.type": "private" });
     return result.removed > 0;
 }
 
 async function clearAll(ctx: Context): Promise<boolean> {
-    const result = await ctx.database.remove(Agent.MESSAGE_TABLE, { "channel.type": "guild" });
+    const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.type": "guild" });
     return result.removed > 0;
 }
 
 async function clearChannel(ctx: Context, id: string): Promise<boolean> {
-    const result = await ctx.database.remove(Agent.MESSAGE_TABLE, { "channel.id": id });
+    const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.id": id });
     return result.removed > 0;
 }

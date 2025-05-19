@@ -1,10 +1,9 @@
 import { Context, Service } from "koishi";
 
-import { Agent } from "./agent";
+import Agent from "./agent";
 import { Config } from "./config";
 import { ToolManager } from "./extensions";
 import { ImageCache } from "./managers/image";
-import path from "path";
 
 
 declare module 'koishi' {
@@ -27,24 +26,13 @@ export default class YesImBot extends Service {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
-        if (!ImageCache.instance) {
-            ImageCache.instance = new ImageCache(path.join(ctx.baseDir, "data", "yesimbot", "image"));
-        }
         this.toolManager = ToolManager.getInstance();
-        this.imageCache = ImageCache.instance;
 
         // 注册指令
         ctx.plugin(require('./commands/cache'));
         ctx.plugin(require('./commands/context'));
         ctx.plugin(require('./commands/extension'));
 
-        ctx.on('ready', () => {
-            // 初始化Agent
-            new Agent(ctx, config);
-        });
-
-        ctx.on('dispose', () => {
-            // agent.dispose();
-        });
+        ctx.plugin(Agent, config);
     }
 }
