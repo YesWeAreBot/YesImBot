@@ -7,11 +7,11 @@ const { dependencies } = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
 const allDeps = Object.keys(dependencies || {});
 // 保留的依赖
 const include = [
-    'xsai',
     '@xsai-ext/providers-cloud',
     '@xsai-ext/providers-local',
     '@xsai-ext/shared-providers',
     '@xsai/utils-reasoning',
+    'xsai',
 ];
 // 剩下的设为 external
 const external = allDeps.filter(dep => !include.includes(dep));

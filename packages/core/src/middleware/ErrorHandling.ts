@@ -18,9 +18,9 @@ export class ErrorHandlingMiddleware implements Middleware {
 
     constructor(
         private logger: Context['logger'],
-        private middlewareManager: MiddlewareManager,
         private options?: {
-            uploadDump?: boolean;
+            debug: boolean;
+            uploadDump: boolean;
         }
     ) { }
 
@@ -28,10 +28,14 @@ export class ErrorHandlingMiddleware implements Middleware {
         try {
             // 执行后续中间件
             await next();
+
         } catch (error) {
             // 记录错误日志
             this.logger.error(`Error in session ${ctx.koishiSession.id}:`, error.message);
-            this.logger.error(`Error stack trace:`, error.stack);
+
+            if (this.options.debug) {
+                this.logger.error(`Error stack trace:`, error.stack);
+            }
 
             try {
                 if (this.options?.uploadDump) {
@@ -49,15 +53,6 @@ export class ErrorHandlingMiddleware implements Middleware {
                 }
             } catch (uploadError) {
                 this.logger.error(`Error uploading error dump:`, uploadError.message);
-            }
-
-            // 重置会话状态
-            await ctx.transitionTo(ConversationState.IDLE);
-
-            // 释放频道处理状态
-            const checkReplyConditionMiddleware = this.middlewareManager.getMiddleware('check-reply-condition') as CheckReplyConditionMiddleware;
-            if (checkReplyConditionMiddleware) {
-                checkReplyConditionMiddleware.releaseChannelState(ctx.koishiSession.channelId);
             }
         }
     }

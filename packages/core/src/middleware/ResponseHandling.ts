@@ -28,14 +28,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         // 处理LLM响应
         const { text } = ctx.llmResponse;
 
-        let response;
-
-        try {
-            response = this.parseResponse(text);
-        } catch (error) {
-            logger.error(error.message);
-            return await next();
-        }
+        let response = this.parseResponse(text);
 
         // 处理工具调用
         let request_heartbeat = false;

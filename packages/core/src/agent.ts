@@ -39,6 +39,14 @@ export default class Agent {
 
         // 注册中间件
         this.registerMiddleware();
+
+        ctx.on("dispose", async () => {
+            const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
+
+            const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");
+
+            checkReply.destroy();
+        });
     }
 
     /**
@@ -82,7 +90,10 @@ export default class Agent {
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
-            .use(new ErrorHandlingMiddleware(this.ctx.logger, middlewareManager))
+            .use(new ErrorHandlingMiddleware(this.ctx.logger, {
+                debug: this.config.Debug.EnableDebug,
+                uploadDump: this.config.Debug.UploadDump
+            }))
 
             // 数据库存储中间件
             .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor))
