@@ -26,7 +26,7 @@ export type ToolDefinition<
     name: string;
     description: string;
     parameters: TParams;
-    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<z.infer<TReturns>>>;
+    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<z.infer<TReturns>>> | ToolCallResult<z.infer<TReturns>>;
 };
 
 export interface ToolCallResult<T = any> {
@@ -36,7 +36,7 @@ export interface ToolCallResult<T = any> {
 }
 
 interface EnhancedToolResult<T extends z.ZodTypeAny = any> extends ToolResult {
-    execute: (params: z.infer<T>, context: ToolContext) => Promise<ToolCallResult<z.infer<T>>>;
+    execute: (params: z.infer<T>, context: ToolContext) => Promise<ToolCallResult<z.infer<T>>> | ToolCallResult<z.infer<T>>;
 }
 
 export function Tool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): ToolDefinition<T> {
@@ -59,8 +59,8 @@ export function Failed(error: string): ToolCallResult {
 
 /**
  * 定义工具
- * @param definition 
- * @returns 
+ * @param definition
+ * @returns
  */
 export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>, TContext: ToolContext = {}): EnhancedToolResult<T> {
     let parameters: any = definition.parameters;

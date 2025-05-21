@@ -1,65 +1,65 @@
 {
-    "name": "koishi-plugin-yesimbot",
-    "description": "Yes! I'm Bot! 机械壳，人类心",
-    "version": "3.0.0-alpha.11",
-    "main": "lib/index.js",
-    "typings": "lib/index.d.ts",
-    "homepage": "https://github.com/HydroGest/YesImBot",
-    "files": [
-        "lib",
-        "dist",
-        "resources"
-    ],
-    "contributors": [
-        "HydroGest <2445691453@qq.com>",
-        "Dispure <3116716016@qq.com>"
-    ],
-    "scripts": {
-        "bundle": "node scripts/bundle.js"
+  "name": "koishi-plugin-yesimbot",
+  "description": "Yes! I'm Bot! 机械壳，人类心",
+  "version": "3.0.0-alpha.11",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "homepage": "https://github.com/HydroGest/YesImBot",
+  "files": [
+    "lib",
+    "dist",
+    "resources"
+  ],
+  "contributors": [
+    "HydroGest <2445691453@qq.com>",
+    "Dispure <3116716016@qq.com>"
+  ],
+  "scripts": {
+    "bundle": "node scripts/bundle.js"
+  },
+  "license": "MIT",
+  "keywords": [
+    "chatbot",
+    "koishi",
+    "plugin",
+    "ai"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "directory": "packages/core"
+  },
+  "dependencies": {
+    "jsonrepair": "^3.12.0",
+    "sharp": "^0.33.5",
+    "zod": "3.24.3",
+    "zod-to-json-schema": "^3.24.5"
+  },
+  "devDependencies": {
+    "@koishijs/plugin-mock": "^2.6.6",
+    "@xsai-ext/providers-cloud": "^0.2.2",
+    "@xsai-ext/providers-local": "^0.2.2",
+    "@xsai-ext/shared-providers": "^0.2.2",
+    "@xsai/utils-reasoning": "^0.2.2",
+    "koishi": "^4.18.7",
+    "xsai": "^0.2.2"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.7"
+  },
+  "koishi": {
+    "description": {
+      "zh": "让语言大模型机器人假装群友并和群友聊天！",
+      "en": "A Koishi plugin that allows LLM chat in your guild."
     },
-    "license": "MIT",
-    "keywords": [
-        "chatbot",
-        "koishi",
-        "plugin",
-        "ai"
-    ],
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/HydroGest/YesImBot.git",
-        "directory": "packages/core"
-    },
-    "dependencies": {
-        "jsonrepair": "^3.12.0",
-        "sharp": "^0.33.5",
-        "zod": "3.24.3",
-        "zod-to-json-schema": "^3.24.5"
-    },
-    "devDependencies": {
-        "@koishijs/plugin-mock": "^2.6.6",
-        "@xsai-ext/providers-cloud": "^0.2.2",
-        "@xsai-ext/providers-local": "^0.2.2",
-        "@xsai-ext/shared-providers": "^0.2.2",
-        "@xsai/utils-reasoning": "^0.2.2",
-        "koishi": "^4.18.7",
-        "xsai": "^0.2.2"
-    },
-    "peerDependencies": {
-        "koishi": "^4.18.7"
-    },
-    "koishi": {
-        "description": {
-            "zh": "让语言大模型机器人假装群友并和群友聊天！",
-            "en": "A Koishi plugin that allows LLM chat in your guild."
-        },
-        "browser": true,
-        "service": {
-            "required": [
-                "database"
-            ],
-            "implements": [
-                "yesimbot"
-            ]
-        }
+    "browser": true,
+    "service": {
+      "required": [
+        "database"
+      ],
+      "implements": [
+        "yesimbot"
+      ]
     }
+  }
 }

@@ -1,33 +1,33 @@
 {
-    "name": "@root/yesimbot",
-    "version": "0.0.0",
-    "private": true,
-    "homepage": "https://github.com/HydroGest/YesImBot",
-    "contributors": [
-        "HydroGest <2445691453@qq.com>",
-        "Dispure <3116716016@qq.com>"
-    ],
-    "license": "MIT",
-    "workspaces": [
-        "packages/*"
-    ],
-    "scripts": {
-        "clean": "yakumo clean",
-        "build": "yakumo build",
-        "build:core": "yakumo build core",
-        "bump": "yakumo version",
-        "dep": "yakumo upgrade",
-        "pub": "yakumo publish",
-        "pub:core": "yakumo publish core"
-    },
-    "devDependencies": {
-        "@types/node": "^22.15.18",
-        "cross-env": "^7.0.3",
-        "esbuild": "^0.25.4",
-        "typescript": "5.8.3",
-        "yakumo": "^1.0.0",
-        "yakumo-esbuild": "^1.0.0",
-        "yakumo-tsc": "^1.0.0",
-        "yml-register": "^1.2.5"
-    }
+  "name": "@root/yesimbot",
+  "version": "0.0.0",
+  "private": true,
+  "homepage": "https://github.com/HydroGest/YesImBot",
+  "contributors": [
+    "HydroGest <2445691453@qq.com>",
+    "Dispure <3116716016@qq.com>"
+  ],
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "clean": "yakumo clean",
+    "build": "yakumo build",
+    "build:core": "yakumo build core",
+    "bump": "yakumo version",
+    "dep": "yakumo upgrade",
+    "pub": "yakumo publish",
+    "pub:core": "yakumo publish core"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.19",
+    "cross-env": "^7.0.3",
+    "esbuild": "^0.25.4",
+    "typescript": "5.8.3",
+    "yakumo": "^1.0.0",
+    "yakumo-esbuild": "^1.0.0",
+    "yakumo-tsc": "^1.0.0",
+    "yml-register": "^1.2.5"
+  }
 }

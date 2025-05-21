@@ -72,14 +72,14 @@ export class CheckReplyConditionMiddleware implements Middleware {
 
     /**
      * 回复意愿
-     * 
+     *
      * 下列行为会增加意愿值：
      * - 收到消息
      * - 收到 @ 消息
      * - 收到 @ 消息且满足回复条件
-     * 
+     *
      * 意愿值超过阈值时触发回复
-     * 
+     *
      * 意愿值会随时间自然衰减，回复后会降低但不会完全重置
      */
     private currentThreshold = new Map<string, number>();
@@ -249,12 +249,19 @@ export class CheckReplyConditionMiddleware implements Middleware {
             clearTimeout(this.delayTimers.get(channelId));
         }
 
-        // 设置新的定时器
-        const timer = setTimeout(() => {
-            this.processMessages(ctx, next);
-        }, this.options.messageWaitTime);
-
-        this.delayTimers.set(channelId, timer);
+        await new Promise<void>((resolve, reject) => {
+            // 设置新的定时器
+            const timer = setTimeout(async () => {
+                try {
+                    await this.processMessages(ctx, next);
+                    resolve();
+                } catch (e) {
+                    this.releaseChannelState(ctx.koishiSession.channelId);
+                    reject(e);
+                }
+            }, this.options.messageWaitTime);
+            this.delayTimers.set(channelId, timer);
+        });
     }
 
     /**

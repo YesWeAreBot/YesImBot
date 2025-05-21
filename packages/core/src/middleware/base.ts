@@ -114,8 +114,8 @@ export class MiddlewareManager {
     /**
      * 获取指定名称的中间件
      */
-    public getMiddleware(name: string): Middleware | undefined {
-        return this.middlewares.find(m => m.name === name);
+    public getMiddleware<T extends Middleware>(name: string): T | undefined {
+        return this.middlewares.find(m => m.name === name) as T;
     }
 
     public findIndex(name: string): number {
