@@ -1,11 +1,38 @@
 import type { ChatProvider } from '@xsai-ext/shared-providers';
-import type { ChatOptions, GenerateTextResult, Message, ToolResult } from 'xsai';
-import { extractReasoning, extractReasoningStream, generateText, streamText } from '../dependencies/xsai';
 import { Context } from "koishi";
+import type { ChatOptions, GenerateTextResult, Message, ToolResult } from 'xsai';
+import {
+    createAnthropic,
+    createGoogleGenerativeAI,
+    createOllama,
+    createOpenAI,
+    createOpenRouter,
+    createQwen,
+    createSiliconFlow,
+    createWorkersAI,
+    extractReasoning,
+    extractReasoningStream,
+    generateText,
+    streamText
+} from '../dependencies/xsai';
 
 import { isEmpty, isNotEmpty } from '../utils';
 import { Config, LLMConfig } from "./config";
 
+
+function createFetch(option: { proxy?: string }): typeof globalThis.fetch {
+    return (input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+        return fetch(input, { ...init, });
+    }
+}
+
+interface RequestOptions {
+    logger: Context["logger"];
+    retry?: number;
+    retryDelay?: number;
+    abortSignal?: AbortSignal;
+    debug?: boolean;
+}
 
 export abstract class BaseAdapter {
     protected readonly baseURL: string;
@@ -73,7 +100,7 @@ export abstract class BaseAdapter {
         }
     }
 
-    async chat(messages: Message[], tools?: ToolResult[], option?: { logger: Context["logger"], abortSignal?: AbortSignal, debug?: boolean }): Promise<GenerateTextResult & { reasoning: string }> {
+    async chat(messages: Message[], tools?: ToolResult[], option?: RequestOptions): Promise<GenerateTextResult & { reasoning: string }> {
         // 公共参数
         const chatOptions: ChatOptions = {
             ...(this.provider ? this.provider.chat(this.model) : { model: this.model, baseURL: this.baseURL, apiKey: this.apiKey }),
@@ -101,7 +128,7 @@ export abstract class BaseAdapter {
                     includeUsage: true,
                 },
                 onChunk(chunk) {
-                    // 兼容 DeepSeek 
+                    // 兼容 DeepSeek
                     currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
                     reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
                     if (currentLineBuffer.includes("\n")) {
@@ -182,5 +209,98 @@ export abstract class BaseAdapter {
                 reasoning: "",
             };
         }
+    }
+}
+
+export class CloudflareAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        if (!config.APIKey || !config.UID) {
+            throw new Error('APIKey and UID are required for CloudflareAdapter');
+        }
+        this.provider = createWorkersAI(config.APIKey, config.UID);
+    }
+}
+
+
+export class GeminiAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        if (!this.apiKey) {
+            throw new Error('APIKey is required for GeminiAdapter');
+        }
+        this.provider = createGoogleGenerativeAI(this.apiKey, this.baseURL);
+    }
+}
+
+export class CustomAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        if (!this.baseURL) {
+            throw new Error('BaseURL is required for CustomAdapter');
+        }
+    }
+}
+
+export class OllamaAdapter extends BaseAdapter {
+    constructor(private config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        if (!this.baseURL) {
+            throw new Error('BaseURL is required for OllamaAdapter');
+        }
+        this.provider = createOllama(this.baseURL);
+    }
+}
+
+
+export class OpenAIAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        this.provider = createOpenAI(
+            this.apiKey,
+            this.baseURL,
+        );
+    }
+}
+
+
+export class AnthropicAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        this.provider = createAnthropic(
+            this.apiKey,
+            this.baseURL,
+        );
+    }
+}
+
+
+export class QwenAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        this.provider = createQwen(
+            this.apiKey,
+            this.baseURL,
+        );
+    }
+}
+
+export class SiliconFlowAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        this.provider = createSiliconFlow(
+            this.apiKey,
+            this.baseURL,
+        );
+    }
+}
+
+export class OpenRouterAdapter extends BaseAdapter {
+    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
+        super(config, parameters);
+        this.provider = createOpenRouter(
+            this.apiKey,
+            this.baseURL,
+        );
     }
 }
