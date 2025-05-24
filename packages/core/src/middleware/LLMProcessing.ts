@@ -58,7 +58,7 @@ export class LLMProcessingMiddleware implements Middleware {
                     break;
                 } catch (error) {
                     // 超时，切换下一个 Adapter
-                    if (error.name === "XSAIError" || error.cause.code === "ECONNRESET") {
+                    if (error.name === "XSAIError" || error.cause?.code === "ECONNRESET") {
                         ctx.koishiContext.logger("Current Adapter is unavailable, try next");
                         retry--;
                         continue;
