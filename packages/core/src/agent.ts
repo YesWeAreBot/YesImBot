@@ -1,4 +1,5 @@
 import { Context, sleep } from "koishi";
+import { Agent as HTTPAgent, ProxyAgent, fetch as ufetch } from 'undici';
 import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
@@ -28,17 +29,19 @@ export default class Agent {
         this.ctx = ctx;
         this.config = config;
 
-        // 初始化服务容器
-        this.serviceContainer = new ServiceContainer();
+        ctx.on("ready", async () => {
+            // 初始化服务容器
+            this.serviceContainer = new ServiceContainer();
 
-        // 注册数据库
-        this.registerDatabases();
+            // 注册数据库
+            this.registerDatabases();
 
-        // 初始化核心服务
-        this.initializeServices();
+            // 初始化核心服务
+            this.initializeServices();
 
-        // 注册中间件
-        this.registerMiddleware();
+            // 注册中间件
+            this.registerMiddleware();
+        });
 
         ctx.on("dispose", async () => {
             const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
@@ -87,6 +90,8 @@ export default class Agent {
         // 注册中间件管理器
         const middlewareManager = new MiddlewareManager();
 
+        const proxy = this.config.API.Proxy ? new ProxyAgent(this.config.API.Proxy) : new HTTPAgent();
+
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
@@ -112,9 +117,15 @@ export default class Agent {
                 sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
             }, this.ctx, adapterSwitcher))
 
-            .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory, {
-                maxRetry: this.config.API.MaxRetry,
-            }))
+            .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory,
+                createFetch({
+                    debug: this.config.Debug.EnableDebug,
+                    retry: this.config.API.MaxRetry,
+                    dispatcher: proxy,
+                }) as unknown as typeof globalThis.fetch,
+                {
+                    debug: this.config.Debug.EnableDebug,
+                }))
 
             .use(new ResponseHandlingMiddleware(middlewareManager, toolManager, {
                 maxRetry: this.config.ToolCall.MaxRetry,
@@ -262,3 +273,29 @@ export default class Agent {
         return memory
     }
 }
+
+const defaults = {
+    debug: false,
+    retry: 3,
+    retryDelay: 500,
+    // https://github.com/unjs/ofetch#%EF%B8%8F-auto-retry
+    retryStatusCodes: [408, 409, 425, 429, 500, 502, 503, 504]
+};
+const createFetch = (userOptions: any = {}) => {
+    const options = Object.assign({}, defaults, userOptions);
+    const xsfetch = async (retriesLeft, input, init) => {
+        init = { ...init, dispatcher: userOptions.dispatcher }
+        const res = await ufetch(input, init);
+        if (res.ok || retriesLeft === 0 || !options.retryStatusCodes.includes(res.status))
+            return res;
+        options.debug && console.warn("[xsfetch] Failed, retrying... Times left:", retriesLeft);
+        await sleep(options.retryDelay);
+        return async () => xsfetch(retriesLeft - 1, input, init);
+    };
+    return async (input, init) => {
+        let res = await xsfetch(options.retry, input, init);
+        while (typeof res === "function")
+            res = await res();
+        return res;
+    };
+};

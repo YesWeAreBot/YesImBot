@@ -4,7 +4,6 @@ import type { ChatOptions, GenerateTextResult, Message, ToolResult } from 'xsai'
 import {
     createAnthropic,
     createDeepSeek,
-    createFetch,
     createGoogleGenerativeAI,
     createLMStudio,
     createOllama,
@@ -25,11 +24,9 @@ import { isEmpty, isNotEmpty } from '../utils';
 import { Config, LLMConfig } from "./config";
 
 interface RequestOptions {
-    logger: Context["logger"];
     debug: boolean;
-    retry?: number;
-    retryDelay?: number;
-    retryStatusCodes?: number[];
+    xfetch?: typeof globalThis.fetch;
+    logger: Context["logger"];
     abortSignal?: AbortSignal;
 }
 
@@ -104,22 +101,15 @@ export abstract class BaseAdapter {
             if (option.debug) option.logger.info(info);
         };
 
-        const fetch = createFetch({
-            retry: option.retry,
-            retryDelay: option.retryDelay,
-            retryStatusCodes: option.retryStatusCodes,
-        });
-
         // 公共参数
         const chatOptions: ChatOptions = {
-            fetch,
+            fetch: option.xfetch,
             abortSignal: option?.abortSignal,
             ...(this.provider ? this.provider.chat(this.model) : { model: this.model, baseURL: this.baseURL, apiKey: this.apiKey }),
             ...(tools ? { tools } : {}),
             frequencyPenalty: this.parameters?.FrequencyPenalty,
             messages,
             presencePenalty: this.parameters?.PresencePenalty,
-            maxSteps: 3,
             // seed
             //@ts-ignore
             stop: this.parameters?.Stop,
@@ -221,7 +211,7 @@ export abstract class BaseAdapter {
         }
     }
 
-    abstract setProvider()
+    abstract setProvider(): void;
 }
 
 export class UniversalAdapter extends BaseAdapter {
@@ -243,6 +233,7 @@ export class UniversalAdapter extends BaseAdapter {
                 break;
             case 'Google Gemini':
                 this.provider = createGoogleGenerativeAI(APIKey, BaseURL);
+                delete this.parameters?.FrequencyPenalty;
                 break;
             case 'OpenRouter':
                 this.provider = createOpenRouter(APIKey, BaseURL);
@@ -276,7 +267,6 @@ export class UniversalAdapter extends BaseAdapter {
         }
     }
 }
-
 
 
 class InvalidAdapterTypeError extends Error {

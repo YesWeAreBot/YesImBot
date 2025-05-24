@@ -27,6 +27,7 @@ export interface Config {
         }
     };
     MaxRetry?: number;
+    Proxy?: string;
 }
 
 export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
@@ -41,7 +42,7 @@ export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
         Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出", "深度思考"]))
             .role("checkbox")
             .experimental()
-            .default([])
+            .default(["流式输出"])
             .description("模型支持的功能。<br/>请查阅[文档](https://github.com/HydroGest/AthenaDocsNG/blob/main/docs/user-guide/configuration/main-api.md)了解其作用。如果你不知道这是什么，请不要勾选。"),
         TagName: Schema.string().default("think").description("深度思考标签"),
         StartWithReasoning: Schema.boolean().default(false).description("是否在回复中包含思考内容"),
@@ -62,7 +63,7 @@ export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
         }),
         Schema.object({
             APIType: Schema.const("Google Gemini"),
-            BaseURL: Schema.string().default("https://generativelanguage.googleapis.com"),
+            BaseURL: Schema.string().default("https://generativelanguage.googleapis.com/v1beta/openai/"),
         }),
     ]),
 ]);
@@ -128,4 +129,5 @@ export const Config: Schema<Config> = Schema.object({
         .max(10)
         .step(1)
         .description("API 请求失败时的最大重试次数"),
+    Proxy: Schema.string(),
 }).description("LLM API 相关配置");
