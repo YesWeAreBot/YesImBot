@@ -14,7 +14,7 @@ import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "./middleware/ResponseHandling";
 import { ServiceContainer } from "./services/container";
 import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, MEMORY_TABLE, MESSAGE_TABLE } from "./types/model";
-import { getChannelType } from "./utils";
+import { getChannelType, isEmpty } from "./utils";
 import { ImageProcessor } from "./utils/imageProcessor";
 
 
@@ -239,6 +239,7 @@ export default class Agent {
                 }
 
                 for await (const message of messages) {
+                    if (isEmpty(message)) continue;
                     // 如果是最后一条消息，不延迟
                     if (idx++ >= messages.length) {
                         delay = false;

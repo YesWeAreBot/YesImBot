@@ -66,7 +66,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         // 释放频道处理状态
         const checkReplyMiddleware = this.middlewareManager.getMiddleware('check-reply-condition') as CheckReplyConditionMiddleware;
         if (!checkReplyMiddleware) {
-            throw new Error("[Agent] 未找到CheckReplyConditionMiddleware");
+            throw new Error("未找到CheckReplyConditionMiddleware");
         }
         checkReplyMiddleware.releaseChannelState(ctx.koishiSession.channelId);
     }
@@ -75,12 +75,12 @@ export class ResponseHandlingMiddleware implements Middleware {
     private parseResponse(text: string): { function: string; params: Record<string, unknown> }[] {
         let response: { function: string; params: Record<string, unknown> }[];
         try {
-            response = extractJSONFromString(text, "object") as any[];
+            response = extractJSONFromString(text.substring(text.indexOf("{"), text.lastIndexOf("}") + 1), "object") as any[];
         } catch (error) {
-            throw new Error(`[Agent] 解析响应失败: ${error.message}`);
+            throw new Error(`解析响应失败: ${error.message}`);
         }
         if (!response || response.length == 0) {
-            throw new Error("[Agent] 未解析到响应");
+            throw new Error("未解析到响应");
         }
 
         if (!Array.isArray(response)) {
@@ -89,7 +89,7 @@ export class ResponseHandlingMiddleware implements Middleware {
 
         for (const func of response) {
             if (!func.function || !func.params) {
-                throw new Error("[Agent] 响应格式错误");
+                throw new Error("响应格式错误");
             }
         }
 

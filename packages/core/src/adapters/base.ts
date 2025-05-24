@@ -121,6 +121,7 @@ export abstract class BaseAdapter {
         if (this.ability.includes("流式输出")) {
             let currentLineBuffer = "";
             let reasoningStreamContent = "";
+            let reasoningStage: ReasoningStage = ReasoningStage.None;
             const result = await streamText({
                 ...chatOptions,
                 // maxSteps
@@ -129,12 +130,38 @@ export abstract class BaseAdapter {
                     includeUsage: true,
                 },
                 onChunk(chunk) {
-                    // 兼容 DeepSeek
-                    currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
-                    reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
-                    if (currentLineBuffer.includes("\n")) {
-                        info(currentLineBuffer.replace(/\n$/, ""));
-                        currentLineBuffer = "";
+                    switch (reasoningStage) {
+                        case ReasoningStage.None:
+                            if (isEmpty(chunk.choices[0].delta["reasoning_content"]) && isNotEmpty(chunk.choices[0].delta["content"])) {
+                                reasoningStage = ReasoningStage.Finish;
+                                break;
+                            }
+                            reasoningStage = ReasoningStage.Start;
+                            break;
+                        case ReasoningStage.Start:
+                            if (isEmpty(chunk.choices[0].delta["reasoning_content"]) && isNotEmpty(chunk.choices[0].delta["content"])) {
+                                reasoningStage = ReasoningStage.End
+                                if (isNotEmpty(currentLineBuffer)) {
+                                    info(`> ${currentLineBuffer}`);
+                                    currentLineBuffer = "";
+                                }
+                            };
+                            currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
+                            reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
+                            if (currentLineBuffer.includes("\n")) {
+                                for (let line of currentLineBuffer.split("\n")) {
+                                    if (isNotEmpty(line)) info(`> ${line}`);
+                                }
+                                currentLineBuffer = "";
+                            }
+                            break
+                        case ReasoningStage.End:
+                            if (isNotEmpty(currentLineBuffer)) info(`> ${currentLineBuffer}`);
+                            currentLineBuffer = "";
+                            reasoningStage = ReasoningStage.Finish;
+                            break
+                        default:
+                            break;
                     }
                 },
             })
@@ -159,8 +186,19 @@ export abstract class BaseAdapter {
                 textStreamContent += textPart;
                 currentLineBuffer += textPart;
                 if (currentLineBuffer.includes("\n")) {
-                    info(currentLineBuffer.replace(/\n$/, ""));
-                    currentLineBuffer = "";
+                    if (currentLineBuffer.endsWith("\n")) {
+                        for (let line of currentLineBuffer.split("\n")) {
+                            if (isNotEmpty(line)) info(line);
+                        }
+                        currentLineBuffer = "";
+                    } else {
+                        const lines = currentLineBuffer.split("\n");
+                        const nextLine = lines.pop();
+                        for (let line of lines) {
+                            if (isNotEmpty(line)) info(line);
+                        }
+                        currentLineBuffer = nextLine;
+                    }
                 }
             }
 
@@ -274,4 +312,11 @@ class InvalidAdapterTypeError extends Error {
         super(message);
         this.name = "InvalidAPITypeError";
     }
+}
+
+enum ReasoningStage {
+    None,
+    Start,
+    End,
+    Finish,
 }

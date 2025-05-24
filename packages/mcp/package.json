@@ -1,54 +1,54 @@
 {
-    "name": "koishi-plugin-yesimbot-extension-mcp",
-    "description": "Yes! I'm Bot! MCP 扩展插件",
-    "version": "0.0.6",
-    "main": "lib/index.js",
-    "typings": "lib/index.d.ts",
-    "homepage": "https://github.com/HydroGest/YesImBot",
-    "files": [
-        "lib",
-        "dist",
-        "resources"
-    ],
-    "license": "MIT",
-    "contributors": [
-        "MiaowFISH <miaow233@qq.com>"
-    ],
-    "keywords": [
-        "koishi",
-        "plugin",
-        "mcp",
-        "modelcontextprotocol",
+  "name": "koishi-plugin-yesimbot-extension-mcp",
+  "description": "Yes! I'm Bot! MCP 扩展插件",
+  "version": "0.0.7",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "homepage": "https://github.com/HydroGest/YesImBot",
+  "files": [
+    "lib",
+    "dist",
+    "resources"
+  ],
+  "license": "MIT",
+  "contributors": [
+    "MiaowFISH <miaow233@qq.com>"
+  ],
+  "keywords": [
+    "koishi",
+    "plugin",
+    "mcp",
+    "modelcontextprotocol",
+    "yesimbot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "directory": "packages/mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.0-alpha.9"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.0-alpha.9"
+  },
+  "koishi": {
+    "description": {
+      "zh": "Yes! I'm Bot! MCP 扩展插件",
+      "en": "Yes! I'm Bot! MCP extension plugin"
+    },
+    "service": {
+      "required": [
         "yesimbot"
-    ],
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/HydroGest/YesImBot.git",
-        "directory": "packages/mcp"
-    },
-    "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.11.4"
-    },
-    "devDependencies": {
-        "koishi": "^4.18.7",
-        "koishi-plugin-yesimbot": "^3.0.0-alpha.9"
-    },
-    "peerDependencies": {
-        "koishi": "^4.18.7",
-        "koishi-plugin-yesimbot": "^3.0.0-alpha.9"
-    },
-    "koishi": {
-        "description": {
-            "zh": "Yes! I'm Bot! MCP 扩展插件",
-            "en": "Yes! I'm Bot! MCP extension plugin"
-        },
-        "service": {
-            "required": [
-                "yesimbot"
-            ],
-            "implements": [
-                "yesimbot-extension-mcp"
-            ]
-        }
+      ],
+      "implements": [
+        "yesimbot-extension-mcp"
+      ]
     }
+  }
 }

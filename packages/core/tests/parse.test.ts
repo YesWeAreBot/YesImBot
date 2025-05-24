@@ -15,6 +15,32 @@ import {
 } from '../src/utils/parse-structured-output';
 
 
+test('', () => {
+    let jsonStr = `My previous action was to call \`mcp_howtocook_recommendMeals\` based on Alice's preference. Now Alice is asking "在？" I need to respond to her presence and then tell her about the meal recommendations.{
+  "function": "send_message",
+  "params": {
+    "inner_thoughts": "Alice酱问我在不在，我应该先回应她，然后告诉她我正在帮她想晚上吃什么。",
+    "messages": [
+      "NekoChan在呀！Alice酱是不是在等NekoChan的推荐呀？"
+    ]
+  }
+}`
+
+    const first = jsonStr.indexOf("{");
+    const last = jsonStr.lastIndexOf("}");
+    jsonStr = jsonStr.substring(first, last + 1)
+    let result = extractJSONFromString(jsonStr, 'object')
+    assert.deepEqual(result[0], {
+        function: 'send_message',
+        params: {
+            inner_thoughts: 'Alice酱问我在不在，我应该先回应她，然后告诉她我正在帮她想晚上吃什么。',
+            messages: [
+                'NekoChan在呀！Alice酱是不是在等NekoChan的推荐呀？'
+            ]
+        }
+    })
+})
+
 test('extractJSONFromString should extract JSON object from string', () => {
     let jsonStr = 'Some text {"name":"John Doe"} more text'
     let result = extractJSONFromString(jsonStr, 'object')
