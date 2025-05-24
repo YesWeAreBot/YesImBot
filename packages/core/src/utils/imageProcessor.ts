@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { existsSync, mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
-import { arrayBufferToBase64, Context } from "koishi";
+import { arrayBufferToBase64, Context, Element } from "koishi";
 import path from "path";
 import { IMAGE_TABLE, ImageData } from "../types/model";
 
@@ -30,8 +30,11 @@ export class ImageProcessor {
      * 3. 如果存在，直接返回
      * 4. 如果失败，返回null
      */
-    async process(image_url: string): Promise<ImageData> {
-        const image = await this.download(image_url);
+    async process(image_url: string | Element): Promise<ImageData> {
+
+        let { src, summary } = typeof image_url === "string" ? { src: image_url } : image_url.attrs;
+
+        const image = await this.download(src);
         if (!image) return null;
 
         const hash = this.hash(image);
@@ -43,7 +46,6 @@ export class ImageProcessor {
         // 获取描述等信息，保存到数据库
         const mimeType = this.getMimeType(image);
         const base64 = `data:${mimeType};base64,${arrayBufferToBase64(image)}`;
-        const summary = ''; // TODO: 调用模型获取描述
         const desc = '';    // TODO: 调用模型获取描述
         const size = image.byteLength;
 
@@ -51,7 +53,7 @@ export class ImageProcessor {
             id: hash,
             mimeType,
             // base64,
-            summary,
+            summary: summary || "",
             desc,
             size,
             timestamp: new Date(),

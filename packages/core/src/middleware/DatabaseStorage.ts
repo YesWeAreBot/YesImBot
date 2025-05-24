@@ -24,9 +24,9 @@ export class DatabaseStorageMiddleware implements Middleware {
 
                 case 'image':
                 case 'img':
-                    const imageData = await this.imageProcessor.process(element.attrs.src);
+                    const imageData = await this.imageProcessor.process(element);
                     if (imageData) {
-                        processedElements.push(h("img", { id: imageData.id, summary: imageData.summary, desc: imageData.desc }))
+                        processedElements.push(h("img", { id: imageData.id, summary: element.attrs.summary, desc: imageData.desc || null }))
                     } else {
                         processedElements.push(element);
                     }
