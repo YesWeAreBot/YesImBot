@@ -46,11 +46,11 @@ export type Interaction = {
 };
 
 export interface ImageData {
-    timestamp: Date;   // 
     id: string;        //
     mimeType: string;  //
     base64?: string;   //
     summary: string;   //
     desc?: string;     // 描述
     size: number;      // 大小
+    timestamp: Date;   //
 }
