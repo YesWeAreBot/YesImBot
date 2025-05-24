@@ -5,6 +5,7 @@
 - feat(processor): 使用 MD5 作为图片缓存键
 - 将消息 ID 添加到上下文中
 - feat(adapter): 支持设置代理服务器
+- feat(adapter): 请求失败切换下一个 API
 
 ### 3.0.0-alpha.12
 
