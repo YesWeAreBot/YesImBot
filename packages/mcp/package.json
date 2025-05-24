@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-yesimbot-extension-mcp",
   "description": "Yes! I'm Bot! MCP 扩展插件",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/HydroGest/YesImBot",
