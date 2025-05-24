@@ -78,8 +78,7 @@ export class ErrorHandlingMiddleware implements Middleware {
                 return null;
             }
         } catch (error) {
-            const err = error as any;
-            console.error('Error uploading to dump host:', err.message || err);
+            console.error('Error uploading to dump host:', error.cause.code);
             return null;
         }
     }
@@ -94,7 +93,7 @@ export class ErrorHandlingMiddleware implements Middleware {
         ];
 
         if (error.stack) {
-            dump.concat([
+            dump.push(...[
                 `**Stack Trace:**`,
                 `\n\n`,
                 `${error.stack}`,
@@ -103,7 +102,7 @@ export class ErrorHandlingMiddleware implements Middleware {
         }
 
         if (context.session) {
-            dump.concat([
+            dump.push(...[
                 `### Session Context`,
                 `**Platform:** ${context.session.platform}`,
                 `**User ID:** ${context.session.userId}`,
@@ -117,13 +116,13 @@ export class ErrorHandlingMiddleware implements Middleware {
         if (context.scenario) {
             dump.push(`### Scenario Context (Rendered or Raw)\n`);
             if (context.scenario instanceof Scenario && typeof context.scenario.render === 'function') {
-                dump.concat([
+                dump.push(...[
                     `\n\n`,
                     `${context.scenario.render()}`,
                     `\n\n`,
                 ]);
             } else {
-                dump.concat([
+                dump.push(...[
                     `\n\n`,
                     `json\n${JSON.stringify(context.scenario, null, 2)}`,
                     `\n\n`,
@@ -134,13 +133,13 @@ export class ErrorHandlingMiddleware implements Middleware {
         if (context.llmResponse) {
             dump.push(`### LLM Response (if available)\n`);
             if (typeof context.llmResponse === 'string') {
-                dump.concat([
+                dump.push(...[
                     `\n\n`,
                     `${context.llmResponse}`,
                     `\n\n`,
                 ]);
             } else {
-                dump.concat([
+                dump.push(...[
                     `\n\n`,
                     `json\n${JSON.stringify(context.llmResponse, null, 2)}`,
                     `\n\n`,
@@ -149,7 +148,7 @@ export class ErrorHandlingMiddleware implements Middleware {
         }
 
         if (context.additionalInfo) {
-            dump.concat([
+            dump.push(...[
                 `### Additional Info\n`,
                 `\n\n`,
                 `json\n${JSON.stringify(context.additionalInfo, null, 2)}`,

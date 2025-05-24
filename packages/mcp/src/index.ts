@@ -119,7 +119,7 @@ export async function apply(ctx: Context, config: Config) {
                                 ctx.logger.error(`Request timeout after ${config.timeout}ms`);
                                 return {
                                     success: false,
-                                    message: `Request timeout after ${config.timeout}ms`,
+                                    result: `Request timeout after ${config.timeout}ms`,
                                 };
                             }, config.timeout);
                             let result = await client.callTool({ name: tool.name, arguments: params });
@@ -128,7 +128,7 @@ export async function apply(ctx: Context, config: Config) {
                                 ctx.logger.error(`Failed to call tool ${tool.name}: ${result.error}`);
                                 return {
                                     success: false,
-                                    message: result.error,
+                                    error: result.error as string,
                                 };
                             }
                             let fullContent = "";

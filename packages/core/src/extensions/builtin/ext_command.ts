@@ -14,12 +14,9 @@ import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../bas
 
 export const Execute = Tool({
     name: "execute",
-    description: `运行一些只有在IM平台才能运行的指令，下面是可以运行的指令列表。
-    - fufu表情包
-    - 男娘武器库表情包
-    - 永雏小菲表情包
-  请将指令字符串添加到 cmd 参数上来执行指令。
-  将channel设置为你要执行指令的频道，不填默认为当前频道。
+    description: `执行一些只有在IM平台才能使用的指令。
+  - 将指令字符串添加到 cmd 参数上来执行指令。
+  - 将channel设置为你要执行指令的频道，不填默认为当前频道。
   Example:
     execute("fufu表情包", "123456789")`,
     parameters: z.object({
