@@ -12,7 +12,11 @@ export class AdapterSwitcher {
         this.updateConfig(adapterConfig, parameters);
     }
 
-    getAdapter() {
+    public get length() {
+        return this.adapters.length;
+    }
+
+    public getAdapter() {
         try {
             if (this.current >= this.adapters.length) this.current = 0;
             return { current: this.current, adapter: this.adapters[this.current++] };
@@ -21,7 +25,7 @@ export class AdapterSwitcher {
         }
     }
 
-    updateConfig(
+    public updateConfig(
         adapterConfig: Config["APIList"],
         parameters: Config["Parameters"]
     ) {

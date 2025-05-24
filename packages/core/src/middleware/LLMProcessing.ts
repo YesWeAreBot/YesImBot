@@ -31,29 +31,44 @@ export class LLMProcessingMiddleware implements Middleware {
             // 创建场景对象
             const scenario = await ctx.getScenario();
 
-            // 获取适配器
-            const { adapter } = this.adapterSwitcher.getAdapter();
-            if (!adapter) {
-                throw new Error('No LLM adapter available');
-            }
-
             // 构建提示词
             const systemPrompt = await this.getSystemPrompt();
             const memoryPrompt = await this.memory.render();
 
-            ctx.llmResponse = await adapter.chat([
-                { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
-                { role: 'user', content: scenario.render() }
-            ], null, {
-                xfetch: this.xfetch,
-                debug: this.config.debug,
-                logger: ctx.koishiContext.logger,
-                abortSignal: this.config.abortSignal,
-            });
+            let retry = this.adapterSwitcher.length;
 
-            // 转换到响应状态
-            await ctx.transitionTo(ConversationState.RESPONDING);
-
+            while (retry > 0) {
+                try {
+                    // 获取适配器
+                    let { adapter } = this.adapterSwitcher.getAdapter();
+                    if (!adapter) {
+                        throw new Error('No LLM adapter available');
+                    }
+                    ctx.llmResponse = await adapter.chat([
+                        { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
+                        { role: 'user', content: scenario.render() }
+                    ], null, {
+                        xfetch: this.xfetch,
+                        debug: this.config.debug,
+                        logger: ctx.koishiContext.logger,
+                        abortSignal: this.config.abortSignal,
+                    });
+                    // 转换到响应状态
+                    await ctx.transitionTo(ConversationState.RESPONDING);
+                    break;
+                } catch (error) {
+                    // 超时，切换下一个 Adapter
+                    if (error.name === "XSAIError" || error.cause.code === "ECONNRESET") {
+                        ctx.koishiContext.logger("Current Adapter is unavailable, try next");
+                        retry--;
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+            if (!ctx.llmResponse) {
+                throw new Error(`Request failed after ${this.adapterSwitcher.length} attempts.`)
+            }
             // 继续处理链
             await next();
         } catch (error) {
