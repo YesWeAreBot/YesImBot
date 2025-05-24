@@ -36,6 +36,7 @@ export class LLMProcessingMiddleware implements Middleware {
             const memoryPrompt = await this.memory.render();
 
             let retry = this.adapterSwitcher.length;
+            let lastError: any = null;
 
             while (retry > 0) {
                 try {
@@ -44,6 +45,7 @@ export class LLMProcessingMiddleware implements Middleware {
                     if (!adapter) {
                         throw new Error('No LLM adapter available');
                     }
+                    ctx.koishiContext.logger.debug(`[LLMProcessing] 使用适配器尝试请求，剩余重试次数: ${retry}`);
                     ctx.llmResponse = await adapter.chat([
                         { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
                         { role: 'user', content: scenario.render() }
@@ -57,17 +59,21 @@ export class LLMProcessingMiddleware implements Middleware {
                     await ctx.transitionTo(ConversationState.RESPONDING);
                     break;
                 } catch (error) {
-                    // 超时，切换下一个 Adapter
+                    lastError = error;
+                    // 超时或连接重置，切换下一个 Adapter
                     if (error.name === "XSAIError" || error.cause?.code === "ECONNRESET") {
-                        ctx.koishiContext.logger("Current Adapter is unavailable, try next");
+                        ctx.koishiContext.logger.warn(`[LLMProcessing] 当前适配器不可用（${error.name}: ${error.message}），尝试下一个，剩余重试次数: ${retry - 1}`);
                         retry--;
                         continue;
                     }
+                    // 其他错误直接抛出
+                    ctx.koishiContext.logger.error(`[LLMProcessing] 发生未处理错误: ${error.name}: ${error.message}`);
                     throw error;
                 }
             }
             if (!ctx.llmResponse) {
-                throw new Error(`Request failed after ${this.adapterSwitcher.length} attempts.`)
+                ctx.koishiContext.logger.error(`[LLMProcessing] 所有适配器请求失败，共尝试 ${this.adapterSwitcher.length} 次。最后错误: ${lastError?.name}: ${lastError?.message}`);
+                throw new Error(`Request failed after ${this.adapterSwitcher.length} attempts. Last error: ${lastError?.name}: ${lastError?.message}`);
             }
             // 继续处理链
             await next();
