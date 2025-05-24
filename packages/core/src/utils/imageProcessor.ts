@@ -1,6 +1,7 @@
+import { createHash } from "crypto";
 import { existsSync, mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
-import { arrayBufferToBase64, arrayBufferToHex, Context } from "koishi";
+import { arrayBufferToBase64, Context } from "koishi";
 import path from "path";
 import { IMAGE_TABLE, ImageData } from "../types/model";
 
@@ -22,7 +23,7 @@ export class ImageProcessor {
      * 处理图片
      * @param image_url 图片url
      * @returns 处理后的图片数据
-     * 
+     *
      * 处理流程：
      * 1. 下载图片，获取hash值，判断是否已经存在
      * 2. 如果不存在，获取描述等信息，保存到数据库
@@ -33,7 +34,7 @@ export class ImageProcessor {
         const image = await this.download(image_url);
         if (!image) return null;
 
-        const hash = arrayBufferToHex(image).substring(0, 32);
+        const hash = this.hash(image);
         let [imageData] = await this.ctx.database?.get(IMAGE_TABLE, { id: hash }) || [];
         if (imageData) return imageData;
 
@@ -47,6 +48,7 @@ export class ImageProcessor {
         const size = image.byteLength;
 
         imageData = {
+            timestamp: new Date(),
             id: hash,
             mimeType,
             // base64,
@@ -60,7 +62,7 @@ export class ImageProcessor {
 
     private async download(image_url: string): Promise<ArrayBuffer> {
         try {
-            if (this.ctx.http){
+            if (this.ctx.http) {
                 return await this.ctx.http.get(image_url, { responseType: 'arraybuffer' });
             } else {
                 const res = await fetch(image_url);
@@ -70,6 +72,12 @@ export class ImageProcessor {
             this.ctx.logger.error('Error downloading image');
             this.ctx.logger.error(error);
         }
+    }
+
+    private hash(image: ArrayBuffer): string {
+        const hash = createHash('md5');
+        hash.update(Buffer.from(image));
+        return hash.digest('hex');
     }
 
     private getMimeType(image: ArrayBuffer): string {

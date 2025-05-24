@@ -95,6 +95,7 @@ export class Scenario {
                 isRead = false;
             }
             if (record["messageId"]) {
+                // record is message
                 let elements = h.parse(record.content as string);
                 let content = "";
                 for (let elem of elements) {
@@ -112,26 +113,23 @@ export class Scenario {
                             break;
                     }
                 }
-                // record is message
+
                 if (record["sender"].id == this.session.bot.selfId) {
-                    this.addContext(`[${formatDate(record.timestamp)} YOU] ${content}`, isRead);
-                    continue;
+                    this.addContext(`[#${record["messageId"]} ${formatDate(record.timestamp)} YOU] ${content}`, isRead);
                 } else {
-                    this.addContext(`[${formatDate(record.timestamp)} ${record["sender"].name}<${record["sender"].id}>] ${content}`, isRead);
+                    this.addContext(`[#${record["messageId"]} ${formatDate(record.timestamp)} ${record["sender"].name}<${record["sender"].id}>] ${content}`, isRead);
                 }
-            }
-            else {
+            } else {
                 // record is interaction
                 if (record["type"] === "tool_result") {
                     this.addContext(`[FUNCTION RETURN] ${JSON.stringify(record["content"])}`, isRead)
-                    continue;
                 } else {
                     this.addContext(`[FUNCTION CALL] ${JSON.stringify(record["content"])}`, isRead);
                 }
             }
         }
 
-        await this.ctx.database.set(LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date(), });
+        await this.ctx.database.set(LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date() });
     }
 
     private async getName(): Promise<string> {

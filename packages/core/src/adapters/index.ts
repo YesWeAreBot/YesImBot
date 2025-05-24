@@ -1,8 +1,5 @@
-import { getAdapter } from "../utils/factory";
-import { BaseAdapter, CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter } from "./base";
+import { BaseAdapter, UniversalAdapter } from "./base";
 import { Config } from "./config";
-
-export { BaseAdapter, CloudflareAdapter, CustomAdapter, GeminiAdapter, OllamaAdapter, OpenAIAdapter };
 
 
 export class AdapterSwitcher {
@@ -31,7 +28,7 @@ export class AdapterSwitcher {
         this.adapters = [];
         for (const adapter of adapterConfig) {
             if (!adapter.Enabled) continue;
-            this.adapters.push(getAdapter(adapter, parameters));
+            this.adapters.push(new UniversalAdapter(adapter, parameters));
         }
     }
 }

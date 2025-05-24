@@ -40,8 +40,6 @@ export class MessageContext {
         public koishiContext: Context,
         // Koishi会话对象
         public koishiSession: Session,
-        // 当前消息
-        public message: Message
     ) {
         this.isMentioned = h.parse(koishiSession.content).some(element => element.type === 'at' && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === 'all'));
     }

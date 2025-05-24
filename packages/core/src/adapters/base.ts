@@ -3,35 +3,34 @@ import { Context } from "koishi";
 import type { ChatOptions, GenerateTextResult, Message, ToolResult } from 'xsai';
 import {
     createAnthropic,
+    createDeepSeek,
+    createFetch,
     createGoogleGenerativeAI,
+    createLMStudio,
     createOllama,
     createOpenAI,
     createOpenRouter,
     createQwen,
     createSiliconFlow,
     createWorkersAI,
+    createXAI,
+    createZhipu,
     extractReasoning,
     extractReasoningStream,
     generateText,
-    streamText
+    streamText,
 } from '../dependencies/xsai';
 
 import { isEmpty, isNotEmpty } from '../utils';
 import { Config, LLMConfig } from "./config";
 
-
-function createFetch(option: { proxy?: string }): typeof globalThis.fetch {
-    return (input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
-        return fetch(input, { ...init, });
-    }
-}
-
 interface RequestOptions {
     logger: Context["logger"];
+    debug: boolean;
     retry?: number;
     retryDelay?: number;
+    retryStatusCodes?: number[];
     abortSignal?: AbortSignal;
-    debug?: boolean;
 }
 
 export abstract class BaseAdapter {
@@ -39,7 +38,7 @@ export abstract class BaseAdapter {
     protected readonly apiKey: string;
     protected readonly model: string;
     protected readonly otherParams: Record<string, any>;
-    readonly ability: ("原生工具调用" | "识图功能" | "结构化输出" | "流式输出" | "深度思考" | "对话前缀续写")[];
+    readonly ability: LLMConfig["Ability"];
 
     protected provider?: ChatProvider;
     protected startWith?: string;
@@ -47,18 +46,18 @@ export abstract class BaseAdapter {
     protected startWithReasoning: boolean;
 
     constructor(
-        protected adapterConfig: LLMConfig,
+        protected config: LLMConfig,
         protected parameters?: Config["Parameters"]
     ) {
-        const { APIKey, APIType, AIModel, Ability } = adapterConfig;
-        this.baseURL = adapterConfig.BaseURL;
+        const { APIKey, Model, Ability } = config;
+        this.baseURL = config.BaseURL;
         this.apiKey = APIKey;
-        this.model = AIModel;
+        this.model = Model;
         this.ability = Ability || [];
 
         if (this.ability.includes("深度思考")) {
-            this.reasoningTag = adapterConfig.TagName || "think";
-            this.startWithReasoning = adapterConfig.StartWithReasoning || false;
+            this.reasoningTag = config.TagName || "think";
+            this.startWithReasoning = config.StartWithReasoning || false;
         }
 
         // 解析其他参数
@@ -101,19 +100,32 @@ export abstract class BaseAdapter {
     }
 
     async chat(messages: Message[], tools?: ToolResult[], option?: RequestOptions): Promise<GenerateTextResult & { reasoning: string }> {
+        const info = (info: string) => {
+            if (option.debug) option.logger.info(info);
+        };
+
+        const fetch = createFetch({
+            retry: option.retry,
+            retryDelay: option.retryDelay,
+            retryStatusCodes: option.retryStatusCodes,
+        });
+
         // 公共参数
         const chatOptions: ChatOptions = {
+            fetch,
+            abortSignal: option?.abortSignal,
             ...(this.provider ? this.provider.chat(this.model) : { model: this.model, baseURL: this.baseURL, apiKey: this.apiKey }),
+            ...(tools ? { tools } : {}),
             frequencyPenalty: this.parameters?.FrequencyPenalty,
             messages,
             presencePenalty: this.parameters?.PresencePenalty,
+            maxSteps: 3,
             // seed
             //@ts-ignore
             stop: this.parameters?.Stop,
             temperature: this.parameters?.Temperature,
             // toolChoice
             topP: this.parameters?.TopP,
-            abortSignal: option?.abortSignal,
         }
 
         if (this.ability.includes("流式输出")) {
@@ -121,7 +133,6 @@ export abstract class BaseAdapter {
             let reasoningStreamContent = "";
             const result = await streamText({
                 ...chatOptions,
-                ...(tools ? { tools } : {}),
                 // maxSteps
                 ...this.otherParams,
                 streamOptions: {
@@ -132,7 +143,7 @@ export abstract class BaseAdapter {
                     currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
                     reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
                     if (currentLineBuffer.includes("\n")) {
-                        option?.logger.info(currentLineBuffer.replace(/\n$/, ""));
+                        info(currentLineBuffer.replace(/\n$/, ""));
                         currentLineBuffer = "";
                     }
                 },
@@ -141,7 +152,7 @@ export abstract class BaseAdapter {
             let textStream: ReadableStream<string>
             let textStreamContent = "";
 
-            option?.logger.info(`Receiving text stream from ${this.model}...`);
+            info(`Receiving text stream from ${this.model}...`);
 
             if (this.ability.includes("深度思考")) {
                 const { reasoningStream, textStream: text } = extractReasoningStream(result["textStream"], { tagName: this.reasoningTag, startWithReasoning: true });
@@ -158,14 +169,14 @@ export abstract class BaseAdapter {
                 textStreamContent += textPart;
                 currentLineBuffer += textPart;
                 if (currentLineBuffer.includes("\n")) {
-                    option?.logger.info(currentLineBuffer.replace(/\n$/, ""));
+                    info(currentLineBuffer.replace(/\n$/, ""));
                     currentLineBuffer = "";
                 }
             }
 
             // 输出最后一行
-            if (isNotEmpty(currentLineBuffer)) option?.logger.info(currentLineBuffer);
-            option?.logger.info(`Streaming text from ${this.model} completed.`);
+            if (isNotEmpty(currentLineBuffer)) info(currentLineBuffer);
+            info(`Streaming text from ${this.model} completed.`);
 
             for await (const step of result["stepStream"]) {
                 if (step.finishReason == "tool_calls") {
@@ -177,8 +188,8 @@ export abstract class BaseAdapter {
                         return `${result.join(', ')}`;
                     }
                     for (let executeToolResult of step.toolResults) {
-                        option?.logger.info(`→ ${executeToolResult.toolName}(${stringify(executeToolResult.args)})`)
-                        option?.logger.info(`← ${executeToolResult.result}`)
+                        info(`→ ${executeToolResult.toolName}(${stringify(executeToolResult.args)})`)
+                        info(`← ${executeToolResult.result}`)
                     }
                     return this.chat(step.messages, tools, option);
                 } else if (step.finishReason == "stop") {
@@ -193,7 +204,6 @@ export abstract class BaseAdapter {
             // 非流式输出
             const result = await generateText({
                 ...chatOptions,
-                ...(tools ? { tools } : {}),
                 ...this.otherParams,
             });
             if (this.ability.includes("深度思考")) {
@@ -210,97 +220,68 @@ export abstract class BaseAdapter {
             };
         }
     }
+
+    abstract setProvider()
 }
 
-export class CloudflareAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        if (!config.APIKey || !config.UID) {
-            throw new Error('APIKey and UID are required for CloudflareAdapter');
+export class UniversalAdapter extends BaseAdapter {
+
+    constructor(adapterConfig: LLMConfig, parameters?: Config["Parameters"]) {
+        super(adapterConfig, parameters);
+        this.setProvider();
+    }
+
+    setProvider() {
+        const { APIKey, BaseURL } = this.config;
+        switch (this.config.Provider) {
+            case 'OpenAI':
+            case 'OpenAI Compatible':
+                this.provider = createOpenAI(APIKey, BaseURL);
+                break;
+            case 'Anthropic':
+                this.provider = createAnthropic(APIKey, BaseURL);
+                break;
+            case 'Google Gemini':
+                this.provider = createGoogleGenerativeAI(APIKey, BaseURL);
+                break;
+            case 'OpenRouter':
+                this.provider = createOpenRouter(APIKey, BaseURL);
+                break;
+            case 'SiliconFlow':
+                this.provider = createSiliconFlow(APIKey, BaseURL);
+                break;
+            case 'XAI':
+                this.provider = createXAI(APIKey, BaseURL);
+                break;
+            case 'DeepSeek':
+                this.provider = createDeepSeek(APIKey, BaseURL);
+                break;
+            case 'Zhipu':
+                this.provider = createZhipu(APIKey, BaseURL);
+                break;
+            case 'LMStudio':
+                this.provider = createLMStudio(BaseURL);
+                break;
+            case 'Ollama':
+                this.provider = createOllama(BaseURL);
+                break;
+            case 'Qwen':
+                this.provider = createQwen(APIKey, BaseURL);
+                break;
+            case 'Cloudflare WorkersAI':
+                this.provider = createWorkersAI(APIKey, BaseURL);
+                break;
+            default:
+                throw new InvalidAdapterTypeError("")
         }
-        this.provider = createWorkersAI(config.APIKey, config.UID);
     }
 }
 
 
-export class GeminiAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        if (!this.apiKey) {
-            throw new Error('APIKey is required for GeminiAdapter');
-        }
-        this.provider = createGoogleGenerativeAI(this.apiKey, this.baseURL);
-    }
-}
 
-export class CustomAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        if (!this.baseURL) {
-            throw new Error('BaseURL is required for CustomAdapter');
-        }
-    }
-}
-
-export class OllamaAdapter extends BaseAdapter {
-    constructor(private config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        if (!this.baseURL) {
-            throw new Error('BaseURL is required for OllamaAdapter');
-        }
-        this.provider = createOllama(this.baseURL);
-    }
-}
-
-
-export class OpenAIAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        this.provider = createOpenAI(
-            this.apiKey,
-            this.baseURL,
-        );
-    }
-}
-
-
-export class AnthropicAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        this.provider = createAnthropic(
-            this.apiKey,
-            this.baseURL,
-        );
-    }
-}
-
-
-export class QwenAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        this.provider = createQwen(
-            this.apiKey,
-            this.baseURL,
-        );
-    }
-}
-
-export class SiliconFlowAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        this.provider = createSiliconFlow(
-            this.apiKey,
-            this.baseURL,
-        );
-    }
-}
-
-export class OpenRouterAdapter extends BaseAdapter {
-    constructor(config: LLMConfig, parameters?: Config["Parameters"]) {
-        super(config, parameters);
-        this.provider = createOpenRouter(
-            this.apiKey,
-            this.baseURL,
-        );
+class InvalidAdapterTypeError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "InvalidAPITypeError";
     }
 }
