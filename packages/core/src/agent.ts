@@ -131,24 +131,7 @@ export default class Agent {
         this.ctx.middleware(async (session, next) => {
             try {
                 // 创建消息上下文
-                const messageContext = new MessageContext(
-                    this.ctx,
-                    session,
-                    {
-                        messageId: session.messageId,
-                        content: session.content,
-                        sender: {
-                            id: session.author.id,
-                            name: session.author.name,
-                            nick: session.author.nick,
-                        },
-                        channel: {
-                            id: session.channelId,
-                            type: getChannelType(session.channelId)
-                        },
-                        timestamp: new Date(session.timestamp),
-                    }
-                );
+                const messageContext = new MessageContext(this.ctx, session);
 
                 // 执行中间件链
                 const middlewareManager = this.serviceContainer.get<MiddlewareManager>('middlewareManager');

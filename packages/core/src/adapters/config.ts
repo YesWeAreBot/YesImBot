@@ -2,11 +2,11 @@ import { Schema } from "koishi";
 
 export interface LLMConfig {
     Enabled?: boolean;
-    APIType: "OpenAI" | "Cloudflare" | "Ollama" | "Custom URL" | "Gemini";
-    BaseURL: string;
+    Provider: "OpenAI" | "OpenAI Compatible" | "Anthropic" | "Google Gemini" | "OpenRouter" | "SiliconFlow" | "XAI" | "DeepSeek" | "Zhipu" | "LMStudio" | "Ollama" | "Qwen" | "Cloudflare WorkersAI";
+    BaseURL?: string;
     UID?: string;
     APIKey: string;
-    AIModel: string;
+    Model: string;
     Ability?: Array<"原生工具调用" | "识图功能" | "结构化输出" | "流式输出" | "深度思考">;
     TagName?: string;
     StartWithReasoning?: boolean;
@@ -32,11 +32,11 @@ export interface Config {
 export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
     Schema.object({
         Enabled: Schema.boolean().default(true).description("是否启用"),
-        APIType: Schema.union(["OpenAI", "Cloudflare", "Ollama", "Custom URL", "Gemini"])
+        Provider: Schema.union(["OpenAI", "OpenAI Compatible", "Anthropic", "Google Gemini", "OpenRouter", "SiliconFlow", "XAI", "DeepSeek", "Zhipu", "LMStudio", "Ollama", "Qwen", "Cloudflare WorkersAI"])
             .default("OpenAI")
             .description("API 类型"),
         APIKey: Schema.string().role("secret").required().description("你的 API 令牌"),
-        AIModel: Schema.string()
+        Model: Schema.string()
             .description("模型 ID"),
         Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出", "深度思考"]))
             .role("checkbox")
@@ -50,23 +50,18 @@ export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
     Schema.union([
         Schema.object({
             APIType: Schema.const("OpenAI"),
-            BaseURL: Schema.string().default("https://api.openai.com"),
+            BaseURL: Schema.string().default("https://api.openai.com/v1"),
         }),
         Schema.object({
-            APIType: Schema.const("Cloudflare"),
-            BaseURL: Schema.string().default("https://api.cloudflare.com/client/v4"),
-            UID: Schema.string().required().description("Cloudflare UID"),
-        }),
-        Schema.object({
-            APIType: Schema.const("Custom URL"),
-            BaseURL: Schema.string().required().description("填写完整的 API 地址"),
+            APIType: Schema.const("OpenAI Compatible"),
+            BaseURL: Schema.string().default("https://api.openai.com/v1"),
         }),
         Schema.object({
             APIType: Schema.const("Ollama"),
             BaseURL: Schema.string().default("http://127.0.0.1:11434"),
         }),
         Schema.object({
-            APIType: Schema.const("Gemini"),
+            APIType: Schema.const("Google Gemini"),
             BaseURL: Schema.string().default("https://generativelanguage.googleapis.com"),
         }),
     ]),

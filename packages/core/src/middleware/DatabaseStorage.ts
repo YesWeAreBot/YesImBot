@@ -1,7 +1,8 @@
 import { Context, Element, h } from 'koishi';
 import { MESSAGE_TABLE } from '../types/model';
-import { MessageContext, Middleware } from './base';
+import { getChannelType } from '../utils';
 import { ImageProcessor } from '../utils/imageProcessor';
+import { MessageContext, Middleware } from './base';
 
 
 /**
@@ -43,25 +44,41 @@ export class DatabaseStorageMiddleware implements Middleware {
                     break;
             }
         }
+        const content = processedElements.join("");
 
         // 保存接收到的消息
-        await this.saveReceivedMessage(ctx);
+        await this.saveReceivedMessage(ctx, content);
 
         // 继续处理链
         await next();
     }
 
-    private async saveReceivedMessage(ctx: MessageContext): Promise<void> {
+    private async saveReceivedMessage(ctx: MessageContext, content: string): Promise<void> {
+        const session = ctx.koishiSession;
         // 添加到数据库
         const messages = await this.ctx.database.get(MESSAGE_TABLE, {
-            messageId: ctx.koishiSession.messageId,
+            messageId: session.messageId,
             channel: {
-                id: ctx.koishiSession.channelId,
+                id: session.channelId,
             }
         });
         if (messages.length == 0) {
-            await this.ctx.database.create(MESSAGE_TABLE, ctx.message);
-            this.ctx.logger.info(`Message Received: ${ctx.koishiSession.content}`);
+            await this.ctx.database.create(MESSAGE_TABLE, {
+                messageId: session.messageId,
+                content: content,
+                sender: {
+                    ...session.author,
+                    id: session.author.id,
+                    name: session.author.name,
+                    nick: session.author.nick,
+                },
+                channel: {
+                    id: session.channelId,
+                    type: getChannelType(session.channelId)
+                },
+                timestamp: new Date(session.timestamp),
+            });
+            this.ctx.logger.info(`Message Received: ${content}`);
         }
     }
 }
