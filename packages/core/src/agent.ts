@@ -213,6 +213,7 @@ export default class Agent {
             summary: "string",
             desc: "string",
             size: "integer",
+            timestamp: "timestamp",
         }, {
             primary: "id",
             autoInc: false,

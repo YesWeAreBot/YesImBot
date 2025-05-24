@@ -48,13 +48,13 @@ export class ImageProcessor {
         const size = image.byteLength;
 
         imageData = {
-            timestamp: new Date(),
             id: hash,
             mimeType,
             // base64,
             summary,
             desc,
             size,
+            timestamp: new Date(),
         }
         await this.ctx.database?.create(IMAGE_TABLE, imageData);
         return imageData;
