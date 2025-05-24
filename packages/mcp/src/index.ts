@@ -50,6 +50,7 @@ export const inject = {
 export async function apply(ctx: Context, config: Config) {
     const clients: Client[] = [];
     const transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
+    const allTools = [];
     ctx.on("ready", async () => {
 
         if (config.uvSettings?.autoDownload) {
@@ -59,7 +60,6 @@ export async function apply(ctx: Context, config: Config) {
             // }
         }
 
-        let count = 0;
         ctx.logger.info(`Connecting to ${Object.keys(config.mcpServers).length} servers`);
         for await (const serverName of Object.keys(config.mcpServers)) {
             let transport: SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport;
@@ -119,7 +119,7 @@ export async function apply(ctx: Context, config: Config) {
                                 ctx.logger.error(`Request timeout after ${config.timeout}ms`);
                                 return {
                                     success: false,
-                                    result: `Request timeout after ${config.timeout}ms`,
+                                    error: `Request timeout after ${config.timeout}ms`,
                                 };
                             }, config.timeout);
                             let result = await client.callTool({ name: tool.name, arguments: params });
@@ -144,25 +144,25 @@ export async function apply(ctx: Context, config: Config) {
                             }
                             return {
                                 success: true,
-                                message: fullContent,
+                                result: fullContent,
                             };
                         } catch (error) {
                             return {
                                 success: false,
-                                message: error.message,
+                                error: error.message,
                             };
                         }
                     }
                 });
+                allTools.push(tool.name);
                 ctx.logger.info(`Tool registered: ${tool.name}`);
-                count++;
             }
         }
-        if (count === 0) {
+        if (allTools.length === 0) {
             ctx.logger.error(`No tools found`);
             return;
         } else {
-            ctx.logger.info(`Loaded ${clients.length} servers with ${count} tools`);
+            ctx.logger.info(`Loaded ${clients.length} servers with ${allTools.length} tools`);
         }
     })
 
@@ -174,6 +174,11 @@ export async function apply(ctx: Context, config: Config) {
         for await (const transport of transports) {
             await transport.close();
         }
+
+        for (const tool of allTools) {
+            ctx.yesimbot.toolManager.removeTool(tool);
+        }
+
         ctx.logger.info(`Disconnected from all servers`);
     })
 

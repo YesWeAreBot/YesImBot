@@ -120,8 +120,10 @@ export abstract class BaseAdapter {
 
         if (this.ability.includes("流式输出")) {
             let currentLineBuffer = "";
+            let currentReasoningBuffer = ""
+
             let reasoningStreamContent = "";
-            let reasoningStage: ReasoningStage = ReasoningStage.None;
+
             const result = await streamText({
                 ...chatOptions,
                 // maxSteps
@@ -130,40 +132,15 @@ export abstract class BaseAdapter {
                     includeUsage: true,
                 },
                 onChunk(chunk) {
-                    switch (reasoningStage) {
-                        case ReasoningStage.None:
-                            if (isEmpty(chunk.choices[0].delta["reasoning_content"]) && isNotEmpty(chunk.choices[0].delta["content"])) {
-                                reasoningStage = ReasoningStage.Finish;
-                                break;
-                            }
-                            reasoningStage = ReasoningStage.Start;
-                            break;
-                        case ReasoningStage.Start:
-                            if (isEmpty(chunk.choices[0].delta["reasoning_content"]) && isNotEmpty(chunk.choices[0].delta["content"])) {
-                                reasoningStage = ReasoningStage.End
-                                if (isNotEmpty(currentLineBuffer)) {
-                                    info(`> ${currentLineBuffer}`);
-                                    currentLineBuffer = "";
-                                }
-                            };
-                            currentLineBuffer += chunk.choices[0].delta["reasoning_content"] || "";
-                            reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
-                            if (currentLineBuffer.includes("\n")) {
-                                for (let line of currentLineBuffer.split("\n")) {
-                                    if (isNotEmpty(line)) info(`> ${line}`);
-                                }
-                                currentLineBuffer = "";
-                            }
-                            break
-                        case ReasoningStage.End:
-                            if (isNotEmpty(currentLineBuffer)) info(`> ${currentLineBuffer}`);
-                            currentLineBuffer = "";
-                            reasoningStage = ReasoningStage.Finish;
-                            break
-                        default:
-                            break;
+                    currentReasoningBuffer += chunk.choices[0].delta["reasoning_content"] || "";
+                    reasoningStreamContent += chunk.choices[0].delta["reasoning_content"] || "";
+                    if (currentReasoningBuffer.includes("\n") || isEmpty(chunk.choices[0].delta["reasoning_content"]) && isNotEmpty(chunk.choices[0].delta["content"])) {
+                        for (let line of currentReasoningBuffer.split("\n")) {
+                            if (isNotEmpty(line)) info(`> ${line}`);
+                        }
+                        currentReasoningBuffer = "";
                     }
-                },
+                }
             })
 
             let textStream: ReadableStream<string>
@@ -312,11 +289,4 @@ class InvalidAdapterTypeError extends Error {
         super(message);
         this.name = "InvalidAPITypeError";
     }
-}
-
-enum ReasoningStage {
-    None,
-    Start,
-    End,
-    Finish,
 }

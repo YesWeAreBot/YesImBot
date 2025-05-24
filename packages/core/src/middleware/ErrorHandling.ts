@@ -1,5 +1,4 @@
 import { Context, Session } from 'koishi';
-import { fetch as ufetch } from 'undici';
 
 import { Scenario } from '../Scenario';
 import { MessageContext, Middleware } from './base';
@@ -57,17 +56,17 @@ export class ErrorHandlingMiddleware implements Middleware {
         }
     }
 
-    private async uploadToPaste(content: string): Promise<string | null> {
+    private async uploadToPaste( content: string): Promise<string | null> {
         try {
             const formData = new FormData();
             formData.append('c', content);
 
-            const response = await ufetch('https://dump.yesimbot.chat/', {
-                method: 'POST',
-                body: formData as any,
-            })
+            const response = await fetch('https://dump.yesimbot.chat/', {
+                method: "POST",
+                body: formData
+            });
 
-            const data = await response.json() as any;
+            const data = await response.json();
 
             if (data && data.url) {
                 return data.url;
@@ -76,7 +75,7 @@ export class ErrorHandlingMiddleware implements Middleware {
                 return null;
             }
         } catch (error) {
-            console.error('Error uploading to dump host:', error.cause.code);
+            console.error('Error uploading to dump host:', error.message);
             return null;
         }
     }
@@ -155,31 +154,5 @@ export class ErrorHandlingMiddleware implements Middleware {
         }
 
         return dump.join('\n');
-    }
-
-    private async handleGlobalError(
-        error: Error,
-        context: ErrorContext = {}
-    ) {
-        const { ctx } = context;
-        const logger = ctx && ctx.logger ? ctx.logger('yesimbot:error') : console;
-
-        logger.error(`[GlobalErrorHandler] An error occurred: ${error.message}`);
-        if (error.stack) {
-            logger.error(error.stack);
-        }
-
-        const dumpContent = this.formatErrorDump(error, context);
-
-        logger.info('[GlobalErrorHandler] Generated Error Dump (first 1000 chars):\n', dumpContent.substring(0, 1000) + (dumpContent.length > 1000 ? '...' : ''));
-
-        const pasteUrl = await this.uploadToPaste(dumpContent);
-
-        if (pasteUrl) {
-            logger.info(`[GlobalErrorHandler] Error dump uploaded to: ${pasteUrl}`);
-        } else {
-            logger.warn('[GlobalErrorHandler] Failed to upload error dump to pastebin.');
-        }
-        return pasteUrl;
     }
 }

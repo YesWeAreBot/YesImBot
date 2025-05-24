@@ -132,6 +132,10 @@ export class ToolManager {
         this.tools.set(definition.name, definition);
     }
 
+    removeTool(name: string) {
+        this.tools.delete(name);
+    }
+
     getTool(name: string, context: ToolContext = {}): EnhancedToolResult | undefined {
         if (!this.tools.has(name)) {
             return undefined;
