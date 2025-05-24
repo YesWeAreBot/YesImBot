@@ -1,4 +1,5 @@
 import { Context, Session } from 'koishi';
+import { fetch as ufetch } from 'undici';
 
 import { Scenario } from '../Scenario';
 import { MessageContext, Middleware } from './base';
@@ -61,15 +62,12 @@ export class ErrorHandlingMiddleware implements Middleware {
             const formData = new FormData();
             formData.append('c', content);
 
-            const response = await fetch('https://dump.yesimbot.chat/', {
+            const response = await ufetch('https://dump.yesimbot.chat/', {
                 method: 'POST',
-                body: formData,
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                }
+                body: formData as any,
             })
 
-            const data = await response.json();
+            const data = await response.json() as any;
 
             if (data && data.url) {
                 return data.url;
