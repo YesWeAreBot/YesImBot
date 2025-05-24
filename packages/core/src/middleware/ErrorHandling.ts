@@ -1,8 +1,7 @@
 import { Context, Session } from 'koishi';
 
 import { Scenario } from '../Scenario';
-import { ConversationState, MessageContext, Middleware, MiddlewareManager } from './base';
-import { CheckReplyConditionMiddleware } from './CheckReplyCondition';
+import { MessageContext, Middleware } from './base';
 
 
 export interface ErrorContext {

@@ -4,6 +4,7 @@
 - feat(prompt): 优化 Prompt 试图解决刷屏与复读问题
 - feat(processor): 使用 MD5 作为图片缓存键
 - 将消息 ID 添加到上下文中
+- feat(adapter): 支持设置代理服务器
 
 ### 3.0.0-alpha.12
 

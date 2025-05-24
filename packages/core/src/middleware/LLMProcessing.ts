@@ -1,6 +1,5 @@
 import fs from "fs/promises";
 import path from "path";
-import type { GenerateTextResult, Message, ToolResult } from "xsai";
 
 import { AdapterSwitcher } from "../adapters";
 import { ToolManager } from "../extensions";
@@ -15,8 +14,10 @@ export class LLMProcessingMiddleware implements Middleware {
         private adapterSwitcher: AdapterSwitcher,
         private toolManager: ToolManager,
         private memory: Memory,
+        private xfetch: typeof globalThis.fetch,
         private config?: {
-            maxRetry: number;
+            debug?: boolean;
+            abortSignal?: AbortSignal;
         }
     ) { }
 
@@ -40,27 +41,15 @@ export class LLMProcessingMiddleware implements Middleware {
             const systemPrompt = await this.getSystemPrompt();
             const memoryPrompt = await this.memory.render();
 
-            let retryCount = 0; // 当前重试次数
-
-            while (retryCount < this.config?.maxRetry || 1) {
-                try {
-                    // 发送LLM请求
-                    ctx.llmResponse = await adapter.chat([
-                        { role: 'system', content: systemPrompt },
-                        { role: 'system', content: memoryPrompt },
-                        { role: 'user', content: scenario.render() }
-                    ], null, {
-                        debug: true,
-                        logger: ctx.koishiContext.logger,
-                    });
-                    break; // 成功发送请求，退出循环
-                } catch (error) {
-                    retryCount++; // 重试次数加1
-                    if (retryCount >= this.config?.maxRetry || 1) {
-                        throw error; // 达到最大重试次数，抛出错误
-                    }
-                }
-            }
+            ctx.llmResponse = await adapter.chat([
+                { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
+                { role: 'user', content: scenario.render() }
+            ], null, {
+                xfetch: this.xfetch,
+                debug: this.config.debug,
+                logger: ctx.koishiContext.logger,
+                abortSignal: this.config.abortSignal,
+            });
 
             // 转换到响应状态
             await ctx.transitionTo(ConversationState.RESPONDING);
