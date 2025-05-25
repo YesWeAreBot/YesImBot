@@ -30,29 +30,13 @@ export class MessageContext {
 
     public isMentioned: boolean = false;
 
-    // 场景对象（懒加载）
-    private _scenario?: Scenario;
-    // 记忆对象
-    private memory: Memory;
-
     constructor(
         // Koishi上下文对象
         public koishiContext: Context,
         // Koishi会话对象
         public koishiSession: Session,
     ) {
-        this.isMentioned = h.parse(koishiSession.content).some(element => element.type === 'at' && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === 'all'));
-    }
-
-    /**
-     * 获取对话场景
-     */
-    async getScenario(): Promise<Scenario> {
-        if (!this._scenario) {
-            this._scenario = await Scenario.create(this.koishiContext, this.koishiSession);
-        }
-        await this._scenario.refresh();
-        return this._scenario;
+        this.isMentioned = koishiSession.elements.some(element => element.type === 'at' && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === 'all'));
     }
 
     /**

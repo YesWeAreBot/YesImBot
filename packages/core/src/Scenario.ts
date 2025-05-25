@@ -1,6 +1,7 @@
 import { $, Context, h, Session } from "koishi";
 import type { ImagePart, TextPart } from "xsai";
 
+import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "./services/PlatformAdapter";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
 import { formatDate, getChannelType } from "./utils";
 
@@ -9,211 +10,169 @@ import { formatDate, getChannelType } from "./utils";
  * 对话场景
  */
 export class Scenario {
-    // 场景ID
-    id: string;
-    // 场景类型
-    type: Message['channel']['type'];
-    // 场景名称
-    name: string;
-    // 场景描述
-    description: string;
-    // 场景上下文
-    private context: string[] = [];
-    // 未读消息列表
-    private unread: string[] = [];
-    // 超出上下文的记忆
+
+    private metadata: Record<string, string>;
+    private context: string[] = []; // 已读消息列表
+    private unread: string[] = [];  // 未读消息列表
     private recallSize: number;
+    private lastReplyTime: Date | null = null; // 存储最后回复时间，用于判断消息已读状态
+    private platformAdapter: PlatformAdapter
 
     constructor(private ctx: Context, private session: Session) {
-        this.id = session.channelId;
-        this.type = getChannelType(session.channelId);
-    }
-
-    static async create(ctx: Context, session: Session): Promise<Scenario> {
-        const instance = new Scenario(ctx, session);
-        await instance.init();
-        return instance;
-    }
-
-    /**
-     * 异步初始化
-     */
-    private async init() {
-        this.name = await this.getName() || "Unnamed";
-        this.description = await this.getDescription();
+        switch (session.platform) {
+            case 'onebot':
+                this.platformAdapter = new OneBotPlatform(session);
+                break;
+            default:
+                this.platformAdapter = new DefaultPlatform(session);
+                break;
+        }
     }
 
     /**
-     *
-     * @param limit
+     * 异步加载初始数据 (仅在 Scenario 首次创建时调用一次)
+     * 合并查询消息和交互，减少数据库查询。
+     * @param limit 历史消息数量限制
      */
-    async refresh(limit: number = 30) {
+    async loadInitialData(limit: number = 30) {
         this.context = [];
         this.unread = [];
 
-        const recall = await this.ctx.database
+        // 1. 获取最后回复时间
+        const [lastReplyEntry] = await this.ctx.database.get(LAST_REPLY_TABLE, { channelId: this.session.channelId });
+        this.lastReplyTime = lastReplyEntry ? lastReplyEntry.timestamp : null;
+
+        // 2. 批量查询消息和交互
+        const chatMessages = await this.ctx.database
             .select(MESSAGE_TABLE)
             .where({ channel: { id: this.session.channelId } })
             .orderBy("timestamp", "desc")
+            .limit(limit)
             .execute();
 
-        const chatHistory = recall.slice(0, limit);
-        this.recallSize = recall.length - chatHistory.length;
+        // 删除最后一条消息避免重复添加
+        chatMessages.shift();
 
-        let [lastReplyTime] = await this.ctx.database.get(LAST_REPLY_TABLE, {
-            channelId: this.session.channelId,
-        });
-        let history: (Interaction | Message)[] = chatHistory;
-        for (const chat of chatHistory) {
-            const interactions = await this.ctx.database
-                .select(INTERACTION_TABLE)
-                .where(row => $.eq(row.emitter, chat.messageId))
-                .execute();
-            for await (const interaction of interactions) {
-                let life = interaction.life;
-                if (life > 0) {
-                    history.push(interaction);
-                    await this.ctx.database
-                        .set(INTERACTION_TABLE, {
-                            id: interaction.id
-                        }, {
-                            life: $.subtract(life, 1)
-                        });
-                } else {
-                    let result = await this.ctx.database
-                        .remove(INTERACTION_TABLE, {
-                            id: interaction.id,
-                        });
-                    // this.ctx.logger.warn(`[Scenario] Interaction ${interaction.id} has expired`);
-                }
-            }
-        }
-        history = history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-        for (let record of history) {
-            let isRead = true;
-            if (lastReplyTime && record.timestamp.getTime() > lastReplyTime.timestamp.getTime()) {
-                isRead = false;
-            }
-            if (record["messageId"]) {
-                // record is message
-                let elements = h.parse(record.content as string);
-                let content = "";
-                for (let elem of elements) {
-                    switch (elem.type) {
-                        case "text":
-                            content += elem.attrs.content;
-                            break;
-                        case "img":
-                            content += elem.attrs.summary || `[图片]`;
-                            break;
-                        case "at":
-                            content += `<at id="${elem.attrs.id}" name="@${elem.attrs.name}"/>`
-                        default:
-                            content += `[${elem.type}]`;
-                            break;
-                    }
-                }
+        const messageIds = chatMessages.map(m => m.messageId);
 
-                if (record["sender"].id == this.session.bot.selfId) {
-                    this.addContext(`[#${record["messageId"]} ${formatDate(record.timestamp)} YOU] ${content}`, isRead);
-                } else {
-                    this.addContext(`[#${record["messageId"]} ${formatDate(record.timestamp)} ${record["sender"].name}<${record["sender"].id}>] ${content}`, isRead);
-                }
-            } else {
-                // record is interaction
-                if (record["type"] === "tool_result") {
-                    this.addContext(`[FUNCTION RETURN] ${JSON.stringify(record["content"])}`, isRead)
-                } else {
-                    this.addContext(`[FUNCTION CALL] ${JSON.stringify(record["content"])}`, isRead);
-                }
-            }
+        // 获取与这些消息相关的交互
+        const chatInteractions = await this.ctx.database
+            .select(INTERACTION_TABLE)
+            .where(row => $.in(row.emitter, messageIds))
+            .execute();
+
+        // 合并消息和交互并按时间排序
+        let history: (Interaction | Message)[] = [...chatMessages, ...chatInteractions];
+        history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        // 计算超出上下文限制的记忆数量
+        this.recallSize = Math.max(0, (await this.ctx.database
+            .select(MESSAGE_TABLE)
+            .where({ channel: { id: this.session.channelId } })
+            .execute()).length - chatMessages.length);
+
+        for (const record of history) {
+            // 根据 lastReplyTime 判断是否为已读
+            const isRead = this.lastReplyTime ? record.timestamp.getTime() <= this.lastReplyTime.getTime() : false;
+            this.addContext(record, isRead); // 使用重载的 addContext 方法
         }
 
-        await this.ctx.database.set(LAST_REPLY_TABLE, { channelId: this.session.channelId, }, { timestamp: new Date() });
+        // 初始化场景名称和描述
+        this.metadata = await this.getMetaData();
     }
 
-    private async getName(): Promise<string> {
-        if (this.type === "private") {
-            //@ts-ignore
-            if (this.session.onebot) {
-                try {
-                    //@ts-ignore
-                    let info = await this.session.onebot.getStrangerInfo(this.session.userId);
-                    return info.nickname || String(info.user_id);
-                } catch (error) {
+    /**
+     * 添加消息或交互到 Scenario 的上下文。
+     * @param record 消息或交互对象
+     * @param isRead 是否为已读（机器人视角）
+     */
+    addContext(record: Message | Interaction, isRead = false) {
+        let formattedContent: string;
+        if ((record as Message).messageId) { // 如果是 Message 类型
+            const message = record as Message;
+            let elements = h.parse(message.content as string);
+            let content = "";
+            for (let elem of elements) {
+                switch (elem.type) {
+                    case "text":
+                        content += elem.attrs.content;
+                        break;
+                    case "img":
+                        content += elem.attrs.summary || `[图片]`;
+                        break;
+                    case "at":
+                        content += `<at id="${elem.attrs.id}" name="@${elem.attrs.name}"/>`
+                        break;
+                    default:
+                        content += `[${elem.type}]`;
+                        break;
                 }
             }
-            return this.session.username;
-        }
-        else if (this.type === "guild") {
-            //@ts-ignore
-            if (this.session.onebot) {
-                try {
-                    //@ts-ignore
-                    let info = await this.session.onebot.getGroupInfo(this.session.guildId);
-                    return info.group_name
-                } catch (error) {
-                }
+
+            if (message.sender.id === this.session.bot.selfId) {
+                formattedContent = `[#${message.messageId} ${formatDate(message.timestamp)} YOU] ${content}`;
+            } else {
+                formattedContent = `[#${message.messageId} ${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${content}`;
             }
-            const guild = await this.session.bot.getGuild(this.session.guildId);
-            return guild.name || "Unknown Group";
+        } else { // 如果是 Interaction 类型
+            const interaction = record as Interaction;
+            if (interaction.type === "tool_result") {
+                formattedContent = `[FUNCTION RETURN] ${JSON.stringify(interaction.content)}`;
+            } else {
+                formattedContent = `[FUNCTION CALL] ${JSON.stringify(interaction.content)}`;
+            }
         }
-        else if (this.type === "sandbox") {
-            return "Sandbox";
+
+        if (isRead) {
+            this.context.push(formattedContent);
+        } else {
+            this.unread.push(formattedContent);
         }
     }
 
     /**
-     * 获取场景描述
-     * 可能需要配合平台API获取
-     *
-     * 私聊为用户签名，群聊为群介绍
+     * 清空 Scenario 上下文和未读消息。
      */
-    private async getDescription() {
-        try {
-            if (this.type === "private") {
-                return this.session.author.name || "No description";
-            } else if (this.type === "guild") {
-                return this.session.event.guild?.name || "No description";
-            }
-            return "Sandbox environment";
-        } catch {
-            return "No description available";
-        }
-    }
-
-    addContext(message: string, isRead = false) {
-        if (isRead) {
-            this.context.push(message);
-        } else {
-            this.unread.push(message);
-        }
-    }
-
     clearContext() {
         this.context = [];
+        this.unread = [];
     }
 
     /**
-     * 将场景渲染为字符串
-     *
-     * @example
-     * Scenario ID: <scenario_id>
-     * Scenario Name: <scenario_name>
-     * Scenario Description: <scenario_description>
-     * Your role in this scenario: <your_role>
-     * Chat History:
-     * [<time> <sender>] <content>
-     * You have <count> new messages to read:
-     * [<time> <sender>] <content>
-     * ...
+     * 获取场景元数据
+     */
+    private async getMetaData(): Promise<Record<string, string>> {
+        let metadata = {};
+        switch (getChannelType(this.session.channelId)) {
+            case "guild":
+                const groupInfo = await this.platformAdapter.getGroupInfo(this.session.guildId);
+                metadata = {
+                    ...metadata,
+                    ...groupInfo,
+                }
+                break;
+            case "private":
+                const userInfo = await this.platformAdapter.getUserInfo(this.session.channelId);
+                metadata = {
+                    ...metadata,
+                    ...userInfo,
+                }
+                break;
+            case "sandbox":
+            default:
+                break;
+        }
+        return metadata;
+    }
+
+    /**
+     * 将场景渲染为字符串，用于 LLM 提示词。
+     * 未读消息会被单独列出，并提示 AI 数量。
      */
     render(): string | (TextPart | ImagePart)[] {
         let output = [
-            `Scenario ID: ${this.id}`,
-            `Type: ${this.type}`,
-            `Name: ${this.name}`,
-            `Description: ${this.description}`,
+            `<scenario id="${this.session.channelId}" type="${getChannelType(this.session.channelId)}">`,
+            Object.keys(this.metadata).map(k => `${k}: ${this.metadata[k]}`).join("\n"),
             `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
             "",
             `Chat History:`,
@@ -221,30 +180,15 @@ export class Scenario {
             "",
             `You have ${this.unread.length} new messages to read:`,
             ...this.unread,
+            `</scenario>`
         ].join("\n");
 
-        // 清空未读消息
+        // 渲染后，将未读消息移至已读消息列表，并清空未读列表
+        // 数据库中 last_reply_table 的更新由 LLMProcessingMiddleware 负责
         for (const message of this.unread) {
             this.context.push(message);
         }
         this.unread = [];
         return output;
     }
-}
-
-
-interface PlatformAdapter {
-    getStrangerInfo?(userId: string): Promise<{ nickname?: string }>;
-    getGroupInfo?(groupId: string): Promise<{ group_name?: string }>;
-}
-
-interface MessageFormatter<T> {
-    format(message: T): Promise<string>;
-}
-
-interface MultimodalMessageFormatter<T> {
-    format(message: T): Promise<{
-        textContent: string;
-        imageParts: ImagePart[];
-    }>;
 }

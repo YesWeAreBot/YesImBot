@@ -4,48 +4,59 @@ import path from "path";
 import { AdapterSwitcher } from "../adapters";
 import { ToolManager } from "../extensions";
 import { Memory } from "../Memory";
+import { ServiceContainer } from "../services/container";
+import { ScenarioManager } from '../services/ScenarioManager';
 import { ConversationState, MessageContext, Middleware } from "./base";
 
 
 export class LLMProcessingMiddleware implements Middleware {
     name = 'llm-processing';
+    private scenarioManager: ScenarioManager;
+    private adapterSwitcher: AdapterSwitcher;
+    private toolManager: ToolManager;
 
     constructor(
-        private adapterSwitcher: AdapterSwitcher,
-        private toolManager: ToolManager,
+        private service: ServiceContainer,
         private memory: Memory,
         private xfetch: typeof globalThis.fetch,
         private config?: {
             debug?: boolean;
             abortSignal?: AbortSignal;
         }
-    ) { }
+    ) {
+        this.scenarioManager = service.get<ScenarioManager>("scenarioManager");
+        this.adapterSwitcher = service.get("adapterSwitcher");
+        this.toolManager = service.get("toolManager");
+    }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
-        // 只在处理状态下执行
         if (ctx.state !== ConversationState.PROCESSING) {
             return await next();
         }
 
         try {
-            // 创建场景对象
-            const scenario = await ctx.getScenario();
+            // 在获取场景数据之前，处理所有与该频道相关的交互记录的生命周期
+            await this.scenarioManager.processInteractions(ctx.koishiSession.channelId);
+
+            // 从 ScenarioManager 获取场景对象（可能是缓存的，也可能是新加载的）
+            const scenario = await this.scenarioManager.getScenario(ctx.koishiSession);
 
             // 构建提示词
             const systemPrompt = await this.getSystemPrompt();
             const memoryPrompt = await this.memory.render();
 
             let retry = this.adapterSwitcher.length;
+            const initialRetryCount = retry; // 记录初始重试次数
             let lastError: any = null;
 
             while (retry > 0) {
                 try {
-                    // 获取适配器
-                    let { adapter } = this.adapterSwitcher.getAdapter();
+                    const { adapter } = this.adapterSwitcher.getAdapter(); // 获取当前适配器
                     if (!adapter) {
-                        throw new Error('No LLM adapter available');
+                        // 如果适配器切换器在还有重试次数的情况下，已经没有可用的适配器了
+                        // 这可能意味着适配器列表为空，或者所有适配器都被临时禁用
+                        throw new Error("[LLMProcessing] 没有可用的LLM适配器");
                     }
-                    ctx.koishiContext.logger.debug(`[LLMProcessing] 使用适配器尝试请求，剩余重试次数: ${retry}`);
                     ctx.llmResponse = await adapter.chat([
                         { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
                         { role: 'user', content: scenario.render() }
@@ -55,31 +66,78 @@ export class LLMProcessingMiddleware implements Middleware {
                         logger: ctx.koishiContext.logger,
                         abortSignal: this.config.abortSignal,
                     });
-                    // 转换到响应状态
                     await ctx.transitionTo(ConversationState.RESPONDING);
-                    break;
-                } catch (error) {
-                    lastError = error;
-                    // 超时或连接重置，切换下一个 Adapter
-                    if (error.name === "XSAIError" || error.cause?.code === "ECONNRESET") {
-                        ctx.koishiContext.logger.warn(`[LLMProcessing] 当前适配器不可用（${error.name}: ${error.message}），尝试下一个，剩余重试次数: ${retry - 1}`);
-                        retry--;
-                        continue;
+                    // LLM 成功响应后，更新该频道的最后回复时间
+                    await this.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
+                    break; // 成功，跳出重试循环
+                } catch (error: any) {
+                    lastError = error; // 捕获每次的错误
+                    retry--; // 每次失败都减少重试次数
+                    let errorMessage = `[LLMProcessing] 适配器请求失败 (${error.name}: ${error.message}).`;
+                    let shouldContinueToNextAdapter = false; // 标志是否应该尝试下一个适配器
+                    if (error.name === "XSAIError") {
+                        // 适配器返回的特定错误，表示API可以访问，但模型或服务内部有问题（如token无效，模型不可用，内容被拒绝等）
+                        errorMessage += ` 错误类型: XSAIError (适配器内部错误)。`;
+                        shouldContinueToNextAdapter = true;
+                    } else if (error.message && error.message.includes("fetch failed")) {
+                        // 网络问题
+                        errorMessage += ` 错误类型: 网络请求失败。`;
+                        switch (error.cause?.code) {
+                            case "ECONNREFUSED":
+                                errorMessage += ` 拒绝连接。`;
+                                break;
+                            case "ECONNRESET":
+                                errorMessage += ` 连接被重置。`;
+                                break;
+                            case "ETIMEDOUT":
+                                errorMessage += ` 连接超时。`;
+                                break;
+                            case "ENOTFOUND":
+                                errorMessage += ` 主机未找到（DNS解析失败）。`;
+                                break;
+                            case "EPIPE":
+                                errorMessage += ` 管道破裂。`; // 较少见，但可能发生
+                                break;
+                            default:
+                                errorMessage += ` 未知网络错误码: ${error.cause?.code || '无'}.`;
+                                break;
+                        }
+                        shouldContinueToNextAdapter = true;
+                    } else if (error.name === "AbortError") {
+                        // 请求被用户或系统显式中止
+                        errorMessage += ` 请求已中止。`;
+                        ctx.koishiContext.logger.info(errorMessage); // 中止通常是预期行为，用info而非warn/error
+                        throw error; // 不再重试，直接抛出，因为中止不是适配器的问题
+                    } else {
+                        // 其他未处理的错误 (如 TypeError, RangeError, LLM返回的数据格式错误等)
+                        errorMessage += ` 错误类型: 未知或未分类错误。`;
+                        // 对于未知错误，为了最大化成功率，也尝试下一个适配器
+                        shouldContinueToNextAdapter = true;
                     }
-                    // 其他错误直接抛出
-                    ctx.koishiContext.logger.error(`[LLMProcessing] 发生未处理错误: ${error.name}: ${error.message}`);
-                    throw error;
+                    if (shouldContinueToNextAdapter) {
+                        if (retry > 0) {
+                            ctx.koishiContext.logger.warn(`${errorMessage} 尝试切换到下一个LLM适配器，剩余重试次数: ${retry}`);
+                            continue; // 继续循环，`getAdapter()`会返回下一个适配器
+                        } else {
+                            // 所有重试次数耗尽，但尚未成功
+                            ctx.koishiContext.logger.error(`${errorMessage} 所有LLM适配器尝试失败，不再重试。`);
+                            // 此时，循环将自然结束，进入最终的 !ctx.llmResponse 检查
+                        }
+                    } else {
+                        // 如果不应继续尝试下一个适配器（例如 AbortError），则立即抛出
+                        ctx.koishiContext.logger.error(`${errorMessage} 停止重试。`);
+                        throw error;
+                    }
                 }
             }
+            // 循环结束但 ctx.llmResponse 仍为空，意味着所有尝试都失败了
             if (!ctx.llmResponse) {
-                ctx.koishiContext.logger.error(`[LLMProcessing] 所有适配器请求失败，共尝试 ${this.adapterSwitcher.length} 次。最后错误: ${lastError?.name}: ${lastError?.message}`);
-                throw new Error(`Request failed after ${this.adapterSwitcher.length} attempts. Last error: ${lastError?.name}: ${lastError?.message}`);
+                const attemptedCount = initialRetryCount - retry; // 实际尝试的次数
+                throw new Error(`[LLMProcessing] 所有LLM适配器请求失败，共尝试 ${attemptedCount} 次。最后错误: \n${lastError?.name || '未知错误'}: ${lastError?.message || '无错误消息'}`);
             }
-            // 继续处理链
             await next();
         } catch (error) {
             if (error.name === 'AbortError') {
-                // 请求被取消，不进行错误处理
                 return;
             }
             throw error;

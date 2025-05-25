@@ -1,7 +1,9 @@
 import { Context, Random, Session } from "koishi";
 
 import { Failed, Success, ToolCallResult, ToolManager } from "../extensions";
-import { INTERACTION_TABLE } from "../types/model";
+import { ServiceContainer } from "../services/container";
+import { ScenarioManager } from "../services/ScenarioManager";
+import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
@@ -10,11 +12,17 @@ import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 export class ResponseHandlingMiddleware implements Middleware {
     name = 'response-handling';
 
+    private toolManager: ToolManager
+    private scenarioManager: ScenarioManager;
+
     constructor(
+        private service: ServiceContainer,
         private middlewareManager: MiddlewareManager,
-        private toolManager: ToolManager,
         private options?: { maxRetry: number; life: number },
-    ) { }
+    ) {
+        this.toolManager = service.get("toolManager");
+        this.scenarioManager = service.get("scenarioManager");
+    }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         // 只在响应状态下执行
@@ -132,25 +140,31 @@ export class ResponseHandlingMiddleware implements Middleware {
 
     // 记录工具调用
     private async recordToolCall(koishiContext: Context, koishiSession: Session, func: { function: string; params: Record<string, unknown> }) {
-        await koishiContext.database.create(INTERACTION_TABLE, {
+        const newInteraction: Interaction = {
             id: Random.id(),
             emitter: koishiSession.messageId,
+            emitter_channel_id: koishiSession.cid,
             type: "tool_call",
             content: JSON.stringify(func),
             life: this.options?.life || 3,
             timestamp: new Date()
-        });
+        }
+        await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
+        await this.scenarioManager.updateInteraction(newInteraction, koishiSession, true);
     }
 
     // 记录工具结果
     private async recordToolResult(koishiContext: Context, koishiSession: Session, functionName: string, result: ToolCallResult): Promise<void> {
-        await koishiContext.database.create(INTERACTION_TABLE, {
+        const newInteraction: Interaction = {
             id: Random.id(),
             emitter: koishiSession.messageId,
+            emitter_channel_id: koishiSession.cid,
             type: "tool_result",
             content: JSON.stringify({ [functionName]: result }),
             life: this.options?.life || 3,
             timestamp: new Date()
-        });
+        };
+        await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
+        await this.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
     }
 }
