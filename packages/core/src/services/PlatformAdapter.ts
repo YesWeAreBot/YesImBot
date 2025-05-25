@@ -1,0 +1,99 @@
+import { Session } from "koishi";
+import { } from "koishi-plugin-adapter-onebot";
+
+export interface UserInfo {
+    userId: string;
+    sex?: string;
+    nickname?: string;
+    avatar?: string;
+    sign?: string;
+
+    [key: string]: any;
+}
+
+export interface GroupInfo {
+    groupId: string;
+    name?: string;
+    avatar?: string;
+    maxMemberCount?: number;
+    memberCount?: number;
+
+    [key: string]: any;
+}
+
+/**
+ * 平台信息适配器接口。
+ * 封装了获取用户和群信息的平台特定逻辑。
+ * @param session 当前会话，可用于获取上下文信息
+ */
+export abstract class PlatformAdapter {
+
+    constructor(protected session: Session) {}
+    /**
+     * 获取群信息。
+     * @param groupId 群ID
+     */
+    abstract getGroupInfo(groupId: string): Promise<GroupInfo>;
+
+    /**
+     * 获取用户信息。
+     * @param userId 用户ID
+     */
+    abstract getUserInfo(userId: string): Promise<UserInfo>;
+}
+
+export class DefaultPlatform extends PlatformAdapter {
+    constructor(session: Session) {
+        super(session);
+    }
+
+    async getGroupInfo(groupId: string): Promise<GroupInfo> {
+        const groupInfo = await this.session.bot.getGuild(groupId);
+        return {
+            groupId: groupInfo.id,
+            name: groupInfo.name,
+            avatar: groupInfo.avatar,
+        }
+    }
+
+    async getUserInfo(userId: string): Promise<UserInfo> {
+        const userInfo = await this.session.bot.getUser(userId);
+        return {
+            userId: userInfo.id,
+            nickname: userInfo.nick,
+            avatar: userInfo.avatar,
+        }
+    }
+}
+
+export class OneBotPlatform extends PlatformAdapter {
+    constructor(session: Session) {
+        super(session);
+    }
+
+    async getGroupInfo(groupId: string): Promise<GroupInfo> {
+        const groupInfo = await this.session.onebot.getGroupInfo(groupId);
+
+        const groupNotice = await this.session.onebot.getGroupNotice(groupId);
+
+        const groupMemberList = await this.session.onebot.getGroupMemberList(groupId);
+
+        return {
+            groupId: String(groupInfo.group_id),
+            name: groupInfo.group_name,
+            maxMemberCount: groupInfo.max_member_count,
+            memberCount: groupInfo.member_count,
+        }
+    }
+
+    async getUserInfo(userId: string): Promise<UserInfo> {
+        const userInfo = await this.session.onebot.getStrangerInfo(userId);
+
+        return {
+            userId: String(userInfo.user_id),
+            sex: userInfo.sex,
+            nickname: userInfo.nickname,
+            age: userInfo.age,
+        }
+    }
+}

@@ -30,16 +30,17 @@ export class ErrorHandlingMiddleware implements Middleware {
 
         } catch (error) {
             // 记录错误日志
-            this.logger.error(`Error in session ${ctx.koishiSession.id}:`, error.message);
 
             if (this.options.debug) {
-                this.logger.error(`Error stack trace:`, error.stack);
+                this.logger.error(error.stack);
+            } else {
+                this.logger.error(`发生未知错误，已跳过回复:`, error.message);
             }
 
             try {
                 if (this.options?.uploadDump) {
                     const errorDump = this.formatErrorDump(error as Error, {
-                        scenario: await ctx.getScenario(),
+                        // scenario: await ctx.getScenario(),
                         llmResponse: ctx.llmResponse,
                         session: ctx.koishiSession,
                         ctx: ctx.koishiContext,
@@ -56,7 +57,7 @@ export class ErrorHandlingMiddleware implements Middleware {
         }
     }
 
-    private async uploadToPaste( content: string): Promise<string | null> {
+    private async uploadToPaste(content: string): Promise<string | null> {
         try {
             const formData = new FormData();
             formData.append('c', content);

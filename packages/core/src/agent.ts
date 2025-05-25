@@ -13,7 +13,8 @@ import { ErrorHandlingMiddleware } from "./middleware/ErrorHandling";
 import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "./middleware/ResponseHandling";
 import { ServiceContainer } from "./services/container";
-import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, MEMORY_TABLE, MESSAGE_TABLE } from "./types/model";
+import { ScenarioManager } from "./services/ScenarioManager";
+import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, MEMORY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
 import { getChannelType, isEmpty } from "./utils";
 import { ImageProcessor } from "./utils/imageProcessor";
 
@@ -44,11 +45,13 @@ export default class Agent {
         });
 
         ctx.on("dispose", async () => {
-            const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
+            try {
+                const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
+                const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");
+                checkReply.destroy();
+            } catch (error) {
 
-            const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");
-
-            checkReply.destroy();
+            }
         });
     }
 
@@ -72,6 +75,9 @@ export default class Agent {
         const imageProcessor = new ImageProcessor(this.ctx);
         this.serviceContainer.register('imageProcessor', imageProcessor);
 
+        const scenarioManager = new ScenarioManager(this.ctx);
+        this.serviceContainer.register('scenarioManager', scenarioManager);
+
         // 加载记忆
         const memory = Memory.getInstance(this.ctx);
         this.serviceContainer.register('memory', memory);
@@ -92,6 +98,11 @@ export default class Agent {
 
         const proxy = this.config.API.Proxy ? new ProxyAgent(this.config.API.Proxy) : new HTTPAgent();
 
+        const pfetch = async (input, init) => {
+            init = { ...init, dispatcher: proxy };
+            return await ufetch(input, init);
+        };
+
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
@@ -101,7 +112,7 @@ export default class Agent {
             }))
 
             // 数据库存储中间件
-            .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor))
+            .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor, scenarioManager))
 
             // 检查是否达到回复条件
             .use(new CheckReplyConditionMiddleware({
@@ -117,17 +128,15 @@ export default class Agent {
                 sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
             }, this.ctx, adapterSwitcher))
 
-            .use(new LLMProcessingMiddleware(adapterSwitcher, toolManager, memory,
-                createFetch({
-                    debug: this.config.Debug.EnableDebug,
-                    retry: this.config.API.MaxRetry,
-                    dispatcher: proxy,
-                }) as unknown as typeof globalThis.fetch,
+            .use(new LLMProcessingMiddleware(
+                this.serviceContainer,
+                memory,
+                pfetch as unknown as typeof globalThis.fetch,
                 {
                     debug: this.config.Debug.EnableDebug,
                 }))
 
-            .use(new ResponseHandlingMiddleware(middlewareManager, toolManager, {
+            .use(new ResponseHandlingMiddleware(this.serviceContainer, middlewareManager, {
                 maxRetry: this.config.ToolCall.MaxRetry,
                 life: this.config.ToolCall.Life,
             }))
@@ -169,7 +178,7 @@ export default class Agent {
             timestamp: "timestamp",
             content: "string",
         }, {
-            primary: "messageId",
+            primary: ["messageId"],
             autoInc: false,
         });
 
@@ -177,6 +186,7 @@ export default class Agent {
         this.ctx.model.extend(INTERACTION_TABLE, {
             id: "string",
             emitter: "string",
+            emitter_channel_id: "string",
             type: "string",
             content: "object",
             life: "integer",
@@ -246,7 +256,7 @@ export default class Agent {
                         delay = false;
                     }
                     let messageIds = await session.sendQueued(message);
-                    await ctx.database.create(MESSAGE_TABLE, {
+                    const newMessage: Message = {
                         messageId: messageIds[0],
                         sender: {
                             id: session.bot.selfId,
@@ -259,7 +269,10 @@ export default class Agent {
                         },
                         timestamp: new Date(),
                         content: message,
-                    });
+                    }
+                    await ctx.database.create(MESSAGE_TABLE, newMessage);
+                    const scenarioManager: ScenarioManager = this.serviceContainer.get("scenarioManager");
+                    scenarioManager.updateMessage(newMessage, session, true);
                     ctx.logger.info(`Message Sent: ${message}`);
                     if (delay && config.Bot.WordsPerSecond > 0) {
                         await sleep(message.length / config.Bot.WordsPerSecond * 1000);
@@ -276,28 +289,28 @@ export default class Agent {
     }
 }
 
-const defaults = {
-    debug: false,
-    retry: 3,
-    retryDelay: 500,
-    // https://github.com/unjs/ofetch#%EF%B8%8F-auto-retry
-    retryStatusCodes: [408, 409, 425, 429, 500, 502, 503, 504]
-};
-const createFetch = (userOptions: any = {}) => {
-    const options = Object.assign({}, defaults, userOptions);
-    const xsfetch = async (retriesLeft, input, init) => {
-        init = { ...init, dispatcher: userOptions.dispatcher }
-        const res = await ufetch(input, init);
-        if (res.ok || retriesLeft === 0 || !options.retryStatusCodes.includes(res.status))
-            return res;
-        options.debug && console.warn("[xsfetch] Failed, retrying... Times left:", retriesLeft);
-        await sleep(options.retryDelay);
-        return async () => xsfetch(retriesLeft - 1, input, init);
-    };
-    return async (input, init) => {
-        let res = await xsfetch(options.retry, input, init);
-        while (typeof res === "function")
-            res = await res();
-        return res;
-    };
-};
+// const defaults = {
+//     debug: false,
+//     retry: 3,
+//     retryDelay: 500,
+//     // https://github.com/unjs/ofetch#%EF%B8%8F-auto-retry
+//     retryStatusCodes: [408, 409, 425, 429, 500, 502, 503, 504]
+// };
+// const createFetch = (userOptions: any = {}) => {
+//     const options = Object.assign({}, defaults, userOptions);
+//     const xsfetch = async (retriesLeft, input, init) => {
+//         init = { ...init, dispatcher: userOptions.dispatcher }
+//         const res = await ufetch(input, init);
+//         if (res.ok || retriesLeft === 0 || !options.retryStatusCodes.includes(res.status))
+//             return res;
+//         options.debug && console.warn("[xsfetch] Failed, retrying... Times left:", retriesLeft);
+//         await sleep(options.retryDelay);
+//         return async () => xsfetch(retriesLeft - 1, input, init);
+//     };
+//     return async (input, init) => {
+//         let res = await xsfetch(options.retry, input, init);
+//         while (typeof res === "function")
+//             res = await res();
+//         return res;
+//     };
+// };
