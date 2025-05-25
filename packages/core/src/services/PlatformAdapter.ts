@@ -1,5 +1,5 @@
 import { Session } from "koishi";
-import { } from "koishi-plugin-adapter-onebot";
+// import { } from "koishi-plugin-adapter-onebot";
 
 export interface UserInfo {
     userId: string;
@@ -28,7 +28,7 @@ export interface GroupInfo {
  */
 export abstract class PlatformAdapter {
 
-    constructor(protected session: Session) {}
+    constructor(protected session: Session) { }
     /**
      * 获取群信息。
      * @param groupId 群ID
@@ -72,10 +72,11 @@ export class OneBotPlatform extends PlatformAdapter {
     }
 
     async getGroupInfo(groupId: string): Promise<GroupInfo> {
+        //@ts-ignore
         const groupInfo = await this.session.onebot.getGroupInfo(groupId);
-
+        //@ts-ignore
         const groupNotice = await this.session.onebot.getGroupNotice(groupId);
-
+        //@ts-ignore
         const groupMemberList = await this.session.onebot.getGroupMemberList(groupId);
 
         return {
@@ -87,6 +88,7 @@ export class OneBotPlatform extends PlatformAdapter {
     }
 
     async getUserInfo(userId: string): Promise<UserInfo> {
+        //@ts-ignore
         const userInfo = await this.session.onebot.getStrangerInfo(userId);
 
         return {
