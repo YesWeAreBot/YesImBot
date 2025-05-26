@@ -1,13 +1,13 @@
 import { BaseAdapter, UniversalAdapter } from "./base";
-import { Config } from "./config";
+import { LLMConfig, LLMParameters } from "./config";
 
 
 export class AdapterSwitcher {
     private adapters: BaseAdapter[];
     private current = 0;
     constructor(
-        adapterConfig: Config["APIList"],
-        parameters: Config["Parameters"]
+        adapterConfig: LLMConfig[],
+        parameters: LLMParameters,
     ) {
         this.updateConfig(adapterConfig, parameters);
     }
@@ -26,8 +26,8 @@ export class AdapterSwitcher {
     }
 
     public updateConfig(
-        adapterConfig: Config["APIList"],
-        parameters: Config["Parameters"]
+        adapterConfig: LLMConfig[],
+        parameters: LLMParameters,
     ) {
         this.adapters = [];
         for (const adapter of adapterConfig) {
@@ -36,5 +36,3 @@ export class AdapterSwitcher {
         }
     }
 }
-
-export type { LLMConfig } from "./config";

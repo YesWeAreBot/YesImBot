@@ -30,6 +30,9 @@ export class MessageContext {
 
     public isMentioned: boolean = false;
 
+    // heartbeat触发次数计数器
+    public heartbeatCount: number = 0;
+
     constructor(
         // Koishi上下文对象
         public koishiContext: Context,

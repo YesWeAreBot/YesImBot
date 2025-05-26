@@ -18,7 +18,7 @@ export class ResponseHandlingMiddleware implements Middleware {
     constructor(
         private service: ServiceContainer,
         private middlewareManager: MiddlewareManager,
-        private options?: { maxRetry: number; life: number },
+        private options?: { maxRetry: number; life: number; maxHeartbeat?: number },
     ) {
         this.toolManager = service.get("toolManager");
         this.scenarioManager = service.get("scenarioManager");
@@ -62,8 +62,16 @@ export class ResponseHandlingMiddleware implements Middleware {
 
         // 如果需要继续对话
         if (request_heartbeat) {
-            await ctx.transitionTo(ConversationState.PROCESSING);
-            await this.middlewareManager.executeFrom(ctx, this.middlewareManager.findIndex("llm-processing"));
+            const maxHeartbeat = this.options?.maxHeartbeat || 5; // 默认最大5次
+
+            if (ctx.heartbeatCount >= maxHeartbeat) {
+                ctx.koishiContext.logger.warn(`[ResponseHandling] Heartbeat触发次数已达到最大限制 (${maxHeartbeat})，停止连续对话`);
+            } else {
+                ctx.heartbeatCount++;
+                ctx.koishiContext.logger.info(`[ResponseHandling] 触发heartbeat连续对话，当前次数: ${ctx.heartbeatCount}/${maxHeartbeat}`);
+                await ctx.transitionTo(ConversationState.PROCESSING);
+                await this.middlewareManager.executeFrom(ctx, this.middlewareManager.findIndex("llm-processing"));
+            }
         }
 
         // 继续处理链
@@ -71,11 +79,10 @@ export class ResponseHandlingMiddleware implements Middleware {
 
         // 处理完成后重置状态
         await ctx.transitionTo(ConversationState.IDLE);
+        // 重置heartbeat计数器
+        ctx.heartbeatCount = 0;
         // 释放频道处理状态
         const checkReplyMiddleware = this.middlewareManager.getMiddleware('check-reply-condition') as CheckReplyConditionMiddleware;
-        if (!checkReplyMiddleware) {
-            throw new Error("未找到CheckReplyConditionMiddleware");
-        }
         checkReplyMiddleware.releaseChannelState(ctx.koishiSession.channelId);
     }
 

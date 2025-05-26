@@ -1,5 +1,6 @@
 import { Schema } from "koishi";
 
+// LLM API 配置接口
 export interface LLMConfig {
     Enabled?: boolean;
     Provider: "OpenAI" | "OpenAI Compatible" | "Anthropic" | "Google Gemini" | "OpenRouter" | "SiliconFlow" | "XAI" | "DeepSeek" | "Zhipu" | "LMStudio" | "Ollama" | "Qwen" | "Cloudflare WorkersAI";
@@ -13,121 +14,166 @@ export interface LLMConfig {
     Timeout?: number;
 }
 
-export interface Config {
-    APIList: LLMConfig[];
-    Parameters: {
-        Temperature?: number;
-        MaxTokens?: number;
-        TopP?: number;
-        FrequencyPenalty?: number;
-        PresencePenalty?: number;
-        Stop?: string | string[];
-        OtherParameters?: {
-            [key: string]: string;
-        }
+// LLM API 参数配置接口
+export interface LLMParameters {
+    Temperature?: number;
+    MaxTokens?: number;
+    TopP?: number;
+    FrequencyPenalty?: number;
+    PresencePenalty?: number;
+    Stop?: string | string[];
+    OtherParameters?: {
+        [key: string]: any;
     };
-    MaxRetry?: number;
-    Proxy?: string;
 }
 
+// LLM 配置 Schema
 export const LLMConfig: Schema<LLMConfig> = Schema.intersect([
     Schema.object({
-        Enabled: Schema.boolean().default(true).description("是否启用"),
-        Provider: Schema.union(["OpenAI", "OpenAI Compatible", "Anthropic", "Google Gemini", "OpenRouter", "SiliconFlow", "XAI", "DeepSeek", "Zhipu", "LMStudio", "Ollama", "Qwen", "Cloudflare WorkersAI"])
+        Enabled: Schema.boolean()
+            .default(true)
+            .description("是否启用此 API 配置"),
+        Provider: Schema.union([
+            "OpenAI",
+            "OpenAI Compatible",
+            "Anthropic",
+            "Google Gemini",
+            "OpenRouter",
+            "SiliconFlow",
+            "XAI",
+            "DeepSeek",
+            "Zhipu",
+            "LMStudio",
+            "Ollama",
+            "Qwen",
+            "Cloudflare WorkersAI"
+        ])
             .default("OpenAI")
-            .description("API 类型"),
-        APIKey: Schema.string().role("secret").required().description("你的 API 令牌"),
+            .description("LLM 服务提供商类型"),
+        APIKey: Schema.string()
+            .role("secret")
+            .required()
+            .description("API 访问令牌"),
         Model: Schema.string()
-            .description("模型 ID"),
-        Ability: Schema.array(Schema.union(["原生工具调用", "识图功能", "结构化输出", "流式输出", "深度思考"]))
+            .required()
+            .description("要使用的模型 ID"),
+        Ability: Schema.array(Schema.union([
+            "原生工具调用",
+            "识图功能",
+            "结构化输出",
+            "流式输出",
+            "深度思考"
+        ]))
             .role("checkbox")
             .experimental()
             .default(["流式输出"])
-            .description("模型支持的功能。<br/>请查阅[文档](https://github.com/HydroGest/AthenaDocsNG/blob/main/docs/user-guide/configuration/main-api.md)了解其作用。如果你不知道这是什么，请不要勾选。"),
-        TagName: Schema.string().default("think").description("深度思考标签"),
-        StartWithReasoning: Schema.boolean().default(false).description("是否在回复中包含思考内容"),
-        Timeout: Schema.number().default(60000).description("API请求超时时间（毫秒）"),
+            .description("模型支持的功能特性。请查阅文档了解各功能的作用。如不确定请保持默认设置"),
+        TagName: Schema.string()
+            .default("think")
+            .description("深度思考功能使用的 XML 标签名称"),
+        StartWithReasoning: Schema.boolean()
+            .default(false)
+            .description("是否在回复中包含模型的思考过程"),
+        Timeout: Schema.number()
+            .default(60000)
+            .min(1000)
+            .max(300000)
+            .description("API 请求超时时间（毫秒）"),
     }),
     Schema.union([
         Schema.object({
-            APIType: Schema.const("OpenAI"),
-            BaseURL: Schema.string().default("https://api.openai.com/v1"),
+            Provider: Schema.const("OpenAI"),
+            BaseURL: Schema.string()
+                .default("https://api.openai.com/v1")
+                .description("OpenAI API 基础 URL"),
         }),
         Schema.object({
-            APIType: Schema.const("OpenAI Compatible"),
-            BaseURL: Schema.string().default("https://api.openai.com/v1"),
+            Provider: Schema.const("OpenAI Compatible"),
+            BaseURL: Schema.string()
+                .default("https://api.openai.com/v1")
+                .description("兼容 OpenAI 格式的 API 基础 URL"),
         }),
         Schema.object({
-            APIType: Schema.const("Ollama"),
-            BaseURL: Schema.string().default("http://127.0.0.1:11434"),
+            Provider: Schema.const("Ollama"),
+            BaseURL: Schema.string()
+                .default("http://127.0.0.1:11434")
+                .description("Ollama 服务地址"),
         }),
         Schema.object({
-            APIType: Schema.const("Google Gemini"),
-            BaseURL: Schema.string().default("https://generativelanguage.googleapis.com/v1beta/openai/"),
+            Provider: Schema.const("Google Gemini"),
+            BaseURL: Schema.string()
+                .default("https://generativelanguage.googleapis.com/v1beta/openai/")
+                .description("Google Gemini API 基础 URL"),
+        }),
+        Schema.object({
+            Provider: Schema.const("Cloudflare WorkersAI"),
+            BaseURL: Schema.string()
+                .description("Cloudflare Workers AI API 基础 URL"),
+            UID: Schema.string()
+                .description("Cloudflare 账户 ID"),
+        }),
+        Schema.object({
+            Provider: Schema.union([
+                "Anthropic",
+                "OpenRouter",
+                "SiliconFlow",
+                "XAI",
+                "DeepSeek",
+                "Zhipu",
+                "LMStudio",
+                "Qwen"
+            ]),
+            BaseURL: Schema.string()
+                .description("API 基础 URL"),
         }),
     ]),
 ]);
 
-export const Config: Schema<Config> = Schema.object({
-    APIList: Schema.array(LLMConfig).description("单个 LLM API 配置，可配置多个 API 进行负载均衡。"),
-    Parameters: Schema.object({
-        Temperature: Schema.number()
-            .default(1.36)
-            .min(0)
-            .max(2)
-            .step(0.01)
-            .role("slider")
-            .description("采样器的温度。数值越大，回复越随机；数值越小，回复越确定"),
-        MaxTokens: Schema.number()
-            .default(4096)
-            .min(1)
-            .max(20480)
-            .step(1)
-            .description("一次生成的最大 Token 数量。更大的 Token 数量可能会导致生成更长的回复"),
-        TopP: Schema.number()
-            .default(0.64)
-            .min(0)
-            .max(1)
-            .step(0.01)
-            .role("slider")
-            .description("核心采样。模型生成的所有候选 Tokens 按照其概率从高到低排序后，依次累加这些概率，直到达到或超过此预设的阈值，剩余的 Tokens 会被丢弃。值为1时表示关闭"),
-        FrequencyPenalty: Schema.number()
-            .default(0)
-            .min(-2)
-            .max(2)
-            .step(0.01)
-            .role("slider")
-            .description("数值为正时，会根据 Token 在前文出现的频率进行惩罚，降低模型反复重复同一个词的概率。这是一个乘数"),
-        PresencePenalty: Schema.number()
-            .default(0)
-            .min(-2)
-            .max(2)
-            .step(0.01)
-            .role("slider")
-            .description("数值为正时，如果 Token 在前文出现过，就对其进行惩罚，降低它再次出现的概率，提高模型谈论新话题的可能性。这是一个加数"),
-        Stop: Schema.union([
-            Schema.string().description("单例模式"),
-            Schema.array(Schema.string()).max(4).role("table").description("数组模式"),
-        ])
-            .description("自定义停止词。对于 OpenAI 官方的 API，最多可以设置4个自定义停止词。生成会在遇到这些停止词时停止")
-            .default(["<|endoftext|>"]),
-        OtherParameters: Schema.dict(
-            Schema.string().required(),
-            Schema.any().required()
-        )
-            .default({ do_sample: "true", })
-            .role("table")
-            .description(
-                `自定义请求体中的其他参数。有些api可能包含一些特别有用的功能，例如 dry_base 和 response_format。<br/>
-        如果在调用api时出现400或422错误，请尝试删除此处的自定义参数。<br/>
-        提示：直接将gbnf内容作为grammar_string的值粘贴至此时，换行符会被转换成空格，需要手动替换为\\n后方可生效`.trim()
-            ),
-    }).description("API 参数"),
-    MaxRetry: Schema.number()
-        .default(3)
+export const LLMParameters: Schema<LLMParameters> = Schema.object({
+    Temperature: Schema.number()
+        .default(1.36)
+        .min(0)
+        .max(2)
+        .step(0.01)
+        .role("slider")
+        .description("采样温度，控制回复的随机性。值越大越随机，值越小越确定"),
+    MaxTokens: Schema.number()
+        .default(4096)
         .min(1)
-        .max(10)
+        .max(20480)
         .step(1)
-        .description("API 请求失败时的最大重试次数"),
-    Proxy: Schema.string(),
-}).description("LLM API 相关配置");
+        .description("单次生成的最大 Token 数量"),
+    TopP: Schema.number()
+        .default(0.64)
+        .min(0)
+        .max(1)
+        .step(0.01)
+        .role("slider")
+        .description("核心采样参数，控制候选词汇的范围。值为1时表示关闭"),
+    FrequencyPenalty: Schema.number()
+        .default(0)
+        .min(-2)
+        .max(2)
+        .step(0.01)
+        .role("slider")
+        .description("频率惩罚，降低重复词汇的出现概率"),
+    PresencePenalty: Schema.number()
+        .default(0)
+        .min(-2)
+        .max(2)
+        .step(0.01)
+        .role("slider")
+        .description("存在惩罚，鼓励模型讨论新话题"),
+    Stop: Schema.union([
+        Schema.string().description("单个停止词"),
+        Schema.array(Schema.string()).max(4).role("table").description("多个停止词（最多4个）"),
+    ])
+        .description("自定义停止词，模型遇到这些词时会停止生成"),
+    OtherParameters: Schema.dict(
+        Schema.string().required(),
+        Schema.any().required()
+    )
+        .default({ do_sample: "true" })
+        .role("table")
+        .description("其他自定义 API 参数，如 dry_base、response_format 等。如遇到 400/422 错误请尝试清空此项"),
+}).description("LLM 生成参数配置")
