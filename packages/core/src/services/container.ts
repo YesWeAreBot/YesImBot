@@ -8,8 +8,15 @@ export class ServiceContainer {
 
     get<T>(name: string): T {
         if (!this.services.has(name)) {
-            throw new Error(`Service '${name}' not found in container`);
+            throw new ServiceNotFoundError(name);
         }
         return this.services.get(name) as T;
+    }
+}
+
+export class ServiceNotFoundError extends Error {
+    constructor(serviceName: string) {
+        super(`Service '${serviceName}' not found in container`);
+        this.name = 'ServiceNotFoundError';
     }
 }

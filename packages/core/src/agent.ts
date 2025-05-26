@@ -103,6 +103,13 @@ export default class Agent {
             return await ufetch(input, init);
         };
 
+        // fetch controller
+        const controller = new AbortController();
+
+        this.ctx.on("dispose", () => {
+            controller.abort();
+        })
+
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
@@ -134,11 +141,13 @@ export default class Agent {
                 pfetch as unknown as typeof globalThis.fetch,
                 {
                     debug: this.config.Debug.EnableDebug,
+                    abortSignal: controller.signal,
                 }))
 
             .use(new ResponseHandlingMiddleware(this.serviceContainer, middlewareManager, {
                 maxRetry: this.config.ToolCall.MaxRetry,
                 life: this.config.ToolCall.Life,
+                maxHeartbeat: this.config.Chat.MaxHeartbeat,
             }))
 
         this.serviceContainer.register('middlewareManager', middlewareManager);
@@ -274,8 +283,8 @@ export default class Agent {
                     const scenarioManager: ScenarioManager = this.serviceContainer.get("scenarioManager");
                     scenarioManager.updateMessage(newMessage, session, true);
                     ctx.logger.info(`Message Sent: ${message}`);
-                    if (delay && config.Bot.WordsPerSecond > 0) {
-                        await sleep(message.length / config.Bot.WordsPerSecond * 1000);
+                    if (delay && config.Chat.WordsPerSecond > 0) {
+                        await sleep(message.length / config.Chat.WordsPerSecond * 1000);
                     }
                 }
                 return Success();

@@ -21,7 +21,7 @@ import {
 } from '../dependencies/xsai';
 
 import { isEmpty, isNotEmpty } from '../utils';
-import { Config, LLMConfig } from "./config";
+import { LLMConfig, LLMParameters } from './config';
 
 interface RequestOptions {
     debug: boolean;
@@ -44,7 +44,7 @@ export abstract class BaseAdapter {
 
     constructor(
         protected config: LLMConfig,
-        protected parameters?: Config["Parameters"]
+        protected parameters?: LLMParameters
     ) {
         const { APIKey, Model, Ability } = config;
         this.baseURL = config.BaseURL;
@@ -231,7 +231,7 @@ export abstract class BaseAdapter {
 
 export class UniversalAdapter extends BaseAdapter {
 
-    constructor(adapterConfig: LLMConfig, parameters?: Config["Parameters"]) {
+    constructor(adapterConfig: LLMConfig, parameters?: LLMParameters) {
         super(adapterConfig, parameters);
         this.setProvider();
     }
