@@ -18,7 +18,7 @@ export const AppendCoreMemory = Tool({
     }),
     execute: async ({ label, content }, context) => {
         if (isEmpty(content)) throw new Error("content is required");
-        const memory = Memory.instance;
+        const memory = Memory.getInstance(context.ctx);
         if (memory) {
             let result = await memory.appendCoreMemory(label, content);
             return Success(result);
@@ -40,7 +40,7 @@ export const ReplaceCoreMemory = Tool({
     }),
     execute: async ({ label, old_content, new_content }, context) => {
         if (isEmpty(old_content)) throw new Error("old_content is required");
-        const memory = Memory.instance;
+        const memory = Memory.getInstance(context.ctx);
         if (memory) {
             let result = await memory.replaceCoreMemory(label, old_content, new_content);
             return Success(result);
@@ -123,7 +123,7 @@ export const InsertArchivalMemory = Tool({
     }),
     execute: async ({ content }, context) => {
         if (isEmpty(content)) throw new Error("content is required");
-        const memory = Memory.instance;
+        const memory = Memory.getInstance(context.ctx);
         if (memory) {
             let result = await memory.insertArchivalMemory(content);
             return Success(result);
@@ -144,7 +144,7 @@ export const SearchArchivalMemory = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ query, page, start }, context) => {
-        const memory = Memory.instance;
+        const memory = Memory.getInstance(context.ctx);
         if (memory) {
             let result = await memory.searchArchivalMemory(query, page, start);
             return Success(result);

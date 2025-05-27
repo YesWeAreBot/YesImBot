@@ -35,11 +35,11 @@ export class LLMProcessingMiddleware implements Middleware {
         }
 
         try {
-            // 在获取场景数据之前，处理所有与该频道相关的交互记录的生命周期
-            await this.scenarioManager.processInteractions(ctx.koishiSession.channelId);
-
             // 从 ScenarioManager 获取场景对象（可能是缓存的，也可能是新加载的）
             const scenario = await this.scenarioManager.getScenario(ctx.koishiSession);
+
+            // 处理所有与该频道相关的交互记录的生命周期
+            await this.scenarioManager.processInteractions(ctx.koishiSession.channelId);
 
             // 构建提示词
             const systemPrompt = await this.getSystemPrompt();

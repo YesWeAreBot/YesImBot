@@ -43,16 +43,6 @@ export default class Agent {
             // 注册中间件
             this.registerMiddleware();
         });
-
-        ctx.on("dispose", async () => {
-            try {
-                const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
-                const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");
-                checkReply.destroy();
-            } catch (error) {
-
-            }
-        });
     }
 
     /**
@@ -88,7 +78,7 @@ export default class Agent {
                     .then((memoryBlock) => {
                         if (this.config.MemorySlot.StoreFile[key])
                             memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
-                        memory.coreMemory.set(key, memoryBlock);
+                        memory.addMemoryBlock(key, memoryBlock);
                     });
             }
         }
@@ -106,10 +96,6 @@ export default class Agent {
         // fetch controller
         const controller = new AbortController();
 
-        this.ctx.on("dispose", () => {
-            controller.abort();
-        })
-
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
@@ -122,7 +108,7 @@ export default class Agent {
             .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor, scenarioManager))
 
             // 检查是否达到回复条件
-            .use(new CheckReplyConditionMiddleware({
+            .use(new CheckReplyConditionMiddleware(this.ctx, adapterSwitcher, {
                 allowedChannels: this.config.MemorySlot.SlotContains,
                 testMode: this.config.Debug.TestMode,
                 atReactPossibility: this.config.MemorySlot.AtReactPossibility,
@@ -133,7 +119,7 @@ export default class Agent {
                 threshold: this.config.MemorySlot.Threshold,
                 messageWaitTime: this.config.MemorySlot.MessageWaitTime,
                 sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
-            }, this.ctx, adapterSwitcher))
+            }))
 
             .use(new LLMProcessingMiddleware(
                 this.serviceContainer,
@@ -151,6 +137,14 @@ export default class Agent {
             }))
 
         this.serviceContainer.register('middlewareManager', middlewareManager);
+
+        // 清除副作用
+        this.ctx.on("dispose", () => {
+            controller.abort();
+            scenarioManager.clearAllScenario();
+            const checkReply: CheckReplyConditionMiddleware = middlewareManager.getMiddleware("check-reply-condition");
+            checkReply.destroy();
+        })
     }
 
     /**

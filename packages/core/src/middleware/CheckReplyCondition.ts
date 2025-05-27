@@ -132,9 +132,9 @@ export class CheckReplyConditionMiddleware implements Middleware {
     };
 
     constructor(
+        private koishiContext: Context,
+        private adapterSwitcher: AdapterSwitcher,
         private options: CheckReplyConditionOptions,
-        private koishiContext?: Context,
-        private adapterSwitcher?: AdapterSwitcher
     ) {
         // 设置默认值
         this.options.decayInterval = this.options.decayInterval || 60000; // 1分钟

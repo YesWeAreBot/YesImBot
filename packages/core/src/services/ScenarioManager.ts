@@ -109,8 +109,16 @@ export class ScenarioManager {
      * @param channelId 频道ID
      */
     clearScenario(channelId: string): void {
-        if (this.scenarios.delete(channelId)) {
-            // this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 的 Scenario 实例已从缓存中清除。`);
-        }
+        const removed = this.scenarios.delete(channelId);
+        // if (removed) {
+        //     this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 的 Scenario 实例已从缓存中清除。`);
+        // }
+    }
+
+    /**
+     *清除所有频道的 Scenario 实例缓存。
+     */
+    clearAllScenario(): void {
+        this.scenarios.clear()
     }
 }

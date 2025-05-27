@@ -12,8 +12,8 @@ import { formatDate, getChannelType } from "./utils";
 export class Scenario {
 
     private metadata: Record<string, string>;
-    private context: string[] = []; // 已读消息列表
-    private unread: string[] = [];  // 未读消息列表
+    private context: (Message | Interaction)[] = []; // 已读消息列表
+    private unread: (Message | Interaction)[] = [];  // 未读消息列表
     private recallSize: number;
     private lastReplyTime: Date | null = null; // 存储最后回复时间，用于判断消息已读状态
     private platformAdapter: PlatformAdapter
@@ -34,7 +34,7 @@ export class Scenario {
      * 合并查询消息和交互，减少数据库查询。
      * @param limit 历史消息数量限制
      */
-    async loadInitialData(limit: number = 30) {
+    public async loadInitialData(limit: number = 30) {
         this.context = [];
         this.unread = [];
 
@@ -43,15 +43,17 @@ export class Scenario {
         this.lastReplyTime = lastReplyEntry ? lastReplyEntry.timestamp : null;
 
         // 2. 批量查询消息和交互
-        const chatMessages = await this.ctx.database
+        const messages = await this.ctx.database
             .select(MESSAGE_TABLE)
             .where({ channel: { id: this.session.channelId } })
             .orderBy("timestamp", "desc")
-            .limit(limit)
             .execute();
 
+
         // 删除最后一条消息避免重复添加
-        chatMessages.shift();
+        messages.shift();
+
+        const chatMessages = messages.splice(0, limit);
 
         const messageIds = chatMessages.map(m => m.messageId);
 
@@ -66,10 +68,7 @@ export class Scenario {
         history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         // 计算超出上下文限制的记忆数量
-        this.recallSize = Math.max(0, (await this.ctx.database
-            .select(MESSAGE_TABLE)
-            .where({ channel: { id: this.session.channelId } })
-            .execute()).length - chatMessages.length);
+        this.recallSize = Math.max(0, messages.length)
 
         for (const record of history) {
             // 根据 lastReplyTime 判断是否为已读
@@ -86,54 +85,15 @@ export class Scenario {
      * @param record 消息或交互对象
      * @param isRead 是否为已读（机器人视角）
      */
-    addContext(record: Message | Interaction, isRead = false) {
-        let formattedContent: string;
-        if ((record as Message).messageId) { // 如果是 Message 类型
-            const message = record as Message;
-            let elements = h.parse(message.content as string);
-            let content = "";
-            for (let elem of elements) {
-                switch (elem.type) {
-                    case "text":
-                        content += elem.attrs.content;
-                        break;
-                    case "img":
-                        content += elem.attrs.summary || `[图片]`;
-                        break;
-                    case "at":
-                        content += `<at id="${elem.attrs.id}" name="@${elem.attrs.name}"/>`
-                        break;
-                    default:
-                        content += `[${elem.type}]`;
-                        break;
-                }
-            }
-
-            if (message.sender.id === this.session.bot.selfId) {
-                formattedContent = `[#${message.messageId} ${formatDate(message.timestamp)} YOU] ${content}`;
-            } else {
-                formattedContent = `[#${message.messageId} ${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${content}`;
-            }
-        } else { // 如果是 Interaction 类型
-            const interaction = record as Interaction;
-            if (interaction.type === "tool_result") {
-                formattedContent = `[FUNCTION RETURN] ${JSON.stringify(interaction.content)}`;
-            } else {
-                formattedContent = `[FUNCTION CALL] ${JSON.stringify(interaction.content)}`;
-            }
-        }
-
-        if (isRead) {
-            this.context.push(formattedContent);
-        } else {
-            this.unread.push(formattedContent);
-        }
+    public addContext(record: Message | Interaction, isRead = false) {
+        const arr = isRead ? this.context : this.unread;
+        arr.push(record);
     }
 
     /**
      * 清空 Scenario 上下文和未读消息。
      */
-    clearContext() {
+    public clearContext() {
         this.context = [];
         this.unread = [];
     }
@@ -169,17 +129,17 @@ export class Scenario {
      * 将场景渲染为字符串，用于 LLM 提示词。
      * 未读消息会被单独列出，并提示 AI 数量。
      */
-    render(): string | (TextPart | ImagePart)[] {
+    public render(): string | (TextPart | ImagePart)[] {
         let output = [
             `<scenario id="${this.session.channelId}" type="${getChannelType(this.session.channelId)}">`,
             Object.keys(this.metadata).map(k => `${k}: ${this.metadata[k]}`).join("\n"),
             `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
             "",
             `Chat History:`,
-            ...this.context,
+            ...this.context.map(this.formatContext),
             "",
             `You have ${this.unread.length} new messages to read:`,
-            ...this.unread,
+            ...this.unread.map(this.formatContext),
             `</scenario>`
         ].join("\n");
 
@@ -190,5 +150,50 @@ export class Scenario {
         }
         this.unread = [];
         return output;
+    }
+
+    private formatContext(record: Message | Interaction): string {
+        if ((record as Message).messageId) {
+            // 如果是 Message 类型
+            return this.formatMessage(record as Message);
+        } else {
+            // 如果是 Interaction 类型
+            return this.formatInteraction(record as Interaction);
+        }
+    }
+
+    private formatMessage(message: Message): string {
+        let elements = h.parse(message.content as string);
+        let content = "";
+        for (let elem of elements) {
+            switch (elem.type) {
+                case "text":
+                    content += elem.attrs.content;
+                    break;
+                case "img":
+                    content += elem.attrs.summary || `[图片]`;
+                    break;
+                case "at":
+                    content += `<at id="${elem.attrs.id}" name="@${elem.attrs.name}"/>`
+                    break;
+                default:
+                    content += `[${elem.type}]`;
+                    break;
+            }
+        }
+
+        if (message.sender.id === this.session.bot.selfId) {
+            return `[#${message.messageId} ${formatDate(message.timestamp)} YOU] ${content}`;
+        } else {
+            return `[#${message.messageId} ${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${content}`;
+        }
+    }
+
+    private formatInteraction(interaction: Interaction): string {
+        if (interaction.type === "tool_result") {
+            return `[FUNCTION RETURN] ${JSON.stringify(interaction.content)}`;
+        } else {
+            return `[FUNCTION CALL] ${JSON.stringify(interaction.content)}`;
+        }
     }
 }
