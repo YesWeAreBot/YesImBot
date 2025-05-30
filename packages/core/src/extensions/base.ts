@@ -1,32 +1,31 @@
-import { readdirSync } from "fs";
 import { Context, Session } from "koishi";
-import path from "path";
 import { ToolResult } from "xsai";
 import { z } from "zod";
 import zodToJsonSchema from "zod-to-json-schema";
+import { getExtensionFiles } from "../utils";
 
 /**
  * LLM 上下文对象
  * 用于传递 Koishi 上下文和会话对象
  */
 export interface ToolContext {
-    ctx?: Context;       // Koishi 上下文对象
-    session?: Session;   // Koishi 会话对象
-    [key: string]: any;  // 允许扩展上下文
+    koishiContext?: Context; // Koishi 上下文对象
+    koishiSession?: Session; // Koishi 会话对象
+    [key: string]: unknown; // 允许扩展上下文
 }
 
 /**
  * 工具定义
  * 用于定义工具的名称、描述、参数和执行函数
  */
-export type ToolDefinition<
-    TParams extends z.ZodTypeAny = any,
-    TReturns extends z.ZodTypeAny = any
-> = {
+export type ToolDefinition<TParams extends z.ZodTypeAny = any, TReturns extends z.ZodTypeAny = any> = {
     name: string;
     description: string;
     parameters: TParams;
-    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<z.infer<TReturns>>> | ToolCallResult<z.infer<TReturns>>;
+    execute: (
+        params: z.infer<TParams>,
+        context: ToolContext
+    ) => Promise<ToolCallResult<z.infer<TReturns>>> | ToolCallResult<z.infer<TReturns>>;
 };
 
 export interface ToolCallResult<T = any> {
@@ -35,6 +34,7 @@ export interface ToolCallResult<T = any> {
     error?: string;
 }
 
+//@ts-ignore
 interface EnhancedToolResult<T extends z.ZodTypeAny = any> extends ToolResult {
     execute: (params: z.infer<T>, context: ToolContext) => Promise<ToolCallResult<z.infer<T>>> | ToolCallResult<z.infer<T>>;
 }
@@ -74,15 +74,15 @@ export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>
             name: definition.name,
             description: definition.description,
             parameters: parameters as Record<string, unknown>,
-        }
+        },
     };
 }
 
 export class ToolManager {
     static instance: ToolManager;
-    static getInstance(): ToolManager {
+    static getInstance(ctx): ToolManager {
         if (!ToolManager.instance) {
-            ToolManager.instance = new ToolManager();
+            ToolManager.instance = new ToolManager(ctx);
         }
         return ToolManager.instance;
     }
@@ -90,40 +90,35 @@ export class ToolManager {
     private loaded = false;
     private tools: Map<string, ToolDefinition> = new Map();
 
-    constructor() { }
+    constructor(private ctx: Context) {}
 
-    loadExtensions(logger: Context["logger"]) {
+    load() {
         if (this.loaded) return;
-        const extensionsDir = path.join(__dirname, "builtin");
+        const extensions = getExtensionFiles(this.ctx);
 
-        readdirSync(extensionsDir)
-            .filter(file =>
-                file.startsWith("ext_") &&
-                !file.endsWith(".d.ts")
-            )
-            .forEach(file => {
-                try {
-                    const extension = require(path.join(extensionsDir, file)) as Record<string, ToolDefinition> | { default: ToolDefinition | ToolDefinition[] };
+        for (let file of extensions) {
+            try {
+                const extension = require(file) as Record<string, ToolDefinition> | { default: ToolDefinition | ToolDefinition[] };
 
-                    if (extension.default) {
-                        if (Array.isArray(extension.default)) {
-                            extension.default.forEach(tool => this.registerTool(tool));
-                        } else {
-                            this.registerTool(extension.default);
-                        }
+                if (extension.default) {
+                    if (Array.isArray(extension.default)) {
+                        extension.default.forEach((tool) => this.registerTool(tool));
                     } else {
-                        Object.entries(extension as Record<string, ToolDefinition>)
-                            .filter(([key]) => key !== 'default')
-                            .forEach(([key, tool]) => {
-                                this.registerTool(tool);
-                            });
+                        this.registerTool(extension.default);
                     }
-                    logger.info(`[Extension] Loaded: ${file}`);
-                } catch (error) {
-                    logger.error(`[Extension] Failed to load: ${file}`);
-                    logger.error(error.stack);
+                } else {
+                    Object.entries(extension as Record<string, ToolDefinition>)
+                        .filter(([key]) => key !== "default")
+                        .forEach(([key, tool]) => {
+                            this.registerTool(tool);
+                        });
                 }
-            });
+                this.ctx.logger.info(`[Extension] Loaded: ${file}`);
+            } catch (error) {
+                this.ctx.logger.error(`[Extension] Failed to load: ${file}`);
+                this.ctx.logger.error(error.stack);
+            }
+        }
 
         this.loaded = true;
     }
@@ -166,13 +161,13 @@ export class ToolManager {
             return "";
         }
         const tool = this.tools.get(name);
-        const stringify = (properties: Record<string, { type: string, description: string }>) => {
+        const stringify = (properties: Record<string, { type: string; description: string }>) => {
             let result = [];
             for (const [key, value] of Object.entries(properties)) {
                 result.push(`    ${key}: ${value.description}`);
             }
             return result.join("\n");
-        }
+        };
         if (!tool.parameters["properties"]) {
             tool.parameters = zodToJsonSchema(tool.parameters);
         }
@@ -180,7 +175,7 @@ export class ToolManager {
             `${name}:`,
             `  description: ${tool.description}`,
             `  params:`,
-            stringify(tool.parameters["properties"]) || "    No parameters required."
+            stringify(tool.parameters["properties"]) || "    No parameters required.",
         ].join("\n");
     }
 
@@ -194,4 +189,9 @@ export class ToolManager {
 }
 
 export const INNER_THOUGHTS = z.string().describe("Deep inner monologue private to you only.");
-export const REQUEST_HEARTBEAT = z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.");
+export const REQUEST_HEARTBEAT = z
+    .boolean()
+    .optional()
+    .describe(
+        "Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function."
+    );

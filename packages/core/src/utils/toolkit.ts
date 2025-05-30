@@ -1,9 +1,9 @@
+import { mkdirSync, readdirSync } from "fs";
 import fs from "fs/promises";
 import { Context } from "koishi";
 import path from "path";
 
 import { isEmpty } from "./string";
-import { mkdirSync, readdirSync } from "fs";
 
 /**
  * 消息内容是否包含过滤词
@@ -98,7 +98,7 @@ export function getExtensionPath(ctx: Context, builtin: boolean = false): string
     } else {
         extensionPath = path.join(ctx.baseDir, "data", "yesimbot", "extensions");
     }
-    
+
     try {
         mkdirSync(extensionPath, { recursive: true });
     } catch (err) {}

@@ -18,13 +18,12 @@ import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, MEMORY_TABLE, Message
 import { getChannelType, isEmpty } from "./utils";
 import { ImageProcessor } from "./utils/imageProcessor";
 
-
 export default class Agent {
     private serviceContainer: ServiceContainer;
     private ctx: Context;
     private config: Config;
 
-    static name = 'yesimbot';
+    static name = "yesimbot";
 
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
@@ -50,11 +49,11 @@ export default class Agent {
      */
     private initializeServices(): void {
         // 注册工具管理器
-        const toolManager = ToolManager.getInstance();
+        const toolManager = ToolManager.getInstance(this.ctx);
         // 加载工具
         this.ctx.logger.info("[Tool] Loading tools");
-        toolManager.loadExtensions(this.ctx.logger);
-        this.serviceContainer.register('toolManager', toolManager);
+        toolManager.load();
+        this.serviceContainer.register("toolManager", toolManager);
         // 注册核心工具
         toolManager.registerTool(this.createSendMessageTool(this.config));
 
