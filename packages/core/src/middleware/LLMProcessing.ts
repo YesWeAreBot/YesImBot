@@ -18,7 +18,6 @@ export class LLMProcessingMiddleware implements Middleware {
     constructor(
         private service: ServiceContainer,
         private memory: Memory,
-        private xfetch: typeof globalThis.fetch,
         private config?: {
             debug?: boolean;
             abortSignal?: AbortSignal;
@@ -61,7 +60,6 @@ export class LLMProcessingMiddleware implements Middleware {
                         { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
                         { role: 'user', content: scenario.render() }
                     ], null, {
-                        xfetch: this.xfetch,
                         debug: this.config.debug,
                         logger: ctx.koishiContext.logger,
                         abortSignal: this.config.abortSignal,

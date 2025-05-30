@@ -1,5 +1,5 @@
 import { Context, sleep } from "koishi";
-import { Agent as HTTPAgent, ProxyAgent, fetch as ufetch } from 'undici';
+import { Agent as HTTPAgent, ProxyAgent, fetch as ufetch } from "undici";
 import { z } from "zod";
 
 import { AdapterSwitcher } from "./adapters";
@@ -59,38 +59,29 @@ export default class Agent {
 
         // 注册适配器切换器
         const adapterSwitcher = new AdapterSwitcher(this.config.API.APIList, this.config.API.Parameters);
-        this.serviceContainer.register('adapterSwitcher', adapterSwitcher);
+        this.serviceContainer.register("adapterSwitcher", adapterSwitcher);
 
         const imageProcessor = new ImageProcessor(this.ctx);
-        this.serviceContainer.register('imageProcessor', imageProcessor);
+        this.serviceContainer.register("imageProcessor", imageProcessor);
 
         const scenarioManager = new ScenarioManager(this.ctx);
-        this.serviceContainer.register('scenarioManager', scenarioManager);
+        this.serviceContainer.register("scenarioManager", scenarioManager);
 
         // 加载记忆
         const memory = Memory.getInstance(this.ctx);
-        this.serviceContainer.register('memory', memory);
+        this.serviceContainer.register("memory", memory);
         this.ctx.logger.info("[Memory] Loading memory_blocks");
         if (this.config.MemorySlot.StoreFile) {
             for (const key in this.config.MemorySlot.StoreFile) {
-                MemoryBlock.getOrCreate(this.ctx, key)
-                    .then((memoryBlock) => {
-                        if (this.config.MemorySlot.StoreFile[key])
-                            memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
-                        memory.addMemoryBlock(key, memoryBlock);
-                    });
+                MemoryBlock.getOrCreate(this.ctx, key).then((memoryBlock) => {
+                    if (this.config.MemorySlot.StoreFile[key]) memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
+                    memory.addMemoryBlock(key, memoryBlock);
+                });
             }
         }
 
         // 注册中间件管理器
         const middlewareManager = new MiddlewareManager();
-
-        const proxy = this.config.API.Proxy ? new ProxyAgent(this.config.API.Proxy) : new HTTPAgent();
-
-        const pfetch = async (input, init) => {
-            init = { ...init, dispatcher: proxy };
-            return await ufetch(input, init);
-        };
 
         // fetch controller
         const controller = new AbortController();
@@ -98,44 +89,48 @@ export default class Agent {
         // 设置中间件链
         middlewareManager
             // 错误处理中间件
-            .use(new ErrorHandlingMiddleware(this.ctx.logger, {
-                debug: this.config.Debug.EnableDebug,
-                uploadDump: this.config.Debug.UploadDump
-            }))
+            .use(
+                new ErrorHandlingMiddleware(this.ctx.logger, {
+                    debug: this.config.Debug.EnableDebug,
+                    uploadDump: this.config.Debug.UploadDump,
+                })
+            )
 
             // 数据库存储中间件
             .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor, scenarioManager))
 
             // 检查是否达到回复条件
-            .use(new CheckReplyConditionMiddleware(this.ctx, adapterSwitcher, {
-                allowedChannels: this.config.MemorySlot.SlotContains,
-                testMode: this.config.Debug.TestMode,
-                atReactPossibility: this.config.MemorySlot.AtReactPossibility,
-                increaseWillingnessOn: {
-                    message: this.config.MemorySlot.IncreaseWillingnessOn.Message,
-                    at: this.config.MemorySlot.IncreaseWillingnessOn.At,
-                },
-                threshold: this.config.MemorySlot.Threshold,
-                messageWaitTime: this.config.MemorySlot.MessageWaitTime,
-                sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
-            }))
+            .use(
+                new CheckReplyConditionMiddleware(this.ctx, adapterSwitcher, {
+                    allowedChannels: this.config.MemorySlot.SlotContains,
+                    testMode: this.config.Debug.TestMode,
+                    atReactPossibility: this.config.MemorySlot.AtReactPossibility,
+                    increaseWillingnessOn: {
+                        message: this.config.MemorySlot.IncreaseWillingnessOn.Message,
+                        at: this.config.MemorySlot.IncreaseWillingnessOn.At,
+                    },
+                    threshold: this.config.MemorySlot.Threshold,
+                    messageWaitTime: this.config.MemorySlot.MessageWaitTime,
+                    sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
+                })
+            )
 
-            .use(new LLMProcessingMiddleware(
-                this.serviceContainer,
-                memory,
-                pfetch as unknown as typeof globalThis.fetch,
-                {
+            .use(
+                new LLMProcessingMiddleware(this.serviceContainer, memory, {
                     debug: this.config.Debug.EnableDebug,
                     abortSignal: controller.signal,
-                }))
+                })
+            )
 
-            .use(new ResponseHandlingMiddleware(this.serviceContainer, middlewareManager, {
-                maxRetry: this.config.ToolCall.MaxRetry,
-                life: this.config.ToolCall.Life,
-                maxHeartbeat: this.config.Chat.MaxHeartbeat,
-            }))
+            .use(
+                new ResponseHandlingMiddleware(this.serviceContainer, middlewareManager, {
+                    maxRetry: this.config.ToolCall.MaxRetry,
+                    life: this.config.ToolCall.Life,
+                    maxHeartbeat: this.config.Chat.MaxHeartbeat,
+                })
+            );
 
-        this.serviceContainer.register('middlewareManager', middlewareManager);
+        this.serviceContainer.register("middlewareManager", middlewareManager);
 
         // 清除副作用
         this.ctx.on("dispose", () => {
@@ -143,7 +138,7 @@ export default class Agent {
             scenarioManager.clearAllScenario();
             const checkReply: CheckReplyConditionMiddleware = middlewareManager.getMiddleware("check-reply-condition");
             checkReply.destroy();
-        })
+        });
     }
 
     /**
@@ -156,13 +151,13 @@ export default class Agent {
                 const messageContext = new MessageContext(this.ctx, session);
 
                 // 执行中间件链
-                const middlewareManager = this.serviceContainer.get<MiddlewareManager>('middlewareManager');
+                const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
                 await middlewareManager.execute(messageContext);
 
                 // 继续Koishi中间件链
                 return next();
             } catch (error) {
-                this.ctx.logger.error('Error processing message:', error);
+                this.ctx.logger.error("Error processing message:", error);
                 return next();
             }
         });
@@ -173,63 +168,83 @@ export default class Agent {
      */
     private registerDatabases(): void {
         // 消息表
-        this.ctx.model.extend(MESSAGE_TABLE, {
-            messageId: "string",
-            sender: "object",
-            channel: "object",
-            timestamp: "timestamp",
-            content: "string",
-        }, {
-            primary: ["messageId"],
-            autoInc: false,
-        });
+        this.ctx.model.extend(
+            MESSAGE_TABLE,
+            {
+                messageId: "string",
+                sender: "object",
+                channel: "object",
+                timestamp: "timestamp",
+                content: "string",
+            },
+            {
+                primary: ["messageId"],
+                autoInc: false,
+            }
+        );
 
         // 交互记录表
-        this.ctx.model.extend(INTERACTION_TABLE, {
-            id: "string",
-            emitter: "string",
-            emitter_channel_id: "string",
-            type: "string",
-            content: "object",
-            life: "integer",
-            timestamp: "timestamp"
-        }, {
-            primary: "id"
-        });
+        this.ctx.model.extend(
+            INTERACTION_TABLE,
+            {
+                id: "string",
+                emitter: "string",
+                emitter_channel_id: "string",
+                type: "string",
+                content: "object",
+                life: "integer",
+                timestamp: "timestamp",
+            },
+            {
+                primary: "id",
+            }
+        );
 
         // 记忆块表
-        this.ctx.model.extend(MEMORY_TABLE, {
-            id: "string",
-            label: "string",
-            value: "array",
-            limit: "integer",
-        }, {
-            primary: ["id", "label"],
-            autoInc: false,
-        });
+        this.ctx.model.extend(
+            MEMORY_TABLE,
+            {
+                id: "string",
+                label: "string",
+                value: "array",
+                limit: "integer",
+            },
+            {
+                primary: ["id", "label"],
+                autoInc: false,
+            }
+        );
 
         // 上次回复时间表
-        this.ctx.model.extend(LAST_REPLY_TABLE, {
-            channelId: "string",
-            timestamp: "timestamp",
-        }, {
-            primary: "channelId",
-            autoInc: false,
-        });
+        this.ctx.model.extend(
+            LAST_REPLY_TABLE,
+            {
+                channelId: "string",
+                timestamp: "timestamp",
+            },
+            {
+                primary: "channelId",
+                autoInc: false,
+            }
+        );
 
         // 图片表
-        this.ctx.model.extend(IMAGE_TABLE, {
-            id: "string",
-            mimeType: "string",
-            base64: "string",
-            summary: "string",
-            desc: "string",
-            size: "integer",
-            timestamp: "timestamp",
-        }, {
-            primary: "id",
-            autoInc: false,
-        })
+        this.ctx.model.extend(
+            IMAGE_TABLE,
+            {
+                id: "string",
+                mimeType: "string",
+                base64: "string",
+                summary: "string",
+                desc: "string",
+                size: "integer",
+                timestamp: "timestamp",
+            },
+            {
+                primary: "id",
+                autoInc: false,
+            }
+        );
     }
 
     private createSendMessageTool(config: Config) {
@@ -238,17 +253,26 @@ export default class Agent {
             description: "Sends a message to the human user.",
             parameters: z.object({
                 inner_thoughts: INNER_THOUGHTS,
-                messages: z.array(z.string()).describe("Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."),
-                channel_id: z.string().optional().describe("The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."),
+                messages: z
+                    .array(z.string())
+                    .describe(
+                        "Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."
+                    ),
+                channel_id: z
+                    .string()
+                    .optional()
+                    .describe(
+                        "The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."
+                    ),
                 request_heartbeat: REQUEST_HEARTBEAT,
             }),
             execute: async ({ messages, channel_id }, context) => {
-                const { ctx, session } = context;
+                const { koishiContext, koishiSession } = context;
 
                 let idx = 1;
                 let delay = true;
                 if (!channel_id) {
-                    channel_id = context.session.channelId;
+                    channel_id = koishiSession.channelId;
                 }
 
                 for await (const message of messages) {
@@ -257,13 +281,13 @@ export default class Agent {
                     if (idx++ >= messages.length) {
                         delay = false;
                     }
-                    let messageIds = await session.sendQueued(message);
+                    let messageIds = await koishiSession.sendQueued(message);
                     const newMessage: Message = {
                         messageId: messageIds[0],
                         sender: {
-                            id: session.bot.selfId,
-                            name: session.bot.user.name,
-                            nick: session.bot.user.nick,
+                            id: koishiSession.bot.selfId,
+                            name: koishiSession.bot.user.name,
+                            nick: koishiSession.bot.user.nick,
                         },
                         channel: {
                             id: channel_id,
@@ -271,23 +295,23 @@ export default class Agent {
                         },
                         timestamp: new Date(),
                         content: message,
-                    }
-                    await ctx.database.create(MESSAGE_TABLE, newMessage);
+                    };
+                    await koishiContext.database.create(MESSAGE_TABLE, newMessage);
                     const scenarioManager: ScenarioManager = this.serviceContainer.get("scenarioManager");
-                    scenarioManager.updateMessage(newMessage, session, true);
-                    ctx.logger.info(`Message Sent: ${message}`);
+                    scenarioManager.updateMessage(newMessage, koishiSession, true);
+                    koishiContext.logger.info(`Message Sent: ${message}`);
                     if (delay && config.Chat.WordsPerSecond > 0) {
-                        await sleep(message.length / config.Chat.WordsPerSecond * 1000);
+                        await sleep((message.length / config.Chat.WordsPerSecond) * 1000);
                     }
                 }
                 return Success();
-            }
+            },
         });
     }
 
     public async getMemory() {
-        const memory = this.serviceContainer.get<Memory>('memory');
-        return memory
+        const memory = this.serviceContainer.get<Memory>("memory");
+        return memory;
     }
 }
 
