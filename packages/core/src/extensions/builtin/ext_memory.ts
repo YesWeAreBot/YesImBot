@@ -6,7 +6,6 @@ import { formatDate } from "../../utils";
 import { isEmpty } from "../../utils/string";
 import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
 
-
 export const AppendCoreMemory = Tool({
     name: "core_memory_append",
     description: "Append to the contents of core memory.",
@@ -17,16 +16,17 @@ export const AppendCoreMemory = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ label, content }, context) => {
+        const { koishiContext, koishiSession } = context;
         if (isEmpty(content)) throw new Error("content is required");
-        const memory = Memory.getInstance(context.ctx);
+        const memory = Memory.getInstance(koishiContext);
         if (memory) {
             let result = await memory.appendCoreMemory(label, content);
             return Success(result);
         } else {
             return Failed("Memory is not initialized.");
         }
-    }
-})
+    },
+});
 
 export const ReplaceCoreMemory = Tool({
     name: "core_memory_replace",
@@ -39,16 +39,17 @@ export const ReplaceCoreMemory = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ label, old_content, new_content }, context) => {
+        const { koishiContext, koishiSession } = context;
         if (isEmpty(old_content)) throw new Error("old_content is required");
-        const memory = Memory.getInstance(context.ctx);
+        const memory = Memory.getInstance(koishiContext);
         if (memory) {
             let result = await memory.replaceCoreMemory(label, old_content, new_content);
             return Success(result);
         } else {
             return Failed("Memory is not initialized.");
         }
-    }
-})
+    },
+});
 
 export const SearchConversation = Tool({
     name: "conversation_search",
@@ -60,11 +61,12 @@ export const SearchConversation = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ query, page }, context) => {
-        const channel_id = context.session?.channelId;
+        const { koishiContext, koishiSession } = context;
+        const channel_id = koishiSession.channelId;
 
-        const messages = await context.ctx.database.get(MESSAGE_TABLE, {
+        const messages = await koishiContext.database.get(MESSAGE_TABLE, {
             channel: {
-                id: channel_id
+                id: channel_id,
             },
             content: { $regex: query },
         });
@@ -73,11 +75,11 @@ export const SearchConversation = Tool({
         }
         let result = [
             `Found ${messages.length} messages:`,
-            ...messages.map(message => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`)
+            ...messages.map((message) => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`),
         ].join("\n");
         return Success(result);
-    }
-})
+    },
+});
 
 export const SearchConversationWithDate = Tool({
     name: "conversation_search_date",
@@ -90,14 +92,15 @@ export const SearchConversationWithDate = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ start_date, end_date, page }, context) => {
-        const channel_id = context.session?.channelId;
+        const { koishiContext, koishiSession } = context;
+        const channel_id = koishiSession.channelId;
 
         const start = new Date(start_date);
         const end = new Date(end_date);
 
-        const messages = await context.ctx.database.get(MESSAGE_TABLE, {
+        const messages = await koishiContext.database.get(MESSAGE_TABLE, {
             channel: {
-                id: channel_id
+                id: channel_id,
             },
             timestamp: { $gte: start, $lte: end },
         });
@@ -107,11 +110,11 @@ export const SearchConversationWithDate = Tool({
         }
         let result = [
             "Found ${messages.length} messages in the specified date range:",
-            ...messages.map(message => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`)
+            ...messages.map((message) => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`),
         ].join("\n");
         return Success(result);
-    }
-})
+    },
+});
 
 export const InsertArchivalMemory = Tool({
     name: "archival_memory_insert",
@@ -122,16 +125,17 @@ export const InsertArchivalMemory = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ content }, context) => {
+        const { koishiContext, koishiSession } = context;
         if (isEmpty(content)) throw new Error("content is required");
-        const memory = Memory.getInstance(context.ctx);
+        const memory = Memory.getInstance(koishiContext);
         if (memory) {
             let result = await memory.insertArchivalMemory(content);
             return Success(result);
         } else {
             return Failed("Memory is not initialized.");
         }
-    }
-})
+    },
+});
 
 export const SearchArchivalMemory = Tool({
     name: "archival_memory_search",
@@ -144,12 +148,13 @@ export const SearchArchivalMemory = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ query, page, start }, context) => {
-        const memory = Memory.getInstance(context.ctx);
+        const { koishiContext, koishiSession } = context;
+        const memory = Memory.getInstance(koishiContext);
         if (memory) {
             let result = await memory.searchArchivalMemory(query, page, start);
             return Success(result);
         } else {
             return Failed("Memory is not initialized.");
         }
-    }
-})
+    },
+});
