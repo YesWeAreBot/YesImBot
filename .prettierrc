@@ -1,0 +1,12 @@
+{
+    "endOfLine": "lf",
+    "objectWrap": "collapse",
+    "quoteProps": "as-needed",
+    "semi": true,
+    "tabWidth": 4,
+    "singleQuote": false,
+    "arrowParens": "always",
+    "bracketSpacing": true,
+    "printWidth": 180,
+    "trailingComma": "es5"
+}
