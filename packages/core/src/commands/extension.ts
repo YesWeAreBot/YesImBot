@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import { Context } from "koishi";
 import path from "path";
 
-import { downloadFile, getExtensionFiles, getExtensionPath, normalizeFilename, readMetadata } from "../utils";
+import { downloadFile, getExtensionFiles, getExtensionPath, isEmpty, normalizeFilename, readMetadata } from "../utils";
 
 // 扩展信息类型
 interface ExtensionInfo {
@@ -126,6 +126,8 @@ export function apply(ctx: Context) {
         .option("file", "-f <filename>  指定保存的文件名", { type: "string" })
         .action(async ({ session, options }, url) => {
             try {
+                if (isEmpty(url) || isEmpty(options.file)) return "❌ 请提供下载链接";
+
                 ctx.logger.info(`[扩展安装] 开始从 ${url} 安装扩展...`);
 
                 const isDevMode = process.env.NODE_ENV === "development";
