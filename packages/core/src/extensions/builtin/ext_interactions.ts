@@ -6,10 +6,10 @@
 // ==/Extension==
 
 import { z } from "zod";
+import {} from "koishi-plugin-adapter-onebot";
 
 import { isEmpty } from "../../utils/string";
 import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
-
 
 export const Reaction = Tool({
     name: "reaction-create",
@@ -21,17 +21,20 @@ export const Reaction = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ message, emoji_id }, context) => {
+        const { koishiContext, koishiSession } = context;
         try {
-            // @ts-ignore
-            await this.session.onebot._request("set_msg_emoji_like", { message_id: message, emoji_id: emoji_id });
-            context.ctx.logger.info(`Bot[${context.session.selfId}]对消息 ${message} 进行了表态： ${emoji_id}`);
+            await koishiSession.onebot._request("set_msg_emoji_like", {
+                message_id: message,
+                emoji_id: emoji_id,
+            });
+            koishiContext.logger.info(`Bot[${koishiSession.selfId}]对消息 ${message} 进行了表态： ${emoji_id}`);
             return Success();
         } catch (e) {
-            context.ctx.logger.error(`Bot[${context.session.selfId}]执行表态失败: ${message}, ${emoji_id} - `, e.message);
-            return Failed(`对消息 ${message} 进行表态失败： ${e.message}`)
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]执行表态失败: ${message}, ${emoji_id} - `, e.message);
+            return Failed(`对消息 ${message} 进行表态失败： ${e.message}`);
         }
-    }
-})
+    },
+});
 
 export const Essence = Tool({
     name: "essence-create",
@@ -42,17 +45,19 @@ export const Essence = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ message }, context) => {
+        const { koishiContext, koishiSession } = context;
         try {
-            // @ts-ignore
-            await this.session.onebot._request("set_essence_msg", { message_id: message })
-            context.ctx.logger.info(`Bot[${context.session.selfId}]将消息 ${message} 设置为精华`);
+            await koishiSession.onebot._request("set_essence_msg", {
+                message_id: message,
+            });
+            koishiContext.logger.info(`Bot[${koishiSession.selfId}]将消息 ${message} 设置为精华`);
             return Success();
         } catch (e) {
-            context.ctx.logger.error(`Bot[${context.session.selfId}]设置精华消息失败: ${message} - `, e.message);
-            return Failed(`设置精华消息失败： ${e.message}`)
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]设置精华消息失败: ${message} - `, e.message);
+            return Failed(`设置精华消息失败： ${e.message}`);
         }
-    }
-})
+    },
+});
 
 export const Poke = Tool({
     name: "send-poke",
@@ -64,25 +69,26 @@ export const Poke = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ user_id, channel }, context) => {
+        const { koishiContext, koishiSession } = context;
         try {
-            let channelId: string;
-            if (isEmpty(channel)) {
-                channelId = context.session.channelId;
-            } else {
-                channelId = channel;
-            }
+            let channelId = isEmpty(channel) ? koishiSession.channelId : channel;
             if (!channelId.startsWith("private:")) {
-                // @ts-ignore
-                await this.session.onebot._request("send_poke", { channel: channelId, channelId: channelId, group_id: channelId, user_id: user_id }); // group_id✔
+                await koishiSession.onebot._request("send_poke", {
+                    channel: channelId,
+                    channelId: channelId,
+                    group_id: channelId,
+                    user_id: user_id,
+                });
             } else {
-                // @ts-ignore
-                await this.session.onebot._request("send_poke", { user_id: user_id });
+                await koishiSession.onebot._request("send_poke", {
+                    user_id: user_id,
+                });
             }
-            context.ctx.logger.info(`Bot[${context.session.selfId}]戳了戳 ${user_id}`);
+            koishiContext.logger.info(`Bot[${koishiSession.selfId}]戳了戳 ${user_id}`);
             return Success();
         } catch (e) {
-            context.ctx.logger.error(`Bot[${context.session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
-            return Failed(`戳了戳 ${user_id} 失败： ${e.message}`)
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
+            return Failed(`戳了戳 ${user_id} 失败： ${e.message}`);
         }
-    }
-})
+    },
+});

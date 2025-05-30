@@ -11,7 +11,6 @@ import { z } from "zod";
 import { isEmpty } from "../../utils/string";
 import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
 
-
 export const Execute = Tool({
     name: "execute",
     description: `执行一些只有在IM平台才能使用的指令。
@@ -26,18 +25,20 @@ export const Execute = Tool({
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ cmd, channel }, context) => {
+        const { koishiContext, koishiSession } = context;
+
         if (isEmpty(cmd)) return Failed("cmd is required");
         try {
-            if (isEmpty(channel) || channel == context.session.channelId) {
-                await context.session.execute(cmd);
+            if (isEmpty(channel) || channel == koishiSession.channelId) {
+                await koishiSession.execute(cmd);
             } else {
-                await context.session.bot.sendMessage(channel, h("execute", {}, cmd));
+                await koishiSession.bot.sendMessage(channel, h("execute", {}, cmd));
             }
-            context.ctx.logger.info(`Bot[${context.session.selfId}]执行了指令: ${cmd}`);
+            koishiContext.logger.info(`Bot[${koishiSession.selfId}]执行了指令: ${cmd}`);
             return Success();
         } catch (e) {
-            context.ctx.logger.error(`Bot[${context.session.selfId}]执行指令失败: ${cmd} - `, e.message);
-            return Failed(`执行指令失败 - ${e.message}`)
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]执行指令失败: ${cmd} - `, e.message);
+            return Failed(`执行指令失败 - ${e.message}`);
         }
-    }
-})
+    },
+});
