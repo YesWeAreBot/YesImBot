@@ -1,8 +1,7 @@
 import { Context, sleep } from "koishi";
-import { Agent as HTTPAgent, ProxyAgent, fetch as ufetch } from "undici";
 import { z } from "zod";
 
-import { AdapterSwitcher } from "./adapters";
+import { ChatModelSwitcher } from "./adapters";
 import { Config } from "./config";
 import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool, ToolManager } from "./extensions";
 import { Memory, MemoryBlock } from "./Memory";
@@ -57,9 +56,13 @@ export default class Agent {
         // 注册核心工具
         toolManager.registerTool(this.createSendMessageTool(this.config));
 
-        // 注册适配器切换器
-        const adapterSwitcher = new AdapterSwitcher(this.config.API.APIList, this.config.API.Parameters);
-        this.serviceContainer.register("adapterSwitcher", adapterSwitcher);
+        // 注册模型切换器
+        const chatModelSwitcher = new ChatModelSwitcher(
+            this.config.Provider,
+            this.config.Chat.UseModel as unknown as [number, number][],
+            this.config.ModelSetting
+        );
+        this.serviceContainer.register("chatModelSwitcher", chatModelSwitcher);
 
         const imageProcessor = new ImageProcessor(this.ctx);
         this.serviceContainer.register("imageProcessor", imageProcessor);
@@ -101,7 +104,7 @@ export default class Agent {
 
             // 检查是否达到回复条件
             .use(
-                new CheckReplyConditionMiddleware(this.ctx, adapterSwitcher, {
+                new CheckReplyConditionMiddleware(this.ctx, {
                     allowedChannels: this.config.MemorySlot.SlotContains,
                     testMode: this.config.Debug.TestMode,
                     atReactPossibility: this.config.MemorySlot.AtReactPossibility,

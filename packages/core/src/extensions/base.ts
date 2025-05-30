@@ -1,4 +1,5 @@
 import { Context, Session } from "koishi";
+import path from "path";
 import { ToolResult } from "xsai";
 import { z } from "zod";
 import zodToJsonSchema from "zod-to-json-schema";
@@ -113,7 +114,7 @@ export class ToolManager {
                             this.registerTool(tool);
                         });
                 }
-                this.ctx.logger.info(`[Extension] Loaded: ${file}`);
+                this.ctx.logger.info(`[Extension] Loaded: ${path.basename(file)}`);
             } catch (error) {
                 this.ctx.logger.error(`[Extension] Failed to load: ${file}`);
                 this.ctx.logger.error(error.stack);

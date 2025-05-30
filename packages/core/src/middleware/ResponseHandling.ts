@@ -8,17 +8,16 @@ import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 
-
 export class ResponseHandlingMiddleware implements Middleware {
-    name = 'response-handling';
+    name = "response-handling";
 
-    private toolManager: ToolManager
+    private toolManager: ToolManager;
     private scenarioManager: ScenarioManager;
 
     constructor(
         private service: ServiceContainer,
         private middlewareManager: MiddlewareManager,
-        private options?: { maxRetry: number; life: number; maxHeartbeat?: number },
+        private options?: { maxRetry: number; life: number; maxHeartbeat?: number }
     ) {
         this.toolManager = service.get("toolManager");
         this.scenarioManager = service.get("scenarioManager");
@@ -49,9 +48,15 @@ export class ResponseHandlingMiddleware implements Middleware {
                 channel_id = session.channelId;
             }
 
-            await this.recordToolCall(ctx.koishiContext, ctx.koishiSession, func)
+            await this.recordToolCall(ctx.koishiContext, ctx.koishiSession, func);
 
-            const result = await this.executeToolCall(ctx.koishiContext, ctx.koishiSession, functionName, params, this.options?.maxRetry || 0);
+            const result = await this.executeToolCall(
+                ctx.koishiContext,
+                ctx.koishiSession,
+                functionName,
+                params,
+                this.options?.maxRetry || 0
+            );
 
             await this.recordToolResult(ctx.koishiContext, ctx.koishiSession, functionName, result);
 
@@ -82,7 +87,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         // 重置heartbeat计数器
         ctx.heartbeatCount = 0;
         // 释放频道处理状态
-        const checkReplyMiddleware = this.middlewareManager.getMiddleware('check-reply-condition') as CheckReplyConditionMiddleware;
+        const checkReplyMiddleware = this.middlewareManager.getMiddleware("check-reply-condition") as CheckReplyConditionMiddleware;
         checkReplyMiddleware.releaseChannelState(ctx.koishiSession.channelId);
     }
 
@@ -108,30 +113,36 @@ export class ResponseHandlingMiddleware implements Middleware {
             }
         }
 
-        return response
+        return response;
     }
 
-    async executeToolCall(koishiContext: Context, koishiSession: Session, functionName: string, params: Record<string, unknown>, maxRetry: number): Promise<ToolCallResult> {
+    async executeToolCall(
+        koishiContext: Context,
+        koishiSession: Session,
+        functionName: string,
+        params: Record<string, unknown>,
+        maxRetry: number
+    ): Promise<ToolCallResult> {
         function stringify(args: Record<string, unknown>): string {
             let result = [];
             for (let key in args) {
                 result.push(`${key}="${args[key]}"`);
             }
-            return `${result.join(', ')}`;
+            return `${result.join(", ")}`;
         }
         try {
             const tool = this.toolManager.getTool(functionName);
             if (!tool) {
                 return Failed(`Tool ${functionName} not found`);
             }
-            const context = { session: koishiSession, ctx: koishiContext };
-            koishiContext.logger.info(`→ ${functionName}(${stringify(params)})`)
+            const context = { koishiContext, koishiSession };
+            koishiContext.logger.info(`→ ${functionName}(${stringify(params)})`);
             const result = await tool.execute(params, context);
             if (!result.success && maxRetry > 0) {
                 koishiContext.logger.info(`Tool ${functionName} failed, retrying...`);
                 return await this.executeToolCall(koishiContext, koishiSession, functionName, params, maxRetry - 1);
             }
-            koishiContext.logger.info(`← ${result ? JSON.stringify(result) : "void"}`)
+            koishiContext.logger.info(`← ${result ? JSON.stringify(result) : "void"}`);
             if (result instanceof String) {
                 return Success(result);
             }
@@ -146,7 +157,11 @@ export class ResponseHandlingMiddleware implements Middleware {
     }
 
     // 记录工具调用
-    private async recordToolCall(koishiContext: Context, koishiSession: Session, func: { function: string; params: Record<string, unknown> }) {
+    private async recordToolCall(
+        koishiContext: Context,
+        koishiSession: Session,
+        func: { function: string; params: Record<string, unknown> }
+    ) {
         const newInteraction: Interaction = {
             id: Random.id(),
             emitter: koishiSession.messageId,
@@ -154,14 +169,19 @@ export class ResponseHandlingMiddleware implements Middleware {
             type: "tool_call",
             content: JSON.stringify(func),
             life: this.options?.life || 3,
-            timestamp: new Date()
-        }
+            timestamp: new Date(),
+        };
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
         await this.scenarioManager.updateInteraction(newInteraction, koishiSession, true);
     }
 
     // 记录工具结果
-    private async recordToolResult(koishiContext: Context, koishiSession: Session, functionName: string, result: ToolCallResult): Promise<void> {
+    private async recordToolResult(
+        koishiContext: Context,
+        koishiSession: Session,
+        functionName: string,
+        result: ToolCallResult
+    ): Promise<void> {
         const newInteraction: Interaction = {
             id: Random.id(),
             emitter: koishiSession.messageId,
@@ -169,7 +189,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             type: "tool_result",
             content: JSON.stringify({ [functionName]: result }),
             life: this.options?.life || 3,
-            timestamp: new Date()
+            timestamp: new Date(),
         };
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
         await this.scenarioManager.updateInteraction(newInteraction, koishiSession, false);

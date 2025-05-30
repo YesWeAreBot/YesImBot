@@ -265,7 +265,7 @@ export class MemoryBlock {
     ) {
         this.ctx = ctx;
         this._value = [...value]; // 初始化缓存
-        this.ctx.logger.debug(`创建记忆块: ${label} (${id})`);
+        this.ctx.logger.debug(`创建记忆: ${label} (${id})`);
     }
 
     /**
@@ -284,12 +284,12 @@ export class MemoryBlock {
         try {
             const [result] = await ctx.database.get(MEMORY_TABLE, condition);
             if (result) {
-                ctx.logger.debug(`找到现有记忆块: ${result.label}`);
+                ctx.logger.debug(`找到现有记忆: ${result.label}`);
                 return new MemoryBlock(ctx, result.id, result.label, result.limit, result.value);
             }
 
             if (typeof identifier !== 'string') {
-                throw new MemoryError('未找到记忆块且无法在没有标签的情况下创建');
+                throw new MemoryError('未找到记忆且无法在没有标签的情况下创建');
             }
 
             const id = `block-${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -300,11 +300,11 @@ export class MemoryBlock {
                 limit: 5000
             });
 
-            ctx.logger.info(`创建新记忆块: ${identifier} (${id})`);
+            ctx.logger.info(`创建新记忆: ${identifier} (${id})`);
             return new MemoryBlock(ctx, id, identifier);
         } catch (error) {
-            ctx.logger.error(`获取或创建记忆块失败: ${error.message}`);
-            throw new MemoryError(`获取或创建记忆块失败: ${error.message}`, { identifier });
+            ctx.logger.error(`获取或创建记忆失败: ${error.message}`);
+            throw new MemoryError(`获取或创建记忆失败: ${error.message}`, { identifier });
         }
     }
 
@@ -323,7 +323,7 @@ export class MemoryBlock {
             this.lastModified = 0;
         }
 
-        this.ctx.logger.info(`[文件监视器] 开始监视文件 ${this.filePath}`);
+        this.ctx.logger.info(`[文件监视器] 开始监听文件变动 ${this.filePath}`);
 
         this.watcher = fs.watch(this.filePath, async (eventType) => {
             if (this.debounceTimer) {
@@ -335,7 +335,7 @@ export class MemoryBlock {
                     if (eventType === 'change') {
                         const fstat = await stat(this.filePath!);
                         if (fstat.mtimeMs > this.lastModified) {
-                            this.ctx.logger.info(`[文件监视器] 文件 ${this.filePath} 已被修改，正在同步到记忆块`);
+                            this.ctx.logger.info(`[文件监视器] 文件 ${this.filePath} 已被修改，正在同步到记忆`);
                             this.lastModified = fstat.mtimeMs;
                             await this.syncFromFile();
                         }
@@ -375,7 +375,7 @@ export class MemoryBlock {
                 limit: this.limit
             }]);
             this._value = fileContent; // 更新缓存
-            this.ctx.logger.debug(`已从文件同步数据到记忆块: ${this.label}`);
+            this.ctx.logger.debug(`已从文件同步数据到记忆: ${this.label}`);
         } catch (error) {
             this.ctx.logger.error(`从文件同步失败: ${error.message}`);
             throw new MemoryError(`从文件同步失败: ${error.message}`, { filePath: this.filePath });
@@ -413,7 +413,7 @@ export class MemoryBlock {
             // 注册清理回调
             this.ctx.on("dispose", () => this.dispose());
 
-            this.ctx.logger.info(`成功绑定文件到记忆块: ${this.label} -> ${filePath}`);
+            this.ctx.logger.info(`成功绑定文件到记忆: ${this.label} -> ${filePath}`);
         } catch (error) {
             this.ctx.logger.error(`绑定文件失败: ${error.message}`);
             throw new MemoryError(`绑定文件失败: ${error.message}`, { filePath });
