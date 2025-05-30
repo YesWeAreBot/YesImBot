@@ -5,8 +5,7 @@ import { Config } from "./config";
 import { ToolManager } from "./extensions";
 import { ImageCache } from "./managers/image";
 
-
-declare module 'koishi' {
+declare module "koishi" {
     interface Context {
         yesimbot: YesImBot;
     }
@@ -26,12 +25,16 @@ export default class YesImBot extends Service {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
-        this.toolManager = ToolManager.getInstance();
+        this.toolManager = ToolManager.getInstance(ctx);
+
+        // 本地化
+        ctx.i18n.define("en-US", require("./locales/en-US"));
+        ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
 
         // 注册指令
-        ctx.plugin(require('./commands/cache'));
-        ctx.plugin(require('./commands/context'));
-        ctx.plugin(require('./commands/extension'));
+        ctx.plugin(require("./commands/cache"));
+        ctx.plugin(require("./commands/context"));
+        ctx.plugin(require("./commands/extension"));
 
         ctx.plugin(Agent, config);
     }

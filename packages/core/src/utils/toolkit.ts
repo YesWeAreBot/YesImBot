@@ -1,7 +1,9 @@
 import fs from "fs/promises";
+import { Context } from "koishi";
+import path from "path";
 
 import { isEmpty } from "./string";
-
+import { readdirSync } from "fs";
 
 /**
  * 消息内容是否包含过滤词
@@ -13,15 +15,13 @@ export function containsFilter(content: string, FilterList: string[]): boolean {
     for (const filter of FilterList) {
         if (isEmpty(filter)) continue;
         let regex = new RegExp(filter, "gi");
-        if (regex.test(content))
-            return true;
+        if (regex.test(content)) return true;
     }
     return false;
 }
 
 export function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss") {
-    const pad = (num) => String(num).padStart(2, '0');
-    date.toLocaleString
+    const pad = (num) => String(num).padStart(2, "0");
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const day = date.getDate();
@@ -47,13 +47,13 @@ export function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss") {
 /**
  * 获取频道类型
  */
-export function getChannelType(channelId: string): 'private' | 'guild' | 'sandbox' {
-    if (channelId.startsWith('private:')) {
-        return 'private';
-    } else if (channelId === '#') {
-        return 'sandbox';
+export function getChannelType(channelId: string): "private" | "guild" | "sandbox" {
+    if (channelId.startsWith("private:")) {
+        return "private";
+    } else if (channelId === "#") {
+        return "sandbox";
     } else {
-        return 'guild';
+        return "guild";
     }
 }
 
@@ -72,12 +72,64 @@ export async function downloadFile(url: string, path: string, overwrite: boolean
     if (!overwrite) {
         try {
             await fs.access(path);
-            throw new Error('文件已存在');
+            throw new Error("文件已存在");
         } catch {
             // 文件不存在时忽略错误
         }
     } else {
-        await fs.unlink(path).catch(() => { });
+        await fs.unlink(path).catch(() => {});
         fs.writeFile(path, Buffer.from(await response.arrayBuffer()));
+    }
+}
+
+/**
+ * 获取扩展目录路径
+ */
+export function getExtensionPath(ctx: Context, builtin: boolean = false): string {
+    const isDevMode = process.env.NODE_ENV === "development";
+    if (builtin) {
+        return path.join(
+            ctx.baseDir,
+            isDevMode
+                ? "external/yesimbot/packages/core/lib/extensions/builtin"
+                : "node_modules/koishi-plugin-yesimbot/lib/extensions/builtin"
+        );
+    } else {
+        return path.join(ctx.baseDir, "data", "yesimbot", "extensions");
+    }
+}
+
+/**
+ * 文件名标准化函数
+ * @param original
+ * @returns
+ */
+export function normalizeFilename(original: string): string {
+    // 移除已有扩展名前缀（如果有的话）
+    const baseName = original.startsWith("ext_") ? original.slice(4) : original;
+
+    // 添加统一前缀
+    return `ext_${baseName}`;
+}
+
+/**
+ * 获取有效扩展文件列表
+ * @param ctx
+ * @returns
+ */
+export function getExtensionFiles(ctx: Context): string[] {
+    const builtin = getExtensionPath(ctx, true);
+    const user = getExtensionPath(ctx);
+    try {
+        const builtinFiles = readdirSync(builtin, { recursive: true }).map((file) => path.join(builtin, file)) || [];
+        const userFiles = readdirSync(user).map((file) => path.join(builtin, file)) || [];
+        const files = Array.from(new Set([...builtinFiles, ...userFiles]));
+        return files.filter((file) => {
+            file = path.basename(file);
+            return file.startsWith("ext_") && (file.endsWith(".js") || file.endsWith(".ts")) && !file.endsWith(".d.ts");
+        });
+    } catch (error) {
+        ctx.logger.error("读取扩展目录失败:", error);
+        return [];
     }
 }
