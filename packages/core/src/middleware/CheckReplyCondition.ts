@@ -1,9 +1,8 @@
 import { Context, Random } from "koishi";
 import { ConversationState, MessageContext, Middleware } from "./base";
-import { AdapterSwitcher } from "../adapters";
 
 // 用户优先级类型
-export type UserPriorityLevel = 'high' | 'normal' | 'low' | 'ignore';
+export type UserPriorityLevel = "high" | "normal" | "low" | "ignore";
 
 // 用户交互记录
 interface UserInteraction {
@@ -68,7 +67,7 @@ export interface CheckReplyConditionOptions {
 
 // 检查是否达到回复条件
 export class CheckReplyConditionMiddleware implements Middleware {
-    name = 'check-reply-condition';
+    name = "check-reply-condition";
 
     /**
      * 回复意愿
@@ -107,35 +106,31 @@ export class CheckReplyConditionMiddleware implements Middleware {
     // 延迟处理定时器 (channelId -> 定时器)
     private delayTimers = new Map<string, NodeJS.Timeout>();
     // 最近发送消息的用户 (channelId -> {userId, timestamp})
-    private lastMessageSenders = new Map<string, { userId: string, timestamp: number }>();
+    private lastMessageSenders = new Map<string, { userId: string; timestamp: number }>();
 
     // 默认优先级设置
     private defaultPrioritySettings = {
         decayMultipliers: {
-            high: 0.5,     // 高优先级用户意愿值衰减慢
-            normal: 1.0,   // 正常衰减
-            low: 1.5,      // 低优先级用户意愿值衰减快
-            ignore: 3.0    // 忽略的用户意愿值衰减非常快
+            high: 0.5, // 高优先级用户意愿值衰减慢
+            normal: 1.0, // 正常衰减
+            low: 1.5, // 低优先级用户意愿值衰减快
+            ignore: 3.0, // 忽略的用户意愿值衰减非常快
         },
         attentionMultipliers: {
-            high: 1.5,     // 高优先级用户获得更多关注
-            normal: 1.0,   // 正常关注
-            low: 0.5,      // 低优先级用户获得较少关注
-            ignore: 0.1    // 忽略的用户几乎不获得关注
+            high: 1.5, // 高优先级用户获得更多关注
+            normal: 1.0, // 正常关注
+            low: 0.5, // 低优先级用户获得较少关注
+            ignore: 0.1, // 忽略的用户几乎不获得关注
         },
         thresholdMultipliers: {
-            high: 0.6,     // 高优先级用户的阈值更低
-            normal: 1.0,   // 正常阈值
-            low: 1.5,      // 低优先级用户需要更高的意愿值
-            ignore: 5.0    // 忽略的用户需要非常高的意愿值
-        }
+            high: 0.6, // 高优先级用户的阈值更低
+            normal: 1.0, // 正常阈值
+            low: 1.5, // 低优先级用户需要更高的意愿值
+            ignore: 5.0, // 忽略的用户需要非常高的意愿值
+        },
     };
 
-    constructor(
-        private koishiContext: Context,
-        private adapterSwitcher: AdapterSwitcher,
-        private options: CheckReplyConditionOptions,
-    ) {
+    constructor(private koishiContext: Context, private options: CheckReplyConditionOptions) {
         // 设置默认值
         this.options.decayInterval = this.options.decayInterval || 60000; // 1分钟
         this.options.decayRate = this.options.decayRate || 5; // 每分钟衰减5点
@@ -143,7 +138,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         this.options.attentionDuration = this.options.attentionDuration || 300000; // 5分钟
         this.options.initialAttentionLevel = this.options.initialAttentionLevel || 60;
         this.options.postReplyRetention = this.options.postReplyRetention || 0.3; // 保留30%
-        this.options.defaultUserPriority = this.options.defaultUserPriority || 'normal';
+        this.options.defaultUserPriority = this.options.defaultUserPriority || "normal";
         this.options.prioritySettings = this.options.prioritySettings || this.defaultPrioritySettings;
 
         // 初始化用户优先级配置
@@ -185,7 +180,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
      * 获取用户优先级
      */
     public getUserPriority(userId: string): UserPriorityLevel {
-        return this.userPriorityMap.get(userId) || this.options.defaultUserPriority || 'normal';
+        return this.userPriorityMap.get(userId) || this.options.defaultUserPriority || "normal";
     }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
@@ -206,7 +201,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const userPriority = this.getUserPriority(userId);
 
         // 如果用户被设为忽略且没有被@，直接跳过处理
-        if (userPriority === 'ignore' && !ctx.isMentioned) return;
+        if (userPriority === "ignore" && !ctx.isMentioned) return;
 
         // 处理频道整体意愿值
         let currentThreshold = this.currentThreshold.get(channelId) || 0;
@@ -217,7 +212,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
 
         // 根据用户优先级计算意愿值增加量
         const baseIncrease = this.options.increaseWillingnessOn.message;
-        const priorityMultiplier = this.getPrioritySettingValue('thresholdMultipliers', userPriority);
+        const priorityMultiplier = this.getPrioritySettingValue("thresholdMultipliers", userPriority);
         const actualIncrease = baseIncrease / priorityMultiplier; // 高优先级用户增加更多
 
         // 更新意愿值
@@ -241,11 +236,12 @@ export class CheckReplyConditionMiddleware implements Middleware {
         this.lastMessageSenders.set(channelId, { userId, timestamp: now });
 
         // 如果有未完成的定时器，且是同一用户在阈值时间内的消息，则取消之前的定时器
-        if (this.delayTimers.has(channelId) &&
+        if (
+            this.delayTimers.has(channelId) &&
             lastSender &&
             lastSender.userId === userId &&
-            now - lastSender.timestamp < this.options.sameUserThreshold) {
-
+            now - lastSender.timestamp < this.options.sameUserThreshold
+        ) {
             clearTimeout(this.delayTimers.get(channelId));
         }
 
@@ -285,7 +281,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const baseAttention = this.options.initialAttentionLevel || 50;
 
         // 根据用户优先级调整关注程度
-        const attentionMultiplier = this.getPrioritySettingValue('attentionMultipliers', userPriority);
+        const attentionMultiplier = this.getPrioritySettingValue("attentionMultipliers", userPriority);
         const attentionLevel = baseAttention * attentionMultiplier;
 
         // 设置或更新关注状态
@@ -293,10 +289,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
 
         // 同时增加频道整体意愿值
         const channelThreshold = this.currentThreshold.get(channelId) || 0;
-        this.currentThreshold.set(
-            channelId,
-            Math.min(100, channelThreshold + this.options.increaseWillingnessOn.at)
-        );
+        this.currentThreshold.set(channelId, Math.min(100, channelThreshold + this.options.increaseWillingnessOn.at));
     }
 
     /**
@@ -312,10 +305,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
             const decayAmount = this.calculateDecayAmount(threshold, timePassed);
 
             // 应用衰减，不低于基础值
-            const newThreshold = Math.max(
-                this.options.baseWillingness || 0,
-                threshold - decayAmount
-            );
+            const newThreshold = Math.max(this.options.baseWillingness || 0, threshold - decayAmount);
             this.currentThreshold.set(channelId, newThreshold);
         }
 
@@ -324,7 +314,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
             for (const [userId, willingness] of userMap.entries()) {
                 // 获取用户优先级以调整衰减率
                 const priority = this.getUserPriority(userId);
-                const decayRateMultiplier = this.getPrioritySettingValue('decayMultipliers', priority);
+                const decayRateMultiplier = this.getPrioritySettingValue("decayMultipliers", priority);
 
                 const decayAmount = this.calculateUserDecayAmount(willingness, decayRateMultiplier);
 
@@ -397,7 +387,10 @@ export class CheckReplyConditionMiddleware implements Middleware {
     /**
      * 从优先级设置中获取特定值
      */
-    private getPrioritySettingValue(settingType: 'decayMultipliers' | 'attentionMultipliers' | 'thresholdMultipliers', priority: UserPriorityLevel): number {
+    private getPrioritySettingValue(
+        settingType: "decayMultipliers" | "attentionMultipliers" | "thresholdMultipliers",
+        priority: UserPriorityLevel
+    ): number {
         const defaultValue = 1.0;
 
         if (!this.options.prioritySettings) {
@@ -435,26 +428,23 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const userPriority = this.getUserPriority(userId);
 
         // 根据优先级调整阈值
-        const thresholdMultiplier = this.getPrioritySettingValue('thresholdMultipliers', userPriority);
+        const thresholdMultiplier = this.getPrioritySettingValue("thresholdMultipliers", userPriority);
         const adjustedThreshold = this.options.threshold * thresholdMultiplier;
 
         // 决定是否回复
         const shouldReactToAt = ctx.isMentioned && Random.bool(this.options.atReactPossibility);
         const isThresholdReached = channelThreshold >= adjustedThreshold;
-        const isUserThresholdReached = userWillingness >= (adjustedThreshold * 0.7);
-        const isAttentionTriggered = isUnderAttention && (Math.random() < (attention?.attentionLevel || 0) / 100);
+        const isUserThresholdReached = userWillingness >= adjustedThreshold * 0.7;
+        const isAttentionTriggered = isUnderAttention && Math.random() < (attention?.attentionLevel || 0) / 100;
 
-        const shouldReply = shouldReactToAt ||
-            isThresholdReached ||
-            isUserThresholdReached ||
-            isAttentionTriggered ||
-            this.options.testMode;
+        const shouldReply =
+            shouldReactToAt || isThresholdReached || isUserThresholdReached || isAttentionTriggered || this.options.testMode;
 
         ctx.koishiContext.logger.info(
             `[CheckReplyCondition] channelId: ${channelId}, userId: ${userId}, ` +
-            `priority: ${userPriority}, channelThreshold: ${channelThreshold}, ` +
-            `userWillingness: ${userWillingness}, adjustedThreshold: ${adjustedThreshold}, ` +
-            `isUnderAttention: ${isUnderAttention}, shouldReply: ${shouldReply}`
+                `priority: ${userPriority}, channelThreshold: ${channelThreshold}, ` +
+                `userWillingness: ${userWillingness}, adjustedThreshold: ${adjustedThreshold}, ` +
+                `isUnderAttention: ${isUnderAttention}, shouldReply: ${shouldReply}`
         );
 
         if (shouldReply) {
@@ -488,7 +478,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const history = this.userInteractionHistory.get(userId) || {
             lastInteraction: Date.now(),
             interactionCount: 0,
-            positiveInteractions: 0
+            positiveInteractions: 0,
         };
 
         history.lastInteraction = Date.now();
@@ -505,8 +495,8 @@ export class CheckReplyConditionMiddleware implements Middleware {
         // 记录日志
         this.koishiContext?.logger.info(
             `[CheckReplyCondition] 处理用户反馈: userId=${userId}, ` +
-            `isPositive=${isPositive}, interactionCount=${history.interactionCount}, ` +
-            `positiveRate=${history.positiveInteractions / history.interactionCount}`
+                `isPositive=${isPositive}, interactionCount=${history.interactionCount}, ` +
+                `positiveRate=${history.positiveInteractions / history.interactionCount}`
         );
     }
 
@@ -526,13 +516,13 @@ export class CheckReplyConditionMiddleware implements Middleware {
         let newPriority: UserPriorityLevel;
 
         if (positiveRate > 0.8) {
-            newPriority = 'high';
+            newPriority = "high";
         } else if (positiveRate > 0.5) {
-            newPriority = 'normal';
+            newPriority = "normal";
         } else if (positiveRate > 0.2) {
-            newPriority = 'low';
+            newPriority = "low";
         } else {
-            newPriority = 'ignore';
+            newPriority = "ignore";
         }
 
         // 设置新优先级
@@ -544,37 +534,37 @@ export class CheckReplyConditionMiddleware implements Middleware {
      * @param userMessages 用户最近的消息记录
      * @returns 是否为积极反馈
      */
-    public async analyzeUserFeedback(userMessages: string[]): Promise<boolean> {
-        if (!this.adapterSwitcher || !this.koishiContext) {
-            return false; // 如果没有adapter，默认为非积极反馈
-        }
+    // public async analyzeUserFeedback(userMessages: string[]): Promise<boolean> {
+    //     if (!this.adapterSwitcher || !this.koishiContext) {
+    //         return false; // 如果没有adapter，默认为非积极反馈
+    //     }
 
-        // 获取适配器
-        const { adapter } = this.adapterSwitcher.getAdapter();
-        if (!adapter) {
-            return false;
-        }
+    //     // 获取适配器
+    //     const { adapter } = this.adapterSwitcher.getAdapter();
+    //     if (!adapter) {
+    //         return false;
+    //     }
 
-        try {
-            // 构建提示词
-            const prompt = this.getFeedbackAnalysisPrompt(userMessages);
+    //     try {
+    //         // 构建提示词
+    //         const prompt = this.getFeedbackAnalysisPrompt(userMessages);
 
-            // 发送LLM请求
-            const result = await adapter.chat([
-                { role: 'system', content: prompt }
-            ], null, {
-                debug: false,
-                logger: this.koishiContext.logger,
-            });
+    //         // 发送LLM请求
+    //         const result = await adapter.chat([
+    //             { role: 'system', content: prompt }
+    //         ], null, {
+    //             debug: false,
+    //             logger: this.koishiContext.logger,
+    //         });
 
-            // 解析结果
-            const response = result.text.toLowerCase().trim();
-            return response.includes('positive') || response.includes('积极');
-        } catch (error) {
-            this.koishiContext.logger.error(`[CheckReplyCondition] 分析用户反馈失败: ${error.message}`);
-            return false;
-        }
-    }
+    //         // 解析结果
+    //         const response = result.text.toLowerCase().trim();
+    //         return response.includes('positive') || response.includes('积极');
+    //     } catch (error) {
+    //         this.koishiContext.logger.error(`[CheckReplyCondition] 分析用户反馈失败: ${error.message}`);
+    //         return false;
+    //     }
+    // }
 
     /**
      * 构建用户反馈分析的提示词
@@ -591,7 +581,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
 请只回复"positive"（积极）或"negative"（消极）一个词，不要包含任何其他文本。
 
 用户消息:
-${userMessages.map(msg => `"${msg}"`).join('\n')}
+${userMessages.map((msg) => `"${msg}"`).join("\n")}
 `;
     }
 

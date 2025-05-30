@@ -1,38 +1,31 @@
-import { BaseAdapter, UniversalAdapter } from "./base";
-import { LLMConfig, LLMParameters } from "./config";
+import { Provider } from "./base";
+import { Provider as ProviderConfig, ModelSetting } from "./config";
 
-
-export class AdapterSwitcher {
-    private adapters: BaseAdapter[];
+export class ChatModelSwitcher {
+    private provider: Provider[] = [];
     private current = 0;
-    constructor(
-        adapterConfig: LLMConfig[],
-        parameters: LLMParameters,
-    ) {
-        this.updateConfig(adapterConfig, parameters);
-    }
+    private useModel: [number, number][];
 
-    public get length() {
-        return this.adapters.length;
-    }
-
-    public getAdapter() {
-        try {
-            if (this.current >= this.adapters.length) this.current = 0;
-            return { current: this.current, adapter: this.adapters[this.current++] };
-        } catch (error) {
-            return;
+    constructor(providerConfig: ProviderConfig[], useModel: [number, number][], modelSetting: ModelSetting) {
+        this.useModel = useModel;
+        for (let prov of providerConfig) {
+            this.provider.push(new Provider(prov, modelSetting));
         }
     }
 
-    public updateConfig(
-        adapterConfig: LLMConfig[],
-        parameters: LLMParameters,
-    ) {
-        this.adapters = [];
-        for (const adapter of adapterConfig) {
-            if (!adapter.Enabled) continue;
-            this.adapters.push(new UniversalAdapter(adapter, parameters));
+    public get length() {
+        return this.useModel.length;
+    }
+
+    public getModel() {
+        try {
+            if (this.current >= this.useModel.length) this.current = 0;
+            let model = this.useModel[this.current++];
+            const prov = this.provider[model[0]]; // 获取对应提供商
+            const chatModel = prov.getChatModel(model[1]); // 从提供商获取模型
+            return { current: this.current, model: chatModel };
+        } catch (error) {
+            return;
         }
     }
 }

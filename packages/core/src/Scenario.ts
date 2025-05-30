@@ -136,10 +136,10 @@ export class Scenario {
             `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
             "",
             `Chat History:`,
-            ...this.context.map(this.formatContext),
+            ...this.context.map(this.formatContext.bind(this)),
             "",
             `You have ${this.unread.length} new messages to read:`,
-            ...this.unread.map(this.formatContext),
+            ...this.unread.map(this.formatContext.bind(this)),
             `</scenario>`,
         ].join("\n");
 

@@ -1,18 +1,17 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { AdapterSwitcher } from "../adapters";
+import { ChatModelSwitcher } from "../adapters";
 import { ToolManager } from "../extensions";
 import { Memory } from "../Memory";
 import { ServiceContainer } from "../services/container";
-import { ScenarioManager } from '../services/ScenarioManager';
+import { ScenarioManager } from "../services/ScenarioManager";
 import { ConversationState, MessageContext, Middleware } from "./base";
 
-
 export class LLMProcessingMiddleware implements Middleware {
-    name = 'llm-processing';
+    name = "llm-processing";
     private scenarioManager: ScenarioManager;
-    private adapterSwitcher: AdapterSwitcher;
+    private chatModelSwitcher: ChatModelSwitcher;
     private toolManager: ToolManager;
 
     constructor(
@@ -24,7 +23,7 @@ export class LLMProcessingMiddleware implements Middleware {
         }
     ) {
         this.scenarioManager = service.get<ScenarioManager>("scenarioManager");
-        this.adapterSwitcher = service.get("adapterSwitcher");
+        this.chatModelSwitcher = service.get("chatModelSwitcher");
         this.toolManager = service.get("toolManager");
     }
 
@@ -44,26 +43,30 @@ export class LLMProcessingMiddleware implements Middleware {
             const systemPrompt = await this.getSystemPrompt();
             const memoryPrompt = await this.memory.render();
 
-            let retry = this.adapterSwitcher.length;
+            let retry = this.chatModelSwitcher.length;
             const initialRetryCount = retry; // 记录初始重试次数
             let lastError: any = null;
 
             while (retry > 0) {
                 try {
-                    const { adapter } = this.adapterSwitcher.getAdapter(); // 获取当前适配器
-                    if (!adapter) {
+                    const { model } = this.chatModelSwitcher.getModel(); // 获取当前适配器
+                    if (!model) {
                         // 如果适配器切换器在还有重试次数的情况下，已经没有可用的适配器了
                         // 这可能意味着适配器列表为空，或者所有适配器都被临时禁用
                         throw new Error("[LLMProcessing] 没有可用的LLM适配器");
                     }
-                    ctx.llmResponse = await adapter.chat([
-                        { role: 'system', content: systemPrompt + "\n" + memoryPrompt },
-                        { role: 'user', content: scenario.render() }
-                    ], null, {
-                        debug: this.config.debug,
-                        logger: ctx.koishiContext.logger,
-                        abortSignal: this.config.abortSignal,
-                    });
+                    ctx.llmResponse = await model.chat(
+                        [
+                            { role: "system", content: systemPrompt + "\n" + memoryPrompt },
+                            { role: "user", content: scenario.render() },
+                        ],
+                        null,
+                        {
+                            debug: this.config.debug,
+                            logger: ctx.koishiContext.logger,
+                            abortSignal: this.config.abortSignal,
+                        }
+                    );
                     await ctx.transitionTo(ConversationState.RESPONDING);
                     // LLM 成功响应后，更新该频道的最后回复时间
                     await this.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
@@ -97,7 +100,7 @@ export class LLMProcessingMiddleware implements Middleware {
                                 errorMessage += ` 管道破裂。`; // 较少见，但可能发生
                                 break;
                             default:
-                                errorMessage += ` 未知网络错误码: ${error.cause?.code || '无'}.`;
+                                errorMessage += ` 未知网络错误码: ${error.cause?.code || "无"}.`;
                                 break;
                         }
                         shouldContinueToNextAdapter = true;
@@ -131,11 +134,16 @@ export class LLMProcessingMiddleware implements Middleware {
             // 循环结束但 ctx.llmResponse 仍为空，意味着所有尝试都失败了
             if (!ctx.llmResponse) {
                 const attemptedCount = initialRetryCount - retry; // 实际尝试的次数
-                throw new Error(`[LLMProcessing] 所有LLM适配器请求失败，共尝试 ${attemptedCount} 次。最后错误: \n${lastError?.name || '未知错误'}: ${lastError?.message || '无错误消息'}`);
+                ctx.koishiContext.logger.error(
+                    `[LLMProcessing] 所有LLM适配器请求失败，共尝试 ${attemptedCount} 次。最后错误: \n${lastError?.name || "未知错误"}: ${
+                        lastError?.message || "无错误消息"
+                    }`
+                );
+                throw lastError;
             }
             await next();
         } catch (error) {
-            if (error.name === 'AbortError') {
+            if (error.name === "AbortError") {
                 return;
             }
             throw error;
@@ -144,10 +152,7 @@ export class LLMProcessingMiddleware implements Middleware {
 
     private async getSystemPrompt(): Promise<string> {
         let content = await fs.readFile(path.join(__dirname, "../../resources/memgpt_chat.txt"), "utf-8");
-        content += [
-            `Available functions:`,
-            this.toolManager.getToolPrompts()
-        ].join("\n");
+        content += [`Available functions:`, this.toolManager.getToolPrompts()].join("\n");
         return content;
     }
 }
