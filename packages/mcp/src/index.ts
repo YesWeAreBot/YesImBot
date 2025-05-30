@@ -4,8 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { execSync } from "child_process";
 import { Context, Schema } from "koishi";
-import { } from "koishi-plugin-yesimbot";
-
+import {} from "koishi-plugin-yesimbot";
 
 interface Server {
     command?: string;
@@ -22,17 +21,19 @@ export interface Config {
         mirror: string;
         executablePath?: string;
         args?: string[];
-    }
+    };
 }
 
 export const Config: Schema<Config> = Schema.object({
     timeout: Schema.number().description("请求超时时间").default(5000),
-    mcpServers: Schema.dict(Schema.object({
-        url: Schema.string().description("MCP 服务器地址"),
-        command: Schema.string().description("MCP 启动命令"),
-        args: Schema.array(Schema.string()).role("table").description("MCP 启动参数"),
-        env: Schema.dict(String).role("table").description("MCP 环境变量"),
-    })).description("MCP服务器列表，可使用 `编辑JSON` 添加或删除服务器"),
+    mcpServers: Schema.dict(
+        Schema.object({
+            url: Schema.string().description("MCP 服务器地址"),
+            command: Schema.string().description("MCP 启动命令"),
+            args: Schema.array(Schema.string()).role("table").description("MCP 启动参数"),
+            env: Schema.dict(String).role("table").description("MCP 环境变量"),
+        })
+    ).description("MCP服务器列表，可使用 `编辑JSON` 添加或删除服务器"),
     uvSettings: Schema.object({
         autoDownload: Schema.boolean().experimental().description("是否自动下载 UVX").default(true),
         mirror: Schema.string().description("Pypi镜像源").default("https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"),
@@ -45,14 +46,13 @@ export const name = "yesimbot-extension-mcp";
 
 export const inject = {
     required: ["yesimbot"],
-}
+};
 
 export async function apply(ctx: Context, config: Config) {
     const clients: Client[] = [];
     const transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
     const allTools = [];
     ctx.on("ready", async () => {
-
         if (config.uvSettings?.autoDownload) {
             // 检查是否已经安装了 UVX，如果没有安装则安装
             // if (!config.uvSettings?.executablePath) {
@@ -106,16 +106,18 @@ export async function apply(ctx: Context, config: Config) {
                     ...tool.inputSchema["properties"],
                     request_heartbeat: {
                         type: "boolean",
-                        description: "Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.",
-                    }
-                }
+                        description:
+                            "Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.",
+                    },
+                };
                 toolManager.registerTool({
                     name: tool.name,
                     description: tool.description,
                     parameters: tool.inputSchema,
                     execute: async (params, context) => {
+                        let timer;
                         try {
-                            const timer = setTimeout(() => {
+                            timer = setTimeout(() => {
                                 ctx.logger.error(`Request timeout after ${config.timeout}ms`);
                                 return {
                                     success: false,
@@ -128,7 +130,7 @@ export async function apply(ctx: Context, config: Config) {
                                 ctx.logger.error(`Failed to call tool ${tool.name}: ${result.error}`);
                                 return {
                                     success: false,
-                                    error: result.error as string,
+                                    error: `Failed to call tool ${tool.name}: ${result.error}`,
                                 };
                             }
                             let fullContent = "";
@@ -147,12 +149,13 @@ export async function apply(ctx: Context, config: Config) {
                                 result: fullContent,
                             };
                         } catch (error) {
+                            clearTimeout(timer);
                             return {
                                 success: false,
                                 error: error.message,
                             };
                         }
-                    }
+                    },
                 });
                 allTools.push(tool.name);
                 ctx.logger.info(`Tool registered: ${tool.name}`);
@@ -164,7 +167,7 @@ export async function apply(ctx: Context, config: Config) {
         } else {
             ctx.logger.info(`Loaded ${clients.length} servers with ${allTools.length} tools`);
         }
-    })
+    });
 
     ctx.on("dispose", async () => {
         for await (const client of clients) {
@@ -180,9 +183,9 @@ export async function apply(ctx: Context, config: Config) {
         }
 
         ctx.logger.info(`Disconnected from all servers`);
-    })
+    });
 
-    function installStdio(command: string, args: string[], env: Record<string, string>, options?: { cwd?: string; }): StdioClientTransport {
+    function installStdio(command: string, args: string[], env: Record<string, string>, options?: { cwd?: string }): StdioClientTransport {
         try {
             const version = getVersion(command);
             if (version) {
