@@ -3,7 +3,7 @@ import { Context } from "koishi";
 import path from "path";
 
 import { isEmpty } from "./string";
-import { readdirSync } from "fs";
+import { mkdirSync, readdirSync } from "fs";
 
 /**
  * 消息内容是否包含过滤词
@@ -87,16 +87,23 @@ export async function downloadFile(url: string, path: string, overwrite: boolean
  */
 export function getExtensionPath(ctx: Context, builtin: boolean = false): string {
     const isDevMode = process.env.NODE_ENV === "development";
+    let extensionPath;
     if (builtin) {
-        return path.join(
+        extensionPath = path.join(
             ctx.baseDir,
             isDevMode
                 ? "external/yesimbot/packages/core/lib/extensions/builtin"
                 : "node_modules/koishi-plugin-yesimbot/lib/extensions/builtin"
         );
     } else {
-        return path.join(ctx.baseDir, "data", "yesimbot", "extensions");
+        extensionPath = path.join(ctx.baseDir, "data", "yesimbot", "extensions");
     }
+    
+    try {
+        mkdirSync(extensionPath, { recursive: true });
+    } catch (err) {}
+
+    return extensionPath;
 }
 
 /**
@@ -122,14 +129,15 @@ export function getExtensionFiles(ctx: Context): string[] {
     const user = getExtensionPath(ctx);
     try {
         const builtinFiles = readdirSync(builtin, { recursive: true }).map((file) => path.join(builtin, file)) || [];
-        const userFiles = readdirSync(user).map((file) => path.join(builtin, file)) || [];
+        const userFiles = readdirSync(user, { recursive: true }).map((file) => path.join(builtin, file)) || [];
         const files = Array.from(new Set([...builtinFiles, ...userFiles]));
         return files.filter((file) => {
             file = path.basename(file);
             return file.startsWith("ext_") && (file.endsWith(".js") || file.endsWith(".ts")) && !file.endsWith(".d.ts");
         });
     } catch (error) {
-        ctx.logger.error("读取扩展目录失败:", error);
+        ctx.logger.error("读取扩展目录失败:");
+        ctx.logger.error(error);
         return [];
     }
 }
