@@ -92,7 +92,7 @@ export function getExtensionPath(ctx: Context, builtin: boolean = false): string
         extensionPath = path.join(
             ctx.baseDir,
             isDevMode
-                ? "external/yesimbot/packages/core/lib/extensions/builtin"
+                ? "external/yesimbot/packages/core/src/extensions/builtin"
                 : "node_modules/koishi-plugin-yesimbot/lib/extensions/builtin"
         );
     } else {

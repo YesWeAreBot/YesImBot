@@ -3,11 +3,13 @@ import { Context } from "koishi";
 import { MESSAGE_TABLE } from "../types/model";
 import { isEmpty } from "../utils/string";
 
-
 export function apply(ctx: Context) {
-    ctx
-        .command("清空对话", "清除 BOT 的对话上下文", { authority: 3 })
-        .option("target", "-t <target:string> 指定要清空对话的会话。使用 private:指定私聊会话，使用 all 或 private:all 分别清除所有群聊或私聊记忆", { authority: 3 })
+    ctx.command("清空对话", "清除 BOT 的对话上下文", { authority: 3 })
+        .option(
+            "target",
+            "-t <target:string> 指定要清空对话的会话。使用 private:指定私聊会话，使用 all 或 private:all 分别清除所有群聊或私聊记忆",
+            { authority: 3 }
+        )
         .option("person", "-p <person:string> 从所有会话中清除指定用户的记忆", { authority: 3 })
         .usage("注意：如果使用 清空对话 <target> 来清空对话而不带 -t 参数，将会清除当前会话的记忆！")
         .example(
@@ -61,7 +63,6 @@ export function apply(ctx: Context) {
             return;
         });
 }
-
 
 async function clearBySenderId(ctx: Context, senderId: string): Promise<boolean> {
     const result = await ctx.database.remove(MESSAGE_TABLE, { "sender.id": senderId });

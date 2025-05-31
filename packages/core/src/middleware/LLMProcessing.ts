@@ -2,7 +2,6 @@ import fs from "fs/promises";
 import path from "path";
 
 import { ChatModelSwitcher } from "../adapters";
-import { ToolManager } from "../extensions";
 import { Memory } from "../Memory";
 import { ServiceContainer } from "../services/container";
 import { ScenarioManager } from "../services/ScenarioManager";
@@ -12,7 +11,6 @@ export class LLMProcessingMiddleware implements Middleware {
     name = "llm-processing";
     private scenarioManager: ScenarioManager;
     private chatModelSwitcher: ChatModelSwitcher;
-    private toolManager: ToolManager;
 
     constructor(
         private service: ServiceContainer,
@@ -26,7 +24,6 @@ export class LLMProcessingMiddleware implements Middleware {
     ) {
         this.scenarioManager = service.get<ScenarioManager>("scenarioManager");
         this.chatModelSwitcher = service.get("chatModelSwitcher");
-        this.toolManager = service.get("toolManager");
     }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
@@ -44,7 +41,7 @@ export class LLMProcessingMiddleware implements Middleware {
             await this.scenarioManager.processInteractions(ctx.koishiSession.channelId);
 
             // 构建提示词
-            const systemPrompt = await this.getSystemPrompt();
+            const systemPrompt = await this.getSystemPrompt(ctx);
             const memoryPrompt = await this.memory.render();
             const context = this.scenarioManager.render(contain);
 
@@ -155,9 +152,9 @@ export class LLMProcessingMiddleware implements Middleware {
         }
     }
 
-    private async getSystemPrompt(): Promise<string> {
+    private async getSystemPrompt(ctx: MessageContext): Promise<string> {
         let content = await fs.readFile(path.join(__dirname, "../../resources/memgpt_chat.txt"), "utf-8");
-        content += [`Available functions:`, this.toolManager.getToolPrompts()].join("\n");
+        content += [`Available functions:`,  ctx.koishiContext.toolManager.getToolPrompts()].join("\n");
         return content;
     }
 }

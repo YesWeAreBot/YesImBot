@@ -1,4 +1,4 @@
-import { ToolCallResult } from "../extensions";
+import { ToolCallResult } from "../extensions/base";
 import { MemoryBlock } from "../Memory";
 
 // 数据库表名

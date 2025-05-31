@@ -149,7 +149,9 @@ export class Scenario {
      */
     public render(): string | (TextPart | ImagePart)[] {
         const channelType = getChannelType(this.session.channelId);
-        const newMessage = this.isActive ? `<new_messages>\n${this.unread.map(this.formatContext.bind(this)).join("\n")}\n</new_messages>` : "";
+        const newMessage = this.isActive
+            ? `<new_messages>\n${this.unread.map(this.formatContext.bind(this)).join("\n")}\n</new_messages>`
+            : "";
         let output = [
             `<scenario id="${this.session.channelId}" type="${channelType}">`,
             ...Object.keys(this.metadata).map((k) => `${k.toUpperCase()}: ${this.metadata[k]}`),

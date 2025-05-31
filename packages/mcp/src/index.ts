@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { execSync } from "child_process";
 import { Context, Schema } from "koishi";
-import {} from "koishi-plugin-yesimbot";
+import {} from "koishi-plugin-yesimbot/lib/extensions";
 
 interface Server {
     command?: string;
@@ -45,7 +45,7 @@ export const Config: Schema<Config> = Schema.object({
 export const name = "yesimbot-extension-mcp";
 
 export const inject = {
-    required: ["yesimbot"],
+    required: ["yesimbot", "toolManager"],
 };
 
 export async function apply(ctx: Context, config: Config) {
@@ -94,7 +94,6 @@ export async function apply(ctx: Context, config: Config) {
                 continue;
             }
         }
-        const toolManager = ctx.yesimbot.toolManager;
         for (const client of clients) {
             const tools = await client.listTools();
             for (const tool of tools["tools"]) {
@@ -110,12 +109,12 @@ export async function apply(ctx: Context, config: Config) {
                             "Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.",
                     },
                 };
-                toolManager.registerTool({
+                ctx.toolManager.registerTool({
                     name: tool.name,
                     description: tool.description,
                     parameters: tool.inputSchema,
                     execute: async (params, context) => {
-                        let timer;
+                        let timer: NodeJS.Timeout;
                         try {
                             timer = setTimeout(() => {
                                 ctx.logger.error(`Request timeout after ${config.timeout}ms`);
@@ -179,7 +178,7 @@ export async function apply(ctx: Context, config: Config) {
         }
 
         for (const tool of allTools) {
-            ctx.yesimbot.toolManager.removeTool(tool);
+            ctx.toolManager.removeTool(tool);
         }
 
         ctx.logger.info(`Disconnected from all servers`);
