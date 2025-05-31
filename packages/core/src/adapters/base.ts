@@ -18,6 +18,7 @@ import {
 
 import { ModelSetting, Provider as ProviderConfig } from "./config";
 import { ChatModel } from "./chat";
+import { EmbedModel } from "./embed";
 
 export class Provider {
     private fetch: typeof globalThis.fetch;
@@ -79,6 +80,15 @@ export class Provider {
     public getChatModel(index: number) : ChatModel {
         const model = this.config.Models[index];
         return new ChatModel(this.chatProvider, model, this.setting, this.fetch);
+    }
+
+    public getEmbedModel() {
+        // 具有嵌入能力的模型
+        const model = this.config.Models.find((model) => model.Ability & 1 << 4);
+        if (!model) {
+            throw new Error("没有找到具有嵌入能力的模型");
+        }
+        return new EmbedModel(this.embedProvider, model.ModelID, this.fetch);
     }
 }
 
