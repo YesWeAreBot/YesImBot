@@ -15,6 +15,7 @@ export class Scenario {
     private recallSize: number;
     private lastReplyTime: Date | null = null; // 存储最后回复时间，用于判断消息已读状态
     private platformAdapter: PlatformAdapter;
+    private limit: number;
 
     constructor(private ctx: Context, private session: Session) {
         switch (session.platform) {
@@ -28,11 +29,19 @@ export class Scenario {
     }
 
     /**
+     * 判断群组是否活跃
+     */
+    public get isActive(): boolean {
+        return this.unread.length > 0;
+    }
+
+    /**
      * 异步加载初始数据 (仅在 Scenario 首次创建时调用一次)
      * 合并查询消息和交互，减少数据库查询。
      * @param limit 历史消息数量限制
      */
     public async loadInitialData(limit: number = 30) {
+        this.limit = limit;
         this.context = [];
         this.unread = [];
 
@@ -85,8 +94,18 @@ export class Scenario {
      * @param isRead 是否为已读（机器人视角）
      */
     public addContext(record: Message | Interaction, isRead = false) {
-        const arr = isRead ? this.context : this.unread;
-        arr.push(record);
+        if (isRead) {
+            if (this.context.length < this.limit) {
+                this.context.push(record);
+            } else {
+                // 移除最早的消息或交互
+                this.context.shift();
+                this.context.push(record);
+                this.recallSize++;
+            }
+        } else {
+            this.unread.push(record);
+        }
     }
 
     /**
@@ -130,16 +149,16 @@ export class Scenario {
      */
     public render(): string | (TextPart | ImagePart)[] {
         const channelType = getChannelType(this.session.channelId);
+        const newMessage = this.isActive ? `<new_messages>\n${this.unread.map(this.formatContext.bind(this)).join("\n")}\n</new_messages>` : "";
         let output = [
             `<scenario id="${this.session.channelId}" type="${channelType}">`,
             ...Object.keys(this.metadata).map((k) => `${k.toUpperCase()}: ${this.metadata[k]}`),
             `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
             "",
-            `Chat History:`,
+            `<recent_chat_history>`,
             ...this.context.map(this.formatContext.bind(this)),
-            "",
-            `You have ${this.unread.length} new messages to read:`,
-            ...this.unread.map(this.formatContext.bind(this)),
+            "</recent_chat_history>",
+            newMessage,
             `</scenario>`,
         ].join("\n");
 

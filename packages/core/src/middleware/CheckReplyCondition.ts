@@ -1,4 +1,4 @@
-import { Context, Random } from "koishi";
+import { Computed, Context, Random } from "koishi";
 import { ConversationState, MessageContext, Middleware } from "./base";
 
 // 用户优先级类型
@@ -20,11 +20,11 @@ interface UserAttention {
 // 新的配置选项
 export interface CheckReplyConditionOptions {
     // 允许的频道
-    allowedChannels: string[];
+    allowedChannels: string[][];
     // 测试模式，每条消息都会触发回复
     testMode: boolean;
     // at回复概率
-    atReactPossibility: number;
+    atReactPossibility: number | Computed<number>;
     // 意愿增加量
     increaseWillingnessOn: {
         // 收到消息
@@ -192,7 +192,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         if (ctx.koishiSession.author.isBot) return;
 
         // 忽略非指定频道的消息
-        if (!this.options.allowedChannels.includes(ctx.koishiSession.channelId)) return;
+        if (!this.options.allowedChannels.find((slot) => slot.includes(ctx.koishiSession.channelId))) return;
 
         // 如果当前频道已有处理任务，则忽略新的触发条件
         if (this.channelProcessingState.get(channelId)) return;
@@ -432,7 +432,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const adjustedThreshold = this.options.threshold * thresholdMultiplier;
 
         // 决定是否回复
-        const shouldReactToAt = ctx.isMentioned && Random.bool(this.options.atReactPossibility);
+        const shouldReactToAt = ctx.isMentioned && Random.bool(this.options.atReactPossibility as number);
         const isThresholdReached = channelThreshold >= adjustedThreshold;
         const isUserThresholdReached = userWillingness >= adjustedThreshold * 0.7;
         const isAttentionTriggered = isUnderAttention && Math.random() < (attention?.attentionLevel || 0) / 100;
