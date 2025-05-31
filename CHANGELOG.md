@@ -1,4 +1,4 @@
-### 3.0.0-beta.1
+### 3.0.0-alpha.15
 refactor(embeddings): 重构嵌入功能到适配器模块
 fix(command): 添加参数验证
 fix(extension): 修复扩展导入路径
