@@ -1,6 +1,6 @@
 import { Context, Random, Session } from "koishi";
 
-import { Failed, Success, ToolCallResult, ToolManager } from "../extensions";
+import { Failed, Success, ToolCallResult } from "../extensions/base";
 import { ServiceContainer } from "../services/container";
 import { ScenarioManager } from "../services/ScenarioManager";
 import { Interaction, INTERACTION_TABLE } from "../types/model";
@@ -11,7 +11,6 @@ import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 export class ResponseHandlingMiddleware implements Middleware {
     name = "response-handling";
 
-    private toolManager: ToolManager;
     private scenarioManager: ScenarioManager;
 
     constructor(
@@ -19,7 +18,6 @@ export class ResponseHandlingMiddleware implements Middleware {
         private middlewareManager: MiddlewareManager,
         private options?: { maxRetry: number; life: number; maxHeartbeat?: number }
     ) {
-        this.toolManager = service.get("toolManager");
         this.scenarioManager = service.get("scenarioManager");
     }
 
@@ -131,7 +129,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             return `${result.join(", ")}`;
         }
         try {
-            const tool = this.toolManager.getTool(functionName);
+            const tool = koishiContext.toolManager.getTool(functionName);
             if (!tool) {
                 return Failed(`Tool ${functionName} not found`);
             }

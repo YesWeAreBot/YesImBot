@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { ChatModelSwitcher } from "./adapters";
 import { Config } from "./config";
-import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool, ToolManager } from "./extensions";
+import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./extensions/base";
 import { Memory, MemoryBlock } from "./Memory";
 import { MessageContext, MiddlewareManager } from "./middleware/base";
 import { CheckReplyConditionMiddleware } from "./middleware/CheckReplyCondition";
@@ -22,7 +22,9 @@ export default class Agent {
     private ctx: Context;
     private config: Config;
 
-    static name = "yesimbot";
+    static readonly name = "yesimbot";
+
+    static readonly inject = ["toolManager"];
 
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
@@ -47,14 +49,8 @@ export default class Agent {
      * 初始化核心服务
      */
     private initializeServices(): void {
-        // 注册工具管理器
-        const toolManager = ToolManager.getInstance(this.ctx);
-        // 加载工具
-        this.ctx.logger.info("[Tool] Loading tools");
-        toolManager.load();
-        this.serviceContainer.register("toolManager", toolManager);
         // 注册核心工具
-        toolManager.registerTool(this.createSendMessageTool(this.config));
+        this.ctx.toolManager.registerTool(this.createSendMessageTool(this.config));
 
         // 注册模型切换器
         const chatModelSwitcher = new ChatModelSwitcher(
@@ -319,29 +315,3 @@ export default class Agent {
         return memory;
     }
 }
-
-// const defaults = {
-//     debug: false,
-//     retry: 3,
-//     retryDelay: 500,
-//     // https://github.com/unjs/ofetch#%EF%B8%8F-auto-retry
-//     retryStatusCodes: [408, 409, 425, 429, 500, 502, 503, 504]
-// };
-// const createFetch = (userOptions: any = {}) => {
-//     const options = Object.assign({}, defaults, userOptions);
-//     const xsfetch = async (retriesLeft, input, init) => {
-//         init = { ...init, dispatcher: userOptions.dispatcher }
-//         const res = await ufetch(input, init);
-//         if (res.ok || retriesLeft === 0 || !options.retryStatusCodes.includes(res.status))
-//             return res;
-//         options.debug && console.warn("[xsfetch] Failed, retrying... Times left:", retriesLeft);
-//         await sleep(options.retryDelay);
-//         return async () => xsfetch(retriesLeft - 1, input, init);
-//     };
-//     return async (input, init) => {
-//         let res = await xsfetch(options.retry, input, init);
-//         while (typeof res === "function")
-//             res = await res();
-//         return res;
-//     };
-// };

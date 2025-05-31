@@ -1,9 +1,7 @@
-import { Context, Session } from "koishi";
-import path from "path";
-import { ToolResult } from "xsai";
+import { Context, Session } from "koishi"; // 引入 Service
+import { ToolResult as XSaiToolResult } from "xsai"; // 别名，避免与 ToolCallResult 混淆
 import { z } from "zod";
 import zodToJsonSchema from "zod-to-json-schema";
-import { getExtensionFiles } from "../utils";
 
 /**
  * LLM 上下文对象
@@ -16,7 +14,7 @@ export interface ToolContext {
 }
 
 /**
- * 工具定义
+ * 工具定义 (原始定义)
  * 用于定义工具的名称、描述、参数和执行函数
  */
 export type ToolDefinition<TParams extends z.ZodTypeAny = any, TReturns extends z.ZodTypeAny = any> = {
@@ -29,28 +27,54 @@ export type ToolDefinition<TParams extends z.ZodTypeAny = any, TReturns extends 
     ) => Promise<ToolCallResult<z.infer<TReturns>>> | ToolCallResult<z.infer<TReturns>>;
 };
 
+/**
+ * 工具调用结果
+ */
 export interface ToolCallResult<T = any> {
     success: boolean;
     result?: T;
     error?: string;
 }
 
-//@ts-ignore
-interface EnhancedToolResult<T extends z.ZodTypeAny = any> extends ToolResult {
-    execute: (params: z.infer<T>, context: ToolContext) => Promise<ToolCallResult<z.infer<T>>> | ToolCallResult<z.infer<T>>;
+/**
+ * 可执行工具类型
+ * 结合了 xsai 的工具描述和我们自己的执行函数
+ */
+// @ts-ignore
+export interface ExecutableTool<TParams extends z.ZodTypeAny = any, TReturns extends z.ZodTypeAny = any> extends XSaiToolResult {
+    // XSaiToolResult 包含了 type: "function" 和 function: { name, description, parameters }
+    execute: (
+        params: z.infer<TParams>,
+        context: ToolContext
+    ) => Promise<ToolCallResult<z.infer<TReturns>>> | ToolCallResult<z.infer<TReturns>>;
 }
 
+/**
+ * 工具定义辅助函数 (简单返回输入)
+ * @param definition 工具定义
+ * @returns 相同的工具定义
+ */
 export function Tool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>): ToolDefinition<T> {
     return definition;
 }
 
-export function Success(result?: any): ToolCallResult {
+/**
+ * 成功结果辅助函数
+ * @param result 返回值
+ * @returns 成功工具调用结果对象
+ */
+export function Success<T>(result?: T): ToolCallResult<T> {
     return {
         success: true,
         result: result,
     };
 }
 
+/**
+ * 失败结果辅助函数
+ * @param error 错误信息
+ * @returns 失败工具调用结果对象
+ */
 export function Failed(error: string): ToolCallResult {
     return {
         success: false,
@@ -59,136 +83,32 @@ export function Failed(error: string): ToolCallResult {
 }
 
 /**
- * 定义工具
- * @param definition
- * @returns
+ * 定义并封装工具为可执行格式
+ * @param definition 工具的原始定义
+ * @param baseContext 可选的基础上下文，会在执行时与运行时上下文合并
+ * @returns 包含 xsai 描述和可执行函数的工具对象
  */
-export function defineTool<T extends z.ZodTypeAny>(definition: ToolDefinition<T>, TContext: ToolContext = {}): EnhancedToolResult<T> {
-    let parameters: any = definition.parameters;
-    if (!definition.parameters["properties"]) {
-        parameters = zodToJsonSchema(definition.parameters);
-    }
+export function defineTool<TParams extends z.ZodTypeAny, TReturns extends z.ZodTypeAny>(
+    definition: ToolDefinition<TParams, TReturns>,
+    baseContext: ToolContext = {} // 默认值设为 {}
+): ExecutableTool<TParams, TReturns> {
+    // 总是将 Zod schema 转换为 JSON schema
+    const parametersJsonSchema = zodToJsonSchema(definition.parameters);
+
     return {
         type: "function",
-        execute: (params: z.infer<T>, context = TContext) => definition.execute(params, context),
+        // 执行函数：合并 defineTool 传入的基础上下文和运行时传入的上下文
+        execute: (params: z.infer<TParams>, runtimeContext: ToolContext) =>
+            definition.execute(params, { ...baseContext, ...runtimeContext }),
         function: {
             name: definition.name,
             description: definition.description,
-            parameters: parameters as Record<string, unknown>,
+            parameters: parametersJsonSchema as Record<string, unknown>, // 类型断言为 Record<string, unknown>
         },
     };
 }
 
-export class ToolManager {
-    static instance: ToolManager;
-    static getInstance(ctx): ToolManager {
-        if (!ToolManager.instance) {
-            ToolManager.instance = new ToolManager(ctx);
-        }
-        return ToolManager.instance;
-    }
-
-    private loaded = false;
-    private tools: Map<string, ToolDefinition> = new Map();
-
-    constructor(private ctx: Context) {}
-
-    load() {
-        if (this.loaded) return;
-        const extensions = getExtensionFiles(this.ctx);
-
-        for (let file of extensions) {
-            try {
-                const extension = require(file) as Record<string, ToolDefinition> | { default: ToolDefinition | ToolDefinition[] };
-
-                if (extension.default) {
-                    if (Array.isArray(extension.default)) {
-                        extension.default.forEach((tool) => this.registerTool(tool));
-                    } else {
-                        this.registerTool(extension.default);
-                    }
-                } else {
-                    Object.entries(extension as Record<string, ToolDefinition>)
-                        .filter(([key]) => key !== "default")
-                        .forEach(([key, tool]) => {
-                            this.registerTool(tool);
-                        });
-                }
-                this.ctx.logger.info(`[Extension] Loaded: ${path.basename(file)}`);
-            } catch (error) {
-                this.ctx.logger.error(`[Extension] Failed to load: ${file}`);
-                this.ctx.logger.error(error.stack);
-            }
-        }
-
-        this.loaded = true;
-    }
-
-    registerTool(definition: ToolDefinition) {
-        this.tools.set(definition.name, definition);
-    }
-
-    removeTool(name: string) {
-        this.tools.delete(name);
-    }
-
-    getTool(name: string, context: ToolContext = {}): EnhancedToolResult | undefined {
-        if (!this.tools.has(name)) {
-            return undefined;
-        }
-        return defineTool(this.tools.get(name), context);
-    }
-
-    getTools(context: ToolContext = {}): EnhancedToolResult[] {
-        let tools: EnhancedToolResult[] = [];
-        for (const [name, definition] of this.tools) {
-            tools.push(defineTool(definition, context));
-        }
-        return tools;
-    }
-
-    /**
-     * 获取工具的描述
-     * @param name
-     * @example
-     * send_message:
-     *   description: Sends a message to the human user.
-     *   params:
-     *     inner_thoughts: Deep inner monologue private to you only.
-     *     messages: Array<string> Max(2) Message contents. Each item in the list will be sent individually to mimic human sentence breaking behavior.
-     */
-    getToolPrompt(name: string): string {
-        if (!this.tools.has(name)) {
-            return "";
-        }
-        const tool = this.tools.get(name);
-        const stringify = (properties: Record<string, { type: string; description: string }>) => {
-            let result = [];
-            for (const [key, value] of Object.entries(properties)) {
-                result.push(`    ${key}: ${value.description}`);
-            }
-            return result.join("\n");
-        };
-        if (!tool.parameters["properties"]) {
-            tool.parameters = zodToJsonSchema(tool.parameters);
-        }
-        return [
-            `${name}:`,
-            `  description: ${tool.description}`,
-            `  params:`,
-            stringify(tool.parameters["properties"]) || "    No parameters required.",
-        ].join("\n");
-    }
-
-    getToolPrompts(): string {
-        let prompts: string[] = [];
-        for (const [name, definition] of this.tools) {
-            prompts.push(this.getToolPrompt(name));
-        }
-        return prompts.join("\n");
-    }
-}
-
+// 常用 Zod 常量定义
 export const INNER_THOUGHTS = z.string().describe("Deep inner monologue private to you only.");
 export const REQUEST_HEARTBEAT = z
     .boolean()

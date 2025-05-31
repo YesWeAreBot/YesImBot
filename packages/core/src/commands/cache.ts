@@ -4,9 +4,8 @@ import path from "path";
 
 import { IMAGE_TABLE } from "../types/model";
 
-
 export function apply(ctx: Context) {
-    const cachePath = path.join(ctx.baseDir, 'data', 'yesimbot', 'image_cache');
+    const cachePath = path.join(ctx.baseDir, "data", "yesimbot", "image_cache");
 
     ctx.command("cache", "图片缓存管理")
         .alias("图片缓存")
@@ -36,22 +35,20 @@ export function apply(ctx: Context) {
             return "已清除所有图片缓存";
         });
 
-
     async function _delete(id: string) {
-        const result = await this.ctx.database.remove(IMAGE_TABLE, { id })
+        const result = await this.ctx.database.remove(IMAGE_TABLE, { id });
         if (result.removed) unlinkSync(path.join(cachePath, id));
     }
 
     async function _clear() {
-        const images = await this.ctx.database.get(IMAGE_TABLE, {})
+        const images = await this.ctx.database.get(IMAGE_TABLE, {});
 
         for (let image of images) {
             unlinkSync(path.join(cachePath, image.id));
         }
 
-        await this.ctx.database.drop(IMAGE_TABLE)
+        await this.ctx.database.drop(IMAGE_TABLE);
     }
-
 
     /**
      * 清理过期缓存
@@ -60,11 +57,7 @@ export function apply(ctx: Context) {
     async function _cleanExpired(maxAge: number = 7 * 24 * 60 * 60 * 1000): Promise<number> {
         const now = Date.now();
 
-        const images = await this.ctx.database.get(IMAGE_TABLE, (row) =>
-            $.and(
-                $.lt(row.timestamp, new Date(now - maxAge))
-            )
-        )
+        const images = await this.ctx.database.get(IMAGE_TABLE, (row) => $.and($.lt(row.timestamp, new Date(now - maxAge))));
 
         for (let image of images) {
             await this.delete(image.id);
@@ -73,4 +66,3 @@ export function apply(ctx: Context) {
         return images.length;
     }
 }
-

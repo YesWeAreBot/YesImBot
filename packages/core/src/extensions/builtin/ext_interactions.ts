@@ -16,22 +16,23 @@ export const Reaction = Tool({
     description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
     parameters: z.object({
         inner_thoughts: INNER_THOUGHTS,
-        message: z.string().describe("消息 ID"),
+        message_id: z.string().describe("消息 ID"),
         emoji_id: z.number().describe("表态编号"),
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
-    execute: async ({ message, emoji_id }, context) => {
+    execute: async ({ message_id, emoji_id }, context) => {
         const { koishiContext, koishiSession } = context;
+        if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
             await koishiSession.onebot._request("set_msg_emoji_like", {
-                message_id: message,
-                emoji_id: emoji_id,
+                message_id,
+                emoji_id,
             });
-            koishiContext.logger.info(`Bot[${koishiSession.selfId}]对消息 ${message} 进行了表态： ${emoji_id}`);
+            koishiContext.logger.info(`Bot[${koishiSession.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success();
         } catch (e) {
-            koishiContext.logger.error(`Bot[${koishiSession.selfId}]执行表态失败: ${message}, ${emoji_id} - `, e.message);
-            return Failed(`对消息 ${message} 进行表态失败： ${e.message}`);
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, e.message);
+            return Failed(`对消息 ${message_id} 进行表态失败： ${e.message}`);
         }
     },
 });
@@ -41,19 +42,18 @@ export const Essence = Tool({
     description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
     parameters: z.object({
         inner_thoughts: INNER_THOUGHTS,
-        message: z.number().describe("消息 ID"),
+        message_id: z.string().describe("消息 ID"),
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
-    execute: async ({ message }, context) => {
+    execute: async ({ message_id }, context) => {
         const { koishiContext, koishiSession } = context;
+        if (isEmpty(String(message_id))) return Failed("message_id is required");
         try {
-            await koishiSession.onebot._request("set_essence_msg", {
-                message_id: message,
-            });
-            koishiContext.logger.info(`Bot[${koishiSession.selfId}]将消息 ${message} 设置为精华`);
+            await koishiSession.onebot._request("set_essence_msg", { message_id });
+            koishiContext.logger.info(`Bot[${koishiSession.selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
         } catch (e) {
-            koishiContext.logger.error(`Bot[${koishiSession.selfId}]设置精华消息失败: ${message} - `, e.message);
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]设置精华消息失败: ${message_id} - `, e.message);
             return Failed(`设置精华消息失败： ${e.message}`);
         }
     },
@@ -70,6 +70,7 @@ export const Poke = Tool({
     }),
     execute: async ({ user_id, channel }, context) => {
         const { koishiContext, koishiSession } = context;
+        if (isEmpty(String(user_id))) return Failed("user_id is required");
         try {
             let channelId = isEmpty(channel) ? koishiSession.channelId : channel;
             if (!channelId.startsWith("private:")) {
