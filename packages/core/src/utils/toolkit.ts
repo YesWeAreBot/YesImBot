@@ -86,15 +86,9 @@ export async function downloadFile(url: string, path: string, overwrite: boolean
  * 获取扩展目录路径
  */
 export function getExtensionPath(ctx: Context, builtin: boolean = false): string {
-    const isDevMode = process.env.NODE_ENV === "development";
     let extensionPath;
     if (builtin) {
-        extensionPath = path.join(
-            ctx.baseDir,
-            isDevMode
-                ? "external/yesimbot/packages/core/src/extensions/builtin"
-                : "node_modules/koishi-plugin-yesimbot/lib/extensions/builtin"
-        );
+        extensionPath = path.join(__dirname, "../", "extensions", "builtin");
     } else {
         extensionPath = path.join(ctx.baseDir, "data", "yesimbot", "extensions");
     }
