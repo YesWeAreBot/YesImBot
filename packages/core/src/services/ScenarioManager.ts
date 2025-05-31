@@ -1,7 +1,7 @@
 import { $, Context, Session } from "koishi";
 import { Scenario } from "../Scenario";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message } from "../types/model";
-
+import { formatDate } from "../utils";
 
 /**
  * Scenario 管理器。
@@ -37,6 +37,16 @@ export class ScenarioManager {
     }
 
     /**
+     * 获取已经加载的 Scenario 实例。
+     * 如果不存在，则返回 undefined。
+     * @param channelId
+     * @returns
+     */
+    public getScenarioByChannelId(channelId: string): Scenario | undefined {
+        return this.scenarios.get(channelId);
+    }
+
+    /**
      * 更新 Scenario 中的消息。
      * 当有新消息（无论是用户发送还是机器人发送）时调用。
      * @param message 消息对象
@@ -44,7 +54,6 @@ export class ScenarioManager {
      * @param isBotMessage 是否为机器人自身发送的消息（影响已读/未读状态）
      */
     async updateMessage(message: Message, session: Session, isBotMessage: boolean): Promise<void> {
-        const channelId = message.channel.id;
         const scenario = await this.getScenario(session); // 确保 Scenario 实例已加载
         // 机器人自身发送的消息对机器人而言是已读的，用户发送的消息是未读的
         scenario.addContext(message, isBotMessage);
@@ -58,7 +67,6 @@ export class ScenarioManager {
      * @param session 关联的会话
      */
     async updateInteraction(interaction: Interaction, session: Session, isRead: boolean): Promise<void> {
-        const channelId = session.channelId; // 交互通常与当前会话频道相关联
         const scenario = await this.getScenario(session); // 确保 Scenario 实例已加载
         // 交互记录通常是新的信息，标记为未读以供 AI 重点关注
         scenario.addContext(interaction, isRead);
@@ -79,13 +87,11 @@ export class ScenarioManager {
             let life = interaction.life;
             if (life > 0) {
                 // 递减 life 值
-                await this.ctx.database
-                    .set(INTERACTION_TABLE, { id: interaction.id }, { life: $.subtract(life, 1) });
+                await this.ctx.database.set(INTERACTION_TABLE, { id: interaction.id }, { life: $.subtract(life, 1) });
                 // this.ctx.logger.info(`[ScenarioManager] 交互 ${interaction.id} 的生命周期递减至 ${life - 1}。`);
             } else {
                 // 移除过期交互
-                await this.ctx.database
-                    .remove(INTERACTION_TABLE, { id: interaction.id });
+                await this.ctx.database.remove(INTERACTION_TABLE, { id: interaction.id });
                 // this.ctx.logger.info(`[ScenarioManager] 交互 ${interaction.id} 已过期并被移除。`);
             }
         }
@@ -97,10 +103,16 @@ export class ScenarioManager {
      * @param channelId 频道ID
      */
     async setLastReplyTime(channelId: string): Promise<void> {
-        await this.ctx.database.upsert(LAST_REPLY_TABLE, [{
-            channelId: channelId,
-            timestamp: new Date()
-        }], ['channelId']);
+        await this.ctx.database.upsert(
+            LAST_REPLY_TABLE,
+            [
+                {
+                    channelId: channelId,
+                    timestamp: new Date(),
+                },
+            ],
+            ["channelId"]
+        );
         // this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 的最后回复时间已更新。`);
     }
 
@@ -119,6 +131,36 @@ export class ScenarioManager {
      *清除所有频道的 Scenario 实例缓存。
      */
     clearAllScenario(): void {
-        this.scenarios.clear()
+        this.scenarios.clear();
+    }
+
+    /**
+     * 渲染指定频道的 Scenario 上下文。
+     */
+    public render(channels: string[]) {
+        const scenarioList = channels.map((channel) => {
+            const scenario = this.scenarios.get(channel);
+            if (!scenario) {
+                //throw new Error(`[ScenarioManager] 找不到频道 ${channel} 的 Scenario 实例。`);
+            }
+            return scenario;
+        }).filter(Boolean);
+        const active = scenarioList.filter((scenario) => scenario.isActive);
+        const inactive = scenarioList.filter((scenario) => !scenario.isActive);
+        const content = [
+            `<scenario_update timestamp="${formatDate(new Date())}">`,
+            ...active.map((scenario) => scenario.render()),
+            `<no_activity>`,
+            ...inactive.map((scenario) => scenario.render()),
+            `</no_activity>`,
+            `</scenario_update>`,
+
+            `<task_instruction>
+请综合以上所有群组的最新动态，决定你希望如何回应。
+如果你决定回复，请按照以下格式组织你的回复。对于每个目标群组，生成一个独立的回复内容。
+如果你不回复任何群组，请明确指示。
+</task_instruction>`,
+        ];
+        return content.join("\n");
     }
 }

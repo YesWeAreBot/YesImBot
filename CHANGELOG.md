@@ -1,3 +1,16 @@
+### 3.0.0-beta.1
+refactor(embeddings): 重构嵌入功能到适配器模块
+fix(command): 添加参数验证
+fix(extension): 修复扩展导入路径
+fix(tool): 修复内置工具
+feat(config): 增加最大心跳次数
+feat: 优化场景管理和响应处理逻辑
+- 在ResponseHandling中跳过send_message函数的交互记录
+- 修改CheckReplyCondition以支持频道分组和动态回复概率
+- 重构Scenario类，改进消息存储和渲染逻辑
+- 在LLMProcessing中添加多频道场景渲染支持
+- 增强ScenarioManager的多场景协同处理能力
+
 ### 3.0.0-alpha.14
 feat: 重构场景管理和平台适配逻辑
 

@@ -20,6 +20,8 @@ export class LLMProcessingMiddleware implements Middleware {
         private config?: {
             debug?: boolean;
             abortSignal?: AbortSignal;
+            slotContains: string[][];
+            slotSize: number;
         }
     ) {
         this.scenarioManager = service.get<ScenarioManager>("scenarioManager");
@@ -33,8 +35,10 @@ export class LLMProcessingMiddleware implements Middleware {
         }
 
         try {
+            const contain = this.config.slotContains.find((slot) => slot.includes(ctx.koishiSession.channelId));
+
             // 从 ScenarioManager 获取场景对象（可能是缓存的，也可能是新加载的）
-            const scenario = await this.scenarioManager.getScenario(ctx.koishiSession);
+            const currentScenario = await this.scenarioManager.getScenario(ctx.koishiSession, this.config.slotSize);
 
             // 处理所有与该频道相关的交互记录的生命周期
             await this.scenarioManager.processInteractions(ctx.koishiSession.channelId);
@@ -42,6 +46,7 @@ export class LLMProcessingMiddleware implements Middleware {
             // 构建提示词
             const systemPrompt = await this.getSystemPrompt();
             const memoryPrompt = await this.memory.render();
+            const context = this.scenarioManager.render(contain);
 
             let retry = this.chatModelSwitcher.length;
             const initialRetryCount = retry; // 记录初始重试次数
@@ -58,7 +63,7 @@ export class LLMProcessingMiddleware implements Middleware {
                     ctx.llmResponse = await model.chat(
                         [
                             { role: "system", content: systemPrompt + "\n" + memoryPrompt },
-                            { role: "user", content: scenario.render() },
+                            { role: "user", content: context },
                         ],
                         null,
                         {
@@ -68,8 +73,6 @@ export class LLMProcessingMiddleware implements Middleware {
                         }
                     );
                     await ctx.transitionTo(ConversationState.RESPONDING);
-                    // LLM 成功响应后，更新该频道的最后回复时间
-                    await this.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
                     break; // 成功，跳出重试循环
                 } catch (error: any) {
                     lastError = error; // 捕获每次的错误
@@ -142,6 +145,8 @@ export class LLMProcessingMiddleware implements Middleware {
                 throw lastError;
             }
             await next();
+            // LLM 成功响应后，更新该频道的最后回复时间
+            await this.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
         } catch (error) {
             if (error.name === "AbortError") {
                 return;

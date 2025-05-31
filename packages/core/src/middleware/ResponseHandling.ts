@@ -182,6 +182,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         functionName: string,
         result: ToolCallResult
     ): Promise<void> {
+        if (functionName === "send_message") return;
         const newInteraction: Interaction = {
             id: Random.id(),
             emitter: koishiSession.messageId,

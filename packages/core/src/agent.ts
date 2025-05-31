@@ -59,7 +59,7 @@ export default class Agent {
         // 注册模型切换器
         const chatModelSwitcher = new ChatModelSwitcher(
             this.config.Provider,
-            this.config.Chat.UseModel as unknown as [number, number][],
+            (this.config.Chat?.UseModel as unknown as [number, number][]) || [[0, 0]],
             this.config.ModelSetting
         );
         this.serviceContainer.register("chatModelSwitcher", chatModelSwitcher);
@@ -122,6 +122,8 @@ export default class Agent {
                 new LLMProcessingMiddleware(this.serviceContainer, memory, {
                     debug: this.config.Debug.EnableDebug,
                     abortSignal: controller.signal,
+                    slotContains: this.config.MemorySlot.SlotContains,
+                    slotSize: this.config.MemorySlot.SlotSize,
                 })
             )
 

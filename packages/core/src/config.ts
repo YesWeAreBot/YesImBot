@@ -1,12 +1,15 @@
-import { Schema } from "koishi";
+import { Computed, Schema } from "koishi";
 import { ModelSetting, Provider } from "./adapters/config";
 
 // 主配置接口
 export interface Config {
+    // Memory : {
+    //     Scenario: {Identifier: string} []
+    // }
     MemorySlot: {
-        SlotContains: string[];
+        SlotContains: string[][];
         SlotSize: number;
-        AtReactPossibility?: number;
+        AtReactPossibility?: number | Computed<number>;
         IncreaseWillingnessOn: {
             Message: number;
             At: number;
@@ -36,16 +39,17 @@ export interface Config {
 
 // 主配置 Schema
 export const Config: Schema<Config> = Schema.object({
+    // Memory: Schema.object({
+    //     Scenario: Schema.array(Schema.object({
+    //         Identifier: Schema.string().required().description("场景标识符"),
+    //     })).role("table").description("场景配置"),
+    // }),
     MemorySlot: Schema.object({
-        SlotContains: Schema.array(String).required().role("table").description("记忆槽位标识符列表，用于区分不同的对话上下文"),
+        SlotContains: Schema.array(Schema.array(String).role("table")).description("记忆槽位标识符列表，用于区分不同的对话上下文"),
         SlotSize: Schema.number().default(20).min(1).max(100).description("每个记忆槽位保存的最大消息数量"),
-        AtReactPossibility: Schema.number()
-            .default(0.5)
-            .min(0)
-            .max(1)
-            .step(0.05)
-            .role("slider")
-            .description("收到 @ 消息时立即回复的概率（0-1）"),
+        AtReactPossibility: Schema.computed(
+            Schema.number().default(0.5).min(0).max(1).step(0.05).role("slider").description("收到 @ 消息时立即回复的概率（0-1）")
+        ),
         IncreaseWillingnessOn: Schema.object({
             Message: Schema.number().default(15).min(0).max(100).description("收到普通消息时增加的回复意愿值"),
             At: Schema.number().default(80).min(0).max(100).description("收到 @ 消息时增加的回复意愿值"),
