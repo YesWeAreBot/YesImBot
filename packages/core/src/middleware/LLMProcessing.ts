@@ -35,7 +35,7 @@ export class LLMProcessingMiddleware implements Middleware {
             const contain = this.config.slotContains.find((slot) => slot.includes(ctx.koishiSession.channelId));
 
             // 从 ScenarioManager 获取场景对象（可能是缓存的，也可能是新加载的）
-            const currentScenario = await this.scenarioManager.getScenario(ctx.koishiSession, this.config.slotSize);
+            ctx.currentScenario = await this.scenarioManager.getScenario(ctx.koishiSession, this.config.slotSize);
 
             // 处理所有与该频道相关的交互记录的生命周期
             await this.scenarioManager.processInteractions(ctx.koishiSession.channelId);
@@ -154,7 +154,7 @@ export class LLMProcessingMiddleware implements Middleware {
 
     private async getSystemPrompt(ctx: MessageContext): Promise<string> {
         let content = await fs.readFile(path.join(__dirname, "../../resources/memgpt_chat.txt"), "utf-8");
-        content += [`Available functions:`,  ctx.koishiContext.toolManager.getToolPrompts()].join("\n");
+        content += [`Available functions:`, ctx.koishiContext.toolManager.getToolPrompts()].join("\n");
         return content;
     }
 }

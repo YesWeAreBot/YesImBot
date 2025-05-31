@@ -5,13 +5,12 @@ import { Memory } from "../Memory";
 import { Scenario } from "../Scenario";
 import { Message } from "../types/model";
 
-
 /**
  * 会话状态枚举
  * 简化为三个核心状态
  */
 export enum ConversationState {
-    IDLE,       // 空闲状态，等待新消息触发
+    IDLE, // 空闲状态，等待新消息触发
     PROCESSING, // 处理中状态
     RESPONDING, // 响应中状态
 }
@@ -33,13 +32,17 @@ export class MessageContext {
     // heartbeat触发次数计数器
     public heartbeatCount: number = 0;
 
+    public currentScenario: Scenario;
+
     constructor(
         // Koishi上下文对象
         public koishiContext: Context,
         // Koishi会话对象
-        public koishiSession: Session,
+        public koishiSession: Session
     ) {
-        this.isMentioned = koishiSession.elements.some(element => element.type === 'at' && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === 'all'));
+        this.isMentioned = koishiSession.elements.some(
+            (element) => element.type === "at" && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === "all")
+        );
     }
 
     /**
@@ -100,10 +103,10 @@ export class MiddlewareManager {
      * 获取指定名称的中间件
      */
     public getMiddleware<T extends Middleware>(name: string): T | undefined {
-        return this.middlewares.find(m => m.name === name) as T;
+        return this.middlewares.find((m) => m.name === name) as T;
     }
 
     public findIndex(name: string): number {
-        return this.middlewares.findIndex(m => m.name === name);
+        return this.middlewares.findIndex((m) => m.name === name);
     }
 }

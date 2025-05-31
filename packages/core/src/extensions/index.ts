@@ -25,8 +25,6 @@ export default class ToolManager extends Service {
     constructor(ctx: Context) {
         super(ctx, "toolManager", true);
 
-        ctx.logger.info("ToolManager Launched")
-
         /**
          * 服务启动时加载扩展
          */
@@ -129,7 +127,7 @@ export default class ToolManager extends Service {
         }
 
         const jsonSchema = zodToJsonSchema(tool.parameters);
-        const properties = (jsonSchema['properties'] as Record<string, any>) || {}; // 确保 properties 是一个对象
+        const properties = (jsonSchema["properties"] as Record<string, any>) || {}; // 确保 properties 是一个对象
 
         const stringifyProperties = (props: Record<string, any>): string => {
             const result: string[] = [];

@@ -1,70 +1,117 @@
-import { Context, Session } from 'koishi';
+import { Context, Session } from "koishi";
+import * as os from "os";
+import { v4 as uuidv4 } from "uuid";
+import type { GenerateTextResult } from "xsai";
+import { Scenario } from "../Scenario";
+import { MessageContext, Middleware } from "./base";
 
-import { Scenario } from '../Scenario';
-import { MessageContext, Middleware } from './base';
+// 1. 优化 ErrorContext 接口，增加原始错误对象和更多上下文
+export interface ErrorReportContext {
+    originalError: Error; // 包含原始错误对象，方便提取更多信息
+    scenario?: Scenario;
+    llmResponse?: GenerateTextResult;
+    koishiContext?: Context; // Koishi 上下文对象
+    koishiSession?: Session; // Koishi 会话对象
+    additionalInfo?: Record<string, any>; // 额外的自定义信息
+    errorId?: string; // 错误唯一ID
+}
 
-
-export interface ErrorContext {
-    scenario?: Scenario | object;
-    llmResponse?: string | object;
-    session?: Session;
-    ctx?: Context;
-    additionalInfo?: Record<string, any>;
+export interface ErrorHandlingOptions {
+    debug?: boolean; // 是否开启调试模式，打印详细堆栈
+    uploadDump?: boolean; // 是否上传错误倾倒
+    pasteServiceUrl?: string; // 粘贴服务的URL
+    // 敏感信息处理选项，例如是否包含完整的会话内容
+    includeFullSessionContent?: boolean;
 }
 
 export class ErrorHandlingMiddleware implements Middleware {
-    name = 'error-handling';
+    name = "error-handling";
 
+    // 2. 优化构造函数，使用更清晰的选项接口
     constructor(
-        private logger: Context['logger'],
-        private options?: {
-            debug: boolean;
-            uploadDump: boolean;
+        private logger: Context["logger"],
+        private options: ErrorHandlingOptions = {
+            debug: false,
+            uploadDump: false,
+            pasteServiceUrl: "https://dump.yesimbot.chat/", // 默认值
+            includeFullSessionContent: false,
         }
-    ) { }
+    ) {
+        // 确保options有默认值
+        this.options = {
+            debug: false,
+            uploadDump: false,
+            pasteServiceUrl: "https://dump.yesimbot.chat/",
+            includeFullSessionContent: false,
+            ...options,
+        };
+    }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         try {
-            // 执行后续中间件
-            await next();
-
+            await next(); // 执行后续中间件
         } catch (error) {
-            // 记录错误日志
+            const errorId = uuidv4(); // 为每个错误生成一个唯一ID
+
+            // 3. 改进本地日志记录，更详细且带有错误ID
+            this.logger.error(`[Error ID: ${errorId}] 发生未知错误，已跳过回复。`);
+            this.logger.error(`Error Type: ${(error as Error).name}`);
+            this.logger.error(`Error Message: ${(error as Error).message}`);
 
             if (this.options.debug) {
-                this.logger.error(error.stack);
+                this.logger.error(`Error Stack:`, (error as Error).stack);
             } else {
-                this.logger.error(`发生未知错误，已跳过回复:`, error.message);
+                this.logger.error(`For detailed stack trace, enable debug mode.`);
+            }
+
+            // 记录触发错误的用户和频道信息
+            if (ctx.koishiSession) {
+                this.logger.error(
+                    `Triggered by User: ${ctx.koishiSession.userId} (${ctx.koishiSession.platform}) in Channel: ${ctx.koishiSession.channelId}`
+                );
             }
 
             try {
-                if (this.options?.uploadDump) {
+                if (this.options.uploadDump) {
                     const errorDump = this.formatErrorDump(error as Error, {
-                        // scenario: await ctx.getScenario(),
+                        originalError: error as Error,
+                        scenario: ctx.currentScenario,
                         llmResponse: ctx.llmResponse,
-                        session: ctx.koishiSession,
-                        ctx: ctx.koishiContext,
-                        // additionalInfo: ctx.additionalInfo,
+                        koishiSession: ctx.koishiSession,
+                        koishiContext: ctx.koishiContext,
+                        // additionalInfo: ctx.additionalInfo, // 如果 MessageContext 有此字段
+                        errorId: errorId,
                     });
+
                     const pasteUrl = await this.uploadToPaste(errorDump);
                     if (pasteUrl) {
-                        this.logger.info(`Error dump uploaded to: ${pasteUrl}`);
+                        this.logger.info(`[Error ID: ${errorId}] Error dump uploaded to: ${pasteUrl}`);
+                        // 4. 可以考虑在这里向用户发送一个友好的提示，告知问题已被记录
+                        // 例如：ctx.koishiSession?.send('抱歉，程序遇到了一些问题，我们已记录并会尽快处理。');
                     }
                 }
             } catch (uploadError) {
-                this.logger.error(`Error uploading error dump:`, uploadError.message);
+                this.logger.error(`[Error ID: ${errorId}] Error uploading error dump:`, (uploadError as Error).message);
+                if (this.options.debug) {
+                    this.logger.error(`Upload error stack:`, (uploadError as Error).stack);
+                }
             }
         }
     }
 
     private async uploadToPaste(content: string): Promise<string | null> {
+        if (!this.options.pasteServiceUrl) {
+            this.logger.warn("No paste service URL configured. Skipping dump upload.");
+            return null;
+        }
+
         try {
             const formData = new FormData();
-            formData.append('c', content);
+            formData.append("c", content);
 
-            const response = await fetch('https://dump.yesimbot.chat/', {
+            const response = await fetch(this.options.pasteServiceUrl, {
                 method: "POST",
-                body: formData
+                body: formData,
             });
 
             const data = await response.json();
@@ -72,88 +119,119 @@ export class ErrorHandlingMiddleware implements Middleware {
             if (data && data.url) {
                 return data.url;
             } else {
-                console.error('Failed to upload to paste:', data.error || `Status: ${response.status}`);
+                this.logger.error(
+                    `Failed to upload to paste service (${this.options.pasteServiceUrl}):`,
+                    data.error || `Status: ${response.status} - ${response.statusText}`
+                );
                 return null;
             }
         } catch (error) {
-            console.error('Error uploading to dump host:', error.message);
+            this.logger.error(`Error connecting to dump host (${this.options.pasteServiceUrl}):`, (error as Error).message);
             return null;
         }
     }
 
-    private formatErrorDump(error: Error, context: ErrorContext = {}): string {
-        let dump = [
-            `## YesImBot Error Dump\n\n`,
-            `**Timestamp:** ${new Date().toISOString()}\n\n`,
-            `### Error Details`,
-            `**Type:** ${error.name}`,
-            `**Message:** ${error.message}`,
-        ];
+    // 5. 极大地美化 formatErrorDump 方法
+    private formatErrorDump(error: Error, context: ErrorReportContext): string {
+        const dumpSections: string[] = [];
+
+        const packageJson = require("../../package.json");
+
+        // --- Header ---
+        dumpSections.push(
+            `# YesImBot Error Report\n`,
+            `**Error ID:** \`${context.errorId || "N/A"}\`\n`,
+            `**Timestamp (UTC):** \`${new Date().toISOString()}\`\n`,
+            `**Plugin Version:** \`${packageJson.version}\`\n`,
+            `---`
+        );
+
+        // --- Error Details ---
+        dumpSections.push(`## 🔴 Error Details\n`, `**Type:** \`${error.name}\`\n`, `**Message:** \`${error.message}\`\n`);
 
         if (error.stack) {
-            dump.push(...[
-                `**Stack Trace:**`,
-                `\n\n`,
-                `${error.stack}`,
-                `\n\n`,
-            ]);
+            dumpSections.push(`### Stack Trace:\n`, `\`\`\`typescript\n${error.stack}\n\`\`\``);
         }
 
-        if (context.session) {
-            dump.push(...[
-                `### Session Context`,
-                `**Platform:** ${context.session.platform}`,
-                `**User ID:** ${context.session.userId}`,
-                `**Channel ID:** ${context.session.channelId}`,
-                `**Guild ID:** ${context.session.guildId || 'N/A'}`,
-                `**Self ID:** ${context.session.selfId}`,
-                `\n`,
-            ]);
+        // --- System Information ---
+        dumpSections.push(
+            `\n---\n`,
+            `## ⚙️ System Information\n`,
+            `**Node.js Version:** \`${process.version}\`\n`,
+            `**Platform:** \`${process.platform} (${os.release()})\`\n`,
+            `**Architecture:** \`${process.arch}\`\n`,
+            `**CPU Cores:** \`${os.cpus().length}\`\n`,
+            `**Total Memory:** \`${(os.totalmem() / 1024 ** 3).toFixed(2)} GB\`\n`
+        );
+
+        // --- Session Context ---
+        if (context.koishiSession) {
+            const session = context.koishiSession;
+            dumpSections.push(
+                `\n---\n`,
+                `## 👥 Session Context\n`,
+                `**Platform:** \`${session.platform}\`\n`,
+                `**User ID:** \`${session.userId}\`\n`,
+                `**Channel ID:** \`${session.channelId}\`\n`,
+                `**Guild ID:** \`${session.guildId || "N/A"}\`\n`,
+                `**Self ID:** \`${session.selfId}\`\n`,
+                `**Message ID:** \`${session.messageId || "N/A"}\`\n`
+            );
+
+            // 谨慎包含原始消息内容，考虑敏感信息
+            if (this.options.includeFullSessionContent && session.content) {
+                dumpSections.push(`**Original Message Content (potentially sensitive):**\n`, `\`\`\`text\n${session.content}\n\`\`\``);
+            } else if (session.content) {
+                dumpSections.push(
+                    `**Original Message Content (first 100 chars, truncated):**\n`,
+                    `\`\`\`text\n${session.content.substring(0, 100)}${session.content.length > 100 ? "..." : ""}\n\`\`\``
+                );
+            }
         }
 
+        // --- Scenario Context ---
         if (context.scenario) {
-            dump.push(`### Scenario Context (Rendered or Raw)\n`);
-            if (context.scenario instanceof Scenario && typeof context.scenario.render === 'function') {
-                dump.push(...[
-                    `\n\n`,
-                    `${context.scenario.render()}`,
-                    `\n\n`,
-                ]);
+            dumpSections.push(`\n---\n`, `## 📜 Scenario Context\n`);
+            // 检查 Scenario 是否有 render 方法
+            if (context.scenario instanceof Scenario && typeof (context.scenario as any).render === "function") {
+                try {
+                    dumpSections.push(`\`\`\`markdown\n${(context.scenario as any).render()}\n\`\`\``);
+                } catch (e) {
+                    dumpSections.push(
+                        `*Failed to render scenario: ${(e as Error).message}*\n\`\`\`json\n${JSON.stringify(
+                            context.scenario,
+                            null,
+                            2
+                        )}\n\`\`\``
+                    );
+                }
             } else {
-                dump.push(...[
-                    `\n\n`,
-                    `json\n${JSON.stringify(context.scenario, null, 2)}`,
-                    `\n\n`,
-                ]);
+                dumpSections.push(`\`\`\`json\n${JSON.stringify(context.scenario, null, 2)}\n\`\`\``);
             }
         }
 
+        // --- LLM Response ---
         if (context.llmResponse) {
-            dump.push(`### LLM Response (if available)\n`);
-            if (typeof context.llmResponse === 'string') {
-                dump.push(...[
-                    `\n\n`,
-                    `${context.llmResponse}`,
-                    `\n\n`,
-                ]);
-            } else {
-                dump.push(...[
-                    `\n\n`,
-                    `json\n${JSON.stringify(context.llmResponse, null, 2)}`,
-                    `\n\n`,
-                ]);
+            dumpSections.push(`\n---\n`, `## 🤖 LLM Response\n`);
+            if (typeof context.llmResponse?.text === "string") {
+                dumpSections.push(`\`\`\`text\n${context.llmResponse.text}\n\`\`\``);
             }
+            dumpSections.push(`\n---\n`, `## Raw Response (if available)\n`);
+            dumpSections.push(`\`\`\`json\n${JSON.stringify(context.llmResponse, null, 2)}\n\`\`\``);
         }
 
-        if (context.additionalInfo) {
-            dump.push(...[
-                `### Additional Info\n`,
-                `\n\n`,
-                `json\n${JSON.stringify(context.additionalInfo, null, 2)}`,
-                `\n\n`,
-            ]);
+        // --- Additional Info ---
+        if (context.additionalInfo && Object.keys(context.additionalInfo).length > 0) {
+            dumpSections.push(
+                `\n---\n`,
+                `## ➕ Additional Information\n`,
+                `\`\`\`json\n${JSON.stringify(context.additionalInfo, null, 2)}\n\`\`\``
+            );
         }
 
-        return dump.join('\n');
+        // --- Footer ---
+        dumpSections.push(`\n---\n`, `*This report is generated by YesImBot's error handling middleware.*`);
+
+        return dumpSections.join("\n");
     }
 }
