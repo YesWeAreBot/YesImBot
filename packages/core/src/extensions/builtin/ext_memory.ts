@@ -1,160 +1,170 @@
+import { Context, Field, Query } from "koishi";
 import { z } from "zod";
+import { MemoryError } from "../../memory/MemoryError";
+import { MemoryService } from "../../memory/MemoryService";
+import { Message, MESSAGE_TABLE } from "../../types/model";
+import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Tool } from "../base";
 
-import { Memory } from "../../Memory";
-import { MESSAGE_TABLE } from "../../types/model";
-import { formatDate } from "../../utils";
-import { isEmpty } from "../../utils/string";
-import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
+// Helper to get MemoryService instance
+function getMemory(ctx: Context): MemoryService {
+    if (!ctx.memory) throw new Error("MemoryService not available on context.");
+    return ctx.memory;
+}
 
-export const AppendCoreMemory = Tool({
+// 1. Core Memory Append Tool
+export const CoreMemoryAppendTool = Tool({
     name: "core_memory_append",
-    description: "Append to the contents of core memory.",
+    description: "Appends new content to a specified sub-block of your core memory (persona or human).",
     parameters: z.object({
         inner_thoughts: INNER_THOUGHTS,
-        label: z.string().describe("Section of the memory to be edited (persona or human)."),
-        content: z.string().describe("Content to write to the memory."),
+        label: z.enum(["persona", "human"]).describe("The core memory sub-block to edit ('persona' or 'human')."),
+        content: z
+            .string()
+            .describe("The content to append. Each new piece of content should be a distinct thought or piece of information."),
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ label, content }, context) => {
-        const { koishiContext, koishiSession } = context;
-        if (isEmpty(content)) throw new Error("content is required");
-        const memory = Memory.getInstance(koishiContext);
-        if (memory) {
-            let result = await memory.appendCoreMemory(label, content);
-            return Success(result);
-        } else {
-            return Failed("Memory is not initialized.");
+        const { koishiContext } = context;
+        try {
+            const result = await getMemory(koishiContext).appendToCoreMemory(label, content);
+            return { success: true, message: result };
+        } catch (e: any) {
+            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
         }
     },
 });
 
-export const ReplaceCoreMemory = Tool({
+// 2. Core Memory Replace Tool
+export const CoreMemoryReplaceTool = Tool({
     name: "core_memory_replace",
-    description: "Replace the contents of core memory.",
+    description:
+        "Replaces existing content with new content in a specified sub-block of your core memory (persona or human). The old content must be an exact match.",
     parameters: z.object({
         inner_thoughts: INNER_THOUGHTS,
-        label: z.string().describe("Section of the memory to be edited (persona or human)."),
-        old_content: z.string().describe("String to replace. Must be an exact match."),
-        new_content: z.string().describe("Content to write to the memory. To delete memories, use an empty string."),
+        label: z.enum(["persona", "human"]).describe("The core memory sub-block to edit ('persona' or 'human')."),
+        old_content: z.string().describe("The exact content to be replaced."),
+        new_content: z.string().describe("The new content to replace the old content. If empty, the old content will be deleted."),
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ label, old_content, new_content }, context) => {
-        const { koishiContext, koishiSession } = context;
-        if (isEmpty(old_content)) throw new Error("old_content is required");
-        const memory = Memory.getInstance(koishiContext);
-        if (memory) {
-            let result = await memory.replaceCoreMemory(label, old_content, new_content);
-            return Success(result);
-        } else {
-            return Failed("Memory is not initialized.");
+        const { koishiContext } = context;
+        try {
+            const result = await getMemory(koishiContext).replaceInCoreMemory(label, old_content, new_content);
+            return { success: true, message: result };
+        } catch (e: any) {
+            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
         }
     },
 });
 
-export const SearchConversation = Tool({
-    name: "conversation_search",
-    description: "Search prior conversation history using case-insensitive string matching.",
-    parameters: z.object({
-        inner_thoughts: INNER_THOUGHTS,
-        query: z.string().describe("String to search for."),
-        page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
-        request_heartbeat: REQUEST_HEARTBEAT,
-    }),
-    execute: async ({ query, page }, context) => {
-        const { koishiContext, koishiSession } = context;
-        const channel_id = koishiSession.channelId;
-
-        const messages = await koishiContext.database.get(MESSAGE_TABLE, {
-            channel: {
-                id: channel_id,
-            },
-            content: { $regex: query },
-        });
-        if (messages.length === 0) {
-            return Failed("No messages found.");
-        }
-        let result = [
-            `Found ${messages.length} messages:`,
-            ...messages.map((message) => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`),
-        ].join("\n");
-        return Success(result);
-    },
-});
-
-export const SearchConversationWithDate = Tool({
-    name: "conversation_search_date",
-    description: "Search prior conversation history using a date range.",
-    parameters: z.object({
-        inner_thoughts: INNER_THOUGHTS,
-        start_date: z.string().describe("The start of the date range to search, in the format 'YYYY-MM-DD HH:mm:ss'."),
-        end_date: z.string().describe("The end of the date range to search, in the format 'YYYY-MM-DD HH:mm:ss'."),
-        page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
-        request_heartbeat: REQUEST_HEARTBEAT,
-    }),
-    execute: async ({ start_date, end_date, page }, context) => {
-        const { koishiContext, koishiSession } = context;
-        const channel_id = koishiSession.channelId;
-
-        const start = new Date(start_date);
-        const end = new Date(end_date);
-
-        const messages = await koishiContext.database.get(MESSAGE_TABLE, {
-            channel: {
-                id: channel_id,
-            },
-            timestamp: { $gte: start, $lte: end },
-        });
-
-        if (messages.length === 0) {
-            return Failed("No messages found in the specified date range.");
-        }
-        let result = [
-            "Found ${messages.length} messages in the specified date range:",
-            ...messages.map((message) => `[${formatDate(message.timestamp)} ${message.sender.name}<${message.sender.id}>] ${message.content}`),
-        ].join("\n");
-        return Success(result);
-    },
-});
-
-export const InsertArchivalMemory = Tool({
+// 3. Archival Memory Insert Tool
+export const ArchivalMemoryInsertTool = Tool({
     name: "archival_memory_insert",
-    description: "Add to archival memory. Make sure to phrase the memory contents such that it can be easily queried later.",
+    description: "Stores new information into your archival memory for long-term storage and later retrieval.",
     parameters: z.object({
         inner_thoughts: INNER_THOUGHTS,
-        content: z.string().describe("Content to write to the memory."),
+        content: z
+            .string()
+            .describe(
+                "The information to store in archival memory. This can be reflections, insights, facts, or any detailed information."
+            ),
+        metadata: z.record(z.any()).optional().describe("Optional key-value pairs to categorize or add context to the memory entry."),
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
-    execute: async ({ content }, context) => {
-        const { koishiContext, koishiSession } = context;
-        if (isEmpty(content)) throw new Error("content is required");
-        const memory = Memory.getInstance(koishiContext);
-        if (memory) {
-            let result = await memory.insertArchivalMemory(content);
-            return Success(result);
-        } else {
-            return Failed("Memory is not initialized.");
+    execute: async ({ content, metadata }, context) => {
+        const { koishiContext } = context;
+        try {
+            const entry = await getMemory(koishiContext).storeInArchivalMemory(content, metadata);
+            return { success: true, message: `Content stored in archival memory with ID: ${entry.id}.`, entry_id: entry.id };
+        } catch (e: any) {
+            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
         }
     },
 });
 
-export const SearchArchivalMemory = Tool({
+// 4. Archival Memory Search Tool
+export const ArchivalMemorySearchTool = Tool({
     name: "archival_memory_search",
-    description: "Search archival memory using semantic (embedding-based) search.",
+    description: "Searches your archival memory for entries matching a query. Returns a list of matching entries.",
     parameters: z.object({
         inner_thoughts: INNER_THOUGHTS,
-        query: z.string().describe("String to search for."),
-        page: z.number().optional().describe("Allows you to page through results. Only use on a follow-up query. Defaults to 0 (first page)."),
-        start: z.number().optional().describe(" Starting index for the search results. Defaults to 0."),
+        query: z.string().describe("The search query to find relevant information in archival memory."),
+        page: z.number().int().positive().optional().describe("The page number for pagination of results (default: 1)."),
+        pageSize: z.number().int().positive().max(50).optional().describe("Number of results per page (default: 10, max: 50)."),
+        filterMetadata: z.record(z.any()).optional().describe("Key-value pairs to filter entries by their metadata."),
         request_heartbeat: REQUEST_HEARTBEAT,
     }),
-    execute: async ({ query, page, start }, context) => {
-        const { koishiContext, koishiSession } = context;
-        const memory = Memory.getInstance(koishiContext);
-        if (memory) {
-            let result = await memory.searchArchivalMemory(query, page, start);
-            return Success(result);
-        } else {
-            return Failed("Memory is not initialized.");
+    execute: async ({ query, page, pageSize, filterMetadata }, context) => {
+        const { koishiContext } = context;
+        try {
+            const searchResult = await getMemory(koishiContext).archivalStore.search(query, {
+                page: page,
+                pageSize: pageSize,
+                filterMetadata: filterMetadata,
+            });
+            const formattedResults = searchResult.results.map((entry) => getMemory(koishiContext).archivalStore.renderEntryText(entry));
+            return {
+                success: true,
+                total_found: searchResult.total,
+                results_count: searchResult.results.length,
+                page: page || 1,
+                results: formattedResults,
+            };
+        } catch (e: any) {
+            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
+        }
+    },
+});
+
+// 5. Conversation Search Tool (Recall Memory)
+export const ConversationSearchTool = Tool({
+    name: "conversation_search",
+    description: "Searches your entire message history (recall memory) for past interactions based on a query.",
+    parameters: z.object({
+        inner_thoughts: INNER_THOUGHTS,
+        query: z.string().describe("The search term to find in past messages. Supports simple keyword matching."),
+        limit: z.number().int().positive().max(25).optional().describe("Maximum number of messages to return (default: 5, max: 25)."),
+        channel_id: z.string().optional().describe("Filter by a specific channel ID."),
+        user_id: z.string().optional().describe("Filter by messages sent by a specific user ID (not the bot)."),
+        request_heartbeat: REQUEST_HEARTBEAT,
+    }),
+    execute: async ({ query, limit, channel_id, user_id }, context) => {
+        const { koishiContext } = context;
+        try {
+            const whereClauses: Query.Expr<Message>[] = []; // Message is your database model type for messages
+
+            // Basic text search across 'content'
+            // For more advanced search, you might need full-text search capabilities in your DB
+            if (query) {
+                whereClauses.push({ content: { $regex: new RegExp(query, "i") } });
+            }
+            if (channel_id) {
+                whereClauses.push({ channel: { id: channel_id } });
+            }
+            if (user_id) {
+                whereClauses.push({ sender: { id: user_id } });
+            }
+            // Combine clauses with $and if multiple are present
+            const finalQuery: Query<Message> = whereClauses.length > 1 ? { $and: whereClauses } : whereClauses[0] || {};
+
+            const messages = await koishiContext.database
+                .select(MESSAGE_TABLE)
+                .where(finalQuery)
+                .limit(limit)
+                .orderBy("timestamp", "desc")
+                .execute();
+
+            if (!messages || messages.length === 0) {
+                return { success: true, message: "No matching messages found in recall memory.", results: [] };
+            }
+
+            const formattedResults = messages.map(
+                (msg) => `[${new Date(msg.timestamp).toISOString()}] ` + `${msg.sender.name || msg.sender.id}: ${msg.content}`
+            );
+            return { success: true, results_count: messages.length, results: formattedResults };
+        } catch (e: any) {
+            koishiContext.logger.error(`Conversation search failed: ${e.message}`);
+            return { success: false, error: "Failed to search conversation history." };
         }
     },
 });

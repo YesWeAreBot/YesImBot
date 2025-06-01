@@ -1,5 +1,5 @@
 import type { ChatProvider, EmbedProvider, ImageProvider } from "@xsai-ext/shared-providers";
-import { Agent as HTTPAgent, ProxyAgent, fetch as ufetch } from "undici";
+import { ProxyAgent, fetch as ufetch } from "undici";
 
 import {
     createAnthropic,
@@ -16,8 +16,9 @@ import {
     createZhipu,
 } from "../dependencies/xsai";
 
-import { ModelSetting, Provider as ProviderConfig } from "./config";
+import { isNotEmpty } from "../utils";
 import { ChatModel } from "./chat";
+import { ModelSetting, Provider as ProviderConfig } from "./config";
 import { EmbedModel } from "./embed";
 
 export class Provider {
@@ -27,9 +28,8 @@ export class Provider {
     private imageProvider: ImageProvider;
 
     constructor(private config: ProviderConfig, private setting: ModelSetting) {
-        const proxy = config.Proxy ? new ProxyAgent(config.Proxy) : new HTTPAgent();
         this.fetch = (async (input, init) => {
-            init = { ...init, dispatcher: proxy };
+            if (isNotEmpty(config.Proxy)) init = { ...init, dispatcher: new ProxyAgent(config.Proxy) };
             return await ufetch(input, init);
         }) as unknown as typeof globalThis.fetch;
 
@@ -77,14 +77,14 @@ export class Provider {
         }
     }
 
-    public getChatModel(index: number) : ChatModel {
+    public getChatModel(index: number): ChatModel {
         const model = this.config.Models[index];
         return new ChatModel(this.chatProvider, model, this.setting, this.fetch);
     }
 
     public getEmbedModel() {
         // 具有嵌入能力的模型
-        const model = this.config.Models.find((model) => model.Ability & 1 << 4);
+        const model = this.config.Models.find((model) => model.Ability & (1 << 4));
         if (!model) {
             throw new Error("没有找到具有嵌入能力的模型");
         }

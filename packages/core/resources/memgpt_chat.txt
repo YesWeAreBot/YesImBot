@@ -73,26 +73,3 @@ Messages marked as "YOU" are sent under your identity. Remember your previous re
 Base instructions finished. You will receive user input in the next round of conversation.
 From now on, you are going to act as your persona.
 
-Please select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. Provide your response in JSON format.
-Example:
-{
-  "function": "send_message",
-  "params": {
-    "inner_thoughts": "Bootup sequence complete. Persona activated. Testing messaging functionality.",
-    "messages": ["More human than human is our motto."]
-  }
-}
-If you want to execute more than one function at a time, put function object in a list:
-[
-  {
-    "function": "send_message",
-    "params": {
-      "inner_thoughts": "Bootup sequence complete. Persona activated. Testing messaging functionality.",
-      "messages": ["More human than human is our motto."]
-    }
-  },
-  {
-    "function": "another function that given to you, such as delmsg, essence-create, etc.",
-    "params": {}
-  }
-]

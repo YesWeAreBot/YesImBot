@@ -32,7 +32,7 @@ export const Config: Schema<Config> = Schema.object({
             command: Schema.string().description("MCP 启动命令"),
             args: Schema.array(Schema.string()).role("table").description("MCP 启动参数"),
             env: Schema.dict(String).role("table").description("MCP 环境变量"),
-        })
+        }).collapse()
     ).description("MCP服务器列表，可使用 `编辑JSON` 添加或删除服务器"),
     uvSettings: Schema.object({
         autoDownload: Schema.boolean().experimental().description("是否自动下载 UVX").default(true),

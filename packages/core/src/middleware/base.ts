@@ -1,9 +1,7 @@
-import { Context, h, Session } from "koishi";
+import { Context, Session } from "koishi";
 import type { GenerateTextResult } from "xsai";
 
-import { Memory } from "../Memory";
 import { Scenario } from "../Scenario";
-import { Message } from "../types/model";
 
 /**
  * 会话状态枚举
