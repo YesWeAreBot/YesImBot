@@ -1,8 +1,9 @@
 import { Computed, Schema } from "koishi";
 import { ModelSetting, Provider } from "./adapters/config";
+import { defaultCompressionPrompt } from "./memory/MemoryBlock";
 
 interface BlockConfig {
-    Limit: number;
+    Limit?: number;
     FilePathToBind: string;
 }
 
@@ -10,6 +11,25 @@ interface BlockConfig {
 export interface Config {
     Memory: {
         Block: Record<string, BlockConfig>;
+        UseModel?: [number, number];
+        Compression: {
+            CompressionWhen?: "Lines" | "Characters" | "IntervalMessages" | "IntervalMinutes";
+            Lines?: number; // 按行数阈值触发
+            Characters?: number; // 按字符数阈值触发
+            IntervalMessages?: number; // 按消息频率触发
+            IntervalMinutes?: number; // 按时间间隔触发
+            CustomPrompt?: string; // 压缩总结的自定义提示词
+            // Add a field to specify which core blocks should be compressed
+            CompressibleBlocks?: string[]; // 例如: ['human', 'context']
+        };
+        Extract: {
+            ExtractWhen?: number;
+            CustomPrompt?: string;
+        };
+        Backup: {
+            Enabled: boolean;
+            BackupPath: string;
+        };
     };
     MemorySlot: {
         SlotContains: string[][];
@@ -26,7 +46,7 @@ export interface Config {
     Provider: Provider[];
     ModelSetting: ModelSetting;
     Chat: {
-        UseModel: Array<Array<number>>;
+        UseModel: [number, number][];
         MaxHeartbeat: number;
         WordsPerSecond: number;
     };
@@ -43,21 +63,6 @@ export interface Config {
 
 // 主配置 Schema
 export const Config: Schema<Config> = Schema.object({
-    Memory: Schema.object({
-        Block: Schema.dict(
-            Schema.object({
-                Limit: Schema.number().min(0).default(5000).description("长度限制"),
-                FilePathToBind: Schema.path({
-                    allowCreate: true,
-                    filters: ["directory", { name: "text", extensions: ["txt"] }],
-                })
-                    .required()
-                    .description("文件路径"),
-            }).description("记忆类型")
-        )
-            .role("table")
-            .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
-    }),
     MemorySlot: Schema.object({
         SlotContains: Schema.array(Schema.array(String).role("table")).description("记忆槽位标识符列表，用于区分不同的对话上下文"),
         SlotSize: Schema.number().default(20).min(1).max(100).description("每个记忆槽位保存的最大消息数量"),
@@ -79,11 +84,52 @@ export const Config: Schema<Config> = Schema.object({
             Schema.tuple([Schema.number().min(0), Schema.number().min(0)])
                 .default([0, 0])
                 .description("第几个提供商的第几个模型，从 0 开始计数")
-        ).description("对话使用的模型"),
+        ).description("对话使用的模型") as Schema,
         MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
         WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
     }).description("对话行为配置"),
-
+    Memory: Schema.object({
+        Block: Schema.dict(
+            Schema.object({
+                Limit: Schema.number().min(0).default(5000).description("长度限制"),
+                FilePathToBind: Schema.path({
+                    allowCreate: true,
+                    filters: ["directory", { name: "text", extensions: ["txt"] }],
+                })
+                    .required()
+                    .description("文件路径"),
+            }).description("记忆类型")
+        )
+            .role("table")
+            .default({
+                human: { Limit: 5000, FilePathToBind: "data/yesimbot/memory/human.txt" },
+                persona: { Limit: 2000, FilePathToBind: "data/yesimbot/memory/persona.txt" },
+            })
+            .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
+        UseModel: Schema.tuple([Number, Number]).default([0, 0]).description("压缩记忆使用的模型") as Schema,
+        Compression: Schema.object({
+            // SummaryWhen: Schema.number(),
+            Lines: Schema.number().min(0).default(500).description("记忆块内容超过多少行时触发压缩汇总 (0为禁用)"),
+            Characters: Schema.number().min(0).default(20000).description("记忆块内容超过多少字符时触发压缩汇总 (0为禁用)"),
+            IntervalMessages: Schema.number().min(0).default(0).description("每追加多少条消息后触发压缩汇总 (0为禁用)"),
+            IntervalMinutes: Schema.number().min(0).default(0).description("每间隔多少分钟后触发压缩汇总 (0为禁用)"),
+            CompressibleBlocks: Schema.array(String).default(["human"]).description("哪些 core memory block 启用压缩"),
+            CustomPrompt: Schema.string()
+                .default(defaultCompressionPrompt)
+                .role("textarea", { rows: [2, 4] })
+                .description("自定义提示词"),
+        }).description("记忆压缩配置"),
+        Extract: Schema.object({
+            // ExtractWhen: Schema.number(),
+            CustomPrompt: Schema.string()
+                .role("textarea", { rows: [2, 4] })
+                .description("自定义提示词"),
+        }).description("记忆提取配置"),
+        Backup: Schema.object({
+            Enabled: Schema.boolean().default(true),
+            BackupPath: Schema.string().default("data/yesimbot/memory/.backup"),
+        }),
+    }).description("记忆设置"),
     // 保留备用。记忆方案：["embedding模型与RAG，结合koishi的database做向量库", "定期发送消息给LLM，总结聊天记录，并塞到后续的请求prompt中", "两者结合，定期发送消息给LLM，总结聊天记录，把总结文本向量化后存入向量库，有请求时把输入向量化和向量库内的总结做比对，提取出相关的总结塞到prompt中"]
     // 向量库的设想：为每个向量添加时间戳，定期检查并删除超过一定时间的向量；记录每个向量的使用频率，删除使用频率低的向量；查询时，提升更近时间存入的向量的权重 // 遗忘机制 & 减少向量库的大小
     // 多模态向量库：图像和文本嵌入模型，需要CLIP等多模态模型支持/文本和图像对齐??

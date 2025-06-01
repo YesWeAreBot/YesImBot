@@ -50,7 +50,7 @@ export class LLMProcessingMiddleware implements Middleware {
 
             while (retry > 0) {
                 try {
-                    const { model } = this.chatModelSwitcher.getModel(); // 获取当前适配器
+                    const model = this.chatModelSwitcher.getModel(); // 获取当前适配器
                     if (!model) {
                         // 如果适配器切换器在还有重试次数的情况下，已经没有可用的适配器了
                         // 这可能意味着适配器列表为空，或者所有适配器都被临时禁用

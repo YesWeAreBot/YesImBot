@@ -2,6 +2,8 @@ import fs from "fs";
 import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { Context, Logger } from "koishi";
 import path from "path";
+import { ChatModel } from "../adapters/chat";
+import { Config } from "../config"; // 引入Config类型
 import { MEMORY_TABLE, MemoryBlockData } from "../types/model";
 import { isEmpty } from "../utils/string";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
@@ -298,6 +300,67 @@ export class MemoryBlock {
         await this.stopWatching();
     }
 
+    // New method for compression
+    public async compress(
+        ctx: Context, // Pass the full context to access services like chat
+        chatModel: ChatModel,
+        compressionConfig: Config["Memory"]["Compression"],
+        backupConfig: Config["Memory"]["Backup"]
+    ): Promise<void> {
+        const logger = ctx.logger(MemoryBlock.name + ".Compression");
+        logger.info(`Attempting to compress ${this._label}. Original content: ${this._content.length} lines, ${this.currentSize} chars.`);
+
+        // 1. Backup logic
+        if (backupConfig.Enabled) {
+            const backupDir = path.resolve(backupConfig.BackupPath);
+            // Format timestamp: YYYY-MM-DDTHH_MM_SS (remove invalid chars for filename)
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-").replace(/[TZ]/g, "_").substring(0, 19);
+            const backupFileName = `${this._label}_${timestamp}.txt`;
+            const backupFilePath = path.join(backupDir, backupFileName);
+
+            try {
+                if (!fs.existsSync(backupDir)) {
+                    await mkdir(backupDir, { recursive: true });
+                }
+                await writeFile(backupFilePath, this._content.join("\n"), "utf-8");
+                logger.info(`Backed up ${this._label} to ${backupFilePath} before compression.`);
+            } catch (error) {
+                logger.error(`Failed to backup ${this._label} to ${backupFilePath}: ${error.message}`);
+                // Don't throw, compression can still proceed.
+            }
+        }
+
+        // 2. Prepare prompt for LLM
+        const memoriesContent = this._content.join("\n");
+        const compressionPrompt = compressionConfig.CustomPrompt || defaultCompressionPrompt;
+        const fullPrompt = `${compressionPrompt}\n\nMemories:\n${memoriesContent}`;
+
+        // 3. Call LLM
+        try {
+            if (!chatModel) {
+                throw new MemoryError(`LLM model not found for compression`, { label: this._label });
+            }
+
+            logger.info(`Sending ${memoriesContent.length} chars to LLM for compression of ${this._label}...`);
+            const { text } = await chatModel.chat([{ role: "user", content: fullPrompt }]);
+            const compressedContent = text.trim();
+
+            if (isEmpty(compressedContent)) {
+                logger.warn(`LLM returned empty summary for ${this._label}. Keeping original content.`);
+                return; // Don't replace with empty content
+            }
+
+            // 4. Update _content and persist
+            this._content = [compressedContent]; // Replace all lines with the single summarized line
+            this.lastModifiedInMemory = new Date();
+            await this.persistToStoreAndFile(); // This will save to DB and file system
+            logger.info(`Successfully compressed ${this._label}. New content: ${this._content.length} lines, ${this.currentSize} chars.`);
+        } catch (error) {
+            logger.error(`Failed to compress ${this._label} using LLM: ${error.message}`);
+            throw new MemoryError(`Compression failed for ${this._label}`, { error: error.message, label: this._label });
+        }
+    }
+
     static async getOrCreate(
         ctx: Context,
         identifier: { label: string; id?: string }, // Label is required for lookup/creation logic
@@ -349,3 +412,34 @@ export class MemoryBlock {
         }
     }
 }
+
+
+export const defaultCompressionPrompt = `记忆压缩汇总的基本原则与要求
+
+1. 人物核心特征优先
+   - 保留每个人的身份、特长、性格、重要习惯，去掉重复或琐碎的行为记录（如某次聊天内容）。
+   - 示例：
+      - ✅ 保留 "小软酱是化学博士，开发AnyChem，数学物理全能，性格傲娇"
+      - ❌ 删除 "今天和小软酱玩化学游戏，她纠正了我"（非核心特征）
+2. 合并同类信息
+   - 同一人物的多个属性尽量合并为一句，避免分散。
+   - 示例：
+      - 原句：
+         - "马克柴喜欢语文、数学、英语和计算机"
+         - "马克柴喜欢二次元文化，玩过东方Project"
+      - 合并为：
+         - "马克柴擅长文科理科，爱好二次元（东方Project）"
+3. 时间敏感性信息简化
+   - 具体日期/事件（如考试时间）若无长期意义，可模糊化或删除。
+   - 示例：
+      - ❌ "2025年5月28日数学周测" → ✅ "马克柴近期有数学考试焦虑"
+4. 群体行为与互动精简
+   - 群聊中的临时互动（如"今天群里讨论XX"）若无特殊意义，直接删除。
+   - 保留长期关系（如"群小草是赞助商"）或标志性事件（如"茴香豆称我为骗子"）。
+5. 避免主观评价
+   - 删除纯情绪表达（如"很讨厌""让我生气"），除非反映人物性格（如"AAA气泡鱼在意被遗忘"）。
+6. 标准化表述
+   - 统一称呼（如全用"马克柴"或全用"mkc"），避免混用。
+   - 用简洁句式（如"人物A是XX，擅长YY，性格ZZ"）。
+
+压缩后依然保持每行一条记忆，每一条记忆是一个完整的句子。`

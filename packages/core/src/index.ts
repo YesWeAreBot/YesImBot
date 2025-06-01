@@ -39,7 +39,7 @@ export default class YesImBot extends Service {
             };
             coreBlockDefaults[label] = blockConfig;
         }
-        ctx.plugin(MemoryService, { coreBlockDefaults });
+        ctx.plugin(MemoryService, { coreBlockDefaults, ...config.Memory });
 
         ctx.on("ready", async () => {
             // 注册指令

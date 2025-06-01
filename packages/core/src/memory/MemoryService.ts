@@ -1,10 +1,12 @@
 import { Context, Service } from "koishi";
+import { Config } from "../config";
 import { MEMORY_TABLE } from "../types/model";
 import { formatDate } from "../utils";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
 import { ArchivalEntry, ArchivalSearchResult, IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
 import { MemoryBlock } from "./MemoryBlock";
 import { MemoryError } from "./MemoryError";
+import { ChatModel } from "../adapters/chat";
 
 export interface CoreMemoryBlockConfig {
     limit?: number;
@@ -17,7 +19,17 @@ export interface MemoryServiceConfig {
         human?: CoreMemoryBlockConfig;
         [key: string]: CoreMemoryBlockConfig | undefined;
     };
+    Compression?: Config["Memory"]["Compression"];
+    Extract?: Config["Memory"]["Extract"];
+    Backup?: Config["Memory"]["Backup"];
+    UseModel?: Config["Memory"]["UseModel"];
+
     // Future: Allow selection of IMemoryBlockStore and IArchivalMemoryStore implementations via config
+}
+
+interface MemoryBlockCompressionState {
+    messageCount: number; // 用于 IntervalMessages 计数
+    lastCompressionTime: Date; // 用于 IntervalMinutes 计数
 }
 
 declare module "koishi" {
@@ -32,57 +44,70 @@ export class MemoryService extends Service {
     private readonly memoryBlockStore: IMemoryBlockStore;
     public readonly archivalStore: IArchivalMemoryStore;
 
-    constructor(ctx: Context, config: MemoryServiceConfig = {}) {
+    private _compressionStates: Map<string, MemoryBlockCompressionState> = new Map();
+    private _intervalCompressionTimer: NodeJS.Timeout | null = null;
+
+    private chatModel: ChatModel;
+
+    constructor(ctx: Context, public readonly config: MemoryServiceConfig = {}) {
         super(ctx, "memory", true);
+
+        ctx.model.extend(
+            MEMORY_TABLE,
+            {
+                id: "string",
+                label: "string",
+                content: "array",
+                limit: "integer",
+            },
+            {
+                primary: ["id", "label"],
+                autoInc: false,
+            }
+        );
 
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
+        ctx.logger.info("MemoryService initialized.");
+    }
 
-        ctx.on("ready", async () => {
-            ctx.model.extend(
-                MEMORY_TABLE,
-                {
-                    id: "string",
-                    label: "string",
-                    content: "array",
-                    limit: "integer",
-                },
-                {
-                    primary: ["id", "label"],
-                    autoInc: false,
-                }
-            );
+    protected async start() {
+        this.ctx.logger.info("Starting MemoryService and initializing core blocks...");
 
-            ctx.logger.info("Starting MemoryService and initializing core blocks...");
-            // Initialize 'persona' and 'human' core blocks as per requirements
-            const personaConfig = config.coreBlockDefaults?.persona || {};
-            await this.getOrCreateCoreMemoryBlock("persona", {
-                limit: personaConfig.limit ?? 2000,
-                initialValue: personaConfig.initialValue ?? ["Persona not yet defined."],
-                filePathToBind: personaConfig.filePathToBind,
+        // 确保所有在配置中指定的或默认的核心块被加载/创建
+        const allBlockLabelsToInit = new Set<string>();
+        allBlockLabelsToInit.add("persona");
+        allBlockLabelsToInit.add("human");
+        for (const label in this.config.coreBlockDefaults) {
+            allBlockLabelsToInit.add(label);
+        }
+
+        for (const label of allBlockLabelsToInit) {
+            const blockConfig = this.config.coreBlockDefaults?.[label] || {};
+            await this.getOrCreateCoreMemoryBlock(label, {
+                limit: blockConfig.limit ?? 5000,
+                initialValue: blockConfig.initialValue,
+                filePathToBind: blockConfig.filePathToBind,
             });
 
-            const humanConfig = config.coreBlockDefaults?.human || {};
-            await this.getOrCreateCoreMemoryBlock("human", {
-                limit: humanConfig.limit ?? 1000,
-                initialValue: humanConfig.initialValue ?? ["User information not yet available."],
-                filePathToBind: humanConfig.filePathToBind,
+            // 为所有核心块初始化压缩状态
+            this._compressionStates.set(label, {
+                messageCount: 0,
+                lastCompressionTime: new Date(),
             });
-            this.ctx.logger.info('Core blocks "persona" and "human" ensured.');
+            this.ctx.logger.debug(`Initialized compression state for block "${label}".`);
+        }
+        this.ctx.logger.info("All core blocks ensured to be loaded/created.");
 
-            for (let label of Object.keys(config.coreBlockDefaults)) {
-                if (label === "persona" || label === "human") continue;
-
-                const blockConfig = config.coreBlockDefaults[label];
-                await this.getOrCreateCoreMemoryBlock(label, {
-                    limit: blockConfig.limit ?? 1000,
-                    initialValue: blockConfig.initialValue ?? ["This selection not yet available."],
-                    filePathToBind: blockConfig.filePathToBind,
-                });
-            }
-        });
-
-        ctx.logger.info("Initialized.");
+        // 设置定时任务，如果配置了按时间间隔压缩
+        const intervalMinutes = this.config.Compression?.IntervalMinutes ?? 0;
+        if (intervalMinutes > 0) {
+            this._intervalCompressionTimer = setInterval(async () => {
+                this.ctx.logger.debug(`[Compression] Running scheduled check for all compressible blocks.`);
+                await this._triggerTimedCompression();
+            }, intervalMinutes * 60 * 1000);
+            this.ctx.logger.info(`[Compression] Scheduled compression check every ${intervalMinutes} minutes.`);
+        }
     }
 
     public async getOrCreateCoreMemoryBlock(label: string, customConfig: CoreMemoryBlockConfig = {}): Promise<MemoryBlock> {
@@ -126,13 +151,25 @@ export class MemoryService extends Service {
     }
 
     public async appendToCoreMemory(label: string, content: string): Promise<string> {
-        if (label !== "persona" && label !== "human") {
-            throw new MemoryError(`Core memory operations are restricted to 'persona' and 'human' blocks. Attempted on: '${label}'.`);
+        const compressibleBlocks = this.config.Compression?.CompressibleBlocks || [];
+        // 允许向 'persona', 'human' 或任何配置中明确标记为可压缩的块追加内容。
+        if (label !== "persona" && label !== "human" && !compressibleBlocks.includes(label)) {
+            throw new MemoryError(
+                `Core memory operations are restricted to 'persona', 'human', and explicitly configured compressible blocks. Attempted on: '${label}'.`
+            );
         }
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.append(content);
         this.lastModified = new Date();
         this.ctx.logger.info(`Appended to core memory "${label}".`);
+
+        // 更新消息计数并检查是否需要触发压缩
+        const state = this._compressionStates.get(label);
+        if (state && compressibleBlocks.includes(label)) {
+            // 仅对可压缩块更新状态
+            state.messageCount++;
+            await this._checkAndTriggerCompression(label);
+        }
         return `Successfully appended to core memory block <${label}>.`;
     }
 
@@ -148,14 +185,11 @@ export class MemoryService extends Service {
     }
 
     public async getCoreMemoryContentForPrompt(): Promise<string> {
-        // const personaBlock = this.getCoreMemoryBlock("persona");
-        // const humanBlock = this.getCoreMemoryBlock("human");
-
         const extraBlocks = [...this.coreMemoryBlocks.values()];
 
         const blockContent = extraBlocks.map((mb) => {
             return [
-                `<${mb.label} limit="${mb.currentSize}/${mb.limit} lastModified="${formatDate(mb.lastModified)}">`,
+                `<${mb.label} limit="${mb.currentSize}/${mb.limit}" lastModified="${formatDate(mb.lastModified)}">`,
                 ...mb.content,
                 `</${mb.label}>`,
             ].join("\n");
@@ -198,12 +232,136 @@ export class MemoryService extends Service {
         }
     }
 
+    public setChatModel(model: ChatModel) {
+        this.chatModel = model;
+    }
+
+    // 新增：检查并触发压缩（非定时）
+    private async _checkAndTriggerCompression(label: string): Promise<void> {
+        const compressionConfig = this.config.Compression;
+        const block = this.getCoreMemoryBlock(label);
+        const state = this._compressionStates.get(label);
+
+        // 如果未配置压缩、块或状态不存在，或该块不在可压缩列表中，则跳过
+        if (!compressionConfig?.CompressibleBlocks?.includes(label) || !block || !state) {
+            return;
+        }
+
+        const triggerWhen = compressionConfig.CompressionWhen;
+        let shouldCompress = false;
+
+        this.ctx.logger.debug(
+            `[Compression] Checking ${label} for compression. Current: Lines=${block.content.length}, Chars=${block.currentSize}, Msgs=${state.messageCount}`
+        );
+
+        switch (triggerWhen) {
+            case "Lines":
+                if (compressionConfig.Lines > 0 && block.content.length >= compressionConfig.Lines) {
+                    shouldCompress = true;
+                    this.ctx.logger.info(
+                        `[Compression] ${label} triggered by Lines threshold (${block.content.length}/${compressionConfig.Lines}).`
+                    );
+                }
+                break;
+            case "Characters":
+                if (compressionConfig.Characters > 0 && block.currentSize >= compressionConfig.Characters) {
+                    shouldCompress = true;
+                    this.ctx.logger.info(
+                        `[Compression] ${label} triggered by Characters threshold (${block.currentSize}/${compressionConfig.Characters}).`
+                    );
+                }
+                break;
+            case "IntervalMessages":
+                if (compressionConfig.IntervalMessages > 0 && state.messageCount >= compressionConfig.IntervalMessages) {
+                    shouldCompress = true;
+                    this.ctx.logger.info(
+                        `[Compression] ${label} triggered by IntervalMessages threshold (${state.messageCount}/${compressionConfig.IntervalMessages}).`
+                    );
+                }
+                break;
+            default:
+                break; // IntervalMinutes 由 _triggerTimedCompression 处理
+        }
+
+        if (shouldCompress) {
+            await this._performCompression(label, block, state);
+        }
+    }
+
+    // 新增：触发定时压缩
+    private async _triggerTimedCompression(): Promise<void> {
+        const compressionConfig = this.config.Compression;
+        if (!compressionConfig || !compressionConfig.IntervalMinutes || compressionConfig.IntervalMinutes <= 0) {
+            return;
+        }
+
+        for (const label of compressionConfig.CompressibleBlocks || []) {
+            const block = this.getCoreMemoryBlock(label);
+            const state = this._compressionStates.get(label);
+
+            if (!block || !state) continue;
+
+            const timeDiffMinutes = (new Date().getTime() - state.lastCompressionTime.getTime()) / (1000 * 60);
+
+            // 仅当 CompressionWhen 为 IntervalMinutes 时，才响应定时触发
+            if (compressionConfig.CompressionWhen === "IntervalMinutes" && timeDiffMinutes >= compressionConfig.IntervalMinutes) {
+                this.ctx.logger.info(
+                    `[Compression] ${label} triggered by IntervalMinutes threshold (${timeDiffMinutes.toFixed(1)}/${
+                        compressionConfig.IntervalMinutes
+                    } mins).`
+                );
+                await this._performCompression(label, block, state);
+            }
+        }
+    }
+
+    // 新增：执行实际的压缩操作
+    private async _performCompression(label: string, block: MemoryBlock, state: MemoryBlockCompressionState): Promise<void> {
+        const compressionConfig = this.config.Compression;
+        const backupConfig = this.config.Backup;
+        const modelConfig = this.config.UseModel; // 使用 MemoryServiceConfig 中的 UseModel
+
+        if (!compressionConfig || !modelConfig || !backupConfig) {
+            this.ctx.logger.error(`[Compression] Missing configuration for compression for block ${label}. Skipping compression.`);
+            return;
+        }
+
+        try {
+            // 调用 MemoryBlock 的 compress 方法
+            await block.compress(this.ctx, this.chatModel, compressionConfig, backupConfig);
+            // 压缩成功后，重置状态
+            state.messageCount = 0;
+            state.lastCompressionTime = new Date();
+            this.ctx.logger.info(`[Compression] Successfully compressed and reset state for block ${label}.`);
+        } catch (error) {
+            this.ctx.logger.error(`[Compression] Failed to compress block ${label}: ${error.message}`);
+            // 压缩失败不阻止后续操作，但会记录错误。状态不重置，以便下次检查时可能再次触发。
+        }
+    }
+
+    /**
+     * 提供一个方法供外部调用
+     * @param label
+     */
+    public async compression(label: string): Promise<void> {
+        const block = this.getCoreMemoryBlock(label);
+        const state = this._compressionStates.get(label);
+
+        await this._performCompression(label, block, state);
+    }
+
     protected async stop() {
         this.ctx.logger.info("Stopping MemoryService...");
+        if (this._intervalCompressionTimer) {
+            clearInterval(this._intervalCompressionTimer);
+            this._intervalCompressionTimer = null;
+            this.ctx.logger.info("[Compression] Stopped interval compression timer.");
+        }
         for (const block of this.coreMemoryBlocks.values()) {
             await block.disposeFileWatcher().catch((e) => this.ctx.logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
         }
         this.coreMemoryBlocks.clear();
+        this._compressionStates.clear(); // 清除所有压缩状态
         if (this.archivalStore.clearAll) {
             await this.archivalStore.clearAll().catch((e) => this.ctx.logger.warn(`Error clearing archival store: ${e.message}`));
         }
