@@ -144,11 +144,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             if (result instanceof String) {
                 return Success(result);
             }
-            if (result.success) {
-                return Success(result.result);
-            } else {
-                return Failed(result.error);
-            }
+            return result;
         } catch (error) {
             return Failed(error.message);
         }

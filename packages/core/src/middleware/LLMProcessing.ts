@@ -1,8 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
 
+import { Context } from "koishi";
 import { ChatModelSwitcher } from "../adapters";
-import { Memory } from "../Memory";
 import { ServiceContainer } from "../services/container";
 import { ScenarioManager } from "../services/ScenarioManager";
 import { ConversationState, MessageContext, Middleware } from "./base";
@@ -13,8 +13,8 @@ export class LLMProcessingMiddleware implements Middleware {
     private chatModelSwitcher: ChatModelSwitcher;
 
     constructor(
+        private ctx: Context,
         private service: ServiceContainer,
-        private memory: Memory,
         private config?: {
             debug?: boolean;
             abortSignal?: AbortSignal;
@@ -42,7 +42,6 @@ export class LLMProcessingMiddleware implements Middleware {
 
             // 构建提示词
             const systemPrompt = await this.getSystemPrompt(ctx);
-            const memoryPrompt = await this.memory.render();
             const context = this.scenarioManager.render(contain);
 
             let retry = this.chatModelSwitcher.length;
@@ -59,7 +58,7 @@ export class LLMProcessingMiddleware implements Middleware {
                     }
                     ctx.llmResponse = await model.chat(
                         [
-                            { role: "system", content: systemPrompt + "\n" + memoryPrompt },
+                            { role: "system", content: systemPrompt },
                             { role: "user", content: context },
                         ],
                         null,
@@ -153,8 +152,35 @@ export class LLMProcessingMiddleware implements Middleware {
     }
 
     private async getSystemPrompt(ctx: MessageContext): Promise<string> {
+        const memoryPrompt = await this.ctx.memory.getCoreMemoryContentForPrompt();
+        const toolPrompt =
+            `\nPlease select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. Provide your response in JSON format.
+Example:
+{
+  "function": "send_message",
+  "params": {
+    "inner_thoughts": "Bootup sequence complete. Persona activated. Testing messaging functionality.",
+    "messages": ["More human than human is our motto."]
+  }
+}
+If you want to execute more than one function at a time, put function object in a list:
+[
+  {
+    "function": "send_message",
+    "params": {
+      "inner_thoughts": "Bootup sequence complete. Persona activated. Testing messaging functionality.",
+      "messages": ["More human than human is our motto."]
+    }
+  },
+  {
+    "function": "another function that given to you, such as delmsg, essence-create, etc.",
+    "params": {}
+  }
+]
+Available functions:\n` + ctx.koishiContext.toolManager.getToolPrompts();
+
         let content = await fs.readFile(path.join(__dirname, "../../resources/memgpt_chat.txt"), "utf-8");
-        content += [`Available functions:`, ctx.koishiContext.toolManager.getToolPrompts()].join("\n");
+        content = content + memoryPrompt + toolPrompt;
         return content;
     }
 }

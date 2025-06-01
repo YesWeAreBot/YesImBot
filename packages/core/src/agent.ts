@@ -4,7 +4,6 @@ import { z } from "zod";
 import { ChatModelSwitcher } from "./adapters";
 import { Config } from "./config";
 import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./extensions/base";
-import { Memory, MemoryBlock } from "./Memory";
 import { MessageContext, MiddlewareManager } from "./middleware/base";
 import { CheckReplyConditionMiddleware } from "./middleware/CheckReplyCondition";
 import { DatabaseStorageMiddleware } from "./middleware/DatabaseStorage";
@@ -13,7 +12,7 @@ import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "./middleware/ResponseHandling";
 import { ServiceContainer } from "./services/container";
 import { ScenarioManager } from "./services/ScenarioManager";
-import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, MEMORY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
+import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
 import { getChannelType, isEmpty } from "./utils";
 import { ImageProcessor } from "./utils/imageProcessor";
 
@@ -24,7 +23,7 @@ export default class Agent {
 
     static readonly name = "yesimbot";
 
-    static readonly inject = ["toolManager"];
+    static readonly inject = ["toolManager", "memory"];
 
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
@@ -66,19 +65,6 @@ export default class Agent {
         const scenarioManager = new ScenarioManager(this.ctx);
         this.serviceContainer.register("scenarioManager", scenarioManager);
 
-        // 加载记忆
-        const memory = Memory.getInstance(this.ctx);
-        this.serviceContainer.register("memory", memory);
-        this.ctx.logger.info("[Memory] Loading memory_blocks");
-        if (this.config.MemorySlot.StoreFile) {
-            for (const key in this.config.MemorySlot.StoreFile) {
-                MemoryBlock.getOrCreate(this.ctx, key).then((memoryBlock) => {
-                    if (this.config.MemorySlot.StoreFile[key]) memoryBlock.bindFile(this.config.MemorySlot.StoreFile[key]);
-                    memory.addMemoryBlock(key, memoryBlock);
-                });
-            }
-        }
-
         // 注册中间件管理器
         const middlewareManager = new MiddlewareManager();
 
@@ -115,7 +101,7 @@ export default class Agent {
             )
 
             .use(
-                new LLMProcessingMiddleware(this.serviceContainer, memory, {
+                new LLMProcessingMiddleware(this.ctx, this.serviceContainer, {
                     debug: this.config.Debug.EnableDebug,
                     abortSignal: controller.signal,
                     slotContains: this.config.MemorySlot.SlotContains,
@@ -198,21 +184,6 @@ export default class Agent {
             },
             {
                 primary: "id",
-            }
-        );
-
-        // 记忆块表
-        this.ctx.model.extend(
-            MEMORY_TABLE,
-            {
-                id: "string",
-                label: "string",
-                value: "array",
-                limit: "integer",
-            },
-            {
-                primary: ["id", "label"],
-                autoInc: false,
             }
         );
 
@@ -308,10 +279,5 @@ export default class Agent {
                 return Success();
             },
         });
-    }
-
-    public async getMemory() {
-        const memory = this.serviceContainer.get<Memory>("memory");
-        return memory;
     }
 }

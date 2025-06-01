@@ -1,11 +1,16 @@
 import { Computed, Schema } from "koishi";
 import { ModelSetting, Provider } from "./adapters/config";
 
+interface BlockConfig {
+    Limit: number;
+    FilePathToBind: string;
+}
+
 // 主配置接口
 export interface Config {
-    // Memory : {
-    //     Scenario: {Identifier: string} []
-    // }
+    Memory: {
+        Block: Record<string, BlockConfig>;
+    };
     MemorySlot: {
         SlotContains: string[][];
         SlotSize: number;
@@ -17,7 +22,6 @@ export interface Config {
         Threshold: number;
         MessageWaitTime: number;
         SameUserThreshold: number;
-        StoreFile: Record<string, string>;
     };
     Provider: Provider[];
     ModelSetting: ModelSetting;
@@ -39,11 +43,21 @@ export interface Config {
 
 // 主配置 Schema
 export const Config: Schema<Config> = Schema.object({
-    // Memory: Schema.object({
-    //     Scenario: Schema.array(Schema.object({
-    //         Identifier: Schema.string().required().description("场景标识符"),
-    //     })).role("table").description("场景配置"),
-    // }),
+    Memory: Schema.object({
+        Block: Schema.dict(
+            Schema.object({
+                Limit: Schema.number().min(0).default(5000).description("长度限制"),
+                FilePathToBind: Schema.path({
+                    allowCreate: true,
+                    filters: ["directory", { name: "text", extensions: ["txt"] }],
+                })
+                    .required()
+                    .description("文件路径"),
+            }).description("记忆类型")
+        )
+            .role("table")
+            .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
+    }),
     MemorySlot: Schema.object({
         SlotContains: Schema.array(Schema.array(String).role("table")).description("记忆槽位标识符列表，用于区分不同的对话上下文"),
         SlotSize: Schema.number().default(20).min(1).max(100).description("每个记忆槽位保存的最大消息数量"),
@@ -57,19 +71,6 @@ export const Config: Schema<Config> = Schema.object({
         Threshold: Schema.number().min(0).max(100).default(80).step(1).role("slider").description("触发回复的意愿阈值"),
         MessageWaitTime: Schema.number().default(2000).min(0).max(10000).description("消息等待时间（毫秒），用于合并用户的连续消息"),
         SameUserThreshold: Schema.number().default(5000).min(0).max(30000).description("判定为同一用户连续消息的时间阈值（毫秒）"),
-        StoreFile: Schema.dict(
-            String,
-            Schema.path({
-                allowCreate: true,
-                filters: ["directory", { name: "text", extensions: ["txt"] }],
-            }).required()
-        )
-            .role("table")
-            .default({
-                human: "data/yesimbot/memory/human.txt",
-                persona: "data/yesimbot/memory/persona.txt",
-            })
-            .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
     }).description("记忆槽位管理配置"),
     Provider: Schema.array(Provider).required().description("模型服务"),
     ModelSetting: ModelSetting.description("模型设置"),
