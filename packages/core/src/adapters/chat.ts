@@ -7,8 +7,8 @@ import { isNotEmpty } from "../utils";
 import { Ability, Model, ModelSetting } from "./config";
 
 interface RequestOptions {
-    debug: boolean;
-    logger: Context["logger"];
+    debug?: boolean;
+    logger?: Context["logger"];
     abortSignal?: AbortSignal;
 }
 
@@ -47,7 +47,7 @@ export class ChatModel {
         }
     }
 
-    async chat(messages: Message[], tools?: ToolResult[], option?: RequestOptions): Promise<GenerateTextResult> {
+    async chat(messages: Message[], tools?: ToolResult[], option: RequestOptions = {}): Promise<GenerateTextResult> {
         const info = (info: string) => {
             if (option.debug) option.logger.info(info);
         };

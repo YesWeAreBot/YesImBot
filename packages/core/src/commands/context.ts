@@ -3,6 +3,8 @@ import { Context } from "koishi";
 import { MESSAGE_TABLE } from "../types/model";
 import { isEmpty } from "../utils/string";
 
+export const inject = ["memory"];
+
 export function apply(ctx: Context) {
     ctx.command("清空对话", "清除 BOT 的对话上下文", { authority: 3 })
         .option(
@@ -62,6 +64,15 @@ export function apply(ctx: Context) {
             await session.sendQueued(result);
             return;
         });
+
+    ctx.command("压缩记忆 <label:string>", "压缩记忆上下文", { authority: 3 }).action(async ({ session }, label) => {
+        if (isEmpty(label)) {
+            return "请指定一个 label";
+        } else {
+            await ctx.memory.compression(label);
+            return "压缩完成";
+        }
+    });
 }
 
 async function clearBySenderId(ctx: Context, senderId: string): Promise<boolean> {

@@ -5,6 +5,8 @@ import { MemoryService } from "../../memory/MemoryService";
 import { Message, MESSAGE_TABLE } from "../../types/model";
 import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Tool } from "../base";
 
+
+
 // Helper to get MemoryService instance
 function getMemory(ctx: Context): MemoryService {
     if (!ctx.memory) throw new Error("MemoryService not available on context.");

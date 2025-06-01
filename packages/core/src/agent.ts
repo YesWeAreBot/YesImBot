@@ -59,6 +59,8 @@ export default class Agent {
         );
         this.serviceContainer.register("chatModelSwitcher", chatModelSwitcher);
 
+        this.ctx.memory.setChatModel(chatModelSwitcher.getModel(this.config.Memory.UseModel));
+
         const imageProcessor = new ImageProcessor(this.ctx);
         this.serviceContainer.register("imageProcessor", imageProcessor);
 
