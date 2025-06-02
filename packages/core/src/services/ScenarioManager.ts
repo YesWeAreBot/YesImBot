@@ -137,30 +137,38 @@ export class ScenarioManager {
     /**
      * 渲染指定频道的 Scenario 上下文。
      */
-    public render(channels: string[]) {
-        const scenarioList = channels.map((channel) => {
-            const scenario = this.scenarios.get(channel);
-            if (!scenario) {
-                //throw new Error(`[ScenarioManager] 找不到频道 ${channel} 的 Scenario 实例。`);
-            }
-            return scenario;
-        }).filter(Boolean);
+    public render(channels: string[]): string {
+        const INDENT_UNIT = "  ";
+        const scenarioList = channels
+            .map((channel) => {
+                const scenario = this.scenarios.get(channel);
+                if (!scenario) {
+                    //throw new Error(`[ScenarioManager] 找不到频道 ${channel} 的 Scenario 实例。`);
+                }
+                return scenario;
+            })
+            .filter(Boolean) as Scenario[];
         const active = scenarioList.filter((scenario) => scenario.isActive);
         const inactive = scenarioList.filter((scenario) => !scenario.isActive);
-        const content = [
-            `<scenario_update timestamp="${formatDate(new Date())}">`,
-            ...active.map((scenario) => scenario.render()),
-            `<no_activity>`,
-            ...inactive.map((scenario) => scenario.render()),
-            `</no_activity>`,
-            `</scenario_update>`,
+        const contentParts: string[] = [];
 
-            `<task_instruction>
-请综合以上所有群组的最新动态，决定你希望如何回应。
-如果你决定回复，请按照以下格式组织你的回复。对于每个目标群组，生成一个独立的回复内容。
-如果你不回复任何群组，请明确指示。
-</task_instruction>`,
-        ];
-        return content.join("\n");
+        contentParts.push(`<scenario_update timestamp="${formatDate(new Date())}">`);
+        active.forEach((scenario) => {
+            contentParts.push(scenario.render());
+        });
+        contentParts.push(`</scenario_update>`);
+
+        contentParts.push(`<no_activity>`);
+        inactive.forEach((scenario) => {
+            contentParts.push(scenario.render());
+        });
+        contentParts.push(`</no_activity>`);
+
+        contentParts.push(`<task_instruction>`);
+        contentParts.push(INDENT_UNIT + `请综合以上所有群组的最新动态，决定你希望如何回应。`);
+        contentParts.push(INDENT_UNIT + `如果你决定回复，请按照以下格式组织你的回复。对于每个目标群组，生成一个独立的回复内容。`);
+        contentParts.push(INDENT_UNIT + `如果你不回复任何群组，请明确指示。`);
+        contentParts.push(`</task_instruction>`);
+        return contentParts.join("\n");
     }
 }

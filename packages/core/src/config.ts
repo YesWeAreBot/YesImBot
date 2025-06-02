@@ -50,6 +50,10 @@ export interface Config {
         MaxHeartbeat: number;
         WordsPerSecond: number;
     };
+    ImageViewer: {
+        UseModel?: [number, number];
+        CustomPrompt?: string;
+    };
     ToolCall: {
         MaxRetry: number;
         Life: number;
@@ -162,6 +166,18 @@ export const Config: Schema<Config> = Schema.object({
     //         }),
     //     ])
     // ]),
+
+    ImageViewer: Schema.object({
+        UseModel: Schema.tuple([Number, Number]).default([0, 0]).description("解析图片使用的模型") as Schema,
+        CustomPrompt: Schema.string()
+            .default(
+                `你是一个图像分析专家。请根据以下指令，详细分析提供的图片。
+请提供图片主要内容、场景、主要物体和人物的详细描述，力求准确、客观和全面。
+请直接输出分析结果，无需额外寒暄。避免提及你无法直接看到图片。你的回答应该简洁、信息丰富且直接回应指令。`
+            )
+            .role("textarea", { rows: [2, 4] })
+            .description("自定义提示词"),
+    }).description("识图设置"),
 
     ToolCall: Schema.object({
         MaxRetry: Schema.number().default(3).min(0).max(10).description("工具调用失败时的最大重试次数"),

@@ -1,5 +1,6 @@
 import { Context, Service } from "koishi";
 
+import { ModelService } from "./adapters";
 import Agent from "./agent";
 import { Config } from "./config";
 import ToolManager from "./extensions";
@@ -25,8 +26,15 @@ export default class YesImBot extends Service {
         // 本地化
         ctx.i18n.define("en-US", require("./locales/en-US"));
         ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
+
         // 注册工具管理器
         ctx.plugin(ToolManager);
+
+        //
+        ctx.plugin(ModelService, {
+            providerConfig: config.Provider,
+            modelSetting: config.ModelSetting,
+        });
 
         // 记忆管理层
         const coreBlockDefaults = {};
