@@ -1,6 +1,6 @@
 // ==Extension==
 // @name         Interactions
-// @version      1.0.0
+// @version      1.1.0
 // @description  允许大模型在聊群内进行交互
 // @author       HydroGest
 // ==/Extension==
@@ -11,6 +11,7 @@ import {} from 'koishi-plugin-adapter-onebot'
 
 import { isEmpty } from "../../utils/string";
 import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
+import { ImageProcessor } from "../../utils/imageProcessor";
 
 export const Reaction = Tool({
     name: "reaction-create",
@@ -109,7 +110,7 @@ export const GetForwardMsg = Tool({
             // @ts-ignore  
             const result = await koishiSession.onebot._request("get_forward_msg", { id: id });  
             
-            const formattedResult = formatForwardMessage(result);  
+            const formattedResult = await formatForwardMessage(result, koishiContext);  
             
             context.koishiContext.logger.info(`Bot[${koishiSession.selfId}]获取转发消息 ${id} 成功`);  
             
@@ -121,35 +122,52 @@ export const GetForwardMsg = Tool({
     }  
 })
 
-function formatForwardMessage(apiResponse: any): string {  
-    if (!apiResponse?.data?.message) {  
-        return "无法解析转发消息";  
-    }  
-  
-    const messages = apiResponse.data.message;  
-    const formattedMessages = messages.map((node: any) => {  
-        if (node.type !== "node") return "";  
-          
-        const { user_id, nickname, content } = node.data;  
-        const formattedContent = content.map((item: any) => {  
-            switch (item.type) {  
-                case "image":  
-                    // 图片格式化为 [图片 #id]，id是filename转小写去掉扩展名  
-                    const filename = item.data.filename || "";  
-                    const imageId = filename.toLowerCase().replace(/\.[^/.]+$/, "");  
-                    return `[图片 #${imageId}]`;  
-                  
-                case "text":  
-                    return item.data.text;  
-                  
-                default:  
-                    // 其他类型使用summary，如果没有summary就保留原始字符串  
-                    return item.data.summary || JSON.stringify(item.data);  
-            }  
-        }).join("");  
-  
-        return `${nickname}(${user_id}): ${formattedContent}`;  
-    }).filter(msg => msg).join("\n");  
-  
-    return `转发消息内容:\n${formattedMessages}`;  
+async function formatForwardMessage(apiResponse: any, ctx: any): Promise<string> {
+    try {
+        // 兼容不同响应结构
+        const messages = apiResponse.data?.message || apiResponse.message || [];
+        
+        if (!Array.isArray(messages)) {
+            return "无效的消息格式";
+        }
+
+        const imageProcessor = new ImageProcessor(ctx);
+        
+        const formattedMessages = await Promise.all(
+            messages.map(async (node: any) => {
+                if (node?.type !== "node") return "";
+                
+                const { user_id, nickname, content } = node.data || {};
+                if (!content) return `${nickname || '未知用户'}(${user_id || '?'}): [空内容]`;
+                
+                const contentParts = await Promise.all(
+                    content.map(async (item: any) => {
+                        try {
+                            if (!item?.type) return '[未知消息类型]';
+                            
+                            switch (item.type) {
+                                case "image":
+                                    const imageData = await imageProcessor.process(item.data?.url);
+                                    return `[图片 #${imageData.id}]`;
+                                case "text":
+                                    return item.data?.text || '';
+                                default:
+                                    return item.data?.summary || `[${item.type}消息]`;
+                            }
+                        } catch (e) {
+                            ctx.logger.error('格式化消息部分失败:', e);
+                            return '[内容解析错误]';
+                        }
+                    })
+                );
+                
+                return `${nickname || '未知用户'}(${user_id || '?'}): ${contentParts.join('')}`;
+            })
+        );
+        
+        return formattedMessages.filter(msg => msg.trim()).join("\n") || "无有效消息内容";
+    } catch (e) {
+        ctx.logger.error('格式化转发消息失败:', e);
+        return "消息格式化失败";
+    }
 }
