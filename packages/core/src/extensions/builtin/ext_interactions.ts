@@ -94,3 +94,62 @@ export const Poke = Tool({
         }
     },
 });
+
+export const GetForwardMsg = Tool({  
+    name: "get_forward_msg",  
+    description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,  
+    parameters: z.object({  
+        inner_thoughts: INNER_THOUGHTS,  
+        id: z.string().describe("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),  
+        request_heartbeat: REQUEST_HEARTBEAT,  
+    }),  
+    execute: async ({ id }, context) => {  
+        const { koishiContext, koishiSession } = context;
+        try {  
+            // @ts-ignore  
+            const result = await koishiSession.onebot._request("get_forward_msg", { id: id });  
+            
+            const formattedResult = formatForwardMessage(result);  
+            
+            context.koishiContext.logger.info(`Bot[${koishiSession.selfId}]获取转发消息 ${id} 成功`);  
+            
+            return Success(formattedResult);  
+        } catch (e) {  
+            context.koishiContext.logger.error(`Bot[${koishiSession.selfId}]获取转发消息失败: ${id} - `, e.message);  
+            return Failed(`获取转发消息失败： ${e.message}`)  
+        }  
+    }  
+})
+
+function formatForwardMessage(apiResponse: any): string {  
+    if (!apiResponse?.data?.message) {  
+        return "无法解析转发消息";  
+    }  
+  
+    const messages = apiResponse.data.message;  
+    const formattedMessages = messages.map((node: any) => {  
+        if (node.type !== "node") return "";  
+          
+        const { user_id, nickname, content } = node.data;  
+        const formattedContent = content.map((item: any) => {  
+            switch (item.type) {  
+                case "image":  
+                    // 图片格式化为 [图片 #id]，id是filename转小写去掉扩展名  
+                    const filename = item.data.filename || "";  
+                    const imageId = filename.toLowerCase().replace(/\.[^/.]+$/, "");  
+                    return `[图片 #${imageId}]`;  
+                  
+                case "text":  
+                    return item.data.text;  
+                  
+                default:  
+                    // 其他类型使用summary，如果没有summary就保留原始字符串  
+                    return item.data.summary || JSON.stringify(item.data);  
+            }  
+        }).join("");  
+  
+        return `${nickname}(${user_id}): ${formattedContent}`;  
+    }).filter(msg => msg).join("\n");  
+  
+    return `转发消息内容:\n${formattedMessages}`;  
+}
