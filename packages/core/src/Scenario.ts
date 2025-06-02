@@ -222,7 +222,7 @@ export class Scenario {
                     break;
                 case "img":
                 case "image":
-                    content += elem.attrs.summary || `[图片 #${elem.attrs.id}]`;
+                    content += `[图片 #${elem.attrs.id}]`;
                     break;
                 case "at":
                     content += `<at id="${elem.attrs.id}" ${isNotEmpty(elem.attrs.name) ? `name="@${elem.attrs.name}"` : ""}/>`;
