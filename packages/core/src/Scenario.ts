@@ -214,6 +214,9 @@ export class Scenario {
                 case "quote":
                     content += `[引用 #${elem.attrs.id}]`;
                     break;
+                case "forward":
+                    content += `[聊天记录 #${elem.attrs.id}]`;
+                    break;
                 case "text":
                     content += elem.attrs.content;
                     break;
