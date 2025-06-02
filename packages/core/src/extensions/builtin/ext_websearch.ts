@@ -10,7 +10,7 @@ import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../bas
   
 export const WebSearch = Tool({  
     name: "web_search",  
-    description: "搜索网络内容，获取相关信息和链接。可以多次搜索。",  
+    description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",  
     parameters: z.object({  
         inner_thoughts: INNER_THOUGHTS,  
         query: z.string().describe("搜索关键词或查询内容。"),  
