@@ -6,7 +6,8 @@
 // ==/Extension==
 
 import { z } from "zod";
-import {} from "koishi-plugin-adapter-onebot";
+
+import {} from 'koishi-plugin-adapter-onebot'
 
 import { isEmpty } from "../../utils/string";
 import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
