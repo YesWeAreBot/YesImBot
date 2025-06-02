@@ -3,7 +3,7 @@ import type { ImagePart, TextPart } from "xsai";
 
 import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "./services/PlatformAdapter";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
-import { formatDate, getChannelType } from "./utils";
+import { formatDate, getChannelType, isEmpty, isNotEmpty } from "./utils";
 
 /**
  * 对话场景
@@ -147,30 +147,53 @@ export class Scenario {
      * 将场景渲染为字符串，用于 LLM 提示词。
      * 未读消息会被单独列出，并提示 AI 数量。
      */
-    public render(): string | (TextPart | ImagePart)[] {
+    public render(): string {
+        // 将返回类型限定为 string
+        const INDENT_UNIT = "  "; // 2个空格的缩进单位
         const channelType = getChannelType(this.session.channelId);
+        // 构建 <new_messages> 块，它需要二级缩进，内部内容需要三级缩进
         const newMessage = this.isActive
-            ? `<new_messages>\n${this.unread.map(this.formatContext.bind(this)).join("\n")}\n</new_messages>`
-            : "";
-        let output = [
-            `<scenario id="${this.session.channelId}" type="${channelType}">`,
-            ...Object.keys(this.metadata).map((k) => `${k.toUpperCase()}: ${this.metadata[k]}`),
-            `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`,
-            "",
-            `<recent_chat_history>`,
-            ...this.context.map(this.formatContext.bind(this)),
-            "</recent_chat_history>",
-            newMessage,
-            `</scenario>`,
-        ].join("\n");
-
+            ? [
+                  INDENT_UNIT.repeat(2) + "<new_messages>", // <new_messages> 标签在二级缩进
+                  ...this.unread.map((msg) => INDENT_UNIT.repeat(3) + this.formatContext(msg)), // 内容在三级缩进
+                  INDENT_UNIT.repeat(2) + "</new_messages>", // 闭合标签在二级缩进
+              ].join("\n")
+            : ""; // 如果没有新消息，则为空字符串
+        const outputParts: string[] = [];
+        // <scenario> 标签，相对于其父元素（<scenario_update> 或 <no_activity>）应该是一级缩进
+        outputParts.push(INDENT_UNIT + `<scenario id="${this.session.channelId}" type="${channelType}">`);
+        // 元数据，需要二级缩进
+        Object.keys(this.metadata).forEach((k) => {
+            outputParts.push(INDENT_UNIT.repeat(2) + `${k.toUpperCase()}: ${this.metadata[k]}`);
+        });
+        // recall memory 消息，需要二级缩进
+        outputParts.push(
+            INDENT_UNIT.repeat(2) +
+                `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`
+        );
+        // 空行（根据示例，recall memory 消息和 chat history 之间没有空行）
+        // 如果需要空行，可以在这里添加：outputParts.push("");
+        // <recent_chat_history> 标签，需要二级缩进
+        outputParts.push(INDENT_UNIT.repeat(2) + `<recent_chat_history>`);
+        // chat history 内容，需要三级缩进
+        this.context.forEach((msg) => {
+            outputParts.push(INDENT_UNIT.repeat(3) + this.formatContext(msg));
+        });
+        // </recent_chat_history> 标签，需要二级缩进
+        outputParts.push(INDENT_UNIT.repeat(2) + `</recent_chat_history>`);
+        // 添加新消息块，如果存在的话
+        if (newMessage) {
+            outputParts.push(newMessage);
+        }
+        // </scenario> 闭合标签，需要一级缩进
+        outputParts.push(INDENT_UNIT + `</scenario>`);
         // 渲染后，将未读消息移至已读消息列表，并清空未读列表
         // 数据库中 last_reply_table 的更新由 LLMProcessingMiddleware 负责
         for (const message of this.unread) {
             this.context.push(message);
         }
         this.unread = [];
-        return output;
+        return outputParts.join("\n");
     }
 
     private formatContext(record: Message | Interaction): string {
@@ -188,14 +211,18 @@ export class Scenario {
         let content = "";
         for (let elem of elements) {
             switch (elem.type) {
+                case "quote":
+                    content += `[引用 #${elem.attrs.id}]`;
+                    break;
                 case "text":
                     content += elem.attrs.content;
                     break;
                 case "img":
-                    content += elem.attrs.summary || `[图片]`;
+                case "image":
+                    content += elem.attrs.summary || `[图片 #${elem.attrs.id}]`;
                     break;
                 case "at":
-                    content += `<at id="${elem.attrs.id}" name="@${elem.attrs.name}"/>`;
+                    content += `<at id="${elem.attrs.id}" ${isNotEmpty(elem.attrs.name) ? `name="@${elem.attrs.name}"` : ""}/>`;
                     break;
                 default:
                     content += `[${elem.type}]`;
@@ -212,7 +239,9 @@ export class Scenario {
 
     private formatInteraction(interaction: Interaction): string {
         if (interaction.type === "tool_result") {
-            return `[FUNCTION RETURN] ${JSON.stringify(interaction.content)}`;
+            const name = interaction.content["function"];
+            const returnValue = interaction.content["result"];
+            return `[FUNCTION RETURN:${name}] ${JSON.stringify(returnValue)}`;
         } else {
             return `[FUNCTION CALL] ${JSON.stringify(interaction.content)}`;
         }

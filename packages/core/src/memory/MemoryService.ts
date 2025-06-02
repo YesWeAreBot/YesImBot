@@ -39,6 +39,8 @@ declare module "koishi" {
 }
 
 export class MemoryService extends Service {
+    static readonly inject = ["ModelService"];
+
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
     private lastModified: Date = new Date();
     private readonly memoryBlockStore: IMemoryBlockStore;
@@ -68,45 +70,48 @@ export class MemoryService extends Service {
 
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
+        this.chatModel = ctx.ModelService.getChatModel(config.UseModel);
         ctx.logger.info("MemoryService initialized.");
     }
 
     protected async start() {
         this.ctx.logger.info("Starting MemoryService and initializing core blocks...");
+        if (this.config.coreBlockDefaults) {
+            for (const label in this.config.coreBlockDefaults) {
+                if (Object.prototype.hasOwnProperty.call(this.config.coreBlockDefaults, label)) {
+                    const blockConfig = this.config.coreBlockDefaults[label] || {};
+                    await this.getOrCreateCoreMemoryBlock(label, {
+                        limit: blockConfig.limit, // Relies on getOrCreateCoreMemoryBlock's default if undefined
+                        initialValue: blockConfig.initialValue,
+                        filePathToBind: blockConfig.filePathToBind,
+                    });
+                    this.logger.info(`Core memory block "${label}" ensured.`);
 
-        // 确保所有在配置中指定的或默认的核心块被加载/创建
-        const allBlockLabelsToInit = new Set<string>();
-        allBlockLabelsToInit.add("persona");
-        allBlockLabelsToInit.add("human");
-        for (const label in this.config.coreBlockDefaults) {
-            allBlockLabelsToInit.add(label);
-        }
+                    // 为所有核心块初始化压缩状态
+                    this._compressionStates.set(label, {
+                        messageCount: 0,
+                        lastCompressionTime: new Date(),
+                    });
+                    this.ctx.logger.debug(`Initialized compression state for block "${label}".`);
+                }
+            }
 
-        for (const label of allBlockLabelsToInit) {
-            const blockConfig = this.config.coreBlockDefaults?.[label] || {};
-            await this.getOrCreateCoreMemoryBlock(label, {
-                limit: blockConfig.limit ?? 5000,
-                initialValue: blockConfig.initialValue,
-                filePathToBind: blockConfig.filePathToBind,
-            });
-
-            // 为所有核心块初始化压缩状态
-            this._compressionStates.set(label, {
-                messageCount: 0,
-                lastCompressionTime: new Date(),
-            });
-            this.ctx.logger.debug(`Initialized compression state for block "${label}".`);
-        }
-        this.ctx.logger.info("All core blocks ensured to be loaded/created.");
-
-        // 设置定时任务，如果配置了按时间间隔压缩
-        const intervalMinutes = this.config.Compression?.IntervalMinutes ?? 0;
-        if (intervalMinutes > 0) {
-            this._intervalCompressionTimer = setInterval(async () => {
-                this.ctx.logger.debug(`[Compression] Running scheduled check for all compressible blocks.`);
-                await this._triggerTimedCompression();
-            }, intervalMinutes * 60 * 1000);
-            this.ctx.logger.info(`[Compression] Scheduled compression check every ${intervalMinutes} minutes.`);
+            // 设置定时任务，如果配置了按时间间隔压缩
+            const intervalMinutes = this.config.Compression?.IntervalMinutes ?? 0;
+            if (intervalMinutes > 0) {
+                this._intervalCompressionTimer = setInterval(async () => {
+                    this.ctx.logger.debug(`[Compression] Running scheduled check for all compressible blocks.`);
+                    await this._triggerTimedCompression();
+                }, intervalMinutes * 60 * 1000);
+                this.ctx.logger.info(`[Compression] Scheduled compression check every ${intervalMinutes} minutes.`);
+            }
+        } else {
+            this.ctx.logger.info(
+                'No coreBlockDefaults configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.'
+            );
+            // You might still want to ensure essential blocks like 'persona' and 'human' exist by default if not in config:
+            // await this.getOrCreateCoreMemoryBlock('persona', { limit: 2000, initialValue: ["Persona not set."] });
+            // await this.getOrCreateCoreMemoryBlock('human', { limit: 1000, initialValue: ["Human info not set."] });
         }
     }
 
@@ -152,12 +157,7 @@ export class MemoryService extends Service {
 
     public async appendToCoreMemory(label: string, content: string): Promise<string> {
         const compressibleBlocks = this.config.Compression?.CompressibleBlocks || [];
-        // 允许向 'persona', 'human' 或任何配置中明确标记为可压缩的块追加内容。
-        if (label !== "persona" && label !== "human" && !compressibleBlocks.includes(label)) {
-            throw new MemoryError(
-                `Core memory operations are restricted to 'persona', 'human', and explicitly configured compressible blocks. Attempted on: '${label}'.`
-            );
-        }
+
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.append(content);
         this.lastModified = new Date();
@@ -174,9 +174,6 @@ export class MemoryService extends Service {
     }
 
     public async replaceInCoreMemory(label: string, oldContent: string, newContent: string): Promise<string> {
-        if (label !== "persona" && label !== "human") {
-            throw new MemoryError(`Core memory operations are restricted to 'persona' and 'human' blocks. Attempted on: '${label}'.`);
-        }
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.replace(oldContent, newContent);
         this.lastModified = new Date();
@@ -185,22 +182,26 @@ export class MemoryService extends Service {
     }
 
     public async getCoreMemoryContentForPrompt(): Promise<string> {
+        const INDENT_UNIT = "  "; // 缩进单位，这里是两个空格
         const extraBlocks = [...this.coreMemoryBlocks.values()];
-
-        const blockContent = extraBlocks.map((mb) => {
+        // 渲染每个内存块的内容，并应用缩进
+        const blockContentLines = extraBlocks.map((mb) => {
+            // content 内部的每一行需要进一步缩进
+            const indentedContent = mb.content.map((line) => INDENT_UNIT.repeat(2) + line);
             return [
-                `<${mb.label} limit="${mb.currentSize}/${mb.limit}" lastModified="${formatDate(mb.lastModified)}">`,
-                ...mb.content,
-                `</${mb.label}>`,
+                INDENT_UNIT.repeat(1) + `<${mb.label} limit="${mb.currentSize}/${mb.limit}" lastModified="${formatDate(mb.lastModified)}">`,
+                ...indentedContent,
+                INDENT_UNIT.repeat(1) + `</${mb.label}>`,
             ].join("\n");
         });
-
         return [
             `### Memory [last modified: ${formatDate(this.lastModified)}]`,
             `${await this.archivalStore.count()} total memories you created are stored in archival memory (use functions to access them)`,
-            ``,
+            ``, // 空行
             `Core memory shown below (limited in size, additional information stored in archival / recall memory):`,
-            ...blockContent,
+            // INDENT_UNIT + `<core_memory>`, // 外层 <core_memory> 标签，一层缩进
+            ...blockContentLines, // 拼接已经缩进好的内存块内容
+            // INDENT_UNIT + `</core_memory>`, // 关闭外层 <core_memory> 标签
         ].join("\n");
     }
 
@@ -230,10 +231,6 @@ export class MemoryService extends Service {
             this.ctx.logger.error(`Failed to search archival memory: ${error.message}`);
             throw new MemoryError(`Search archival memory failed`, { query, options, error });
         }
-    }
-
-    public setChatModel(model: ChatModel) {
-        this.chatModel = model;
     }
 
     // 新增：检查并触发压缩（非定时）

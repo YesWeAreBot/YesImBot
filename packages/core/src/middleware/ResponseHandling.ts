@@ -141,9 +141,6 @@ export class ResponseHandlingMiddleware implements Middleware {
                 return await this.executeToolCall(koishiContext, koishiSession, functionName, params, maxRetry - 1);
             }
             koishiContext.logger.info(`← ${result ? JSON.stringify(result) : "void"}`);
-            if (result instanceof String) {
-                return Success(result);
-            }
             return result;
         } catch (error) {
             return Failed(error.message);
@@ -161,7 +158,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             emitter: koishiSession.messageId,
             emitter_channel_id: koishiSession.cid,
             type: "tool_call",
-            content: JSON.stringify(func),
+            content: func,
             life: this.options?.life || 3,
             timestamp: new Date(),
         };
@@ -182,7 +179,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             emitter: koishiSession.messageId,
             emitter_channel_id: koishiSession.cid,
             type: "tool_result",
-            content: JSON.stringify({ [functionName]: result }),
+            content: { function: functionName, result },
             life: this.options?.life || 3,
             timestamp: new Date(),
         };

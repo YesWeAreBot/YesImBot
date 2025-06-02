@@ -40,7 +40,7 @@ export interface Interaction {
     emitter: string; // 由哪条消息触发，为消息ID
     emitter_channel_id: string; // 触发此交互的消息所在的频道 ID
     type: "tool_call" | "tool_result" | "message";
-    content: ToolCallResult | string;
+    content: { function: string; params?: Record<string, unknown>; result?: ToolCallResult };
     life: number; // 生命周期，为添加到上下文的次数，归零时将被删除，避免浪费token
     timestamp: Date;
 }

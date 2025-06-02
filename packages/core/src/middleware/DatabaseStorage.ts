@@ -1,44 +1,41 @@
-import { Context, Element, h } from 'koishi';
-import { ScenarioManager } from '../services/ScenarioManager';
-import { MESSAGE_TABLE, Message } from '../types/model';
-import { getChannelType } from '../utils';
-import { ImageProcessor } from '../utils/imageProcessor';
-import { MessageContext, Middleware } from './base';
-
+import { Context, Element, h } from "koishi";
+import { ScenarioManager } from "../services/ScenarioManager";
+import { MESSAGE_TABLE, Message } from "../types/model";
+import { getChannelType } from "../utils";
+import { ImageProcessor } from "../utils/imageProcessor";
+import { MessageContext, Middleware } from "./base";
 
 /**
  * 数据库存储中间件
  */
 export class DatabaseStorageMiddleware implements Middleware {
-    name = 'database-storage';
+    name = "database-storage";
 
-    constructor(
-        private ctx: Context,
-        private imageProcessor: ImageProcessor,
-        private scenarioManager: ScenarioManager
-    ) { }
+    constructor(private ctx: Context, private imageProcessor: ImageProcessor, private scenarioManager: ScenarioManager) {}
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         const elements = ctx.koishiSession.elements;
         const processedElements: Element[] = [];
         for await (const element of elements) {
             switch (element.type) {
-                case 'text':
+                case "text":
                     processedElements.push(element);
                     break;
-                case 'image':
-                case 'img':
+                case "image":
+                case "img":
                     const imageData = await this.imageProcessor.process(element);
                     if (imageData) {
-                        processedElements.push(h("img", { id: imageData.id, summary: element.attrs.summary, desc: imageData.desc || null }))
+                        processedElements.push(
+                            h("img", { id: imageData.id, summary: element.attrs.summary, desc: imageData.desc || null })
+                        );
                     } else {
                         processedElements.push(element);
                     }
                     break;
-                case 'at':
+                case "at":
                     processedElements.push(element);
                     break;
-                case 'video':
+                case "video":
                     processedElements.push(element);
                     break;
                 default:
@@ -46,6 +43,9 @@ export class DatabaseStorageMiddleware implements Middleware {
                     break;
             }
         }
+
+        if (ctx.koishiSession.quote) processedElements.unshift(h.quote(ctx.koishiSession.quote.id));
+
         const content = processedElements.join("");
 
         // 保存接收到的消息
@@ -68,7 +68,7 @@ export class DatabaseStorageMiddleware implements Middleware {
             messageId: session.messageId,
             channel: {
                 id: session.channelId,
-            }
+            },
         });
         if (messages.length === 0) {
             const message: Message = {
@@ -82,7 +82,7 @@ export class DatabaseStorageMiddleware implements Middleware {
                 },
                 channel: {
                     id: session.channelId,
-                    type: getChannelType(session.channelId)
+                    type: getChannelType(session.channelId),
                 },
                 timestamp: new Date(session.timestamp),
             };
