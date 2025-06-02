@@ -1,3 +1,10 @@
+// ==Extension==
+// @name         Memory
+// @version        1.0.0
+// @description    Memory service
+// @author        MiaowFISH
+// ==/Extension==
+
 import { Context, Field, Query } from "koishi";
 import { z } from "zod";
 import { MemoryError } from "../../memory/MemoryError";
