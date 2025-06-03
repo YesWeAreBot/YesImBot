@@ -11,15 +11,11 @@ import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 export class ResponseHandlingMiddleware implements Middleware {
     name = "response-handling";
 
-    private scenarioManager: ScenarioManager;
-
     constructor(
-        private service: ServiceContainer,
+        private scenarioManager: ScenarioManager,
         private middlewareManager: MiddlewareManager,
         private options?: { maxRetry: number; life: number; maxHeartbeat?: number }
-    ) {
-        this.scenarioManager = service.get("scenarioManager");
-    }
+    ) {}
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         // 只在响应状态下执行
@@ -33,10 +29,21 @@ export class ResponseHandlingMiddleware implements Middleware {
         // 处理LLM响应
         const { text } = ctx.llmResponse;
 
-        let response = this.parseResponse(text);
+        let response: { function: string; params: Record<string, unknown> }[];
+        try {
+            // 解析LLM响应中的JSON，LLM通常会返回一个JSON字符串，可能嵌入在其他文本中
+            response = this.parseResponse(text);
+        } catch (error) {
+            logger.error(`[ResponseHandling] LLM响应解析失败: ${error.message}`);
+            await ctx.transitionTo(ConversationState.IDLE); // 错误后重置状态
+            // 释放频道处理状态
+            const checkReplyMiddleware = this.middlewareManager.getMiddleware("check-reply-condition") as CheckReplyConditionMiddleware;
+            checkReplyMiddleware.releaseChannelState(session.channelId);
+            return;
+        }
 
-        // 处理工具调用
         let request_heartbeat = false;
+        // 确保工具调用和工具结果被正确记录到 Interaction 数据中
         for (const func of response) {
             let { function: functionName, params } = func;
 
@@ -46,26 +53,22 @@ export class ResponseHandlingMiddleware implements Middleware {
                 channel_id = session.channelId;
             }
 
-            await this.recordToolCall(ctx.koishiContext, ctx.koishiSession, func);
+            // 记录工具调用，使用新的 Interaction 结构
+            await this.recordToolCall(ctx.koishiContext, session, functionName, params);
 
-            const result = await this.executeToolCall(
-                ctx.koishiContext,
-                ctx.koishiSession,
-                functionName,
-                params,
-                this.options?.maxRetry || 0
-            );
+            const result = await this.executeToolCall(ctx.koishiContext, session, functionName, params, this.options?.maxRetry || 0);
 
-            await this.recordToolResult(ctx.koishiContext, ctx.koishiSession, functionName, result);
+            // 记录工具结果，使用新的 Interaction 结构
+            await this.recordToolResult(ctx.koishiContext, session, functionName, result);
 
             if (params.request_heartbeat) {
                 request_heartbeat = true;
             }
         }
 
-        // 如果需要继续对话
+        // 如果需要继续对话 (heartbeat)
         if (request_heartbeat) {
-            const maxHeartbeat = this.options?.maxHeartbeat || 5; // 默认最大5次
+            const maxHeartbeat = this.options?.maxHeartbeat || 5;
 
             if (ctx.heartbeatCount >= maxHeartbeat) {
                 ctx.koishiContext.logger.warn(`[ResponseHandling] Heartbeat触发次数已达到最大限制 (${maxHeartbeat})，停止连续对话`);
@@ -73,7 +76,9 @@ export class ResponseHandlingMiddleware implements Middleware {
                 ctx.heartbeatCount++;
                 ctx.koishiContext.logger.info(`[ResponseHandling] 触发heartbeat连续对话，当前次数: ${ctx.heartbeatCount}/${maxHeartbeat}`);
                 await ctx.transitionTo(ConversationState.PROCESSING);
+                // 重新进入 LLM 处理流程，确保 Prompt 会更新
                 await this.middlewareManager.executeFrom(ctx, this.middlewareManager.findIndex("llm-processing"));
+                return; // 提前返回，因为处理链将从 llm-processing 重新开始
             }
         }
 
@@ -86,28 +91,33 @@ export class ResponseHandlingMiddleware implements Middleware {
         ctx.heartbeatCount = 0;
         // 释放频道处理状态
         const checkReplyMiddleware = this.middlewareManager.getMiddleware("check-reply-condition") as CheckReplyConditionMiddleware;
-        checkReplyMiddleware.releaseChannelState(ctx.koishiSession.channelId);
+        checkReplyMiddleware.releaseChannelState(session.channelId);
     }
 
-    // 解析LLM响应
+    // 解析LLM响应，提取函数调用信息
     private parseResponse(text: string): { function: string; params: Record<string, unknown> }[] {
         let response: { function: string; params: Record<string, unknown> }[];
         try {
-            response = extractJSONFromString(text.substring(text.indexOf("{"), text.lastIndexOf("}") + 1), "object") as any[];
+            // 尝试从 LLM 的原始文本中提取 JSON 字符串
+            const jsonStr = text.substring(text.indexOf("```json") + 7, text.lastIndexOf("```")) || text;
+            // 进一步处理，去除可能的多余换行和空格，确保是纯净的 JSON
+            response = extractJSONFromString(jsonStr.trim(), "object") as any[];
         } catch (error) {
             throw new Error(`解析响应失败: ${error.message}`);
         }
         if (!response || response.length == 0) {
-            throw new Error("未解析到响应");
+            // 如果解析到的不是数组，尝试将其包装成数组
+            if (!Array.isArray(response)) {
+                response = [response];
+            } else {
+                throw new Error("未解析到有效的函数调用响应");
+            }
         }
 
-        if (!Array.isArray(response)) {
-            response = [response];
-        }
-
+        // 验证解析结果的格式
         for (const func of response) {
-            if (!func.function || !func.params) {
-                throw new Error("响应格式错误");
+            if (!func || typeof func !== "object" || !func.function || !func.params) {
+                throw new Error("响应格式错误：每个函数调用必须包含 'function' 和 'params' 字段。");
             }
         }
 
@@ -124,66 +134,88 @@ export class ResponseHandlingMiddleware implements Middleware {
         function stringify(args: Record<string, unknown>): string {
             let result = [];
             for (let key in args) {
-                result.push(`${key}="${args[key]}"`);
+                result.push(`${key}="${JSON.stringify(args[key])}"`);
             }
             return `${result.join(", ")}`;
         }
         try {
             const tool = koishiContext.toolManager.getTool(functionName);
             if (!tool) {
+                koishiContext.logger.warn(`Tool ${functionName} not found`);
                 return Failed(`Tool ${functionName} not found`);
             }
             const context = { koishiContext, koishiSession };
-            koishiContext.logger.info(`→ ${functionName}(${stringify(params)})`);
+            koishiContext.logger.info(`→ Tool Call: ${functionName}(${stringify(params)})`);
             const result = await tool.execute(params, context);
             if (!result.success && maxRetry > 0) {
                 koishiContext.logger.info(`Tool ${functionName} failed, retrying...`);
+                // 递归重试
                 return await this.executeToolCall(koishiContext, koishiSession, functionName, params, maxRetry - 1);
             }
-            koishiContext.logger.info(`← ${result ? JSON.stringify(result) : "void"}`);
+            koishiContext.logger.info(`← Tool Return: ${result ? JSON.stringify(result) : "void"}`);
             return result;
         } catch (error) {
+            koishiContext.logger.error(`Error executing tool ${functionName}: ${error.message}`);
             return Failed(error.message);
         }
     }
 
-    // 记录工具调用
+    /**
+     * 记录工具调用。
+     * @param koishiContext Koishi Context
+     * @param koishiSession Koishi Session
+     * @param functionName 工具函数名称
+     * @param params 调用参数
+     */
     private async recordToolCall(
         koishiContext: Context,
         koishiSession: Session,
-        func: { function: string; params: Record<string, unknown> }
-    ) {
+        functionName: string,
+        params: Record<string, unknown>
+    ): Promise<void> {
         const newInteraction: Interaction = {
             id: Random.id(),
-            emitter: koishiSession.messageId,
-            emitter_channel_id: koishiSession.cid,
+            emitter: koishiSession.messageId, // 关联到触发此LLM响应的用户消息
+            emitter_channel_id: koishiSession.channelId,
             type: "tool_call",
-            content: func,
-            life: this.options?.life || 3,
+            functionName: functionName,
+            toolParams: params,
+            life: this.options?.life || 3, // 从配置中获取或默认3轮
             timestamp: new Date(),
         };
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
-        await this.scenarioManager.updateInteraction(newInteraction, koishiSession, true);
+        // 新增的交互应该被视为未读，以便在下一轮 LLM 调用中被注意到
+        await this.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
     }
 
-    // 记录工具结果
+    /**
+     * 记录工具执行结果。
+     * @param koishiContext Koishi Context
+     * @param koishiSession Koishi Session
+     * @param functionName 工具函数名称
+     * @param result 工具执行结果
+     */
     private async recordToolResult(
         koishiContext: Context,
         koishiSession: Session,
         functionName: string,
         result: ToolCallResult
     ): Promise<void> {
+        // send_message 工具的结果不需要单独记录为 Interaction，因为它会直接发送消息给用户，并在 Message 表中记录
         if (functionName === "send_message") return;
+
         const newInteraction: Interaction = {
             id: Random.id(),
-            emitter: koishiSession.messageId,
-            emitter_channel_id: koishiSession.cid,
+            emitter: koishiSession.messageId, // 关联到触发此LLM响应的用户消息
+            emitter_channel_id: koishiSession.channelId,
             type: "tool_result",
-            content: { function: functionName, result },
-            life: this.options?.life || 3,
+            functionName: functionName,
+            toolResult: result,
+            life: this.options?.life || 3, // 从配置中获取或默认3轮
             timestamp: new Date(),
         };
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
+        // 工具结果也应被视为未读，以便 LLM 能够看到结果
         await this.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
     }
 }

@@ -9,22 +9,18 @@ import { ConversationState, MessageContext, Middleware } from "./base";
 
 export class LLMProcessingMiddleware implements Middleware {
     name = "llm-processing";
-    private scenarioManager: ScenarioManager;
-    private chatModelSwitcher: ChatModelSwitcher;
 
     constructor(
         private ctx: Context,
-        private service: ServiceContainer,
+        private scenarioManager: ScenarioManager,
+        private chatModelSwitcher: ChatModelSwitcher,
         private config?: {
             debug?: boolean;
             abortSignal?: AbortSignal;
             slotContains: string[][];
             slotSize: number;
         }
-    ) {
-        this.scenarioManager = service.get<ScenarioManager>("scenarioManager");
-        this.chatModelSwitcher = service.get("chatModelSwitcher");
-    }
+    ) {}
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         if (ctx.state !== ConversationState.PROCESSING) {
@@ -156,6 +152,7 @@ export class LLMProcessingMiddleware implements Middleware {
         const toolPrompt =
             `\nPlease select the most suitable function and parameters from the list of available functions below, based on the ongoing conversation. Provide your response in JSON format.
 Example:
+\`\`\`json
 {
   "function": "send_message",
   "params": {
@@ -163,7 +160,9 @@ Example:
     "messages": ["More human than human is our motto."]
   }
 }
+\`\`\`
 If you want to execute more than one function at a time, put function object in a list:
+\`\`\`json
 [
   {
     "function": "send_message",
@@ -177,6 +176,7 @@ If you want to execute more than one function at a time, put function object in 
     "params": {}
   }
 ]
+\`\`\`
 Available functions:\n` + ctx.koishiContext.toolManager.getToolPrompts();
 
         let content = await fs.readFile(path.join(__dirname, "../../resources/memgpt_chat.txt"), "utf-8");

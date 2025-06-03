@@ -3,7 +3,7 @@ import { Context } from "koishi";
 import { MESSAGE_TABLE } from "../types/model";
 import { isEmpty } from "../utils/string";
 
-export const inject = ["memory"];
+export const inject = ["memory", "scenario"];
 
 export function apply(ctx: Context) {
     ctx.command("清空对话", "清除 BOT 的对话上下文", { authority: 3 })
@@ -32,6 +32,7 @@ export function apply(ctx: Context) {
                 // 按用户ID清空对话
                 const cleared = await clearBySenderId(ctx, options.person);
                 result = `${cleared ? "✅" : "❌"} 用户 ${options.person}`;
+                ctx.scenario.clearScenario(`private:${options.person}`);
             } else {
                 const clearGroupId = options.target || msgDestination;
                 // 要清除的会话集合
@@ -87,10 +88,12 @@ async function clearPrivateAll(ctx: Context): Promise<boolean> {
 
 async function clearAll(ctx: Context): Promise<boolean> {
     const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.type": "guild" });
+    ctx.scenario.clearAllScenario();
     return result.removed > 0;
 }
 
 async function clearChannel(ctx: Context, id: string): Promise<boolean> {
     const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.id": id });
+    ctx.scenario.clearScenario(id);
     return result.removed > 0;
 }

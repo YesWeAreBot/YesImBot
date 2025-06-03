@@ -19,13 +19,12 @@ export interface Config {
             IntervalMessages?: number; // 按消息频率触发
             IntervalMinutes?: number; // 按时间间隔触发
             CustomPrompt?: string; // 压缩总结的自定义提示词
-            // Add a field to specify which core blocks should be compressed
             CompressibleBlocks?: string[]; // 例如: ['human', 'context']
         };
-        Extract: {
-            ExtractWhen?: number;
-            CustomPrompt?: string;
-        };
+        // Extract: {
+        //     ExtractWhen?: number;
+        //     CustomPrompt?: string;
+        // };
         Backup: {
             Enabled: boolean;
             BackupPath: string;
@@ -81,14 +80,16 @@ export const Config: Schema<Config> = Schema.object({
         MessageWaitTime: Schema.number().default(2000).min(0).max(10000).description("消息等待时间（毫秒），用于合并用户的连续消息"),
         SameUserThreshold: Schema.number().default(5000).min(0).max(30000).description("判定为同一用户连续消息的时间阈值（毫秒）"),
     }).description("记忆槽位管理配置"),
-    Provider: Schema.array(Provider).required().description("模型服务"),
+    Provider: Schema.array(Provider).collapse(true).required().description("模型服务"),
     ModelSetting: ModelSetting.description("模型设置"),
     Chat: Schema.object({
         UseModel: Schema.array(
             Schema.tuple([Schema.number().min(0), Schema.number().min(0)])
                 .default([0, 0])
                 .description("第几个提供商的第几个模型，从 0 开始计数")
-        ).description("对话使用的模型") as Schema,
+        )
+            .required()
+            .description("对话使用的模型") as Schema,
         MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
         WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
     }).description("对话行为配置"),
@@ -123,12 +124,12 @@ export const Config: Schema<Config> = Schema.object({
                 .role("textarea", { rows: [2, 4] })
                 .description("自定义提示词"),
         }).description("记忆压缩配置"),
-        Extract: Schema.object({
-            // ExtractWhen: Schema.number(),
-            CustomPrompt: Schema.string()
-                .role("textarea", { rows: [2, 4] })
-                .description("自定义提示词"),
-        }).description("记忆提取配置"),
+        // Extract: Schema.object({
+        //     // ExtractWhen: Schema.number(),
+        //     CustomPrompt: Schema.string()
+        //         .role("textarea", { rows: [2, 4] })
+        //         .description("自定义提示词"),
+        // }).description("记忆提取配置"),
         Backup: Schema.object({
             Enabled: Schema.boolean().default(true),
             BackupPath: Schema.string().default("data/yesimbot/memory/.backup"),

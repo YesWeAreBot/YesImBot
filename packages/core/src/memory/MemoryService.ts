@@ -20,11 +20,9 @@ export interface MemoryServiceConfig {
         [key: string]: CoreMemoryBlockConfig | undefined;
     };
     Compression?: Config["Memory"]["Compression"];
-    Extract?: Config["Memory"]["Extract"];
+    // Extract?: Config["Memory"]["Extract"];
     Backup?: Config["Memory"]["Backup"];
     UseModel?: Config["Memory"]["UseModel"];
-
-    // Future: Allow selection of IMemoryBlockStore and IArchivalMemoryStore implementations via config
 }
 
 interface MemoryBlockCompressionState {

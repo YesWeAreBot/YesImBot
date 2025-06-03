@@ -37,8 +37,8 @@ build({
     target: 'node20',
     outfile: './lib/dependencies/xsai.js',
     external,
-    sourcemap: false,
-    minify: true,
+    sourcemap: true,
+    minify: false,
     logLevel: 'info',
 }).catch((error) => {
     process.exit(1);

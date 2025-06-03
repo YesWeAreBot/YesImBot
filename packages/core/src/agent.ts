@@ -22,7 +22,7 @@ export default class Agent {
 
     static readonly name = "yesimbot";
 
-    static readonly inject = ["toolManager", "memory", "ModelService"];
+    static readonly inject = ["toolManager", "memory", "ModelService", "scenario"];
 
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
@@ -54,9 +54,6 @@ export default class Agent {
         const imageProcessor = new ImageProcessor(this.ctx);
         this.serviceContainer.register("imageProcessor", imageProcessor);
 
-        const scenarioManager = new ScenarioManager(this.ctx);
-        this.serviceContainer.register("scenarioManager", scenarioManager);
-
         // 注册核心工具
         this.ctx.toolManager.registerTool(this.createSendMessageTool(this.config));
         this.ctx.toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config));
@@ -78,7 +75,7 @@ export default class Agent {
             )
 
             // 数据库存储中间件
-            .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor, scenarioManager))
+            .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor, this.ctx.scenario))
 
             // 检查是否达到回复条件
             .use(
@@ -97,7 +94,7 @@ export default class Agent {
             )
 
             .use(
-                new LLMProcessingMiddleware(this.ctx, this.serviceContainer, {
+                new LLMProcessingMiddleware(this.ctx, this.ctx.scenario, chatModelSwitcher, {
                     debug: this.config.Debug.EnableDebug,
                     abortSignal: controller.signal,
                     slotContains: this.config.MemorySlot.SlotContains,
@@ -106,7 +103,7 @@ export default class Agent {
             )
 
             .use(
-                new ResponseHandlingMiddleware(this.serviceContainer, middlewareManager, {
+                new ResponseHandlingMiddleware(this.ctx.scenario, middlewareManager, {
                     maxRetry: this.config.ToolCall.MaxRetry,
                     life: this.config.ToolCall.Life,
                     maxHeartbeat: this.config.Chat.MaxHeartbeat,
@@ -118,7 +115,7 @@ export default class Agent {
         // 清除副作用
         this.ctx.on("dispose", () => {
             controller.abort();
-            scenarioManager.clearAllScenario();
+            this.ctx.scenario.clearAllScenario();
             const checkReply: CheckReplyConditionMiddleware = middlewareManager.getMiddleware("check-reply-condition");
             checkReply.destroy();
         });
@@ -174,7 +171,9 @@ export default class Agent {
                 emitter: "string",
                 emitter_channel_id: "string",
                 type: "string",
-                content: "object",
+                functionName: "string",
+                toolParams: "json",
+                toolResult: "object",
                 life: "integer",
                 timestamp: "timestamp",
             },
@@ -265,8 +264,7 @@ export default class Agent {
                         content: message,
                     };
                     await koishiContext.database.create(MESSAGE_TABLE, newMessage);
-                    const scenarioManager: ScenarioManager = this.serviceContainer.get("scenarioManager");
-                    scenarioManager.updateMessage(newMessage, koishiSession, true);
+                    this.ctx.scenario.updateMessage(newMessage, koishiSession, true);
                     koishiContext.logger.info(`Message Sent: ${message}`);
                     if (delay && config.Chat.WordsPerSecond > 0) {
                         await sleep((message.length / config.Chat.WordsPerSecond) * 1000);
