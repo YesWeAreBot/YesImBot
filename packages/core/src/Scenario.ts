@@ -1,21 +1,20 @@
-import { $, Context, h, Session } from "koishi";
-import type { ImagePart, TextPart } from "xsai";
+import { $, Context, Element, h, Session } from "koishi";
 
 import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "./services/PlatformAdapter";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
-import { formatDate, getChannelType, isEmpty, isNotEmpty } from "./utils";
+import { formatDate, getChannelType, isNotEmpty } from "./utils";
 
 /**
  * 对话场景
  */
 export class Scenario {
     private metadata: Record<string, string>;
-    private context: (Message | Interaction)[] = []; // 已读消息列表
-    private unread: (Message | Interaction)[] = []; // 未读消息列表
-    private recallSize: number;
+    public context: (Message | Interaction)[] = []; // 已读消息列表
+    public unread: (Message | Interaction)[] = []; // 未读消息列表
+    private recallSize: number; // 数据库中超出上下文限制，但仍可“召回”的历史记录数量
     private lastReplyTime: Date | null = null; // 存储最后回复时间，用于判断消息已读状态
     private platformAdapter: PlatformAdapter;
-    private limit: number;
+    private limit: number; // 上下文消息数量限制
 
     constructor(private ctx: Context, private session: Session) {
         switch (session.platform) {
@@ -29,7 +28,7 @@ export class Scenario {
     }
 
     /**
-     * 判断群组是否活跃
+     * 判断群组是否活跃（有未读消息）
      */
     public get isActive(): boolean {
         return this.unread.length > 0;
@@ -46,9 +45,7 @@ export class Scenario {
         this.unread = [];
 
         // 1. 获取最后回复时间
-        const [lastReplyEntry] = await this.ctx.database.get(LAST_REPLY_TABLE, {
-            channelId: this.session.channelId,
-        });
+        const [lastReplyEntry] = await this.ctx.database.get(LAST_REPLY_TABLE, { channelId: this.session.channelId });
         this.lastReplyTime = lastReplyEntry ? lastReplyEntry.timestamp : null;
 
         // 2. 批量查询消息和交互
@@ -58,59 +55,108 @@ export class Scenario {
             .orderBy("timestamp", "desc")
             .execute();
 
-        // 删除最后一条消息避免重复添加
-        messages.shift();
+        const chatMessagesToLoad = messages.filter((m) => m.messageId !== this.session.messageId).slice(0, limit);
 
-        const chatMessages = messages.splice(0, limit);
+        const messageIds = chatMessagesToLoad.map((m) => m.messageId);
 
-        const messageIds = chatMessages.map((m) => m.messageId);
-
-        // 获取与这些消息相关的交互
         const chatInteractions = await this.ctx.database
             .select(INTERACTION_TABLE)
-            .where((row) => $.in(row.emitter, messageIds))
+            .where((row) => $.and($.eq(row.emitter_channel_id, this.session.channelId), $.gt(row.life, 0), $.in(row.emitter, messageIds)))
+            .orderBy("timestamp", "asc")
             .execute();
 
         // 合并消息和交互并按时间排序
-        let history: (Interaction | Message)[] = [...chatMessages, ...chatInteractions];
+        let history: (Interaction | Message)[] = [...chatMessagesToLoad.reverse(), ...chatInteractions];
         history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         // 计算超出上下文限制的记忆数量
-        this.recallSize = Math.max(0, messages.length);
+        const totalHistoricalMessagesCountInDb = (
+            await this.ctx.database
+                .select(MESSAGE_TABLE)
+                .where({ channel: { id: this.session.channelId } })
+                .execute()
+        ).length;
+
+        this.recallSize = Math.max(0, totalHistoricalMessagesCountInDb - chatMessagesToLoad.length);
 
         for (const record of history) {
             // 根据 lastReplyTime 判断是否为已读
             const isRead = this.lastReplyTime ? record.timestamp.getTime() <= this.lastReplyTime.getTime() : false;
-            this.addContext(record, isRead); // 使用重载的 addContext 方法
+            this.addContext(record, isRead, true);
         }
 
         // 初始化场景名称和描述
-        this.metadata = await this.getMetaData();
+        try {
+            this.metadata = await this.getMetaData();
+        } catch (error) {
+            this.ctx.logger.warn(`Failed to get scenario metadata for ${this.session.channelId}: ${error.message}`);
+            this.metadata = {};
+        }
     }
 
     /**
      * 添加消息或交互到 Scenario 的上下文。
      * @param record 消息或交互对象
      * @param isRead 是否为已读（机器人视角）
+     * @param isLoadingInitialData 标记是否在初始加载数据，避免在加载时错误增加 recallSize
      */
-    public addContext(record: Message | Interaction, isRead = false) {
+    public addContext(record: Message | Interaction, isRead = false, isLoadingInitialData = false) {
+        const targetArray = isRead ? this.context : this.unread;
+
         if (isRead) {
-            if (this.context.length < this.limit) {
-                this.context.push(record);
-            } else {
-                // 移除最早的消息或交互
-                this.context.shift();
-                this.context.push(record);
+            if (this.context.length >= this.limit) {
+                const shiftedItem = this.context.shift(); // 移除最早的消息或交互
+                // Only increment recallSize if a MESSAGE was shifted out during non-initial load
+                // And if we are not in the initial loading phase (recallSize is set once there)
+                if (!isLoadingInitialData && shiftedItem && (shiftedItem as Message).messageId) {
+                    // This logic for recallSize might be tricky if interactions are also shifted.
+                    // recallSize is primarily for messages.
+                }
                 this.recallSize++;
             }
+            this.context.push(record);
         } else {
             this.unread.push(record);
         }
     }
 
     /**
-     * 清空 Scenario 上下文和未读消息。
+     * 同步 Interaction 的生命周期，在内存中递减 life 并移除生命周期结束的 Interaction。
+     * 这个方法由 ScenarioManager 在数据库操作后调用。
      */
+    public syncAndPruneInteractions(): void {
+        let prunedCount = 0;
+
+        // Helper function to process an array (context or unread)
+        const processArray = (arr: (Message | Interaction)[]) => {
+            const newArray: (Message | Interaction)[] = [];
+            for (const record of arr) {
+                if ((record as Interaction).functionName !== undefined) {
+                    // It's an Interaction
+                    const interaction = record as Interaction;
+                    interaction.life--; // Decrement life in memory
+                    if (interaction.life > 0) {
+                        newArray.push(interaction);
+                    } else {
+                        prunedCount++; // Count how many were pruned
+                    }
+                } else {
+                    newArray.push(record); // It's a Message, keep it
+                }
+            }
+            return newArray;
+        };
+
+        this.context = processArray(this.context);
+        this.unread = processArray(this.unread);
+
+        if (prunedCount > 0) {
+            this.ctx.logger.debug(
+                `[Scenario ${this.session.channelId}] Pruned ${prunedCount} expired interactions from in-memory context.`
+            );
+        }
+    }
+
     public clearContext() {
         this.context = [];
         this.unread = [];
@@ -120,7 +166,7 @@ export class Scenario {
      * 获取场景元数据
      */
     private async getMetaData(): Promise<Record<string, string>> {
-        let metadata = {};
+        let metadata: Record<string, string> = {};
         switch (getChannelType(this.session.channelId)) {
             case "guild":
                 const groupInfo = await this.platformAdapter.getGroupInfo(this.session.guildId);
@@ -130,7 +176,7 @@ export class Scenario {
                 };
                 break;
             case "private":
-                const userInfo = await this.platformAdapter.getUserInfo(this.session.channelId);
+                const userInfo = await this.platformAdapter.getUserInfo(this.session.userId);
                 metadata = {
                     ...metadata,
                     ...userInfo,
@@ -148,61 +194,57 @@ export class Scenario {
      * 未读消息会被单独列出，并提示 AI 数量。
      */
     public render(): string {
-        // 将返回类型限定为 string
-        const INDENT_UNIT = "  "; // 2个空格的缩进单位
+        const INDENT_UNIT = "  ";
         const channelType = getChannelType(this.session.channelId);
-        // 构建 <new_messages> 块，它需要二级缩进，内部内容需要三级缩进
-        const newMessage = this.isActive
-            ? [
-                  INDENT_UNIT.repeat(2) + "<new_messages>", // <new_messages> 标签在二级缩进
-                  ...this.unread.map((msg) => INDENT_UNIT.repeat(3) + this.formatContext(msg)), // 内容在三级缩进
-                  INDENT_UNIT.repeat(2) + "</new_messages>", // 闭合标签在二级缩进
-              ].join("\n")
-            : ""; // 如果没有新消息，则为空字符串
+
         const outputParts: string[] = [];
-        // <scenario> 标签，相对于其父元素（<scenario_update> 或 <no_activity>）应该是一级缩进
         outputParts.push(INDENT_UNIT + `<scenario id="${this.session.channelId}" type="${channelType}">`);
-        // 元数据，需要二级缩进
         Object.keys(this.metadata).forEach((k) => {
             outputParts.push(INDENT_UNIT.repeat(2) + `${k.toUpperCase()}: ${this.metadata[k]}`);
         });
-        // recall memory 消息，需要二级缩进
+
         outputParts.push(
             INDENT_UNIT.repeat(2) +
                 `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`
         );
-        // 空行（根据示例，recall memory 消息和 chat history 之间没有空行）
-        // 如果需要空行，可以在这里添加：outputParts.push("");
-        // <recent_chat_history> 标签，需要二级缩进
-        outputParts.push(INDENT_UNIT.repeat(2) + `<recent_chat_history>`);
-        // chat history 内容，需要三级缩进
-        this.context.forEach((msg) => {
-            outputParts.push(INDENT_UNIT.repeat(3) + this.formatContext(msg));
-        });
-        // </recent_chat_history> 标签，需要二级缩进
-        outputParts.push(INDENT_UNIT.repeat(2) + `</recent_chat_history>`);
-        // 添加新消息块，如果存在的话
-        if (newMessage) {
-            outputParts.push(newMessage);
+
+        if (this.context.length > 0) {
+            outputParts.push(INDENT_UNIT.repeat(2) + `<recent_chat_history>`);
+            this.context.forEach((msg) => {
+                outputParts.push(INDENT_UNIT.repeat(3) + this.formatContext(msg));
+            });
+            outputParts.push(INDENT_UNIT.repeat(2) + `</recent_chat_history>`);
+        } else {
+            outputParts.push(INDENT_UNIT.repeat(2) + `<recent_chat_history>(No recent chat history available)</recent_chat_history>`);
         }
-        // </scenario> 闭合标签，需要一级缩进
+
+        if (this.isActive) {
+            outputParts.push(INDENT_UNIT.repeat(2) + "<new_messages>");
+            this.unread.forEach((msg) => {
+                outputParts.push(INDENT_UNIT.repeat(3) + this.formatContext(msg));
+            });
+            outputParts.push(INDENT_UNIT.repeat(2) + "</new_messages>");
+        }
+
         outputParts.push(INDENT_UNIT + `</scenario>`);
-        // 渲染后，将未读消息移至已读消息列表，并清空未读列表
-        // 数据库中 last_reply_table 的更新由 LLMProcessingMiddleware 负责
-        for (const message of this.unread) {
-            this.context.push(message);
+
+        for (const message of [...this.unread]) {
+            this.addContext(message, true);
         }
         this.unread = [];
+
+        while (this.context.length > this.limit) {
+            this.context.shift();
+        }
+
         return outputParts.join("\n");
     }
 
     private formatContext(record: Message | Interaction): string {
-        if ((record as Message).messageId) {
-            // 如果是 Message 类型
-            return this.formatMessage(record as Message);
-        } else {
-            // 如果是 Interaction 类型
+        if ((record as Interaction).functionName !== undefined) {
             return this.formatInteraction(record as Interaction);
+        } else {
+            return this.formatMessage(record as Message);
         }
     }
 
@@ -214,18 +256,23 @@ export class Scenario {
                 case "quote":
                     content += `[引用 #${elem.attrs.id}]`;
                     break;
-                case "forward":
-                    content += `[聊天记录 #${elem.attrs.id}]`;
-                    break;
                 case "text":
-                    content += elem.attrs.content;
+                    content += Element.escape(elem.attrs.content) || "";
                     break;
                 case "img":
                 case "image":
-                    content += `[图片 #${elem.attrs.id}]`;
+                    content += h("img", elem.attrs).toString();
                     break;
                 case "at":
-                    content += `<at id="${elem.attrs.id}" ${isNotEmpty(elem.attrs.name) ? `name="@${elem.attrs.name}"` : ""}/>`;
+                    content += `<at id="${elem.attrs.id}"${isNotEmpty(elem.attrs.name) ? ` name="@${elem.attrs.name}"` : ""}/>`;
+                    break;
+                case "face":
+                    content += `[表情:${elem.attrs.id}]`;
+                    break;
+                case "video":
+                case "audio":
+                case "file":
+                    content += `[${elem.type}]`;
                     break;
                 default:
                     content += `[${elem.type}]`;
@@ -234,19 +281,25 @@ export class Scenario {
         }
 
         const date = formatDate(message.timestamp);
-
-        const sender = message.sender.id === this.session.bot.selfId ? "YOU" : `${message.sender.name}<${message.sender.id}>`;
-
+        let sender = message.sender.id === this.session.bot.selfId ? "YOU" : `${message.sender.name}<${message.sender.id}>`;
+        if (message.sender.id !== this.session.bot.selfId && !message.sender.name && message.sender.nick) {
+            if (message.sender.nick && message.sender.nick !== message.sender.name) {
+                sender = `${message.sender.nick}(${message.sender.name})<${message.sender.id}>`;
+            }
+        }
         return `[#${message.messageId} ${date} ${sender}] ${content}`;
     }
 
     private formatInteraction(interaction: Interaction): string {
         if (interaction.type === "tool_result") {
-            const name = interaction.content["function"];
-            const returnValue = interaction.content["result"];
-            return `[FUNCTION RETURN:${name}] ${JSON.stringify(returnValue)}`;
+            const serializedResult = JSON.stringify(interaction.toolResult);
+            return `[FUNCTION RETURN:${interaction.functionName}] ${serializedResult}`;
         } else {
-            return `[FUNCTION CALL] ${JSON.stringify(interaction.content)}`;
+            const serializedParams = JSON.stringify({
+                function: interaction.functionName,
+                params: interaction.toolParams,
+            });
+            return `[FUNCTION CALL] ${serializedParams}`;
         }
     }
 }

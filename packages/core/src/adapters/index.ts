@@ -47,8 +47,8 @@ export class ModelService extends Service {
         }
     }
 
-    getChatModel(useModel: [number, number]): ChatModel {
-        if (useModel) return this.providers[useModel[0]].getChatModel(useModel[1]);
+    getChatModel(useModel: [number, number] = [0, 0]): ChatModel {
+        if (useModel) return this.providers[useModel[0]]?.getChatModel(useModel[1]);
     }
 
     getChatModelSwitcher(useModel: [number, number][]) {

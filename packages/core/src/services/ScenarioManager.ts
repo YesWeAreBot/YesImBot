@@ -1,17 +1,22 @@
-import { $, Context, Session } from "koishi";
+import { $, Context, Service, Session } from "koishi";
 import { Scenario } from "../Scenario";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message } from "../types/model";
 import { formatDate } from "../utils";
+
+declare module "koishi" {
+    interface Context {
+        scenario: ScenarioManager;
+    }
+}
 
 /**
  * Scenario 管理器。
  * 负责 Scenario 实例的生命周期、缓存和增量更新。
  */
-export class ScenarioManager {
+export class ScenarioManager extends Service {
     private scenarios: Map<string, Scenario> = new Map();
-    private ctx: Context;
     constructor(ctx: Context) {
-        this.ctx = ctx;
+        super(ctx, "scenario", true);
     }
 
     /**
@@ -53,11 +58,9 @@ export class ScenarioManager {
      * @param session 关联的会话
      * @param isBotMessage 是否为机器人自身发送的消息（影响已读/未读状态）
      */
-    async updateMessage(message: Message, session: Session, isBotMessage: boolean): Promise<void> {
-        const scenario = await this.getScenario(session); // 确保 Scenario 实例已加载
-        // 机器人自身发送的消息对机器人而言是已读的，用户发送的消息是未读的
-        scenario.addContext(message, isBotMessage);
-        // this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 增量更新消息: ${message.messageId}`);
+    async updateMessage(message: Message, session: Session, isRead: boolean): Promise<void> {
+        const scenario = await this.getScenario(session);
+        scenario.addContext(message, isRead);
     }
 
     /**
@@ -67,34 +70,43 @@ export class ScenarioManager {
      * @param session 关联的会话
      */
     async updateInteraction(interaction: Interaction, session: Session, isRead: boolean): Promise<void> {
-        const scenario = await this.getScenario(session); // 确保 Scenario 实例已加载
-        // 交互记录通常是新的信息，标记为未读以供 AI 重点关注
+        const scenario = await this.getScenario(session);
         scenario.addContext(interaction, isRead);
-        // this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 增量更新交互: ${interaction.id}`);
     }
 
     /**
      * 处理交互记录的生命周期：递减 'life' 值并移除过期记录。
-     * 在 LLM 处理之前调用，确保上下文中的交互记录是最新的。
+     * 此函数在 Koishi LLMChain 处理之前调用，确保上下文中的交互记录是最新的。
+     * 优化：使用批处理 SQL 语句。
+     * 新增：同步更新内存中 Scenario 实例的 Interaction 生命周期。
      * @param channelId 频道ID
      */
     async processInteractions(channelId: string): Promise<void> {
-        const interactions = await this.ctx.database
-            .select(INTERACTION_TABLE)
-            .where({ emitter_channel_id: channelId }) // 使用新的 emitter_channel_id 字段
-            .execute();
-        for (const interaction of interactions) {
-            let life = interaction.life;
-            if (life > 0) {
-                // 递减 life 值
-                await this.ctx.database.set(INTERACTION_TABLE, { id: interaction.id }, { life: $.subtract(life, 1) });
-                // this.ctx.logger.info(`[ScenarioManager] 交互 ${interaction.id} 的生命周期递减至 ${life - 1}。`);
+        let updatedInDbCount = 0;
+        let deletedInDbCount = 0;
+
+        try {
+            // 1. 递减数据库中所有有效交互的 life 值
+            const updateResult = await this.ctx.database.set(
+                INTERACTION_TABLE,
+                {
+                    $and: [{ emitter_channel_id: channelId }, { life: { $gt: 0 } }],
+                },
+                (row) => ({ life: $.subtract(row.life, 1) })
+            );
+
+            // 2. 移除数据库中 life 值小于等于 0 的过期交互
+            const removalResult = await this.ctx.database.remove(INTERACTION_TABLE, {
+                $and: [{ emitter_channel_id: channelId }, { life: { $lte: 0 } }],
+            });
+
+            // 3. 同步更新内存中 Scenario 实例的 Interaction 生命周期
+            const scenario = this.scenarios.get(channelId);
+            if (scenario) {
+                scenario.syncAndPruneInteractions();
             } else {
-                // 移除过期交互
-                await this.ctx.database.remove(INTERACTION_TABLE, { id: interaction.id });
-                // this.ctx.logger.info(`[ScenarioManager] 交互 ${interaction.id} 已过期并被移除。`);
             }
-        }
+        } catch (error) {}
     }
 
     /**
@@ -103,65 +115,54 @@ export class ScenarioManager {
      * @param channelId 频道ID
      */
     async setLastReplyTime(channelId: string): Promise<void> {
-        await this.ctx.database.upsert(
-            LAST_REPLY_TABLE,
-            [
-                {
-                    channelId: channelId,
-                    timestamp: new Date(),
-                },
-            ],
-            ["channelId"]
-        );
-        // this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 的最后回复时间已更新。`);
+        await this.ctx.database.upsert(LAST_REPLY_TABLE, [{ channelId: channelId, timestamp: new Date() }], ["channelId"]);
     }
-
-    /**
-     * 清除指定频道的 Scenario 实例缓存。
-     * @param channelId 频道ID
-     */
     clearScenario(channelId: string): void {
         const removed = this.scenarios.delete(channelId);
-        // if (removed) {
-        //     this.ctx.logger.info(`[ScenarioManager] 频道 ${channelId} 的 Scenario 实例已从缓存中清除。`);
-        // }
+        if (removed) {
+            this.ctx.logger.debug(`[ScenarioManager] 频道 ${channelId} 的 Scenario 实例已从缓存中清除。`);
+        }
     }
 
-    /**
-     *清除所有频道的 Scenario 实例缓存。
-     */
     clearAllScenario(): void {
         this.scenarios.clear();
+        this.ctx.logger.info(`[ScenarioManager] 所有 Scenario 实例已从缓存中清除。`);
     }
 
-    /**
-     * 渲染指定频道的 Scenario 上下文。
-     */
     public render(channels: string[]): string {
         const INDENT_UNIT = "  ";
         const scenarioList = channels
             .map((channel) => {
                 const scenario = this.scenarios.get(channel);
                 if (!scenario) {
-                    //throw new Error(`[ScenarioManager] 找不到频道 ${channel} 的 Scenario 实例。`);
+                    this.ctx.logger.warn(`[ScenarioManager] 渲染时找不到频道 ${channel} 的 Scenario 实例。`);
                 }
                 return scenario;
             })
-            .filter(Boolean) as Scenario[];
+            .filter((s) => s !== undefined) as Scenario[];
+
         const active = scenarioList.filter((scenario) => scenario.isActive);
         const inactive = scenarioList.filter((scenario) => !scenario.isActive);
         const contentParts: string[] = [];
 
         contentParts.push(`<scenario_update timestamp="${formatDate(new Date())}">`);
-        active.forEach((scenario) => {
-            contentParts.push(scenario.render());
-        });
+        if (active.length > 0) {
+            active.forEach((scenario) => {
+                contentParts.push(scenario.render());
+            });
+        } else {
+            contentParts.push(INDENT_UNIT + `<!-- No active scenarios with new messages -->`);
+        }
         contentParts.push(`</scenario_update>`);
 
         contentParts.push(`<no_activity>`);
-        inactive.forEach((scenario) => {
-            contentParts.push(scenario.render());
-        });
+        if (inactive.length > 0) {
+            inactive.forEach((scenario) => {
+                contentParts.push(scenario.render());
+            });
+        } else {
+            contentParts.push(INDENT_UNIT + `<!-- No inactive scenarios to report -->`);
+        }
         contentParts.push(`</no_activity>`);
 
         contentParts.push(`<task_instruction>`);
