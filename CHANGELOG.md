@@ -1,4 +1,17 @@
-### 3.0.0-alpha.17
+### 3.0.0-beta.1
+refactor(scenario): 优化交互处理逻辑，修复清空对话后上下文无法同步的问题
+- 将 ScenarioManager 注册为服务
+- 优化 Interaction 数据结构，明确区分工具调用和结果
+- 改进内存中交互生命周期的同步与清理机制
+- 增强错误处理和日志记录
+- 优化上下文渲染格式，支持更多消息类型
+- 修复消息加载和分页逻辑
+feat(commands): 添加配置管理命令模块
+新增 config.ts 文件实现配置的获取和设置功能，支持嵌套对象和数组索引的路径解析。主要包含：
+- conf.get 命令：通过键路径获取配置值
+- conf.set 命令：通过键路径设置配置值
+
+### 3.0.0-beta.0
 feat(error-handling): 调整错误上报格式
 refactor(memory): 重构记忆模块实现
 - 将原有Memory类拆分为MemoryService、MemoryBlock等模块化组件
