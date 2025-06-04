@@ -1,11 +1,11 @@
 import { $, Context, Service, Session } from "koishi";
 import { Scenario } from "../Scenario";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message } from "../types/model";
-import { formatDate } from "../utils";
 
 declare module "koishi" {
-    interface Context {
-        scenario: ScenarioManager;
+    interface Events {
+        "scenario/clear": (channelId: string) => void;
+        "scenario/clearAll": () => void;
     }
 }
 
@@ -13,10 +13,15 @@ declare module "koishi" {
  * Scenario 管理器。
  * 负责 Scenario 实例的生命周期、缓存和增量更新。
  */
-export class ScenarioManager extends Service {
+export class ScenarioManager {
     private scenarios: Map<string, Scenario> = new Map();
-    constructor(ctx: Context) {
-        super(ctx, "scenario", true);
+    constructor(private ctx: Context) {
+        ctx.on("scenario/clear", (channelId) => {
+            this.clearScenario(channelId);
+        });
+        ctx.on("scenario/clearAll", () => {
+            this.clearAllScenario();
+        });
     }
 
     /**
@@ -34,10 +39,9 @@ export class ScenarioManager extends Service {
             return this.scenarios.get(channelId)!;
         }
         // 缓存中不存在，创建新的 Scenario 实例并加载初始数据
-        const scenario = new Scenario(this.ctx, session);
-        await scenario.loadInitialData(limit);
+        const scenario = new Scenario(this.ctx, session, limit);
+        await scenario.loadInitialData();
         this.scenarios.set(channelId, scenario);
-        // this.ctx.logger.info(`[ScenarioManager] 为频道 ${channelId} 创建并加载了新的 Scenario 实例。`);
         return scenario;
     }
 
@@ -56,11 +60,11 @@ export class ScenarioManager extends Service {
      * 当有新消息（无论是用户发送还是机器人发送）时调用。
      * @param message 消息对象
      * @param session 关联的会话
-     * @param isBotMessage 是否为机器人自身发送的消息（影响已读/未读状态）
+     * @param isNewMessage 是否为新消息，机器人尚未处理
      */
-    async updateMessage(message: Message, session: Session, isRead: boolean): Promise<void> {
+    async updateMessage(message: Message, session: Session, isNewMessage: boolean): Promise<void> {
         const scenario = await this.getScenario(session);
-        scenario.addContext(message, isRead);
+        scenario.addContext(message, isNewMessage);
     }
 
     /**
@@ -68,10 +72,11 @@ export class ScenarioManager extends Service {
      * 当工具调用或结果返回时调用。
      * @param interaction 交互对象
      * @param session 关联的会话
+     * @param isNewMessage 是否为新交互，机器人尚未处理
      */
-    async updateInteraction(interaction: Interaction, session: Session, isRead: boolean): Promise<void> {
+    async updateInteraction(interaction: Interaction, session: Session, isNewMessage: boolean): Promise<void> {
         const scenario = await this.getScenario(session);
-        scenario.addContext(interaction, isRead);
+        scenario.addContext(interaction, isNewMessage);
     }
 
     /**
@@ -82,9 +87,6 @@ export class ScenarioManager extends Service {
      * @param channelId 频道ID
      */
     async processInteractions(channelId: string): Promise<void> {
-        let updatedInDbCount = 0;
-        let deletedInDbCount = 0;
-
         try {
             // 1. 递减数据库中所有有效交互的 life 值
             const updateResult = await this.ctx.database.set(
@@ -105,8 +107,11 @@ export class ScenarioManager extends Service {
             if (scenario) {
                 scenario.syncAndPruneInteractions();
             } else {
+                this.ctx.logger.warn(`[ScenarioManager] 尝试处理不在缓存中的频道 ${channelId} 的交互。`);
             }
-        } catch (error) {}
+        } catch (error: any) {
+            this.ctx.logger.error(`[ScenarioManager] 处理频道 ${channelId} 交互时出错: ${error.message}`);
+        }
     }
 
     /**
@@ -117,6 +122,7 @@ export class ScenarioManager extends Service {
     async setLastReplyTime(channelId: string): Promise<void> {
         await this.ctx.database.upsert(LAST_REPLY_TABLE, [{ channelId: channelId, timestamp: new Date() }], ["channelId"]);
     }
+
     clearScenario(channelId: string): void {
         const removed = this.scenarios.delete(channelId);
         if (removed) {
@@ -129,47 +135,32 @@ export class ScenarioManager extends Service {
         this.ctx.logger.info(`[ScenarioManager] 所有 Scenario 实例已从缓存中清除。`);
     }
 
-    public render(channels: string[]): string {
-        const INDENT_UNIT = "  ";
-        const scenarioList = channels
-            .map((channel) => {
-                const scenario = this.scenarios.get(channel);
-                if (!scenario) {
-                    this.ctx.logger.warn(`[ScenarioManager] 渲染时找不到频道 ${channel} 的 Scenario 实例。`);
-                }
-                return scenario;
-            })
-            .filter((s) => s !== undefined) as Scenario[];
-
-        const active = scenarioList.filter((scenario) => scenario.isActive);
-        const inactive = scenarioList.filter((scenario) => !scenario.isActive);
-        const contentParts: string[] = [];
-
-        contentParts.push(`<scenario_update timestamp="${formatDate(new Date())}">`);
-        if (active.length > 0) {
-            active.forEach((scenario) => {
-                contentParts.push(scenario.render());
-            });
-        } else {
-            contentParts.push(INDENT_UNIT + `<!-- No active scenarios with new messages -->`);
+    /**
+     * 获取所有活跃的 Scenario 实例列表，供 PromptBuilder 渲染。
+     */
+    public getActiveScenariosForRender(): Scenario[] {
+        const activeScenarios: Scenario[] = [];
+        for (const scenario of this.scenarios.values()) {
+            if (scenario.isActive) {
+                activeScenarios.push(scenario);
+            }
         }
-        contentParts.push(`</scenario_update>`);
-
-        contentParts.push(`<no_activity>`);
-        if (inactive.length > 0) {
-            inactive.forEach((scenario) => {
-                contentParts.push(scenario.render());
-            });
-        } else {
-            contentParts.push(INDENT_UNIT + `<!-- No inactive scenarios to report -->`);
-        }
-        contentParts.push(`</no_activity>`);
-
-        contentParts.push(`<task_instruction>`);
-        contentParts.push(INDENT_UNIT + `请综合以上所有群组的最新动态，决定你希望如何回应。`);
-        contentParts.push(INDENT_UNIT + `如果你决定回复，请按照以下格式组织你的回复。对于每个目标群组，生成一个独立的回复内容。`);
-        contentParts.push(INDENT_UNIT + `如果你不回复任何群组，请明确指示。`);
-        contentParts.push(`</task_instruction>`);
-        return contentParts.join("\n");
+        return activeScenarios;
     }
+
+    /**
+     * 获取所有不活跃的 Scenario 实例列表（主要指群聊），供 PromptBuilder 渲染。
+     */
+    public getInactiveScenariosForRender(): Scenario[] {
+        const inactiveScenarios: Scenario[] = [];
+        for (const scenario of this.scenarios.values()) {
+            if (!scenario.isActive) {
+                inactiveScenarios.push(scenario);
+            }
+        }
+        return inactiveScenarios;
+    }
+
+    // 移除原有的 render 方法，其职责已转移到 PromptBuilder
+    // public render(channels: string[]): string { /* ... */ }
 }

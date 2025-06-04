@@ -2,21 +2,20 @@ import { $, Context, Element, h, Session } from "koishi";
 
 import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "./services/PlatformAdapter";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
-import { formatDate, getChannelType, isNotEmpty } from "./utils";
+import { formatDate, getChannelType } from "./utils";
 
 /**
  * 对话场景
  */
 export class Scenario {
     private metadata: Record<string, string>;
-    public context: (Message | Interaction)[] = []; // 已读消息列表
-    public unread: (Message | Interaction)[] = []; // 未读消息列表
+    public chatHistory: (Message | Interaction)[] = []; // 已读消息列表
+    public newMessages: (Message | Interaction)[] = []; // 未读消息列表
     private recallSize: number; // 数据库中超出上下文限制，但仍可“召回”的历史记录数量
     private lastReplyTime: Date | null = null; // 存储最后回复时间，用于判断消息已读状态
     private platformAdapter: PlatformAdapter;
-    private limit: number; // 上下文消息数量限制
 
-    constructor(private ctx: Context, private session: Session) {
+    constructor(private ctx: Context, private session: Session, private limit: number = 30) {
         switch (session.platform) {
             case "onebot":
                 this.platformAdapter = new OneBotPlatform(session);
@@ -31,7 +30,7 @@ export class Scenario {
      * 判断群组是否活跃（有未读消息）
      */
     public get isActive(): boolean {
-        return this.unread.length > 0;
+        return this.newMessages.length > 0;
     }
 
     /**
@@ -39,10 +38,10 @@ export class Scenario {
      * 合并查询消息和交互，减少数据库查询。
      * @param limit 历史消息数量限制
      */
-    public async loadInitialData(limit: number = 30) {
-        this.limit = limit;
-        this.context = [];
-        this.unread = [];
+    public async loadInitialData() {
+        // 初始化并清空上下文
+        this.chatHistory = [];
+        this.newMessages = [];
 
         // 1. 获取最后回复时间
         const [lastReplyEntry] = await this.ctx.database.get(LAST_REPLY_TABLE, { channelId: this.session.channelId });
@@ -55,7 +54,7 @@ export class Scenario {
             .orderBy("timestamp", "desc")
             .execute();
 
-        const chatMessagesToLoad = messages.filter((m) => m.messageId !== this.session.messageId).slice(0, limit);
+        const chatMessagesToLoad = messages.filter((m) => m.messageId !== this.session.messageId).slice(0, this.limit);
 
         const messageIds = chatMessagesToLoad.map((m) => m.messageId);
 
@@ -80,9 +79,9 @@ export class Scenario {
         this.recallSize = Math.max(0, totalHistoricalMessagesCountInDb - chatMessagesToLoad.length);
 
         for (const record of history) {
-            // 根据 lastReplyTime 判断是否为已读
-            const isRead = this.lastReplyTime ? record.timestamp.getTime() <= this.lastReplyTime.getTime() : false;
-            this.addContext(record, isRead, true);
+            // 根据 lastReplyTime 判断是否是新消息
+            const isNewMessage = this.lastReplyTime ? record.timestamp.getTime() > this.lastReplyTime.getTime() : true;
+            this.addContext(record, isNewMessage, true);
         }
 
         // 初始化场景名称和描述
@@ -97,15 +96,15 @@ export class Scenario {
     /**
      * 添加消息或交互到 Scenario 的上下文。
      * @param record 消息或交互对象
-     * @param isRead 是否为已读（机器人视角）
+     * @param isNewMessage 是否是新消息
      * @param isLoadingInitialData 标记是否在初始加载数据，避免在加载时错误增加 recallSize
      */
-    public addContext(record: Message | Interaction, isRead = false, isLoadingInitialData = false) {
-        const targetArray = isRead ? this.context : this.unread;
-
-        if (isRead) {
-            if (this.context.length >= this.limit) {
-                const shiftedItem = this.context.shift(); // 移除最早的消息或交互
+    public addContext(record: Message | Interaction, isNewMessage = true, isLoadingInitialData = false) {
+        if (isNewMessage) {
+            this.newMessages.push(record);
+        } else {
+            if (this.chatHistory.length > this.limit) {
+                const shiftedItem = this.chatHistory.shift(); // 移除最早的消息或交互
                 // Only increment recallSize if a MESSAGE was shifted out during non-initial load
                 // And if we are not in the initial loading phase (recallSize is set once there)
                 if (!isLoadingInitialData && shiftedItem && (shiftedItem as Message).messageId) {
@@ -114,9 +113,7 @@ export class Scenario {
                 }
                 this.recallSize++;
             }
-            this.context.push(record);
-        } else {
-            this.unread.push(record);
+            this.chatHistory.push(record);
         }
     }
 
@@ -147,8 +144,8 @@ export class Scenario {
             return newArray;
         };
 
-        this.context = processArray(this.context);
-        this.unread = processArray(this.unread);
+        this.chatHistory = processArray(this.chatHistory);
+        this.newMessages = processArray(this.newMessages);
 
         if (prunedCount > 0) {
             this.ctx.logger.debug(
@@ -157,9 +154,26 @@ export class Scenario {
         }
     }
 
+    /**
+     * 清空上下文
+     */
     public clearContext() {
-        this.context = [];
-        this.unread = [];
+        this.chatHistory = [];
+        this.newMessages = [];
+    }
+
+    /**
+     * 将新消息转移到已读历史中，并重置活跃状态。
+     * 在机器人成功回复后调用。
+     */
+    public clearNewMessages(): void {
+        this.chatHistory.push(...this.newMessages);
+        this.newMessages = [];
+
+        // 确保 chatHistory 不超过限制
+        if (this.chatHistory.length > this.limit) {
+            this.chatHistory = this.chatHistory.slice(-this.limit);
+        }
     }
 
     /**
@@ -190,12 +204,13 @@ export class Scenario {
     }
 
     /**
-     * 将场景渲染为字符串，用于 LLM 提示词。
+     * 渲染此 Scenario 实例的上下文，供 PromptBuilder 使用。
      * 未读消息会被单独列出，并提示 AI 数量。
      */
-    public render(): string {
-        const INDENT_UNIT = "  ";
+    public renderForPrompt(): string {
+        const INDENT_UNIT = "  "; // 2 spaces
         const channelType = getChannelType(this.session.channelId);
+        const isPrivateChat = channelType === "private"; // 是否为私聊场景，私聊会更简洁。
 
         const outputParts: string[] = [];
         outputParts.push(INDENT_UNIT + `<scenario id="${this.session.channelId}" type="${channelType}">`);
@@ -208,9 +223,9 @@ export class Scenario {
                 `${this.recallSize} previous messages between you and the scenario are stored in recall memory (use functions to access them)`
         );
 
-        if (this.context.length > 0) {
+        if (this.chatHistory.length > 0) {
             outputParts.push(INDENT_UNIT.repeat(2) + `<recent_chat_history>`);
-            this.context.forEach((msg) => {
+            this.chatHistory.forEach((msg) => {
                 outputParts.push(INDENT_UNIT.repeat(3) + this.formatContext(msg));
             });
             outputParts.push(INDENT_UNIT.repeat(2) + `</recent_chat_history>`);
@@ -220,22 +235,13 @@ export class Scenario {
 
         if (this.isActive) {
             outputParts.push(INDENT_UNIT.repeat(2) + "<new_messages>");
-            this.unread.forEach((msg) => {
+            this.newMessages.forEach((msg) => {
                 outputParts.push(INDENT_UNIT.repeat(3) + this.formatContext(msg));
             });
             outputParts.push(INDENT_UNIT.repeat(2) + "</new_messages>");
         }
 
         outputParts.push(INDENT_UNIT + `</scenario>`);
-
-        for (const message of [...this.unread]) {
-            this.addContext(message, true);
-        }
-        this.unread = [];
-
-        while (this.context.length > this.limit) {
-            this.context.shift();
-        }
 
         return outputParts.join("\n");
     }
@@ -254,7 +260,7 @@ export class Scenario {
         for (let elem of elements) {
             switch (elem.type) {
                 case "quote":
-                    content += `[引用 #${elem.attrs.id}]`;
+                    content += `[引用#${elem.attrs.id}]`;
                     break;
                 case "text":
                     content += Element.escape(elem.attrs.content) || "";
@@ -264,7 +270,7 @@ export class Scenario {
                     content += h("img", elem.attrs).toString();
                     break;
                 case "at":
-                    content += `<at id="${elem.attrs.id}"${isNotEmpty(elem.attrs.name) ? ` name="@${elem.attrs.name}"` : ""}/>`;
+                    content += h("at", elem.attrs);
                     break;
                 case "face":
                     content += `[表情:${elem.attrs.id}]`;
@@ -281,7 +287,9 @@ export class Scenario {
         }
 
         const date = formatDate(message.timestamp);
-        let sender = message.sender.id === this.session.bot.selfId ? "YOU" : `${message.sender.name}<${message.sender.id}>`;
+        const SELF_IDENTIFIER = "YOU"; // 用于标识机器人自身的标识符
+
+        let sender = message.sender.id === this.session.bot.selfId ? SELF_IDENTIFIER : `${message.sender.name}<${message.sender.id}>`;
         if (message.sender.id !== this.session.bot.selfId && !message.sender.name && message.sender.nick) {
             if (message.sender.nick && message.sender.nick !== message.sender.name) {
                 sender = `${message.sender.nick}(${message.sender.name})<${message.sender.id}>`;

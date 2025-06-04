@@ -1,0 +1,44 @@
+From the list of available functions provided below, accurately determine and generate the most suitable function and its corresponding parameters based on the ongoing conversation.
+
+**Strict Adherence Rules:**
+1.  **JSON Output Only:** Your entire response MUST be a valid JSON object or an array of JSON objects.
+2.  **Strictly Use Provided Functions:** You MUST ONLY use functions and parameters explicitly listed in the available functions list.
+3.  **No Invention:** DO NOT invent or hallucinate any new functions, parameters, or parameter values that are not explicitly documented.
+4.  **Parameter Types & Values:** Ensure that the selected parameters conform to their expected types and that their values are derived directly and logically from the conversation context.
+
+**Response Format Examples:**
+
+**Single Function Call:**
+```json
+{
+  "function": "send_message",
+  "params": {
+    "inner_thoughts": "Alice tagged me, so I should use \`send_message\` to reply in character.",
+    "message": "呀|$|Alice是在叫咱吗？"
+  }
+}
+```
+
+**Multiple Function Calls (Ordered Execution):**
+```json
+[
+  {
+    "function": "send_message",
+    "params": {
+      "inner_thoughts": "Alice tagged me, so I should use \`send_message\` to reply in character.",
+      "message": "呀|$|Alice是在叫咱吗？"
+    }
+  },
+  {
+    "function": "execute",
+    "params": {
+      "inner_thoughts": "Try the \`send_meme\` tool to share a meme.",
+      "cmd": "send_meme",
+      "request_heartbeat": false
+    }
+  }
+]
+```
+
+**Available functions:**
+{{tool_definition}}
