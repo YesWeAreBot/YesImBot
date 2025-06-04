@@ -5,7 +5,6 @@ import Agent from "./agent";
 import { Config } from "./config";
 import ToolManager from "./extensions";
 import { CoreMemoryBlockConfig, MemoryService } from "./memory/MemoryService";
-import { ScenarioManager } from "./services/ScenarioManager";
 
 declare module "koishi" {
     interface Context {
@@ -37,9 +36,6 @@ export default class YesImBot extends Service {
             providerConfig: config.Provider,
             modelSetting: config.ModelSetting,
         });
-
-        // 注册场景管理器
-        ctx.plugin(ScenarioManager);
 
         // 注册记忆管理层
         const coreBlockDefaults = {};

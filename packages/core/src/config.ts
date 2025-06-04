@@ -1,6 +1,7 @@
 import { Computed, Schema } from "koishi";
 import { ModelSetting, Provider } from "./adapters/config";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
+import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
 
 interface BlockConfig {
     Limit?: number;
@@ -57,6 +58,7 @@ export interface Config {
         MaxRetry: number;
         Life: number;
     };
+    PromptTemplate: PromptBuilderConfig;
     Debug: {
         EnableDebug: boolean;
         UploadDump: boolean;
@@ -184,6 +186,21 @@ export const Config: Schema<Config> = Schema.object({
         MaxRetry: Schema.number().default(3).min(0).max(10).description("工具调用失败时的最大重试次数"),
         Life: Schema.number().default(3).min(0).max(10).description("工具调用的生命周期次数"),
     }).description("工具调用管理配置"),
+
+    PromptTemplate: Schema.object({
+        SystemTemplate: Schema.string()
+            .default(SystemBaseTemplate)
+            .role("textarea", { rows: [4, 8] })
+            .description("自定义系统提示词模板"),
+        UserTemplate: Schema.string()
+            .default(UserBaseTemplate)
+            .role("textarea", { rows: [4, 8] })
+            .description("自定义用户提示词模板"),
+        ToolTemplate: Schema.string()
+            .default(ToolBaseTemplate)
+            .role("textarea", { rows: [4, 8] })
+            .description("自定义工具提示词模板"),
+    }).description("自定义提示词"),
 
     Debug: Schema.object({
         EnableDebug: Schema.boolean().default(false).description("在控制台显示详细的调试信息"),
