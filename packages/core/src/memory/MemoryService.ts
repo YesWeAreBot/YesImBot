@@ -32,12 +32,12 @@ interface MemoryBlockCompressionState {
 
 declare module "koishi" {
     interface Context {
-        memory: MemoryService;
+        "yesimbot.memory": MemoryService;
     }
 }
 
 export class MemoryService extends Service {
-    static readonly inject = ["ModelService"];
+    static readonly inject = ["yesimbot.model"];
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
     private lastModified: Date = new Date();
@@ -50,7 +50,7 @@ export class MemoryService extends Service {
     private chatModel: ChatModel;
 
     constructor(ctx: Context, public readonly config: MemoryServiceConfig = {}) {
-        super(ctx, "memory", true);
+        super(ctx, "yesimbot.memory", true);
 
         ctx.model.extend(
             MEMORY_TABLE,
@@ -68,7 +68,7 @@ export class MemoryService extends Service {
 
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
-        this.chatModel = ctx.ModelService.getChatModel(config.UseModel);
+        this.chatModel = ctx["yesimbot.model"].getChatModel(config.UseModel);
         ctx.logger.info("MemoryService initialized.");
     }
 
@@ -79,11 +79,11 @@ export class MemoryService extends Service {
                 if (Object.prototype.hasOwnProperty.call(this.config.coreBlockDefaults, label)) {
                     const blockConfig = this.config.coreBlockDefaults[label] || {};
                     await this.getOrCreateCoreMemoryBlock(label, {
-                        limit: blockConfig.limit, // Relies on getOrCreateCoreMemoryBlock's default if undefined
+                        limit: blockConfig.limit,
                         initialValue: blockConfig.initialValue,
                         filePathToBind: blockConfig.filePathToBind,
                     });
-                    this.logger.info(`Core memory block "${label}" ensured.`);
+                    this.ctx.logger.info(`Core memory block "${label}" ensured.`);
 
                     // 为所有核心块初始化压缩状态
                     this._compressionStates.set(label, {
@@ -104,12 +104,7 @@ export class MemoryService extends Service {
                 this.ctx.logger.info(`[Compression] Scheduled compression check every ${intervalMinutes} minutes.`);
             }
         } else {
-            this.ctx.logger.info(
-                'No coreBlockDefaults configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.'
-            );
-            // You might still want to ensure essential blocks like 'persona' and 'human' exist by default if not in config:
-            // await this.getOrCreateCoreMemoryBlock('persona', { limit: 2000, initialValue: ["Persona not set."] });
-            // await this.getOrCreateCoreMemoryBlock('human', { limit: 1000, initialValue: ["Human info not set."] });
+            this.ctx.logger.info( `No coreBlockDefaults configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.`);
         }
     }
 

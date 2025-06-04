@@ -32,7 +32,7 @@ interface ModelServiceConfig {
 
 declare module "koishi" {
     interface Context {
-        ModelService: ModelService;
+        "yesimbot.model": ModelService;
     }
 }
 
@@ -40,7 +40,7 @@ export class ModelService extends Service {
     private providers: Provider[] = [];
 
     constructor(ctx: Context, config: ModelServiceConfig) {
-        super(ctx, "ModelService", true);
+        super(ctx, "yesimbot.model", true);
 
         for (let prov of config.providerConfig) {
             this.providers.push(new Provider(prov, config.modelSetting));

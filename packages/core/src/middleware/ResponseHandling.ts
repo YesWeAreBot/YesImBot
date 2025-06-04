@@ -1,21 +1,27 @@
 import { Context, Random, Session } from "koishi";
 
-import { Failed, Success, ToolCallResult } from "../extensions/base";
-import { ServiceContainer } from "../services/container";
+import { Failed, ToolCallResult } from "../extensions/base";
 import { ScenarioManager } from "../services/ScenarioManager";
 import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
 
-export class ResponseHandlingMiddleware implements Middleware {
-    name = "response-handling";
-
+export class ResponseHandlingMiddleware extends Middleware {
     constructor(
-        private scenarioManager: ScenarioManager,
-        private middlewareManager: MiddlewareManager,
-        private options?: { maxRetry: number; life: number; maxHeartbeat?: number }
-    ) {}
+        protected ctx: Context,
+        protected services: {
+            readonly scenarioManager: ScenarioManager;
+            readonly middlewareManager: MiddlewareManager;
+        },
+        protected config: {
+            maxRetry: number;
+            life: number;
+            maxHeartbeat?: number;
+        }
+    ) {
+        super("response-handling", ctx, services, config);
+    }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         // 只在响应状态下执行
@@ -37,7 +43,9 @@ export class ResponseHandlingMiddleware implements Middleware {
             logger.error(`[ResponseHandling] LLM响应解析失败: ${error.message}`);
             await ctx.transitionTo(ConversationState.IDLE); // 错误后重置状态
             // 释放频道处理状态
-            const checkReplyMiddleware = this.middlewareManager.getMiddleware("check-reply-condition") as CheckReplyConditionMiddleware;
+            const checkReplyMiddleware = this.services.middlewareManager.getMiddleware(
+                "check-reply-condition"
+            ) as CheckReplyConditionMiddleware;
             checkReplyMiddleware.releaseChannelState(session.channelId);
             return;
         }
@@ -56,7 +64,7 @@ export class ResponseHandlingMiddleware implements Middleware {
             // 记录工具调用，使用新的 Interaction 结构
             await this.recordToolCall(ctx.koishiContext, session, functionName, params);
 
-            const result = await this.executeToolCall(ctx.koishiContext, session, functionName, params, this.options?.maxRetry || 0);
+            const result = await this.executeToolCall(ctx.koishiContext, session, functionName, params, this.config?.maxRetry || 0);
 
             // 记录工具结果，使用新的 Interaction 结构
             await this.recordToolResult(ctx.koishiContext, session, functionName, result);
@@ -68,7 +76,7 @@ export class ResponseHandlingMiddleware implements Middleware {
 
         // 如果需要继续对话 (heartbeat)
         if (request_heartbeat) {
-            const maxHeartbeat = this.options?.maxHeartbeat || 5;
+            const maxHeartbeat = this.config?.maxHeartbeat || 5;
 
             if (ctx.heartbeatCount >= maxHeartbeat) {
                 ctx.koishiContext.logger.warn(`[ResponseHandling] Heartbeat触发次数已达到最大限制 (${maxHeartbeat})，停止连续对话`);
@@ -77,7 +85,7 @@ export class ResponseHandlingMiddleware implements Middleware {
                 ctx.koishiContext.logger.info(`[ResponseHandling] 触发heartbeat连续对话，当前次数: ${ctx.heartbeatCount}/${maxHeartbeat}`);
                 await ctx.transitionTo(ConversationState.PROCESSING);
                 // 重新进入 LLM 处理流程，确保 Prompt 会更新
-                await this.middlewareManager.executeFrom(ctx, this.middlewareManager.findIndex("llm-processing"));
+                await this.services.middlewareManager.executeFrom(ctx, this.services.middlewareManager.findIndex("llm-processing"));
                 return; // 提前返回，因为处理链将从 llm-processing 重新开始
             }
         }
@@ -90,7 +98,7 @@ export class ResponseHandlingMiddleware implements Middleware {
         // 重置heartbeat计数器
         ctx.heartbeatCount = 0;
         // 释放频道处理状态
-        const checkReplyMiddleware = this.middlewareManager.getMiddleware("check-reply-condition") as CheckReplyConditionMiddleware;
+        const checkReplyMiddleware: CheckReplyConditionMiddleware = this.services.middlewareManager.getMiddleware("check-reply-condition");
         checkReplyMiddleware.releaseChannelState(session.channelId);
     }
 
@@ -138,8 +146,9 @@ export class ResponseHandlingMiddleware implements Middleware {
             }
             return `${result.join(", ")}`;
         }
+        const toolManager = koishiContext["yesimbot.tool"];
         try {
-            const tool = koishiContext.toolManager.getTool(functionName);
+            const tool = toolManager.getTool(functionName);
             if (!tool) {
                 koishiContext.logger.warn(`Tool ${functionName} not found`);
                 return Failed(`Tool ${functionName} not found`);
@@ -180,12 +189,11 @@ export class ResponseHandlingMiddleware implements Middleware {
             type: "tool_call",
             functionName: functionName,
             toolParams: params,
-            life: this.options?.life || 3, // 从配置中获取或默认3轮
+            life: this.config?.life || 3, // 从配置中获取或默认3轮
             timestamp: new Date(),
         };
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
-        // 新增的交互应该被视为未读，以便在下一轮 LLM 调用中被注意到
-        await this.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
+        await this.services.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
     }
 
     /**
@@ -211,11 +219,10 @@ export class ResponseHandlingMiddleware implements Middleware {
             type: "tool_result",
             functionName: functionName,
             toolResult: result,
-            life: this.options?.life || 3, // 从配置中获取或默认3轮
+            life: this.config?.life || 3, // 从配置中获取或默认3轮
             timestamp: new Date(),
         };
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
-        // 工具结果也应被视为未读，以便 LLM 能够看到结果
-        await this.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
+        await this.services.scenarioManager.updateInteraction(newInteraction, koishiSession, true);
     }
 }

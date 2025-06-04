@@ -1,6 +1,8 @@
 import { Context, isEmpty } from "koishi";
 import { Config } from "../config";
 
+export const name = "yesimbot.command.config";
+
 export function apply(ctx: Context, config: Config) {
     ctx.command("conf.get [key:string]", { authority: 3 }).action(async ({ session, options }, key) => {
         if (isEmpty(key)) return "请输入有效的配置键";

@@ -1,6 +1,7 @@
 import { Context, sleep } from "koishi";
 import { z } from "zod";
 
+import { ChatModelSwitcher } from "./adapters";
 import { Config } from "./config";
 import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./extensions/base";
 import { MessageContext, MiddlewareManager } from "./middleware/base";
@@ -9,29 +10,30 @@ import { DatabaseStorageMiddleware } from "./middleware/DatabaseStorage";
 import { ErrorHandlingMiddleware } from "./middleware/ErrorHandling";
 import { LLMProcessingMiddleware } from "./middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "./middleware/ResponseHandling";
-import { ServiceContainer } from "./services/container";
+import { PromptBuilder } from "./prompt/PromptBuilder";
 import { ScenarioManager } from "./services/ScenarioManager";
 import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
-import { getChannelType, isEmpty } from "./utils";
-import { ImageProcessor } from "./utils/imageProcessor";
+import { getChannelType, isEmpty, ImageProcessor } from "./utils";
 
 export default class Agent {
-    private serviceContainer: ServiceContainer;
     private ctx: Context;
     private config: Config;
 
     static readonly name = "yesimbot";
 
-    static readonly inject = ["toolManager", "memory", "ModelService", "scenario"];
+    static readonly inject = ["yesimbot.tool", "yesimbot.memory", "yesimbot.model"];
+
+    private chatModelSwitcher: ChatModelSwitcher;
+    private imageProcessor: ImageProcessor;
+    private promptBuilder: PromptBuilder;
+    private scenarioManager: ScenarioManager;
+    private middlewareManager: MiddlewareManager;
 
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.config = config;
 
         ctx.on("ready", async () => {
-            // 初始化服务容器
-            this.serviceContainer = new ServiceContainer();
-
             // 注册数据库
             this.registerDatabases();
 
@@ -48,34 +50,38 @@ export default class Agent {
      */
     private initializeServices(): void {
         // 注册模型切换器
-        const chatModelSwitcher = this.ctx.ModelService.getChatModelSwitcher(this.config.Chat.UseModel);
-        this.serviceContainer.register("chatModelSwitcher", chatModelSwitcher);
+        this.chatModelSwitcher = this.ctx["yesimbot.model"].getChatModelSwitcher(this.config.Chat.UseModel);
 
-        const imageProcessor = new ImageProcessor(this.ctx);
-        this.serviceContainer.register("imageProcessor", imageProcessor);
+        this.imageProcessor = new ImageProcessor(this.ctx);
+
+        this.scenarioManager = new ScenarioManager(this.ctx);
+
+        this.promptBuilder = new PromptBuilder(this.ctx, this.scenarioManager, this.config.PromptTemplate);
 
         // 注册核心工具
-        this.ctx.toolManager.registerTool(this.createSendMessageTool(this.config));
-        this.ctx.toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config));
+        this.ctx["yesimbot.tool"].registerTool(this.createSendMessageTool(this.config));
+        this.ctx["yesimbot.tool"].registerTool(this.createViewImageTool(this.imageProcessor, this.config.ImageViewer));
 
         // 注册中间件管理器
-        const middlewareManager = new MiddlewareManager();
+        this.middlewareManager = new MiddlewareManager();
 
         // fetch controller
         const controller = new AbortController();
 
         // 设置中间件链
-        middlewareManager
+        this.middlewareManager
             // 错误处理中间件
             .use(
-                new ErrorHandlingMiddleware(this.ctx.logger, {
+                new ErrorHandlingMiddleware(this.ctx, {
                     debug: this.config.Debug.EnableDebug,
                     uploadDump: this.config.Debug.UploadDump,
+                    pasteServiceUrl: "https://dump.yesimbot.chat/",
+                    includeFullSessionContent: false,
                 })
             )
 
             // 数据库存储中间件
-            .use(new DatabaseStorageMiddleware(this.ctx, imageProcessor, this.ctx.scenario))
+            .use(new DatabaseStorageMiddleware(this.ctx, { imageProcessor: this.imageProcessor, scenarioManager: this.scenarioManager }))
 
             // 检查是否达到回复条件
             .use(
@@ -94,29 +100,39 @@ export default class Agent {
             )
 
             .use(
-                new LLMProcessingMiddleware(this.ctx, this.ctx.scenario, chatModelSwitcher, {
-                    debug: this.config.Debug.EnableDebug,
-                    abortSignal: controller.signal,
-                    slotContains: this.config.MemorySlot.SlotContains,
-                    slotSize: this.config.MemorySlot.SlotSize,
-                })
+                new LLMProcessingMiddleware(
+                    this.ctx,
+                    {
+                        chatModelSwitcher: this.chatModelSwitcher,
+                        promptBuilder: this.promptBuilder,
+                        scenarioManager: this.scenarioManager,
+                    },
+                    {
+                        debug: this.config.Debug.EnableDebug,
+                        abortSignal: controller.signal,
+                        slotContains: this.config.MemorySlot.SlotContains,
+                        slotSize: this.config.MemorySlot.SlotSize,
+                    }
+                )
             )
 
             .use(
-                new ResponseHandlingMiddleware(this.ctx.scenario, middlewareManager, {
-                    maxRetry: this.config.ToolCall.MaxRetry,
-                    life: this.config.ToolCall.Life,
-                    maxHeartbeat: this.config.Chat.MaxHeartbeat,
-                })
+                new ResponseHandlingMiddleware(
+                    this.ctx,
+                    { middlewareManager: this.middlewareManager, scenarioManager: this.scenarioManager },
+                    {
+                        maxRetry: this.config.ToolCall.MaxRetry,
+                        life: this.config.ToolCall.Life,
+                        maxHeartbeat: this.config.Chat.MaxHeartbeat,
+                    }
+                )
             );
-
-        this.serviceContainer.register("middlewareManager", middlewareManager);
 
         // 清除副作用
         this.ctx.on("dispose", () => {
             controller.abort();
-            this.ctx.scenario.clearAllScenario();
-            const checkReply: CheckReplyConditionMiddleware = middlewareManager.getMiddleware("check-reply-condition");
+            this.scenarioManager.clearAllScenario();
+            const checkReply: CheckReplyConditionMiddleware = this.middlewareManager.getMiddleware("check-reply-condition");
             checkReply.destroy();
         });
     }
@@ -131,8 +147,7 @@ export default class Agent {
                 const messageContext = new MessageContext(this.ctx, session);
 
                 // 执行中间件链
-                const middlewareManager = this.serviceContainer.get<MiddlewareManager>("middlewareManager");
-                await middlewareManager.execute(messageContext);
+                await this.middlewareManager.execute(messageContext);
 
                 // 继续Koishi中间件链
                 return next();
@@ -220,10 +235,10 @@ export default class Agent {
             description: "Sends a message to the human user.",
             parameters: z.object({
                 inner_thoughts: INNER_THOUGHTS,
-                messages: z
-                    .array(z.string())
+                message: z
+                    .string()
                     .describe(
-                        "Message contents. Each item in the list will be sent individually to mimic human-like message splitting behavior. Keep it short."
+                        "Message content. Use `|$|` to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short."
                     ),
                 channel_id: z
                     .string()
@@ -233,8 +248,9 @@ export default class Agent {
                     ),
                 request_heartbeat: REQUEST_HEARTBEAT,
             }),
-            execute: async ({ messages, channel_id }, context) => {
+            execute: async ({ message, channel_id }, context) => {
                 const { koishiContext, koishiSession } = context;
+                const messages = message.split("|$|");
 
                 let idx = 1;
                 let delay = true;
@@ -242,13 +258,13 @@ export default class Agent {
                     channel_id = koishiSession.channelId;
                 }
 
-                for await (const message of messages) {
-                    if (isEmpty(message)) continue;
+                for await (const seg of messages) {
+                    if (isEmpty(seg)) continue;
                     // 如果是最后一条消息，不延迟
                     if (idx++ >= messages.length) {
                         delay = false;
                     }
-                    let messageIds = await koishiSession.sendQueued(message);
+                    let messageIds = await koishiSession.sendQueued(seg);
                     const newMessage: Message = {
                         messageId: messageIds[0],
                         sender: {
@@ -261,13 +277,13 @@ export default class Agent {
                             type: getChannelType(channel_id),
                         },
                         timestamp: new Date(),
-                        content: message,
+                        content: seg,
                     };
                     await koishiContext.database.create(MESSAGE_TABLE, newMessage);
-                    this.ctx.scenario.updateMessage(newMessage, koishiSession, true);
-                    koishiContext.logger.info(`Message Sent: ${message}`);
+                    this.scenarioManager.updateMessage(newMessage, koishiSession, false);
+                    koishiContext.logger.info(`Message Sent: ${seg}`);
                     if (delay && config.Chat.WordsPerSecond > 0) {
-                        await sleep((message.length / config.Chat.WordsPerSecond) * 1000);
+                        await sleep((seg.length / config.Chat.WordsPerSecond) * 1000);
                     }
                 }
                 return Success();
@@ -275,7 +291,7 @@ export default class Agent {
         });
     }
 
-    private createViewImageTool(imageProcessor: ImageProcessor, config: Config) {
+    private createViewImageTool(imageProcessor: ImageProcessor, config: Config["ImageViewer"]) {
         return Tool({
             name: "view_image",
             description:
@@ -293,7 +309,7 @@ export default class Agent {
             }),
             async execute({ image_id, query }, context) {
                 const { koishiContext } = context;
-                const chatModel = koishiContext.ModelService.getChatModel(config.ImageViewer.UseModel);
+                const chatModel = koishiContext["yesimbot.model"].getChatModel(config.UseModel);
 
                 const prefix = "你是一个图像分析专家。请根据以下指令，详细分析提供的图片。";
                 const suffix = "请直接输出分析结果，无需额外寒暄。避免提及你无法直接看到图片。你的回答应该简洁、信息丰富且直接回应指令。";

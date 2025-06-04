@@ -8,10 +8,13 @@ import { MessageContext, Middleware } from "./base";
 /**
  * 数据库存储中间件
  */
-export class DatabaseStorageMiddleware implements Middleware {
-    name = "database-storage";
-
-    constructor(private ctx: Context, private imageProcessor: ImageProcessor, private scenarioManager: ScenarioManager) {}
+export class DatabaseStorageMiddleware extends Middleware {
+    constructor(
+        protected ctx: Context,
+        protected services: { imageProcessor: ImageProcessor; scenarioManager: ScenarioManager },
+    ) {
+        super("database-storage", ctx, services, null);
+    }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
         const elements = ctx.koishiSession.elements;
@@ -23,7 +26,7 @@ export class DatabaseStorageMiddleware implements Middleware {
                     break;
                 case "image":
                 case "img":
-                    const imageData = await this.imageProcessor.process(element);
+                    const imageData = await this.services.imageProcessor.process(element);
                     if (imageData) {
                         processedElements.push(
                             h("img", { id: imageData.id, summary: element.attrs.summary, desc: imageData.desc || null })
@@ -52,9 +55,8 @@ export class DatabaseStorageMiddleware implements Middleware {
         const newMessage = await this.saveReceivedMessage(ctx, content);
 
         // 如果消息成功保存，则通知 ScenarioManager 更新缓存中的 Scenario 实例
-        // 用户发送的消息对机器人而言是未读的
         if (newMessage) {
-            await this.scenarioManager.updateMessage(newMessage, ctx.koishiSession, false);
+            await this.services.scenarioManager.updateMessage(newMessage, ctx.koishiSession, true);
         }
 
         // 继续处理链
