@@ -54,12 +54,21 @@ export class MessageContext {
 /**
  * 中间件接口
  */
-export interface Middleware {
-    // 中间件名称
-    name: string;
+export abstract class Middleware {
+    public readonly name: string; // 中间件名称
+    protected readonly ctx: Context; // Koishi上下文对象
+    protected readonly services: any; // 服务对象
+    protected readonly config: any; // 配置对象
+
+    constructor(name: string, ctx: Context, services?: any, config?: any) {
+        this.name = name;
+        this.ctx = ctx;
+        this.services = services;
+        this.config = config;
+    }
 
     // 执行中间件
-    execute(ctx: MessageContext, next: () => Promise<void>): Promise<void>;
+    abstract execute(ctx: MessageContext, next: () => Promise<void>): Promise<void>;
 }
 
 /**

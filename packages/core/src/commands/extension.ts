@@ -13,6 +13,8 @@ interface ExtensionInfo {
     description?: string;
 }
 
+export const name = "yesimbot.command.extension";
+
 export function apply(ctx: Context) {
     // 扩展列表指令
     ctx.command("扩展列表", "显示已安装的扩展列表", { authority: 3 }).action(async ({ session }) => {

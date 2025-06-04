@@ -24,55 +24,44 @@ export interface ErrorHandlingOptions {
     includeFullSessionContent?: boolean;
 }
 
-export class ErrorHandlingMiddleware implements Middleware {
+export class ErrorHandlingMiddleware extends Middleware {
     name = "error-handling";
 
     // 2. 优化构造函数，使用更清晰的选项接口
     constructor(
-        private logger: Context["logger"],
-        private options: ErrorHandlingOptions = {
-            debug: false,
-            uploadDump: false,
-            pasteServiceUrl: "https://dump.yesimbot.chat/", // 默认值
-            includeFullSessionContent: false,
-        }
+        ctx: Context,
+        config: ErrorHandlingOptions,
     ) {
-        // 确保options有默认值
-        this.options = {
-            debug: false,
-            uploadDump: false,
-            pasteServiceUrl: "https://dump.yesimbot.chat/",
-            includeFullSessionContent: false,
-            ...options,
-        };
+        super("error-handling", ctx, null, config);
     }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
+        const logger = this.ctx.logger;
         try {
             await next(); // 执行后续中间件
         } catch (error) {
             const errorId = uuidv4(); // 为每个错误生成一个唯一ID
 
             // 3. 改进本地日志记录，更详细且带有错误ID
-            this.logger.error(`[Error ID: ${errorId}] 发生未知错误，已跳过回复。`);
-            this.logger.error(`Error Type: ${(error as Error).name}`);
-            this.logger.error(`Error Message: ${(error as Error).message}`);
+            logger.error(`[Error ID: ${errorId}] 发生未知错误，已跳过回复。`);
+            logger.error(`Error Type: ${(error as Error).name}`);
+            logger.error(`Error Message: ${(error as Error).message}`);
 
-            if (this.options.debug) {
-                this.logger.error(`Error Stack:`, (error as Error).stack);
+            if (this.config.debug) {
+                logger.error(`Error Stack:`, (error as Error).stack);
             } else {
-                this.logger.error(`For detailed stack trace, enable debug mode.`);
+                logger.error(`For detailed stack trace, enable debug mode.`);
             }
 
             // 记录触发错误的用户和频道信息
             if (ctx.koishiSession) {
-                this.logger.error(
+                logger.error(
                     `Triggered by User: ${ctx.koishiSession.userId} (${ctx.koishiSession.platform}) in Channel: ${ctx.koishiSession.channelId}`
                 );
             }
 
             try {
-                if (this.options.uploadDump) {
+                if (this.config.uploadDump) {
                     const errorDump = this.formatErrorDump(error as Error, {
                         originalError: error as Error,
                         scenario: ctx.currentScenario,
@@ -85,23 +74,24 @@ export class ErrorHandlingMiddleware implements Middleware {
 
                     const pasteUrl = await this.uploadToPaste(errorDump);
                     if (pasteUrl) {
-                        this.logger.info(`[Error ID: ${errorId}] Error dump uploaded to: ${pasteUrl}`);
+                        logger.info(`[Error ID: ${errorId}] Error dump uploaded to: ${pasteUrl}`);
                         // 4. 可以考虑在这里向用户发送一个友好的提示，告知问题已被记录
                         // 例如：ctx.koishiSession?.send('抱歉，程序遇到了一些问题，我们已记录并会尽快处理。');
                     }
                 }
             } catch (uploadError) {
-                this.logger.error(`[Error ID: ${errorId}] Error uploading error dump:`, (uploadError as Error).message);
-                if (this.options.debug) {
-                    this.logger.error(`Upload error stack:`, (uploadError as Error).stack);
+                logger.error(`[Error ID: ${errorId}] Error uploading error dump:`, (uploadError as Error).message);
+                if (this.config.debug) {
+                    logger.error(`Upload error stack:`, (uploadError as Error).stack);
                 }
             }
         }
     }
 
     private async uploadToPaste(content: string): Promise<string | null> {
-        if (!this.options.pasteServiceUrl) {
-            this.logger.warn("No paste service URL configured. Skipping dump upload.");
+        const logger = this.ctx.logger;
+        if (!this.config.pasteServiceUrl) {
+            logger.warn("No paste service URL configured. Skipping dump upload.");
             return null;
         }
 
@@ -109,7 +99,7 @@ export class ErrorHandlingMiddleware implements Middleware {
             const formData = new FormData();
             formData.append("c", content);
 
-            const response = await fetch(this.options.pasteServiceUrl, {
+            const response = await fetch(this.config.pasteServiceUrl, {
                 method: "POST",
                 body: formData,
             });
@@ -119,14 +109,14 @@ export class ErrorHandlingMiddleware implements Middleware {
             if (data && data.url) {
                 return data.url;
             } else {
-                this.logger.error(
-                    `Failed to upload to paste service (${this.options.pasteServiceUrl}):`,
+                logger.error(
+                    `Failed to upload to paste service (${this.config.pasteServiceUrl}):`,
                     data.error || `Status: ${response.status} - ${response.statusText}`
                 );
                 return null;
             }
         } catch (error) {
-            this.logger.error(`Error connecting to dump host (${this.options.pasteServiceUrl}):`, (error as Error).message);
+            logger.error(`Error connecting to dump host (${this.config.pasteServiceUrl}):`, (error as Error).message);
             return null;
         }
     }
@@ -179,7 +169,7 @@ export class ErrorHandlingMiddleware implements Middleware {
             );
 
             // 谨慎包含原始消息内容，考虑敏感信息
-            if (this.options.includeFullSessionContent && session.content) {
+            if (this.config.includeFullSessionContent && session.content) {
                 dumpSections.push(`**Original Message Content (potentially sensitive):**\n`, `\`\`\`text\n${session.content}\n\`\`\``);
             } else if (session.content) {
                 dumpSections.push(
@@ -193,9 +183,9 @@ export class ErrorHandlingMiddleware implements Middleware {
         if (context.scenario) {
             dumpSections.push(`\n---\n`, `## 📜 Scenario Context\n`);
             // 检查 Scenario 是否有 render 方法
-            if (context.scenario instanceof Scenario && typeof (context.scenario as any).render === "function") {
+            if (context.scenario instanceof Scenario && typeof (context.scenario as Scenario).renderForPrompt === "function") {
                 try {
-                    dumpSections.push(`\`\`\`markdown\n${(context.scenario as any).render()}\n\`\`\``);
+                    dumpSections.push(`\`\`\`markdown\n${(context.scenario as Scenario).renderForPrompt()}\n\`\`\``);
                 } catch (e) {
                     dumpSections.push(
                         `*Failed to render scenario: ${(e as Error).message}*\n\`\`\`json\n${JSON.stringify(

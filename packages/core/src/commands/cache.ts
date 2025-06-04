@@ -4,6 +4,8 @@ import path from "path";
 
 import { IMAGE_TABLE } from "../types/model";
 
+export const name = "yesimbot.command.cache";
+
 export function apply(ctx: Context) {
     const cachePath = path.join(ctx.baseDir, "data", "yesimbot", "image_cache");
 

@@ -3,7 +3,7 @@ import { Context } from "koishi";
 import { MESSAGE_TABLE } from "../types/model";
 import { isEmpty } from "../utils/string";
 
-export const inject = ["memory", "scenario"];
+export const name = "yesimbot.command.memory";
 
 export function apply(ctx: Context) {
     ctx.command("清空对话", "清除 BOT 的对话上下文", { authority: 3 })
@@ -32,7 +32,7 @@ export function apply(ctx: Context) {
                 // 按用户ID清空对话
                 const cleared = await clearBySenderId(ctx, options.person);
                 result = `${cleared ? "✅" : "❌"} 用户 ${options.person}`;
-                ctx.scenario.clearScenario(`private:${options.person}`);
+                ctx.emit("scenario/clear", `private:${options.person}`);
             } else {
                 const clearGroupId = options.target || msgDestination;
                 // 要清除的会话集合
@@ -70,7 +70,7 @@ export function apply(ctx: Context) {
         if (isEmpty(label)) {
             return "请指定一个 label";
         } else {
-            await ctx.memory.compression(label);
+            await ctx["yesimbot.memory"].compression(label);
             return "压缩完成";
         }
     });
@@ -88,12 +88,12 @@ async function clearPrivateAll(ctx: Context): Promise<boolean> {
 
 async function clearAll(ctx: Context): Promise<boolean> {
     const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.type": "guild" });
-    ctx.scenario.clearAllScenario();
+    ctx.emit("scenario/clearAll");
     return result.removed > 0;
 }
 
 async function clearChannel(ctx: Context, id: string): Promise<boolean> {
     const result = await ctx.database.remove(MESSAGE_TABLE, { "channel.id": id });
-    ctx.scenario.clearScenario(id);
+    ctx.emit("scenario/clear", id);
     return result.removed > 0;
 }

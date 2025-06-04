@@ -66,9 +66,7 @@ export interface CheckReplyConditionOptions {
 }
 
 // 检查是否达到回复条件
-export class CheckReplyConditionMiddleware implements Middleware {
-    name = "check-reply-condition";
-
+export class CheckReplyConditionMiddleware extends Middleware {
     /**
      * 回复意愿
      *
@@ -130,26 +128,27 @@ export class CheckReplyConditionMiddleware implements Middleware {
         },
     };
 
-    constructor(private koishiContext: Context, private options: CheckReplyConditionOptions) {
+    constructor(public ctx: Context, public config: CheckReplyConditionOptions) {
+        super("check-reply-condition", ctx, null, config);
         // 设置默认值
-        this.options.decayInterval = this.options.decayInterval || 60000; // 1分钟
-        this.options.decayRate = this.options.decayRate || 5; // 每分钟衰减5点
-        this.options.baseWillingness = this.options.baseWillingness || 0;
-        this.options.attentionDuration = this.options.attentionDuration || 300000; // 5分钟
-        this.options.initialAttentionLevel = this.options.initialAttentionLevel || 60;
-        this.options.postReplyRetention = this.options.postReplyRetention || 0.3; // 保留30%
-        this.options.defaultUserPriority = this.options.defaultUserPriority || "normal";
-        this.options.prioritySettings = this.options.prioritySettings || this.defaultPrioritySettings;
+        this.config.decayInterval = this.config.decayInterval || 60000; // 1分钟
+        this.config.decayRate = this.config.decayRate || 5; // 每分钟衰减5点
+        this.config.baseWillingness = this.config.baseWillingness || 0;
+        this.config.attentionDuration = this.config.attentionDuration || 300000; // 5分钟
+        this.config.initialAttentionLevel = this.config.initialAttentionLevel || 60;
+        this.config.postReplyRetention = this.config.postReplyRetention || 0.3; // 保留30%
+        this.config.defaultUserPriority = this.config.defaultUserPriority || "normal";
+        this.config.prioritySettings = this.config.prioritySettings || this.defaultPrioritySettings;
 
         // 初始化用户优先级配置
-        if (this.options.userPriorities) {
-            for (const [userId, priority] of Object.entries(this.options.userPriorities)) {
+        if (this.config.userPriorities) {
+            for (const [userId, priority] of Object.entries(this.config.userPriorities)) {
                 this.userPriorityMap.set(userId, priority);
             }
         }
 
         // 启动衰减定时器
-        this.decayTimer = setInterval(() => this.decayWillingness(), this.options.decayInterval);
+        this.decayTimer = setInterval(() => this.decayWillingness(), this.config.decayInterval);
     }
 
     /**
@@ -180,7 +179,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
      * 获取用户优先级
      */
     public getUserPriority(userId: string): UserPriorityLevel {
-        return this.userPriorityMap.get(userId) || this.options.defaultUserPriority || "normal";
+        return this.userPriorityMap.get(userId) || this.config.defaultUserPriority || "normal";
     }
 
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
@@ -192,7 +191,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         if (ctx.koishiSession.author.isBot) return;
 
         // 忽略非指定频道的消息
-        if (!this.options.allowedChannels.find((slot) => slot.includes(ctx.koishiSession.channelId))) return;
+        if (!this.config.allowedChannels.find((slot) => slot.includes(ctx.koishiSession.channelId))) return;
 
         // 如果当前频道已有处理任务，则忽略新的触发条件
         if (this.channelProcessingState.get(channelId)) return;
@@ -211,12 +210,12 @@ export class CheckReplyConditionMiddleware implements Middleware {
         let userWillingness = channelUserMap.get(userId) || 0;
 
         // 根据用户优先级计算意愿值增加量
-        const baseIncrease = this.options.increaseWillingnessOn.message;
+        const baseIncrease = this.config.increaseWillingnessOn.message;
         const priorityMultiplier = this.getPrioritySettingValue("thresholdMultipliers", userPriority);
         const actualIncrease = baseIncrease / priorityMultiplier; // 高优先级用户增加更多
 
         // 更新意愿值
-        currentThreshold += this.options.increaseWillingnessOn.message;
+        currentThreshold += this.config.increaseWillingnessOn.message;
         userWillingness += actualIncrease;
 
         // 更新存储
@@ -240,7 +239,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
             this.delayTimers.has(channelId) &&
             lastSender &&
             lastSender.userId === userId &&
-            now - lastSender.timestamp < this.options.sameUserThreshold
+            now - lastSender.timestamp < this.config.sameUserThreshold
         ) {
             clearTimeout(this.delayTimers.get(channelId));
         }
@@ -255,7 +254,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
                     this.releaseChannelState(ctx.koishiSession.channelId);
                     reject(e);
                 }
-            }, this.options.messageWaitTime);
+            }, this.config.messageWaitTime);
             this.delayTimers.set(channelId, timer);
         });
     }
@@ -277,8 +276,8 @@ export class CheckReplyConditionMiddleware implements Middleware {
         const userPriority = this.getUserPriority(userId);
 
         // 设置持续关注时间和程度
-        const expireTime = now + (this.options.attentionDuration || 300000);
-        const baseAttention = this.options.initialAttentionLevel || 50;
+        const expireTime = now + (this.config.attentionDuration || 300000);
+        const baseAttention = this.config.initialAttentionLevel || 50;
 
         // 根据用户优先级调整关注程度
         const attentionMultiplier = this.getPrioritySettingValue("attentionMultipliers", userPriority);
@@ -289,7 +288,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
 
         // 同时增加频道整体意愿值
         const channelThreshold = this.currentThreshold.get(channelId) || 0;
-        this.currentThreshold.set(channelId, Math.min(100, channelThreshold + this.options.increaseWillingnessOn.at));
+        this.currentThreshold.set(channelId, Math.min(100, channelThreshold + this.config.increaseWillingnessOn.at));
     }
 
     /**
@@ -305,7 +304,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
             const decayAmount = this.calculateDecayAmount(threshold, timePassed);
 
             // 应用衰减，不低于基础值
-            const newThreshold = Math.max(this.options.baseWillingness || 0, threshold - decayAmount);
+            const newThreshold = Math.max(this.config.baseWillingness || 0, threshold - decayAmount);
             this.currentThreshold.set(channelId, newThreshold);
         }
 
@@ -338,7 +337,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
      */
     private calculateDecayAmount(threshold: number, timePassed: number): number {
         // 基础衰减率（每分钟）
-        const baseDecayRate = this.options.decayRate || 5;
+        const baseDecayRate = this.config.decayRate || 5;
 
         // 根据时间计算应该衰减的量
         const minutesPassed = timePassed / 60000;
@@ -355,7 +354,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
      */
     private calculateUserDecayAmount(willingness: number, decayRateMultiplier: number): number {
         // 基础衰减率（每分钟）
-        const baseDecayRate = this.options.decayRate || 5;
+        const baseDecayRate = this.config.decayRate || 5;
 
         // 根据用户优先级调整衰减率
         const adjustedDecayRate = baseDecayRate * decayRateMultiplier;
@@ -393,11 +392,11 @@ export class CheckReplyConditionMiddleware implements Middleware {
     ): number {
         const defaultValue = 1.0;
 
-        if (!this.options.prioritySettings) {
+        if (!this.config.prioritySettings) {
             return defaultValue;
         }
 
-        const settings = this.options.prioritySettings[settingType];
+        const settings = this.config.prioritySettings[settingType];
         if (!settings) {
             return defaultValue;
         }
@@ -429,16 +428,15 @@ export class CheckReplyConditionMiddleware implements Middleware {
 
         // 根据优先级调整阈值
         const thresholdMultiplier = this.getPrioritySettingValue("thresholdMultipliers", userPriority);
-        const adjustedThreshold = this.options.threshold * thresholdMultiplier;
+        const adjustedThreshold = this.config.threshold * thresholdMultiplier;
 
         // 决定是否回复
-        const shouldReactToAt = ctx.isMentioned && Random.bool(this.options.atReactPossibility as number);
+        const shouldReactToAt = ctx.isMentioned && Random.bool(this.config.atReactPossibility as number);
         const isThresholdReached = channelThreshold >= adjustedThreshold;
         const isUserThresholdReached = userWillingness >= adjustedThreshold * 0.7;
         const isAttentionTriggered = isUnderAttention && Math.random() < (attention?.attentionLevel || 0) / 100;
 
-        const shouldReply =
-            shouldReactToAt || isThresholdReached || isUserThresholdReached || isAttentionTriggered || this.options.testMode;
+        const shouldReply = shouldReactToAt || isThresholdReached || isUserThresholdReached || isAttentionTriggered || this.config.testMode;
 
         ctx.koishiContext.logger.info(
             `[CheckReplyCondition] channelId: ${channelId}, userId: ${userId}, ` +
@@ -455,7 +453,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
             ctx.state = ConversationState.PROCESSING;
 
             // 降低意愿值，但不完全重置
-            const retentionRate = this.options.postReplyRetention || 0.3;
+            const retentionRate = this.config.postReplyRetention || 0.3;
             this.currentThreshold.set(channelId, channelThreshold * retentionRate);
 
             // 用户意愿值也降低
@@ -493,7 +491,7 @@ export class CheckReplyConditionMiddleware implements Middleware {
         this.updateUserPriorityBasedOnHistory(userId);
 
         // 记录日志
-        this.koishiContext?.logger.info(
+        this.ctx.logger.info(
             `[CheckReplyCondition] 处理用户反馈: userId=${userId}, ` +
                 `isPositive=${isPositive}, interactionCount=${history.interactionCount}, ` +
                 `positiveRate=${history.positiveInteractions / history.interactionCount}`

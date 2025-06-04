@@ -5,10 +5,9 @@ import { getExtensionFiles } from "../utils";
 import { ToolDefinition, ToolContext, ExecutableTool, defineTool } from "./base";
 import zodToJsonSchema from "zod-to-json-schema";
 
-// 声明模块，将 ToolManager 服务添加到 Koishi 的 Context 类型中
 declare module "koishi" {
     interface Context {
-        toolManager: ToolManager;
+        "yesimbot.tool": ToolManager;
     }
 }
 
@@ -23,7 +22,7 @@ export default class ToolManager extends Service {
     private tools: Map<string, ToolDefinition> = new Map();
 
     constructor(ctx: Context) {
-        super(ctx, "toolManager", true);
+        super(ctx, "yesimbot.tool", true);
 
         /**
          * 服务启动时加载扩展
