@@ -54,13 +54,16 @@ export default class Agent {
 
         this.imageProcessor = new ImageProcessor(this.ctx);
 
-        this.scenarioManager = new ScenarioManager(this.ctx);
+        this.scenarioManager = new ScenarioManager(this.ctx, this.config.Multimodal);
 
-        this.promptBuilder = new PromptBuilder(this.ctx, this.scenarioManager, this.config.PromptTemplate);
+        this.promptBuilder = new PromptBuilder(this.ctx, this.scenarioManager, this.config.PromptTemplate, this.config.Multimodal);
 
         // 注册核心工具
         this.ctx["yesimbot.tool"].registerTool(this.createSendMessageTool(this.config));
-        this.ctx["yesimbot.tool"].registerTool(this.createViewImageTool(this.imageProcessor, this.config.ImageViewer));
+
+        if (!this.config.Multimodal.Enabled) {
+            this.ctx["yesimbot.tool"].registerTool(this.createViewImageTool(this.imageProcessor, this.config.ImageViewer));
+        }
 
         // 注册中间件管理器
         this.middlewareManager = new MiddlewareManager();
@@ -339,7 +342,7 @@ export default class Agent {
                 prompt.push(suffix);
 
                 try {
-                    const { base64 } = (await imageProcessor.getImage(image_id)) || {};
+                    const base64 = await imageProcessor.getBase64(image_id);
 
                     if (!base64) {
                         return {

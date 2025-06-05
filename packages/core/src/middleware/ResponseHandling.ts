@@ -142,7 +142,7 @@ export class ResponseHandlingMiddleware extends Middleware {
         function stringify(args: Record<string, unknown>): string {
             let result = [];
             for (let key in args) {
-                result.push(`${key}="${JSON.stringify(args[key])}"`);
+                result.push(`${key}="${typeof args[key] === "string"? args[key] : JSON.stringify(args[key])}"`);
             }
             return `${result.join(", ")}`;
         }

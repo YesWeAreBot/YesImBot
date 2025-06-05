@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { existsSync, mkdirSync } from "fs";
-import { writeFile, readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { arrayBufferToBase64, Context, Element } from "koishi";
 import path from "path";
 import { IMAGE_TABLE, ImageData } from "../types/model";
@@ -19,18 +19,14 @@ export class ImageProcessor {
         }
     }
 
-    async getImage(image_id: string): Promise<ImageData | undefined> {
+    async getBase64(image_id: string): Promise<string> {
         let [imageData] = (await this.ctx.database?.get(IMAGE_TABLE, { id: image_id })) || [];
         if (!imageData) return;
         const image = await readFile(path.join(this.cachePath, image_id), "base64");
         const mimeType = imageData["mimeType"];
         const base64 = `data:${mimeType};base64,${image}`;
 
-        imageData = {
-            ...imageData,
-            base64,
-        };
-        return imageData;
+        return base64;
     }
 
     /**
