@@ -2,6 +2,7 @@ import { Computed, Schema } from "koishi";
 import { ModelSetting, Provider } from "./adapters/config";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
 import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
+import { MultimodalConfig } from "./Scenario";
 
 interface BlockConfig {
     Limit?: number;
@@ -58,6 +59,8 @@ export interface Config {
         MaxRetry: number;
         Life: number;
     };
+    Task: {};
+    Multimodal: MultimodalConfig;
     PromptTemplate: PromptBuilderConfig;
     Debug: {
         EnableDebug: boolean;
@@ -186,6 +189,14 @@ export const Config: Schema<Config> = Schema.object({
         MaxRetry: Schema.number().default(3).min(0).max(10).description("工具调用失败时的最大重试次数"),
         Life: Schema.number().default(3).min(0).max(10).description("工具调用的生命周期次数"),
     }).description("工具调用管理配置"),
+
+    Task: Schema.object({}),
+
+    Multimodal: Schema.object({
+        Enabled: Schema.boolean().default(false),
+        ImageDetail: Schema.union(["low", "high", "auto"]).default("auto"),
+        MaxImagesPerPrompt: Schema.number().default(3),
+    }).description("多模态设置"),
 
     PromptTemplate: Schema.object({
         SystemTemplate: Schema.string()

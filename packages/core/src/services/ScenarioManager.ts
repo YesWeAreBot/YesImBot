@@ -1,5 +1,5 @@
-import { $, Context, Service, Session } from "koishi";
-import { Scenario } from "../Scenario";
+import { $, Context, Session } from "koishi";
+import { MultimodalConfig, Scenario } from "../Scenario";
 import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message } from "../types/model";
 
 declare module "koishi" {
@@ -15,7 +15,7 @@ declare module "koishi" {
  */
 export class ScenarioManager {
     private scenarios: Map<string, Scenario> = new Map();
-    constructor(private ctx: Context) {
+    constructor(private ctx: Context, private multimodalConfig: MultimodalConfig) {
         ctx.on("scenario/clear", (channelId) => {
             this.clearScenario(channelId);
         });
@@ -39,7 +39,7 @@ export class ScenarioManager {
             return this.scenarios.get(channelId)!;
         }
         // 缓存中不存在，创建新的 Scenario 实例并加载初始数据
-        const scenario = new Scenario(this.ctx, session, limit);
+        const scenario = new Scenario(this.ctx, session, limit, this.multimodalConfig);
         await scenario.loadInitialData();
         this.scenarios.set(channelId, scenario);
         return scenario;
