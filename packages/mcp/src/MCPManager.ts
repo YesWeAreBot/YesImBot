@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Logger } from "./Logger";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
@@ -11,7 +12,7 @@ export class MCPManager {
     private commandResolver: CommandResolver;
     private config: Config;
     private clients: Client[] = [];
-    private transports: any[] = [];
+    private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
     private registeredTools: string[] = [];
 
     constructor(logger: Logger, commandResolver: CommandResolver, config: Config) {
@@ -116,7 +117,6 @@ export class MCPManager {
     private async registerSingleTool(client: Client, tool: any, serverName: string, toolManager: any): Promise<void> {
         // 增强工具模式
         const enhancedSchema = {
-            ...tool.inputSchema,
             properties: {
                 inner_thoughts: {
                     type: "string",

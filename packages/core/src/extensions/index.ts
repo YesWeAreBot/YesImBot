@@ -125,7 +125,7 @@ export default class ToolManager extends Service {
             return "";
         }
 
-        const jsonSchema = zodToJsonSchema(tool.parameters);
+        const jsonSchema = tool.parameters["properties"] ? tool.parameters : zodToJsonSchema(tool.parameters);
         const properties = (jsonSchema["properties"] as Record<string, any>) || {}; // 确保 properties 是一个对象
 
         const stringifyProperties = (props: Record<string, any>): string => {
