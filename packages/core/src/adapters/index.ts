@@ -1,7 +1,7 @@
+import { Context, Service } from "koishi";
 import { Provider } from "./base";
 import { ChatModel } from "./chat";
-import { Provider as ProviderConfig, ModelSetting } from "./config";
-import { Context, Service } from "koishi";
+import { ModelSetting, Provider as ProviderConfig } from "./config";
 
 export class ChatModelSwitcher {
     private current = 0;

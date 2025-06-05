@@ -114,23 +114,6 @@ export function apply(ctx: Context, config: Config) {
     });
 }
 
-function toBoolean(value: any): boolean {
-    if (typeof value === "boolean") {
-        return value;
-    }
-    if (typeof value === "string") {
-        const lowerValue = value.toLowerCase().trim();
-        if (lowerValue === "true") return true;
-        if (lowerValue === "false") return false;
-    }
-    if (typeof value === "number") {
-        if (value === 1) return true;
-        if (value === 0) return false;
-    }
-    // 对于其他情况，使用 JavaScript 的隐式转换规则
-    return Boolean(value);
-}
-
 function hasCommonKeys(obj1, obj2) {
     // 如果 obj1 是空对象，我们将其视为可以合并，因为它不应该阻止任何新属性的添加
     // 否则，只有当两者有共同键时才被视为可以合并

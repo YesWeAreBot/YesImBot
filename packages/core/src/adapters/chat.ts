@@ -3,7 +3,7 @@ import { Context, isEmpty } from "koishi";
 import type { ChatOptions, GenerateTextResult, Message, ToolResult } from "xsai";
 
 import { generateText, streamText } from "../dependencies/xsai";
-import { isNotEmpty } from "../utils";
+import { isNotEmpty, toBoolean } from "../utils";
 import { Ability, Model, ModelSetting } from "./config";
 
 interface RequestOptions {
@@ -33,7 +33,7 @@ export class ChatModel {
                         this.customParameters[param.key] = Number(param.value);
                         break;
                     case "布尔值":
-                        this.customParameters[param.key] = Boolean(param.value);
+                        this.customParameters[param.key] = toBoolean(param.value);
                         break;
                     case "JSON":
                         this.customParameters[param.key] = JSON.parse(param.value);
