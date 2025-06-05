@@ -1,4 +1,6 @@
 ### 3.0.0-beta.1
+feat(extension): 获取转发聊天记录
+feat(extension): 支持查看转发记录里的图片
 refactor(scenario): 优化交互处理逻辑，修复清空对话后上下文无法同步的问题
 - 将 ScenarioManager 注册为服务
 - 优化 Interaction 数据结构，明确区分工具调用和结果
@@ -7,9 +9,27 @@ refactor(scenario): 优化交互处理逻辑，修复清空对话后上下文无
 - 优化上下文渲染格式，支持更多消息类型
 - 修复消息加载和分页逻辑
 feat(commands): 添加配置管理命令模块
-新增 config.ts 文件实现配置的获取和设置功能，支持嵌套对象和数组索引的路径解析。主要包含：
+新增 config.ts 文件实现配置的获取和设置功能，支持嵌套对象和数组索引的路径解析。
 - conf.get 命令：通过键路径获取配置值
 - conf.set 命令：通过键路径设置配置值
+feat: 增加提示词构造器、优化提示词构造流程、添加并更新部分提示词
+- 提示词支持使用{{}}占位符
+- 增强防越狱机制
+- 允许自定义提示词
+refactor(core): 统一服务命名并重构中间件架构
+重构核心模块的服务命名规范，统一使用"yesimbot"前缀。将中间件改为抽象类实现，优化依赖注入方式。删除冗余的ServiceContainer，简化服务管理。
+- 将ModelService、MemoryService等服务重命名为统一命名空间
+- 重构中间件为抽象类，提供更好的扩展性
+- 优化服务依赖注入方式，直接通过ctx访问
+- 删除不再需要的ServiceContainer及相关代码
+- 调整部分命令和工具的导出方式
+feat: 实现多模态支持
+添加多模态配置支持，重构 Scenario 和 PromptBuilder 以处理图片和文本混合内容。
+1. 引入 MultimodalConfig 配置接口，支持图片详细度和最大数量限制
+2. 重构 Scenario.renderForPrompt() 返回 Part 数组而非纯文本
+3. 修改 PromptBuilder 处理多模态内容，支持图片和文本混合提示词
+4. 优化图片处理逻辑，添加图片计数和限制检查
+5. 改进消息格式化，支持图片嵌入和文本合并
 
 ### 3.0.0-beta.0
 feat(error-handling): 调整错误上报格式
