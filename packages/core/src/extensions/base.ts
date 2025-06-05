@@ -92,8 +92,12 @@ export function defineTool<TParams extends z.ZodTypeAny, TReturns extends z.ZodT
     definition: ToolDefinition<TParams, TReturns>,
     baseContext: ToolContext = {} // 默认值设为 {}
 ): ExecutableTool<TParams, TReturns> {
-    // 总是将 Zod schema 转换为 JSON schema
-    const parametersJsonSchema = zodToJsonSchema(definition.parameters);
+    let parametersJsonSchema;
+    if (definition.parameters["properties"]) {
+        parametersJsonSchema = definition.parameters;
+    } else {
+        parametersJsonSchema = zodToJsonSchema(definition.parameters);
+    }
 
     return {
         type: "function",
@@ -103,7 +107,7 @@ export function defineTool<TParams extends z.ZodTypeAny, TReturns extends z.ZodT
         function: {
             name: definition.name,
             description: definition.description,
-            parameters: parametersJsonSchema as Record<string, unknown>, // 类型断言为 Record<string, unknown>
+            parameters: parametersJsonSchema as Record<string, unknown>,
         },
     };
 }
