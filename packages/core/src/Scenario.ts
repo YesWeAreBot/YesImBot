@@ -383,6 +383,9 @@ export class Scenario {
                 case "quote":
                     currentTextContent += `[引用#${elem.attrs.id}]`;
                     break;
+                case "forward":
+                    currentTextContent += `[聊天记录 #${elem.attrs.id}]`;
+                    break;
                 case "text":
                     currentTextContent += Element.escape(elem.attrs.content) || "";
                     break;
