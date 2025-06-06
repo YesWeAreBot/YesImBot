@@ -1,4 +1,4 @@
-import { ToolCallResult } from "../extensions/base";
+import { ToolCallResult } from "../extensions";
 
 // 数据库表名
 export const MESSAGE_TABLE = "yesimbot.message";

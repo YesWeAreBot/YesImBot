@@ -1,11 +1,11 @@
 import { Context, Random, Session } from "koishi";
 
-import { Failed, ToolCallResult } from "../extensions/base";
 import { ScenarioManager } from "../services/ScenarioManager";
 import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
+import { Failed, ToolCallResult } from "../extensions";
 
 export class ResponseHandlingMiddleware extends Middleware {
     constructor(

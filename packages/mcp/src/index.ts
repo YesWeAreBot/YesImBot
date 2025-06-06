@@ -38,8 +38,8 @@ export async function apply(ctx: Context, config: Config) {
 
     const commandResolver = new CommandResolver(logger, systemUtils, config, installedUVPath, installedBunPath);
 
-    const mcpManager = new MCPManager(logger, commandResolver, config);
     const toolManager = ctx["yesimbot.tool"];
+    const mcpManager = new MCPManager(logger, commandResolver, toolManager, config);
 
     // 启动时初始化
     ctx.on("ready", async () => {
@@ -68,14 +68,14 @@ export async function apply(ctx: Context, config: Config) {
         commandResolver.updateInstalledPaths(installedUVPath, installedBunPath);
 
         // 连接 MCP 服务器
-        await mcpManager.connectServers(toolManager);
+        await mcpManager.connectServers();
 
         logger.success("MCP 扩展插件初始化完成");
     });
 
     // 清理资源
     ctx.on("dispose", async () => {
-        await mcpManager.cleanup(toolManager);
+        await mcpManager.cleanup();
         await fileManager.cleanup([cacheDir]);
         logger.success("插件清理完成");
     });

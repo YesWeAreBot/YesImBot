@@ -7,20 +7,18 @@
 
 import { z } from "zod";
 
-import {} from 'koishi-plugin-adapter-onebot'
+import {} from "koishi-plugin-adapter-onebot";
 
-import { isEmpty } from "../../utils/string";
-import { Failed, INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "../base";
 import { ImageProcessor } from "../../utils/imageProcessor";
+import { isEmpty } from "../../utils/string";
+import { createTool, Failed, Success, withCommonParams } from "../helpers";
 
-export const Reaction = Tool({
+export const Reaction = createTool({
     name: "reaction-create",
     description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
-    parameters: z.object({
-        inner_thoughts: INNER_THOUGHTS,
+    parameters: withCommonParams({
         message_id: z.string().describe("消息 ID"),
         emoji_id: z.number().describe("表态编号"),
-        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ message_id, emoji_id }, context) => {
         const { koishiContext, koishiSession } = context;
@@ -39,13 +37,11 @@ export const Reaction = Tool({
     },
 });
 
-export const Essence = Tool({
+export const Essence = createTool({
     name: "essence-create",
     description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
-    parameters: z.object({
-        inner_thoughts: INNER_THOUGHTS,
+    parameters: withCommonParams({
         message_id: z.string().describe("消息 ID"),
-        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ message_id }, context) => {
         const { koishiContext, koishiSession } = context;
@@ -61,14 +57,12 @@ export const Essence = Tool({
     },
 });
 
-export const Poke = Tool({
+export const Poke = createTool({
     name: "send-poke",
     description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
-    parameters: z.object({
-        inner_thoughts: INNER_THOUGHTS,
+    parameters: withCommonParams({
         user_id: z.string().describe("用户名称"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
-        request_heartbeat: REQUEST_HEARTBEAT,
     }),
     execute: async ({ user_id, channel }, context) => {
         const { koishiContext, koishiSession } = context;
@@ -96,78 +90,76 @@ export const Poke = Tool({
     },
 });
 
-export const GetForwardMsg = Tool({  
-    name: "get_forward_msg",  
-    description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,  
-    parameters: z.object({  
-        inner_thoughts: INNER_THOUGHTS,  
-        id: z.string().describe("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),  
-        request_heartbeat: REQUEST_HEARTBEAT,  
-    }),  
-    execute: async ({ id }, context) => {  
+export const GetForwardMsg = createTool({
+    name: "get_forward_msg",
+    description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
+    parameters: withCommonParams({
+        id: z.string().describe("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
+    }),
+    execute: async ({ id }, context) => {
         const { koishiContext, koishiSession } = context;
-        try {  
-            // @ts-ignore  
-            const result = await koishiSession.onebot._request("get_forward_msg", { id: id });  
-            
-            const formattedResult = await formatForwardMessage(result, koishiContext);  
-            
-            context.koishiContext.logger.info(`Bot[${koishiSession.selfId}]获取转发消息 ${id} 成功`);  
-            
-            return Success(formattedResult);  
-        } catch (e) {  
-            context.koishiContext.logger.error(`Bot[${koishiSession.selfId}]获取转发消息失败: ${id} - `, e.message);  
-            return Failed(`获取转发消息失败： ${e.message}`)  
-        }  
-    }  
-})
+        try {
+            // @ts-ignore
+            const result = await koishiSession.onebot._request("get_forward_msg", { id: id });
+
+            const formattedResult = await formatForwardMessage(result, koishiContext);
+
+            context.koishiContext.logger.info(`Bot[${koishiSession.selfId}]获取转发消息 ${id} 成功`);
+
+            return Success(formattedResult);
+        } catch (e) {
+            context.koishiContext.logger.error(`Bot[${koishiSession.selfId}]获取转发消息失败: ${id} - `, e.message);
+            return Failed(`获取转发消息失败： ${e.message}`);
+        }
+    },
+});
 
 async function formatForwardMessage(apiResponse: any, ctx: any): Promise<string> {
     try {
         // 兼容不同响应结构
         const messages = apiResponse.data?.message || apiResponse.message || [];
-        
+
         if (!Array.isArray(messages)) {
             return "无效的消息格式";
         }
 
         const imageProcessor = new ImageProcessor(ctx);
-        
+
         const formattedMessages = await Promise.all(
             messages.map(async (node: any) => {
                 if (node?.type !== "node") return "";
-                
+
                 const { user_id, nickname, content } = node.data || {};
-                if (!content) return `${nickname || '未知用户'}(${user_id || '?'}): [空内容]`;
-                
+                if (!content) return `${nickname || "未知用户"}(${user_id || "?"}): [空内容]`;
+
                 const contentParts = await Promise.all(
                     content.map(async (item: any) => {
                         try {
-                            if (!item?.type) return '[未知消息类型]';
-                            
+                            if (!item?.type) return "[未知消息类型]";
+
                             switch (item.type) {
                                 case "image":
                                     const imageData = await imageProcessor.process(item.data?.url);
                                     return `[图片 #${imageData.id}]`;
                                 case "text":
-                                    return item.data?.text || '';
+                                    return item.data?.text || "";
                                 default:
                                     return item.data?.summary || `[${item.type}消息]`;
                             }
                         } catch (e) {
-                            ctx.logger.error('格式化消息部分失败:', e);
-                            return '[内容解析错误]';
+                            ctx.logger.error("格式化消息部分失败:", e);
+                            return "[内容解析错误]";
                         }
                     })
                 );
-                
-                return `${nickname || '未知用户'}(${user_id || '?'}): ${contentParts.join('')}`;
+
+                return `${nickname || "未知用户"}(${user_id || "?"}): ${contentParts.join("")}`;
             })
         );
-        
-        return formattedMessages.filter(msg => msg.trim()).join("\n") || "无有效消息内容";
+
+        return formattedMessages.filter((msg) => msg.trim()).join("\n") || "无有效消息内容";
     } catch (e) {
-        ctx.logger.error('格式化转发消息失败:', e);
+        ctx.logger.error("格式化转发消息失败:", e);
         return "消息格式化失败";
     }
 }

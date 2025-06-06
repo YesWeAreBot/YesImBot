@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { ChatModelSwitcher } from "./adapters";
 import { Config } from "./config";
-import { INNER_THOUGHTS, REQUEST_HEARTBEAT, Success, Tool } from "./extensions/base";
 import { MessageContext, MiddlewareManager } from "./middleware/base";
 import { CheckReplyConditionMiddleware } from "./middleware/CheckReplyCondition";
 import { DatabaseStorageMiddleware } from "./middleware/DatabaseStorage";
@@ -14,6 +13,7 @@ import { PromptBuilder } from "./prompt/PromptBuilder";
 import { ScenarioManager } from "./services/ScenarioManager";
 import { IMAGE_TABLE, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
 import { getChannelType, isEmpty, ImageProcessor } from "./utils";
+import { createTool, Success, withCommonParams } from "./extensions";
 
 export default class Agent {
     private ctx: Context;
@@ -233,11 +233,11 @@ export default class Agent {
     }
 
     private createSendMessageTool(config: Config) {
-        return Tool({
+        return createTool({
             name: "send_message",
+            version: "1.0.0",
             description: "Sends a message to the human user.",
-            parameters: z.object({
-                inner_thoughts: INNER_THOUGHTS,
+            parameters: withCommonParams({
                 message: z
                     .string()
                     .describe(
@@ -249,7 +249,6 @@ export default class Agent {
                     .describe(
                         "The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."
                     ),
-                request_heartbeat: REQUEST_HEARTBEAT,
             }),
             execute: async ({ message, channel_id }, context) => {
                 const { koishiContext, koishiSession } = context;
@@ -295,12 +294,12 @@ export default class Agent {
     }
 
     private createViewImageTool(imageProcessor: ImageProcessor, config: Config["ImageViewer"]) {
-        return Tool({
+        return createTool({
             name: "view_image",
+            version: "1.0.0",
             description:
                 "获取聊天记录中指定图片内容的详细描述。当对话需要你理解图片内容才能做出响应时调用此工具。请在需要查看图片以回答用户问题、识别图片中的信息、或理解图片传达的场景时使用。",
-            parameters: z.object({
-                inner_thoughts: INNER_THOUGHTS,
+            parameters: withCommonParams({
                 image_id: z.string().describe("聊天记录中图片的唯一ID。"),
                 query: z
                     .string()
@@ -308,7 +307,6 @@ export default class Agent {
                         "你希望了解图片的具体内容或方面。例如：'描述图片主要内容'，'图片中有哪些文字？'，'图片中人物的表情是什么？'，'分析图片传递的情绪或场景'，'总结图片的关键信息'。请尽可能具体。如果你不指定，将提供图片的主要内容描述。"
                     )
                     .optional(),
-                request_heartbeat: REQUEST_HEARTBEAT,
             }),
             async execute({ image_id, query }, context) {
                 const { koishiContext } = context;
