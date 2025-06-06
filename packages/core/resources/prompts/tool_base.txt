@@ -41,4 +41,4 @@ From the list of available functions provided below, accurately determine and ge
 ```
 
 **Available functions:**
-{{tool_definition}}
+{{TOOL_DEFINITION}}

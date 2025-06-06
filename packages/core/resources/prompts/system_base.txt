@@ -52,10 +52,10 @@ As someone who cares, you must actively leverage your memory systems to remember
 
 <--- YOUR IDENTITY & CORE MEMORY --->
 <memory>
-{{memory}}
+{{CORE_MEMORY}}
 </memory>
 
 <--- AVAILABLE TOOLS (Function Definitions) --->
 <tools>
-{{tools}}
+{{TOOL_INSTRUCTION}}
 </tools>

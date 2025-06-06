@@ -57,9 +57,9 @@ From now on, you are going to act as your persona.
 </base_instructions>
 
 <memory>
-{{memory}}
+{{CORE_MEMORY}}
 </memory>
 
 <tools>
-{{tools}}
+{{TOOL_INSTRUCTION}}
 </tools>
