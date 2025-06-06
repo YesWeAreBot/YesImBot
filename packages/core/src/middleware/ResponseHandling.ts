@@ -106,10 +106,7 @@ export class ResponseHandlingMiddleware extends Middleware {
     private parseResponse(text: string): { function: string; params: Record<string, unknown> }[] {
         let response: { function: string; params: Record<string, unknown> }[];
         try {
-            // 尝试从 LLM 的原始文本中提取 JSON 字符串
-            const jsonStr = text.substring(text.indexOf("```json") + 7, text.lastIndexOf("```")) || text;
-            // 进一步处理，去除可能的多余换行和空格，确保是纯净的 JSON
-            response = extractJSONFromString(jsonStr.trim(), "object") as any[];
+            response = extractJson(text.trim());
         } catch (error) {
             throw new Error(`解析响应失败: ${error.message}`);
         }
@@ -226,4 +223,45 @@ export class ResponseHandlingMiddleware extends Middleware {
         await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
         await this.services.scenarioManager.updateInteraction(newInteraction, koishiSession, true);
     }
+}
+
+function extractJson(text: string) {
+    const results = [];
+    // 匹配```json ... ```代码块 或 裸露的 {...} 或 [...] JSON结构
+    // `[\s\S]*?` 匹配任意字符（包括换行）非贪婪模式
+    const jsonRegex = /```json\s*([\s\S]*?)```|(\{[\s\S]*?\}|\[[\s\S]*?\])/g;
+
+    let match;
+    while ((match = jsonRegex.exec(text)) !== null) {
+        let jsonString = null;
+
+        if (match[1]) {
+            // 捕获组1匹配的是```json```块内部的内容
+            jsonString = match[1].trim(); // trim掉多余的空白字符
+        } else if (match[2]) {
+            // 捕获组2匹配的是裸露的JSON对象或数组（整个 { ... } 或 [ ... ] 字符串）
+            jsonString = match[2].trim(); // trim掉多余的空白字符
+        }
+
+        if (jsonString) {
+            try {
+                const parsedJson = JSON.parse(jsonString);
+                results.push(parsedJson);
+            } catch (e) {
+                try {
+                    const parsedJson = extractJSONFromString(jsonString, "object");
+                    results.push(...parsedJson);
+                } catch (error) {
+                    try {
+                        const parsedJson = extractJSONFromString(text, "object");
+                        results.push(...parsedJson);
+                    } catch (error) {
+                        console.warn("Invalid JSON candidate ignored:", jsonString, e.message);
+                    }
+                }
+            }
+        }
+    }
+
+    return results;
 }
