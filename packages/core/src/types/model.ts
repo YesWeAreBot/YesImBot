@@ -9,7 +9,7 @@ export const IMAGE_TABLE = "yesimbot.image";
 
 declare module "koishi" {
     interface Tables {
-        [MESSAGE_TABLE]: Message;
+        [MESSAGE_TABLE]: ChatMessage;
         [MEMORY_TABLE]: MemoryBlockData;
         [INTERACTION_TABLE]: Interaction;
         [LAST_REPLY_TABLE]: {
@@ -20,7 +20,7 @@ declare module "koishi" {
     }
 }
 
-export interface Message {
+export interface ChatMessage {
     messageId: string;
     sender: {
         id: string;

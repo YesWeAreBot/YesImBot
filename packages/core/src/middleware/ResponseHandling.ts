@@ -1,11 +1,9 @@
 import { Context, Random, Session } from "koishi";
-
+import { Failed, ToolCallResult } from "../extensions";
 import { ScenarioManager } from "../services/ScenarioManager";
 import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
-import { CheckReplyConditionMiddleware } from "./CheckReplyCondition";
-import { Failed, ToolCallResult } from "../extensions";
 
 export class ResponseHandlingMiddleware extends Middleware {
     constructor(
@@ -37,36 +35,35 @@ export class ResponseHandlingMiddleware extends Middleware {
 
         let response: { function: string; params: Record<string, unknown> }[];
         try {
-            // 解析LLM响应中的JSON，LLM通常会返回一个JSON字符串，可能嵌入在其他文本中
+            // 解析LLM响应中的JSON
             response = this.parseResponse(text);
         } catch (error) {
             logger.error(`[ResponseHandling] LLM响应解析失败: ${error.message}`);
-            await ctx.transitionTo(ConversationState.IDLE); // 错误后重置状态
-            // 释放频道处理状态
-            const checkReplyMiddleware = this.services.middlewareManager.getMiddleware(
-                "check-reply-condition"
-            ) as CheckReplyConditionMiddleware;
-            checkReplyMiddleware.releaseChannelState(session.channelId);
+            // 错误后重置状态
+            await ctx.transitionTo(ConversationState.IDLE);
+
+            // 通过事件通知释放频道状态，而不是直接调用
+            ctx.koishiContext.emit("channel:processing:release", session.channelId);
             return;
         }
 
         let request_heartbeat = false;
-        // 确保工具调用和工具结果被正确记录到 Interaction 数据中
+
+        // 处理工具调用
         for (const func of response) {
             let { function: functionName, params } = func;
 
             let channel_id = params?.channel_id;
-
             if (!channel_id) {
                 channel_id = session.channelId;
             }
 
-            // 记录工具调用，使用新的 Interaction 结构
+            // 记录工具调用
             await this.recordToolCall(ctx.koishiContext, session, functionName, params);
 
             const result = await this.executeToolCall(ctx.koishiContext, session, functionName, params, this.config?.maxRetry || 0);
 
-            // 记录工具结果，使用新的 Interaction 结构
+            // 记录工具结果
             await this.recordToolResult(ctx.koishiContext, session, functionName, result);
 
             if (params.request_heartbeat) {
@@ -84,9 +81,10 @@ export class ResponseHandlingMiddleware extends Middleware {
                 ctx.heartbeatCount++;
                 ctx.koishiContext.logger.info(`[ResponseHandling] 触发heartbeat连续对话，当前次数: ${ctx.heartbeatCount}/${maxHeartbeat}`);
                 await ctx.transitionTo(ConversationState.PROCESSING);
-                // 重新进入 LLM 处理流程，确保 Prompt 会更新
+
+                // 重新进入 LLM 处理流程
                 await this.services.middlewareManager.executeFrom(ctx, this.services.middlewareManager.findIndex("llm-processing"));
-                return; // 提前返回，因为处理链将从 llm-processing 重新开始
+                return;
             }
         }
 
@@ -95,11 +93,10 @@ export class ResponseHandlingMiddleware extends Middleware {
 
         // 处理完成后重置状态
         await ctx.transitionTo(ConversationState.IDLE);
-        // 重置heartbeat计数器
         ctx.heartbeatCount = 0;
-        // 释放频道处理状态
-        const checkReplyMiddleware: CheckReplyConditionMiddleware = this.services.middlewareManager.getMiddleware("check-reply-condition");
-        checkReplyMiddleware.releaseChannelState(session.channelId);
+
+        // 通过事件通知释放频道状态
+        ctx.koishiContext.emit("channel:processing:release", session.channelId);
     }
 
     // 解析LLM响应，提取函数调用信息

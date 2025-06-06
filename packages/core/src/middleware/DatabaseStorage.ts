@@ -1,6 +1,6 @@
 import { Context, Element, h } from "koishi";
 import { ScenarioManager } from "../services/ScenarioManager";
-import { MESSAGE_TABLE, Message } from "../types/model";
+import { ChatMessage, MESSAGE_TABLE } from "../types/model";
 import { getChannelType } from "../utils";
 import { ImageProcessor } from "../utils/imageProcessor";
 import { MessageContext, Middleware } from "./base";
@@ -9,10 +9,7 @@ import { MessageContext, Middleware } from "./base";
  * 数据库存储中间件
  */
 export class DatabaseStorageMiddleware extends Middleware {
-    constructor(
-        protected ctx: Context,
-        protected services: { imageProcessor: ImageProcessor; scenarioManager: ScenarioManager },
-    ) {
+    constructor(protected ctx: Context, protected services: { imageProcessor: ImageProcessor; scenarioManager: ScenarioManager }) {
         super("database-storage", ctx, services, null);
     }
 
@@ -63,7 +60,7 @@ export class DatabaseStorageMiddleware extends Middleware {
         await next();
     }
 
-    private async saveReceivedMessage(ctx: MessageContext, content: string): Promise<Message | null> {
+    private async saveReceivedMessage(ctx: MessageContext, content: string): Promise<ChatMessage | null> {
         const session = ctx.koishiSession;
         // 检查消息是否已存在，防止重复存储
         const messages = await this.ctx.database.get(MESSAGE_TABLE, {
@@ -73,7 +70,7 @@ export class DatabaseStorageMiddleware extends Middleware {
             },
         });
         if (messages.length === 0) {
-            const message: Message = {
+            const message: ChatMessage = {
                 messageId: session.messageId,
                 content: content,
                 sender: {
