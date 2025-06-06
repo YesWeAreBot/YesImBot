@@ -9,7 +9,7 @@ import { Context, Query } from "koishi";
 import { z } from "zod";
 import { MemoryError } from "../../memory/MemoryError";
 import { MemoryService } from "../../memory/MemoryService";
-import { Message, MESSAGE_TABLE } from "../../types/model";
+import { ChatMessage, MESSAGE_TABLE } from "../../types/model";
 import { createTool, withCommonParams } from "../helpers";
 
 function getMemory(ctx: Context): MemoryService {
@@ -128,7 +128,7 @@ export const ConversationSearchTool = createTool({
     execute: async ({ query, limit, channel_id, user_id }, context) => {
         const { koishiContext } = context;
         try {
-            const whereClauses: Query.Expr<Message>[] = []; // Message is your database model type for messages
+            const whereClauses: Query.Expr<ChatMessage>[] = []; // Message is your database model type for messages
 
             // Basic text search across 'content'
             // For more advanced search, you might need full-text search capabilities in your DB
@@ -142,7 +142,7 @@ export const ConversationSearchTool = createTool({
                 whereClauses.push({ sender: { id: user_id } });
             }
             // Combine clauses with $and if multiple are present
-            const finalQuery: Query<Message> = whereClauses.length > 1 ? { $and: whereClauses } : whereClauses[0] || {};
+            const finalQuery: Query<ChatMessage> = whereClauses.length > 1 ? { $and: whereClauses } : whereClauses[0] || {};
 
             const messages = await koishiContext.database
                 .select(MESSAGE_TABLE)

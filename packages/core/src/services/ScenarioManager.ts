@@ -1,6 +1,6 @@
 import { $, Context, Session } from "koishi";
 import { MultimodalConfig, Scenario } from "../Scenario";
-import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message } from "../types/model";
+import { ChatMessage, Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE } from "../types/model";
 
 declare module "koishi" {
     interface Events {
@@ -62,7 +62,7 @@ export class ScenarioManager {
      * @param session 关联的会话
      * @param isNewMessage 是否为新消息，机器人尚未处理
      */
-    async updateMessage(message: Message, session: Session, isNewMessage: boolean): Promise<void> {
+    async updateMessage(message: ChatMessage, session: Session, isNewMessage: boolean): Promise<void> {
         const scenario = await this.getScenario(session);
         scenario.addContext(message, isNewMessage);
     }

@@ -1,9 +1,9 @@
 import { $, Context, Element, h, Session } from "koishi";
-import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "./services/PlatformAdapter";
-import { Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, Message, MESSAGE_TABLE } from "./types/model";
-import { formatDate, getChannelType, ImageProcessor } from "./utils";
 import type { Part, TextPart, UserMessagePart } from "xsai";
 import { message } from "./dependencies/xsai";
+import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "./services/PlatformAdapter";
+import { ChatMessage, Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE, MESSAGE_TABLE } from "./types/model";
+import { formatDate, getChannelType, ImageProcessor } from "./utils";
 
 const { textPart, imagePart } = message;
 
@@ -29,8 +29,8 @@ interface ImageInfo {
 export class Scenario {
     public readonly id: string;
     private metadata: Record<string, string>;
-    public chatHistory: (Message | Interaction)[] = []; // 已读消息列表
-    public newMessages: (Message | Interaction)[] = []; // 未读消息列表
+    public chatHistory: (ChatMessage | Interaction)[] = []; // 已读消息列表
+    public newMessages: (ChatMessage | Interaction)[] = []; // 未读消息列表
     private recallSize: number; // 数据库中超出上下文限制，但仍可"召回"的历史记录数量
     private lastReplyTime: Date | null = null; // 存储最后回复时间，用于判断消息已读状态
     private platformAdapter: PlatformAdapter;
@@ -94,7 +94,7 @@ export class Scenario {
             .execute();
 
         // 合并消息和交互并按时间排序
-        let history: (Interaction | Message)[] = [...chatMessagesToLoad.reverse(), ...chatInteractions];
+        let history: (Interaction | ChatMessage)[] = [...chatMessagesToLoad.reverse(), ...chatInteractions];
         history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         // 计算超出上下文限制的记忆数量
@@ -128,7 +128,7 @@ export class Scenario {
      * @param isNewMessage 是否是新消息
      * @param isLoadingInitialData 标记是否在初始加载数据，避免在加载时错误增加 recallSize
      */
-    public addContext(record: Message | Interaction, isNewMessage = true, isLoadingInitialData = false) {
+    public addContext(record: ChatMessage | Interaction, isNewMessage = true, isLoadingInitialData = false) {
         if (isNewMessage) {
             this.newMessages.push(record);
         } else {
@@ -136,7 +136,7 @@ export class Scenario {
                 const shiftedItem = this.chatHistory.shift(); // 移除最早的消息或交互
                 // Only increment recallSize if a MESSAGE was shifted out during non-initial load
                 // And if we are not in the initial loading phase (recallSize is set once there)
-                if (!isLoadingInitialData && shiftedItem && (shiftedItem as Message).messageId) {
+                if (!isLoadingInitialData && shiftedItem && (shiftedItem as ChatMessage).messageId) {
                     // This logic for recallSize might be tricky if interactions are also shifted.
                     // recallSize is primarily for messages.
                 }
@@ -154,8 +154,8 @@ export class Scenario {
         let prunedCount = 0;
 
         // Helper function to process an array (context or unread)
-        const processArray = (arr: (Message | Interaction)[]) => {
-            const newArray: (Message | Interaction)[] = [];
+        const processArray = (arr: (ChatMessage | Interaction)[]) => {
+            const newArray: (ChatMessage | Interaction)[] = [];
             for (const record of arr) {
                 if ((record as Interaction).functionName !== undefined) {
                     // It's an Interaction
@@ -237,7 +237,7 @@ export class Scenario {
      * @param records 消息或交互记录数组
      * @returns 图片信息数组，按时间排序（最新的在前）
      */
-    private async collectAllImages(records: (Message | Interaction)[]): Promise<ImageInfo[]> {
+    private async collectAllImages(records: (ChatMessage | Interaction)[]): Promise<ImageInfo[]> {
         const allImages: ImageInfo[] = [];
 
         for (const record of records) {
@@ -246,7 +246,7 @@ export class Scenario {
                 continue;
             }
 
-            const message = record as Message;
+            const message = record as ChatMessage;
             const elements = h.parse(message.content as string);
 
             for (const elem of elements) {
@@ -356,11 +356,11 @@ export class Scenario {
      * @param allowedImageSet 允许渲染的图片集合
      * @returns {Array<Part>} 格式化后的内容 Part 数组
      */
-    private async formatContext(record: Message | Interaction, allowedImageSet: Set<string>): Promise<UserMessagePart[]> {
+    private async formatContext(record: ChatMessage | Interaction, allowedImageSet: Set<string>): Promise<UserMessagePart[]> {
         if ((record as Interaction).functionName !== undefined) {
             return [message.textPart(this.formatInteraction(record as Interaction))]; // 交互始终是文本
         } else {
-            return this.formatMessage(record as Message, allowedImageSet);
+            return this.formatMessage(record as ChatMessage, allowedImageSet);
         }
     }
 
@@ -370,7 +370,7 @@ export class Scenario {
      * @param allowedImageSet 允许渲染的图片集合
      * @returns 格式化后的消息部分数组
      */
-    private async formatMessage(message: Message, allowedImageSet: Set<string>): Promise<Array<UserMessagePart>> {
+    private async formatMessage(message: ChatMessage, allowedImageSet: Set<string>): Promise<Array<UserMessagePart>> {
         const parts: Array<UserMessagePart> = [];
         let currentTextContent: string = ""; // 累积当前文本内容，直到遇到图片或消息结束
 
@@ -505,7 +505,7 @@ export class Scenario {
      * @param message 消息对象
      * @returns 格式化后的发送者字符串
      */
-    private getSenderString(message: Message): string {
+    private getSenderString(message: ChatMessage): string {
         const SELF_IDENTIFIER = "YOU"; // 用于标识机器人自身的标识符
 
         let sender = message.sender.id === this.session.bot.selfId ? SELF_IDENTIFIER : `${message.sender.name}<${message.sender.id}>`;
