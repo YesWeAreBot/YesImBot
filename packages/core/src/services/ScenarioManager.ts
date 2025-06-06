@@ -138,10 +138,10 @@ export class ScenarioManager {
     /**
      * 获取所有活跃的 Scenario 实例列表，供 PromptBuilder 渲染。
      */
-    public getActiveScenariosForRender(): Scenario[] {
+    public getActiveScenariosForRender(allowedChannels: string[]): Scenario[] {
         const activeScenarios: Scenario[] = [];
         for (const scenario of this.scenarios.values()) {
-            if (scenario.isActive) {
+            if (allowedChannels.includes(scenario.id) && scenario.isActive) {
                 activeScenarios.push(scenario);
             }
         }
@@ -151,10 +151,10 @@ export class ScenarioManager {
     /**
      * 获取所有不活跃的 Scenario 实例列表（主要指群聊），供 PromptBuilder 渲染。
      */
-    public getInactiveScenariosForRender(): Scenario[] {
+    public getInactiveScenariosForRender(allowedChannels: string[]): Scenario[] {
         const inactiveScenarios: Scenario[] = [];
         for (const scenario of this.scenarios.values()) {
-            if (!scenario.isActive) {
+            if (allowedChannels.includes(scenario.id) && !scenario.isActive) {
                 inactiveScenarios.push(scenario);
             }
         }

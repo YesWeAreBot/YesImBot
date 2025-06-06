@@ -27,6 +27,7 @@ interface ImageInfo {
  * 对话场景
  */
 export class Scenario {
+    public readonly id: string;
     private metadata: Record<string, string>;
     public chatHistory: (Message | Interaction)[] = []; // 已读消息列表
     public newMessages: (Message | Interaction)[] = []; // 未读消息列表
@@ -38,6 +39,7 @@ export class Scenario {
     private imageProcessor: ImageProcessor;
 
     constructor(private ctx: Context, private session: Session, private limit: number = 30, multimodalConfig: MultimodalConfig) {
+        this.id = session.channelId;
         switch (session.platform) {
             case "onebot":
                 this.platformAdapter = new OneBotPlatform(session);

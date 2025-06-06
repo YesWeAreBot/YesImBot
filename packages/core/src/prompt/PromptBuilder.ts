@@ -13,8 +13,6 @@ import { formatDate } from "../utils";
 
 const { textPart } = message;
 
-type LLMMessageContent = string | Part[];
-
 export type PromptBlockGenerator = (ctx: MessageContext, PromptBuilder: PromptBuilder) => Promise<string | Array<Part> | null>;
 
 export interface PromptBuilderConfig {
@@ -81,12 +79,12 @@ export class PromptBuilder {
      */
     private registerDefaultBlockGenerators(): void {
         // 核心记忆块 (通常为纯文本)
-        this.registerBlockGenerator("memory", async () => {
+        this.registerBlockGenerator("CORE_MEMORY", async () => {
             return this.memory.getCoreMemoryContentForPrompt();
         });
 
         // 工具描述块 (通常为纯文本)
-        this.registerBlockGenerator("tools", async () => {
+        this.registerBlockGenerator("TOOL_INSTRUCTION", async () => {
             const template = this.config.ToolTemplate;
             if (!template) {
                 this.logger.warn("Tool template not found.");
@@ -96,25 +94,25 @@ export class PromptBuilder {
         });
 
         // 工具定义块 (通常为纯文本)
-        this.registerBlockGenerator("tool_definition", async () => {
+        this.registerBlockGenerator("TOOL_DEFINITION", async () => {
             return this.toolManager.getToolPrompts();
         });
 
-        // 任务指令块 (通常为纯文本)
-        this.registerBlockGenerator("task_instruction", async () => {
-            const template = this.templates.get("task_instruction.txt");
-            if (!template) {
-                this.logger.warn("task_instruction.txt template not found.");
-                return "Please respond appropriately.";
-            }
-            return template;
-        });
+        // // 任务指令块 (通常为纯文本)
+        // this.registerBlockGenerator("TASK_INSTRUCTION", async () => {
+        //     const template = this.templates.get("task_instruction.txt");
+        //     if (!template) {
+        //         this.logger.warn("task_instruction.txt template not found.");
+        //         return "Please respond appropriately.";
+        //     }
+        //     return template;
+        // });
 
         // 场景上下文生成器 (可能包含文本和图片)
-        this.registerBlockGenerator("scenario_context", async (ctx) => {
+        this.registerBlockGenerator("SCENARIO_CONTEXT", async (ctx) => {
             // 获取所有活跃和不活跃的群组场景
-            const activeScenarios = this.scenarioManager.getActiveScenariosForRender();
-            const inactiveScenarios = this.scenarioManager.getInactiveScenariosForRender();
+            const activeScenarios = this.scenarioManager.getActiveScenariosForRender(ctx.allowedChannels);
+            const inactiveScenarios = this.scenarioManager.getInactiveScenariosForRender(ctx.allowedChannels);
 
             let allScenarioParts: Array<UserMessagePart> = [];
 

@@ -146,8 +146,17 @@ export default class Agent {
     private registerMiddleware(): void {
         this.ctx.middleware(async (session, next) => {
             try {
+                const allowedChannels = this.config.MemorySlot.SlotContains.find((slots) => slots.includes(session.channelId));
+
+                if (allowedChannels.length === 0) {
+                    if (this.config.Debug.EnableDebug) {
+                        this.ctx.logger.info(`${session.channelId} 不在回复列表，已跳过`)
+                    }
+                    return next();
+                }
+
                 // 创建消息上下文
-                const messageContext = new MessageContext(this.ctx, session);
+                const messageContext = new MessageContext(this.ctx, session, allowedChannels);
 
                 // 执行中间件链
                 await this.middlewareManager.execute(messageContext);

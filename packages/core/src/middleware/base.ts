@@ -36,7 +36,9 @@ export class MessageContext {
         // Koishi上下文对象
         public koishiContext: Context,
         // Koishi会话对象
-        public koishiSession: Session
+        public koishiSession: Session,
+
+        public allowedChannels: string[],
     ) {
         this.isMentioned = koishiSession.elements.some(
             (element) => element.type === "at" && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === "all")
