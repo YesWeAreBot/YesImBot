@@ -2,34 +2,37 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Logger } from "./Logger";
+import { Context } from "koishi";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
+import { Logger } from "./Logger";
 
 // MCP 连接管理器
 export class MCPManager {
     private logger: Logger;
     private commandResolver: CommandResolver;
+    private toolManager: Context["yesimbot.tool"];
     private config: Config;
     private clients: Client[] = [];
     private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
     private registeredTools: string[] = [];
 
-    constructor(logger: Logger, commandResolver: CommandResolver, config: Config) {
+    constructor(logger: Logger, commandResolver: CommandResolver, toolManager: Context["yesimbot.tool"], config: Config) {
         this.logger = logger;
         this.commandResolver = commandResolver;
+        this.toolManager = toolManager;
         this.config = config;
     }
 
     /**
      * 连接所有 MCP 服务器
      */
-    async connectServers(toolManager: any): Promise<void> {
+    async connectServers(): Promise<void> {
         const serverNames = Object.keys(this.config.mcpServers);
         this.logger.info(`准备连接 ${serverNames.length} 个 MCP 服务器`);
 
         for (const serverName of serverNames) {
-            await this.connectServer(serverName, toolManager);
+            await this.connectServer(serverName);
         }
 
         if (this.clients.length === 0) {
@@ -42,7 +45,7 @@ export class MCPManager {
     /**
      * 连接单个 MCP 服务器
      */
-    private async connectServer(serverName: string, toolManager: any): Promise<void> {
+    private async connectServer(serverName: string): Promise<void> {
         const server = this.config.mcpServers[serverName];
         let transport: any;
 
@@ -77,7 +80,7 @@ export class MCPManager {
             this.logger.success(`已连接服务器: ${serverName}`);
 
             // 注册工具
-            await this.registerTools(client, serverName, toolManager);
+            await this.registerTools(client, serverName);
         } catch (error) {
             this.logger.error(`连接服务器 ${serverName} 失败: ${error.message}`);
             if (transport) {
@@ -93,7 +96,7 @@ export class MCPManager {
     /**
      * 注册工具
      */
-    private async registerTools(client: Client, serverName: string, toolManager: any): Promise<void> {
+    private async registerTools(client: Client, serverName: string): Promise<void> {
         try {
             const toolsResponse = await client.listTools();
             const tools = toolsResponse?.tools || [];
@@ -104,7 +107,7 @@ export class MCPManager {
             }
 
             for (const tool of tools) {
-                await this.registerSingleTool(client, tool, serverName, toolManager);
+                await this.registerSingleTool(client, tool, serverName);
             }
         } catch (error) {
             this.logger.error(`注册工具失败: ${error.message}`);
@@ -114,7 +117,7 @@ export class MCPManager {
     /**
      * 注册单个工具
      */
-    private async registerSingleTool(client: Client, tool: any, serverName: string, toolManager: any): Promise<void> {
+    private async registerSingleTool(client: Client, tool: any, serverName: string): Promise<void> {
         // 增强工具模式
         const enhancedSchema = {
             properties: {
@@ -131,9 +134,12 @@ export class MCPManager {
             },
         };
 
-        toolManager.registerTool({
-            name: tool.name,
-            description: tool.description,
+        this.toolManager.registerTool({
+            metadata: {
+                name: tool.name,
+                version: "1.0.0",
+                description: tool.description,
+            },
             parameters: enhancedSchema,
             execute: async (params: any) => {
                 return await this.executeTool(client, tool.name, params);
@@ -194,13 +200,13 @@ export class MCPManager {
     /**
      * 清理资源
      */
-    async cleanup(toolManager: any): Promise<void> {
+    async cleanup(): Promise<void> {
         this.logger.info("正在清理 MCP 连接...");
 
         // 注销工具
         for (const toolName of this.registeredTools) {
             try {
-                toolManager.removeTool(toolName);
+                this.toolManager.unregisterTool(toolName);
                 this.logger.debug(`注销工具: ${toolName}`);
             } catch (error) {
                 this.logger.warn(`注销工具失败: ${error.message}`);
