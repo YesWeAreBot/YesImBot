@@ -117,7 +117,9 @@ export const Provider: Schema<Provider> = Schema.object({
             /^(?:(http[s]?|socks[45]|ftp|ssh):\/\/)?(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])|localhost|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}|[a-zA-Z0-9-]{1,63}\):(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9]\d{0,3})$/i
         )
         .description("代理地址"),
-});
+})
+    .collapse(true)
+    .description("提供商配置");
 
 // Embedding 配置 Schema
 export const EmbeddingConfig: Schema<EmbeddingConfig> = Schema.intersect([
