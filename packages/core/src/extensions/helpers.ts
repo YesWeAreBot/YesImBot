@@ -218,8 +218,8 @@ export async function withRetry<T>(
  * 常用参数模式
  */
 export const CommonParams = {
-    INNER_THOUGHTS: z.string().describe("内心独白，仅对你自己可见"),
-    REQUEST_HEARTBEAT: z.boolean().optional().describe("是否在函数执行后请求立即心跳"),
+    INNER_THOUGHTS: z.string().describe("Deep inner monologue private to you only."),
+    REQUEST_HEARTBEAT: z.boolean().optional().describe("Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function."),
     CHANNEL_ID: z.string().optional().describe("频道ID，不填则使用当前频道"),
     USER_ID: z.string().optional().describe("用户ID"),
     MESSAGE_ID: z.string().optional().describe("消息ID"),

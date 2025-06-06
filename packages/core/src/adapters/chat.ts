@@ -2,7 +2,7 @@ import type { ChatProvider } from "@xsai-ext/shared-providers";
 import { Context, isEmpty } from "koishi";
 import type { ChatOptions, GenerateTextResult, Message, ToolResult } from "xsai";
 
-import { generateText, streamText } from "../dependencies/xsai";
+import { extractReasoning, generateText, streamText } from "../dependencies/xsai";
 import { isNotEmpty, toBoolean } from "../utils";
 import { Ability, Model, ModelSetting } from "./config";
 
@@ -150,6 +150,12 @@ export class ChatModel {
         } else {
             // 非流式输出
             const result = await generateText(chatOptions);
+            if (this.ability.includes("Reasoning")) {
+                const { reasoning, text } = extractReasoning(result.text);
+                info(reasoning);
+                result.text = text;
+            }
+            info(result.text);
             return result;
         }
     }
