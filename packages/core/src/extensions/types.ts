@@ -1,103 +1,132 @@
-import { Context, Session } from "koishi";
-import { ToolResult as XSaiToolResult } from "xsai";
+import { Context, Logger, Session } from "koishi";
 import { z } from "zod";
 
 /**
- * 工具运行时上下文
+ * 扩展元数据
+ * @template TConfig - 扩展配置的Zod Schema类型
  */
-export interface ToolContext {
-    koishiContext?: Context;
-    koishiSession?: Session;
-    [key: string]: unknown;
+export interface ExtensionMetadata<TConfig extends z.ZodTypeAny = z.ZodNever> {
+    /** 扩展的唯一名称，将用作配置键 */
+    name: string;
+    /** 版本号 */
+    version: string;
+    /** 扩展描述 */
+    description: string;
+    /** 扩展的配置项目定义 (使用 Zod) */
+    schema?: TConfig;
+    /** 作者 */
+    author?: string;
+    /** 主页 */
+    homepage?: string;
+    /** 仓库地址 */
+    repository?: string;
+    /** 许可证 */
+    license?: string;
+    /** 关键词 */
+    keywords?: string[];
 }
 
 /**
  * 工具元数据
  */
 export interface ToolMetadata {
+    /** 工具名称，在扩展内必须唯一 */
     name: string;
-    version: string;
-    author?: string;
+    /** 工具描述 */
     description: string;
+    /** 版本号 */
+    version?: string;
+    /** 作者 */
+    author?: string;
+    /** 工具分类 */
     category?: string;
+    /** 标签 */
     tags?: string[];
 }
 
 /**
- * 扩展元数据
+ * 工具执行上下文
+ * @template TConfig - 扩展的配置对象类型
  */
-export interface ExtensionMetadata {
-    name: string;
-    version: string;
-    author?: string;
-    description: string;
-    homepage?: string;
-    repository?: string;
-    license?: string;
-    keywords?: string[];
+export interface ToolContext<TConfig = any> {
+    /** Koishi 上下文 */
+    koishiContext: Context;
+    /** Koishi 会话 */
+    koishiSession: Session;
+    /** 日志记录器 */
+    logger?: Logger;
+    /** 该工具所属扩展的配置 */
+    extensionConfig: TConfig;
 }
 
 /**
  * 工具调用结果
  */
-export interface ToolCallResult<T = any> {
+export interface ToolCallResult<TResult = any> {
+    /** 是否成功 */
     success: boolean;
-    result?: T;
+    /** 返回结果 */
+    result?: TResult;
+    /** 错误信息 */
     error?: string;
-    metadata?: {
-        executionTime?: number;
-        retryCount?: number;
-        [key: string]: any;
+    /** 附加元数据，如执行时间等 */
+    metadata?: Record<string, any>;
+}
+
+/**
+ * 工具定义
+ * @template TParams - 工具参数的Zod Schema类型
+ * @template TReturns - 工具返回值的类型
+ * @template TConfig - 扩展配置对象的类型
+ */
+export interface ToolDefinition<TParams extends z.ZodTypeAny = z.ZodTypeAny, TReturns = any, TConfig = any> {
+    name?: string;
+    description?: string;
+    version?: string;
+    metadata?: ToolMetadata;
+    parameters: TParams | { properties: { [key: string]: { type: StaticRange; description: string } } };
+    execute: (params: z.infer<TParams>, context: ToolContext<TConfig>) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
+    hooks?: {
+        onRegister?: (context: ToolContext<TConfig>) => Promise<void> | void;
+        onUnregister?: (context: ToolContext<TConfig>) => Promise<void> | void;
+        onBeforeExecute?: (params: z.infer<TParams>, context: ToolContext<TConfig>) => Promise<void> | void;
+        onAfterExecute?: (result: ToolCallResult<TReturns>, context: ToolContext<TConfig>) => Promise<void> | void;
+        onError?: (error: Error, context: ToolContext<TConfig>) => Promise<void> | void;
     };
 }
 
 /**
- * 工具生命周期钩子
+ * 扩展定义
+ * @template TConfig - 扩展配置的Zod Schema类型
  */
-export interface ToolLifecycleHooks {
-    onRegister?: (context: ToolContext) => Promise<void> | void;
-    onUnregister?: (context: ToolContext) => Promise<void> | void;
-    onBeforeExecute?: (params: any, context: ToolContext) => Promise<void> | void;
-    onAfterExecute?: (result: ToolCallResult, context: ToolContext) => Promise<void> | void;
-    onError?: (error: Error, context: ToolContext) => Promise<void> | void;
+export interface ExtensionDefinition<TConfig extends z.ZodTypeAny = z.ZodNever> {
+    metadata: ExtensionMetadata<TConfig>;
+    tools: ToolDefinition<any, any, z.infer<TConfig>>[];
+    onLoad?: (ctx: Context, config: z.infer<TConfig>) => Promise<void>;
+    onUnload?: (ctx: Context) => Promise<void>;
 }
 
 /**
- * 工具定义接口
+ * 装饰器模式下的扩展类构造器接口
  */
-export interface ToolDefinition<TParams extends z.ZodTypeAny = any, TReturns = any> {
-    metadata: ToolMetadata;
-    parameters: TParams;
-    hooks?: ToolLifecycleHooks;
-    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
+export interface ExtensionConstructor {
+    new (...args: any[]): any;
+    getExtensionDefinition(): ExtensionDefinition<any>;
 }
 
 /**
- * 扩展定义接口
+ * 可执行的工具对象，为LLM格式化
  */
-export interface ExtensionDefinition {
-    metadata: ExtensionMetadata;
-    tools: ToolDefinition[];
-}
-
-/**
- * 可执行工具接口
- */
-//@ts-ignore
-export interface ExecutableTool<TParams extends z.ZodTypeAny = any, TReturns = any> extends XSaiToolResult {
+export interface ExecutableTool<TParams extends z.ZodTypeAny = z.ZodAny, TReturns = any> {
+    type: "function";
     metadata: ToolMetadata;
     extensionMetadata?: ExtensionMetadata;
-    execute: (params: z.infer<TParams>, context: ToolContext) => Promise<ToolCallResult<TReturns>>;
-}
-
-/**
- * 工具注册配置
- */
-export interface ToolRegistrationOptions {
-    replace?: boolean;
-    validateDependencies?: boolean;
-    enableHooks?: boolean;
-    extensionMetadata?: ExtensionMetadata;
+    function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+    };
+    execute: (params: z.infer<TParams>, runtimeContext: Partial<ToolContext>) => Promise<ToolCallResult<TReturns>>;
 }
 
 /**
@@ -115,13 +144,12 @@ export interface ToolManagerConfig {
 }
 
 /**
- * 工具执行选项
+ * 工具注册选项
  */
-export interface ToolExecutionOptions {
-    timeout?: number;
-    maxRetries?: number;
+export interface ToolRegistrationOptions {
+    replace?: boolean;
     enableHooks?: boolean;
-    context?: ToolContext;
+    extensionMetadata?: ExtensionMetadata<any>;
 }
 
 /**
@@ -132,10 +160,10 @@ export enum ToolErrorType {
     VALIDATION_ERROR = "VALIDATION_ERROR",
     EXECUTION_ERROR = "EXECUTION_ERROR",
     TIMEOUT_ERROR = "TIMEOUT_ERROR",
-    DEPENDENCY_ERROR = "DEPENDENCY_ERROR",
     PERMISSION_ERROR = "PERMISSION_ERROR",
     LOAD_ERROR = "LOAD_ERROR",
     REGISTRATION_ERROR = "REGISTRATION_ERROR",
+    CONFIG_ERROR = "CONFIG_ERROR",
 }
 
 /**
@@ -146,13 +174,4 @@ export class ToolError extends Error {
         super(message);
         this.name = "ToolError";
     }
-}
-
-/**
- * 装饰器元数据
- */
-export interface DecoratorMetadata {
-    target: any;
-    propertyKey: string;
-    descriptor: PropertyDescriptor;
 }

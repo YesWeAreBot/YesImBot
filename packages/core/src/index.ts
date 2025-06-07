@@ -29,7 +29,7 @@ export default class YesImBot extends Service {
         ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
 
         // 注册工具管理器
-        ctx.plugin(ToolManager);
+        ctx.plugin(ToolManager, config.ToolManagerConfig);
 
         // 注册模型服务
         ctx.plugin(ModelService, {

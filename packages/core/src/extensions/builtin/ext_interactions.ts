@@ -14,8 +14,11 @@ import { isEmpty } from "../../utils/string";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
 
 export const Reaction = createTool({
-    name: "reaction-create",
-    description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
+    metadata: {
+        name: "reaction-create",
+        description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
+    },
+
     parameters: withCommonParams({
         message_id: z.string().describe("消息 ID"),
         emoji_id: z.number().describe("表态编号"),
@@ -38,8 +41,11 @@ export const Reaction = createTool({
 });
 
 export const Essence = createTool({
-    name: "essence-create",
-    description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
+    metadata: {
+        name: "essence-create",
+        description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
+    },
+
     parameters: withCommonParams({
         message_id: z.string().describe("消息 ID"),
     }),
@@ -58,8 +64,11 @@ export const Essence = createTool({
 });
 
 export const Poke = createTool({
-    name: "send-poke",
-    description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
+    metadata: {
+        name: "send-poke",
+        description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
+    },
+
     parameters: withCommonParams({
         user_id: z.string().describe("用户名称"),
         channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
@@ -91,8 +100,11 @@ export const Poke = createTool({
 });
 
 export const GetForwardMsg = createTool({
-    name: "get_forward_msg",
-    description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
+    metadata: {
+        name: "get_forward_msg",
+        description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
+    },
+
     parameters: withCommonParams({
         id: z.string().describe("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
     }),

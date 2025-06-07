@@ -82,9 +82,12 @@ export class ServiceInitializer {
 
     private createSendMessageTool(config: Config["Chat"]) {
         return createTool({
-            name: "send_message",
-            version: "1.0.0",
-            description: "Sends a message to the human user.",
+            metadata: {
+                name: "send_message",
+                version: "1.0.0",
+                description: "Sends a message to the human user.",
+            },
+
             parameters: withCommonParams({
                 message: z
                     .string()
@@ -144,10 +147,12 @@ export class ServiceInitializer {
 
     private createViewImageTool(imageProcessor: ImageProcessor, config: Config["ImageViewer"]) {
         return createTool({
-            name: "view_image",
-            version: "1.0.0",
-            description:
-                "获取聊天记录中指定图片内容的详细描述。当对话需要你理解图片内容才能做出响应时调用此工具。请在需要查看图片以回答用户问题、识别图片中的信息、或理解图片传达的场景时使用。",
+            metadata: {
+                name: "view_image",
+                description:
+                    "获取聊天记录中指定图片内容的详细描述。当对话需要你理解图片内容才能做出响应时调用此工具。请在需要查看图片以回答用户问题、识别图片中的信息、或理解图片传达的场景时使用。",
+            },
+
             parameters: withCommonParams({
                 image_id: z.string().describe("聊天记录中图片的唯一ID。"),
                 query: z
