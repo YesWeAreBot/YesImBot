@@ -1,5 +1,6 @@
 import { Computed, Schema } from "koishi";
 import { ModelSetting, Provider } from "./adapters/config";
+import { ToolManagerConfig } from "./extensions";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
 import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
 import { MultimodalConfig } from "./Scenario";
@@ -55,6 +56,7 @@ export interface Config {
         UseModel?: [number, number];
         CustomPrompt?: string;
     };
+    ToolManagerConfig: ToolManagerConfig;
     ToolCall: {
         MaxRetry: number;
         Life: number;
@@ -184,6 +186,15 @@ export const Config: Schema<Config> = Schema.object({
             .role("textarea", { rows: [2, 4] })
             .description("自定义提示词"),
     }).description("识图设置"),
+
+    ToolManagerConfig: Schema.object({
+        autoLoad: Schema.boolean().default(true),
+        extensionPaths: Schema.array(String).default([]),
+        logLevel: Schema.union(["debug", "info", "warn", "error"]).default("info"),
+        timeout: Schema.number().default(30000),
+        hotReload: Schema.boolean().default(true),
+        validateTypes: Schema.boolean().default(true),
+    }),
 
     ToolCall: Schema.object({
         MaxRetry: Schema.number().default(3).min(0).max(10).description("工具调用失败时的最大重试次数"),

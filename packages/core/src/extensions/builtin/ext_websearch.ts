@@ -2,39 +2,22 @@ import { z } from "zod";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
 
 export const WebSearch = createTool({
-    name: "web_search",
-    version: "1.0.0",
-    description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",
-    author: "HydroGest",
+    metadata: {
+        name: "web_search",
+        version: "1.0.0",
+        description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",
+        author: "HydroGest",
+    },
 
     parameters: withCommonParams({
         query: z.string().describe("搜索关键词或查询内容。"),
     }),
 
-    hooks: {
-        onBeforeExecute: async (params, context) => {
-            const { koishiContext } = context;
-            koishiContext?.logger.debug(`[WebSearchTool] 准备执行指令: ${params.cmd}`);
-        },
-
-        onAfterExecute: async (result, context) => {
-            const { koishiContext } = context;
-            if (result.success) {
-                koishiContext?.logger.debug(`[WebSearchTool] 指令执行成功`);
-            } else {
-                koishiContext?.logger.debug(`[WebSearchTool] 指令执行失败: ${result.error}`);
-            }
-        },
-
-        onError: async (error, context) => {
-            const { koishiContext } = context;
-            koishiContext?.logger.error(`[WebSearchTool] 执行过程中发生错误:`, error);
-        },
-    },
-
     execute: async ({ query }, context) => {
         try {
-            const searchUrl = `https://search.yesimbot.chat/search?q=${encodeURIComponent(query)}&engines=baidu,github,bing,presearch&format=json`;
+            const searchUrl = `https://search.yesimbot.chat/search?q=${encodeURIComponent(
+                query
+            )}&engines=baidu,github,bing,presearch&format=json`;
 
             const response = await fetch(searchUrl);
             if (!response.ok) {

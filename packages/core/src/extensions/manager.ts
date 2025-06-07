@@ -1,385 +1,328 @@
 import { Context, Service } from "koishi";
 import path from "path";
-import { getExtensionFiles } from "../utils";
-import {
-    createToolError,
-    defineExecutableTool,
-    isValidExtensionDefinition,
-    isValidToolDefinition,
-    validateToolParameters,
-    withRetry,
-    withTimeout
-} from "./helpers";
-import { ToolLogger } from "./logger";
-import { ToolRegistry } from "./registry";
+import { z } from "zod";
+import { createExtension, createToolError, defineExecutableTool, isValidExtension, isValidTool, validateToolParameters } from "./helpers";
 import {
     ExecutableTool,
+    ExtensionConstructor,
     ExtensionDefinition,
     ToolCallResult,
     ToolContext,
     ToolDefinition,
     ToolError,
     ToolErrorType,
-    ToolExecutionOptions,
     ToolManagerConfig,
-    ToolRegistrationOptions
+    ToolRegistrationOptions,
 } from "./types";
+import { getExtensionFiles } from "./utils";
 
 declare module "koishi" {
     interface Context {
         "yesimbot.tool": ToolManager;
     }
+    interface Config {
+        extensions?: Record<string, any>;
+    }
 }
 
-/**
- * 优化后的工具管理器
- * 提供完整的工具生命周期管理、错误处理和日志记录
- */
 export class ToolManager extends Service {
-    private _logger: ToolLogger;
-    private registry: ToolRegistry;
     private loaded = false;
     private fileWatchers = new Map<string, any>();
-    private metrics = {
-        totalExecutions: 0,
-        successfulExecutions: 0,
-        failedExecutions: 0,
-        totalExecutionTime: 0,
-        averageExecutionTime: 0,
-    };
 
-    constructor(ctx: Context, config: ToolManagerConfig = {}) {
+    // --- 原 Registry 的属性 ---
+    private tools = new Map<string, ToolDefinition<any, any, any>>();
+    private extensions = new Map<string, ExtensionDefinition<any>>();
+    private toolToExtension = new Map<string, string>();
+    private categories = new Map<string, Set<string>>();
+    private extensionConfigs = new Map<string, any>();
+
+    constructor(ctx: Context, public config: ToolManagerConfig = {}) {
         super(ctx, "yesimbot.tool", true);
 
-        // 初始化配置
-        this.config = {
-            autoLoad: config.autoLoad ?? true,
-            extensionPaths: config.extensionPaths ?? [],
-            logLevel: config.logLevel ?? "info",
-            enableMetrics: config.enableMetrics ?? true,
-            maxRetries: config.maxRetries ?? 3,
-            timeout: config.timeout ?? 30000,
-            hotReload: config.hotReload ?? false,
-            validateTypes: config.validateTypes ?? true,
-        };
-
-        // 初始化组件
-        this._logger = new ToolLogger(ctx, this.config.logLevel);
-        this.registry = new ToolRegistry(this._logger);
-
         ctx.on("ready", async () => {
-            // 自动加载
-            if (this.config.autoLoad) {
-                await this.loadExtensions();
-            }
+            if (this.config?.autoLoad) await this.loadExtensions();
         });
-
-        // 服务停止时清理
         ctx.on("dispose", () => this.cleanup());
     }
 
-    /**
-     * 加载扩展文件
-     */
+    // --- 扩展加载逻辑 ---
+
     async loadExtensions(): Promise<void> {
         if (this.loaded) {
-            this._logger.warn("Loader", "扩展已加载，跳过重复加载");
+            this.ctx.logger.warn("扩展已加载，如需重载请调用 reloadExtensions()");
             return;
         }
-
-        try {
-            const extensionFiles = getExtensionFiles(this.ctx);
-            const allPaths = [...extensionFiles, ...this.config.extensionPaths];
-
-            this._logger.info("Loader", `开始加载扩展，共 ${allPaths.length} 个文件`);
-
-            let totalToolsLoaded = 0;
-
-            for (const filePath of allPaths) {
-                try {
-                    const toolsLoaded = await this.loadExtensionFile(filePath);
-                    totalToolsLoaded += toolsLoaded;
-
-                    // 设置热重载监听
-                    if (this.config.hotReload) {
-                        this.setupFileWatcher(filePath);
-                    }
-                } catch (error) {
-                    this._logger.extensionLoadError(path.basename(filePath), error as Error);
-                }
-            }
-
-            this.loaded = true;
-            this._logger.info("Loader", `扩展加载完成，总共加载 ${totalToolsLoaded} 个工具`);
-        } catch (error) {
-            this._logger.error("Loader", "扩展加载过程中发生错误", error);
-            throw error;
+        const extensionFiles = getExtensionFiles(this.ctx);
+        this.ctx.logger.info(`发现 ${extensionFiles.length} 个扩展文件，开始加载...`);
+        for (const filePath of extensionFiles) {
+            await this.loadExtensionFile(filePath);
         }
+        this.loaded = true;
+        this.ctx.logger.info(`所有扩展加载完成，共注册 ${this.tools.size} 个工具。`);
     }
 
-    /**
-     * 加载单个扩展文件
-     */
-    private async loadExtensionFile(filePath: string): Promise<number> {
-        // 清除缓存以支持热重载
-        delete require.cache[require.resolve(filePath)];
-
-        const extension = require(filePath);
+    private async loadExtensionFile(filePath: string): Promise<void> {
         const fileName = path.basename(filePath);
-        let toolsLoaded = 0;
-
         try {
-            // 尝试解析为完整扩展定义
-            if (isValidExtensionDefinition(extension.default)) {
-                const extensionDef = extension.default as ExtensionDefinition;
-                for (const tool of extensionDef.tools) {
-                    await this.registerTool(tool, {
-                        replace: true,
-                        extensionMetadata: extensionDef.metadata
-                    });
-                    toolsLoaded++;
-                }
-            } else {
-                // 兼容旧的工具定义方式
-                const tools = this.extractToolsFromExtension(extension);
-                for (const tool of tools) {
-                    await this.registerTool(tool, { replace: true });
-                    toolsLoaded++;
-                }
+            delete require.cache[require.resolve(filePath)];
+            const module = require(filePath);
+            const extensionDef = this.resolveModuleAsExtension(module, fileName);
+            if (!extensionDef) {
+                throw new ToolError(ToolErrorType.LOAD_ERROR, `文件 ${fileName} 未包含任何有效的扩展或工具导出。`);
             }
-
-            this._logger.extensionLoaded(fileName, toolsLoaded);
-            return toolsLoaded;
+            await this.registerExtension(extensionDef);
+            if (this.config.hotReload) this.setupFileWatcher(filePath);
         } catch (error) {
-            throw new ToolError(
-                ToolErrorType.LOAD_ERROR,
-                `加载扩展文件失败: ${(error as Error).message}`,
-                filePath,
-                error as Error
-            );
+            this.ctx.logger.error(`✗ 扩展加载失败: ${fileName} - ${(error as Error).message}`);
+            this.ctx.logger.debug((error as Error).stack);
         }
     }
 
-    /**
-     * 从扩展模块中提取工具定义
-     */
-    private extractToolsFromExtension(extension: any): ToolDefinition[] {
-        const tools: ToolDefinition[] = [];
-
-        if (extension.default && isValidToolDefinition(extension.default)) {
-            tools.push(extension.default);
+    private resolveModuleAsExtension(module: any, fileName: string): ExtensionDefinition<any> | null {
+        const DefaultExport = module.default;
+        // 模式 1: 装饰器类
+        if (DefaultExport && typeof DefaultExport === "function" && "getExtensionDefinition" in DefaultExport) {
+            return (DefaultExport as ExtensionConstructor).getExtensionDefinition();
         }
-
-        // 提取命名导出的工具
-        Object.entries(extension)
-            .filter(([key]) => key !== "default")
-            .forEach(([, tool]) => {
-                if (isValidToolDefinition(tool)) {
-                    tools.push(tool as ToolDefinition);
-                }
+        // 模式 2: 完整扩展包
+        if (isValidExtension(DefaultExport)) {
+            return DefaultExport;
+        }
+        // 模式 3: 直接导出工具
+        const toolsFromDirectExport: ToolDefinition[] = Object.values(module).filter(isValidTool) as ToolDefinition[];
+        if (toolsFromDirectExport.length > 0) {
+            return createExtension({
+                metadata: {
+                    name: path.basename(fileName, path.extname(fileName)).replace(/^ext_/, ""),
+                    version: "1.0.0",
+                    description: `从文件 ${fileName} 自动收集的工具集合`,
+                },
+                tools: toolsFromDirectExport,
             });
-
-        return tools;
+        }
+        return null;
     }
 
-    /**
-     * 获取扩展文件列表
-     */
-    private getExtensionFiles(): string[] {
-        // 这里应该实现从扩展目录扫描文件的逻辑
-        // 为了简化，这里返回空数组，实际使用时需要根据具体的文件结构实现
-        return [];
-    }
+    private async registerExtension(extensionDef: ExtensionDefinition<any>): Promise<void> {
+        const { metadata, tools, onLoad } = extensionDef;
 
-    /**
-     * 设置文件监听器（热重载）
-     */
-    private setupFileWatcher(filePath: string): void {
-        if (this.fileWatchers.has(filePath)) {
-            return;
-        }
-
-        const fs = require("fs");
-        if (!fs.existsSync(filePath)) {
-            return;
-        }
-
-        const watcher = fs.watchFile(filePath, async () => {
-            this._logger.info("HotReload", `检测到文件变化: ${path.basename(filePath)}`);
-            try {
-                // 重新加载单个文件
-                await this.loadExtensionFile(filePath);
-                this._logger.success("HotReload", `文件重载成功: ${path.basename(filePath)}`);
-            } catch (error) {
-                this._logger.error("HotReload", `文件重载失败: ${path.basename(filePath)}`, error);
+        let validatedConfig = {};
+        if (metadata.schema) {
+            const userConfig = this.ctx.config.extensions?.[metadata.name] ?? {};
+            const result = metadata.schema.safeParse(userConfig);
+            if (!result.success) {
+                throw new ToolError(ToolErrorType.CONFIG_ERROR, `扩展 "${metadata.name}" 配置无效: ${result.error.message}`);
             }
-        });
+            validatedConfig = result.data;
+        }
+        this.extensionConfigs.set(metadata.name, validatedConfig);
+        this.extensions.set(metadata.name, extensionDef);
 
-        this.fileWatchers.set(filePath, watcher);
+        if (onLoad) await onLoad(this.ctx, validatedConfig);
+
+        for (const tool of tools) {
+            await this.registerTool(tool, { replace: true, extensionMetadata: metadata });
+        }
+        this.ctx.logger.success(`✓ 扩展加载成功: ${metadata.name}@${metadata.version} (${tools.length} 个工具)`);
     }
 
-    /**
-     * 注册工具
-     */
-    async registerTool(definition: ToolDefinition, options?: Partial<ToolExecutionOptions & ToolRegistrationOptions>): Promise<void> {
-        try {
-            await this.registry.register(definition, options, { koishiContext: this.ctx });
-        } catch (error) {
-            this._logger.error("Registry", `注册工具失败: ${definition.metadata?.name}`, error);
-            throw error;
+    // --- 工具注册与查询 (原 Registry 方法) ---
+
+    async registerTool(definition: ToolDefinition, options?: Partial<ToolRegistrationOptions>): Promise<void> {
+        const { metadata } = definition;
+
+        const { replace = false, extensionMetadata } = options ?? {};
+
+        if (this.tools.has(metadata.name) && !replace) {
+            throw new ToolError(ToolErrorType.REGISTRATION_ERROR, `工具 "${metadata.name}" 已存在。`);
         }
-    }
 
-    /**
-     * 批量注册工具
-     */
-    async registerTools(definitions: ToolDefinition[], options?: Partial<ToolExecutionOptions & ToolRegistrationOptions>): Promise<void> {
-        const results = await Promise.allSettled(
-            definitions.map(def => this.registerTool(def, options))
-        );
+        this.tools.set(metadata.name, definition);
 
-        const failures = results
-            .map((result, index) => ({ result, index }))
-            .filter(({ result }) => result.status === "rejected")
-            .map(({ result, index }) => ({
-                tool: definitions[index].metadata.name,
-                error: (result as PromiseRejectedResult).reason
-            }));
-
-        if (failures.length > 0) {
-            const errorMessage = failures
-                .map(({ tool, error }) => `${tool}: ${error.message}`)
-                .join("; ");
-            throw new ToolError(
-                ToolErrorType.REGISTRATION_ERROR,
-                `批量注册失败: ${errorMessage}`
-            );
+        if (extensionMetadata) {
+            this.toolToExtension.set(metadata.name, extensionMetadata.name);
         }
+
+        if (metadata.category) {
+            if (!this.categories.has(metadata.category)) {
+                this.categories.set(metadata.category, new Set());
+            }
+            this.categories.get(metadata.category)!.add(metadata.name);
+        }
+        this.ctx.logger.success(`  ✓ 工具注册成功: ${metadata.name}`);
     }
 
     /**
      * 注销工具
      */
-    async unregisterTool(toolName: string): Promise<boolean> {
-        try {
-            return await this.registry.unregister(toolName, { koishiContext: this.ctx });
-        } catch (error) {
-            this._logger.error("Registry", `注销工具失败: ${toolName}`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * 获取可执行工具
-     */
-    getTool(name: string, context: ToolContext = {}): ExecutableTool | undefined {
-        const definition = this.registry.get(name);
+    async unregisterTool(toolName: string, context?: ToolContext): Promise<boolean> {
+        const definition = this.tools.get(toolName);
         if (!definition) {
-            return undefined;
+            return false;
         }
 
-        const extensionName = this.registry["toolToExtension"]?.get(name);
-        const extensionMetadata = extensionName ? this.registry["extensions"]?.get(extensionName) : undefined;
+        try {
+            // 执行注销前钩子
+            if (definition.hooks?.onUnregister && context) {
+                await definition.hooks.onUnregister(context);
+            }
 
-        return defineExecutableTool(definition, context, extensionMetadata);
+            // 从注册表中移除
+            this.tools.delete(toolName);
+
+            // 从扩展关联中移除
+            const extensionName = this.toolToExtension.get(toolName);
+            if (extensionName) {
+                this.toolToExtension.delete(toolName);
+
+                // 检查扩展是否还有其他工具
+                const hasOtherTools = Array.from(this.toolToExtension.values()).includes(extensionName);
+                if (!hasOtherTools) {
+                    this.extensions.delete(extensionName);
+                }
+            }
+
+            // 从分类索引中移除
+            if (definition.metadata.category) {
+                const categoryTools = this.categories.get(definition.metadata.category);
+                if (categoryTools) {
+                    categoryTools.delete(toolName);
+                    if (categoryTools.size === 0) {
+                        this.categories.delete(definition.metadata.category);
+                    }
+                }
+            }
+            return true;
+        } catch (error) {
+            throw new ToolError(
+                ToolErrorType.REGISTRATION_ERROR,
+                `注销工具 "${toolName}" 失败: ${(error as Error).message}`,
+                toolName,
+                error as Error
+            );
+        }
     }
 
-    /**
-     * 获取所有可执行工具
-     */
-    getTools(context: ToolContext = {}): ExecutableTool[] {
-        return this.registry.getAll().map((definition) => {
-            const extensionName = this.registry["toolToExtension"]?.get(definition.metadata.name);
-            const extensionMetadata = extensionName ? this.registry["extensions"]?.get(extensionName) : undefined;
-            return defineExecutableTool(definition, context, extensionMetadata);
-        });
+    getToolDefinition(name: string): ToolDefinition | undefined {
+        return this.tools.get(name);
     }
 
-    /**
-     * 执行工具调用（带完整的错误处理和重试机制）
-     */
-    async executeToolCall(
-        koishiContext: Context,
-        koishiSession: any,
-        functionName: string,
-        params: Record<string, unknown>,
-        maxRetry?: number
-    ): Promise<ToolCallResult> {
+    getAllToolDefinitions(): ToolDefinition[] {
+        return Array.from(this.tools.values());
+    }
+
+    getToolsByCategory(category: string): ToolDefinition[] {
+        const toolNames = this.categories.get(category) ?? new Set();
+        return Array.from(toolNames)
+            .map((name) => this.getToolDefinition(name))
+            .filter((t): t is ToolDefinition => !!t);
+    }
+
+    // --- 工具执行与管理 ---
+
+    getTool(name: string): ExecutableTool | undefined {
+        const definition = this.getToolDefinition(name);
+        if (!definition) return undefined;
+
+        const extensionName = this.toolToExtension.get(name);
+        const extensionMetadata = extensionName ? this.extensions.get(extensionName)?.metadata : undefined;
+        const extensionConfig = extensionName ? this.extensionConfigs.get(extensionName) : {};
+
+        const baseContext: Partial<ToolContext> = {
+            koishiContext: this.ctx,
+            logger: this.ctx.logger.extend(name), // 为每个工具提供带前缀的子logger
+            extensionConfig,
+        };
+        return defineExecutableTool(definition, baseContext, extensionMetadata);
+    }
+
+    getTools(): ExecutableTool[] {
+        return this.getAllToolDefinitions().map((def) => this.getTool(def.metadata.name)!);
+    }
+
+    async executeToolCall(session: any, functionName: string, params: Record<string, unknown>): Promise<ToolCallResult> {
         const startTime = Date.now();
-        const retryCount = maxRetry ?? this.config.maxRetries;
+        this.ctx.logger.info(`→ 开始执行工具: ${functionName}(${JSON.stringify(params)})`);
+
+        const tool = this.getTool(functionName);
+        if (!tool) {
+            const errorMsg = `工具 "${functionName}" 未找到`;
+            this.ctx.logger.warn(`← 工具执行失败: ${errorMsg}`);
+            return { success: false, error: errorMsg };
+        }
+
+        const definition = this.getToolDefinition(functionName)!;
+        const validation = validateToolParameters(definition.parameters as z.ZodTypeAny, params);
+        if (!validation.success) {
+            const error = createToolError(ToolErrorType.VALIDATION_ERROR, validation.error, functionName);
+            this.ctx.logger.warn(`← 工具执行失败: ${functionName} - ${error.message}`);
+            return { success: false, error: error.message };
+        }
 
         try {
-            // 记录执行开始
-            this._logger.toolExecutionStart(functionName, params);
-
-            // 获取工具
-            const tool = this.getTool(functionName, { koishiContext, koishiSession });
-            if (!tool) {
-                throw createToolError(ToolErrorType.NOT_FOUND, `工具 "${functionName}" 未找到`, functionName);
-            }
-
-            // 参数验证
-            const definition = this.registry.get(functionName)!;
-            if (this.config.validateTypes) {
-                const validation = validateToolParameters(definition.parameters, params);
-                if (!validation.success) {
-                    throw createToolError(
-                        ToolErrorType.VALIDATION_ERROR,
-                        (validation as { error: string }).error,
-                        functionName
-                    );
-                }
-                params = validation.data;
-            }
-
-            // 执行工具（带超时和重试）
-            const result = await withRetry(
-                () => withTimeout(
-                    tool.execute(params, { koishiContext, koishiSession }),
-                    this.config.timeout,
-                    functionName
-                ),
-                retryCount,
-                functionName,
-                (retryNum) => this._logger.toolRetry(functionName, retryNum, retryCount)
-            );
-
-            // 记录成功执行
+            const result = await tool.execute(validation.data, { koishiSession: session });
             const executionTime = Date.now() - startTime;
-            this.updateMetrics(true, executionTime);
-            this._logger.toolExecutionSuccess(functionName, executionTime, result.result);
-
+            const resultPreview = JSON.stringify(result.result).substring(0, 100);
+            this.ctx.logger.success(`← 工具执行成功: ${functionName} (${executionTime}ms) -> ${resultPreview}...`);
             return result;
         } catch (error) {
-            // 记录失败执行
             const executionTime = Date.now() - startTime;
-            this.updateMetrics(false, executionTime);
-
-            let errorMessage = `执行工具时发生未知错误: ${(error as Error).message}`;
-            if (error instanceof ToolError) {
-                errorMessage = error.message;
-
-                // 记录安全违规
-                if (error.type === ToolErrorType.PERMISSION_ERROR) {
-                    this._logger.securityViolation(functionName, errorMessage, params);
-                }
-            }
-
-            this._logger.toolExecutionError(functionName, executionTime, errorMessage);
-
-            return {
-                success: false,
-                error: errorMessage,
-                metadata: { executionTime, retryCount: 0 },
-            };
+            const toolError =
+                error instanceof ToolError
+                    ? error
+                    : createToolError(ToolErrorType.EXECUTION_ERROR, (error as Error).message, functionName, error as Error);
+            this.ctx.logger.error(`← 工具执行失败: ${functionName} (${executionTime}ms) - ${toolError.message}`);
+            return { success: false, error: toolError.message };
         }
+    }
+
+    async reloadExtensions(): Promise<void> {
+        this.ctx.logger.info("开始重新加载所有扩展...");
+        await this.cleanup();
+        await this.loadExtensions();
+    }
+
+    private async cleanup(): Promise<void> {
+        this.ctx.logger.info("开始清理资源...");
+        this.fileWatchers.forEach((watcher) => watcher.close());
+        this.fileWatchers.clear();
+
+        for (const ext of this.extensions.values()) {
+            if (ext.onUnload) {
+                await ext.onUnload(this.ctx).catch((e) => this.ctx.logger.error(`扩展 ${ext.metadata.name} 的 onUnload 钩子执行失败`, e));
+            }
+        }
+
+        this.tools.clear();
+        this.extensions.clear();
+        this.toolToExtension.clear();
+        this.categories.clear();
+        this.extensionConfigs.clear();
+        this.loaded = false;
+
+        this.ctx.logger.info("清理完成");
+    }
+
+    private setupFileWatcher(filePath: string): void {
+        if (this.fileWatchers.has(filePath)) return;
+        const fs = require("fs");
+        if (!fs.existsSync(filePath)) return;
+
+        const watcher = fs.watch(filePath, async (eventType) => {
+            if (eventType === "change") {
+                this.ctx.logger.info(`[HotReload] 检测到文件变化: ${path.basename(filePath)}，准备重载...`);
+                // 需要更复杂的逻辑来卸载旧扩展并加载新扩展
+                await this.reloadExtensions();
+            }
+        });
+        this.fileWatchers.set(filePath, watcher);
     }
 
     /**
      * 获取工具的 Prompt 描述
      */
     getToolPrompt(name: string): string {
-        const definition = this.registry.get(name);
+        const definition = this.getToolDefinition(name);
         if (!definition) {
             return "";
         }
@@ -401,111 +344,16 @@ export class ToolManager extends Service {
         const paramsString = stringifyProperties(properties);
         const metadata = definition.metadata;
 
-        return [
-            `${metadata.name}:`,
-            `  description: ${metadata.description}`,
-            `  params:`,
-            paramsString || "    无参数",
-        ].join("\n");
+        return [`${metadata.name}:`, `  description: ${metadata.description}`, `  params:`, paramsString || "    无参数"].join("\n");
     }
 
     /**
      * 获取所有工具的 Prompt 描述
      */
     getToolPrompts(): string {
-        return this.registry
-            .getToolNames()
-            .map((name) => this.getToolPrompt(name))
-            .join("\n\n");
-    }
-
-    /**
-     * 搜索工具
-     */
-    searchTools(query: string): ExecutableTool[] {
-        return this.registry.search(query).map((definition) => defineExecutableTool(definition));
-    }
-
-    /**
-     * 根据分类获取工具
-     */
-    getToolsByCategory(category: string): ExecutableTool[] {
-        return this.registry.getByCategory(category).map((definition) => defineExecutableTool(definition));
-    }
-
-    /**
-     * 根据扩展获取工具
-     */
-    getToolsByExtension(extensionName: string): ExecutableTool[] {
-        return this.registry.getByExtension(extensionName).map((definition) => defineExecutableTool(definition));
-    }
-
-    /**
-     * 获取工具统计信息
-     */
-    getStats() {
-        return {
-            registry: this.registry.getStats(),
-            execution: this.config.enableMetrics ? { ...this.metrics } : null,
-        };
-    }
-
-    /**
-     * 重新加载扩展
-     */
-    async reloadExtensions(): Promise<void> {
-        this._logger.info("Loader", "开始重新加载扩展");
-        this.registry.clear();
-        this.loaded = false;
-        await this.loadExtensions();
-    }
-
-    /**
-     * 更新执行指标
-     */
-    private updateMetrics(success: boolean, executionTime: number): void {
-        if (!this.config.enableMetrics) return;
-
-        this.metrics.totalExecutions++;
-        this.metrics.totalExecutionTime += executionTime;
-        this.metrics.averageExecutionTime = this.metrics.totalExecutionTime / this.metrics.totalExecutions;
-
-        if (success) {
-            this.metrics.successfulExecutions++;
-        } else {
-            this.metrics.failedExecutions++;
-        }
-    }
-
-    /**
-     * 清理资源
-     */
-    private async cleanup(): Promise<void> {
-        this._logger.info("Manager", "开始清理工具管理器资源");
-
-        // 清理文件监听器
-        for (const [filePath, watcher] of this.fileWatchers) {
-            try {
-                const fs = require("fs");
-                fs.unwatchFile(filePath);
-                this._logger.debug("Manager", `已清理文件监听器: ${filePath}`);
-            } catch (error) {
-                this._logger.error("Manager", `清理文件监听器失败: ${filePath}`, error);
-            }
-        }
-        this.fileWatchers.clear();
-
-        // 执行所有工具的注销钩子
-        const context = { koishiContext: this.ctx };
-        for (const toolName of this.registry.getToolNames()) {
-            try {
-                await this.registry.unregister(toolName, context);
-            } catch (error) {
-                this._logger.error("Cleanup", `清理工具 ${toolName} 时发生错误`, error);
-            }
-        }
-
-        this.registry.clear();
-        this._logger.info("Manager", "工具管理器清理完成");
+        return this.getAllToolDefinitions()
+            .map((toolDef) => this.getToolPrompt(toolDef.metadata.name))
+            .filter(Boolean)
+            .join("\n");
     }
 }
