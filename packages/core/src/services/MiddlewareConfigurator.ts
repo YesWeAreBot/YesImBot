@@ -9,7 +9,7 @@ import { LLMProcessingMiddleware } from "../middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "../middleware/ResponseHandling";
 import { PromptBuilder } from "../prompt/PromptBuilder";
 import { ImageProcessor } from "../utils";
-import { ScenarioManager } from "./ScenarioManager";
+import { ScenarioManager } from "./scenario/ScenarioManager";
 import { IServiceContainer, SERVICE_TOKENS } from "./ServiceContainer";
 
 /**
@@ -122,7 +122,7 @@ export class MiddlewareConfigurator {
             this.controller.abort();
 
             const scenarioManager = this.container.get<ScenarioManager>(SERVICE_TOKENS.SCENARIO_MANAGER);
-            scenarioManager.clearAllScenario();
+            scenarioManager.clearAllScenarios();
 
             const middlewareManager = this.container.get<MiddlewareManager>(SERVICE_TOKENS.MIDDLEWARE_MANAGER);
             const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");

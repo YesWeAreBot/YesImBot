@@ -1,10 +1,7 @@
-import fs from "fs/promises";
-import path from "path";
-
 import { Context } from "koishi";
 import { ChatModelSwitcher } from "../adapters";
-import { ScenarioManager } from "../services/ScenarioManager";
 import { PromptBuilder } from "../prompt/PromptBuilder"; // 引入 PromptBuilder
+import { ScenarioManager } from "../services/scenario/ScenarioManager";
 import { ConversationState, MessageContext, Middleware } from "./base";
 
 export class LLMProcessingMiddleware extends Middleware {
@@ -141,7 +138,7 @@ export class LLMProcessingMiddleware extends Middleware {
             await next();
             // LLM 成功响应后，更新该频道的最后回复时间，并清理该Scenario的新消息
             await this.services.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
-            ctx.currentScenario.clearNewMessages();
+            ctx.currentScenario.clearPendingMessages();
         } catch (error: any) {
             if (error.name === "AbortError") {
                 return;

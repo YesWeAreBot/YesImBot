@@ -1,6 +1,7 @@
 import { $, Context, Session } from "koishi";
-import { MultimodalConfig, Scenario } from "../Scenario";
-import { ChatMessage, Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE } from "../types/model";
+import { ChatMessage, Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE } from "../../types/model";
+import { Scenario } from "./Scenario";
+import { ContextProcessor } from "./ContextProcessor";
 
 declare module "koishi" {
     interface Events {
@@ -10,65 +11,72 @@ declare module "koishi" {
 }
 
 /**
- * Scenario 管理器。
- * 负责 Scenario 实例的生命周期、缓存和增量更新。
+ * 统一的场景管理器
  */
 export class ScenarioManager {
     private scenarios: Map<string, Scenario> = new Map();
-    constructor(private ctx: Context, private multimodalConfig: MultimodalConfig) {
-        ctx.on("scenario/clear", (channelId) => {
-            this.clearScenario(channelId);
-        });
-        ctx.on("scenario/clearAll", () => {
-            this.clearAllScenario();
-        });
+    private contextProcessor?: ContextProcessor;
+
+    constructor(
+        private ctx: Context,
+        private multimodalConfig: any,
+        private config?: {
+            UseModel: [number, number];
+            enableEnhancedContext?: boolean;
+            contextWindowTokens?: number;
+        }
+    ) {
+        if (config?.enableEnhancedContext) {
+            if (!ctx["yesimbot.model"]) {
+                ctx.logger.warn(
+                    "[ScenarioManager] Enhanced context is enabled, but no LLM service is available. Feature will be disabled."
+                );
+            } else {
+                const chatModel = ctx["yesimbot.model"].getChatModel(config.UseModel);
+                this.contextProcessor = new ContextProcessor(ctx, chatModel);
+            }
+        }
+
+        ctx.on("scenario/clear", (channelId) => this.clearScenario(channelId));
+        ctx.on("scenario/clearAll", () => this.clearAllScenarios());
     }
 
     /**
-     * 获取或创建指定频道的 Scenario 实例。
-     * 如果缓存中存在，则直接返回。如果不存在，则创建并加载初始数据。
-     * @param session 当前会话，用于获取 channelId 及初始化 Scenario
-     * @param limit 加载历史消息的数量限制
+     * 获取或创建场景实例
      */
     async getScenario(session: Session, limit: number = 30): Promise<Scenario> {
         const channelId = session.channelId;
         if (!channelId) {
             throw new Error("获取 Scenario 需要 Channel ID。");
         }
-        if (this.scenarios.has(channelId)) {
-            return this.scenarios.get(channelId)!;
+
+        let scenario = this.scenarios.get(channelId);
+
+        if (!scenario) {
+            scenario = new Scenario(this.ctx, session, limit, this.multimodalConfig);
+            await scenario.load();
+            this.scenarios.set(channelId, scenario);
         }
-        // 缓存中不存在，创建新的 Scenario 实例并加载初始数据
-        const scenario = new Scenario(this.ctx, session, limit, this.multimodalConfig);
-        await scenario.loadInitialData();
-        this.scenarios.set(channelId, scenario);
+
+        // 如果启用了增强功能且场景有新消息，则进行分析
+        if (this.contextProcessor && scenario.isActive) {
+            await this.contextProcessor.analyze(scenario);
+        }
+
         return scenario;
     }
 
     /**
-     * 获取已经加载的 Scenario 实例。
-     * 如果不存在，则返回 undefined。
-     * @param channelId
-     * @returns
-     */
-    public getScenarioByChannelId(channelId: string): Scenario | undefined {
-        return this.scenarios.get(channelId);
-    }
-
-    /**
-     * 更新 Scenario 中的消息。
-     * 当有新消息（无论是用户发送还是机器人发送）时调用。
-     * @param message 消息对象
-     * @param session 关联的会话
-     * @param isNewMessage 是否为新消息，机器人尚未处理
+     * 更新场景中的消息
      */
     async updateMessage(message: ChatMessage, session: Session, isNewMessage: boolean): Promise<void> {
+        // 先获取或创建场景，确保场景存在于缓存中
         const scenario = await this.getScenario(session);
-        scenario.addContext(message, isNewMessage);
+        scenario.addMessage(message, isNewMessage);
     }
 
     /**
-     * 更新 Scenario 中的交互记录。
+     * 更新场景中的交互记录
      * 当工具调用或结果返回时调用。
      * @param interaction 交互对象
      * @param session 关联的会话
@@ -76,7 +84,7 @@ export class ScenarioManager {
      */
     async updateInteraction(interaction: Interaction, session: Session, isNewMessage: boolean): Promise<void> {
         const scenario = await this.getScenario(session);
-        scenario.addContext(interaction, isNewMessage);
+        scenario.addMessage(interaction, isNewMessage);
     }
 
     /**
@@ -123,16 +131,20 @@ export class ScenarioManager {
         await this.ctx.database.upsert(LAST_REPLY_TABLE, [{ channelId: channelId, timestamp: new Date() }], ["channelId"]);
     }
 
+    /**
+     * 清除指定频道的场景
+     */
     clearScenario(channelId: string): void {
-        const removed = this.scenarios.delete(channelId);
-        if (removed) {
-            this.ctx.logger.debug(`[ScenarioManager] 频道 ${channelId} 的 Scenario 实例已从缓存中清除。`);
-        }
+        this.scenarios.delete(channelId);
+        this.ctx.logger.debug(`[ScenarioManager] 频道 ${channelId} 的场景已清除。`);
     }
 
-    clearAllScenario(): void {
+    /**
+     * 清除所有场景
+     */
+    clearAllScenarios(): void {
         this.scenarios.clear();
-        this.ctx.logger.info(`[ScenarioManager] 所有 Scenario 实例已从缓存中清除。`);
+        this.ctx.logger.info(`[ScenarioManager] 所有场景已清除。`);
     }
 
     /**
@@ -160,7 +172,4 @@ export class ScenarioManager {
         }
         return inactiveScenarios;
     }
-
-    // 移除原有的 render 方法，其职责已转移到 PromptBuilder
-    // public render(channels: string[]): string { /* ... */ }
 }

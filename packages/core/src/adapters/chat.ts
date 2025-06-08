@@ -47,6 +47,13 @@ export class ChatModel {
         }
     }
 
+    get metadata() {
+        return {
+            provider: this.chatProvider,
+            model: this.model
+        }
+    }
+
     async chat(messages: Message[], tools?: ToolResult[], option: RequestOptions = {}): Promise<GenerateTextResult> {
         const info = (info: string) => {
             if (option.debug) option.logger.info(info);

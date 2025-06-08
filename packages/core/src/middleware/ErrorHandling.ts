@@ -2,7 +2,7 @@ import { Context, Session } from "koishi";
 import * as os from "os";
 import { v4 as uuidv4 } from "uuid";
 import type { GenerateTextResult } from "xsai";
-import { Scenario } from "../Scenario";
+import { Scenario } from "../services/scenario/Scenario";
 import { MessageContext, Middleware } from "./base";
 
 // 1. 优化 ErrorContext 接口，增加原始错误对象和更多上下文
@@ -28,10 +28,7 @@ export class ErrorHandlingMiddleware extends Middleware {
     name = "error-handling";
 
     // 2. 优化构造函数，使用更清晰的选项接口
-    constructor(
-        ctx: Context,
-        config: ErrorHandlingOptions,
-    ) {
+    constructor(ctx: Context, config: ErrorHandlingOptions) {
         super("error-handling", ctx, null, config);
     }
 
@@ -62,7 +59,7 @@ export class ErrorHandlingMiddleware extends Middleware {
 
             try {
                 if (this.config.uploadDump) {
-                    const errorDump = this.formatErrorDump(error as Error, {
+                    const errorDump = await this.formatErrorDump(error as Error, {
                         originalError: error as Error,
                         scenario: ctx.currentScenario,
                         llmResponse: ctx.llmResponse,
@@ -122,7 +119,7 @@ export class ErrorHandlingMiddleware extends Middleware {
     }
 
     // 5. 极大地美化 formatErrorDump 方法
-    private formatErrorDump(error: Error, context: ErrorReportContext): string {
+    private async formatErrorDump(error: Error, context: ErrorReportContext): Promise<string> {
         const dumpSections: string[] = [];
 
         const packageJson = require("../../package.json");
@@ -183,9 +180,10 @@ export class ErrorHandlingMiddleware extends Middleware {
         if (context.scenario) {
             dumpSections.push(`\n---\n`, `## 📜 Scenario Context\n`);
             // 检查 Scenario 是否有 render 方法
-            if (context.scenario instanceof Scenario && typeof (context.scenario as Scenario).renderForPrompt === "function") {
+            if (context.scenario instanceof Scenario && typeof (context.scenario as Scenario).render === "function") {
                 try {
-                    dumpSections.push(`\`\`\`markdown\n${(context.scenario as Scenario).renderForPrompt()}\n\`\`\``);
+                    const scenarioContext = JSON.stringify(await context.scenario.render(), null, 2);
+                    dumpSections.push(`\`\`\`markdown\n${scenarioContext}\n\`\`\``);
                 } catch (e) {
                     dumpSections.push(
                         `*Failed to render scenario: ${(e as Error).message}*\n\`\`\`json\n${JSON.stringify(

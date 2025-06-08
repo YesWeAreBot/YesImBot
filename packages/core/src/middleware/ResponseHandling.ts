@@ -1,9 +1,9 @@
 import { Context, Random, Session } from "koishi";
 import { Failed, ToolCallResult } from "../extensions";
-import { ScenarioManager } from "../services/ScenarioManager";
 import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
+import { ScenarioManager } from "../services/scenario/ScenarioManager";
 
 export class ResponseHandlingMiddleware extends Middleware {
     constructor(
@@ -226,7 +226,8 @@ function extractJson(text: string) {
     const results = [];
     // 匹配```json ... ```代码块 或 裸露的 {...} 或 [...] JSON结构
     // `[\s\S]*?` 匹配任意字符（包括换行）非贪婪模式
-    const jsonRegex = /```json\s*([\s\S]*?)```|(\{[\s\S]*?\}|\[[\s\S]*?\])/g;
+    // 可能要使用贪婪模式匹配最后一个大括号
+    const jsonRegex = /```json\s*([\s\S]*?)```|(\{[\s\S]*\}|\[[\s\S]*\])/g;
 
     let match;
     while ((match = jsonRegex.exec(text)) !== null) {

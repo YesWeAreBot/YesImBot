@@ -1,7 +1,6 @@
 import { Context, Session } from "koishi";
 import type { GenerateTextResult } from "xsai";
-
-import { Scenario } from "../Scenario";
+import { Scenario } from "../services/scenario/Scenario";
 
 /**
  * 会话状态枚举
