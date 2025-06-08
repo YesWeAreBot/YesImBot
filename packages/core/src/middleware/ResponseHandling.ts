@@ -230,32 +230,26 @@ function extractJson(text: string) {
 
     let match;
     while ((match = jsonRegex.exec(text)) !== null) {
-        let jsonString = null;
+        // 捕获组1匹配的是```json```块内部的内容
+        // 捕获组2匹配的是裸露的JSON对象或数组（整个 { ... } 或 [ ... ] 字符串）
+        let jsonString = match[1] ? match[1].trim() : match[2]?.trim(); // trim掉多余的空白字符
+        if (!jsonString) continue;
 
-        if (match[1]) {
-            // 捕获组1匹配的是```json```块内部的内容
-            jsonString = match[1].trim(); // trim掉多余的空白字符
-        } else if (match[2]) {
-            // 捕获组2匹配的是裸露的JSON对象或数组（整个 { ... } 或 [ ... ] 字符串）
-            jsonString = match[2].trim(); // trim掉多余的空白字符
-        }
-
-        if (jsonString) {
-            try {
-                const parsedJson = JSON.parse(jsonString);
+        try {
+            const parsedJson = JSON.parse(jsonString);
+            // 如果是数组直接展开
+            if (Array.isArray(parsedJson)) {
+                results.push(...parsedJson);
+            } else {
                 results.push(parsedJson);
-            } catch (e) {
-                try {
-                    const parsedJson = extractJSONFromString(jsonString, "object");
-                    results.push(...parsedJson);
-                } catch (error) {
-                    try {
-                        const parsedJson = extractJSONFromString(text, "object");
-                        results.push(...parsedJson);
-                    } catch (error) {
-                        console.warn("Invalid JSON candidate ignored:", jsonString, e.message);
-                    }
-                }
+            }
+        } catch (e) {
+            try {
+                // extractJSONFromString已经返回数组，直接展开
+                const parsedJson = extractJSONFromString(jsonString, "object");
+                results.push(...parsedJson);
+            } catch (error) {
+                console.warn("Invalid JSON candidate ignored:", jsonString, e.message);
             }
         }
     }
