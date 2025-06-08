@@ -1,5 +1,3 @@
-// packages/core/src/errors/index.ts
-
 /**
  * 错误严重级别
  */

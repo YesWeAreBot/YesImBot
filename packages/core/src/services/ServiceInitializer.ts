@@ -6,7 +6,7 @@ import { MiddlewareManager } from "../middleware/base";
 import { PromptBuilder } from "../prompt/PromptBuilder";
 import { ChatMessage, MESSAGE_TABLE } from "../types/model";
 import { getChannelType, ImageProcessor, isEmpty } from "../utils";
-import { ScenarioManager } from "./ScenarioManager";
+import { ScenarioManager } from "./scenario/ScenarioManager";
 import { IServiceContainer, SERVICE_TOKENS } from "./ServiceContainer";
 
 /**

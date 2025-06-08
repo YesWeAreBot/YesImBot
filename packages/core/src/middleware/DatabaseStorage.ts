@@ -1,5 +1,5 @@
 import { Context, Element, h } from "koishi";
-import { ScenarioManager } from "../services/ScenarioManager";
+import { ScenarioManager } from "../services/scenario/ScenarioManager";
 import { ChatMessage, MESSAGE_TABLE } from "../types/model";
 import { getChannelType } from "../utils";
 import { ImageProcessor } from "../utils/imageProcessor";

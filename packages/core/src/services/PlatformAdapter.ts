@@ -75,9 +75,9 @@ export class OneBotPlatform extends PlatformAdapter {
         //@ts-ignore
         const groupInfo = await this.session.onebot.getGroupInfo(groupId);
         //@ts-ignore
-        const groupNotice = await this.session.onebot.getGroupNotice(groupId);
+        //const groupNotice = await this.session.onebot.getGroupNotice(groupId);
         //@ts-ignore
-        const groupMemberList = await this.session.onebot.getGroupMemberList(groupId);
+        //const groupMemberList = await this.session.onebot.getGroupMemberList(groupId);
 
         return {
             groupId: String(groupInfo.group_id),

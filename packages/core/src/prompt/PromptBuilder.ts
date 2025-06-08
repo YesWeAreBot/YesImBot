@@ -7,9 +7,9 @@ import { message } from "../dependencies/xsai";
 import ToolManager from "../extensions";
 import { MemoryService } from "../memory/MemoryService";
 import { MessageContext } from "../middleware/base";
-import { MultimodalConfig } from "../Scenario";
-import { ScenarioManager } from "../services/ScenarioManager";
 import { formatDate } from "../utils";
+import { MultimodalConfig } from "../services/scenario/Scenario";
+import { ScenarioManager } from "../services/scenario/ScenarioManager";
 
 const { textPart } = message;
 
@@ -136,8 +136,7 @@ export class PromptBuilder {
 
             if (activeScenarios.length > 0) {
                 for (const s of activeScenarios) {
-                    // Scenario.renderForPrompt() 现在返回 Part 数组
-                    const renderedParts = await s.renderForPrompt();
+                    const renderedParts = await s.render();
                     appendToScenarioParts(renderedParts);
                 }
             } else {
@@ -148,7 +147,7 @@ export class PromptBuilder {
             appendToScenarioParts([textPart(`<no_activity>`)]);
             if (inactiveScenarios.length > 0) {
                 for (const s of inactiveScenarios) {
-                    const renderedParts = await s.renderForPrompt(); // 渲染群聊场景内容
+                    const renderedParts = await s.render();
                     appendToScenarioParts(renderedParts);
                 }
             } else {

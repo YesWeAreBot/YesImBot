@@ -3,7 +3,7 @@ import { ModelSetting, Provider } from "./adapters/config";
 import { ToolManagerConfig } from "./extensions";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
 import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
-import { MultimodalConfig } from "./Scenario";
+import { MultimodalConfig } from "./services/scenario/Scenario";
 
 interface BlockConfig {
     Limit?: number;
