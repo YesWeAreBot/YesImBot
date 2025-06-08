@@ -2,10 +2,61 @@ import { Context } from "koishi";
 
 import { MESSAGE_TABLE } from "../types/model";
 import { isEmpty } from "../utils/string";
+import { getChannelType } from "../utils";  
 
 export const name = "yesimbot.command.memory";
 
 export function apply(ctx: Context) {
+    ctx.command("添加消息 <content:text>", "在指定场景末尾添加系统消息", { authority: 3 })  
+        .option("channel", "-c <channel:string> 指定要添加消息的频道ID，不填默认为当前频道")  
+        .option("sender", "-s <sender:string> 指定发送者名称，默认为 'SYSTEM'")  
+        .usage("向指定场景添加一条系统消息，该消息会出现在对话历史中。")  
+        .example([  
+            "添加消息 这是一条系统消息",  
+            "添加消息 -c 123456789 系统通知：维护完成",  
+            "添加消息 -s ADMIN -c 123456789 管理员消息"  
+        ].join("\n"))  
+        .action(async ({ session, options }, content) => {  
+            if (isEmpty(content)) {  
+                return "❌ 请提供要添加的消息内容";  
+            }  
+  
+            const targetChannelId = options.channel || session.channelId;  
+            const senderName = options.sender || "SYSTEM";  
+              
+            try {  
+                // 生成唯一的消息ID  
+                const messageId = `system_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;  
+                  
+                // 创建系统消息记录  
+                await ctx.database.create(MESSAGE_TABLE, {  
+                    messageId: messageId,  
+                    sender: {  
+                        id: "system",  
+                        name: senderName,  
+                        nick: senderName,  
+                    },  
+                    channel: {  
+                        id: targetChannelId,  
+                        type: getChannelType(targetChannelId),  
+                    },  
+                    timestamp: new Date(),  
+                    content: content,  
+                });  
+  
+                ctx.logger.info(`System message added to channel ${targetChannelId}: ${content}`);  
+                  
+                return `✅ 系统消息已添加到场景 ${targetChannelId}  
+内容：${content}  
+发送者：${senderName}`;  
+                  
+            } catch (error) {  
+                ctx.logger.error('添加系统消息失败:', error);  
+                return `❌ 添加系统消息失败：${error.message}`;  
+            }  
+        });  
+
+
     ctx.command("清空对话", "清除 BOT 的对话上下文", { authority: 3 })
         .option(
             "target",
