@@ -118,12 +118,16 @@ export class ServiceInitializer {
                         delay = false;
                     }
                     let messageIds = await koishiSession.sendQueued(seg);
+
+                    const selfName = koishiSession.bot.user?.name || koishiSession.bot.selfId;
+                    const selfNick = koishiSession.bot.user?.nick || selfName;
+
                     const newMessage: ChatMessage = {
                         messageId: messageIds[0],
                         sender: {
                             id: koishiSession.bot.selfId,
-                            name: koishiSession.bot.user.name,
-                            nick: koishiSession.bot.user.nick,
+                            name: selfName,
+                            nick: selfNick,
                         },
                         channel: {
                             id: channel_id,
