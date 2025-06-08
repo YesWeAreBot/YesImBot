@@ -77,12 +77,15 @@ export class LLMProcessingMiddleware extends Middleware {
                 } catch (error: any) {
                     lastError = error;
                     retry--;
-                    let errorMessage = `[LLMProcessing] 适配器请求失败 (${error.name}: ${error.message}).`;
+                    // [FIXED] 使用可选链安全访问 error 属性
+                    let errorMessage = `[LLMProcessing] 适配器请求失败 (${error?.name || 'UnknownError'}: ${error?.message || 'No message'}).`;
                     let shouldContinueToNextAdapter = false;
-                    if (error.name === "XSAIError") {
+                    // [FIXED] 使用可选链安全访问 error 属性
+                    if (error?.name === "XSAIError") {
                         errorMessage += ` 错误类型: XSAIError (适配器内部错误)。`;
                         shouldContinueToNextAdapter = true;
-                    } else if (error.message && error.message.includes("fetch failed")) {
+                    // [FIXED] 使用可选链安全访问 error 属性
+                    } else if (error?.message && error.message.includes("fetch failed")) {
                         errorMessage += ` 错误类型: 网络请求失败。`;
                         switch (error.cause?.code) {
                             case "ECONNREFUSED":
@@ -105,7 +108,8 @@ export class LLMProcessingMiddleware extends Middleware {
                                 break;
                         }
                         shouldContinueToNextAdapter = true;
-                    } else if (error.name === "AbortError") {
+                    // [FIXED] 使用可选链安全访问 error 属性
+                    } else if (error?.name === "AbortError") {
                         errorMessage += ` 请求已中止。`;
                         ctx.koishiContext.logger.info(errorMessage);
                         throw error;
@@ -133,14 +137,20 @@ export class LLMProcessingMiddleware extends Middleware {
                         lastError?.message || "无错误消息"
                     }`
                 );
-                throw lastError;
+                // [FIXED] 抛出前检查 lastError 是否存在
+                if (lastError) {
+                    throw lastError;
+                } else {
+                    throw new Error("[LLMProcessing] 所有LLM适配器均失败，但未捕获到具体错误。");
+                }
             }
             await next();
             // LLM 成功响应后，更新该频道的最后回复时间，并清理该Scenario的新消息
             await this.services.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
             ctx.currentScenario.clearPendingMessages();
         } catch (error: any) {
-            if (error.name === "AbortError") {
+            // [FIXED] 使用可选链安全访问 error 属性
+            if (error?.name === "AbortError") {
                 return;
             }
             throw error;
