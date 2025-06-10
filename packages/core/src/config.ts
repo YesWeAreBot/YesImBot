@@ -61,6 +61,10 @@ export interface Config {
         MaxRetry: number;
         Life: number;
     };
+    GroupInfoVisibility: {
+        showGroupTitle: boolean;
+        showChatLevel: boolean;
+    };
     Task: {};
     Multimodal: MultimodalConfig;
     PromptTemplate: PromptBuilderConfig;
@@ -200,6 +204,15 @@ export const Config: Schema<Config> = Schema.object({
         MaxRetry: Schema.number().default(3).min(0).max(10).description("工具调用失败时的最大重试次数"),
         Life: Schema.number().default(3).min(0).max(10).description("工具调用的生命周期次数"),
     }).description("工具调用管理配置"),
+
+    GroupInfoVisibility: Schema.object({
+        showGroupTitle: Schema.boolean()
+            .default(true)
+            .description("是否允许 Bot 查看群成员的头衔"),
+        showChatLevel: Schema.boolean()
+            .default(true)
+            .description("是否允许 Bot 查看群成员的聊天等级"),
+    }).description("群信息可见性设置"),
 
     Task: Schema.object({}),
 

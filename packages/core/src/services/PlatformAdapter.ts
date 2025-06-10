@@ -1,6 +1,77 @@
 import { Session } from "koishi";
 // import { } from "koishi-plugin-adapter-onebot";
 
+/**
+ * 群成员信息
+ */
+export interface GroypMemberInfo {
+    /**
+     * 年龄
+     */
+    age?: number;
+    /**
+     * 地区
+     */
+    area?: string;
+    /**
+     * 群昵称
+     */
+    card?: string;
+    /**
+     * 群昵称是否可修改
+     */
+    card_changeable?: boolean;
+    group_id: number;
+    /**
+     * 是否机器人
+     */
+    is_robot: boolean;
+    /**
+     * 加群时间
+     */
+    join_time?: number;
+    /**
+     * 最后发言时间
+     */
+    last_sent_time?: number;
+    /**
+     * 群等级
+     */
+    level?: number;
+    nickname: string;
+    /**
+     * Q龄
+     */
+    qage?: string;
+    /**
+     * 账号等级
+     */
+    qq_level?: number;
+    /**
+     * 权限
+     */
+    role: string;
+    /**
+     * 性别
+     */
+    sex?: string;
+    /**
+     * 禁言时间戳
+     */
+    shut_up_timestamp?: number;
+    /**
+     * 头衔
+     */
+    title?: string;
+    /**
+     * 头衔过期时间
+     */
+    title_expire_time?: number;
+    unfriendly?: boolean;
+    user_id: number;
+    [property: string]: any;
+}
+
 export interface UserInfo {
     userId: string;
     sex?: string;
