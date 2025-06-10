@@ -392,30 +392,31 @@ export class Scenario {
         let sender = this.formatSender(message);
         const isGroupChat = getChannelType(this.session.channelId) === "guild";
 
-        // 在群聊场景中为发送者添加附加信息
         if (isGroupChat && !sender.includes("YOU")) {
             try {
-                // 获取群成员信息
                 const memberInfo = await this.platformAdapter.getGroupMemberInfo(
                     message.sender.id,
                     this.id
                 );
-
-                // 构建附加信息字符串
+                
                 const details: string[] = [];
 
-                // 添加群头衔（如果有）
+                // 添加群头衔
                 if (this.groupInfoVisibility.ShowGroupTitle && memberInfo.title && memberInfo.title.trim()) {
                     details.push(memberInfo.title);
                 }
-
-                // 添加群等级（如果有且可见）
+                
+                // 添加群等级
                 if (this.groupInfoVisibility.ShowChatLevel && memberInfo.level) {
                     details.push(`Lv.${memberInfo.level}`);
                 }
+                
+                if (details.length > 0) {
+    				sender = `${sender} (${details.join(", ")})`;
+				}
             } catch (error) {
                 // 如果获取成员信息失败，只使用基本信息
-                this.ctx.logger.warn(`无法获取群成员附加信息: ${error.message}`);
+                this.ctx.logger.warn(`无法获取群成员附加信息: ${error.message}\n ${JSON.stringify(message)}`);
             }
         }
 
@@ -449,7 +450,7 @@ export class Scenario {
         } else {
              parts.unshift(textPart(prefix));
         }
-    
+        
         return parts;
     }
 

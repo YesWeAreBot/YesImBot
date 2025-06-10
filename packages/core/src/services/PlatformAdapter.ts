@@ -131,7 +131,7 @@ export class OneBotPlatform extends PlatformAdapter {
     
     async getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo> {
         //@ts-ignore
-        const memberInfo = await this.session.onebot.getGroupMemberInfo(groupId,userId, 10);
+        const memberInfo = await this.session.onebot.getGroupMemberInfo(groupId, userId, false);
         /*const memberInfo = await this.session.onebot.getGroupMemberInfo(
             parseInt(groupId, 10),
             parseInt(userId, 10)
