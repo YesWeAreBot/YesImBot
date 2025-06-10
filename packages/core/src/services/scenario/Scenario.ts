@@ -7,6 +7,12 @@ import { Message, ConversationSummary } from "./types";
 
 const { textPart } = message;
 
+// 群友信息可见性
+export interface GroupInfoVisibility {
+    ShowGroupTitle: boolean;
+    ShowChatLevel: boolean;
+}
+
 // 定义多模态配置接口
 export interface MultimodalConfig {
     Enabled: boolean;
@@ -43,7 +49,8 @@ export class Scenario {
         public readonly ctx: Context,
         public readonly session: Session,
         private readonly limit: number = 30,
-        private readonly multimodalConfig: MultimodalConfig
+        private readonly multimodalConfig: MultimodalConfig,
+        private groupInfoVisibility: GroupInfoVisibility
     ) {
         this.id = session.channelId;
         this.imageProcessor = new ImageProcessor(ctx);
@@ -382,13 +389,43 @@ export class Scenario {
     protected async formatMessage(message: ChatMessage, allowedImageSet: Set<string>): Promise<UserMessagePart[]> {
         const parts: UserMessagePart[] = [];
         const date = formatDate(message.timestamp);
-        const sender = this.formatSender(message);
+        let sender = this.formatSender(message);
+        const isGroupChat = getChannelType(this.session.channelId) === "guild";
+
+        // 在群聊场景中为发送者添加附加信息
+        if (isGroupChat && !sender.includes("YOU")) {
+            try {
+                // 获取群成员信息
+                const memberInfo = await this.platformAdapter.getGroupMemberInfo(
+                    message.sender.id,
+                    this.id
+                );
+
+                // 构建附加信息字符串
+                const details: string[] = [];
+
+                // 添加群头衔（如果有）
+                if (this.groupInfoVisibility.ShowGroupTitle && memberInfo.title && memberInfo.title.trim()) {
+                    details.push(memberInfo.title);
+                }
+
+                // 添加群等级（如果有且可见）
+                if (this.groupInfoVisibility.ShowChatLevel && memberInfo.level) {
+                    details.push(`Lv.${memberInfo.level}`);
+                }
+            } catch (error) {
+                // 如果获取成员信息失败，只使用基本信息
+                this.ctx.logger.warn(`无法获取群成员附加信息: ${error.message}`);
+            }
+        }
+
         const prefix = `[#${message.messageId} ${date} ${sender}]`;
         const elements = h.parse(message.content as string);
         let currentTextContent = "";
+    
         for (const elem of elements) {
             const processed = await this.processElement(elem, message.messageId, allowedImageSet);
-
+    
             if (typeof processed === "string") {
                 currentTextContent += processed;
             } else {
@@ -400,18 +437,22 @@ export class Scenario {
                 parts.push(...processed);
             }
         }
+    
         // 处理剩余文本
         if (currentTextContent) {
             parts.push(textPart(currentTextContent));
         }
+    
         // 添加前缀
         if (parts.length > 0 && parts[0].type === "text") {
-            (parts[0] as TextPart).text = `${prefix} ${(parts[0] as TextPart).text.trimStart()}`;
+             (parts[0] as TextPart).text = `${prefix} ${(parts[0] as TextPart).text.trimStart()}`;
         } else {
-            parts.unshift(textPart(prefix));
+             parts.unshift(textPart(prefix));
         }
+    
         return parts;
     }
+
 
     /**
      * 处理图片元素，根据是否在允许渲染的集合中返回相应的部分

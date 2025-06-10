@@ -9,12 +9,12 @@ export interface GroupMemberInfo {
     title?: string;
     role?: GroupRole;
     card?: string;
-    card_changeable: boolean;
+    card_changeable?: boolean;
     group_id: string;
     join_time: number;
-    last_sent_time: number;
-    title_expire_time: number;
-    unfriendly: boolean;
+    last_sent_time?: number;
+    title_expire_time?: number;
+    unfriendly?: boolean;
     [key: string]: any;
 }
 
@@ -56,6 +56,8 @@ export abstract class PlatformAdapter {
      * @param userId 用户ID
      */
     abstract getUserInfo(userId: string): Promise<UserInfo>;
+    
+    abstract getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo>;
 }
 
 export class DefaultPlatform extends PlatformAdapter {
@@ -72,14 +74,24 @@ export class DefaultPlatform extends PlatformAdapter {
         }
     }
     
-    
-
     async getUserInfo(userId: string): Promise<UserInfo> {
         const userInfo = await this.session.bot.getUser(userId);
         return {
             userId: userInfo.id,
             nickname: userInfo.nick,
             avatar: userInfo.avatar,
+        }
+    }
+    
+    async getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo> {
+        //@ts-ignore
+        const memberInfo = await this.session.bot.getGuildMember(groupId, userId);
+
+        return {
+            group_id: groupId,
+            //is_robot: memberInfo.is_robot,
+            join_time: memberInfo.joinedAt,
+            user_id: userId
         }
     }
 }
@@ -119,10 +131,12 @@ export class OneBotPlatform extends PlatformAdapter {
     
     async getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo> {
         //@ts-ignore
-        const memberInfo = await this.session.onebot.getGroupMemberInfo(
+        const memberInfo = await this.session.onebot.getGroupMemberInfo(groupId,userId, 10);
+        /*const memberInfo = await this.session.onebot.getGroupMemberInfo(
             parseInt(groupId, 10),
             parseInt(userId, 10)
         );
+        */
 
         return {
             //age: memberInfo.age,

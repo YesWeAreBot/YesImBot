@@ -3,7 +3,7 @@ import { ModelSetting, Provider } from "./adapters/config";
 import { ToolManagerConfig } from "./extensions";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
 import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
-import { MultimodalConfig } from "./services/scenario/Scenario";
+import { MultimodalConfig, GroupInfoVisibility } from "./services/scenario/Scenario";
 
 interface BlockConfig {
     Limit?: number;
@@ -61,10 +61,7 @@ export interface Config {
         MaxRetry: number;
         Life: number;
     };
-    GroupInfoVisibility: {
-        showGroupTitle: boolean;
-        showChatLevel: boolean;
-    };
+    GroupInfoVisibility: GroupInfoVisibility;
     Task: {};
     Multimodal: MultimodalConfig;
     PromptTemplate: PromptBuilderConfig;
@@ -206,10 +203,10 @@ export const Config: Schema<Config> = Schema.object({
     }).description("工具调用管理配置"),
 
     GroupInfoVisibility: Schema.object({
-        showGroupTitle: Schema.boolean()
+        ShowGroupTitle: Schema.boolean()
             .default(true)
             .description("是否允许 Bot 查看群成员的头衔"),
-        showChatLevel: Schema.boolean()
+        ShowChatLevel: Schema.boolean()
             .default(true)
             .description("是否允许 Bot 查看群成员的聊天等级"),
     }).description("群信息可见性设置"),

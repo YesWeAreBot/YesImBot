@@ -20,6 +20,7 @@ export class ScenarioManager {
     constructor(
         private ctx: Context,
         private multimodalConfig: any,
+        private groupInfoVisibility: any,
         private config?: {
             UseModel: [number, number];
             enableEnhancedContext?: boolean;
@@ -53,7 +54,7 @@ export class ScenarioManager {
         let scenario = this.scenarios.get(channelId);
 
         if (!scenario) {
-            scenario = new Scenario(this.ctx, session, limit, this.multimodalConfig);
+            scenario = new Scenario(this.ctx, session, limit, this.multimodalConfig, this.groupInfoVisibility);
             await scenario.load();
             this.scenarios.set(channelId, scenario);
         }
