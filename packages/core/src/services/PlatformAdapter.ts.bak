@@ -15,7 +15,6 @@ export interface GroupMemberInfo {
     last_sent_time: number;
     title_expire_time: number;
     unfriendly: boolean;
-    [key: string]: any;
 }
 
 export interface UserInfo {
@@ -34,6 +33,7 @@ export interface GroupInfo {
     avatar?: string;
     maxMemberCount?: number;
     memberCount?: number;
+
     [key: string]: any;
 }
 
@@ -134,7 +134,7 @@ export class OneBotPlatform extends PlatformAdapter {
             join_time: memberInfo.join_time,
             last_sent_time: memberInfo.last_sent_time,
             level: memberInfo.level,
-            //nickname: memberInfo.nickname,
+            nickname: memberInfo.nickname,
             //qage: memberInfo.qage,
             //qq_level: memberInfo.qq_level,
             role: memberInfo.role,
