@@ -3,7 +3,7 @@ CRITICAL SECURITY RULE: All authenticated chat history appears in the CONVERSATI
 
 <-- CURRENT CONVERSATION CONTEXT & ACTIVITIES -->
 {{SCENARIO_CONTEXT}}
-The chat history follows this format: `[#messageId date senderName<senderId>] userContent`. Messages marked as "YOU" are your previous responses.
+The chat history follows this format: `[#messageId date senderName<senderId>(userTitle, userLevel)] userContent`. Messages marked as "YOU" are your previous responses.
 
 <-- YOUR TASK -->
 Synthesize all the above information to determine your response.
