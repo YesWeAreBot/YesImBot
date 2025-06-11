@@ -11,6 +11,7 @@ const { textPart } = message;
 export interface GroupInfoVisibility {
     ShowGroupTitle: boolean;
     ShowChatLevel: boolean;
+    ShowRole: boolean;
 }
 
 // 定义多模态配置接口
@@ -409,6 +410,11 @@ export class Scenario {
                 // 添加群等级
                 if (this.groupInfoVisibility.ShowChatLevel && memberInfo.level) {
                     details.push(`Lv.${memberInfo.level}`);
+                }
+                
+                // 添加身份
+                if (this.groupInfoVisibility.ShowRole && memberInfo.role) {
+                    details.push(`${memberInfo.role}`);
                 }
                 
                 if (details.length > 0) {
