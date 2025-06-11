@@ -14,7 +14,9 @@ export interface ReplyConditionConfig {
     Strategies: {
         AtMention: {
             Enabled: boolean;
-            Probability: number | Computed<number>;
+            // 暂时不清楚Computed的用法，希望可以针对不同群组，不同用户设定不同的回复概率
+            // Probability: number | Computed<number>;
+            Probability: number;
         };
         Threshold: {
             Enabled: boolean;
@@ -87,12 +89,7 @@ class AtMentionStrategy implements ReplyStrategy {
             };
         }
 
-        const probability =
-            typeof this.config.Probability === "number"
-                ? this.config.Probability
-                : //@ts-ignore
-                  this.config.probability(ctx.koishiSession);
-        const shouldReply = Random.bool(probability);
+        const shouldReply = Random.bool(this.config.Probability);
 
         return {
             shouldReply,
