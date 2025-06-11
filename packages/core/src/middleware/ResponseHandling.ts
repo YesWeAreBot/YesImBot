@@ -5,6 +5,22 @@ import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { ScenarioManager } from "../services/scenario/ScenarioManager";
 
+interface FunctionTool {
+    function: string;
+    params: Record<string, unknown>;
+    request_heartbeat: boolean;
+}
+
+interface OutputFormat {
+    thoughts: {
+        observe: string;
+        analyze_infer: string;
+        plan: string;
+    };
+    actions: FunctionTool[];
+    request_heartbeat: boolean;
+}
+
 export class ResponseHandlingMiddleware extends Middleware {
     constructor(
         protected ctx: Context,
@@ -33,7 +49,7 @@ export class ResponseHandlingMiddleware extends Middleware {
         // 处理LLM响应
         const { text } = ctx.llmResponse;
 
-        let response: { function: string; params: Record<string, unknown> }[];
+        let response: OutputFormat;
         try {
             // 解析LLM响应中的JSON
             response = this.parseResponse(text);
@@ -47,11 +63,15 @@ export class ResponseHandlingMiddleware extends Middleware {
             return;
         }
 
-        let request_heartbeat = false;
+        const { thoughts, actions, request_heartbeat } = response;
+
+        logger.info(`观察到：${thoughts.observe}`);
+        logger.info(`分析：${thoughts.analyze_infer}`);
+        logger.info(`计划：${thoughts.plan}`);
 
         // 处理工具调用
-        for (const func of response) {
-            let { function: functionName, params } = func;
+        for (const func of actions) {
+            let { function: functionName, params, request_heartbeat } = func;
 
             let channel_id = params?.channel_id;
             if (!channel_id) {
@@ -61,14 +81,16 @@ export class ResponseHandlingMiddleware extends Middleware {
             // 记录工具调用
             await this.recordToolCall(ctx.koishiContext, session, functionName, params);
 
-            const result = await this.executeToolCall(ctx.koishiContext, session, functionName, params, this.config?.maxRetry || 0);
+            const result = await this.executeToolCall(
+                ctx.koishiContext,
+                ctx.koishiSession,
+                functionName,
+                params,
+                this.config?.maxRetry || 0
+            );
 
             // 记录工具结果
             await this.recordToolResult(ctx.koishiContext, session, functionName, result);
-
-            if (params.request_heartbeat) {
-                request_heartbeat = true;
-            }
         }
 
         // 如果需要继续对话 (heartbeat)
@@ -100,24 +122,21 @@ export class ResponseHandlingMiddleware extends Middleware {
     }
 
     // 解析LLM响应，提取函数调用信息
-    private parseResponse(text: string): { function: string; params: Record<string, unknown> }[] {
-        let response: { function: string; params: Record<string, unknown> }[];
+    private parseResponse(text: string): OutputFormat {
+        let response: OutputFormat;
+        let actions: FunctionTool[];
         try {
-            response = extractJson(text.trim());
+            [response] = extractJson(text.trim()) || [];
+            actions = response?.actions || [];
         } catch (error) {
             throw new Error(`解析响应失败: ${error.message}`);
         }
-        if (!response || response.length == 0) {
-            // 如果解析到的不是数组，尝试将其包装成数组
-            if (!Array.isArray(response)) {
-                response = [response];
-            } else {
-                throw new Error("未解析到有效的函数调用响应");
-            }
+        if (!response || actions?.length == 0) {
+            throw new Error("未解析到有效的函数调用响应");
         }
 
         // 验证解析结果的格式
-        for (const func of response) {
+        for (const func of actions) {
             if (!func || typeof func !== "object" || !func.function || !func.params) {
                 throw new Error("响应格式错误：每个函数调用必须包含 'function' 和 'params' 字段。");
             }
