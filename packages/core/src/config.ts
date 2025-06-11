@@ -1,9 +1,10 @@
-import { Computed, Schema } from "koishi";
-import { ModelSetting, Provider } from "./adapters/config";
+import { Schema } from "koishi";
+import { ModelSetting } from "./adapters/config";
 import { ToolManagerConfig } from "./extensions";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
+import { ReplyConditionConfig } from "./middleware/CheckReplyCondition";
 import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
-import { MultimodalConfig, GroupInfoVisibility } from "./services/scenario/Scenario";
+import { GroupInfoVisibility, MultimodalConfig } from "./services/scenario/Scenario";
 
 interface BlockConfig {
     Limit?: number;
@@ -33,24 +34,25 @@ export interface Config {
             BackupPath: string;
         };
     };
-    MemorySlot: {
-        SlotContains: string[][];
-        SlotSize: number;
-        AtReactPossibility?: number | Computed<number>;
-        IncreaseWillingnessOn: {
-            Message: number;
-            At: number;
-        };
-        Threshold: number;
-        MessageWaitTime: number;
-        SameUserThreshold: number;
-    };
-    Provider: Provider[];
+    ReplyCondition: ReplyConditionConfig;
     ModelSetting: ModelSetting;
     Chat: {
         UseModel: [number, number][];
         MaxHeartbeat: number;
         WordsPerSecond: number;
+    };
+    LLM: {
+        RetryConfig: {
+            MaxRetries: number;
+            TimeoutMs: number;
+            RetryDelayMs: number;
+            ExponentialBackoff: boolean;
+            RetryableErrors: string[];
+        };
+        AdapterSwitching: {
+            Enabled: boolean;
+            MaxAttempts: number;
+        };
     };
     ImageViewer: {
         UseModel?: [number, number];
@@ -68,28 +70,64 @@ export interface Config {
     Debug: {
         EnableDebug: boolean;
         UploadDump: boolean;
-        TestMode: boolean;
     };
 }
 
 // 主配置 Schema
 export const Config: Schema<Config> = Schema.object({
-    MemorySlot: Schema.object({
-        SlotContains: Schema.array(Schema.array(String).role("table")).description("记忆槽位标识符列表，用于区分不同的对话上下文"),
-        SlotSize: Schema.number().default(20).min(1).max(100).description("每个记忆槽位保存的最大消息数量"),
-        AtReactPossibility: Schema.computed(
-            Schema.number().default(0.5).min(0).max(1).step(0.05).role("slider").description("收到 @ 消息时立即回复的概率（0-1）")
-        ),
-        IncreaseWillingnessOn: Schema.object({
-            Message: Schema.number().default(15).min(0).max(100).description("收到普通消息时增加的回复意愿值"),
-            At: Schema.number().default(80).min(0).max(100).description("收到 @ 消息时增加的回复意愿值"),
-        }).description("不同消息类型对回复意愿的影响"),
-        Threshold: Schema.number().min(0).max(100).default(80).step(1).role("slider").description("触发回复的意愿阈值"),
-        MessageWaitTime: Schema.number().default(2000).min(0).max(10000).description("消息等待时间（毫秒），用于合并用户的连续消息"),
-        SameUserThreshold: Schema.number().default(5000).min(0).max(30000).description("判定为同一用户连续消息的时间阈值（毫秒）"),
-    }).description("记忆槽位管理配置"),
-    Provider: Schema.array(Provider).collapse(true).required().description("模型服务"),
-    ModelSetting: ModelSetting.description("模型设置"),
+    ReplyCondition: Schema.object({
+        Channels: Schema.array(Schema.array(String).role("table")).description("允许回复的频道列表"),
+        TestMode: Schema.boolean().default(false).description("测试模式，每条消息都会触发回复"),
+
+        Strategies: Schema.object({
+            AtMention: Schema.object({
+                Enabled: Schema.boolean().default(true).description("启用@提及回复策略"),
+                Probability: Schema.computed(
+                    Schema.number().default(0.8).min(0).max(1).step(0.05).role("slider").description("收到 @ 消息时立即回复的概率（0-1）")
+                ),
+            }).description("@提及回复策略配置"),
+
+            Threshold: Schema.object({
+                Enabled: Schema.boolean().default(true).description("启用阈值回复策略"),
+                Value: Schema.number().min(0).max(100).default(50).step(1).role("slider").description("触发回复的意愿阈值"),
+            }).description("阈值回复策略配置"),
+
+            ConversationFlow: Schema.object({
+                Enabled: Schema.boolean().default(true).description("启用对话流分析策略"),
+                ConfidenceThreshold: Schema.number()
+                    .min(0)
+                    .max(1)
+                    .default(0.6)
+                    .step(0.05)
+                    .role("slider")
+                    .description("对话流分析的置信度阈值"),
+            }).description("对话流分析策略配置"),
+        }).description("回复策略配置"),
+
+        Timing: Schema.object({
+            WaitTime: Schema.number().default(3000).min(0).max(10000).description("消息等待时间（毫秒），用于合并用户的连续消息"),
+            SameUserThreshold: Schema.number().default(5000).min(0).max(30000).description("判定为同一用户连续消息的时间阈值（毫秒）"),
+        }).description("时间控制配置"),
+
+        Advanced: Schema.object({
+            Willingness: Schema.object({
+                MessageIncrease: Schema.number().default(5).min(0).max(50).description("收到普通消息时增加的意愿值"),
+                AtIncrease: Schema.number().default(20).min(0).max(100).description("收到 @ 消息时增加的意愿值"),
+                DecayRate: Schema.number().default(2).min(0).max(20).description("意愿值每分钟衰减量"),
+                RetentionAfterReply: Schema.number()
+                    .default(0.3)
+                    .min(0)
+                    .max(1)
+                    .step(0.1)
+                    .role("slider")
+                    .description("回复后保留的意愿值比例"),
+            }).description("意愿值系统配置"),
+        })
+            .description("高级功能配置")
+            .collapse(),
+    }).description("回复条件配置"),
+
+    ModelSetting: ModelSetting.description("模型服务"),
     Chat: Schema.object({
         UseModel: Schema.array(
             Schema.tuple([Schema.number().min(0), Schema.number().min(0)])
@@ -101,6 +139,23 @@ export const Config: Schema<Config> = Schema.object({
         MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
         WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
     }).description("对话行为配置"),
+
+    LLM: Schema.object({
+        RetryConfig: Schema.object({
+            MaxRetries: Schema.number().min(0).max(10).default(3).description("单个适配器的最大重试次数"),
+            TimeoutMs: Schema.number().min(1000).max(300000).default(30000).description("单次请求超时时间（毫秒）"),
+            RetryDelayMs: Schema.number().min(100).max(10000).default(1000).description("重试延迟时间（毫秒）"),
+            ExponentialBackoff: Schema.boolean().default(true).description("是否使用指数退避策略"),
+            RetryableErrors: Schema.array(String).default([
+                "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE",
+                "XSAIError", "NetworkError", "TimeoutError"
+            ]).description("可重试的错误类型"),
+        }).description("重试配置"),
+        AdapterSwitching: Schema.object({
+            Enabled: Schema.boolean().default(true).description("是否启用适配器自动切换"),
+            MaxAttempts: Schema.number().min(1).max(10).default(3).description("适配器切换的最大尝试次数"),
+        }).description("适配器切换配置"),
+    }).description("LLM处理配置"),
     Memory: Schema.object({
         Block: Schema.dict(
             Schema.object({
@@ -203,15 +258,9 @@ export const Config: Schema<Config> = Schema.object({
     }).description("工具调用管理配置"),
 
     GroupInfoVisibility: Schema.object({
-        ShowGroupTitle: Schema.boolean()
-            .default(true)
-            .description("是否允许 Bot 查看群成员的头衔"),
-        ShowChatLevel: Schema.boolean()
-            .default(true)
-            .description("是否允许 Bot 查看群成员的聊天等级"),
-        ShowRole: Schema.boolean()
-            .default(true)
-            .description("是否允许 Bot 查看群成员的群组身份"),
+        ShowGroupTitle: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的头衔"),
+        ShowChatLevel: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的聊天等级"),
+        ShowRole: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的群组身份"),
     }).description("群信息可见性设置"),
 
     Task: Schema.object({}),
@@ -240,6 +289,5 @@ export const Config: Schema<Config> = Schema.object({
     Debug: Schema.object({
         EnableDebug: Schema.boolean().default(false).description("在控制台显示详细的调试信息"),
         UploadDump: Schema.boolean().default(false).description("应用出错时自动上报详细日志给开发者（包含聊天内容和 LLM 输出）"),
-        TestMode: Schema.boolean().default(false).description("启用测试模式，用于开发和调试"),
     }).description("调试和诊断配置"),
 });
