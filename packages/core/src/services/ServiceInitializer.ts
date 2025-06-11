@@ -39,7 +39,7 @@ export class ServiceInitializer {
 
         // 注册场景管理器
         this.container.register(SERVICE_TOKENS.SCENARIO_MANAGER, () => {
-            return new ScenarioManager(this.ctx, this.config.Multimodal, this.config.GroupInfoVisibility);
+            return new ScenarioManager(this.ctx, this.config.Multimodal, this.config.GroupInfoVisibility, { SlotLimit: 30 });
         });
 
         // 注册提示词构建器

@@ -1,6 +1,6 @@
 import { $, Context, Session } from "koishi";
 import { ChatMessage, Interaction, INTERACTION_TABLE, LAST_REPLY_TABLE } from "../../types/model";
-import { Scenario } from "./Scenario";
+import { GroupInfoVisibility, MultimodalConfig, Scenario } from "./Scenario";
 import { ContextProcessor } from "./ContextProcessor";
 
 declare module "koishi" {
@@ -19,15 +19,16 @@ export class ScenarioManager {
 
     constructor(
         private ctx: Context,
-        private multimodalConfig: any,
-        private groupInfoVisibility: any,
-        private config?: {
-            UseModel: [number, number];
-            enableEnhancedContext?: boolean;
-            contextWindowTokens?: number;
+        private multimodalConfig: MultimodalConfig,
+        private groupInfoVisibility: GroupInfoVisibility,
+        private config: {
+            SlotLimit: number;
+            UseModel?: [number, number];
+            EnableEnhancedContext?: boolean;
+            ContextWindowTokens?: number;
         }
     ) {
-        if (config?.enableEnhancedContext) {
+        if (config?.EnableEnhancedContext) {
             if (!ctx["yesimbot.model"]) {
                 ctx.logger.warn(
                     "[ScenarioManager] Enhanced context is enabled, but no LLM service is available. Feature will be disabled."
@@ -45,7 +46,7 @@ export class ScenarioManager {
     /**
      * 获取或创建场景实例
      */
-    async getScenario(session: Session, limit: number = 30): Promise<Scenario> {
+    async getScenario(session: Session): Promise<Scenario> {
         const channelId = session.channelId;
         if (!channelId) {
             throw new Error("获取 Scenario 需要 Channel ID。");
@@ -54,7 +55,7 @@ export class ScenarioManager {
         let scenario = this.scenarios.get(channelId);
 
         if (!scenario) {
-            scenario = new Scenario(this.ctx, session, limit, this.multimodalConfig, this.groupInfoVisibility);
+            scenario = new Scenario(this.ctx, session, this.config.SlotLimit, this.multimodalConfig, this.groupInfoVisibility);
             await scenario.load();
             this.scenarios.set(channelId, scenario);
         }
