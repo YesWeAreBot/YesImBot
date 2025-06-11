@@ -209,6 +209,9 @@ export const Config: Schema<Config> = Schema.object({
         ShowChatLevel: Schema.boolean()
             .default(true)
             .description("是否允许 Bot 查看群成员的聊天等级"),
+        ShowRole: Schema.boolean()
+            .default(true)
+            .description("是否允许 Bot 查看群成员的群组身份"),
     }).description("群信息可见性设置"),
 
     Task: Schema.object({}),
