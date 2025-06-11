@@ -39,9 +39,7 @@ export class MessageContext {
 
         public allowedChannels: string[],
     ) {
-        this.isMentioned = koishiSession.elements.some(
-            (element) => element.type === "at" && (element.attrs.id === koishiSession.bot.selfId || element.attrs.type === "all")
-        );
+        this.isMentioned = koishiSession.stripped.atSelf;
     }
 
     /**

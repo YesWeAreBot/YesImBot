@@ -148,7 +148,7 @@ export const CommonParams = {
 export function withCommonParams<T extends z.ZodRawShape>(params: T) {
     return z.object({
         inner_thoughts: CommonParams.INNER_THOUGHTS,
-        request_heartbeat: CommonParams.REQUEST_HEARTBEAT,
+        //request_heartbeat: CommonParams.REQUEST_HEARTBEAT,
         ...params,
     });
 }
