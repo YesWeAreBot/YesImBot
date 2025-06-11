@@ -79,6 +79,7 @@ export class Provider {
 
     public getChatModel(index: number): ChatModel {
         const model = this.config.Models[index];
+        if (!model) throw new Error(`当前供应商不存在编号为 {${index}} 的模型`)
         return new ChatModel(this.chatProvider, model, this.setting, this.fetch);
     }
 
