@@ -2,7 +2,7 @@ import { Context } from "koishi";
 import { ChatModelSwitcher } from "../adapters";
 import { Config } from "../config";
 import { MiddlewareManager } from "../middleware/base";
-import { CheckReplyConditionMiddleware } from "../middleware/CheckReplyCondition";
+import { CheckReplyCondition } from "../middleware/CheckReplyCondition";
 import { DatabaseStorageMiddleware } from "../middleware/DatabaseStorage";
 import { ErrorHandlingMiddleware } from "../middleware/ErrorHandling";
 import { LLMProcessingMiddleware } from "../middleware/LLMProcessing";
@@ -17,8 +17,6 @@ import { IServiceContainer, SERVICE_TOKENS } from "./ServiceContainer";
  * 负责配置和组装中间件链
  */
 export class MiddlewareConfigurator {
-    private controller = new AbortController();
-
     constructor(private ctx: Context, private config: Config, private container: IServiceContainer) {}
 
     /**
@@ -28,7 +26,6 @@ export class MiddlewareConfigurator {
         const middlewareManager = this.container.get<MiddlewareManager>(SERVICE_TOKENS.MIDDLEWARE_MANAGER);
 
         this.setupMiddlewareChain(middlewareManager);
-        this.registerEventHandlers();
         this.registerCleanupHandlers();
 
         return middlewareManager;
@@ -56,19 +53,8 @@ export class MiddlewareConfigurator {
             })
         );
 
-        // 检查回复条件中间件
-        const checkReplyMiddleware = new CheckReplyConditionMiddleware(this.ctx, {
-            allowedChannels: this.config.MemorySlot.SlotContains,
-            testMode: this.config.Debug.TestMode,
-            atReactPossibility: this.config.MemorySlot.AtReactPossibility,
-            increaseWillingnessOn: {
-                message: this.config.MemorySlot.IncreaseWillingnessOn.Message,
-                at: this.config.MemorySlot.IncreaseWillingnessOn.At,
-            },
-            threshold: this.config.MemorySlot.Threshold,
-            messageWaitTime: this.config.MemorySlot.MessageWaitTime,
-            sameUserThreshold: this.config.MemorySlot.SameUserThreshold,
-        });
+        // 检查回复条件中间件（重构版本）
+        const checkReplyMiddleware = new CheckReplyCondition(this.ctx, this.config.ReplyCondition);
         middlewareManager.use(checkReplyMiddleware);
 
         // LLM处理中间件
@@ -85,9 +71,17 @@ export class MiddlewareConfigurator {
                 },
                 {
                     debug: this.config.Debug.EnableDebug,
-                    abortSignal: this.controller.signal,
-                    slotContains: this.config.MemorySlot.SlotContains,
-                    slotSize: this.config.MemorySlot.SlotSize,
+                    retryConfig: {
+                        maxRetries: this.config.LLM.RetryConfig.MaxRetries,
+                        timeoutMs: this.config.LLM.RetryConfig.TimeoutMs,
+                        retryDelayMs: this.config.LLM.RetryConfig.RetryDelayMs,
+                        exponentialBackoff: this.config.LLM.RetryConfig.ExponentialBackoff,
+                        retryableErrors: this.config.LLM.RetryConfig.RetryableErrors,
+                    },
+                    adapterSwitchingConfig: {
+                        enabled: this.config.LLM.AdapterSwitching.Enabled,
+                        maxAttempts: this.config.LLM.AdapterSwitching.MaxAttempts,
+                    },
                 }
             )
         );
@@ -106,26 +100,13 @@ export class MiddlewareConfigurator {
         );
     }
 
-    private registerEventHandlers(): void {
-        // 注册频道状态释放事件
-        this.ctx.on("channel:processing:release", (channelId: string) => {
-            const middlewareManager = this.container.get<MiddlewareManager>(SERVICE_TOKENS.MIDDLEWARE_MANAGER);
-            const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");
-            if (checkReply) {
-                checkReply.releaseChannelState(channelId);
-            }
-        });
-    }
-
     private registerCleanupHandlers(): void {
         this.ctx.on("dispose", () => {
-            this.controller.abort();
-
             const scenarioManager = this.container.get<ScenarioManager>(SERVICE_TOKENS.SCENARIO_MANAGER);
             scenarioManager.clearAllScenarios();
 
             const middlewareManager = this.container.get<MiddlewareManager>(SERVICE_TOKENS.MIDDLEWARE_MANAGER);
-            const checkReply = middlewareManager.getMiddleware<CheckReplyConditionMiddleware>("check-reply-condition");
+            const checkReply = middlewareManager.getMiddleware<CheckReplyCondition>("check-reply-condition");
             if (checkReply) {
                 checkReply.destroy();
             }
@@ -133,6 +114,6 @@ export class MiddlewareConfigurator {
     }
 
     public dispose(): void {
-        this.controller.abort();
+        // 清理逻辑已移到各个中间件内部处理
     }
 }
