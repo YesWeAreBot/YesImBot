@@ -28,3 +28,5 @@ data/cache
 data/.vector_cache
 data/queue.json
 data/emojis.json
+
+__snapshots__
