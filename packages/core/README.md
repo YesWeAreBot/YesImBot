@@ -171,6 +171,10 @@ yarn install
 
 # 构建
 yarn build
+
+# 打包外部依赖
+cd packages/core
+yarn bundle
 ```
 
 ## 💫 贡献者
