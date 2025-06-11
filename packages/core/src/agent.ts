@@ -76,7 +76,7 @@ export default class AgentCore {
     private registerMessageHandler(): void {
         this.ctx.middleware(async (session, next) => {
             try {
-                const allowedChannels = this.config.MemorySlot.SlotContains.find((slots) => slots.includes(session.channelId)) || [];
+                const allowedChannels = this.config.ReplyCondition.Channels.find((slots) => slots.includes(session.channelId)) || [];
 
                 if (allowedChannels.length === 0) {
                     if (this.config.Debug.EnableDebug) {

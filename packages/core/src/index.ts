@@ -33,7 +33,7 @@ export default class YesImBot extends Service {
 
         // 注册模型服务
         ctx.plugin(ModelService, {
-            providerConfig: config.Provider,
+            providerConfig: config.ModelSetting.Providers,
             modelSetting: config.ModelSetting,
         });
 
