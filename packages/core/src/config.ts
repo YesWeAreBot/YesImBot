@@ -82,9 +82,13 @@ export const Config: Schema<Config> = Schema.object({
         Strategies: Schema.object({
             AtMention: Schema.object({
                 Enabled: Schema.boolean().default(true).description("启用@提及回复策略"),
-                Probability: Schema.computed(
-                    Schema.number().default(0.8).min(0).max(1).step(0.05).role("slider").description("收到 @ 消息时立即回复的概率（0-1）")
-                ),
+                Probability: Schema.number()
+                    .default(0.8)
+                    .min(0)
+                    .max(1)
+                    .step(0.05)
+                    .role("slider")
+                    .description("收到 @ 消息时立即回复的概率（0-1）"),
             }).description("@提及回复策略配置"),
 
             Threshold: Schema.object({
@@ -146,10 +150,9 @@ export const Config: Schema<Config> = Schema.object({
             TimeoutMs: Schema.number().min(1000).max(300000).default(30000).description("单次请求超时时间（毫秒）"),
             RetryDelayMs: Schema.number().min(100).max(10000).default(1000).description("重试延迟时间（毫秒）"),
             ExponentialBackoff: Schema.boolean().default(true).description("是否使用指数退避策略"),
-            RetryableErrors: Schema.array(String).default([
-                "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE",
-                "XSAIError", "NetworkError", "TimeoutError"
-            ]).description("可重试的错误类型"),
+            RetryableErrors: Schema.array(String)
+                .default(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE", "XSAIError", "NetworkError", "TimeoutError"])
+                .description("可重试的错误类型"),
         }).description("重试配置"),
         AdapterSwitching: Schema.object({
             Enabled: Schema.boolean().default(true).description("是否启用适配器自动切换"),
