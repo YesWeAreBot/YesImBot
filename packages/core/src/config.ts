@@ -11,30 +11,7 @@ interface BlockConfig {
     FilePathToBind: string;
 }
 
-// 主配置接口
 export interface Config {
-    Memory: {
-        Block: Record<string, BlockConfig>;
-        UseModel?: [number, number];
-        Compression: {
-            CompressionWhen?: "Lines" | "Characters" | "IntervalMessages" | "IntervalMinutes";
-            Lines?: number; // 按行数阈值触发
-            Characters?: number; // 按字符数阈值触发
-            IntervalMessages?: number; // 按消息频率触发
-            IntervalMinutes?: number; // 按时间间隔触发
-            CustomPrompt?: string; // 压缩总结的自定义提示词
-            CompressibleBlocks?: string[]; // 例如: ['human', 'context']
-        };
-        // Extract: {
-        //     ExtractWhen?: number;
-        //     CustomPrompt?: string;
-        // };
-        Backup: {
-            Enabled: boolean;
-            BackupPath: string;
-        };
-    };
-    ReplyCondition: ReplyConditionConfig;
     ModelSetting: ModelSetting;
     Chat: {
         UseModel: [number, number][];
@@ -54,10 +31,29 @@ export interface Config {
             MaxAttempts: number;
         };
     };
+    ReplyCondition: ReplyConditionConfig;
+    Memory: {
+        Block: Record<string, BlockConfig>;
+        UseModel?: [number, number];
+        Compression: {
+            CompressionWhen?: "Lines" | "Characters" | "IntervalMessages" | "IntervalMinutes";
+            Lines?: number;
+            Characters?: number;
+            IntervalMessages?: number;
+            IntervalMinutes?: number;
+            CustomPrompt?: string;
+            CompressibleBlocks?: string[];
+        };
+        Backup: {
+            Enabled: boolean;
+            BackupPath: string;
+        };
+    };
     ImageViewer: {
         UseModel?: [number, number];
         CustomPrompt?: string;
     };
+    Multimodal: MultimodalConfig;
     ToolManagerConfig: ToolManagerConfig;
     ToolCall: {
         MaxRetry: number;
@@ -65,7 +61,6 @@ export interface Config {
     };
     GroupInfoVisibility: GroupInfoVisibility;
     Task: {};
-    Multimodal: MultimodalConfig;
     PromptTemplate: PromptBuilderConfig;
     Debug: {
         EnableDebug: boolean;
@@ -73,8 +68,38 @@ export interface Config {
     };
 }
 
-// 主配置 Schema
 export const Config: Schema<Config> = Schema.object({
+    ModelSetting: ModelSetting.description("模型服务"),
+
+    Chat: Schema.object({
+        UseModel: Schema.array(
+            Schema.tuple([Schema.number().min(0), Schema.number().min(0)])
+                .default([0, 0])
+                .description("第几个提供商的第几个模型，从 0 开始计数")
+        )
+            .required()
+            .description("对话使用的模型") as Schema,
+        MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
+        WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
+    }).description("对话行为配置"),
+
+    LLM: Schema.object({
+        RetryConfig: Schema.object({
+            MaxRetries: Schema.number().min(0).max(10).default(3).description("单个适配器的最大重试次数"),
+            TimeoutMs: Schema.number().min(1000).max(300000).default(30000).description("单次请求超时时间（毫秒）"),
+            RetryDelayMs: Schema.number().min(100).max(10000).default(1000).description("重试延迟时间（毫秒）"),
+            ExponentialBackoff: Schema.boolean().default(true).description("是否使用指数退避策略"),
+            RetryableErrors: Schema.array(String)
+                .default(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE", "XSAIError", "NetworkError", "TimeoutError"])
+                .description("可重试的错误类型")
+                .collapse(true),
+        }).description("重试配置"),
+        AdapterSwitching: Schema.object({
+            Enabled: Schema.boolean().default(true).description("是否启用适配器自动切换"),
+            MaxAttempts: Schema.number().min(1).max(10).default(3).description("适配器切换的最大尝试次数"),
+        }).description("适配器切换配置"),
+    }).description("LLM处理配置"),
+    
     ReplyCondition: Schema.object({
         Channels: Schema.array(Schema.array(String).role("table")).description("允许回复的频道列表"),
         TestMode: Schema.boolean().default(false).description("测试模式，每条消息都会触发回复"),
@@ -131,34 +156,6 @@ export const Config: Schema<Config> = Schema.object({
             .collapse(),
     }).description("回复条件配置"),
 
-    ModelSetting: ModelSetting.description("模型服务"),
-    Chat: Schema.object({
-        UseModel: Schema.array(
-            Schema.tuple([Schema.number().min(0), Schema.number().min(0)])
-                .default([0, 0])
-                .description("第几个提供商的第几个模型，从 0 开始计数")
-        )
-            .required()
-            .description("对话使用的模型") as Schema,
-        MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
-        WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
-    }).description("对话行为配置"),
-
-    LLM: Schema.object({
-        RetryConfig: Schema.object({
-            MaxRetries: Schema.number().min(0).max(10).default(3).description("单个适配器的最大重试次数"),
-            TimeoutMs: Schema.number().min(1000).max(300000).default(30000).description("单次请求超时时间（毫秒）"),
-            RetryDelayMs: Schema.number().min(100).max(10000).default(1000).description("重试延迟时间（毫秒）"),
-            ExponentialBackoff: Schema.boolean().default(true).description("是否使用指数退避策略"),
-            RetryableErrors: Schema.array(String)
-                .default(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE", "XSAIError", "NetworkError", "TimeoutError"])
-                .description("可重试的错误类型"),
-        }).description("重试配置"),
-        AdapterSwitching: Schema.object({
-            Enabled: Schema.boolean().default(true).description("是否启用适配器自动切换"),
-            MaxAttempts: Schema.number().min(1).max(10).default(3).description("适配器切换的最大尝试次数"),
-        }).description("适配器切换配置"),
-    }).description("LLM处理配置"),
     Memory: Schema.object({
         Block: Schema.dict(
             Schema.object({
@@ -179,7 +176,6 @@ export const Config: Schema<Config> = Schema.object({
             .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
         UseModel: Schema.tuple([Number, Number]).default([0, 0]).description("压缩记忆使用的模型") as Schema,
         Compression: Schema.object({
-            // SummaryWhen: Schema.number(),
             Lines: Schema.number().min(0).default(500).description("记忆块内容超过多少行时触发压缩汇总 (0为禁用)"),
             Characters: Schema.number().min(0).default(20000).description("记忆块内容超过多少字符时触发压缩汇总 (0为禁用)"),
             IntervalMessages: Schema.number().min(0).default(0).description("每追加多少条消息后触发压缩汇总 (0为禁用)"),
@@ -190,49 +186,11 @@ export const Config: Schema<Config> = Schema.object({
                 .role("textarea", { rows: [2, 4] })
                 .description("自定义提示词"),
         }).description("记忆压缩配置"),
-        // Extract: Schema.object({
-        //     // ExtractWhen: Schema.number(),
-        //     CustomPrompt: Schema.string()
-        //         .role("textarea", { rows: [2, 4] })
-        //         .description("自定义提示词"),
-        // }).description("记忆提取配置"),
         Backup: Schema.object({
             Enabled: Schema.boolean().default(true),
             BackupPath: Schema.string().default("data/yesimbot/memory/.backup"),
         }),
     }).description("记忆设置"),
-    // 保留备用。记忆方案：["embedding模型与RAG，结合koishi的database做向量库", "定期发送消息给LLM，总结聊天记录，并塞到后续的请求prompt中", "两者结合，定期发送消息给LLM，总结聊天记录，把总结文本向量化后存入向量库，有请求时把输入向量化和向量库内的总结做比对，提取出相关的总结塞到prompt中"]
-    // 向量库的设想：为每个向量添加时间戳，定期检查并删除超过一定时间的向量；记录每个向量的使用频率，删除使用频率低的向量；查询时，提升更近时间存入的向量的权重 // 遗忘机制 & 减少向量库的大小
-    // 多模态向量库：图像和文本嵌入模型，需要CLIP等多模态模型支持/文本和图像对齐??
-    // 欸以上这些好像mem0都想到了?
-    //
-    // Memory: Schema.intersect([
-    //     Schema.object({
-    //         Enabled: Schema.boolean().default(false),
-    //     }).description('是否启用记忆中枢'),
-    //     Schema.union([
-    //         Schema.object({
-    //             Enabled: Schema.const(true).required(),
-    //             API: Schema.object({
-    //                 APIType: Schema.union(["OpenAI", "Cloudflare", "Custom URL"])
-    //                     .default("OpenAI")
-    //                     .description("记忆中枢 API 类型"),
-    //                 BaseURL: Schema.string()
-    //                     .default("https://api.openai.com/")
-    //                     .description("记忆中枢 API 基础 URL"),
-    //                 UID: Schema.string()
-    //                     .default("")
-    //                     .description("记忆中枢 Cloudflare UID（如果适用）"),
-    //                 APIKey: Schema.string()
-    //                     .default("sk-xxxxxxx")
-    //                     .description("记忆中枢 API 令牌"),
-    //                 AIModel: Schema.string()
-    //                     .default("gpt-3.5-turbo")
-    //                     .description("记忆中枢使用的模型"),
-    //             }).description("记忆中枢 API 配置"),
-    //         }),
-    //     ])
-    // ]),
 
     ImageViewer: Schema.object({
         UseModel: Schema.tuple([Number, Number]).default([0, 0]).description("解析图片使用的模型") as Schema,
@@ -245,6 +203,12 @@ export const Config: Schema<Config> = Schema.object({
             .role("textarea", { rows: [2, 4] })
             .description("自定义提示词"),
     }).description("识图设置"),
+
+    Multimodal: Schema.object({
+        Enabled: Schema.boolean().default(false),
+        ImageDetail: Schema.union(["low", "high", "auto"]).default("auto"),
+        MaxImagesPerPrompt: Schema.number().default(3),
+    }).description("多模态设置"),
 
     ToolManagerConfig: Schema.object({
         autoLoad: Schema.boolean().default(true),
@@ -267,12 +231,6 @@ export const Config: Schema<Config> = Schema.object({
     }).description("群信息可见性设置"),
 
     Task: Schema.object({}),
-
-    Multimodal: Schema.object({
-        Enabled: Schema.boolean().default(false),
-        ImageDetail: Schema.union(["low", "high", "auto"]).default("auto"),
-        MaxImagesPerPrompt: Schema.number().default(3),
-    }).description("多模态设置"),
 
     PromptTemplate: Schema.object({
         SystemTemplate: Schema.string()
