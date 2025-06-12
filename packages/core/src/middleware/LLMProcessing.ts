@@ -1,4 +1,4 @@
-import { Context } from "koishi";
+import { Context, sleep } from "koishi";
 import { ChatModelSwitcher } from "../adapters";
 import { LLMAdapterError, LLMRequestError, LLMRetryExhaustedError, LLMTimeoutError } from "../errors";
 import { PromptBuilder } from "../prompt/PromptBuilder";
@@ -31,30 +31,20 @@ export interface AdapterSwitchingConfig {
 class LLMRetryManager {
     private readonly logger: any;
 
-    constructor(
-        private retryConfig: RetryConfig,
-        private adapterConfig: AdapterSwitchingConfig,
-        baseLogger: any
-    ) {
+    constructor(private retryConfig: RetryConfig, private adapterConfig: AdapterSwitchingConfig, baseLogger: any) {
         this.logger = baseLogger("LLMRetryManager");
     }
 
     /**
      * 执行带重试的LLM请求
      */
-    async executeWithRetry<T>(
-        operation: (abortSignal: AbortSignal) => Promise<T>,
-        adapterName: string
-    ): Promise<T> {
+    async executeWithRetry<T>(operation: (abortSignal: AbortSignal) => Promise<T>, adapterName: string): Promise<T> {
         let lastError: Error | null = null;
 
         for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
             // 为每次请求创建独立的AbortController
             const controller = new AbortController();
-            const timeoutId = setTimeout(
-                () => controller.abort(),
-                this.retryConfig.timeoutMs
-            );
+            const timeoutId = setTimeout(() => controller.abort(), this.retryConfig.timeoutMs);
 
             try {
                 this.logger.debug(`尝试请求 ${adapterName}，第 ${attempt + 1} 次`);
@@ -94,14 +84,7 @@ class LLMRetryManager {
                 // 检查是否可重试
                 if (!this.isRetryableError(error)) {
                     this.logger.warn(`${adapterName} 遇到不可重试错误: ${error.message}`);
-                    throw new LLMRequestError(
-                        error.message,
-                        adapterName,
-                        attempt,
-                        false,
-                        {},
-                        error
-                    );
+                    throw new LLMRequestError(error.message, adapterName, attempt, false, {}, error);
                 }
 
                 // 如果还有重试机会，等待后重试
@@ -110,11 +93,9 @@ class LLMRetryManager {
                     this.logger.warn(
                         `${adapterName} 请求失败 (${error.message})，${delay}ms 后重试 (${attempt + 1}/${this.retryConfig.maxRetries})`
                     );
-                    await this.sleep(delay);
+                    await sleep(delay);
                 } else {
-                    this.logger.error(
-                        `${adapterName} 重试耗尽，共尝试 ${attempt + 1} 次，最后错误: ${error.message}`
-                    );
+                    this.logger.error(`${adapterName} 重试耗尽，共尝试 ${attempt + 1} 次，最后错误: ${error.message}`);
                 }
             }
         }
@@ -149,11 +130,13 @@ class LLMRetryManager {
         // 检查特定的错误消息模式
         if (error.message) {
             const message = error.message.toLowerCase();
-            if (message.includes("fetch failed") ||
+            if (
+                message.includes("fetch failed") ||
                 message.includes("network error") ||
                 message.includes("timeout") ||
                 message.includes("连接") ||
-                message.includes("超时")) {
+                message.includes("超时")
+            ) {
                 return true;
             }
         }
@@ -174,13 +157,6 @@ class LLMRetryManager {
         const jitter = Math.random() * 0.3 * exponentialDelay; // 30% 抖动
         return Math.min(exponentialDelay + jitter, 30000); // 最大30秒
     }
-
-    /**
-     * 休眠函数
-     */
-    private sleep(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
 }
 
 /**
@@ -192,29 +168,19 @@ class LLMAdapterManager {
     private currentIndex = 0;
     private readonly logger: any;
 
-    constructor(
-        private chatModelSwitcher: ChatModelSwitcher,
-        private adapterConfig: AdapterSwitchingConfig,
-        baseLogger: any
-    ) {
+    constructor(private chatModelSwitcher: ChatModelSwitcher, private adapterConfig: AdapterSwitchingConfig, baseLogger: any) {
         this.logger = baseLogger("LLMAdapterManager");
     }
 
     /**
      * 执行带适配器切换的LLM请求
      */
-    async executeWithAdapterSwitching<T>(
-        operation: (adapterName: string, model: any) => Promise<T>
-    ): Promise<T> {
+    async executeWithAdapterSwitching<T>(operation: (adapterName: string, model: any) => Promise<T>): Promise<T> {
         if (!this.adapterConfig.enabled) {
             // 不启用适配器切换，直接使用当前适配器
-            const model = this.chatModelSwitcher.getModel();
+            const model = this.chatModelSwitcher.getCurrent();
             if (!model) {
-                throw new LLMAdapterError(
-                    "没有可用的LLM适配器",
-                    "unknown",
-                    0
-                );
+                throw new LLMAdapterError("没有可用的LLM适配器", "unknown", 0);
             }
             return await operation("current", model);
         }
@@ -229,20 +195,16 @@ class LLMAdapterManager {
 
         while (attempt < this.adapterConfig.maxAttempts && attempt < totalAdapters) {
             // 尝试当前索引的适配器
-            let model = this.chatModelSwitcher.getModel();
+            let model = this.chatModelSwitcher.getCurrent();
 
             // 如果当前适配器不可用，尝试切换
             if (!model && attempt < totalAdapters - 1) {
                 this.switchToNextAdapter();
-                model = this.chatModelSwitcher.getModel();
+                model = this.chatModelSwitcher.getCurrent();
             }
 
             if (!model) {
-                throw new LLMAdapterError(
-                    "没有可用的LLM适配器",
-                    "unknown",
-                    totalAdapters
-                );
+                throw new LLMAdapterError("没有可用的LLM适配器", "unknown", totalAdapters);
             }
 
             const adapterName = this.getAdapterName(model);
@@ -287,12 +249,7 @@ class LLMAdapterManager {
         }
 
         // 所有适配器都失败了
-        throw new LLMRetryExhaustedError(
-            `所有LLM适配器都失败了`,
-            attempt,
-            Array.from(this.failedAdapters),
-            lastError || undefined
-        );
+        throw new LLMRetryExhaustedError(`所有LLM适配器都失败了`, attempt, Array.from(this.failedAdapters), lastError || undefined);
     }
 
     /**
@@ -300,11 +257,7 @@ class LLMAdapterManager {
      */
     private switchToNextAdapter(): void {
         this.currentIndex = (this.currentIndex + 1) % this.chatModelSwitcher.length;
-        // 这里我们依赖ChatModelSwitcher内部的逻辑来轮换适配器
-        // 如果有switchToNext方法则调用，否则依赖getModel的内部轮换
-        if (typeof (this.chatModelSwitcher as any).switchToNext === 'function') {
-            (this.chatModelSwitcher as any).switchToNext();
-        }
+        this.chatModelSwitcher.switchToNext();
     }
 
     /**
@@ -345,14 +298,21 @@ export class LLMProcessingMiddleware extends Middleware {
             retryDelayMs: 1000,
             exponentialBackoff: true,
             retryableErrors: [
-                "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE",
-                "XSAIError", "NetworkError", "TimeoutError", "AbortError"
-            ]
+                "ECONNREFUSED",
+                "ECONNRESET",
+                "ETIMEDOUT",
+                "ENOTFOUND",
+                "EPIPE",
+                "XSAIError",
+                "NetworkError",
+                "TimeoutError",
+                "AbortError",
+            ],
         };
 
         const defaultAdapterConfig: AdapterSwitchingConfig = {
             enabled: true,
-            maxAttempts: 3
+            maxAttempts: 3,
         };
 
         this.retryManager = new LLMRetryManager(
@@ -392,27 +352,22 @@ export class LLMProcessingMiddleware extends Middleware {
             }
 
             // 执行LLM请求（带适配器切换和重试）
-            ctx.llmResponse = await this.adapterManager.executeWithAdapterSwitching(
-                async (adapterName: string, model: any) => {
-                    return await this.retryManager.executeWithRetry(
-                        async (abortSignal: AbortSignal) => {
-                            return await model.chat(
-                                [
-                                    { role: "system", content: systemPrompt },
-                                    { role: "user", content: userPrompt },
-                                ],
-                                null,
-                                {
-                                    debug: this.config.debug,
-                                    logger: ctx.koishiContext.logger,
-                                    abortSignal,
-                                }
-                            );
-                        },
-                        adapterName
+            ctx.llmResponse = await this.adapterManager.executeWithAdapterSwitching(async (adapterName: string, model: any) => {
+                return await this.retryManager.executeWithRetry(async (abortSignal: AbortSignal) => {
+                    return await model.chat(
+                        [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: userPrompt },
+                        ],
+                        null,
+                        {
+                            debug: this.config.debug,
+                            logger: ctx.koishiContext.logger,
+                            abortSignal,
+                        }
                     );
-                }
-            );
+                }, adapterName);
+            });
 
             await ctx.transitionTo(ConversationState.RESPONDING);
             await next();
@@ -420,7 +375,6 @@ export class LLMProcessingMiddleware extends Middleware {
             // LLM成功响应后的清理工作
             await this.services.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
             ctx.currentScenario.clearPendingMessages();
-
         } catch (error: any) {
             // 处理不同类型的错误
             if (error instanceof LLMRetryExhaustedError) {

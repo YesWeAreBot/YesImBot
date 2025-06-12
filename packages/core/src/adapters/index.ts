@@ -4,7 +4,7 @@ import { ChatModel } from "./chat";
 import { ModelSetting, Provider as ProviderConfig } from "./config";
 
 export class ChatModelSwitcher {
-    private current = 0;
+    private currentIndex = 0;
 
     constructor(private providers: Provider[], private useModel: [number, number][]) {}
 
@@ -12,16 +12,20 @@ export class ChatModelSwitcher {
         return this.useModel.length;
     }
 
-    public getModel(): ChatModel {
+    public getCurrent(): ChatModel {
         try {
-            if (this.current >= this.useModel.length) this.current = 0;
-            let model = this.useModel[this.current++];
-            const prov = this.providers[model[0]]; // 获取对应提供商
-            const chatModel = prov.getChatModel(model[1]); // 从提供商获取模型
+            let model = this.useModel[this.currentIndex];
+            const prov = this.providers[model[0]];
+            const chatModel = prov.getChatModel(model[1]);
             return chatModel;
         } catch (error) {
             return;
         }
+    }
+
+    public switchToNext(): ChatModel {
+        this.currentIndex = (this.currentIndex + 1) % this.useModel.length;
+        return this.getCurrent();
     }
 }
 
