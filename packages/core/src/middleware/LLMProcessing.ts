@@ -225,7 +225,9 @@ class LLMAdapterManager {
                 if (attempt > 0) {
                     this.logger.info(`适配器切换成功，使用 ${adapterName}`);
                 }
-
+                
+                this.switchToNextAdapter();
+                
                 return result;
             } catch (error: any) {
                 lastError = error;
