@@ -34,5 +34,5 @@ send_message:
   params:
     inner_thoughts (string): Deep inner monologue private to you only.
     request_heartbeat (boolean): Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.
-    message (string): Message content. Use a string consisting of zero-width characters \\u200b\\u200c\\u200b to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short.
+    message (string): Message content. Use xml tag <sep/> to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short.
     channel_id (string): The ID of the channel where the message should be sent. If not provided, the message will default to the current channel.
