@@ -41,6 +41,10 @@ export interface ReplyConditionConfig {
             AtIncrease: number;
             DecayRate: number;
             RetentionAfterReply: number;
+            Keywords?: {
+            	List: string[];
+            	Increase: number;
+            }
         };
     };
 }
@@ -173,12 +177,28 @@ class WillingnessService {
 
     constructor(private config?: ReplyConditionConfig["Advanced"]["Willingness"]) {}
 
-    updateWillingness(channelId: string, isMentioned: boolean): void {
+    updateWillingness(channelId: string, isMentioned: boolean, messageContent: string): void {
         if (!this.config) return;
 
         const current = this.channelWillingness.get(channelId) || 0;
-        const increase = isMentioned ? this.config.AtIncrease : this.config.MessageIncrease;
-        this.channelWillingness.set(channelId, current + increase);
+        
+        // 基础增加量
+        let increase = isMentioned ? this.config.AtIncrease : this.config.MessageIncrease;
+        
+        // 关键词检测 - 每匹配一个关键词增加额外意愿值
+        if (this.config.Keywords && messageContent) {
+            const lowerContent = messageContent.toLowerCase();
+            const matchedKeywords = this.config.Keywords.List.filter(keyword => 
+                lowerContent.includes(keyword.toLowerCase())
+            );
+            if (matchedKeywords.length > 0) {
+                increase += this.config.Keywords.Increase * matchedKeywords.length;
+            }
+        }
+
+        const newWillingness = Math.max(0, current + increase);
+        this.channelWillingness.set(channelId, newWillingness);
+        
     }
 
     getWillingness(channelId: string): number {
@@ -259,7 +279,11 @@ export class CheckReplyCondition extends Middleware {
         const state = this.getOrCreateChannelState(channelId);
 
         // 更新意愿值
-        this.willingnessService.updateWillingness(channelId, ctx.isMentioned);
+        this.willingnessService.updateWillingness(
+        	channelId, 
+        	ctx.isMentioned,
+        	ctx.koishiSession.content
+        );
         state.willingness = this.willingnessService.getWillingness(channelId);
 
         // 检查是否需要取消现有定时器
