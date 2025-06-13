@@ -82,23 +82,6 @@ export const Config: Schema<Config> = Schema.object({
         MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
         WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
     }).description("对话行为配置"),
-
-    LLM: Schema.object({
-        RetryConfig: Schema.object({
-            MaxRetries: Schema.number().min(0).max(10).default(3).description("单个适配器的最大重试次数"),
-            TimeoutMs: Schema.number().min(1000).max(300000).default(30000).description("单次请求超时时间（毫秒）"),
-            RetryDelayMs: Schema.number().min(100).max(10000).default(1000).description("重试延迟时间（毫秒）"),
-            ExponentialBackoff: Schema.boolean().default(true).description("是否使用指数退避策略"),
-            RetryableErrors: Schema.array(String)
-                .default(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE", "XSAIError", "NetworkError", "TimeoutError"])
-                .description("可重试的错误类型")
-                .collapse(true),
-        }).description("重试配置"),
-        AdapterSwitching: Schema.object({
-            Enabled: Schema.boolean().default(true).description("是否启用适配器自动切换"),
-            MaxAttempts: Schema.number().min(1).max(10).default(3).description("适配器切换的最大尝试次数"),
-        }).description("适配器切换配置"),
-    }).description("LLM处理配置"),
     
     ReplyCondition: Schema.object({
         Channels: Schema.array(Schema.array(String).role("table")).description("允许回复的频道列表"),
@@ -140,8 +123,8 @@ export const Config: Schema<Config> = Schema.object({
 
         Advanced: Schema.object({
             Willingness: Schema.object({
-                MessageIncrease: Schema.number().default(5).min(0).max(50).description("收到普通消息时增加的意愿值"),
-                AtIncrease: Schema.number().default(20).min(0).max(100).description("收到 @ 消息时增加的意愿值"),
+                MessageIncrease: Schema.number().default(10).min(0).max(50).description("收到普通消息时增加的意愿值"),
+                AtIncrease: Schema.number().default(30).min(0).max(100).description("收到 @ 消息时增加的意愿值"),
                 DecayRate: Schema.number().default(2).min(0).max(20).description("意愿值每分钟衰减量"),
                 RetentionAfterReply: Schema.number()
                     .default(0.3)
@@ -150,11 +133,32 @@ export const Config: Schema<Config> = Schema.object({
                     .step(0.1)
                     .role("slider")
                     .description("回复后保留的意愿值比例"),
+                Keywords: Schema.object({
+                	List: Schema.array(String).description("关键词列表").collapse(),
+                	Increase: Schema.number().default(10).min(0).max(100).description("额外增加的意愿值"),
+                }).description("特定关键词配置"),
             }).description("意愿值系统配置"),
         })
             .description("高级功能配置")
             .collapse(),
     }).description("回复条件配置"),
+
+    LLM: Schema.object({
+        RetryConfig: Schema.object({
+            MaxRetries: Schema.number().min(0).max(10).default(3).description("单个适配器的最大重试次数"),
+            TimeoutMs: Schema.number().min(1000).max(300000).default(30000).description("单次请求超时时间（毫秒）"),
+            RetryDelayMs: Schema.number().min(100).max(10000).default(1000).description("重试延迟时间（毫秒）"),
+            ExponentialBackoff: Schema.boolean().default(true).description("是否使用指数退避策略"),
+            RetryableErrors: Schema.array(String)
+                .default(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE", "XSAIError", "NetworkError", "TimeoutError"])
+                .description("可重试的错误类型")
+                .collapse(true),
+        }).description("重试配置"),
+        AdapterSwitching: Schema.object({
+            Enabled: Schema.boolean().default(true).description("是否启用适配器自动切换"),
+            MaxAttempts: Schema.number().min(1).max(10).default(3).description("适配器切换的最大尝试次数"),
+        }).description("适配器切换配置"),
+    }).description("LLM处理配置"),
 
     Memory: Schema.object({
         Block: Schema.dict(
