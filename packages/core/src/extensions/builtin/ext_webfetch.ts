@@ -5,7 +5,7 @@
 // @author       HydroGest
 // ==/Extension==
 
-import { z } from "zod";
+import { Schema } from "koishi";
 import { isEmpty } from "../../utils/string";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
 
@@ -19,11 +19,11 @@ export const FetchWebPage = createTool({
   Example:
     fetch_webpage("https://example.com", "text")`,
     parameters: withCommonParams({
-        url: z.string().describe("要获取的网页URL"),
-        format: z.enum(["html", "text"]).optional().default("text").describe("返回格式：html(原始HTML) 或 text(纯文本)"),
-        max_length: z.number().optional().default(5000).describe("返回内容的最大长度，默认5000字符"),
-        include_links: z.boolean().optional().default(true).describe("是否包含网页中的其他链接"),
-        max_links: z.number().optional().default(10).describe("最多显示的链接数量，默认10个"),
+        url: Schema.string().description("要获取的网页URL"),
+        format: Schema.union(["html", "text"]).default("text").description("返回格式：html(原始HTML) 或 text(纯文本)"),
+        max_length: Schema.number().default(5000).description("返回内容的最大长度，默认5000字符"),
+        include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),
+        max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
     }),
     execute: async ({ url, format, max_length, include_links, max_links }, context) => {
         if (isEmpty(url)) return Failed("url is required");

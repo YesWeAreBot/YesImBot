@@ -1,5 +1,4 @@
-import { Context, sleep } from "koishi";
-import { z } from "zod";
+import { Context, Schema, sleep } from "koishi";
 import { Config } from "../config";
 import ToolManager, { createTool, Success, withCommonParams } from "../extensions";
 import { MiddlewareManager } from "../middleware/base";
@@ -81,6 +80,7 @@ export class ServiceInitializer {
     }
 
     private createSendMessageTool(config: Config["Chat"]) {
+        const separator = "\u200B\u200C\u200B";
         return createTool({
             metadata: {
                 name: "send_message",
@@ -89,21 +89,19 @@ export class ServiceInitializer {
             },
 
             parameters: withCommonParams({
-                message: z
-                    .string()
-                    .describe(
-                        "Message content. Use xml tag <sep/> to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short."
-                    ),
-                channel_id: z
-                    .string()
-                    .optional()
-                    .describe(
-                        "The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."
-                    ),
+                message: Schema.string().description(
+                    `Message content. Use \`${separator}\` to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short.`
+                ),
+                channel_id: Schema.string().description(
+                    "The ID of the channel where the message should be sent. If not provided, the message will default to the current channel."
+                ),
             }),
             execute: async ({ message, channel_id }, context) => {
                 const { koishiContext, koishiSession } = context;
-                const messages = message.split(/<\s*sep\s*\/?\s*>/i).map((seg) => seg.trim()).filter((seg) => !isEmpty(seg));
+                const messages = message
+                    .split(/<\s*sep\s*\/?\s*>/i)
+                    .map((seg) => seg.trim())
+                    .filter((seg) => !isEmpty(seg));
 
                 let idx = 1;
                 let delay = true;
@@ -158,13 +156,10 @@ export class ServiceInitializer {
             },
 
             parameters: withCommonParams({
-                image_id: z.string().describe("聊天记录中图片的唯一ID。"),
-                query: z
-                    .string()
-                    .describe(
-                        "你希望了解图片的具体内容或方面。例如：'描述图片主要内容'，'图片中有哪些文字？'，'图片中人物的表情是什么？'，'分析图片传递的情绪或场景'，'总结图片的关键信息'。请尽可能具体。如果你不指定，将提供图片的主要内容描述。"
-                    )
-                    .optional(),
+                image_id: Schema.string().description("聊天记录中图片的唯一ID。"),
+                query: Schema.string().description(
+                    "你希望了解图片的具体内容或方面。例如：'描述图片主要内容'，'图片中有哪些文字？'，'图片中人物的表情是什么？'，'分析图片传递的情绪或场景'，'总结图片的关键信息'。请尽可能具体。如果你不指定，将提供图片的主要内容描述。"
+                ),
             }),
             async execute({ image_id, query }, context) {
                 const { koishiContext } = context;

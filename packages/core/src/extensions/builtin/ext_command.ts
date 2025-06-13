@@ -1,9 +1,8 @@
-import { h } from "koishi";
-import { z } from "zod";
+import { h, Schema } from "koishi";
 
 import { isEmpty } from "../../utils/string";
-import { ExtensionMetadata } from "../types";
 import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
+import { ExtensionMetadata } from "../types";
 
 const metadata: ExtensionMetadata = {
     name: "Execute",
@@ -20,8 +19,8 @@ const ExecuteTool = createTool({
   Example:
     execute("fufu表情包", "123456789")`,
     parameters: withCommonParams({
-        cmd: z.string().describe("要运行的指令"),
-        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
+        cmd: Schema.string().description("要运行的指令"),
+        channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     hooks: {
         onRegister({ koishiContext }) {

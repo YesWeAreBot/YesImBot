@@ -1,5 +1,4 @@
-import { z } from "zod";
-import zodToJsonSchema from "zod-to-json-schema";
+import { Schema } from "koishi";
 import {
     ExecutableTool,
     ExtensionDefinition,
@@ -14,7 +13,7 @@ import {
 /**
  * 工具定义辅助函数
  */
-export function createTool<TParams extends z.ZodTypeAny, TReturns = any, TConfig = any>(
+export function createTool<TParams extends Schema, TReturns = any, TConfig = any>(
     config: ToolDefinition<TParams, TReturns, TConfig>
 ): ToolDefinition<TParams, TReturns, TConfig> {
     if (!config.metadata) {
@@ -39,7 +38,7 @@ export function createTool<TParams extends z.ZodTypeAny, TReturns = any, TConfig
 /**
  * 扩展定义辅助函数
  */
-export function createExtension<TConfig extends z.ZodTypeAny>(config: ExtensionDefinition<TConfig>): ExtensionDefinition<TConfig> {
+export function createExtension<TConfig extends Schema<any>>(config: ExtensionDefinition<TConfig>): ExtensionDefinition<TConfig> {
     return {
         ...config,
         metadata: {
@@ -74,19 +73,18 @@ export function Failed(error: string, metadata?: ToolCallResult["metadata"]): To
 /**
  * 将工具定义转换为可执行工具
  */
-export function defineExecutableTool<TParams extends z.ZodTypeAny, TReturns = any, TConfig = any>(
+export function defineExecutableTool<TParams extends Schema<any>, TReturns = any, TConfig = any>(
     definition: ToolDefinition<TParams, TReturns, TConfig>,
     baseContext: Partial<ToolContext<TConfig>> = {},
     extensionMetadata?: ExtensionMetadata
 ): ExecutableTool<TParams, TReturns> {
-
     // 生成 JSON Schema
     let parametersJsonSchema;
     try {
         if (definition.parameters && typeof definition.parameters === "object" && "properties" in definition.parameters) {
             parametersJsonSchema = definition.parameters;
         } else {
-            parametersJsonSchema = zodToJsonSchema(definition.parameters as z.ZodTypeAny);
+            parametersJsonSchema = (definition.parameters as Schema<any>).toJSON();
         }
     } catch (error) {
         throw createToolError(
@@ -106,7 +104,7 @@ export function defineExecutableTool<TParams extends z.ZodTypeAny, TReturns = an
             description: definition.metadata.description,
             parameters: parametersJsonSchema as Record<string, unknown>,
         },
-        execute: async (params: z.infer<TParams>, runtimeContext: Partial<ToolContext>) => {
+        execute: async (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => {
             const mergedContext = { ...baseContext, ...runtimeContext } as ToolContext<TConfig>;
             // 执行逻辑...
             // (省略了钩子以保持简洁，实际代码中应保留)
@@ -115,20 +113,20 @@ export function defineExecutableTool<TParams extends z.ZodTypeAny, TReturns = an
     };
 }
 
-/**
- * 验证工具参数
- */
-export function validateToolParameters<T extends z.ZodTypeAny>(
-    schema: T,
-    params: unknown
-): { success: boolean; data?: z.infer<T>; error?: string } {
-    const result = schema.safeParse(params);
-    if (result.success) {
-        return { success: true, data: result.data };
-    }
-    const errorMessages = result.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
-    return { success: false, error: `参数验证失败: ${errorMessages.join(", ")}` };
-}
+// /**
+//  * 验证工具参数
+//  */
+// export function validateToolParameters<T extends Schema<any>>(
+//     schema: T,
+//     params: unknown
+// ): { success: boolean; data?: Schemastery.TypeS<T>; error?: string } {
+//     const result = schema.safeParse(params);
+//     if (result.success) {
+//         return { success: true, data: result.data };
+//     }
+//     const errorMessages = result.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
+//     return { success: false, error: `参数验证失败: ${errorMessages.join(", ")}` };
+// }
 
 /**
  * 创建工具错误
@@ -141,12 +139,16 @@ export function createToolError(type: ToolErrorType, message: string, toolName?:
  * 常用参数的辅助函数
  */
 export const CommonParams = {
-    INNER_THOUGHTS: z.string().describe("仅供自己参考的内心独白。"),
-    REQUEST_HEARTBEAT: z.boolean().optional().describe("执行后是否需要立即再次思考。"),
+    INNER_THOUGHTS: Schema.string().description("仅供自己参考的内心独白。"),
+    REQUEST_HEARTBEAT: Schema.boolean().description("执行后是否需要立即再次思考。"),
 };
 
-export function withCommonParams<T extends z.ZodRawShape>(params: T) {
-    return z.object({
+type RawShape = {
+    [k: string]: Schema<any, any>;
+};
+
+export function withCommonParams<T extends RawShape>(params: T) {
+    return Schema.object({
         inner_thoughts: CommonParams.INNER_THOUGHTS,
         //request_heartbeat: CommonParams.REQUEST_HEARTBEAT,
         ...params,

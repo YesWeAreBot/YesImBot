@@ -5,8 +5,7 @@
 // @author       HydroGest
 // ==/Extension==
 
-import { z } from "zod";
-
+import { Schema } from "koishi";
 import { isEmpty } from "../../utils/string";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
 
@@ -14,8 +13,8 @@ export const DeleteMsg = createTool({
     name: "delmsg",
     description: `撤回一条消息。撤回用户/你自己的消息。当你认为别人刷屏或发表不当内容时，运行这条指令。`,
     parameters: withCommonParams({
-        message: z.string().describe("要撤回的消息编号"),
-        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
+        message: Schema.string().description("要撤回的消息编号"),
+        channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ message, channel }, context) => {
         const { koishiContext, koishiSession } = context;
@@ -39,9 +38,9 @@ export const BanUser = createTool({
     name: "ban",
     description: `禁言用户。`,
     parameters: withCommonParams({
-        user_id: z.string().describe("要禁言的用户 ID"),
-        duration: z.number().optional().describe("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
-        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
+        user_id: Schema.string().description("要禁言的用户 ID"),
+        duration: Schema.number().description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
+        channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ user_id, duration, channel }, context) => {
         const { koishiContext, koishiSession } = context;

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { Schema } from "koishi";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
 
 export const WebSearch = createTool({
@@ -10,7 +10,7 @@ export const WebSearch = createTool({
     },
 
     parameters: withCommonParams({
-        query: z.string().describe("搜索关键词或查询内容。"),
+        query: Schema.string().description("搜索关键词或查询内容。"),
     }),
 
     execute: async ({ query }, context) => {
