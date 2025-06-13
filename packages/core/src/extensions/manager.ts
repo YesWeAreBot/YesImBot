@@ -1,18 +1,16 @@
 import { Context, Service } from "koishi";
 import path from "path";
-import { z } from "zod";
-import { createExtension, createToolError, defineExecutableTool, isValidExtension, isValidTool, validateToolParameters } from "./helpers";
+import { createExtension, defineExecutableTool, isValidExtension, isValidTool } from "./helpers";
 import {
     ExecutableTool,
     ExtensionConstructor,
     ExtensionDefinition,
-    ToolCallResult,
     ToolContext,
     ToolDefinition,
     ToolError,
     ToolErrorType,
     ToolManagerConfig,
-    ToolRegistrationOptions,
+    ToolRegistrationOptions
 } from "./types";
 import { getExtensionFiles } from "./utils";
 
@@ -240,41 +238,41 @@ export class ToolManager extends Service {
         return this.getAllToolDefinitions().map((def) => this.getTool(def.metadata.name)!);
     }
 
-    async executeToolCall(session: any, functionName: string, params: Record<string, unknown>): Promise<ToolCallResult> {
-        const startTime = Date.now();
-        this.ctx.logger.info(`→ 开始执行工具: ${functionName}(${JSON.stringify(params)})`);
+    // async executeToolCall(session: any, functionName: string, params: Record<string, unknown>): Promise<ToolCallResult> {
+    //     const startTime = Date.now();
+    //     this.ctx.logger.info(`→ 开始执行工具: ${functionName}(${JSON.stringify(params)})`);
 
-        const tool = this.getTool(functionName);
-        if (!tool) {
-            const errorMsg = `工具 "${functionName}" 未找到`;
-            this.ctx.logger.warn(`← 工具执行失败: ${errorMsg}`);
-            return { success: false, error: errorMsg };
-        }
+    //     const tool = this.getTool(functionName);
+    //     if (!tool) {
+    //         const errorMsg = `工具 "${functionName}" 未找到`;
+    //         this.ctx.logger.warn(`← 工具执行失败: ${errorMsg}`);
+    //         return { success: false, error: errorMsg };
+    //     }
 
-        const definition = this.getToolDefinition(functionName)!;
-        const validation = validateToolParameters(definition.parameters as z.ZodTypeAny, params);
-        if (!validation.success) {
-            const error = createToolError(ToolErrorType.VALIDATION_ERROR, validation.error, functionName);
-            this.ctx.logger.warn(`← 工具执行失败: ${functionName} - ${error.message}`);
-            return { success: false, error: error.message };
-        }
+    //     const definition = this.getToolDefinition(functionName)!;
+    //     const validation = validateToolParameters(definition.parameters as z.ZodTypeAny, params);
+    //     if (!validation.success) {
+    //         const error = createToolError(ToolErrorType.VALIDATION_ERROR, validation.error, functionName);
+    //         this.ctx.logger.warn(`← 工具执行失败: ${functionName} - ${error.message}`);
+    //         return { success: false, error: error.message };
+    //     }
 
-        try {
-            const result = await tool.execute(validation.data, { koishiSession: session });
-            const executionTime = Date.now() - startTime;
-            const resultPreview = JSON.stringify(result.result).substring(0, 100);
-            this.ctx.logger.success(`← 工具执行成功: ${functionName} (${executionTime}ms) -> ${resultPreview}...`);
-            return result;
-        } catch (error) {
-            const executionTime = Date.now() - startTime;
-            const toolError =
-                error instanceof ToolError
-                    ? error
-                    : createToolError(ToolErrorType.EXECUTION_ERROR, (error as Error).message, functionName, error as Error);
-            this.ctx.logger.error(`← 工具执行失败: ${functionName} (${executionTime}ms) - ${toolError.message}`);
-            return { success: false, error: toolError.message };
-        }
-    }
+    //     try {
+    //         const result = await tool.execute(validation.data, { koishiSession: session });
+    //         const executionTime = Date.now() - startTime;
+    //         const resultPreview = JSON.stringify(result.result).substring(0, 100);
+    //         this.ctx.logger.success(`← 工具执行成功: ${functionName} (${executionTime}ms) -> ${resultPreview}...`);
+    //         return result;
+    //     } catch (error) {
+    //         const executionTime = Date.now() - startTime;
+    //         const toolError =
+    //             error instanceof ToolError
+    //                 ? error
+    //                 : createToolError(ToolErrorType.EXECUTION_ERROR, (error as Error).message, functionName, error as Error);
+    //         this.ctx.logger.error(`← 工具执行失败: ${functionName} (${executionTime}ms) - ${toolError.message}`);
+    //         return { success: false, error: toolError.message };
+    //     }
+    // }
 
     async reloadExtensions(): Promise<void> {
         this.ctx.logger.info("开始重新加载所有扩展...");

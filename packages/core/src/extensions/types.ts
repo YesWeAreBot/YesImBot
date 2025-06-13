@@ -1,11 +1,10 @@
-import { Context, Logger, Session } from "koishi";
-import { z } from "zod";
+import { Context, Logger, Schema, Session } from "koishi";
 
 /**
  * 扩展元数据
- * @template TConfig - 扩展配置的Zod Schema类型
+ * @template TConfig - 扩展配置的Koishi Schema类型
  */
-export interface ExtensionMetadata<TConfig extends z.ZodTypeAny = z.ZodNever> {
+export interface ExtensionMetadata<TConfig extends Schema = any> {
     /** 扩展的唯一名称，将用作配置键 */
     name: string;
     /** 版本号 */
@@ -79,17 +78,20 @@ export interface ToolCallResult<TResult = any> {
  * @template TReturns - 工具返回值的类型
  * @template TConfig - 扩展配置对象的类型
  */
-export interface ToolDefinition<TParams extends z.ZodTypeAny = z.ZodTypeAny, TReturns = any, TConfig = any> {
+export interface ToolDefinition<TParams extends Schema = any, TReturns = any, TConfig = any> {
     name?: string;
     description?: string;
     version?: string;
     metadata?: ToolMetadata;
     parameters: TParams | { properties: { [key: string]: { type: StaticRange; description: string } } };
-    execute: (params: z.infer<TParams>, context: ToolContext<TConfig>) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
+    execute: (
+        params: Schemastery.TypeS<TParams>,
+        context: ToolContext<TConfig>
+    ) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
     hooks?: {
         onRegister?: (context: ToolContext<TConfig>) => Promise<void> | void;
         onUnregister?: (context: ToolContext<TConfig>) => Promise<void> | void;
-        onBeforeExecute?: (params: z.infer<TParams>, context: ToolContext<TConfig>) => Promise<void> | void;
+        onBeforeExecute?: (params: TParams, context: ToolContext<TConfig>) => Promise<void> | void;
         onAfterExecute?: (result: ToolCallResult<TReturns>, context: ToolContext<TConfig>) => Promise<void> | void;
         onError?: (error: Error, context: ToolContext<TConfig>) => Promise<void> | void;
     };
@@ -99,10 +101,10 @@ export interface ToolDefinition<TParams extends z.ZodTypeAny = z.ZodTypeAny, TRe
  * 扩展定义
  * @template TConfig - 扩展配置的Zod Schema类型
  */
-export interface ExtensionDefinition<TConfig extends z.ZodTypeAny = z.ZodNever> {
+export interface ExtensionDefinition<TConfig extends Schema = Schema<any>> {
     metadata: ExtensionMetadata<TConfig>;
-    tools: ToolDefinition<any, any, z.infer<TConfig>>[];
-    onLoad?: (ctx: Context, config: z.infer<TConfig>) => Promise<void>;
+    tools: ToolDefinition<any, any, Schemastery.TypeS<TConfig>>[];
+    onLoad?: (ctx: Context, config: Schemastery.TypeS<TConfig>) => Promise<void>;
     onUnload?: (ctx: Context) => Promise<void>;
 }
 
@@ -117,7 +119,7 @@ export interface ExtensionConstructor {
 /**
  * 可执行的工具对象，为LLM格式化
  */
-export interface ExecutableTool<TParams extends z.ZodTypeAny = z.ZodAny, TReturns = any> {
+export interface ExecutableTool<TParams extends Schema<any> = any, TReturns = any> {
     type: "function";
     metadata: ToolMetadata;
     extensionMetadata?: ExtensionMetadata;
@@ -126,7 +128,7 @@ export interface ExecutableTool<TParams extends z.ZodTypeAny = z.ZodAny, TReturn
         description: string;
         parameters: Record<string, unknown>;
     };
-    execute: (params: z.infer<TParams>, runtimeContext: Partial<ToolContext>) => Promise<ToolCallResult<TReturns>>;
+    execute: (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => Promise<ToolCallResult<TReturns>>;
 }
 
 /**

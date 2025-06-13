@@ -10,7 +10,7 @@ export {
     Success,
     Failed,
     defineExecutableTool,
-    validateToolParameters,
+    // validateToolParameters,
     createToolError,
     isValidTool,
     isValidExtension,

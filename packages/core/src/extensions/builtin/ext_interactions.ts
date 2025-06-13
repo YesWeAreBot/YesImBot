@@ -5,10 +5,8 @@
 // @author       HydroGest
 // ==/Extension==
 
-import { z } from "zod";
-
-import {} from "koishi-plugin-adapter-onebot";
-
+import { Schema } from "koishi";
+import { } from "koishi-plugin-adapter-onebot";
 import { ImageProcessor } from "../../utils/imageProcessor";
 import { isEmpty } from "../../utils/string";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
@@ -18,21 +16,20 @@ export const Reaction = createTool({
         name: "reaction-create",
         description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
     },
-
     parameters: withCommonParams({
-        message_id: z.string().describe("消息 ID"),
-        emoji_id: z.number().describe("表态编号"),
+        message_id: Schema.string().description("消息 ID"),
+        emoji_id: Schema.number().description("表态编号"),
     }),
     execute: async ({ message_id, emoji_id }, context) => {
         const { koishiContext, koishiSession } = context;
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
-            await koishiSession.onebot._request("set_msg_emoji_like", {
+            const result = await koishiSession.onebot._request("set_msg_emoji_like", {
                 message_id,
                 emoji_id,
             });
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
-            return Success();
+            return Success(result);
         } catch (e) {
             koishiContext.logger.error(`Bot[${koishiSession.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, e.message);
             return Failed(`对消息 ${message_id} 进行表态失败： ${e.message}`);
@@ -47,15 +44,15 @@ export const Essence = createTool({
     },
 
     parameters: withCommonParams({
-        message_id: z.string().describe("消息 ID"),
+        message_id: Schema.string().description("消息 ID"),
     }),
     execute: async ({ message_id }, context) => {
         const { koishiContext, koishiSession } = context;
         if (isEmpty(String(message_id))) return Failed("message_id is required");
         try {
-            await koishiSession.onebot._request("set_essence_msg", { message_id });
+            const result = await koishiSession.onebot._request("set_essence_msg", { message_id });
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]将消息 ${message_id} 设置为精华`);
-            return Success();
+            return Success(result);
         } catch (e) {
             koishiContext.logger.error(`Bot[${koishiSession.selfId}]设置精华消息失败: ${message_id} - `, e.message);
             return Failed(`设置精华消息失败： ${e.message}`);
@@ -70,8 +67,8 @@ export const Poke = createTool({
     },
 
     parameters: withCommonParams({
-        user_id: z.string().describe("用户名称"),
-        channel: z.string().optional().describe("要在哪个频道运行，不填默认为当前频道"),
+        user_id: Schema.string().description("用户名称"),
+        channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ user_id, channel }, context) => {
         const { koishiContext, koishiSession } = context;
@@ -106,7 +103,7 @@ export const GetForwardMsg = createTool({
     },
 
     parameters: withCommonParams({
-        id: z.string().describe("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
+        id: Schema.string().description("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
     }),
     execute: async ({ id }, context) => {
         const { koishiContext, koishiSession } = context;

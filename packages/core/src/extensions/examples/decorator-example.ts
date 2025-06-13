@@ -1,13 +1,13 @@
-import { z } from "zod";
-import { Extension, Tool, Params } from "../decorators";
-import { Success, Failed, withCommonParams } from "../helpers";
+import { Schema } from "koishi";
+import { Extension, Params, Tool } from "../decorators";
+import { Failed, Success, withCommonParams } from "../helpers";
 
 @Extension({
     name: "decorator-example",
     description: "使用装饰器定义的示例，带配置功能。",
     version: "1.0.0",
-    schema: z.object({
-        defaultPrefix: z.string().default("CMD_OUTPUT").describe("模拟命令输出的前缀"),
+    schema: Schema.object({
+        defaultPrefix: Schema.string().default("CMD_OUTPUT").description("模拟命令输出的前缀"),
     }),
 })
 export default class DecoratorExample {
@@ -18,7 +18,7 @@ export default class DecoratorExample {
     })
     @Params(
         withCommonParams({
-            cmd: z.string().min(1).describe("要执行的指令内容"),
+            cmd: Schema.string().min(1).description("要执行的指令内容"),
         })
     )
     async runCommand({ cmd }, context) {

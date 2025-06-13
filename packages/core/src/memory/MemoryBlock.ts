@@ -3,7 +3,7 @@ import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { Context, Logger } from "koishi";
 import path from "path";
 import { ChatModel } from "../adapters/chat";
-import { Config } from "../config"; // 引入Config类型
+import { Config } from "../config";
 import { MEMORY_TABLE, MemoryBlockData } from "../types/model";
 import { isEmpty } from "../utils/string";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";

@@ -8,14 +8,16 @@ import path from "path";
 export function getExtensionPath(ctx: Context, builtin: boolean = false): string {
     let extensionPath;
     if (builtin) {
-        extensionPath = path.join(__dirname, "../", "extensions", "builtin");
+        extensionPath = path.join(__dirname, "builtin");
     } else {
         extensionPath = path.join(ctx.baseDir, "data", "yesimbot", "extensions");
+        try {
+            mkdirSync(extensionPath, { recursive: true });
+        } catch (err) {
+            ctx.logger.error("创建扩展目录失败：");
+            ctx.logger.error(err);
+        }
     }
-
-    try {
-        mkdirSync(extensionPath, { recursive: true });
-    } catch (err) {}
 
     return extensionPath;
 }

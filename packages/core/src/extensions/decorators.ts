@@ -1,29 +1,29 @@
+import { Schema } from "koishi";
 import "reflect-metadata";
-import { z } from "zod";
+import { createExtension, createTool } from "./helpers";
 import {
-    ToolDefinition,
-    ExtensionMetadata,
-    ToolMetadata,
+    ExtensionConstructor,
     ExtensionDefinition,
-    ExtensionConstructor
+    ExtensionMetadata,
+    ToolDefinition,
+    ToolMetadata
 } from "./types";
-import { createTool, createExtension } from "./helpers";
 
 // 元数据键
 const EXTENSION_METADATA_KEY = Symbol("extension:metadata");
 const TOOL_METADATA_KEY = Symbol("tool:metadata");
 const PARAMS_METADATA_KEY = Symbol("params:metadata");
 
-type ExtensionDecoratorMetadata<T extends z.ZodTypeAny> = Omit<ExtensionMetadata<T>, "name" | "version"> & {
+type ExtensionDecoratorMetadata<T extends Schema<any>> = Omit<ExtensionMetadata<T>, "name" | "version"> & {
     name?: string;
     version?: string;
 };
 
 /**
  * 扩展装饰器
- * @param metadata 扩展的元数据，可以包含Zod schema作为配置定义
+ * @param metadata 扩展的元数据，可以包含Koishi schema作为配置定义
  */
-export function Extension<TConfig extends z.ZodTypeAny>(metadata: ExtensionDecoratorMetadata<TConfig>) {
+export function Extension<TConfig extends Schema<any>>(metadata: ExtensionDecoratorMetadata<TConfig>) {
     return function <T extends { new (...args: any[]): any }>(constructor: T): T & ExtensionConstructor {
         const extensionMetadata: ExtensionMetadata<TConfig> = {
             name: metadata.name || constructor.name,
@@ -51,7 +51,7 @@ export function Extension<TConfig extends z.ZodTypeAny>(metadata: ExtensionDecor
 
                 for (const methodName of methodNames) {
                     const toolMetadata: ToolMetadata | undefined = Reflect.getMetadata(TOOL_METADATA_KEY, prototype, methodName);
-                    const paramsSchema: z.ZodTypeAny | undefined = Reflect.getMetadata(PARAMS_METADATA_KEY, prototype, methodName);
+                    const paramsSchema: Schema<any> | undefined = Reflect.getMetadata(PARAMS_METADATA_KEY, prototype, methodName);
 
                     if (toolMetadata && paramsSchema) {
                         tools.push(
@@ -105,9 +105,9 @@ export function Tool(nameOrConfig: string | Partial<ToolMetadata>) {
 
 /**
  * 参数装饰器
- * @param schema 工具参数的 Zod schema
+ * @param schema 工具参数的 Koishi schema
  */
-export function Params<T extends z.ZodTypeAny>(schema: T) {
+export function Params<T extends Schema>(schema: T) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         Reflect.defineMetadata(PARAMS_METADATA_KEY, schema, target, propertyKey);
     };
