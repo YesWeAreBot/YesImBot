@@ -92,7 +92,7 @@ export class ServiceInitializer {
                 message: z
                     .string()
                     .describe(
-                        "Message content. Use a string consisting of zero-width characters \\u200b\\u200c\\u200b to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short."
+                        "Message content. Use xml tag <sep/> to separate sentences. Each segment will be sent individually to mimic human-like typing rhythm. Keep messages short."
                     ),
                 channel_id: z
                     .string()
@@ -103,7 +103,7 @@ export class ServiceInitializer {
             }),
             execute: async ({ message, channel_id }, context) => {
                 const { koishiContext, koishiSession } = context;
-                const messages = message.split("​‌​");
+                const messages = message.split(/<\s*sep\s*\/?\s*>/i).map((seg) => seg.trim()).filter((seg) => !isEmpty(seg));
 
                 let idx = 1;
                 let delay = true;
