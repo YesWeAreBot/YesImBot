@@ -10,6 +10,7 @@ interface RequestOptions {
     debug?: boolean;
     logger?: Context["logger"];
     abortSignal?: AbortSignal;
+    onStreamStart?: () => void;
 }
 
 export class ChatModel {
@@ -50,8 +51,8 @@ export class ChatModel {
     get metadata() {
         return {
             provider: this.chatProvider,
-            model: this.model
-        }
+            model: this.model,
+        };
     }
 
     async chat(messages: Message[], tools?: ToolResult[], option: RequestOptions = {}): Promise<GenerateTextResult> {
@@ -80,6 +81,8 @@ export class ChatModel {
 
             let reasoningStreamContent = "";
 
+            let streamStart = false;
+
             const result = await streamText({
                 ...chatOptions,
                 // maxSteps
@@ -100,6 +103,12 @@ export class ChatModel {
                 //         currentReasoningBuffer = "";
                 //     }
                 // },
+                onChunk() {
+                    if (!streamStart) {
+                        option.onStreamStart();
+                        streamStart = true;
+                    }
+                },
             });
 
             let textStream: ReadableStream<string> = result["textStream"];

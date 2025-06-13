@@ -38,19 +38,30 @@ class LLMRetryManager {
     /**
      * 执行带重试的LLM请求
      */
-    async executeWithRetry<T>(operation: (abortSignal: AbortSignal) => Promise<T>, adapterName: string): Promise<T> {
+    async executeWithRetry<T>(
+        operation: (abortSignal: AbortSignal, cancelTimeout: () => void) => Promise<T>,
+        adapterName: string
+    ): Promise<T> {
         let lastError: Error | null = null;
 
         for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
             // 为每次请求创建独立的AbortController
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), this.retryConfig.timeoutMs);
+            let timeoutId: NodeJS.Timeout | null = setTimeout(() => controller.abort(), this.retryConfig.timeoutMs);
+
+            // 提供取消定时器的回调函数
+            const cancelTimeout = () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+            };
 
             try {
                 this.logger.debug(`尝试请求 ${adapterName}，第 ${attempt + 1} 次`);
 
-                const result = await operation(controller.signal);
-                clearTimeout(timeoutId);
+                const result = await operation(controller.signal, cancelTimeout);
+                cancelTimeout(); // 确保定时器被清除
 
                 if (attempt > 0) {
                     this.logger.info(`${adapterName} 重试成功，共尝试 ${attempt + 1} 次`);
@@ -58,7 +69,7 @@ class LLMRetryManager {
 
                 return result;
             } catch (error: any) {
-                clearTimeout(timeoutId);
+                cancelTimeout(); // 确保定时器被清除
                 lastError = error;
 
                 // 检查是否是中止错误
@@ -355,7 +366,7 @@ export class LLMProcessingMiddleware extends Middleware {
 
             // 执行LLM请求（带适配器切换和重试）
             ctx.llmResponse = await this.adapterManager.executeWithAdapterSwitching(async (adapterName: string, model: any) => {
-                return await this.retryManager.executeWithRetry(async (abortSignal: AbortSignal) => {
+                return await this.retryManager.executeWithRetry(async (abortSignal: AbortSignal, cancelTimeout: () => void) => {
                     return await model.chat(
                         [
                             { role: "system", content: systemPrompt },
@@ -366,6 +377,7 @@ export class LLMProcessingMiddleware extends Middleware {
                             debug: this.config.debug,
                             logger: ctx.koishiContext.logger,
                             abortSignal,
+                            onStreamStart: cancelTimeout, // 当流式响应开始时取消定时器
                         }
                     );
                 }, adapterName);
