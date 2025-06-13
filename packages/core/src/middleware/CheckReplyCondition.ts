@@ -78,7 +78,7 @@ class AtMentionStrategy implements ReplyStrategy {
     name = "at_mention";
     enabled: boolean;
 
-    constructor(private config: ReplyConditionConfig['Strategies']['AtMention']) {
+    constructor(private config: ReplyConditionConfig["Strategies"]["AtMention"]) {
         this.enabled = config.Enabled;
     }
 
@@ -346,8 +346,11 @@ export class CheckReplyCondition extends Middleware {
             try {
                 await this.processMessage(ctx, next, state);
             } catch (error) {
-                this.ctx.logger.error(`[CheckReplyCondition] 处理消息失败: ${error.message}`);
                 state.processing = false;
+                this.delayTimers.delete(channelId);
+
+                // 将错误直接抛出，会传递到最终的错误处理
+                throw error;
             } finally {
                 this.delayTimers.delete(channelId);
             }
