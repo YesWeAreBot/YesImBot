@@ -4,6 +4,7 @@ import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 import { ScenarioManager } from "../services/scenario/ScenarioManager";
+import { PlatformAdapter, OneBotPlatform, DefaultPlatform } from "../services/PlatformAdapter";
 
 interface FunctionTool {
     function: string;
@@ -161,12 +162,18 @@ export class ResponseHandlingMiddleware extends Middleware {
         }
         const toolManager = koishiContext["yesimbot.tool"];
         try {
+            let platformAdapter: PlatformAdapter;
+			if (koishiSession.platform === 'onebot') {
+				platformAdapter = new OneBotPlatform(koishiSession);
+			} else {
+				platformAdapter = new DefaultPlatform(koishiSession);
+			}
             const tool = toolManager.getTool(functionName);
             if (!tool) {
                 koishiContext.logger.warn(`Tool ${functionName} not found`);
                 return Failed(`Tool ${functionName} not found`);
             }
-            const context = { koishiContext, koishiSession };
+            const context = { koishiContext, koishiSession, platformAdapter };
             koishiContext.logger.info(`→ Tool Call: ${functionName}(${stringify(params)})`);
             const result = await tool.execute(params, context);
             if (!result.success && maxRetry > 0) {

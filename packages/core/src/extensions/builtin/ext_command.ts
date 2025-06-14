@@ -27,16 +27,16 @@ const ExecuteTool = createTool({
             koishiContext.logger.info(`工具已注册`);
         },
     },
+    // ... 其他代码保持不变 ...
+
     execute: async ({ cmd, channel }, context) => {
-        const { koishiContext, koishiSession } = context;
+        const { koishiContext, koishiSession, platformAdapter } = context;
 
         if (isEmpty(cmd)) return Failed("cmd is required");
         try {
-            if (isEmpty(channel) || channel == koishiSession.channelId) {
-                await koishiSession.execute(cmd);
-            } else {
-                await koishiSession.bot.sendMessage(channel, h("execute", {}, cmd));
-            }
+            const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
+            await platformAdapter.executeCommand(cmd, targetChannel);
+            
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]执行了指令: ${cmd}`);
             return Success();
         } catch (e) {

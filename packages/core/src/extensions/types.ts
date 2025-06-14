@@ -1,5 +1,5 @@
 import { Context, Logger, Schema, Session } from "koishi";
-
+import { PlatformAdapter, OneBotPlatform, DefaultPlatform } from "../services/PlatformAdapter";
 /**
  * 扩展元数据
  * @template TConfig - 扩展配置的Koishi Schema类型
@@ -56,6 +56,8 @@ export interface ToolContext<TConfig = any> {
     logger?: Logger;
     /** 该工具所属扩展的配置 */
     extensionConfig: TConfig;
+    /** 平台适配器 */
+    platformAdapter: PlatformAdapter;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Session } from "koishi";
+import { Session, h } from "koishi";
 // import { } from "koishi-plugin-adapter-onebot";
 
 export type GroupRole = 'member' | 'admin' | 'owner';
@@ -58,6 +58,27 @@ export abstract class PlatformAdapter {
     abstract getUserInfo(userId: string): Promise<UserInfo>;
     
     abstract getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo>;
+    
+    // 执行指令
+    abstract executeCommand(command: string, channelId: string): Promise<void>;
+    
+    // 添加表态
+    abstract createReaction(messageId: string, emojiId: number): Promise<any>;
+    
+    // 设置精华消息
+    abstract setEssenceMessage(messageId: string): Promise<any>;
+    
+    // 发送戳一戳
+    abstract sendPoke(userId: string, channelId: string): Promise<void>;
+    
+    // 获取转发消息
+    abstract getForwardMessage(id: string): Promise<any>;
+    
+    // 撤回消息
+    abstract deleteMessage(messageId: string, channelId: string): Promise<void>;
+    
+    // 禁言用户
+    abstract muteMember(userId: string, channelId: string, durationMinutes: number): Promise<void>;
 }
 
 export class DefaultPlatform extends PlatformAdapter {
@@ -93,6 +114,35 @@ export class DefaultPlatform extends PlatformAdapter {
             join_time: memberInfo.joinedAt,
             user_id: userId
         }
+    }
+    
+    async executeCommand(command: string, channelId: string): Promise<void> {
+        await this.session.execute(command);
+    }
+    
+    async createReaction(messageId: string, emojiId: number): Promise<any> {
+        throw new Error("Not implemented in DefaultPlatform");
+    }
+    
+    async setEssenceMessage(messageId: string): Promise<any> {
+        throw new Error("Not implemented in DefaultPlatform");
+    }
+    
+    async sendPoke(userId: string, channelId: string): Promise<void> {
+        throw new Error("Not implemented in DefaultPlatform");
+    }
+    
+    async getForwardMessage(id: string): Promise<any> {
+        throw new Error("Not implemented in DefaultPlatform");
+    }
+    
+    async deleteMessage(messageId: string, channelId: string): Promise<void> {
+        await this.session.bot.deleteMessage(channelId, messageId);
+    }
+    
+    async muteMember(userId: string, channelId: string, durationMinutes: number): Promise<void> {
+        const durationMs = durationMinutes * 60 * 1000;
+        await this.session.bot.muteGuildMember(channelId, userId, durationMs);
     }
 }
 
@@ -159,5 +209,58 @@ export class OneBotPlatform extends PlatformAdapter {
             unfriendly: memberInfo.unfriendly,
             user_id: String(memberInfo.user_id)
         };
+    }
+    
+    async executeCommand(command: string, channelId: string): Promise<void> {
+        if (channelId === this.session.channelId) {
+            await this.session.execute(command);
+        } else {
+            await this.session.bot.sendMessage(channelId, h("execute", {}, command));
+        }
+    }
+    
+    async createReaction(messageId: string, emojiId: number): Promise<any> {
+        //@ts-ignore
+        return this.session.onebot._request("set_msg_emoji_like", {
+            message_id: messageId,
+            emoji_id: emojiId,
+        });
+    }
+    
+    async setEssenceMessage(messageId: string): Promise<any> {
+        //@ts-ignore
+        return this.session.onebot._request("set_essence_msg", { message_id: messageId });
+    }
+    
+    async sendPoke(userId: string, channelId: string): Promise<void> {
+        if (!channelId.startsWith("private:")) {
+        	//@ts-ignore
+            await this.session.onebot._request("send_poke", {
+                channel: channelId,
+                group_id: channelId,
+                user_id: userId,
+            });
+        } else {
+        	//@ts-ignore
+            await this.session.onebot._request("send_poke", {
+                user_id: userId,
+            });
+        }
+    }
+    
+    async getForwardMessage(id: string): Promise<any> {
+    	//@ts-ignore
+        return this.session.onebot._request("get_forward_msg", { id });
+    }
+    
+    async deleteMessage(messageId: string, channelId: string): Promise<void> {
+    	//@ts-ignore
+        await this.session.bot.deleteMessage(channelId, messageId);
+    }
+    
+    async muteMember(userId: string, channelId: string, durationMinutes: number): Promise<void> {
+        const durationMs = durationMinutes * 60 * 1000;
+        //@ts-ignore
+        await this.session.bot.muteGuildMember(channelId, userId, durationMs);
     }
 }

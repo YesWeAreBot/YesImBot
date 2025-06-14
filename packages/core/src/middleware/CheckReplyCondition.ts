@@ -394,7 +394,7 @@ export class CheckReplyCondition extends Middleware {
 
 	private logDecision(channelId: string, userId: string, decisions: ReplyDecision[], shouldReply: boolean): void {
 		const strategyResults = decisions.map(d => 
-			`${d.strategy.substring(0, 1)}:${d.shouldReply ? '✓' : '✗'}${Math.round(d.confidence*100)}%`
+			`${d.strategy}:${d.shouldReply ? '✓' : '✗'}${Math.round(d.confidence*100)}%`
 		).join(', ');
 
 		this.ctx.logger.info(
