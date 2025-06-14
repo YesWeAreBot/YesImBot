@@ -392,13 +392,15 @@ export class CheckReplyCondition extends Middleware {
         }
     }
 
-    private logDecision(channelId: string, userId: string, decisions: ReplyDecision[], shouldReply: boolean): void {
-        const summary = decisions.map((d) => `${d.strategy}:${d.shouldReply}(${d.confidence.toFixed(2)})`).join(", ");
+	private logDecision(channelId: string, userId: string, decisions: ReplyDecision[], shouldReply: boolean): void {
+		const strategyResults = decisions.map(d => 
+			`${d.strategy.substring(0, 1)}:${d.shouldReply ? '✓' : '✗'}${Math.round(d.confidence*100)}%`
+		).join(', ');
 
-        this.ctx.logger.info(
-            `[CheckReplyCondition] channelId: ${channelId}, userId: ${userId}, ` + `strategies: [${summary}], shouldReply: ${shouldReply}`
-        );
-    }
+		this.ctx.logger.info(
+			`[CheckReplyCondition] 回复决策: ${channelId} | 用户:${userId} | 策略: ${strategyResults} | 结果: ${shouldReply ? '回复' : '不回复'}`
+		);
+	}
 
     // 清理资源
     public destroy(): void {
