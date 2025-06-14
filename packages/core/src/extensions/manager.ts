@@ -27,6 +27,8 @@ export class ToolManager extends Service {
     private loaded = false;
     private fileWatchers = new Map<string, any>();
 
+    private reloadHooks: Array<() => Promise<void>> = [];
+
     // --- 原 Registry 的属性 ---
     private tools = new Map<string, ToolDefinition<any, any, any>>();
     private extensions = new Map<string, ExtensionDefinition<any>>();
@@ -42,6 +44,11 @@ export class ToolManager extends Service {
         });
         ctx.on("dispose", () => this.cleanup());
     }
+
+    // 重新加载钩子
+ 	public addReloadHook(hook: () => Promise<void>) {
+   		this.reloadHooks.push(hook);
+ 	}
 
     // --- 扩展加载逻辑 ---
 
@@ -274,11 +281,18 @@ export class ToolManager extends Service {
     //     }
     // }
 
-    async reloadExtensions(): Promise<void> {
-        this.ctx.logger.info("开始重新加载所有扩展...");
-        await this.cleanup();
-        await this.loadExtensions();
-    }
+
+	async reloadExtensions(): Promise<void> {
+    	this.ctx.logger.info("开始重新加载所有扩展...");
+      	await this.cleanup();
+      	await this.loadExtensions();
+
+      	// 执行所有重新加载钩子
+      	for (const hook of this.reloadHooks) {
+          	await hook();
+     	}
+      	this.ctx.logger.info("扩展重新加载完成");
+  	}
 
     private async cleanup(): Promise<void> {
         this.ctx.logger.info("开始清理资源...");

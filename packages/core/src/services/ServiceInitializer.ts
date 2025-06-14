@@ -66,18 +66,29 @@ export class ServiceInitializer {
         });
     }
 
+
     private registerTools(): void {
-        const toolManager: ToolManager = this.container.get(SERVICE_TOKENS.TOOL_MANAGER);
+     	const toolManager: ToolManager = this.container.get(SERVICE_TOKENS.TOOL_MANAGER);
 
-        // 注册发送消息工具
-        toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
+      	// 添加重新加载钩子
+      	toolManager.addReloadHook(async () => {
+          	this.ctx.logger.info("[ServiceInitializer] 重新注册核心工具...");
+          	toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
 
-        // 注册查看图片工具（如果未启用多模态）
-        if (!this.config.Multimodal.Enabled) {
-            const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
-            toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
-        }
-    }
+          	if (!this.config.Multimodal.Enabled) {
+              	const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
+              	toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
+          	}
+      	});
+
+      	// 初始注册
+     	toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
+
+      	if (!this.config.Multimodal.Enabled) {
+          	const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
+          	toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
+      	}
+  	}
 
     private createSendMessageTool(config: Config["Chat"]) {
         const separator = "\u200B\u200C\u200B";
