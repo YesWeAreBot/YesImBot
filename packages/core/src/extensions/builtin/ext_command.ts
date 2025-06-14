@@ -1,4 +1,4 @@
-import { h, Schema } from "koishi";
+import { Schema } from "koishi";
 
 import { isEmpty } from "../../utils/string";
 import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
@@ -30,13 +30,13 @@ const ExecuteTool = createTool({
     // ... 其他代码保持不变 ...
 
     execute: async ({ cmd, channel }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
 
         if (isEmpty(cmd)) return Failed("cmd is required");
         try {
             const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
-            await platformAdapter.executeCommand(cmd, targetChannel);
-            
+            await platform.executeCommand(cmd, targetChannel);
+
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]执行了指令: ${cmd}`);
             return Success();
         } catch (e) {

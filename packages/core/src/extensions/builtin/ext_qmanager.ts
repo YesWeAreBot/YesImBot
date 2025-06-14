@@ -10,10 +10,10 @@ export const DeleteMsg = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ message, channel }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(message)) throw new Error("message is required");
         try {
-            await platformAdapter.deleteMessage(message, channel);
+            await platform.deleteMessage(message, channel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]撤回了消息: ${message}`);
             return Success();
         } catch (e) {
@@ -32,10 +32,10 @@ export const BanUser = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ user_id, duration, channel }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(user_id)) throw new Error("user_id is required");
         try {
-            await platformAdapter.muteMember(user_id, duration, channel);
+            await platform.muteMember(user_id, duration, channel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]在频道 ${channel} 禁言用户: ${user_id}`);
             return Success();
         } catch (e) {
