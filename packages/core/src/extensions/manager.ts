@@ -45,10 +45,10 @@ export class ToolManager extends Service {
         ctx.on("dispose", () => this.cleanup());
     }
 
-    // 重新加载钩子
- 	public addReloadHook(hook: () => Promise<void>) {
-   		this.reloadHooks.push(hook);
- 	}
+	// 重新加载钩子
+	public addReloadHook(hook: () => Promise<void>) {
+		this.reloadHooks.push(hook);
+	}
 
     // --- 扩展加载逻辑 ---
 
