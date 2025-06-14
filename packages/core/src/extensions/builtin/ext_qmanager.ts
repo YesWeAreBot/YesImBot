@@ -1,10 +1,3 @@
-// ==Extension==
-// @name         QQ Group Manager
-// @version      1.0.0
-// @description  让大模型可以管理 QQ 群
-// @author       HydroGest
-// ==/Extension==
-
 import { Schema } from "koishi";
 import { isEmpty } from "../../utils/string";
 import { createTool, Failed, Success, withCommonParams } from "../helpers";
@@ -17,14 +10,10 @@ export const DeleteMsg = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ message, channel }, context) => {
-        const { koishiContext, koishiSession } = context;
+        const { koishiContext, koishiSession, platformAdapter } = context;
         if (isEmpty(message)) throw new Error("message is required");
         try {
-            if (isEmpty(channel)) {
-                await koishiSession.bot.deleteMessage(koishiSession.guildId, message);
-            } else {
-                await koishiSession.bot.deleteMessage(channel, message);
-            }
+            await platformAdapter.deleteMessage(message, channel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]撤回了消息: ${message}`);
             return Success();
         } catch (e) {
@@ -43,14 +32,10 @@ export const BanUser = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ user_id, duration, channel }, context) => {
-        const { koishiContext, koishiSession } = context;
+        const { koishiContext, koishiSession, platformAdapter } = context;
         if (isEmpty(user_id)) throw new Error("user_id is required");
         try {
-            if (isEmpty(channel)) {
-                await koishiSession.bot.muteGuildMember(koishiSession.guildId, user_id, duration ? Number(duration) * 60000 : 10 * 60000);
-            } else {
-                await koishiSession.bot.muteGuildMember(channel, user_id, duration ? Number(duration) * 60000 : 10 * 60000);
-            }
+            await platformAdapter.muteMember(user_id, duration, channel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]在频道 ${channel} 禁言用户: ${user_id}`);
             return Success();
         } catch (e) {

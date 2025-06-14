@@ -86,7 +86,8 @@ export class DatabaseStorageMiddleware extends Middleware {
                 timestamp: new Date(session.timestamp),
             };
             await this.ctx.database.create(MESSAGE_TABLE, message);
-            this.ctx.logger.info(`Message Received: ${content}`);
+			this.ctx.logger.info(`[DB] [${session.channelId}] [${session.author.id}] 收到消息: ${content.substring(0, 50)}${content.length > 50 ? "..." : ""}`);
+
             return message;
         }
         return null;

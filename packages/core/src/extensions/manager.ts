@@ -225,7 +225,7 @@ export class ToolManager extends Service {
 
     // --- 工具执行与管理 ---
 
-    getTool(name: string): ExecutableTool | undefined {
+	getTool(name: string): ExecutableTool | undefined {
         const definition = this.getToolDefinition(name);
         if (!definition) return undefined;
 
@@ -235,12 +235,12 @@ export class ToolManager extends Service {
 
         const baseContext: Partial<ToolContext> = {
             koishiContext: this.ctx,
-            logger: this.ctx.logger.extend(name), // 为每个工具提供带前缀的子logger
+            logger: this.ctx.logger.extend(name),
             extensionConfig,
         };
         return defineExecutableTool(definition, baseContext, extensionMetadata);
     }
-
+    
     getTools(): ExecutableTool[] {
         return this.getAllToolDefinitions().map((def) => this.getTool(def.metadata.name)!);
     }
