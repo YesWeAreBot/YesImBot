@@ -12,8 +12,9 @@ export const DeleteMsg = createTool({
     execute: async ({ message, channel }, context) => {
         const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(message)) throw new Error("message is required");
+        const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {
-            await platform.deleteMessage(message, channel);
+            await platform.deleteMessage(message, targetChannel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]撤回了消息: ${message}`);
             return Success();
         } catch (e) {
@@ -34,8 +35,9 @@ export const BanUser = createTool({
     execute: async ({ user_id, duration, channel }, context) => {
         const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(user_id)) throw new Error("user_id is required");
+        const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {
-            await platform.muteMember(user_id, duration, channel);
+            await platform.muteMember(user_id, targetChannel, duration);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]在频道 ${channel} 禁言用户: ${user_id}`);
             return Success();
         } catch (e) {

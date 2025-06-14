@@ -70,8 +70,9 @@ const Poke = createTool({
     execute: async ({ user_id, channel }, context) => {
         const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(String(user_id))) return Failed("user_id is required");
+        const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {
-            await platform.sendPoke(user_id, channel);
+            await platform.sendPoke(user_id, targetChannel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]戳了戳 ${user_id}`);
             return Success();
         } catch (e) {
