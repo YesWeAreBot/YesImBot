@@ -126,11 +126,6 @@ export class MCPManager {
                     description: "Deep inner monologue private to you only.",
                 },
                 ...tool.inputSchema.properties,
-                request_heartbeat: {
-                    type: "boolean",
-                    description:
-                        "Request an immediate heartbeat after function execution. Set to `true` if you want to send a follow-up message or run a follow-up function.",
-                },
             },
         };
 
@@ -169,23 +164,24 @@ export class MCPManager {
 
             if (timer) clearTimeout(timer);
 
-            if (result.isError) {
-                this.logger.error(`工具执行失败: ${result.error}`);
-                return { success: false, error: result.error };
-            }
-
             // 处理返回内容
             let content = "";
             if (Array.isArray(result.content)) {
                 content = result.content
                     .map((item) => {
                         if (item.type === "text") return item.text;
-                        if (item.type === "json") return JSON.stringify(item.json);
-                        return JSON.stringify(item);
+                        else if (item.type === "json") return JSON.stringify(item.json);
+                        else return JSON.stringify(item);
                     })
                     .join("");
             } else {
                 content = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
+            }
+
+            if (result.isError) {
+                const errorMsg = result.error || content;
+                this.logger.error(`工具执行失败: ${errorMsg}`);
+                return { success: false, error: errorMsg };
             }
 
             this.logger.success(`工具 ${toolName} 执行成功`);

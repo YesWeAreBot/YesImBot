@@ -44,6 +44,8 @@ export interface GroupInfo {
  */
 export abstract class PlatformAdapter {
 
+    get name() { return this.session.platform }
+
     constructor(protected session: Session) { }
     /**
      * 获取群信息。
@@ -56,27 +58,27 @@ export abstract class PlatformAdapter {
      * @param userId 用户ID
      */
     abstract getUserInfo(userId: string): Promise<UserInfo>;
-    
+
     abstract getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo>;
-    
+
     // 执行指令
     abstract executeCommand(command: string, channelId: string): Promise<void>;
-    
+
     // 添加表态
     abstract createReaction(messageId: string, emojiId: number): Promise<any>;
-    
+
     // 设置精华消息
     abstract setEssenceMessage(messageId: string): Promise<any>;
-    
+
     // 发送戳一戳
     abstract sendPoke(userId: string, channelId: string): Promise<void>;
-    
+
     // 获取转发消息
     abstract getForwardMessage(id: string): Promise<any>;
-    
+
     // 撤回消息
     abstract deleteMessage(messageId: string, channelId: string): Promise<void>;
-    
+
     // 禁言用户
     abstract muteMember(userId: string, channelId: string, durationMinutes: number): Promise<void>;
 }
@@ -94,7 +96,7 @@ export class DefaultPlatform extends PlatformAdapter {
             avatar: groupInfo.avatar,
         }
     }
-    
+
     async getUserInfo(userId: string): Promise<UserInfo> {
         const userInfo = await this.session.bot.getUser(userId);
         return {
@@ -103,7 +105,7 @@ export class DefaultPlatform extends PlatformAdapter {
             avatar: userInfo.avatar,
         }
     }
-    
+
     async getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo> {
         //@ts-ignore
         const memberInfo = await this.session.bot.getGuildMember(groupId, userId);
@@ -115,31 +117,31 @@ export class DefaultPlatform extends PlatformAdapter {
             user_id: userId
         }
     }
-    
+
     async executeCommand(command: string, channelId: string): Promise<void> {
         await this.session.execute(command);
     }
-    
+
     async createReaction(messageId: string, emojiId: number): Promise<any> {
         throw new Error("Not implemented in DefaultPlatform");
     }
-    
+
     async setEssenceMessage(messageId: string): Promise<any> {
         throw new Error("Not implemented in DefaultPlatform");
     }
-    
+
     async sendPoke(userId: string, channelId: string): Promise<void> {
         throw new Error("Not implemented in DefaultPlatform");
     }
-    
+
     async getForwardMessage(id: string): Promise<any> {
         throw new Error("Not implemented in DefaultPlatform");
     }
-    
+
     async deleteMessage(messageId: string, channelId: string): Promise<void> {
         await this.session.bot.deleteMessage(channelId, messageId);
     }
-    
+
     async muteMember(userId: string, channelId: string, durationMinutes: number): Promise<void> {
         const durationMs = durationMinutes * 60 * 1000;
         await this.session.bot.muteGuildMember(channelId, userId, durationMs);
@@ -178,7 +180,7 @@ export class OneBotPlatform extends PlatformAdapter {
             age: userInfo.age,
         }
     }
-    
+
     async getGroupMemberInfo(userId: string, groupId: string): Promise<GroupMemberInfo> {
         //@ts-ignore
         const memberInfo = await this.session.onebot.getGroupMemberInfo(groupId, userId, false);
@@ -210,7 +212,7 @@ export class OneBotPlatform extends PlatformAdapter {
             user_id: String(memberInfo.user_id)
         };
     }
-    
+
     async executeCommand(command: string, channelId: string): Promise<void> {
         if (channelId === this.session.channelId) {
             await this.session.execute(command);
@@ -218,7 +220,7 @@ export class OneBotPlatform extends PlatformAdapter {
             await this.session.bot.sendMessage(channelId, h("execute", {}, command));
         }
     }
-    
+
     async createReaction(messageId: string, emojiId: number): Promise<any> {
         //@ts-ignore
         return this.session.onebot._request("set_msg_emoji_like", {
@@ -226,12 +228,12 @@ export class OneBotPlatform extends PlatformAdapter {
             emoji_id: emojiId,
         });
     }
-    
+
     async setEssenceMessage(messageId: string): Promise<any> {
         //@ts-ignore
         return this.session.onebot._request("set_essence_msg", { message_id: messageId });
     }
-    
+
     async sendPoke(userId: string, channelId: string): Promise<void> {
         if (!channelId.startsWith("private:")) {
         	//@ts-ignore
@@ -247,17 +249,17 @@ export class OneBotPlatform extends PlatformAdapter {
             });
         }
     }
-    
+
     async getForwardMessage(id: string): Promise<any> {
     	//@ts-ignore
         return this.session.onebot._request("get_forward_msg", { id });
     }
-    
+
     async deleteMessage(messageId: string, channelId: string): Promise<void> {
     	//@ts-ignore
         await this.session.bot.deleteMessage(channelId, messageId);
     }
-    
+
     async muteMember(userId: string, channelId: string, durationMinutes: number): Promise<void> {
         const durationMs = durationMinutes * 60 * 1000;
         //@ts-ignore

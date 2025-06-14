@@ -1,15 +1,13 @@
-import { Context, Random, Session } from "koishi";
+import { Context, Logger, Random } from "koishi";
 import { Failed, ToolCallResult } from "../extensions";
+import { ScenarioManager } from "../services/scenario/ScenarioManager";
 import { Interaction, INTERACTION_TABLE } from "../types/model";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
-import { ScenarioManager } from "../services/scenario/ScenarioManager";
-import { PlatformAdapter, OneBotPlatform, DefaultPlatform } from "../services/PlatformAdapter";
 
 interface FunctionTool {
     function: string;
     params: Record<string, unknown>;
-    request_heartbeat: boolean;
 }
 
 interface OutputFormat {
@@ -23,6 +21,14 @@ interface OutputFormat {
 }
 
 export class ResponseHandlingMiddleware extends Middleware {
+    // 默认配置常量
+    private static readonly DEFAULT_MAX_RETRY = 3;
+    private static readonly DEFAULT_LIFE = 3;
+    private static readonly DEFAULT_MAX_HEARTBEAT = 5;
+    private static readonly RETRY_DELAY_MS = 1500; // 重试延迟
+
+    private readonly logger: Logger;
+
     constructor(
         protected ctx: Context,
         protected services: {
@@ -36,250 +42,243 @@ export class ResponseHandlingMiddleware extends Middleware {
         }
     ) {
         super("response-handling", ctx, services, config);
+        // 为该中间件创建一个带命名空间的 logger
+        this.logger = ctx.logger("ResponseHandling");
     }
 
+    /**
+     * 中间件主执行函数
+     */
     async execute(ctx: MessageContext, next: () => Promise<void>): Promise<void> {
-        // 只在响应状态下执行
         if (ctx.state !== ConversationState.RESPONDING) {
-            return await next();
+            return next();
         }
 
-        const logger = ctx.koishiContext.logger;
-        const session = ctx.koishiSession;
-
-        // 处理LLM响应
-        const { text } = ctx.llmResponse;
-
-        let response: OutputFormat;
         try {
-            // 解析LLM响应中的JSON
-            response = this.parseResponse(text);
-        } catch (error) {
-            logger.error(`[ResponseHandling] LLM响应解析失败: ${error.message}`);
-            // 错误后重置状态
-            await ctx.transitionTo(ConversationState.IDLE);
+            const response = this._parseAndValidateResponse(ctx.llmResponse.text);
+            if (!response) {
+                this.logger.warn("LLM 响应解析失败或无效，处理中止。");
+                await this._finalizeProcessing(ctx);
+                return;
+            }
 
-            // 通过事件通知释放频道状态，而不是直接调用
-            ctx.koishiContext.emit("channel:processing:release", session.channelId);
+            this._logThoughts(response.thoughts);
+            await this._processActions(ctx, response.actions);
+
+            if (response.request_heartbeat) {
+                await this._handleHeartbeat(ctx);
+            } else {
+                await next();
+                await this._finalizeProcessing(ctx);
+            }
+        } catch (error) {
+            this.logger.error("在处理LLM响应时发生未知错误: %s", error.message);
+            this.logger.error(error.stack);
+            await this._finalizeProcessing(ctx); // 保证即使出错也能释放频道
+        }
+    }
+
+    /**
+     * 解析并验证 LLM 的 JSON 响应。
+     * @returns 解析后的数据，如果无效则返回 null。
+     */
+    private _parseAndValidateResponse(text: string): OutputFormat | null {
+        try {
+            const jsonObjects = this._extractJson(text);
+            if (!jsonObjects || jsonObjects.length === 0) {
+                throw new Error("响应中未找到有效的 JSON 内容。");
+            }
+
+            // 通常我们只关心第一个有效的结构化输出
+            const response = jsonObjects[0] as OutputFormat;
+
+            // 基本的结构验证
+            if (!response.thoughts || !response.actions) {
+                throw new Error("JSON 结构缺少 'thoughts' 或 'actions' 字段。");
+            }
+            for (const action of response.actions) {
+                if (!action.function || typeof action.params !== "object") {
+                    throw new Error("Action 格式错误，必须包含 'function' 和 'params'。");
+                }
+            }
+            return response;
+        } catch (error) {
+            this.logger.warn(`[解析失败] ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * 美化并输出模型的思考过程。
+     */
+    private _logThoughts(thoughts: OutputFormat["thoughts"]): void {
+        this.logger.info("🤔 LLM 思考过程分析:");
+        this.logger.info(`  - 观察 (Observe): ${thoughts.observe}`);
+        this.logger.info(`  - 推理 (Analyze): ${thoughts.analyze_infer}`);
+        this.logger.info(`  - 计划 (Plan):    ${thoughts.plan}`);
+    }
+
+    /**
+     * 循环处理所有工具调用。
+     */
+    private async _processActions(ctx: MessageContext, actions: FunctionTool[]): Promise<void> {
+        for (const action of actions) {
+            await this.recordToolCall(ctx, action.function, action.params);
+
+            const result = await this.executeToolCall(ctx, action.function, action.params);
+
+            await this.recordToolResult(ctx, action.function, result);
+        }
+    }
+
+    /**
+     * 处理连续对话（Heartbeat）逻辑。
+     */
+    private async _handleHeartbeat(ctx: MessageContext): Promise<void> {
+        const maxHeartbeat = this.config.maxHeartbeat ?? ResponseHandlingMiddleware.DEFAULT_MAX_HEARTBEAT;
+        if (ctx.heartbeatCount >= maxHeartbeat) {
+            this.logger.warn(`❤️ Heartbeat 已达到最大限制 (${maxHeartbeat})，对话强制结束。`);
+            await this._finalizeProcessing(ctx);
             return;
         }
 
-        const { thoughts, actions, request_heartbeat } = response;
+        ctx.heartbeatCount++;
+        this.logger.info(`❤️ 触发 Heartbeat，准备进行第 ${ctx.heartbeatCount} 次连续对话...`);
 
-        logger.info(`观察到：${thoughts.observe}`);
-        logger.info(`分析：${thoughts.analyze_infer}`);
-        logger.info(`计划：${thoughts.plan}`);
+        await ctx.transitionTo(ConversationState.PROCESSING);
 
-        // 处理工具调用
-        for (const func of actions) {
-            let { function: functionName, params, request_heartbeat } = func;
+        // 重新进入 LLM 处理流程
+        const llmMiddlewareIndex = this.services.middlewareManager.findIndex("llm-processing");
+        await this.services.middlewareManager.executeFrom(ctx, llmMiddlewareIndex);
+    }
 
-            let channel_id = params?.channel_id;
-            if (!channel_id) {
-                channel_id = session.channelId;
-            }
-
-            // 记录工具调用
-            await this.recordToolCall(ctx.koishiContext, session, functionName, params);
-
-            const result = await this.executeToolCall(
-                ctx.koishiContext,
-                ctx.koishiSession,
-                functionName,
-                params,
-                this.config?.maxRetry || 0
-            );
-
-            // 记录工具结果
-            await this.recordToolResult(ctx.koishiContext, session, functionName, result);
-        }
-
-        // 如果需要继续对话 (heartbeat)
-        if (request_heartbeat) {
-            const maxHeartbeat = this.config?.maxHeartbeat || 5;
-
-            if (ctx.heartbeatCount >= maxHeartbeat) {
-                ctx.koishiContext.logger.warn(`[ResponseHandling] Heartbeat触发次数已达到最大限制 (${maxHeartbeat})，停止连续对话`);
-            } else {
-                ctx.heartbeatCount++;
-                ctx.koishiContext.logger.info(`[ResponseHandling] 触发heartbeat连续对话，当前次数: ${ctx.heartbeatCount}/${maxHeartbeat}`);
-                await ctx.transitionTo(ConversationState.PROCESSING);
-
-                // 重新进入 LLM 处理流程
-                await this.services.middlewareManager.executeFrom(ctx, this.services.middlewareManager.findIndex("llm-processing"));
-                return;
-            }
-        }
-
-        // 继续处理链
-        await next();
-
-        // 处理完成后重置状态
+    /**
+     * 结束处理流程，重置状态并释放频道。
+     */
+    private async _finalizeProcessing(ctx: MessageContext): Promise<void> {
         await ctx.transitionTo(ConversationState.IDLE);
         ctx.heartbeatCount = 0;
-
-        // 通过事件通知释放频道状态
-        ctx.koishiContext.emit("channel:processing:release", session.channelId);
-    }
-
-    // 解析LLM响应，提取函数调用信息
-    private parseResponse(text: string): OutputFormat {
-        let response: OutputFormat;
-        let actions: FunctionTool[];
-        try {
-            [response] = extractJson(text.trim()) || [];
-            actions = response?.actions || [];
-        } catch (error) {
-            throw new Error(`解析响应失败: ${error.message}`);
-        }
-        if (!response || actions?.length == 0) {
-            throw new Error("未解析到有效的函数调用响应");
-        }
-
-        // 验证解析结果的格式
-        for (const func of actions) {
-            if (!func || typeof func !== "object" || !func.function || !func.params) {
-                throw new Error("响应格式错误：每个函数调用必须包含 'function' 和 'params' 字段。");
-            }
-        }
-
-        return response;
-    }
-
-    async executeToolCall(
-        koishiContext: Context,
-        koishiSession: Session,
-        functionName: string,
-        params: Record<string, unknown>,
-        maxRetry: number
-    ): Promise<ToolCallResult> {
-        function stringify(args: Record<string, unknown>): string {
-            let result = [];
-            for (let key in args) {
-                result.push(`${key}="${typeof args[key] === "string" ? args[key] : JSON.stringify(args[key])}"`);
-            }
-            return `${result.join(", ")}`;
-        }
-        const toolManager = koishiContext["yesimbot.tool"];
-        try {
-            let platformAdapter: PlatformAdapter;
-			if (koishiSession.platform === 'onebot') {
-				platformAdapter = new OneBotPlatform(koishiSession);
-			} else {
-				platformAdapter = new DefaultPlatform(koishiSession);
-			}
-            const tool = toolManager.getTool(functionName);
-            if (!tool) {
-                koishiContext.logger.warn(`Tool ${functionName} not found`);
-                return Failed(`Tool ${functionName} not found`);
-            }
-            const context = { koishiContext, koishiSession, platformAdapter };
-            koishiContext.logger.info(`→ Tool Call: ${functionName}(${stringify(params)})`);
-            const result = await tool.execute(params, context);
-            if (!result.success && maxRetry > 0) {
-                koishiContext.logger.info(`Tool ${functionName} failed, retrying...`);
-                // 递归重试
-                return await this.executeToolCall(koishiContext, koishiSession, functionName, params, maxRetry - 1);
-            }
-            koishiContext.logger.info(`← Tool Return: ${result ? JSON.stringify(result) : "void"}`);
-            return result;
-        } catch (error) {
-            koishiContext.logger.error(`Error executing tool ${functionName}: ${error.message}`);
-            koishiContext.logger.error((error as Error).stack);
-            return Failed(error.message);
-        }
+        ctx.koishiContext.emit("channel:processing:release", ctx.koishiSession.channelId);
+        this.logger.info("🚦 频道状态已重置为 IDLE，处理流程结束。");
     }
 
     /**
-     * 记录工具调用。
-     * @param koishiContext Koishi Context
-     * @param koishiSession Koishi Session
-     * @param functionName 工具函数名称
-     * @param params 调用参数
+     * 执行单个工具调用，包含优化的重试逻辑。
      */
-    private async recordToolCall(
-        koishiContext: Context,
-        koishiSession: Session,
-        functionName: string,
-        params: Record<string, unknown>
-    ): Promise<void> {
+    async executeToolCall(ctx: MessageContext, functionName: string, params: Record<string, unknown>): Promise<ToolCallResult> {
+        const toolManager = this.ctx["yesimbot.tool"];
+        const tool = toolManager.getTool(functionName);
+
+        if (!tool) {
+            this.logger.warn(`[❌ Failed] 工具 '${functionName}' 未找到。`);
+            return Failed(`Tool ${functionName} not found`);
+        }
+
+        const maxRetry = this.config.maxRetry ?? ResponseHandlingMiddleware.DEFAULT_MAX_RETRY;
+        let lastResult: ToolCallResult = Failed("Tool call did not execute.");
+
+        const stringifyParams = Object.entries(params)
+            .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+            .join(", ");
+
+        this.logger.info(`[⚙️ Action] → 调用工具: ${functionName}(${stringifyParams})`);
+
+        for (let attempt = 1; attempt <= maxRetry + 1; attempt++) {
+            try {
+                // 仅在重试时（非首次尝试）输出日志并等待
+                if (attempt > 1) {
+                    this.logger.info(`  - 第 ${attempt - 1}/${maxRetry} 次重试...`);
+                    await new Promise((resolve) => setTimeout(resolve, ResponseHandlingMiddleware.RETRY_DELAY_MS));
+                }
+
+                lastResult = await tool.execute(params, {
+                    koishiContext: ctx.koishiContext,
+                    koishiSession: ctx.koishiSession,
+                    platform: ctx.platform,
+                });
+
+                if (lastResult.success) {
+                    this.logger.info(`[✔️ Success] ← 工具返回: ${JSON.stringify(lastResult)}`);
+                    return lastResult;
+                }
+
+                // 如果失败了，检查是否允许重试
+                if (!lastResult.retryable) {
+                    this.logger.warn(`[❌ Failed] ← 工具执行失败且不可重试: ${lastResult.error}`);
+                    return lastResult;
+                }
+
+                this.logger.warn(`[⚠️ Retryable] ← 工具执行失败，准备重试。原因: ${lastResult.error}`);
+            } catch (error) {
+                this.logger.error(`[❌ Error] 工具 '${functionName}' 执行时抛出异常: %s`, error.message);
+                this.logger.error(error.stack);
+                lastResult = Failed(`Exception during tool execution: ${error.message}`);
+                // 发生异常通常不可重试
+                return lastResult;
+            }
+        }
+
+        this.logger.error(`[❌ Failed] ← 工具 '${functionName}' 在 ${maxRetry} 次重试后仍然失败。`);
+        return lastResult;
+    }
+
+    private async recordToolCall(ctx: MessageContext, functionName: string, params: Record<string, unknown>): Promise<void> {
         const newInteraction: Interaction = {
             id: Random.id(),
-            emitter: koishiSession.messageId, // 关联到触发此LLM响应的用户消息
-            emitter_channel_id: koishiSession.channelId,
+            emitter: ctx.koishiSession.messageId,
+            emitter_channel_id: ctx.koishiSession.channelId,
             type: "tool_call",
-            functionName: functionName,
+            functionName,
             toolParams: params,
-            life: this.config?.life || 3, // 从配置中获取或默认3轮
+            life: this.config.life ?? ResponseHandlingMiddleware.DEFAULT_LIFE,
             timestamp: new Date(),
         };
-        await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
-        await this.services.scenarioManager.updateInteraction(newInteraction, koishiSession, false);
+        await this.ctx.database.create(INTERACTION_TABLE, newInteraction);
+        await this.services.scenarioManager.updateInteraction(newInteraction, ctx.koishiSession, false);
     }
 
-    /**
-     * 记录工具执行结果。
-     * @param koishiContext Koishi Context
-     * @param koishiSession Koishi Session
-     * @param functionName 工具函数名称
-     * @param result 工具执行结果
-     */
-    private async recordToolResult(
-        koishiContext: Context,
-        koishiSession: Session,
-        functionName: string,
-        result: ToolCallResult
-    ): Promise<void> {
-        // send_message 工具的结果不需要单独记录为 Interaction，因为它会直接发送消息给用户，并在 Message 表中记录
+    private async recordToolResult(ctx: MessageContext, functionName: string, result: ToolCallResult): Promise<void> {
         if (functionName === "send_message") return;
 
         const newInteraction: Interaction = {
             id: Random.id(),
-            emitter: koishiSession.messageId, // 关联到触发此LLM响应的用户消息
-            emitter_channel_id: koishiSession.channelId,
+            emitter: ctx.koishiSession.messageId,
+            emitter_channel_id: ctx.koishiSession.channelId,
             type: "tool_result",
-            functionName: functionName,
+            functionName,
             toolResult: result,
-            life: this.config?.life || 3, // 从配置中获取或默认3轮
+            life: this.config.life ?? ResponseHandlingMiddleware.DEFAULT_LIFE,
             timestamp: new Date(),
         };
-        await koishiContext.database.create(INTERACTION_TABLE, newInteraction);
-        await this.services.scenarioManager.updateInteraction(newInteraction, koishiSession, true);
+        await this.ctx.database.create(INTERACTION_TABLE, newInteraction);
+        await this.services.scenarioManager.updateInteraction(newInteraction, ctx.koishiSession, true);
     }
-}
 
-function extractJson(text: string) {
-    const results = [];
-    // 匹配```json ... ```代码块 或 裸露的 {...} 或 [...] JSON结构
-    // `[\s\S]*?` 匹配任意字符（包括换行）非贪婪模式
-    // 可能要使用贪婪模式匹配最后一个大括号
-    const jsonRegex = /```json\s*([\s\S]*?)```|(\{[\s\S]*\}|\[[\s\S]*\])/g;
+    /**
+     * 从字符串中提取 JSON 对象。
+     * (保持原实现，因为它处理了多种 JSON 格式)
+     */
+    private _extractJson(text: string): any[] {
+        const results = [];
+        const jsonRegex = /```json\s*([\s\S]*?)```|(\{[\s\S]*\}|\[[\s\S]*\])/g;
 
-    let match;
-    while ((match = jsonRegex.exec(text)) !== null) {
-        // 捕获组1匹配的是```json```块内部的内容
-        // 捕获组2匹配的是裸露的JSON对象或数组（整个 { ... } 或 [ ... ] 字符串）
-        let jsonString = match[1] ? match[1].trim() : match[2]?.trim(); // trim掉多余的空白字符
-        if (!jsonString) continue;
+        let match;
+        while ((match = jsonRegex.exec(text)) !== null) {
+            const jsonString = match[1] ? match[1].trim() : match[2]?.trim();
+            if (!jsonString) continue;
 
-        try {
-            const parsedJson = JSON.parse(jsonString);
-            // 如果是数组直接展开
-            if (Array.isArray(parsedJson)) {
-                results.push(...parsedJson);
-            } else {
-                results.push(parsedJson);
-            }
-        } catch (e) {
             try {
-                // extractJSONFromString已经返回数组，直接展开
-                const parsedJson = extractJSONFromString(jsonString, "object");
-                results.push(...parsedJson);
-            } catch (error) {
-                console.warn("Invalid JSON candidate ignored:", jsonString, e.message);
+                const parsedJson = JSON.parse(jsonString);
+                results.push(...(Array.isArray(parsedJson) ? parsedJson : [parsedJson]));
+            } catch (e) {
+                try {
+                    const parsedJson = extractJSONFromString(jsonString, "object");
+                    results.push(...parsedJson);
+                } catch (error) {
+                    this.logger.debug("无效的 JSON 候选被忽略: %s", jsonString);
+                }
             }
         }
+        return results;
     }
-
-    return results;
 }
