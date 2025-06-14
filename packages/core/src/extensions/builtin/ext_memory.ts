@@ -1,24 +1,19 @@
-// ==Extension==
-// @name         Memory
-// @version        1.0.0
-// @description    Memory service
-// @author        MiaowFISH
-// ==/Extension==
-
 import { Context, Query, Schema } from "koishi";
 import { MemoryError } from "../../memory/MemoryError";
 import { MemoryService } from "../../memory/MemoryService";
 import { ChatMessage, MESSAGE_TABLE } from "../../types/model";
-import { createTool, withCommonParams } from "../helpers";
+import { createExtension, createTool, withCommonParams } from "../helpers";
+import { ExtensionMetadata } from "../types";
 
-function getMemory(ctx: Context): MemoryService {
-    const memory = ctx["yesimbot.memory"];
-    if (!memory) throw new Error("MemoryService not available on context.");
-    return memory;
-}
+const metadata: ExtensionMetadata = {
+    name: "Memory",
+    version: "1.0.0",
+    description: "Memory service",
+    author: "MiaowFISH",
+};
 
 // 1. Core Memory Append Tool
-export const CoreMemoryAppendTool = createTool({
+const CoreMemoryAppendTool = createTool({
     name: "core_memory_append",
     description: "Appends new content to a specified sub-block of your core memory (persona or human).",
     parameters: withCommonParams({
@@ -39,7 +34,7 @@ export const CoreMemoryAppendTool = createTool({
 });
 
 // 2. Core Memory Replace Tool
-export const CoreMemoryReplaceTool = createTool({
+const CoreMemoryReplaceTool = createTool({
     name: "core_memory_replace",
     description:
         "Replaces existing content with new content in a specified sub-block of your core memory (persona or human). The old content must be an exact match.",
@@ -60,7 +55,7 @@ export const CoreMemoryReplaceTool = createTool({
 });
 
 // 3. Archival Memory Insert Tool
-export const ArchivalMemoryInsertTool = createTool({
+const ArchivalMemoryInsertTool = createTool({
     name: "archival_memory_insert",
     description: "Stores new information into your archival memory for long-term storage and later retrieval.",
     parameters: withCommonParams({
@@ -81,7 +76,7 @@ export const ArchivalMemoryInsertTool = createTool({
 });
 
 // 4. Archival Memory Search Tool
-export const ArchivalMemorySearchTool = createTool({
+const ArchivalMemorySearchTool = createTool({
     name: "archival_memory_search",
     description: "Searches your archival memory for entries matching a query. Returns a list of matching entries.",
     parameters: withCommonParams({
@@ -113,7 +108,7 @@ export const ArchivalMemorySearchTool = createTool({
 });
 
 // 5. Conversation Search Tool (Recall Memory)
-export const ConversationSearchTool = createTool({
+const ConversationSearchTool = createTool({
     name: "conversation_search",
     description: "Searches your entire message history (recall memory) for past interactions based on a query.",
     parameters: withCommonParams({
@@ -161,4 +156,15 @@ export const ConversationSearchTool = createTool({
             return { success: false, error: "Failed to search conversation history." };
         }
     },
+});
+
+function getMemory(ctx: Context): MemoryService {
+    const memory = ctx["yesimbot.memory"];
+    if (!memory) throw new Error("MemoryService not available on context.");
+    return memory;
+}
+
+export default createExtension({
+    metadata,
+    tools: [CoreMemoryAppendTool, CoreMemoryReplaceTool, ConversationSearchTool, ArchivalMemoryInsertTool, ArchivalMemorySearchTool],
 });

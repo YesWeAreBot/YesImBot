@@ -1,9 +1,17 @@
 import { Schema } from "koishi";
 import { ImageProcessor } from "../../utils/imageProcessor";
 import { isEmpty } from "../../utils/string";
-import { createTool, Failed, Success, withCommonParams } from "../helpers";
+import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
+import { ExtensionMetadata } from "../types";
 
-export const Reaction = createTool({
+const metadata: ExtensionMetadata = {
+    name: "Interactions",
+    version: "1.1.0",
+    description: "允许大模型在聊群内进行交互",
+    author: "HydroGest",
+};
+
+const Reaction = createTool({
     metadata: {
         name: "reaction-create",
         description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
@@ -13,10 +21,10 @@ export const Reaction = createTool({
         emoji_id: Schema.number().description("表态编号"),
     }),
     execute: async ({ message_id, emoji_id }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
-            await platformAdapter.createReaction(message_id, emoji_id);
+            await platform.createReaction(message_id, emoji_id);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success();
         } catch (e) {
@@ -26,7 +34,7 @@ export const Reaction = createTool({
     },
 });
 
-export const Essence = createTool({
+const Essence = createTool({
     metadata: {
         name: "essence-create",
         description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
@@ -36,10 +44,10 @@ export const Essence = createTool({
         message_id: Schema.string().description("消息 ID"),
     }),
     execute: async ({ message_id }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(String(message_id))) return Failed("message_id is required");
         try {
-            await platformAdapter.setEssenceMessage(message_id);
+            await platform.setEssenceMessage(message_id);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
         } catch (e) {
@@ -49,7 +57,7 @@ export const Essence = createTool({
     },
 });
 
-export const Poke = createTool({
+const Poke = createTool({
     metadata: {
         name: "send-poke",
         description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
@@ -60,10 +68,10 @@ export const Poke = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ user_id, channel }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
         if (isEmpty(String(user_id))) return Failed("user_id is required");
         try {
-            await platformAdapter.sendPoke(user_id, channel);
+            await platform.sendPoke(user_id, channel);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]戳了戳 ${user_id}`);
             return Success();
         } catch (e) {
@@ -73,7 +81,7 @@ export const Poke = createTool({
     },
 });
 
-export const GetForwardMsg = createTool({
+const GetForwardMsg = createTool({
     metadata: {
         name: "get_forward_msg",
         description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
@@ -83,9 +91,9 @@ export const GetForwardMsg = createTool({
         id: Schema.string().description("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
     }),
     execute: async ({ id }, context) => {
-        const { koishiContext, koishiSession, platformAdapter } = context;
+        const { koishiContext, koishiSession, platform } = context;
         try {
-            const result = await platformAdapter.getForwardMessage(id);
+            const result = await platform.getForwardMessage(id);
             const formattedResult = await formatForwardMessage(result, koishiContext);
 
             context.koishiContext.logger.info(`Bot[${koishiSession.selfId}]获取转发消息 ${id} 成功`);
@@ -147,3 +155,8 @@ async function formatForwardMessage(apiResponse: any, ctx: any): Promise<string>
         return "消息格式化失败";
     }
 }
+
+export default createExtension({
+    metadata,
+    tools: [Reaction, Essence, Poke, GetForwardMsg],
+});
