@@ -57,7 +57,7 @@ export interface ToolContext<TConfig = any> {
     /** 该工具所属扩展的配置 */
     extensionConfig: TConfig;
     /** 平台适配器 */
-    platformAdapter: PlatformAdapter;
+    platform: PlatformAdapter;
 }
 
 /**
@@ -70,6 +70,8 @@ export interface ToolCallResult<TResult = any> {
     result?: TResult;
     /** 错误信息 */
     error?: string;
+    /** 是否可重试 */
+    retryable?: boolean;
     /** 附加元数据，如执行时间等 */
     metadata?: Record<string, any>;
 }

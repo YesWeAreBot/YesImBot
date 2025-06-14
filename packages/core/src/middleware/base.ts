@@ -1,5 +1,6 @@
 import { Context, Session } from "koishi";
 import type { GenerateTextResult } from "xsai";
+import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "../services/PlatformAdapter";
 import { Scenario } from "../services/scenario/Scenario";
 
 /**
@@ -31,15 +32,24 @@ export class MessageContext {
 
     public currentScenario: Scenario;
 
+    public platform: PlatformAdapter;
+
     constructor(
         // Koishi上下文对象
         public koishiContext: Context,
         // Koishi会话对象
         public koishiSession: Session,
 
-        public allowedChannels: string[],
+        public allowedChannels: string[]
     ) {
         this.isMentioned = koishiSession.stripped.atSelf;
+        let platformAdapter: PlatformAdapter;
+        if (koishiSession.platform === "onebot") {
+            platformAdapter = new OneBotPlatform(koishiSession);
+        } else {
+            platformAdapter = new DefaultPlatform(koishiSession);
+        }
+        this.platform = platformAdapter;
     }
 
     /**
