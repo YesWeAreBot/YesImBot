@@ -89,7 +89,7 @@ export class ServiceInitializer {
 	}
 
     private createSendMessageTool(config: Config["Chat"]) {
-        const separator = "\u200B\u200C\u200B";
+        const separator = "<sep/>";
         return createTool({
             metadata: {
                 name: "send_message",
