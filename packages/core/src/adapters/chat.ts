@@ -105,7 +105,7 @@ export class ChatModel {
                 // },
                 onChunk() {
                     if (!streamStart) {
-                        option.onStreamStart();
+                        option?.onStreamStart();
                         streamStart = true;
                     }
                 },
