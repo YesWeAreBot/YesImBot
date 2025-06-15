@@ -130,7 +130,15 @@ export interface ExecutableTool<TParams extends Schema<any> = any, TReturns = an
     function: {
         name: string;
         description: string;
-        parameters: Record<string, unknown>;
+        parameters: {
+            properties: {
+                [key: string]: {
+                    type: string;
+                    description: string;
+                    required?: boolean;
+                };
+            };
+        };
     };
     execute: (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => Promise<ToolCallResult<TReturns>>;
 }

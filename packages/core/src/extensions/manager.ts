@@ -10,7 +10,7 @@ import {
     ToolError,
     ToolErrorType,
     ToolManagerConfig,
-    ToolRegistrationOptions
+    ToolRegistrationOptions,
 } from "./types";
 import { getExtensionFiles } from "./utils";
 
@@ -45,10 +45,10 @@ export class ToolManager extends Service {
         ctx.on("dispose", () => this.cleanup());
     }
 
-	// 重新加载钩子
-	public addReloadHook(hook: () => Promise<void>) {
-		this.reloadHooks.push(hook);
-	}
+    // 重新加载钩子
+    public addReloadHook(hook: () => Promise<void>) {
+        this.reloadHooks.push(hook);
+    }
 
     // --- 扩展加载逻辑 ---
 
@@ -225,7 +225,7 @@ export class ToolManager extends Service {
 
     // --- 工具执行与管理 ---
 
-	getTool(name: string): ExecutableTool | undefined {
+    getTool(name: string): ExecutableTool | undefined {
         const definition = this.getToolDefinition(name);
         if (!definition) return undefined;
 
@@ -240,7 +240,7 @@ export class ToolManager extends Service {
         };
         return defineExecutableTool(definition, baseContext, extensionMetadata);
     }
-    
+
     getTools(): ExecutableTool[] {
         return this.getAllToolDefinitions().map((def) => this.getTool(def.metadata.name)!);
     }
@@ -281,18 +281,17 @@ export class ToolManager extends Service {
     //     }
     // }
 
+    async reloadExtensions(): Promise<void> {
+        this.ctx.logger.info("开始重新加载所有扩展...");
+        await this.cleanup();
+        await this.loadExtensions();
 
-	async reloadExtensions(): Promise<void> {
-    	this.ctx.logger.info("开始重新加载所有扩展...");
-      	await this.cleanup();
-      	await this.loadExtensions();
-
-      	// 执行所有重新加载钩子
-      	for (const hook of this.reloadHooks) {
-          	await hook();
-     	}
-      	this.ctx.logger.info("扩展重新加载完成");
-  	}
+        // 执行所有重新加载钩子
+        for (const hook of this.reloadHooks) {
+            await hook();
+        }
+        this.ctx.logger.info("扩展重新加载完成");
+    }
 
     private async cleanup(): Promise<void> {
         this.ctx.logger.info("开始清理资源...");
@@ -340,7 +339,7 @@ export class ToolManager extends Service {
         }
 
         const tool = defineExecutableTool(definition);
-        const properties = (tool.function.parameters?.properties as Record<string, any>) || {};
+        const properties = tool.function.parameters.properties;
 
         const stringifyProperties = (props: Record<string, any>): string => {
             return Object.entries(props)

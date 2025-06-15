@@ -84,7 +84,18 @@ export function defineExecutableTool<TParams extends Schema<any>, TReturns = any
         if (definition.parameters && typeof definition.parameters === "object" && "properties" in definition.parameters) {
             parametersJsonSchema = definition.parameters;
         } else {
-            parametersJsonSchema = (definition.parameters as Schema<any>).toJSON();
+            const properties: Record<string, unknown> = {};
+            const dict = (definition.parameters as Schema<any>).dict;
+            Object.keys(dict).forEach((key) => {
+                properties[key] = {
+                    type: dict[key].type,
+                    description: dict[key].meta.description,
+                    required: dict[key].meta.required,
+                };
+            });
+            parametersJsonSchema = {
+                properties,
+            };
         }
     } catch (error) {
         throw createToolError(
@@ -102,13 +113,22 @@ export function defineExecutableTool<TParams extends Schema<any>, TReturns = any
         function: {
             name: definition.metadata.name,
             description: definition.metadata.description,
-            parameters: parametersJsonSchema as Record<string, unknown>,
+            parameters: parametersJsonSchema,
         },
         execute: async (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => {
             const mergedContext = { ...baseContext, ...runtimeContext } as ToolContext<TConfig>;
-            // 执行逻辑...
-            // (省略了钩子以保持简洁，实际代码中应保留)
-            return definition.execute(params, mergedContext);
+            await definition?.hooks?.onBeforeExecute(params, mergedContext);
+
+            let result;
+
+            try {
+                result = await definition.execute(params, mergedContext);
+            } catch (error) {
+                await definition?.hooks?.onError(error, mergedContext);
+            } finally {
+                await definition?.hooks?.onAfterExecute(result, mergedContext);
+                return result;
+            }
         },
     };
 }
