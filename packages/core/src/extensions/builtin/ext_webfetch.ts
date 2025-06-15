@@ -19,7 +19,7 @@ export const FetchWebPage = createTool({
   Example:
     fetch_webpage("https://example.com", "text")`,
     parameters: withCommonParams({
-        url: Schema.string().description("要获取的网页URL"),
+        url: Schema.string().required().description("要获取的网页URL"),
         format: Schema.union(["html", "text"]).default("text").description("返回格式：html(原始HTML) 或 text(纯文本)"),
         max_length: Schema.number().default(5000).description("返回内容的最大长度，默认5000字符"),
         include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),

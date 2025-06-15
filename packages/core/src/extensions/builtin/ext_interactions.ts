@@ -17,8 +17,8 @@ const Reaction = createTool({
         description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
     },
     parameters: withCommonParams({
-        message_id: Schema.string().description("消息 ID"),
-        emoji_id: Schema.number().description("表态编号"),
+        message_id: Schema.string().required().description("消息 ID"),
+        emoji_id: Schema.number().required().description("表态编号"),
     }),
     execute: async ({ message_id, emoji_id }, context) => {
         const { koishiContext, koishiSession, platform } = context;
@@ -41,7 +41,7 @@ const Essence = createTool({
     },
 
     parameters: withCommonParams({
-        message_id: Schema.string().description("消息 ID"),
+        message_id: Schema.string().required().description("消息 ID"),
     }),
     execute: async ({ message_id }, context) => {
         const { koishiContext, koishiSession, platform } = context;
@@ -64,7 +64,7 @@ const Poke = createTool({
     },
 
     parameters: withCommonParams({
-        user_id: Schema.string().description("用户名称"),
+        user_id: Schema.string().required().description("用户名称"),
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async ({ user_id, channel }, context) => {
@@ -89,7 +89,7 @@ const GetForwardMsg = createTool({
     },
 
     parameters: withCommonParams({
-        id: Schema.string().description("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
+        id: Schema.string().required().description("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
     }),
     execute: async ({ id }, context) => {
         const { koishiContext, koishiSession, platform } = context;

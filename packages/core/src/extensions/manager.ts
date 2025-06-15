@@ -346,7 +346,7 @@ export class ToolManager extends Service {
                 .map(([key, value]) => {
                     const description = value?.description || "(无描述)";
                     const type = value?.type || "unknown";
-                    const required = value?.required ? " *" : "";
+                    const required = value?.required ? " *必须" : "";
                     return `    ${key} (${type}${required}): ${description}`;
                 })
                 .join("\n");
