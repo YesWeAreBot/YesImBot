@@ -10,7 +10,7 @@ export const WebSearch = createTool({
     },
 
     parameters: withCommonParams({
-        query: Schema.string().description("搜索关键词或查询内容。"),
+        query: Schema.string().required().description("搜索关键词或查询内容。"),
     }),
 
     execute: async ({ query }, context) => {
