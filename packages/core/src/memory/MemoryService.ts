@@ -104,7 +104,9 @@ export class MemoryService extends Service {
                 this.ctx.logger.info(`[Compression] Scheduled compression check every ${intervalMinutes} minutes.`);
             }
         } else {
-            this.ctx.logger.info( `No coreBlockDefaults configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.`);
+            this.ctx.logger.info(
+                `No coreBlockDefaults configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.`
+            );
         }
     }
 
@@ -148,6 +150,18 @@ export class MemoryService extends Service {
         return block;
     }
 
+    public async getProvider(): Promise<{
+        lastModified: string;
+        archivalCount: number;
+        memoryBlocks: MemoryBlock[];
+    }> {
+        return {
+            lastModified: this.lastModified.toISOString(),
+            archivalCount: await this.archivalStore.count(),
+            memoryBlocks: Array.from(this.coreMemoryBlocks.values()),
+        };
+    }
+
     public async appendToCoreMemory(label: string, content: string): Promise<string> {
         const compressibleBlocks = this.config.Compression?.CompressibleBlocks || [];
 
@@ -172,30 +186,6 @@ export class MemoryService extends Service {
         this.lastModified = new Date();
         this.ctx.logger.info(`Replaced in core memory "${label}".`);
         return `Successfully replaced content in core memory block <${label}>.`;
-    }
-
-    public async getCoreMemoryContentForPrompt(): Promise<string> {
-        const INDENT_UNIT = "  "; // 缩进单位，这里是两个空格
-        const extraBlocks = [...this.coreMemoryBlocks.values()];
-        // 渲染每个内存块的内容，并应用缩进
-        const blockContentLines = extraBlocks.map((mb) => {
-            // content 内部的每一行需要进一步缩进
-            const indentedContent = mb.content.map((line) => INDENT_UNIT.repeat(2) + line);
-            return [
-                INDENT_UNIT.repeat(1) + `<${mb.label} limit="${mb.currentSize}/${mb.limit}" lastModified="${formatDate(mb.lastModified)}">`,
-                ...indentedContent,
-                INDENT_UNIT.repeat(1) + `</${mb.label}>`,
-            ].join("\n");
-        });
-        return [
-            `### Memory [last modified: ${formatDate(this.lastModified)}]`,
-            `${await this.archivalStore.count()} total memories you created are stored in archival memory (use functions to access them)`,
-            ``, // 空行
-            `Core memory shown below (limited in size, additional information stored in archival / recall memory):`,
-            // INDENT_UNIT + `<core_memory>`, // 外层 <core_memory> 标签，一层缩进
-            ...blockContentLines, // 拼接已经缩进好的内存块内容
-            // INDENT_UNIT + `</core_memory>`, // 关闭外层 <core_memory> 标签
-        ].join("\n");
     }
 
     public async storeInArchivalMemory(content: string, metadata?: Record<string, any>): Promise<ArchivalEntry> {
@@ -224,6 +214,17 @@ export class MemoryService extends Service {
             this.ctx.logger.error(`Failed to search archival memory: ${error.message}`);
             throw new MemoryError(`Search archival memory failed`, { query, options, error });
         }
+    }
+
+    /**
+     * 提供一个方法供外部调用
+     * @param label
+     */
+    public async compression(label: string): Promise<void> {
+        const block = this.getCoreMemoryBlock(label);
+        const state = this._compressionStates.get(label);
+
+        await this._performCompression(label, block, state);
     }
 
     // 新增：检查并触发压缩（非定时）
@@ -327,17 +328,6 @@ export class MemoryService extends Service {
             this.ctx.logger.error(`[Compression] Failed to compress block ${label}: ${error.message}`);
             // 压缩失败不阻止后续操作，但会记录错误。状态不重置，以便下次检查时可能再次触发。
         }
-    }
-
-    /**
-     * 提供一个方法供外部调用
-     * @param label
-     */
-    public async compression(label: string): Promise<void> {
-        const block = this.getCoreMemoryBlock(label);
-        const state = this._compressionStates.get(label);
-
-        await this._performCompression(label, block, state);
     }
 
     protected async stop() {

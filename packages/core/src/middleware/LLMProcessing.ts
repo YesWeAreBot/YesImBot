@@ -2,7 +2,6 @@ import { Context, sleep } from "koishi";
 import { ChatModelSwitcher } from "../adapters";
 import { LLMAdapterError, LLMRequestError, LLMRetryExhaustedError, LLMTimeoutError } from "../errors";
 import { PromptBuilder } from "../prompt/PromptBuilder";
-import { ScenarioManager } from "../services/scenario/ScenarioManager";
 import { ConversationState, MessageContext, Middleware } from "./base";
 
 /**
@@ -236,9 +235,9 @@ class LLMAdapterManager {
                 if (attempt > 0) {
                     this.logger.info(`适配器切换成功，使用 ${adapterName}`);
                 }
-                
+
                 this.switchToNextAdapter();
-                
+
                 return result;
             } catch (error: any) {
                 lastError = error;
@@ -289,7 +288,6 @@ export class LLMProcessingMiddleware extends Middleware {
     constructor(
         protected ctx: Context,
         protected services: {
-            readonly scenarioManager: ScenarioManager;
             readonly chatModelSwitcher: ChatModelSwitcher;
             readonly promptBuilder: PromptBuilder;
         },
@@ -347,11 +345,6 @@ export class LLMProcessingMiddleware extends Middleware {
         }
 
         try {
-            ctx.currentScenario = await this.services.scenarioManager.getScenario(ctx.koishiSession);
-
-            // 处理所有与该频道相关的交互记录的生命周期
-            await this.services.scenarioManager.processInteractions(ctx.koishiSession.channelId);
-
             // 构建提示词
             const systemPrompt = await this.services.promptBuilder.buildSystemPrompt(ctx);
             const userPrompt = await this.services.promptBuilder.buildUserPrompt(ctx);
@@ -360,7 +353,7 @@ export class LLMProcessingMiddleware extends Middleware {
                 this.logger.debug("--- LLM System Prompt ---");
                 this.logger.debug(systemPrompt);
                 this.logger.debug("--- LLM User Prompt ---");
-                this.logger.debug(userPrompt);
+                this.logger.debug(JSON.stringify(userPrompt, null, 2));
                 this.logger.debug("--- End Prompts ---");
             }
 
@@ -385,10 +378,6 @@ export class LLMProcessingMiddleware extends Middleware {
 
             await ctx.transitionTo(ConversationState.RESPONDING);
             await next();
-
-            // LLM成功响应后的清理工作
-            await this.services.scenarioManager.setLastReplyTime(ctx.koishiSession.channelId);
-            ctx.currentScenario.clearPendingMessages();
         } catch (error: any) {
             // 处理不同类型的错误
             if (error instanceof LLMRetryExhaustedError) {

@@ -3,8 +3,7 @@ import { ModelSetting } from "./adapters/config";
 import { ToolManagerConfig } from "./extensions";
 import { defaultCompressionPrompt } from "./memory/MemoryBlock";
 import { ReplyConditionConfig } from "./middleware/CheckReplyCondition";
-import { PromptBuilderConfig, SystemBaseTemplate, ToolBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
-import { GroupInfoVisibility, MultimodalConfig } from "./services/scenario/Scenario";
+import { PromptBuilderConfig, SystemBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
 
 interface BlockConfig {
     Limit?: number;
@@ -53,13 +52,13 @@ export interface Config {
         UseModel?: [number, number];
         CustomPrompt?: string;
     };
-    Multimodal: MultimodalConfig;
+    // Multimodal: MultimodalConfig;
     ToolManagerConfig: ToolManagerConfig;
     ToolCall: {
         MaxRetry: number;
         Life: number;
     };
-    GroupInfoVisibility: GroupInfoVisibility;
+    // GroupInfoVisibility: GroupInfoVisibility;
     Task: {};
     PromptTemplate: PromptBuilderConfig;
     Debug: {
@@ -82,7 +81,7 @@ export const Config: Schema<Config> = Schema.object({
         MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
         WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
     }).description("对话行为配置"),
-    
+
     ReplyCondition: Schema.object({
         Channels: Schema.array(Schema.array(String).role("table")).description("允许回复的频道列表"),
         TestMode: Schema.boolean().default(false).description("测试模式，每条消息都会触发回复"),
@@ -208,11 +207,11 @@ export const Config: Schema<Config> = Schema.object({
             .description("自定义提示词"),
     }).description("识图设置"),
 
-    Multimodal: Schema.object({
-        Enabled: Schema.boolean().default(false),
-        ImageDetail: Schema.union(["low", "high", "auto"]).default("auto"),
-        MaxImagesPerPrompt: Schema.number().default(3),
-    }).description("多模态设置"),
+    // Multimodal: Schema.object({
+    //     Enabled: Schema.boolean().default(false),
+    //     ImageDetail: Schema.union(["low", "high", "auto"]).default("auto"),
+    //     MaxImagesPerPrompt: Schema.number().default(3),
+    // }).description("多模态设置"),
 
     ToolManagerConfig: Schema.object({
         autoLoad: Schema.boolean().default(true),
@@ -228,11 +227,11 @@ export const Config: Schema<Config> = Schema.object({
         Life: Schema.number().default(3).min(0).max(10).description("工具调用的生命周期次数"),
     }).description("工具调用管理配置"),
 
-    GroupInfoVisibility: Schema.object({
-        ShowGroupTitle: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的头衔"),
-        ShowChatLevel: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的聊天等级"),
-        ShowRole: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的群组身份"),
-    }).description("群信息可见性设置"),
+    // GroupInfoVisibility: Schema.object({
+    //     ShowGroupTitle: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的头衔"),
+    //     ShowChatLevel: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的聊天等级"),
+    //     ShowRole: Schema.boolean().default(true).description("是否允许 Bot 查看群成员的群组身份"),
+    // }).description("群信息可见性设置"),
 
     Task: Schema.object({}),
 
@@ -245,10 +244,6 @@ export const Config: Schema<Config> = Schema.object({
             .default(UserBaseTemplate)
             .role("textarea", { rows: [4, 8] })
             .description("自定义用户提示词模板"),
-        ToolTemplate: Schema.string()
-            .default(ToolBaseTemplate)
-            .role("textarea", { rows: [4, 8] })
-            .description("自定义工具提示词模板"),
     }).description("自定义提示词"),
 
     Debug: Schema.object({

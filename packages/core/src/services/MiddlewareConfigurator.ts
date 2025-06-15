@@ -9,8 +9,8 @@ import { LLMProcessingMiddleware } from "../middleware/LLMProcessing";
 import { ResponseHandlingMiddleware } from "../middleware/ResponseHandling";
 import { PromptBuilder } from "../prompt/PromptBuilder";
 import { ImageProcessor } from "../utils";
-import { ScenarioManager } from "./scenario/ScenarioManager";
 import { IServiceContainer, SERVICE_TOKENS } from "./ServiceContainer";
+import { DataManager } from "./worldstate/DataManager";
 
 /**
  * 中间件配置器
@@ -44,12 +44,12 @@ export class MiddlewareConfigurator {
 
         // 数据库存储中间件
         const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
-        const scenarioManager = this.container.get<ScenarioManager>(SERVICE_TOKENS.SCENARIO_MANAGER);
+        const dataManager = this.container.get<DataManager>(SERVICE_TOKENS.DATA_MANAGER);
 
         middlewareManager.use(
             new DatabaseStorageMiddleware(this.ctx, {
                 imageProcessor,
-                scenarioManager,
+                dataManager,
             })
         );
 
@@ -67,7 +67,6 @@ export class MiddlewareConfigurator {
                 {
                     chatModelSwitcher,
                     promptBuilder,
-                    scenarioManager,
                 },
                 {
                     debug: this.config.Debug.EnableDebug,
@@ -90,7 +89,7 @@ export class MiddlewareConfigurator {
         middlewareManager.use(
             new ResponseHandlingMiddleware(
                 this.ctx,
-                { middlewareManager, scenarioManager },
+                { middlewareManager },
                 {
                     maxRetry: this.config.ToolCall.MaxRetry,
                     life: this.config.ToolCall.Life,
@@ -102,18 +101,11 @@ export class MiddlewareConfigurator {
 
     private registerCleanupHandlers(): void {
         this.ctx.on("dispose", () => {
-            const scenarioManager = this.container.get<ScenarioManager>(SERVICE_TOKENS.SCENARIO_MANAGER);
-            scenarioManager.clearAllScenarios();
-
             const middlewareManager = this.container.get<MiddlewareManager>(SERVICE_TOKENS.MIDDLEWARE_MANAGER);
             const checkReply = middlewareManager.getMiddleware<CheckReplyCondition>("check-reply-condition");
             if (checkReply) {
                 checkReply.destroy();
             }
         });
-    }
-
-    public dispose(): void {
-        // 清理逻辑已移到各个中间件内部处理
     }
 }

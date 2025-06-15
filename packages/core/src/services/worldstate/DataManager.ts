@@ -63,10 +63,10 @@ export class DataManager extends Service {
     /**
      * 获取当前的世界状态
      */
-    async getWorldState(): Promise<WorldState> {
+    async getWorldState(allowedChannels: string[]): Promise<WorldState> {
         const activeThreshold = new Date(Date.now() - 1 * 60 * 60 * 1000);
 
-        const allChannels = await this.ctx.database.get("channel", {});
+        const allChannels = await this.ctx.database.get("channel", { id: allowedChannels });
 
         const activeChannelPromises: Promise<Channel>[] = [];
         const inactiveChannelPromises: Promise<Channel>[] = [];
@@ -85,6 +85,20 @@ export class DataManager extends Service {
             activeChannels: (await Promise.all(activeChannelPromises)).filter((c) => c !== null),
             inactiveChannels: (await Promise.all(inactiveChannelPromises)).filter((c) => c !== null),
         };
+    }
+
+    async getLastTurn(platform: string, channelId: string): Promise<TurnData> {
+        const [turn] = await this.ctx.database
+            .select("turns")
+            .where({
+                platform,
+                channelId,
+                status: "new",
+            })
+            .orderBy("startTimestamp", "desc")
+            .limit(1)
+            .execute();
+        return turn;
     }
 
     /**
@@ -119,7 +133,7 @@ export class DataManager extends Service {
             timestamp: new Date(session.timestamp),
             data: {
                 messageId: session.messageId,
-                senderId: session.userId, // 这是平台ID (pid)
+                senderId: session.userId,
                 content: session.content,
             },
         });

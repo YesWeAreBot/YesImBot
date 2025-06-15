@@ -1,7 +1,7 @@
 import { Context, Session } from "koishi";
 import type { GenerateTextResult } from "xsai";
 import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "../services/PlatformAdapter";
-import { Scenario } from "../services/scenario/Scenario";
+import type { AgentResponse } from "../services/worldstate/interfaces";
 
 /**
  * 会话状态枚举
@@ -30,7 +30,8 @@ export class MessageContext {
     // heartbeat触发次数计数器
     public heartbeatCount: number = 0;
 
-    public currentScenario: Scenario;
+    public currentTurnId: string;
+    public agentResponses: AgentResponse[] = [];
 
     public platform: PlatformAdapter;
 
@@ -50,6 +51,16 @@ export class MessageContext {
             platformAdapter = new DefaultPlatform(koishiSession);
         }
         this.platform = platformAdapter;
+
+        koishiContext["yesimbot.data"].getLastTurn(koishiSession.platform, koishiSession.channelId).then(async (turn) => {
+            if (turn) {
+                this.currentTurnId = turn.id;
+            } else {
+                const newTurn = await koishiContext["yesimbot.data"].startNewTurn(koishiSession.platform, koishiSession.channelId);
+                this.currentTurnId = newTurn.id;
+                koishiContext.logger.info(`[Turn] Started new turn: ${this.currentTurnId}`);
+            }
+        });
     }
 
     /**

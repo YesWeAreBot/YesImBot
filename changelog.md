@@ -46,6 +46,20 @@ refactor(scenario): 重构场景模块，优化代码结构和功能实现
 - 优化图片处理和消息格式化逻辑
 - 添加类型定义文件 types.ts
 - 更新相关模块的引用路径
+feat(worldstate): 实现世界状态管理服务及数据模型
+新增世界状态管理服务，包含以下核心功能：
+- 定义世界状态、频道、成员等核心数据接口
+- 实现成员和对话回合的仓库模式数据访问层
+- 提供数据管理服务用于获取频道信息和世界状态
+- 扩展Koishi数据库模型以支持新功能
+- 添加可选参数检查防止空指针异常
+refactor(core): 重构场景管理为基于回合的世界状态系统
+- 移除 ScenarioManager 及相关场景管理代码，引入 DataManager 和回合系统
+- 新增 world_state.mustache 模板用于世界状态渲染
+- 修改中间件以支持回合制交互，包括 DatabaseStorageMiddleware 和 ResponseHandlingMiddleware
+- 更新提示模板，整合回合制世界观和工具调用框架
+- 调整服务容器注册，用 DataManager 替换 ScenarioManager
+- 修改核心内存服务接口，支持新的模板渲染需求
 
 ### 3.0.0-beta.0
 feat(error-handling): 调整错误上报格式

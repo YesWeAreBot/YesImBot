@@ -367,4 +367,29 @@ export class ToolManager extends Service {
             .filter(Boolean)
             .join("\n");
     }
+
+    getToolSchemas(): {
+        name: string;
+        description: string;
+        params: {
+            key: string;
+            type: string;
+            required?: boolean;
+            description: string;
+        }[];
+    }[] {
+        return this.getAllToolDefinitions().map((toolDef) => {
+            const tool = defineExecutableTool(toolDef);
+            return {
+                name: tool.metadata.name,
+                description: tool.metadata.description,
+                params: Object.entries(tool.function.parameters.properties).map(([key, value]) => {
+                    return {
+                        key,
+                        ...value,
+                    };
+                }),
+            };
+        });
+    }
 }
