@@ -3,9 +3,7 @@ import { Config } from "../config";
 import ToolManager, { createTool, Success, withCommonParams } from "../extensions";
 import { MiddlewareManager } from "../middleware/base";
 import { PromptBuilder } from "../prompt/PromptBuilder";
-import { ChatMessage, MESSAGE_TABLE } from "../types/model";
-import { getChannelType, ImageProcessor, isEmpty } from "../utils";
-import { ScenarioManager } from "./scenario/ScenarioManager";
+import { ImageProcessor, isEmpty } from "../utils";
 import { IServiceContainer, SERVICE_TOKENS } from "./ServiceContainer";
 
 /**
@@ -36,15 +34,14 @@ export class ServiceInitializer {
             return new ImageProcessor(this.ctx);
         });
 
-        // 注册场景管理器
-        this.container.register(SERVICE_TOKENS.SCENARIO_MANAGER, () => {
-            return new ScenarioManager(this.ctx, this.config.Multimodal, this.config.GroupInfoVisibility, { SlotLimit: 30 });
+        // 注册 DataManager
+        this.container.register(SERVICE_TOKENS.DATA_MANAGER, () => {
+            return this.ctx["yesimbot.data"];
         });
 
         // 注册提示词构建器
         this.container.register(SERVICE_TOKENS.PROMPT_BUILDER, () => {
-            const scenarioManager = this.container.get<ScenarioManager>(SERVICE_TOKENS.SCENARIO_MANAGER);
-            return new PromptBuilder(this.ctx, scenarioManager, this.config.PromptTemplate, this.config.Multimodal);
+            return new PromptBuilder(this.ctx, this.config.PromptTemplate);
         });
 
         // 注册中间件管理器
@@ -66,27 +63,27 @@ export class ServiceInitializer {
         });
     }
 
-	private registerTools(): void {
-		const toolManager: ToolManager = this.container.get(SERVICE_TOKENS.TOOL_MANAGER);
+    private registerTools(): void {
+        const toolManager: ToolManager = this.container.get(SERVICE_TOKENS.TOOL_MANAGER);
 
-		// 添加重新加载钩子
-		toolManager.addReloadHook(async () => {
-			this.ctx.logger.info("[ServiceInitializer] 重新注册核心工具...");
-			toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
-			if (!this.config.Multimodal.Enabled) {
-			const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
-				toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
-			}
-		});
+        // 添加重新加载钩子
+        toolManager.addReloadHook(async () => {
+            this.ctx.logger.info("[ServiceInitializer] 重新注册核心工具...");
+            toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
+            // if (!this.config.Multimodal.Enabled) {
+            //     const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
+            //     toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
+            // }
+        });
 
-		// 初始注册
-		toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
+        // 初始注册
+        toolManager.registerTool(this.createSendMessageTool(this.config.Chat));
 
-		if (!this.config.Multimodal.Enabled) {
-			const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
-			toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
-		}
-	}
+        // if (!this.config.Multimodal.Enabled) {
+        // 	const imageProcessor = this.container.get<ImageProcessor>(SERVICE_TOKENS.IMAGE_PROCESSOR);
+        // 	toolManager.registerTool(this.createViewImageTool(imageProcessor, this.config.ImageViewer));
+        // }
+    }
 
     private createSendMessageTool(config: Config["Chat"]) {
         const separator = "<sep/>";
@@ -124,28 +121,11 @@ export class ServiceInitializer {
                     if (idx++ >= messages.length) {
                         delay = false;
                     }
-                    let messageIds = await koishiSession.sendQueued(seg);
+                    await koishiSession.sendQueued(seg);
 
-                    const selfName = koishiSession.bot.user?.name || koishiSession.bot.selfId;
-                    const selfNick = koishiSession.bot.user?.nick || selfName;
+                    // Bot's own messages are captured as 'AgentResponse' (action + observation) in the Turn.
+                    // No need to save them as separate 'message_sent' events here.
 
-                    const newMessage: ChatMessage = {
-                        messageId: messageIds[0],
-                        sender: {
-                            id: koishiSession.bot.selfId,
-                            name: selfName,
-                            nick: selfNick,
-                        },
-                        channel: {
-                            id: channel_id,
-                            type: getChannelType(channel_id),
-                        },
-                        timestamp: new Date(),
-                        content: seg,
-                    };
-                    await koishiContext.database.create(MESSAGE_TABLE, newMessage);
-                    const scenarioManager: ScenarioManager = this.container.get(SERVICE_TOKENS.SCENARIO_MANAGER);
-                    scenarioManager.updateMessage(newMessage, koishiSession, false);
                     koishiContext.logger.info(`Message Sent: ${seg}`);
                     if (delay && config.WordsPerSecond > 0) {
                         await sleep((seg.length / config.WordsPerSecond) * 1000);

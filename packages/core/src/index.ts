@@ -5,6 +5,7 @@ import Agent from "./agent";
 import { Config } from "./config";
 import ToolManager from "./extensions";
 import { CoreMemoryBlockConfig, MemoryService } from "./memory/MemoryService";
+import { DataManager } from "./services/worldstate/DataManager";
 
 declare module "koishi" {
     interface Context {
@@ -49,6 +50,9 @@ export default class YesImBot extends Service {
             coreBlockDefaults[label] = blockConfig;
         }
         ctx.plugin(MemoryService, { coreBlockDefaults, ...config.Memory });
+
+        // 注册 WorldState DataManager 服务
+        this.ctx.plugin(DataManager);
 
         ctx.on("ready", async () => {
             // 注册指令

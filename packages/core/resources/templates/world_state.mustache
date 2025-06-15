@@ -1,0 +1,57 @@
+{{#WORLD_STATE}}
+<world_state timestamp="{{timestamp}}">
+  <active_channels>
+    {{#activeChannels}}
+    <channel id="{{id}}" type="{{type}}">
+      <name>{{name}}</name>
+      <members>
+        {{#allMembers}}
+        <user id="{{id}}"{{#role}} role="{{.}}"{{/role}}>{{name}}</user>
+        {{/allMembers}}
+      </members>
+      <history>
+      {{#history}}
+        <turn id="{{id}}" status="{{status}}">
+          <events>
+          {{#events}}
+            <event type="{{type}}" timestamp="{{timestamp}}">
+              {{#actor}}<actor id="{{id}}">{{name}}</actor>{{/actor}}{{#user}}<user id="{{id}}">{{name}}</user>{{/user}}{{#messageId}}[{{.}} {{#sender}}{{name}}<{{id}}>{{/sender}}] {{content}}{{/messageId}}
+            </event>
+          {{/events}}
+          </events>
+          <responses>
+          {{#responses}}
+            <response>
+              {{#thoughts}}
+              <thoughts>
+                <obverse>{{obverse}}</obverse>
+                <analyze_infer>{{analyze_infer}}</analyze_infer>
+                <plan>{{plan}}</plan>
+              </thoughts>
+              {{/thoughts}}
+              <actions>
+              {{#actions}}
+                <action function="{{function}}" params="{{params}}"/>
+              {{/actions}}
+              </actions>
+              <observations>
+              {{#observations}}
+                <observation function="{{function}}" result="{{result}}"/>
+              {{/observations}}
+              </observations>
+            </response>
+          {{/responses}}
+          </responses>
+        </turn>
+      {{/history}}
+      </history>
+    </channel>
+    {{/activeChannels}}
+  </active_channels>
+  <inactive_channels>
+    {{#inactiveChannels}}
+    <channel_id>{{id}}</channel_id>
+    {{/inactiveChannels}}
+  </inactive_channels>
+</world_state>
+{{/WORLD_STATE}}

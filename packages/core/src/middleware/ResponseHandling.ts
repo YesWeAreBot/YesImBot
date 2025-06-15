@@ -1,7 +1,7 @@
-import { Context, Logger, Random } from "koishi";
+import { Context, Logger, randomId } from "koishi";
 import { Failed, ToolCallResult } from "../extensions";
-import { ScenarioManager } from "../services/scenario/ScenarioManager";
-import { Interaction, INTERACTION_TABLE } from "../types/model";
+import { DataManager } from "../services/worldstate/DataManager";
+import { Action, ActionResult, AgentResponse } from "../services/worldstate/interfaces";
 import { extractJSONFromString } from "../utils/parse-structured-output";
 import { ConversationState, MessageContext, Middleware, MiddlewareManager } from "./base";
 
@@ -28,11 +28,11 @@ export class ResponseHandlingMiddleware extends Middleware {
     private static readonly RETRY_DELAY_MS = 1500; // 重试延迟
 
     private readonly logger: Logger;
+    private readonly dataManager: DataManager;
 
     constructor(
         protected ctx: Context,
         protected services: {
-            readonly scenarioManager: ScenarioManager;
             readonly middlewareManager: MiddlewareManager;
         },
         protected config: {
@@ -44,6 +44,7 @@ export class ResponseHandlingMiddleware extends Middleware {
         super("response-handling", ctx, services, config);
         // 为该中间件创建一个带命名空间的 logger
         this.logger = ctx.logger("ResponseHandling");
+        this.dataManager = ctx["yesimbot.data"];
     }
 
     /**
@@ -63,7 +64,10 @@ export class ResponseHandlingMiddleware extends Middleware {
             }
 
             this._logThoughts(response.thoughts);
-            await this._processActions(ctx, response.actions);
+
+            // Process actions and build the agent response object
+            const agentResponse = await this._processActions(ctx, response.actions, response.thoughts);
+            ctx.agentResponses.push(agentResponse);
 
             if (response.request_heartbeat) {
                 await this._handleHeartbeat(ctx);
@@ -119,16 +123,42 @@ export class ResponseHandlingMiddleware extends Middleware {
     }
 
     /**
-     * 循环处理所有工具调用。
+     * 循环处理所有工具调用，并构建一个 AgentResponse 对象。
      */
-    private async _processActions(ctx: MessageContext, actions: FunctionTool[]): Promise<void> {
+    private async _processActions(ctx: MessageContext, actions: Action[], thoughts: OutputFormat["thoughts"]): Promise<AgentResponse> {
+        const observations: ActionResult[] = [];
         for (const action of actions) {
-            await this.recordToolCall(ctx, action.function, action.params);
-
             const result = await this.executeToolCall(ctx, action.function, action.params);
 
-            await this.recordToolResult(ctx, action.function, result);
+            // 保存自己发送的消息
+            // 先这样写，过后要改
+            if (action.function == "send_message") {
+                await this.ctx.database.create("channel_events", {
+                    turnId: ctx.currentTurnId,
+                    type: "message_sent",
+                    timestamp: new Date(),
+                    data: {
+                        messageId: randomId(),
+                        senderId: ctx.koishiSession.selfId,
+                        content: action.params["message"],
+                    },
+                });
+            }
+            observations.push({
+                function: action.function,
+                result: result,
+            });
         }
+
+        return {
+            thoughts: {
+                obverse: thoughts.observe,
+                analyze_infer: thoughts.analyze_infer,
+                plan: thoughts.plan,
+            },
+            actions: actions,
+            observations: observations,
+        };
     }
 
     /**
@@ -156,6 +186,14 @@ export class ResponseHandlingMiddleware extends Middleware {
      * 结束处理流程，重置状态并释放频道。
      */
     private async _finalizeProcessing(ctx: MessageContext): Promise<void> {
+        // 将本轮所有收集到的 Agent 响应写入数据库
+        for (const response of ctx.agentResponses) {
+            await this.dataManager.addAgentResponse(ctx.currentTurnId, response);
+        }
+        // 结束回合
+        await this.dataManager.endTurn(ctx.currentTurnId);
+        this.logger.info(`[Turn] Ended turn: ${ctx.currentTurnId}`);
+
         await ctx.transitionTo(ConversationState.IDLE);
         ctx.heartbeatCount = 0;
         ctx.koishiContext.emit("channel:processing:release", ctx.koishiSession.channelId);
@@ -220,38 +258,6 @@ export class ResponseHandlingMiddleware extends Middleware {
 
         this.logger.error(`[❌ Failed] ← 工具 '${functionName}' 在 ${maxRetry} 次重试后仍然失败。`);
         return lastResult;
-    }
-
-    private async recordToolCall(ctx: MessageContext, functionName: string, params: Record<string, unknown>): Promise<void> {
-        const newInteraction: Interaction = {
-            id: Random.id(),
-            emitter: ctx.koishiSession.messageId,
-            emitter_channel_id: ctx.koishiSession.channelId,
-            type: "tool_call",
-            functionName,
-            toolParams: params,
-            life: this.config.life ?? ResponseHandlingMiddleware.DEFAULT_LIFE,
-            timestamp: new Date(),
-        };
-        await this.ctx.database.create(INTERACTION_TABLE, newInteraction);
-        await this.services.scenarioManager.updateInteraction(newInteraction, ctx.koishiSession, false);
-    }
-
-    private async recordToolResult(ctx: MessageContext, functionName: string, result: ToolCallResult): Promise<void> {
-        if (functionName === "send_message") return;
-
-        const newInteraction: Interaction = {
-            id: Random.id(),
-            emitter: ctx.koishiSession.messageId,
-            emitter_channel_id: ctx.koishiSession.channelId,
-            type: "tool_result",
-            functionName,
-            toolResult: result,
-            life: this.config.life ?? ResponseHandlingMiddleware.DEFAULT_LIFE,
-            timestamp: new Date(),
-        };
-        await this.ctx.database.create(INTERACTION_TABLE, newInteraction);
-        await this.services.scenarioManager.updateInteraction(newInteraction, ctx.koishiSession, true);
     }
 
     /**

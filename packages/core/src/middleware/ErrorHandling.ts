@@ -2,13 +2,11 @@ import { Context, Session } from "koishi";
 import * as os from "os";
 import { v4 as uuidv4 } from "uuid";
 import type { GenerateTextResult } from "xsai";
-import { Scenario } from "../services/scenario/Scenario";
 import { MessageContext, Middleware } from "./base";
 
 // 1. 优化 ErrorContext 接口，增加原始错误对象和更多上下文
 export interface ErrorReportContext {
     originalError: Error; // 包含原始错误对象，方便提取更多信息
-    scenario?: Scenario;
     llmResponse?: GenerateTextResult;
     koishiContext?: Context; // Koishi 上下文对象
     koishiSession?: Session; // Koishi 会话对象
@@ -61,7 +59,6 @@ export class ErrorHandlingMiddleware extends Middleware {
                 if (this.config.uploadDump) {
                     const errorDump = await this.formatErrorDump(error as Error, {
                         originalError: error as Error,
-                        scenario: ctx.currentScenario,
                         llmResponse: ctx.llmResponse,
                         koishiSession: ctx.koishiSession,
                         koishiContext: ctx.koishiContext,
@@ -177,26 +174,26 @@ export class ErrorHandlingMiddleware extends Middleware {
         }
 
         // --- Scenario Context ---
-        if (context.scenario) {
-            dumpSections.push(`\n---\n`, `## 📜 Scenario Context\n`);
-            // 检查 Scenario 是否有 render 方法
-            if (context.scenario instanceof Scenario && typeof (context.scenario as Scenario).render === "function") {
-                try {
-                    const scenarioContext = JSON.stringify(await context.scenario.render(), null, 2);
-                    dumpSections.push(`\`\`\`markdown\n${scenarioContext}\n\`\`\``);
-                } catch (e) {
-                    dumpSections.push(
-                        `*Failed to render scenario: ${(e as Error).message}*\n\`\`\`json\n${JSON.stringify(
-                            context.scenario,
-                            null,
-                            2
-                        )}\n\`\`\``
-                    );
-                }
-            } else {
-                dumpSections.push(`\`\`\`json\n${JSON.stringify(context.scenario, null, 2)}\n\`\`\``);
-            }
-        }
+        // if (context.scenario) {
+        //     dumpSections.push(`\n---\n`, `## 📜 Scenario Context\n`);
+        //     // 检查 Scenario 是否有 render 方法
+        //     if (context.scenario instanceof Scenario && typeof (context.scenario as Scenario).render === "function") {
+        //         try {
+        //             const scenarioContext = JSON.stringify(await context.scenario.render(), null, 2);
+        //             dumpSections.push(`\`\`\`markdown\n${scenarioContext}\n\`\`\``);
+        //         } catch (e) {
+        //             dumpSections.push(
+        //                 `*Failed to render scenario: ${(e as Error).message}*\n\`\`\`json\n${JSON.stringify(
+        //                     context.scenario,
+        //                     null,
+        //                     2
+        //                 )}\n\`\`\``
+        //             );
+        //         }
+        //     } else {
+        //         dumpSections.push(`\`\`\`json\n${JSON.stringify(context.scenario, null, 2)}\n\`\`\``);
+        //     }
+        // }
 
         // --- LLM Response ---
         if (context.llmResponse) {

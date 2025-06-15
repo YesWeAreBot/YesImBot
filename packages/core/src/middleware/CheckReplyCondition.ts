@@ -1,5 +1,6 @@
-import { Computed, Context, Random } from "koishi";
+import { Context, Random } from "koishi";
 import { ConversationFlowAnalyzer } from "../services/ConversationFlowAnalyzer";
+import { DataManager } from "../services/worldstate/DataManager";
 import { ChatMessage } from "../types/model";
 import { getChannelType } from "../utils";
 import { ConversationState, MessageContext, Middleware } from "./base";
@@ -181,14 +182,14 @@ class WillingnessService {
         if (!this.config) return;
 
         const current = this.channelWillingness.get(channelId) || 0;
-        
+
         // 基础增加量
         let increase = isMentioned ? this.config.AtIncrease : this.config.MessageIncrease;
-        
+
         // 关键词检测 - 每匹配一个关键词增加额外意愿值
         if (this.config.Keywords && messageContent) {
             const lowerContent = messageContent.toLowerCase();
-            const matchedKeywords = this.config.Keywords.List.filter(keyword => 
+            const matchedKeywords = this.config.Keywords.List.filter(keyword =>
                 lowerContent.includes(keyword.toLowerCase())
             );
             if (matchedKeywords.length > 0) {
@@ -198,7 +199,6 @@ class WillingnessService {
 
         const newWillingness = Math.max(0, current + increase);
         this.channelWillingness.set(channelId, newWillingness);
-        
     }
 
     getWillingness(channelId: string): number {
@@ -229,9 +229,12 @@ export class CheckReplyCondition extends Middleware {
     private delayTimers = new Map<string, NodeJS.Timeout>();
     private willingnessService: WillingnessService;
     private decayTimer?: NodeJS.Timeout;
+    private dataManager: DataManager;
 
     constructor(public ctx: Context, public config: ReplyConditionConfig) {
         super("check-reply-condition", ctx, null, config);
+
+        this.dataManager = ctx["yesimbot.data"];
 
         this.willingnessService = new WillingnessService(config.Advanced?.Willingness);
         this.initializeStrategies();
@@ -280,7 +283,7 @@ export class CheckReplyCondition extends Middleware {
 
         // 更新意愿值
         this.willingnessService.updateWillingness(
-        	channelId, 
+        	channelId,
         	ctx.isMentioned,
         	ctx.koishiSession.content
         );
@@ -383,6 +386,11 @@ export class CheckReplyCondition extends Middleware {
                 this.willingnessService.resetAfterReply(channelId);
                 state.willingness = this.willingnessService.getWillingness(channelId);
 
+                // 开始一个新的对话回合 (Turn)
+                //const newTurn = await this.dataManager.startNewTurn(ctx.koishiSession.platform, channelId);
+                //ctx.currentTurnId = newTurn.id;
+                //this.ctx.logger.info(`[Turn] Started new turn: ${ctx.currentTurnId}`);
+
                 // 设置处理状态并继续中间件链
                 ctx.state = ConversationState.PROCESSING;
                 await next();
@@ -393,7 +401,7 @@ export class CheckReplyCondition extends Middleware {
     }
 
 	private logDecision(channelId: string, userId: string, decisions: ReplyDecision[], shouldReply: boolean): void {
-		const strategyResults = decisions.map(d => 
+		const strategyResults = decisions.map(d =>
 			`${d.strategy}:${d.shouldReply ? '✓' : '✗'}${Math.round(d.confidence*100)}%`
 		).join(', ');
 

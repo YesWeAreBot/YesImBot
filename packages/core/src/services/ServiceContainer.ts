@@ -4,7 +4,7 @@
 export const SERVICE_TOKENS = {
     CHAT_MODEL_SWITCHER: Symbol("ChatModelSwitcher"),
     IMAGE_PROCESSOR: Symbol("ImageProcessor"),
-    SCENARIO_MANAGER: Symbol("ScenarioManager"),
+    DATA_MANAGER: Symbol("DataManager"),
     PROMPT_BUILDER: Symbol("PromptBuilder"),
     MIDDLEWARE_MANAGER: Symbol("MiddlewareManager"),
     TOOL_MANAGER: Symbol("ToolManager"),

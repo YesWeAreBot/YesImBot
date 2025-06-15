@@ -29,7 +29,7 @@ export default class AgentCore {
     private middlewareManager: MiddlewareManager;
 
     static readonly name = "yesimbot";
-    static readonly inject = ["yesimbot.tool", "yesimbot.memory", "yesimbot.model"];
+    static readonly inject = ["yesimbot.tool", "yesimbot.memory", "yesimbot.model", "yesimbot.data"];
 
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
@@ -107,7 +107,6 @@ export default class AgentCore {
      * 清理资源
      */
     public dispose(): void {
-        this.middlewareConfigurator.dispose();
         this.container.dispose();
         this.ctx.logger.info("[Agent] 资源清理完成");
     }

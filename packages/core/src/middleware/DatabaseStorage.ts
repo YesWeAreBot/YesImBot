@@ -1,5 +1,5 @@
 import { Context, Element, h } from "koishi";
-import { ScenarioManager } from "../services/scenario/ScenarioManager";
+import { DataManager } from "../services/worldstate/DataManager";
 import { ChatMessage, MESSAGE_TABLE } from "../types/model";
 import { getChannelType } from "../utils";
 import { ImageProcessor } from "../utils/imageProcessor";
@@ -9,7 +9,7 @@ import { MessageContext, Middleware } from "./base";
  * 数据库存储中间件
  */
 export class DatabaseStorageMiddleware extends Middleware {
-    constructor(protected ctx: Context, protected services: { imageProcessor: ImageProcessor; scenarioManager: ScenarioManager }) {
+    constructor(protected ctx: Context, protected services: { imageProcessor: ImageProcessor; dataManager: DataManager }) {
         super("database-storage", ctx, services, null);
     }
 
@@ -51,9 +51,10 @@ export class DatabaseStorageMiddleware extends Middleware {
         // 保存接收到的消息
         const newMessage = await this.saveReceivedMessage(ctx, content);
 
-        // 如果消息成功保存，则通知 ScenarioManager 更新缓存中的 Scenario 实例
-        if (newMessage) {
-            await this.services.scenarioManager.updateMessage(newMessage, ctx.koishiSession, true);
+        // 如果消息成功保存，并且我们正处于一个回合中，则更新世界状态
+        if (newMessage && ctx.currentTurnId) {
+            await this.services.dataManager.touchChannel(ctx.koishiSession);
+            await this.services.dataManager.addMessageEvent(ctx.currentTurnId, ctx.koishiSession);
         }
 
         // 继续处理链
