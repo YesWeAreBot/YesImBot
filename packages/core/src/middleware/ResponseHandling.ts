@@ -69,6 +69,9 @@ export class ResponseHandlingMiddleware extends Middleware {
             const agentResponse = await this._processActions(ctx, response.actions, response.thoughts);
             ctx.agentResponses.push(agentResponse);
 
+            //
+            await this.dataManager.addAgentResponse(ctx.currentTurnId, agentResponse);
+
             if (response.request_heartbeat) {
                 await this._handleHeartbeat(ctx);
             } else {
@@ -186,10 +189,6 @@ export class ResponseHandlingMiddleware extends Middleware {
      * 结束处理流程，重置状态并释放频道。
      */
     private async _finalizeProcessing(ctx: MessageContext): Promise<void> {
-        // 将本轮所有收集到的 Agent 响应写入数据库
-        for (const response of ctx.agentResponses) {
-            await this.dataManager.addAgentResponse(ctx.currentTurnId, response);
-        }
         // 结束回合
         await this.dataManager.endTurn(ctx.currentTurnId);
         this.logger.info(`[Turn] Ended turn: ${ctx.currentTurnId}`);

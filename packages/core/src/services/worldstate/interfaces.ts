@@ -73,6 +73,7 @@ export interface Thought {
 export interface Action {
     function: string;
     params: Record<string, unknown>;
+    renderParams?: () => string;
 }
 
 export interface ActionResult {
@@ -82,6 +83,7 @@ export interface ActionResult {
         result?: unknown;
         error?: unknown;
     };
+    renderResult?: () => string;
 }
 
 // --- 事件相关接口 ---

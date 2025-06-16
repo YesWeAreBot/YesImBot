@@ -31,12 +31,12 @@
               {{/thoughts}}
               <actions>
               {{#actions}}
-                <action function="{{function}}" params="{{params}}"/>
+                <action>{"function":"{{function}}","params":{{renderParams}}}</action>
               {{/actions}}
               </actions>
               <observations>
               {{#observations}}
-                <observation function="{{function}}" result="{{result}}"/>
+                <observation function="{{function}}" success="{{result.success}}">{{renderResult}}</observation>
               {{/observations}}
               </observations>
             </response>
