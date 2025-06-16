@@ -126,10 +126,20 @@ export class TurnRepository {
             .map((item) => ({
                 function: item.function,
                 params: typeof item.params === "object" && item.params !== null ? item.params : {},
+                renderParams() {
+                    return JSON.stringify(this.params);
+                },
             }));
     }
     private validateObservations(data: any): ActionResult[] {
         if (!Array.isArray(data)) return [];
-        return data.filter((item) => typeof item === "object" && item !== null) as ActionResult[];
+        const observations = data.filter((item) => typeof item === "object" && item !== null) as ActionResult[];
+        observations.forEach((item) => {
+            item.renderResult = function () {
+                const result = this.result?.result || this.result?.error || "";
+                return typeof result === "string" ? result : JSON.stringify(result);
+            };
+        });
+        return observations;
     }
 }

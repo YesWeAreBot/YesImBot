@@ -117,16 +117,16 @@ export function defineExecutableTool<TParams extends Schema<any>, TReturns = any
         },
         execute: async (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => {
             const mergedContext = { ...baseContext, ...runtimeContext } as ToolContext<TConfig>;
-            await definition?.hooks?.onBeforeExecute(params, mergedContext);
+            await definition?.hooks?.onBeforeExecute?.(params, mergedContext);
 
             let result;
 
             try {
                 result = await definition.execute(params, mergedContext);
             } catch (error) {
-                await definition?.hooks?.onError(error, mergedContext);
+                await definition?.hooks?.onError?.(error, mergedContext);
             } finally {
-                await definition?.hooks?.onAfterExecute(result, mergedContext);
+                await definition?.hooks?.onAfterExecute?.(result, mergedContext);
                 return result;
             }
         },

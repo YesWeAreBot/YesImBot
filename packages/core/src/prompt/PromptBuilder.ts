@@ -54,11 +54,9 @@ export class PromptBuilder {
      * @param template 模板内容的字符串。
      */
     public registerPartial(name: string, template: string): void {
-        if (this.partials.has(name)) {
-            this.logger.warn(`Overwriting existing partial template: ${name}`);
-        }
+        if (this.partials.has(name)) this.logger.warn(`Overwriting partial: ${name}`);
         this.partials.set(name, template);
-        this.logger.debug(`Registered partial template: ${name}`);
+        this.logger.debug(`Registered partial: ${name}`);
     }
 
     /**
@@ -67,11 +65,9 @@ export class PromptBuilder {
      * @param provider 数据提供者函数。
      */
     public registerDataProvider(name: string, provider: PromptDataProvider): void {
-        if (this.dataProviders.has(name)) {
-            this.logger.warn(`Overwriting existing prompt data provider: ${name}`);
-        }
+        if (this.dataProviders.has(name)) this.logger.warn(`Overwriting provider: ${name}`);
         this.dataProviders.set(name, provider);
-        this.logger.debug(`Registered prompt data provider: ${name}`);
+        this.logger.debug(`Registered provider: ${name}`);
     }
 
     /**
@@ -79,7 +75,6 @@ export class PromptBuilder {
      */
     private registerDefaultPartials(): void {
         const load = (name: string) => readFileSync(path.resolve(__dirname, `../../resources/templates/${name}.mustache`), "utf-8");
-
         this.registerPartial("CORE_MEMORY", load("core_memory"));
         this.registerPartial("TOOL_DEFINITION", load("tool_definition"));
         this.registerPartial("WORLD_STATE", load("world_state"));
@@ -90,92 +85,152 @@ export class PromptBuilder {
      * 每个提供者的数据都将用于渲染其同名的 Partial。
      */
     private registerDefaultDataProviders(): void {
-        // 返回符合 core_memory.mustache 模板所需的数据结构
         this.registerDataProvider("CORE_MEMORY", async () => {
-            // 示例：此函数应从 memory service 获取数据并构造成对象
-            return await this.memory.getProvider();
+            return this.memory.getProvider();
         });
 
-        // 返回符合 tool_definition.mustache 模板所需的数据结构
         this.registerDataProvider("TOOL_DEFINITION", async () => {
-            const tools = await this.toolManager.getToolSchemas();
-            return { tools }; // 包装在对象中以匹配 {{#tools}}
+            return { tools: await this.toolManager.getToolSchemas() };
         });
 
-        // 返回符合 world_state.mustache 模板所需的数据结构
         this.registerDataProvider("WORLD_STATE", async (ctx) => {
-            // 直接返回世界状态对象，模板会处理其渲染
-            return this.dataManager.getWorldState(ctx.allowedChannels);
+            const state = await this.dataManager.getWorldState(ctx.allowedChannels);
+
+            // state.activeChannels.forEach(channel=>{
+            //     channel.history.forEach(turn=>{
+            //         turn.responses.forEach(resp=>{
+            //             resp.actions.forEach(action=>{
+            //                 action.
+            //             })
+            //         })
+            //     })
+            // })
+
+            return state;
         });
     }
 
+    // --- 核心构建逻辑 ---
+
     /**
-     * 构建系统提示词 (LLM 的 system role)。
-     * @param ctx 消息上下文。
-     * @returns 完整的系统提示词字符串。
+     * 构建一个完整的提示词对（System 和 User）。
+     * 这是推荐使用的主要方法，因为它能通过内部缓存优化数据获取。
+     * @param ctx 消息上下文
+     * @returns 包含 system 和 user 提示词的对象
      */
-    public async buildSystemPrompt(ctx: MessageContext): Promise<string> {
-        return this.render(this.config.SystemTemplate, ctx);
+    public async build(ctx: MessageContext): Promise<{ system: string; user: UserMessagePart[] }> {
+        // 创建一个本次构建独有的缓存
+        const requestCache = new Map<string, Promise<any>>();
+
+        const extraData = {
+            _toString: function (obj): string {
+                return typeof obj === "string" ? obj : JSON.stringify(obj);
+            },
+            // userName: ctx.session.author.name || ctx.session.author.id,
+            // userId: ctx.session.author.id,
+            // userContent: ctx.session.content,
+        };
+
+        const system = await this.render(this.config.SystemTemplate, ctx, extraData, requestCache);
+        const userContent = await this.render(this.config.UserTemplate, ctx, extraData, requestCache);
+        const user = [textPart(userContent)];
+
+        return { system, user };
     }
 
     /**
-     * 构建用户提示词 (LLM 的 user role)。
-     * @param ctx 消息上下文。
-     * @returns 完整的用户提示词 Part 数组。
+     * 递归地从模板及其 partials 中解析出所有需要的数据键。
+     * @param template 模板字符串
+     * @param visitedPartials 用于防止无限递归的集合
+     * @returns 一个包含所有必需数据键的 Set
      */
-    public async buildUserPrompt(ctx: MessageContext): Promise<UserMessagePart[]> {
-        // 额外的数据：我们可以动态地将当前用户信息注入到 view 中
-        // const extraData = {
-        //     userName: ctx.session.author.name || ctx.session.author.id,
-        //     userId: ctx.session.author.id,
-        //     userContent: ctx.session.content,
-        // };
-        const extraData = {};
-        const content = await this.render(this.config.UserTemplate, ctx, extraData);
-        return [textPart(content)];
+    private getRequiredDataKeys(template: string, visitedPartials = new Set<string>()): Set<string> {
+        const keys = new Set<string>();
+        const tokens = Mustache.parse(template);
+
+        for (const token of tokens) {
+            const type = token[0];
+            const name = token[1];
+
+            if (type === "name" || type === "#" || type === "^") {
+                // 'user.name' -> 'user'
+                keys.add(name.split(".")[0]);
+            } else if (type === ">") {
+                // Partial {{> name }}
+                keys.add(name); // Partial 的名字本身也是一个数据键
+                if (!visitedPartials.has(name)) {
+                    visitedPartials.add(name);
+                    const partialTemplate = this.partials.get(name);
+                    if (partialTemplate) {
+                        const nestedKeys = this.getRequiredDataKeys(partialTemplate, visitedPartials);
+                        nestedKeys.forEach((key) => keys.add(key));
+                    }
+                }
+            }
+        }
+        return keys;
     }
 
     /**
-     * 使用 Mustache 渲染指定的模板。
+     * 使用 Mustache 高效地渲染模板。
+     * 它会先分析模板，只获取所需数据，并利用缓存避免重复获取。
      * @param template 待渲染的顶级模板字符串。
      * @param ctx 消息上下文。
-     * @param extraData 可选的、要与 providers 的数据合并的额外数据。
+     * @param extraData 额外的、非 provider 提供的数据。
+     * @param cache 用于在多次 render 调用之间共享数据获取结果的缓存。
      * @returns 渲染完成的字符串。
      */
-    private async render(template: string, ctx: MessageContext, extraData: Record<string, any> = {}): Promise<string> {
-        // 1. 并行获取所有 DataProvider 的数据
-        const providers = Array.from(this.dataProviders.entries());
+    private async render(
+        template: string,
+        ctx: MessageContext,
+        extraData: Record<string, any>,
+        cache: Map<string, Promise<any>>
+    ): Promise<string> {
+        // 1. 静态分析模板，找出所有需要的数据键
+        const requiredKeys = this.getRequiredDataKeys(template);
+        this.logger.debug(`Template requires data for keys: %o`, Array.from(requiredKeys));
 
-        const viewPromises = providers.map(async ([key, provider]) => {
-            try {
-                const data = await provider(ctx);
-                return { key, data };
-            } catch (error) {
-                this.logger.error(`Error fetching data for prompt block '${key}':`, error);
-                return { key, data: `[Error rendering ${key}]` }; // 在提示词中明确指出错误
+        // 2. 按需、带缓存地获取数据
+        const view: Record<string, any> = { ...extraData };
+        const promises: Promise<void>[] = [];
+
+        for (const key of requiredKeys) {
+            // 如果数据已由 extraData 提供，则跳过
+            if (key in extraData) continue;
+
+            // 如果缓存中已有此 key 的 promise，则无需再次调用 provider
+            if (cache.has(key)) {
+                this.logger.debug(`[Cache Hit] Using cached data for key: ${key}`);
+            } else {
+                const provider = this.dataProviders.get(key);
+                if (provider) {
+                    this.logger.debug(`[Cache Miss] Fetching data for key: ${key}`);
+                    // 将 promise 放入缓存，而不是结果。这可以防止并发请求同一资源（"thundering herd"）
+                    const promise = provider(ctx).catch((error) => {
+                        this.logger.error(`Error fetching data for prompt block '${key}':`, error);
+                        return `[Error rendering ${key}]`;
+                    });
+                    cache.set(key, promise);
+                }
             }
-        });
 
-        const results = await Promise.all(viewPromises);
+            const dataPromise = cache.get(key);
+            if (dataPromise) {
+                promises.push(
+                    dataPromise.then((data) => {
+                        view[key] = data;
+                    })
+                );
+            }
+        }
 
-        // 2. 构建最终的 view 对象，将所有数据源合并
-        const view = results.reduce(
-            (acc, { key, data }) => {
-                // Mustache 可以通过 {{KEY}} 直接渲染简单字符串，也可以通过 {{#KEY}}...{{/KEY}} 来处理对象
-                acc[key] = data;
-                return acc;
-            },
-            { ...extraData }
-        ); // 从 extraData 开始
+        await Promise.all(promises);
 
-        // 3. 将 partials Map 转换为 Mustache 需要的对象格式
+        // 3. 渲染
         const partials = Object.fromEntries(this.partials);
-
-        // 4. 使用 Mustache.render 进行最终渲染，传入模板、视图和分部
         return Mustache.render(template, view, partials);
     }
 }
 
-// 这些文件保持不变，因为它们只是提供原始模板字符串
 export const SystemBaseTemplate = readFileSync(path.resolve(__dirname, "../../resources/prompts/memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(__dirname, "../../resources/prompts/user_base.txt"), "utf-8");

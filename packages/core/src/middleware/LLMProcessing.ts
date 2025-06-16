@@ -346,14 +346,13 @@ export class LLMProcessingMiddleware extends Middleware {
 
         try {
             // 构建提示词
-            const systemPrompt = await this.services.promptBuilder.buildSystemPrompt(ctx);
-            const userPrompt = await this.services.promptBuilder.buildUserPrompt(ctx);
+            const { system, user } = await this.services.promptBuilder.build(ctx);
 
             if (this.config.debug) {
                 this.logger.debug("--- LLM System Prompt ---");
-                this.logger.debug(systemPrompt);
+                this.logger.debug(system);
                 this.logger.debug("--- LLM User Prompt ---");
-                this.logger.debug(JSON.stringify(userPrompt, null, 2));
+                this.logger.debug(JSON.stringify(user, null, 2));
                 this.logger.debug("--- End Prompts ---");
             }
 
@@ -362,8 +361,8 @@ export class LLMProcessingMiddleware extends Middleware {
                 return await this.retryManager.executeWithRetry(async (abortSignal: AbortSignal, cancelTimeout: () => void) => {
                     return await model.chat(
                         [
-                            { role: "system", content: systemPrompt },
-                            { role: "user", content: userPrompt },
+                            { role: "system", content: system },
+                            { role: "user", content: user },
                         ],
                         null,
                         {
