@@ -15,7 +15,26 @@
           <events>
           {{#events}}
             <event type="{{type}}" timestamp="{{timestamp}}">
-              {{#actor}}<actor id="{{id}}">{{name}}</actor>{{/actor}}{{#user}}<user id="{{id}}">{{name}}</user>{{/user}}{{#messageId}}[{{.}} {{#sender}}{{name}}<{{id}}>{{/sender}}] {{content}}{{/messageId}}
+              {{! 渲染消息事件 }}
+              {{#is_message}}
+                <sender id="{{sender.id}}">{{sender.name}}</sender>{{#quote}}{{/quote}}
+                <content id="{{messageId}}">{{content}}</content>
+              {{/is_message}}
+              {{! 渲染成员加入事件 }}
+              {{#is_member_join}}
+                <user_joined id="{{user_joined.id}}">{{user_joined.name}}</user_joined>
+              {{/is_member_join}}
+              {{! 渲染用户被禁言事件 }}
+              {{#is_user_muted}}
+                <muter id="{{muter.id}}">{{muter.name}}</muter>
+                <muted_user id="{{muted_user.id}}">{{muted_user.name}}</muted_user>
+                <duration_minutes>{{duration_minutes}}</duration_minutes>
+                {{#reason}}<reason>{{.}}</reason>{{/reason}}
+              {{/is_user_muted}}
+              {{! 当你需要添加新事件类型时，比如 member_leave }}
+              {{#is_member_leave}}
+                {{! ... 在这里添加新事件的渲染逻辑 ... }}
+              {{/is_member_leave}}
             </event>
           {{/events}}
           </events>

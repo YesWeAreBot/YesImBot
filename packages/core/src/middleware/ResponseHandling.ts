@@ -1,4 +1,4 @@
-import { Context, Logger, randomId } from "koishi";
+import { Context, Logger } from "koishi";
 import { Failed, ToolCallResult } from "../extensions";
 import { DataManager } from "../services/worldstate/DataManager";
 import { Action, ActionResult, AgentResponse } from "../services/worldstate/interfaces";
@@ -42,7 +42,6 @@ export class ResponseHandlingMiddleware extends Middleware {
         }
     ) {
         super("response-handling", ctx, services, config);
-        // 为该中间件创建一个带命名空间的 logger
         this.logger = ctx.logger("ResponseHandling");
         this.dataManager = ctx["yesimbot.data"];
     }
@@ -69,19 +68,19 @@ export class ResponseHandlingMiddleware extends Middleware {
             const agentResponse = await this._processActions(ctx, response.actions, response.thoughts);
             ctx.agentResponses.push(agentResponse);
 
-            //
+            // 将 Agent 响应写入数据库
             await this.dataManager.addAgentResponse(ctx.currentTurnId, agentResponse);
 
             if (response.request_heartbeat) {
                 await this._handleHeartbeat(ctx);
             } else {
                 await next();
-                await this._finalizeProcessing(ctx);
             }
         } catch (error) {
             this.logger.error("在处理LLM响应时发生未知错误: %s", error.message);
             this.logger.error(error.stack);
-            await this._finalizeProcessing(ctx); // 保证即使出错也能释放频道
+        } finally {
+            await this._finalizeProcessing(ctx);
         }
     }
 
@@ -132,21 +131,6 @@ export class ResponseHandlingMiddleware extends Middleware {
         const observations: ActionResult[] = [];
         for (const action of actions) {
             const result = await this.executeToolCall(ctx, action.function, action.params);
-
-            // 保存自己发送的消息
-            // 先这样写，过后要改
-            if (action.function == "send_message") {
-                await this.ctx.database.create("channel_events", {
-                    turnId: ctx.currentTurnId,
-                    type: "message_sent",
-                    timestamp: new Date(),
-                    data: {
-                        messageId: randomId(),
-                        senderId: ctx.koishiSession.selfId,
-                        content: action.params["message"],
-                    },
-                });
-            }
             observations.push({
                 function: action.function,
                 result: result,
@@ -234,7 +218,7 @@ export class ResponseHandlingMiddleware extends Middleware {
                     platform: ctx.platform,
                 });
 
-                if (lastResult.success) {
+                if (lastResult.status === "success") {
                     this.logger.info(`[✔️ Success] ← 工具返回: ${JSON.stringify(lastResult)}`);
                     return lastResult;
                 }

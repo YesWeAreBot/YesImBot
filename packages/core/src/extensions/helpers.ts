@@ -53,7 +53,7 @@ export function createExtension<TConfig extends Schema<any>>(config: ExtensionDe
  */
 export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): ToolCallResult<T> {
     return {
-        success: true,
+        status: "status",
         result,
         metadata,
     };
@@ -64,7 +64,7 @@ export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): T
  */
 export function Failed(error: string, metadata?: ToolCallResult["metadata"]): ToolCallResult {
     return {
-        success: false,
+        status: "failed",
         error,
         metadata,
     };

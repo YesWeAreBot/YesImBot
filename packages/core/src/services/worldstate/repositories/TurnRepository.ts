@@ -4,7 +4,7 @@ import {
     ActionResult,
     AgentResponse,
     ChannelEvent,
-    MessageSentEvent,
+    MessageEvent,
     SystemNotificationEvent,
     Turn,
     UserJoinedEvent,
@@ -71,21 +71,31 @@ export class TurnRepository {
                             user: memberMap.get(data.userId) ?? { id: data.userId, name: "未知用户" },
                             reason: data.reason,
                         } as UserLeftEvent;
+                    case "message":
                     case "message_sent":
                         return {
                             ...base,
-                            type: "message_sent",
+                            type: "message",
                             messageId: data.messageId,
                             sender: memberMap.get(data.senderId) ?? { id: data.senderId, name: "未知用户" },
                             content: data.content,
-                        } as MessageSentEvent;
+                        } as MessageEvent;
                     case "system_notification":
                         return { ...base, type: "system_notification", content: data.content } as SystemNotificationEvent;
                     default:
                         return null;
                 }
             })
-            .filter(Boolean);
+            .filter(Boolean)
+            .map((event) => {
+                // 创建一个新对象，避免修改原始数据
+                const templateEvent: any = { ...event };
+
+                // 根据事件类型添加布尔标记
+                templateEvent[`is_${event.type}`] = true;
+
+                return templateEvent;
+            });
 
         return {
             id: turnRecord.id,
@@ -119,6 +129,7 @@ export class TurnRepository {
             plan: typeof data.plan === "string" ? data.plan : "",
         };
     }
+
     private validateActions(data: any): Action[] {
         if (!Array.isArray(data)) return [];
         return data
@@ -131,6 +142,7 @@ export class TurnRepository {
                 },
             }));
     }
+
     private validateObservations(data: any): ActionResult[] {
         if (!Array.isArray(data)) return [];
         const observations = data.filter((item) => typeof item === "object" && item !== null) as ActionResult[];
