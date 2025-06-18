@@ -64,8 +64,7 @@ export interface ToolContext<TConfig = any> {
  * 工具调用结果
  */
 export interface ToolCallResult<TResult = any> {
-    /** 是否成功 */
-    success: boolean;
+    status: "success" | "failed" | string;
     /** 返回结果 */
     result?: TResult;
     /** 错误信息 */

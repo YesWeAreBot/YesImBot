@@ -2,7 +2,7 @@ import { Context, Query, Schema } from "koishi";
 import { MemoryError } from "../../memory/MemoryError";
 import { MemoryService } from "../../memory/MemoryService";
 import { ChatMessage, MESSAGE_TABLE } from "../../types/model";
-import { createExtension, createTool, withCommonParams } from "../helpers";
+import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
 import { ExtensionMetadata } from "../types";
 
 const metadata: ExtensionMetadata = {
@@ -26,9 +26,9 @@ const CoreMemoryAppendTool = createTool({
         const { koishiContext } = context;
         try {
             const result = await getMemory(koishiContext).appendToCoreMemory(label, content);
-            return { success: true, message: result };
+            return Success(result);
         } catch (e: any) {
-            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
+            return Failed(e.message);
         }
     },
 });
@@ -47,9 +47,9 @@ const CoreMemoryReplaceTool = createTool({
         const { koishiContext } = context;
         try {
             const result = await getMemory(koishiContext).replaceInCoreMemory(label, old_content, new_content);
-            return { success: true, message: result };
+            return Success(result);
         } catch (e: any) {
-            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
+            return Failed(e.message);
         }
     },
 });
@@ -68,9 +68,9 @@ const ArchivalMemoryInsertTool = createTool({
         const { koishiContext } = context;
         try {
             const entry = await getMemory(koishiContext).storeInArchivalMemory(content, metadata);
-            return { success: true, message: `Content stored in archival memory with ID: ${entry.id}.`, entry_id: entry.id };
+            return Success(`Content stored in archival memory with ID: ${entry.id}.`, { entry_id: entry.id });
         } catch (e: any) {
-            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
+            return Failed(e.message);
         }
     },
 });
@@ -94,15 +94,14 @@ const ArchivalMemorySearchTool = createTool({
                 filterMetadata: filterMetadata,
             });
             const formattedResults = searchResult.results.map((entry) => getMemory(koishiContext).archivalStore.renderEntryText(entry));
-            return {
-                success: true,
+            return Success({
                 total_found: searchResult.total,
                 results_count: searchResult.results.length,
                 page: page || 1,
                 results: formattedResults,
-            };
+            });
         } catch (e: any) {
-            return { success: false, error: e.message, context: e instanceof MemoryError && e.context ? e.context : undefined };
+            return Failed(e.message);
         }
     },
 });
@@ -144,16 +143,16 @@ const ConversationSearchTool = createTool({
                 .execute();
 
             if (!messages || messages.length === 0) {
-                return { success: true, message: "No matching messages found in recall memory.", results: [] };
+                return Failed("No matching messages found in recall memory.");
             }
 
             const formattedResults = messages.map(
                 (msg) => `[${new Date(msg.timestamp).toISOString()}] ` + `${msg.sender.name || msg.sender.id}: ${msg.content}`
             );
-            return { success: true, results_count: messages.length, results: formattedResults };
+            return Success({ results_count: messages.length, results: formattedResults });
         } catch (e: any) {
             koishiContext.logger.error(`Conversation search failed: ${e.message}`);
-            return { success: false, error: "Failed to search conversation history." };
+            return Failed("Failed to search conversation history." + e.message);
         }
     },
 });

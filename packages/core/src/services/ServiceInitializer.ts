@@ -186,7 +186,7 @@ export class ServiceInitializer {
 
                     if (!base64) {
                         return {
-                            success: false,
+                            status: "failed",
                             error: `Image ${image_id} Not Found`,
                         };
                     }
@@ -202,12 +202,12 @@ export class ServiceInitializer {
                     ]);
 
                     return {
-                        success: true,
+                        status: "success",
                         result: text,
                     };
                 } catch (error) {
                     return {
-                        success: false,
+                        status: "failed",
                         error: `${error.name}: ${error.message}`,
                     };
                 }
