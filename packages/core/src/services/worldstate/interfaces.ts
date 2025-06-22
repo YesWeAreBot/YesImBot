@@ -1,3 +1,5 @@
+import { ToolCallResult } from "../extensions";
+
 export interface WorldState {
     timestamp: string;
     activeChannels: Channel[];
@@ -78,11 +80,7 @@ export interface Action {
 
 export interface ActionResult {
     function: string;
-    result: {
-        success: boolean;
-        result?: unknown;
-        error?: unknown;
-    };
+    result: ToolCallResult;
     renderResult?: () => string;
 }
 
@@ -110,8 +108,8 @@ export interface UserLeftEvent extends BaseEvent {
     reason?: string;
 }
 
-export interface MessageSentEvent extends BaseEvent {
-    type: "message_sent";
+export interface MessageEvent extends BaseEvent {
+    type: "message";
     messageId: string;
     sender: Member;
     content: string;
@@ -122,4 +120,4 @@ export interface SystemNotificationEvent extends BaseEvent {
     content: string;
 }
 
-export type ChannelEvent = UserJoinedEvent | UserLeftEvent | MessageSentEvent | SystemNotificationEvent;
+export type ChannelEvent = UserJoinedEvent | UserLeftEvent | MessageEvent | SystemNotificationEvent;
