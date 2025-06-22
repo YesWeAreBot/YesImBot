@@ -1,22 +1,27 @@
 import { Schema } from "koishi";
-import { ModelSetting } from "./adapters/config";
-import { ToolManagerConfig } from "./extensions";
-import { defaultCompressionPrompt } from "./memory/MemoryBlock";
-import { ReplyConditionConfig } from "./middleware/CheckReplyCondition";
-import { PromptBuilderConfig, SystemBaseTemplate, UserBaseTemplate } from "./prompt/PromptBuilder";
 
-interface BlockConfig {
-    Limit?: number;
-    FilePathToBind: string;
+import { ReplyConditionConfig } from "./middleware";
+import {
+    defaultCompressionPrompt,
+    MemoryServiceConfig,
+    ModelDescriptor,
+    ModelServiceConfig,
+    ModelServiceConfigSchema,
+    SystemBaseTemplate,
+    ToolServiceConfig,
+    UserBaseTemplate,
+} from "./services";
+import { PromptBuilderConfig } from "./shared";
+
+export interface ChatConfig {
+    UseModel: ModelDescriptor[];
+    MaxHeartbeat: number;
+    WordsPerSecond: number;
 }
 
 export interface Config {
-    ModelSetting: ModelSetting;
-    Chat: {
-        UseModel: [number, number][];
-        MaxHeartbeat: number;
-        WordsPerSecond: number;
-    };
+    ModelServiceConfig: ModelServiceConfig;
+    Chat: ChatConfig;
     LLM: {
         RetryConfig: {
             MaxRetries: number;
@@ -31,29 +36,13 @@ export interface Config {
         };
     };
     ReplyCondition: ReplyConditionConfig;
-    Memory: {
-        Block: Record<string, BlockConfig>;
-        UseModel?: [number, number];
-        Compression: {
-            CompressionWhen?: "Lines" | "Characters" | "IntervalMessages" | "IntervalMinutes";
-            Lines?: number;
-            Characters?: number;
-            IntervalMessages?: number;
-            IntervalMinutes?: number;
-            CustomPrompt?: string;
-            CompressibleBlocks?: string[];
-        };
-        Backup: {
-            Enabled: boolean;
-            BackupPath: string;
-        };
-    };
+    Memory: MemoryServiceConfig;
     ImageViewer: {
         UseModel?: [number, number];
         CustomPrompt?: string;
     };
     // Multimodal: MultimodalConfig;
-    ToolManagerConfig: ToolManagerConfig;
+    ToolServiceConfig: ToolServiceConfig;
     ToolCall: {
         MaxRetry: number;
         Life: number;
@@ -67,20 +56,24 @@ export interface Config {
     };
 }
 
-export const Config: Schema<Config> = Schema.object({
-    ModelSetting: ModelSetting.description("模型服务"),
+export const ChatConfigSchema: Schema<ChatConfig> = Schema.object({
+    UseModel: Schema.array(
+        Schema.object({
+            ProviderName: Schema.string().description("提供商名称"),
+            ModelId: Schema.string().description("模型ID"),
+        })
+    )
+        .role("table")
+        .required()
+        .description("对话使用的模型"),
+    MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
+    WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
+}).description("对话行为配置");
 
-    Chat: Schema.object({
-        UseModel: Schema.array(
-            Schema.tuple([Schema.number().min(0), Schema.number().min(0)])
-                .default([0, 0])
-                .description("第几个提供商的第几个模型，从 0 开始计数")
-        )
-            .required()
-            .description("对话使用的模型") as Schema,
-        MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
-        WordsPerSecond: Schema.number().min(0).max(360).default(20).step(1).role("slider").description("模拟打字速度，每秒发送的字符数"),
-    }).description("对话行为配置"),
+export const Config: Schema<Config> = Schema.object({
+    ModelServiceConfig: ModelServiceConfigSchema.description("模型服务"),
+
+    Chat: ChatConfigSchema,
 
     ReplyCondition: Schema.object({
         Channels: Schema.array(Schema.array(String).role("table")).description("允许回复的频道列表"),
@@ -133,8 +126,8 @@ export const Config: Schema<Config> = Schema.object({
                     .role("slider")
                     .description("回复后保留的意愿值比例"),
                 Keywords: Schema.object({
-                	List: Schema.array(String).description("关键词列表").collapse(),
-                	Increase: Schema.number().default(10).min(0).max(100).description("额外增加的意愿值"),
+                    List: Schema.array(String).description("关键词列表").collapse(),
+                    Increase: Schema.number().default(10).min(0).max(100).description("额外增加的意愿值"),
                 }).description("特定关键词配置"),
             }).description("意愿值系统配置"),
         })
@@ -213,7 +206,7 @@ export const Config: Schema<Config> = Schema.object({
     //     MaxImagesPerPrompt: Schema.number().default(3),
     // }).description("多模态设置"),
 
-    ToolManagerConfig: Schema.object({
+    ToolServiceConfig: Schema.object({
         autoLoad: Schema.boolean().default(true),
         extensionPaths: Schema.array(String).default([]),
         logLevel: Schema.union(["debug", "info", "warn", "error"]).default("info"),

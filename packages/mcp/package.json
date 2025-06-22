@@ -27,7 +27,7 @@
     "directory": "packages/mcp"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.13.0",
     "yauzl": "^3.2.0"
   },
   "devDependencies": {

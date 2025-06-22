@@ -1,9 +1,8 @@
 import fs from "fs/promises";
-import { Context } from "koishi";
+import { Context, isEmpty } from "koishi";
 import path from "path";
-
-import { downloadFile, isEmpty,  readMetadata } from "../utils";
-import { getExtensionFiles, getExtensionPath, normalizeFilename } from "../extensions/utils";
+import { getExtensionFiles, getExtensionPath, normalizeFilename } from "../services/extensions/utils";
+import { downloadFile, readMetadata } from "../shared";
 
 // 扩展信息类型
 interface ExtensionInfo {

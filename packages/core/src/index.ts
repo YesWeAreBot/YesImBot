@@ -1,15 +1,36 @@
 import { Context, Service } from "koishi";
 
-import { ModelService } from "./adapters";
-import Agent from "./agent";
+import AgentCore from "./agent/agent";
 import { Config } from "./config";
-import ToolManager from "./extensions";
-import { CoreMemoryBlockConfig, MemoryService } from "./memory/MemoryService";
-import { DataManager } from "./services/worldstate/DataManager";
+import { DataManager, MemoryService, ModelService, PromptBuilder, ToolService } from "./services";
+import {
+    ChatMessage,
+    IMAGE_TABLE,
+    ImageData,
+    Interaction,
+    INTERACTION_TABLE,
+    LAST_REPLY_TABLE,
+    MEMORY_TABLE,
+    MemoryBlockData,
+    MESSAGE_TABLE,
+} from "./shared";
 
 declare module "koishi" {
     interface Context {
         yesimbot: YesImBot;
+    }
+}
+
+declare module "koishi" {
+    interface Tables {
+        [MESSAGE_TABLE]: ChatMessage;
+        [MEMORY_TABLE]: MemoryBlockData;
+        [INTERACTION_TABLE]: Interaction;
+        [LAST_REPLY_TABLE]: {
+            channelId: string;
+            timestamp: Date;
+        };
+        [IMAGE_TABLE]: ImageData;
     }
 }
 
@@ -30,38 +51,111 @@ export default class YesImBot extends Service {
         ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
 
         // 注册工具管理器
-        ctx.plugin(ToolManager, config.ToolManagerConfig);
+        ctx.plugin(ToolService, config.ToolServiceConfig);
 
         // 注册模型服务
-        ctx.plugin(ModelService, {
-            providerConfig: config.ModelSetting.Providers,
-            modelSetting: config.ModelSetting,
-        });
+        ctx.plugin(ModelService, config.ModelServiceConfig);
 
         // 注册记忆管理层
-        const coreBlockDefaults = {};
-        for (let label of Object.keys(config.Memory.Block)) {
-            const rawConfig = config.Memory.Block[label];
-            if (!label) continue;
-            const blockConfig: CoreMemoryBlockConfig = {
-                limit: rawConfig.Limit,
-                filePathToBind: rawConfig.FilePathToBind,
-            };
-            coreBlockDefaults[label] = blockConfig;
-        }
-        ctx.plugin(MemoryService, { coreBlockDefaults, ...config.Memory });
+        ctx.plugin(MemoryService, config.Memory);
 
         // 注册 WorldState DataManager 服务
         this.ctx.plugin(DataManager);
+
+        // 注册提示词构建器服务
+        this.ctx.plugin(PromptBuilder, config.PromptTemplate);
+
+        this.registerTables();
 
         ctx.on("ready", async () => {
             // 注册指令
             ctx.plugin(require("./commands/cache"));
             ctx.plugin(require("./commands/config"), config);
-            ctx.plugin(require("./commands/context"));
             ctx.plugin(require("./commands/extension"));
 
-            ctx.plugin(Agent, config);
+            ctx.plugin(AgentCore, config);
         });
+    }
+
+    /**
+     * 注册所有数据库表
+     */
+    public registerTables(): void {
+        this.registerMessageTable();
+        this.registerInteractionTable();
+        this.registerLastReplyTable();
+        this.registerImageTable();
+
+        this.ctx.logger.info("[DatabaseManager] 所有数据库表注册完成");
+    }
+
+    private registerMessageTable(): void {
+        this.ctx.model.extend(
+            MESSAGE_TABLE,
+            {
+                messageId: "string",
+                sender: "object",
+                channel: "object",
+                timestamp: "timestamp",
+                content: "string",
+            },
+            {
+                primary: ["messageId"],
+                autoInc: false,
+            }
+        );
+    }
+
+    private registerInteractionTable(): void {
+        this.ctx.model.extend(
+            INTERACTION_TABLE,
+            {
+                id: "string",
+                emitter: "string",
+                emitter_channel_id: "string",
+                type: "string",
+                functionName: "string",
+                toolParams: "json",
+                toolResult: "object",
+                life: "integer",
+                timestamp: "timestamp",
+            },
+            {
+                primary: "id",
+            }
+        );
+    }
+
+    private registerLastReplyTable(): void {
+        this.ctx.model.extend(
+            LAST_REPLY_TABLE,
+            {
+                channelId: "string",
+                timestamp: "timestamp",
+            },
+            {
+                primary: "channelId",
+                autoInc: false,
+            }
+        );
+    }
+
+    private registerImageTable(): void {
+        this.ctx.model.extend(
+            IMAGE_TABLE,
+            {
+                id: "string",
+                mimeType: "string",
+                base64: "string",
+                summary: "string",
+                desc: "string",
+                size: "integer",
+                timestamp: "timestamp",
+            },
+            {
+                primary: "id",
+                autoInc: false,
+            }
+        );
     }
 }

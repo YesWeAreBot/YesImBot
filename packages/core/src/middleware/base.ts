@@ -1,41 +1,31 @@
-import { Context, Session } from "koishi";
-import type { GenerateTextResult } from "xsai";
+import { Context, Logger, Session } from "koishi";
+import { GenerateTextResult } from "xsai";
 import { DefaultPlatform, OneBotPlatform, PlatformAdapter } from "../services/PlatformAdapter";
-import type { AgentResponse } from "../services/worldstate/interfaces";
+import { AgentResponse } from "../services/worldstate/interfaces";
 
-/**
- * 会话状态枚举
- * 简化为三个核心状态
- */
-export enum ConversationState {
-    IDLE, // 空闲状态，等待新消息触发
-    PROCESSING, // 处理中状态
-    RESPONDING, // 响应中状态
-}
+export class MiddlewareContext {
+    /** 中间件间共享数据 */
+    readonly shared: Map<string, any> = new Map();
 
-/**
- * 消息上下文
- * 在中间件链中传递的上下文对象
- */
-export class MessageContext {
-    // 当前会话状态
-    public state: ConversationState = ConversationState.IDLE;
+    /** 跳过后续中间件 */
+    // skip(reason?: string): void;
 
-    // LLM响应和处理后的响应
-    public llmResponse?: GenerateTextResult;
+    /** 标记中间件执行失败 */
+    // fail(error: Error, middlewareName: string): void;
+
+    /** LLM响应和处理后的响应 */
+    public llmResponses?: GenerateTextResult[];
     public processedResponse?: string[];
-
-    public isMentioned: boolean = false;
-
-    // heartbeat触发次数计数器
-    public heartbeatCount: number = 0;
-
-    public currentTurnId: string;
     public agentResponses: AgentResponse[] = [];
 
-    public platform: PlatformAdapter;
+    public _platform: PlatformAdapter;
 
-    constructor(
+    public currentTurnId: string;
+
+    /** 是否@提到机器人 */
+    public isMentioned: boolean = false;
+
+    private constructor(
         // Koishi上下文对象
         public koishiContext: Context,
         // Koishi会话对象
@@ -50,90 +40,152 @@ export class MessageContext {
         } else {
             platformAdapter = new DefaultPlatform(koishiSession);
         }
-        this.platform = platformAdapter;
-
-        koishiContext["yesimbot.data"].getLastTurn(koishiSession.platform, koishiSession.channelId).then(async (turn) => {
-            if (turn) {
-                this.currentTurnId = turn.id;
-            } else {
-                const newTurn = await koishiContext["yesimbot.data"].startNewTurn(koishiSession.platform, koishiSession.channelId);
-                this.currentTurnId = newTurn.id;
-                koishiContext.logger.info(`[Turn] Started new turn: ${this.currentTurnId}`);
-            }
-        });
+        this._platform = platformAdapter;
     }
 
-    /**
-     * 转换会话状态
-     */
-    async transitionTo(newState: ConversationState): Promise<void> {
-        this.state = newState;
+    public static async create(koishiContext: Context, koishiSession: Session, allowedChannels: string[]): Promise<MiddlewareContext> {
+        const context = new MiddlewareContext(koishiContext, koishiSession, allowedChannels);
+        await context.initializeTurn();
+        return context;
+    }
+
+    private async initializeTurn(): Promise<void> {
+        const turn = await this.koishiContext["yesimbot.data"].getLastTurn(this.koishiSession.platform, this.koishiSession.channelId);
+        if (turn) {
+            this.currentTurnId = turn.id;
+        } else {
+            const newTurn = await this.koishiContext["yesimbot.data"].startNewTurn(
+                this.koishiSession.platform,
+                this.koishiSession.channelId
+            );
+            this.currentTurnId = newTurn.id;
+            this.koishiContext.logger.info(`[Turn] Started new turn: ${this.currentTurnId}`);
+        }
     }
 }
 
 /**
  * 中间件接口
  */
-export abstract class Middleware {
-    public readonly name: string; // 中间件名称
-    protected readonly ctx: Context; // Koishi上下文对象
-    protected readonly services: any; // 服务对象
-    protected readonly config: any; // 配置对象
+export interface Middleware<TConfig = any> {
+    /** 中间件唯一标识 */
+    readonly id: string;
+    /** 中间件名称 */
+    readonly name: string;
+    /** 是否启用 */
+    readonly enabled: boolean;
+    /** 配置对象 */
+    readonly config: TConfig;
 
-    constructor(name: string, ctx: Context, services?: any, config?: any) {
-        this.name = name;
-        this.ctx = ctx;
-        this.services = services;
-        this.config = config;
-    }
+    /** 执行中间件逻辑 */
+    execute(ctx: MiddlewareContext, next: () => Promise<void>): Promise<void>;
 
-    // 执行中间件
-    abstract execute(ctx: MessageContext, next: () => Promise<void>): Promise<void>;
+    /** 初始化中间件 */
+    initialize?(): Promise<void>;
+
+    /** 清理资源 */
+    dispose?(): Promise<void>;
 }
 
 /**
- * 中间件管理器
- * 负责注册和执行中间件链
+ * 抽象中间件基类
+ * 提供通用的中间件实现基础
  */
-export class MiddlewareManager {
-    // 中间件列表
-    public middlewares: Middleware[] = [];
+export abstract class BaseMiddleware<TConfig = any> implements Middleware<TConfig> {
+    public readonly id: string;
+    public readonly name: string;
+    public readonly enabled: boolean;
+    public readonly config: TConfig;
+
+    protected readonly ctx: Context;
+    protected readonly logger: Logger;
+
+    constructor(name: string, ctx: Context, config?: TConfig) {
+        this.id = `middleware.${name}`;
+        this.name = name;
+        this.enabled = true;
+        this.ctx = ctx;
+        this.logger = ctx.logger(name);
+        this.config = config;
+    }
 
     /**
-     * 注册中间件
+     * 执行中间件逻辑
      */
-    use(middleware: Middleware): this {
+    abstract execute(ctx: MiddlewareContext, next: () => Promise<void>): Promise<void>;
+
+    /**
+     * 初始化中间件
+     */
+    async initialize?(): Promise<void>;
+
+    /**
+     * 清理资源
+     */
+    async dispose?(): Promise<void>;
+
+    /**
+     * 获取共享数据
+     */
+    protected getShared<T>(ctx: MiddlewareContext, key: string): T | undefined {
+        return ctx.shared.get(key);
+    }
+
+    /**
+     * 设置共享数据
+     */
+    protected setShared<T>(ctx: MiddlewareContext, key: string, value: T): void {
+        ctx.shared.set(key, value);
+    }
+}
+
+/**
+ * 中间件管道
+ */
+export class Pipeline {
+    private middlewares: Middleware[] = [];
+
+    public use(middleware: Middleware): void {
         this.middlewares.push(middleware);
-        return this;
     }
 
-    /**
-     * 执行中间件链
-     */
-    async execute(ctx: MessageContext): Promise<void> {
-        await this.executeFrom(ctx, 0);
-    }
+    public async execute(ctx: MiddlewareContext): Promise<void> {
+        const middlewaresToExecute = [...this.middlewares];
 
-    /**
-     * 从指定位置开始执行中间件链
-     */
-    async executeFrom(ctx: MessageContext, startIndex: number): Promise<void> {
         const dispatch = async (index: number): Promise<void> => {
-            if (index >= this.middlewares.length) return;
-            const middleware = this.middlewares[index];
-            await middleware.execute(ctx, () => dispatch(index + 1));
+            if (index >= middlewaresToExecute.length) {
+                return;
+            }
+
+            const currentMiddleware = middlewaresToExecute[index];
+
+            const next = () => dispatch(index + 1);
+
+            await currentMiddleware.execute(ctx, next);
         };
-        await dispatch(startIndex);
+
+        await dispatch(0);
     }
 
     /**
-     * 获取指定名称的中间件
+     * 初始化中间件
      */
-    public getMiddleware<T extends Middleware>(name: string): T | undefined {
-        return this.middlewares.find((m) => m.name === name) as T;
+    public async initialize(): Promise<void> {
+        for (const middleware of this.middlewares) {
+            if (middleware.initialize) {
+                await middleware.initialize();
+            }
+        }
     }
 
-    public findIndex(name: string): number {
-        return this.middlewares.findIndex((m) => m.name === name);
+    /**
+     * 清理资源
+     */
+    public async dispose(): Promise<void> {
+        for (const middleware of this.middlewares) {
+            if (middleware.dispose) {
+                await middleware.dispose();
+            }
+        }
     }
 }

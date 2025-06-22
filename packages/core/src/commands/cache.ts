@@ -1,8 +1,7 @@
-import { $, Context } from "koishi";
 import { unlinkSync } from "fs";
+import { $, Context } from "koishi";
 import path from "path";
-
-import { IMAGE_TABLE } from "../types/model";
+import { IMAGE_TABLE } from "../shared";
 
 export const name = "yesimbot.command.cache";
 
