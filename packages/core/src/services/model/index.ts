@@ -1,6 +1,7 @@
 import { Context, Service } from "koishi";
 
 // 工厂相关
+import { Services } from "../types";
 import { AnthropicFactory } from "./factories/anthropic";
 import { IProviderFactory } from "./factories/base";
 import { OllamaFactory } from "./factories/ollama";
@@ -24,7 +25,7 @@ export class ModelService extends Service {
     private readonly providerInstances = new Map<string, ProviderInstance>();
 
     constructor(ctx: Context, public config: ModelServiceConfig) {
-        super(ctx, "yesimbot.model", true);
+        super(ctx, Services.Model, true);
 
         this.registerFactories();
         this.initializeProviders();

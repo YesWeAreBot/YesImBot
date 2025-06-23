@@ -7,8 +7,9 @@ import type { UserMessagePart } from "xsai";
 import { message } from "../dependencies/xsai";
 import { ToolService } from "./extensions";
 import { MemoryService } from "./memory";
-import { DataManager } from "./worldstate";
 import { MiddlewareContext } from "../middleware";
+import { WorldStateService } from "./worldstate";
+import { Services } from "./types";
 
 const { textPart } = message;
 
@@ -27,23 +28,22 @@ export interface PromptBuilderConfig {
 }
 
 export class PromptBuilder extends Service {
-    static readonly name = "yesimbot.promptBuilder";
-    static readonly inject = ["yesimbot.memory", "yesimbot.tool", "yesimbot.data"];
+    static readonly inject = [Services.Memory, Services.Tool, Services.WorldState];
 
     private readonly dataProviders: Map<string, PromptDataProvider> = new Map();
     private readonly partials: Map<string, string> = new Map();
+
     private readonly memory: MemoryService;
     private readonly tool: ToolService;
-    private readonly data: DataManager;
+    private readonly worldState: WorldStateService;
 
-    constructor(ctx: Context, public readonly config: PromptBuilderConfig) {
-        super(ctx, "yesimbot.promptBuilder", true);
-        this.logger = ctx.logger("PromptBuilder");
+    constructor(ctx: Context, config: PromptBuilderConfig) {
+        super(ctx, Services.PromptBuilder, true);
 
         // 获取核心服务
-        this.memory = ctx["yesimbot.memory"];
-        this.tool = ctx["yesimbot.tool"];
-        this.data = ctx["yesimbot.data"];
+        this.memory = ctx[Services.Memory];
+        this.tool = ctx[Services.Tool];
+        this.worldState = ctx[Services.WorldState];
 
         // 禁用 Mustache 的 HTML 转义，因为我们的输出是纯文本
         Mustache.escape = (text) => text;
@@ -100,17 +100,7 @@ export class PromptBuilder extends Service {
         });
 
         this.registerDataProvider("WORLD_STATE", async (ctx: MiddlewareContext) => {
-            const state = await this.data.getWorldState(ctx.allowedChannels);
-
-            // state.activeChannels.forEach(channel=>{
-            //     channel.history.forEach(turn=>{
-            //         turn.responses.forEach(resp=>{
-            //             resp.actions.forEach(action=>{
-            //                 action.
-            //             })
-            //         })
-            //     })
-            // })
+            const state = await this.worldState.getWorldState(ctx.allowedChannels);
 
             return state;
         });

@@ -10,6 +10,8 @@ import {
     SystemBaseTemplate,
     ToolServiceConfig,
     UserBaseTemplate,
+    WorldStateConfig,
+    WorldStateConfigSchema,
 } from "./services";
 import { PromptBuilderConfig } from "./shared";
 
@@ -50,6 +52,7 @@ export interface Config {
     // GroupInfoVisibility: GroupInfoVisibility;
     Task: {};
     PromptTemplate: PromptBuilderConfig;
+    WorldState: WorldStateConfig;
     Debug: {
         EnableDebug: boolean;
         UploadDump: boolean;
@@ -238,6 +241,8 @@ export const Config: Schema<Config> = Schema.object({
             .role("textarea", { rows: [4, 8] })
             .description("自定义用户提示词模板"),
     }).description("自定义提示词"),
+
+    WorldState: WorldStateConfigSchema,
 
     Debug: Schema.object({
         EnableDebug: Schema.boolean().default(false).description("在控制台显示详细的调试信息"),

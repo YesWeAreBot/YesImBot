@@ -1,6 +1,8 @@
 export * from "./extensions";
 export * from "./memory";
 export * from "./model";
-export * from "./PromptBuilder";
+export * from "./platform";
+export * from "./prompt-builder";
 export * from "./worldstate";
 
+export  * from "./types";
