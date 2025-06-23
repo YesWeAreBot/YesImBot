@@ -2,6 +2,7 @@ import { Context, Service } from "koishi";
 import { MEMORY_TABLE } from "../../shared";
 import { ModelDescriptor } from "../model";
 import { ChatModel } from "../model/impl/ChatModel";
+import { Services } from "../types";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
 import { ArchivalEntry, ArchivalSearchResult, IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
 import { MemoryBlock } from "./MemoryBlock";
@@ -47,12 +48,12 @@ interface MemoryBlockCompressionState {
 
 declare module "koishi" {
     interface Context {
-        "yesimbot.memory": MemoryService;
+        [Services.Memory]: MemoryService;
     }
 }
 
 export class MemoryService extends Service {
-    static readonly inject = ["yesimbot.model"];
+    static readonly inject = [Services.Model];
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
     private lastModified: Date = new Date();
@@ -65,7 +66,7 @@ export class MemoryService extends Service {
     private chatModel: ChatModel;
 
     constructor(ctx: Context, public readonly config: MemoryServiceConfig = {}) {
-        super(ctx, "yesimbot.memory", true);
+        super(ctx, Services.Memory, true);
 
         ctx.model.extend(
             MEMORY_TABLE,
@@ -83,7 +84,7 @@ export class MemoryService extends Service {
 
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
-        this.chatModel = ctx["yesimbot.model"].getChatModel(config.UseModel);
+        this.chatModel = ctx[Services.Model].getChatModel(config.UseModel);
         ctx.logger.info("MemoryService initialized.");
     }
 

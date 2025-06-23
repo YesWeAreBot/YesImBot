@@ -2,7 +2,7 @@ import { Context, Service } from "koishi";
 
 import AgentCore from "./agent/agent";
 import { Config } from "./config";
-import { DataManager, MemoryService, ModelService, PromptBuilder, ToolService } from "./services";
+import { MemoryService, ModelService, PromptBuilder, ToolService, WorldStateService } from "./services";
 import {
     ChatMessage,
     IMAGE_TABLE,
@@ -59,8 +59,8 @@ export default class YesImBot extends Service {
         // 注册记忆管理层
         ctx.plugin(MemoryService, config.Memory);
 
-        // 注册 WorldState DataManager 服务
-        this.ctx.plugin(DataManager);
+        // 注册 WorldState 服务
+        this.ctx.plugin(WorldStateService, config.WorldState);
 
         // 注册提示词构建器服务
         this.ctx.plugin(PromptBuilder, config.PromptTemplate);

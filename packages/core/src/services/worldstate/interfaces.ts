@@ -1,123 +1,150 @@
-import { ToolCallResult } from "../extensions";
+/**
+ * 本文件定义了 WorldState 服务的核心领域对象。
+ * 这些接口代表了业务逻辑操作的核心，由仓储层(Repository)负责从数据库数据(DTOs)构建。
+ */
 
+import { TableName } from "./model";
+
+// --- 基础实体 (Entities) ---
+
+/**
+ * 代表一个平台用户，包含了从平台API实时获取或缓存的基础信息。
+ */
+export interface PlatformUser {
+    /** 平台唯一用户ID (pid) */
+    id: string;
+    /** 用户在平台上的全局名称或用户名 */
+    name?: string;
+    /** 用户在平台上的头像URL */
+    avatar?: string;
+    /** 是否为机器人 */
+    isBot?: boolean;
+}
+
+/**
+ * 代表一个在特定频道中的成员，是最终呈现给 Agent 的核心用户对象。
+ * 它是通过融合【平台实时信息】和【我们数据库中的附加状态】而成的完整视图。
+ */
+export interface Member extends PlatformUser {
+    /** 在特定频道中的昵称 (优先使用我们DB的覆盖值，否则使用平台值) */
+    nick?: string;
+    /** 在特定频道中的角色 (优先使用我们DB的覆盖值，否则使用平台值) */
+    role?: string;
+}
+
+/**
+ * 代表一个独立的对话场景（群聊或私聊）。
+ */
+export interface Channel {
+    id: string;
+    platform: string;
+    name: string;
+    type: "group" | "private";
+    description?: string;
+    members: Member[];
+    memberSummary: MemberSummary;
+    history: Turn[];
+}
+
+/**
+ * 频道内成员的宏观统计信息。
+ */
+export interface MemberSummary {
+    totalCount: number;
+    onlineCount: number;
+    recentActiveCount: number;
+}
+
+// --- 核心结构 (Core Structures) ---
+
+/**
+ * 代表 Agent 感知到的整个世界快照。
+ */
 export interface WorldState {
     timestamp: string;
     activeChannels: Channel[];
     inactiveChannels: Channel[];
 }
 
-// 一个频道对象，替换原来的 Scenario
-// 群组或是私聊，或者沙盒测试环境
-export interface Channel {
-    id: string; // 频道 ID
-    name: string; // 频道名称，群聊就是群组名，私聊为“你和 <用户名> 的私聊”
-    type: "guild" | "private" | "sandbox";
-    platform: string;
-    meta: {
-        description?: string; // 频道描述，有些适配器获取不到。或许可以根据历史对话生成一个
-    };
-    // 经过智能筛选和摘要的成员信息
-    // 层次1: 核心成员，如群主、管理员，或与自己有特殊关系的成员
-    // 层次2: 上下文相关成员 (近期发言或被@)
-    members: Member[];
-
-    // 层次3: 群体氛围感知的摘要信息
-    memberSummary: MemberSummary;
-    history: Turn[];
-}
-
-export interface MemberSummary {
-    total_count: number; // 频道成员总数
-    online_count: number; // 频道在线成员数
-    recent_active_members_count: number; // 频道近期活跃成员数
-}
-
-export interface User {
-    id: string; // 特点平台用户 ID (pid)
-    name: string; // 用户名称
-    meta: {
-        avatar?: string; // 用户头像 URL
-        [key: string]: unknown;
-    };
-    created_at: Date;
-    updated_at: Date;
-}
-
-export interface Member extends User {
-    channel_id: string;
-    meta: User["meta"] & {
-        nick?: string;
-        role?: string;
-    };
-    last_active?: string; // 用户上次活跃时间
-}
-
+/**
+ * 代表一次完整的“刺激-反应”循环。
+ */
 export interface Turn {
     id: string;
-    status: "full" | "summarized" | "folded" | "new";
-    events: ChannelEvent[];
-    summary?: string; // 摘要
+    status: "new" | "in_progress" | "completed" | "summarized";
+    events: Event[];
     responses: AgentResponse[];
+    summary?: string;
 }
 
+// --- 事件系统 (Event System) ---
+
+/**
+ * 所有事件的基类。
+ * @template T - 事件类型的字符串字面量。
+ * @template P - 事件特有的数据负载 (payload)。
+ */
+export interface BaseEvent<T extends string, P extends object> {
+    id: string;
+    type: T;
+    timestamp: Date;
+    /** 负载对象，包含了事件的核心信息和关联ID */
+    payload: P;
+    /** 一个方便模板渲染的布尔标记 */
+    [key: `is_${string}`]: boolean;
+}
+
+export type MessageEvent = BaseEvent<
+    "message",
+    {
+        actor: Member; // 消息发送者
+        content: string;
+        messageId: string;
+        quote?: { messageId: string; content?: string; actor: Member };
+    }
+>;
+
+export type MemberJoinedEvent = BaseEvent<
+    "member-joined",
+    {
+        actor: Member; // 操作者
+        user: Member; // 加入的成员
+    }
+>;
+
+export type MemberLeftEvent = BaseEvent<
+    "member-left",
+    {
+        actor: Member; // 操作者
+        user: Member; // 离开的成员
+    }
+>;
+
+/**
+ * 通用事件，用于捕获所有未被强类型定义的其他事件。
+ */
+export type GenericEvent = BaseEvent<
+    string,
+    {
+        koishiEventName: string;
+        actor?: Member;
+        [key: string]: any;
+    }
+>;
+
+export type Event = MessageEvent | MemberJoinedEvent | MemberLeftEvent | GenericEvent;
+
+// --- Agent 响应结构 ---
 export interface AgentResponse {
-    thoughts: Thought;
+    thoughts: { observe: string; analyze_infer: string; plan: string };
     actions: Action[];
     observations: ActionResult[];
 }
-
-export interface Thought {
-    obverse: string;
-    analyze_infer: string;
-    plan: string;
-}
-
 export interface Action {
     function: string;
     params: Record<string, unknown>;
-    renderParams?: () => string;
 }
-
 export interface ActionResult {
     function: string;
-    result: ToolCallResult;
-    renderResult?: () => string;
+    result: any;
 }
-
-// --- 事件相关接口 ---
-
-// 基础事件结构
-interface BaseEvent {
-    id: number; // 自增 ID
-    type: string;
-    timestamp: Date;
-}
-
-// 具体事件类型定义
-export interface UserJoinedEvent extends BaseEvent {
-    type: "user_joined";
-    actor: Member; // 操作者 (可能是系统或其他成员)
-    user: Member; // 加入的成员
-    note?: string;
-}
-
-export interface UserLeftEvent extends BaseEvent {
-    type: "user_left";
-    actor: Member;
-    user: Member;
-    reason?: string;
-}
-
-export interface MessageEvent extends BaseEvent {
-    type: "message";
-    messageId: string;
-    sender: Member;
-    content: string;
-}
-
-export interface SystemNotificationEvent extends BaseEvent {
-    type: "system_notification";
-    content: string;
-}
-
-export type ChannelEvent = UserJoinedEvent | UserLeftEvent | MessageEvent | SystemNotificationEvent;
