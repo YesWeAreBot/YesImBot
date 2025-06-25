@@ -1,5 +1,5 @@
 import { Context, Logger, Schema, Session } from "koishi";
-import { PlatformAdapter } from "../PlatformAdapter";
+import { PlatformService } from "../platform";
 
 /**
  * 扩展元数据
@@ -48,17 +48,17 @@ export interface ToolMetadata {
  * 工具执行上下文
  * @template TConfig - 扩展的配置对象类型
  */
-export interface ToolContext<TConfig = any> {
+export interface ToolExecutionContext<TConfig = any> {
     /** Koishi 上下文 */
     koishiContext: Context;
     /** Koishi 会话 */
     koishiSession: Session;
+    /** 平台适配器 */
+    platform: PlatformService;
     /** 日志记录器 */
     logger?: Logger;
     /** 该工具所属扩展的配置 */
     extensionConfig: TConfig;
-    /** 平台适配器 */
-    platform: PlatformAdapter;
 }
 
 /**
@@ -90,14 +90,14 @@ export interface ToolDefinition<TParams extends Schema = any, TReturns = any, TC
     parameters: TParams | { properties: { [key: string]: { type: StaticRange; description: string } } };
     execute: (
         params: Schemastery.TypeS<TParams>,
-        context: ToolContext<TConfig>
+        context: ToolExecutionContext<TConfig>
     ) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
     hooks?: {
-        onRegister?: (context: ToolContext<TConfig>) => Promise<void> | void;
-        onUnregister?: (context: ToolContext<TConfig>) => Promise<void> | void;
-        onBeforeExecute?: (params: TParams, context: ToolContext<TConfig>) => Promise<void> | void;
-        onAfterExecute?: (result: ToolCallResult<TReturns>, context: ToolContext<TConfig>) => Promise<void> | void;
-        onError?: (error: Error, context: ToolContext<TConfig>) => Promise<void> | void;
+        onRegister?: (context: ToolExecutionContext<TConfig>) => Promise<void> | void;
+        onUnregister?: (context: ToolExecutionContext<TConfig>) => Promise<void> | void;
+        onBeforeExecute?: (params: TParams, context: ToolExecutionContext<TConfig>) => Promise<void> | void;
+        onAfterExecute?: (result: ToolCallResult<TReturns>, context: ToolExecutionContext<TConfig>) => Promise<void> | void;
+        onError?: (error: Error, context: ToolExecutionContext<TConfig>) => Promise<void> | void;
     };
 }
 
@@ -140,18 +140,19 @@ export interface ExecutableTool<TParams extends Schema<any> = any, TReturns = an
             };
         };
     };
-    execute: (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => Promise<ToolCallResult<TReturns>>;
+    execute: (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolExecutionContext>) => Promise<ToolCallResult<TReturns>>;
 }
 
 /**
  * 工具管理器配置
  */
 export interface ToolServiceConfig {
+    MaxRetry?: any;
+    RetryDelayMs?: number;
     autoLoad?: boolean;
     extensionPaths?: string[];
     logLevel?: "debug" | "info" | "warn" | "error";
     enableMetrics?: boolean;
-    maxRetries?: number;
     timeout?: number;
     hotReload?: boolean;
     validateTypes?: boolean;

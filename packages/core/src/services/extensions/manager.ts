@@ -1,22 +1,24 @@
 import { Context, Service } from "koishi";
 import path from "path";
-import { createExtension, defineExecutableTool, isValidExtension, isValidTool } from "./helpers";
+import { Services } from "../types";
+import { createExtension, defineExecutableTool, Failed, isValidExtension, isValidTool } from "./helpers";
 import {
     ExecutableTool,
     ExtensionConstructor,
     ExtensionDefinition,
-    ToolContext,
+    ToolCallResult,
     ToolDefinition,
     ToolError,
     ToolErrorType,
-    ToolServiceConfig,
+    ToolExecutionContext,
     ToolRegistrationOptions,
+    ToolServiceConfig,
 } from "./types";
 import { getExtensionFiles } from "./utils";
 
 declare module "koishi" {
     interface Context {
-        "yesimbot.tool": ToolService;
+        [Services.Tool]: ToolService;
     }
 }
 
@@ -33,8 +35,8 @@ export class ToolService extends Service {
     private categories = new Map<string, Set<string>>();
     private extensionConfigs = new Map<string, any>();
 
-    constructor(ctx: Context, public config: ToolServiceConfig = {}) {
-        super(ctx, "yesimbot.tool", true);
+    constructor(ctx: Context, public config: ToolServiceConfig) {
+        super(ctx, Services.Tool, true);
 
         ctx.on("ready", async () => {
             if (this.config?.autoLoad) await this.loadExtensions();
@@ -156,7 +158,7 @@ export class ToolService extends Service {
     /**
      * 注销工具
      */
-    async unregisterTool(toolName: string, context?: ToolContext): Promise<boolean> {
+    async unregisterTool(toolName: string, context?: ToolExecutionContext): Promise<boolean> {
         const definition = this.tools.get(toolName);
         if (!definition) {
             return false;
@@ -229,7 +231,7 @@ export class ToolService extends Service {
         const extensionMetadata = extensionName ? this.extensions.get(extensionName)?.metadata : undefined;
         const extensionConfig = extensionName ? this.extensionConfigs.get(extensionName) : {};
 
-        const baseContext: Partial<ToolContext> = {
+        const baseContext: Partial<ToolExecutionContext> = {
             koishiContext: this.ctx,
             logger: this.ctx.logger.extend(name),
             extensionConfig,
@@ -241,41 +243,54 @@ export class ToolService extends Service {
         return this.getAllToolDefinitions().map((def) => this.getTool(def.metadata.name)!);
     }
 
-    // async executeToolCall(session: any, functionName: string, params: Record<string, unknown>): Promise<ToolCallResult> {
-    //     const startTime = Date.now();
-    //     this.ctx.logger.info(`→ 开始执行工具: ${functionName}(${JSON.stringify(params)})`);
+    async executeToolCall(context: ToolExecutionContext, functionName: string, params: Record<string, unknown>): Promise<ToolCallResult> {
+        const tool = this.getTool(functionName);
 
-    //     const tool = this.getTool(functionName);
-    //     if (!tool) {
-    //         const errorMsg = `工具 "${functionName}" 未找到`;
-    //         this.ctx.logger.warn(`← 工具执行失败: ${errorMsg}`);
-    //         return { success: false, error: errorMsg };
-    //     }
+        if (!tool) {
+            this.ctx.logger.warn(`[TOOL_EXEC] Tool '${functionName}' not found.`);
+            return Failed(`Tool ${functionName} not found`);
+        }
 
-    //     const definition = this.getToolDefinition(functionName)!;
-    //     const validation = validateToolParameters(definition.parameters as z.ZodTypeAny, params);
-    //     if (!validation.success) {
-    //         const error = createToolError(ToolErrorType.VALIDATION_ERROR, validation.error, functionName);
-    //         this.ctx.logger.warn(`← 工具执行失败: ${functionName} - ${error.message}`);
-    //         return { success: false, error: error.message };
-    //     }
+        const stringifyParams = Object.entries(params)
+            .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+            .join(", ");
+        this.ctx.logger.info(`[TOOL_EXEC] → Calling tool: ${functionName}(${stringifyParams})`);
 
-    //     try {
-    //         const result = await tool.execute(validation.data, { koishiSession: session });
-    //         const executionTime = Date.now() - startTime;
-    //         const resultPreview = JSON.stringify(result.result).substring(0, 100);
-    //         this.ctx.logger.success(`← 工具执行成功: ${functionName} (${executionTime}ms) -> ${resultPreview}...`);
-    //         return result;
-    //     } catch (error) {
-    //         const executionTime = Date.now() - startTime;
-    //         const toolError =
-    //             error instanceof ToolError
-    //                 ? error
-    //                 : createToolError(ToolErrorType.EXECUTION_ERROR, (error as Error).message, functionName, error as Error);
-    //         this.ctx.logger.error(`← 工具执行失败: ${functionName} (${executionTime}ms) - ${toolError.message}`);
-    //         return { success: false, error: toolError.message };
-    //     }
-    // }
+        let lastResult: ToolCallResult = Failed("Tool call did not execute.");
+
+        for (let attempt = 1; attempt <= this.config.MaxRetry + 1; attempt++) {
+            try {
+                if (attempt > 1) {
+                    this.ctx.logger.info(`  - Retrying (${attempt - 1}/${this.config.MaxRetry})...`);
+                    await new Promise((resolve) => setTimeout(resolve, this.config.RetryDelayMs));
+                }
+
+                // 假设 tool.execute 需要一个上下文对象
+                lastResult = await tool.execute(params, context);
+
+                if (lastResult.status === "success") {
+                    this.ctx.logger.info(`[TOOL_EXEC] ✔ Success ← Tool returned: ${JSON.stringify(lastResult)}`);
+                    return lastResult;
+                }
+
+                if (!lastResult.retryable) {
+                    this.ctx.logger.warn(`[TOOL_EXEC] ❌ Failed (Not Retryable) ← Tool failed: ${lastResult.error}`);
+                    return lastResult;
+                }
+
+                this.ctx.logger.warn(`[TOOL_EXEC] ⚠️ Failed (Retryable) ← Tool failed, will retry. Reason: ${lastResult.error}`);
+            } catch (error) {
+                this.ctx.logger.error(`[TOOL_EXEC] 💥 Error ← Exception during tool execution '${functionName}':`, error);
+                lastResult = Failed(`Exception: ${error.message}`);
+                return lastResult; // 异常通常不可重试
+            }
+        }
+
+        this.ctx.logger.error(
+            `[TOOL_EXEC] ❌ Failed (Retries Exhausted) ← Tool '${functionName}' failed after ${this.config.MaxRetry} retries.`
+        );
+        return lastResult;
+    }
 
     async reloadExtensions(): Promise<void> {
         this.ctx.logger.info("开始重新加载所有扩展...");

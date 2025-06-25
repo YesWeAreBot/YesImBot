@@ -5,7 +5,7 @@ import {
     ExtensionMetadata,
     ToolDefinition,
     ToolCallResult,
-    ToolContext,
+    ToolExecutionContext,
     ToolError,
     ToolErrorType,
 } from "./types";
@@ -75,7 +75,7 @@ export function Failed(error: string, metadata?: ToolCallResult["metadata"]): To
  */
 export function defineExecutableTool<TParams extends Schema<any>, TReturns = any, TConfig = any>(
     definition: ToolDefinition<TParams, TReturns, TConfig>,
-    baseContext: Partial<ToolContext<TConfig>> = {},
+    baseContext: Partial<ToolExecutionContext<TConfig>> = {},
     extensionMetadata?: ExtensionMetadata
 ): ExecutableTool<TParams, TReturns> {
     // 生成 JSON Schema
@@ -115,8 +115,8 @@ export function defineExecutableTool<TParams extends Schema<any>, TReturns = any
             description: definition.metadata.description,
             parameters: parametersJsonSchema,
         },
-        execute: async (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolContext>) => {
-            const mergedContext = { ...baseContext, ...runtimeContext } as ToolContext<TConfig>;
+        execute: async (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolExecutionContext>) => {
+            const mergedContext = { ...baseContext, ...runtimeContext } as ToolExecutionContext<TConfig>;
             await definition?.hooks?.onBeforeExecute?.(params, mergedContext);
 
             let result;
