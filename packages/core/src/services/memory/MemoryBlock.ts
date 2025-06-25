@@ -3,11 +3,12 @@ import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { Context, Logger } from "koishi";
 import path from "path";
 
-import { Config } from "../../config";
-import { MEMORY_TABLE, MemoryBlockData, isEmpty } from "../../shared";
-import { ChatModel } from "../model/impl/ChatModel";
+import { isEmpty } from "../../shared";
+import { ChatModel } from "../model";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
 import { MemoryError } from "./MemoryError";
+import { BackupConfig, MEMORY_TABLE, MemoryCompressionConfig } from "./config";
+import { MemoryBlockData } from "./types";
 
 export class MemoryBlock {
     private _id: string;
@@ -304,8 +305,8 @@ export class MemoryBlock {
     public async compress(
         ctx: Context, // Pass the full context to access services like chat
         chatModel: ChatModel,
-        compressionConfig: Config["Memory"]["Compression"],
-        backupConfig: Config["Memory"]["Backup"]
+        compressionConfig: MemoryCompressionConfig,
+        backupConfig: BackupConfig
     ): Promise<void> {
         const logger = ctx.logger(MemoryBlock.name + ".Compression");
         logger.info(`Attempting to compress ${this._label}. Original content: ${this._content.length} lines, ${this.currentSize} chars.`);

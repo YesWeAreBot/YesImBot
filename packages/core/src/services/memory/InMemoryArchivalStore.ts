@@ -1,16 +1,5 @@
 import { Context, Logger } from "koishi";
-
-export interface ArchivalEntry {
-    id: string;
-    content: string;
-    timestamp: Date;
-    metadata?: Record<string, any>;
-}
-
-export interface ArchivalSearchResult {
-    results: ArchivalEntry[];
-    total: number;
-}
+import { ArchivalEntry, ArchivalSearchResult } from "./types";
 
 export interface IArchivalMemoryStore {
     store(content: string, metadata?: Record<string, any>): Promise<ArchivalEntry>;

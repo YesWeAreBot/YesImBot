@@ -1,6 +1,8 @@
 import { Context } from "koishi";
-import { MEMORY_TABLE, MemoryBlockData } from "../../shared";
+
 import { MemoryError } from "./MemoryError";
+import { MEMORY_TABLE } from "./config";
+import { MemoryBlockData } from "./types";
 
 export interface IMemoryBlockStore {
     load(id: string, label: string): Promise<MemoryBlockData | null>;
