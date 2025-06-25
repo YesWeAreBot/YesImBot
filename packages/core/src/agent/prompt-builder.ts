@@ -34,8 +34,8 @@ export class PromptBuilder {
         Mustache.escape = (text) => text;
 
         // 加载模板 (此处为示例，实际应从文件加载)
-        this.systemTemplate = "System Prompt: {{> TOOL_DEFINITION}} {{> WORLD_STATE}}";
-        this.userTemplate = "User Prompt: {{> AGENT_SELF_ASSESSMENT}} {{> CURRENT_CONVERSATION}}";
+        this.systemTemplate = config.SystemTemplate;
+        this.userTemplate = config.UserTemplate;
 
         // 注册默认的局部模板
         this.registerDefaultPartials();

@@ -22,10 +22,9 @@ import { PromptBuilder, PromptContext } from "./prompt-builder";
 import { Willingness, WillingnessCalculator } from "./willingness-calculator";
 
 export class AgentCore {
-    private ctx: Context;
-    private config: AgentConfig;
+    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Platform];
 
-    // 依赖 WorldState 服务
+    // 依赖的服务
     private worldState: WorldStateService;
     private modelService: ModelService;
     private toolService: ToolService;
@@ -33,142 +32,154 @@ export class AgentCore {
     // 内部组件
     private flowAnalyzer: ConversationFlowAnalyzer;
     private willingnessCalculator: WillingnessCalculator;
-    private parser: JsonParser<AgentResponse>;
-
     private promptBuilder: PromptBuilder;
-
+    private parser: JsonParser<AgentResponse>;
     private retryManager: LLMRetryManager;
     private adapterManager: LLMAdapterManager;
 
-    // 用于防抖的计时器 Map
+    // 内部状态
+    private allowedChannels = new Set<string>();
+    private channelGroupMap = new Map<string, string[]>();
+    private channelWillingness = new Map<string, number>();
+    private willingnessDecayTimer: NodeJS.Timeout;
     private debounceTimers = new Map<string, NodeJS.Timeout>();
 
-    constructor(ctx: Context, config: AgentConfig) {
+    constructor(private ctx: Context, private config: AgentConfig) {
         this.config = config;
-        this.worldState = ctx[Services.WorldState];
-        this.modelService = ctx[Services.Model];
+
+        // [REFACTOR] 通过 inject 获取服务实例
+        this.worldState = this.ctx[Services.WorldState];
+        this.modelService = this.ctx[Services.Model];
+        this.toolService = this.ctx[Services.Tool];
 
         // 实例化内部组件
-        this.flowAnalyzer = new ConversationFlowAnalyzer(ctx);
-        this.willingnessCalculator = new WillingnessCalculator(ctx, this.config.Willingness);
+        this.flowAnalyzer = new ConversationFlowAnalyzer(this.ctx);
+        this.willingnessCalculator = new WillingnessCalculator(this.ctx, this.config.Willingness);
+        this.promptBuilder = new PromptBuilder(this.ctx, this.config.Prompt);
+        this.parser = new JsonParser<AgentResponse>();
 
-        this.promptBuilder = new PromptBuilder(ctx, config.Prompt);
+        // [FIX] 从 ModelService 获取重试和适配器管理器
+        this.retryManager = this.modelService.getRetryManager(this.config.Llm.Retry);
+        this.adapterManager = this.modelService.getAdapterManager(this.config.Llm.UseModel);
+
+        ctx.on("ready", () => {
+            this.start();
+        });
+
+        ctx.on("dispose", () => {
+            this.stop();
+        });
     }
 
     protected start(): void {
         this.ctx.logger.info("Agent Service started.");
+        this.updateAllowedChannels();
+        this.ctx.on("config", () => this.updateAllowedChannels());
 
-        // 监听 WorldStateService 广播的事件
         this.ctx.on("worldstate:segment-updated", (session, segmentId, channelId, platform) => {
+            if (!this.isChannelAllowed(channelId)) return;
             this.handleSegmentUpdate(session, segmentId, channelId, platform);
         });
+
+        this.startWillingnessDecay();
     }
 
     protected stop(): void {
         this.ctx.logger.info("Agent Service stopped.");
         this.debounceTimers.forEach(clearTimeout);
+        clearInterval(this.willingnessDecayTimer);
+    }
+
+    // [ADD] 新增和完善的私有方法
+    private updateAllowedChannels(): void {
+        this.allowedChannels.clear();
+        this.config.Arousal.AllowedChannelGroups.forEach((group) => {
+            group.forEach((channelId) => {
+                this.allowedChannels.add(channelId);
+            });
+        });
+    }
+
+    private isChannelAllowed(channelId: string): boolean {
+        return this.allowedChannels.has(channelId);
+    }
+
+    private startWillingnessDecay(): void {
+        this.willingnessDecayTimer = setInterval(() => {
+            for (const [channelId, willingness] of this.channelWillingness) {
+                const decayed = Math.max(0, willingness - this.config.Willingness.DecayPerMinute);
+                this.channelWillingness.set(channelId, decayed);
+            }
+        }, 60000);
     }
 
     private handleSegmentUpdate(session: Session, segmentId: string, channelId: string, platform: string): void {
         const channelKey = `${platform}:${channelId}`;
-
-        // 清除旧的计时器
         if (this.debounceTimers.has(channelKey)) {
             clearTimeout(this.debounceTimers.get(channelKey));
         }
-
-        // 设置新的防抖计时器
-        const debounceMs = this.config.Arousal.DebounceMs || 1500;
         this.debounceTimers.set(
             channelKey,
             setTimeout(() => {
                 this.ctx.logger.info(`Debounce timer triggered for channel ${channelKey}. Starting decision process...`);
                 this.decideToAct(session, channelId, platform);
                 this.debounceTimers.delete(channelKey);
-            }, debounceMs)
+            }, this.config.Arousal.DebounceMs)
         );
     }
 
     private async decideToAct(session: Session, channelId: string, platform: string): Promise<void> {
         this.ctx.logger.info(`[DECISION] Evaluating channel ${platform}:${channelId}`);
-
-        // 1. 获取最新的开放对话片段
-        const segmentRecord = await this.worldState.findOpenSegmentRecord(channelId, platform); // 假设的方法
+        const segmentRecord = await this.worldState.findOpenSegmentRecord(channelId, platform);
         if (!segmentRecord) {
             this.ctx.logger.warn(`[DECISION] No open segment found for ${platform}:${channelId}. Aborting.`);
             return;
         }
 
-        const channelRecord = await this.worldState.getChannelRecord(channelId, platform); // 假设的方法
-        if (!channelRecord || !channelRecord.guildId) {
-            this.ctx.logger.warn(`[DECISION] No guildId found for ${platform}:${channelId}. Aborting.`);
-            return;
+        const channelRecord = await this.worldState.getChannelRecord(channelId, platform);
+        if (!channelRecord || !channelRecord.guildId) return;
+
+        const segmentToAnalyze = await this.worldState.segments.hydrateSegment(segmentRecord, platform, channelRecord.guildId, channelId);
+        const analysis = this.flowAnalyzer.analyze(segmentToAnalyze);
+        const currentWillingness = this.channelWillingness.get(channelId) || 0;
+        const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
+
+        if (this.config.Debug.LogDecisionDetails) {
+            this.ctx.logger.info(
+                `[DECISION] ${channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
+                    willingness.threshold
+                } | Act: ${willingness.shouldAct} | R: ${willingness.reasons.join("; ")}`
+            );
         }
 
-        // 2. 将原始数据水合成用于分析的领域对象
-        const segmentToAnalyze = await this.worldState.segments.hydrateSegment(segmentRecord, platform, channelRecord.guildId, channelId);
-
-        // 2. 调用分析器
-        const analysis: FlowAnalysis = this.flowAnalyzer.analyze(segmentToAnalyze);
-        this.ctx.logger.info(`[DECISION] Flow Analysis: ${JSON.stringify(analysis)}`);
-
-        // 3. 调用意愿计算器
-        const willingness: Willingness = this.willingnessCalculator.calculate(analysis);
-        this.ctx.logger.info(
-            `[DECISION] Willingness Calculation: value=${willingness.value.toFixed(2)}, threshold=${willingness.threshold}, shouldAct=${
-                willingness.shouldAct
-            }`
-        );
-        this.ctx.logger.info(`[DECISION] Reasons: ${willingness.reasons.join("; ")}`);
-
-        // 4. 根据最终决策行动
         if (willingness.shouldAct) {
-            this.ctx.logger.info(`[ACTION] Willingness threshold met. Executing thinking cycle.`);
+            const retainedWillingness = willingness.value * this.config.Willingness.RetentionAfterReply;
+            this.channelWillingness.set(channelId, retainedWillingness);
             await this.executeThinkingCycle(session, segmentToAnalyze, analysis, willingness);
         } else {
-            this.ctx.logger.info(`[ACTION] Willingness threshold not met. Agent remains silent.`);
+            this.channelWillingness.set(channelId, willingness.value);
         }
     }
 
-    /**
-     * ReAct 思考-行动循环的核心控制器
-     * @param segment 触发此循环的对话片段
-     * @param analysis 对此片段的分析结果
-     * @param willingness 触发此循环的意愿度计算结果
-     */
     public async executeThinkingCycle(
         session: Session,
         segment: DialogueSegment,
         analysis: FlowAnalysis,
         willingness: Willingness
     ): Promise<void> {
-        const channelId = segment.channelId;
-        const platform = segment.platform;
-
-        // 1. 创建一个新的 AgentTurn
-        const agentTurnRecord = await this.ctx.database.create(TableName.AgentTurns, {
-            id: `turn_${Date.now()}_${Random.id(8)}`,
-            stimulusSegmentId: segment.id,
-            channelId: channelId,
-            platform: platform,
-            status: "in_progress",
-            startTimestamp: new Date(),
-            endTimestamp: new Date(), // 临时值
-        });
-
+        const agentTurnRecord = await this.worldState.createAgentTurn(segment);
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
-        const agentTurnHistory: AgentTurn[] = []; // 用于在循环中累积上下文
+        const agentTurnHistory: AgentTurn[] = [];
 
-        // 2. 启动心跳循环 (Heartbeat Loop)
-        while (shouldContinueHeartbeat && heartbeatCount < this.config.MaxHeartbeat) {
+        while (shouldContinueHeartbeat && heartbeatCount < this.config.Llm.MaxHeartbeat) {
             heartbeatCount++;
             this.ctx.logger.info(`[THINK] ❤️ Heartbeat #${heartbeatCount} for turn ${agentTurnRecord.id}`);
 
-            // a. 构建提示词
-            const promptContext: PromptContext = await this.buildPromptContext(
-                channelId,
-                platform,
+            const channelGroup = this.channelGroupMap.get(segment.channelId) || [segment.channelId];
+            const promptContext = await this.buildPromptContext(
+                channelGroup,
+                session.platform,
                 segment,
                 analysis,
                 willingness,
@@ -176,30 +187,30 @@ export class AgentCore {
             );
             const { system, user } = await this.promptBuilder.build(promptContext);
 
-            // b. 调用 LLM
-            const llmRawResponse = await this.adapterManager.executeWithAdapterSwitching(async (adapterName: string, model: ChatModel) => {
-                return await this.retryManager.executeWithRetry(async (abortSignal: AbortSignal, cancelTimeout: () => void) => {
-                    return await model.chat(
-                        [
-                            { role: "system", content: system },
-                            { role: "user", content: user },
-                        ],
-                        {
-                            debug: true,
-                            logger: this.ctx.logger(model.id),
-                            abortSignal,
-                            onStreamStart: cancelTimeout, // 当流式响应开始时取消定时器
-                        }
-                    );
-                }, adapterName);
-            });
+            // [REFACTOR] 使用 ModelService 进行 LLM 调用
+            const llmRawResponse = await this.modelService.chat(
+                [
+                    { role: "system", content: system },
+                    { role: "user", content: user },
+                ],
+                {
+                    retryConfig: {
+                        maxRetries: this.config.Llm.Retry.MaxRetries,
+                        timeoutMs: this.config.Llm.Retry.TimeoutMs,
+                        retryDelayMs: this.config.Llm.Retry.RetryDelayMs,
+                        exponentialBackoff: this.config.Llm.Retry.ExponentialBackoff,
+                    },
+                    adapterSwitchingConfig: {
+                        enabled: true,
+                        maxAttempts: 3,
+                    },
+                }
+            );
 
             const llmParsedResponse = this.parser.parse(llmRawResponse.text);
 
             if (llmParsedResponse.error || !llmParsedResponse.data) {
-                this.ctx.logger.warn(`[THINK] Failed to parse LLM response: ${llmParsedResponse.error}`);
-                this.ctx.logger.warn(`[THINK] Raw LLM Response: ${llmRawResponse}`);
-                this.ctx.logger.warn(`[THINK] Reason: ${llmParsedResponse.logs}`);
+                this.ctx.logger.warn(`[THINK] Failed to parse LLM response: ${llmParsedResponse.error}. Raw: ${llmRawResponse.text}`);
                 shouldContinueHeartbeat = false;
                 continue;
             }
@@ -214,57 +225,31 @@ export class AgentCore {
                 extensionConfig: {},
             };
 
-            // public async execute(action: Action, executionContext: ToolExecutionContext): Promise<ActionResult> {
-            //     const { function: functionName, params } = action;
+            // [REFACTOR] 使用 ToolService 执行工具调用
+            const observations = await Promise.all(
+                validResponse.actions.map(async (action) => {
+                    const result = await this.toolService.executeToolCall(context, action.function, action.params);
+                    return { function: action.function, result };
+                })
+            );
 
-            //     const result = await this.toolService.executeToolCall(executionContext, functionName, params);
-            //     return {
-            //         function: functionName,
-            //         result,
-            //     };
-            // }
-
-            const execute = async (action: Action, context: ToolExecutionContext): Promise<ActionResult> => {
-                const { function: functionName, params } = action;
-                const result = await this.toolService.executeToolCall(context, functionName, params);
-                return {
-                    function: functionName,
-                    result,
-                };
-            };
-
-            // c. 执行工具调用
-            const observations = await Promise.all(validResponse.actions.map((action) => execute(action, context)));
-
-            // d. 记录 AgentResponse
-            const agentResponse: AgentResponse = {
-                thoughts: validResponse.thoughts,
-                actions: validResponse.actions,
-                observations: observations,
-                request_heartbeat: validResponse.request_heartbeat,
-            };
+            const agentResponse: AgentResponse = { ...validResponse, observations };
             await this.ctx.database.create(TableName.AgentResponses, {
                 turnId: agentTurnRecord.id,
-                ...agentResponse,
+                thoughts: agentResponse.thoughts,
+                actions: agentResponse.actions,
+                observations: agentResponse.observations,
             });
 
-            // e. 准备下一次循环
-            agentTurnHistory.push({
-                // 将本次的完整响应添加到历史中
-                id: agentTurnRecord.id,
-                platform: platform,
-                channelId: channelId,
-                stimulusSegmentId: segment.id,
-                status: "in_progress",
-                responses: [agentResponse],
-                is_agent_turn: true,
-                is_dialogue_segment: false,
-            });
+            // [FIX] 填充 agentTurnHistory 以便在循环中使用
+            //const hydratedResponse = await this.worldState.hydrateAgentResponse(agentResponse);
+            agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse], is_agent_turn: true, is_dialogue_segment: false });
+
             shouldContinueHeartbeat = validResponse.request_heartbeat;
         }
 
         // 3. 结束循环并更新状态
-        if (heartbeatCount >= this.config.MaxHeartbeat) {
+        if (heartbeatCount >= this.config.Llm.MaxHeartbeat) {
             this.ctx.logger.warn(`[THINK] Max heartbeat reached for turn ${agentTurnRecord.id}.`);
         }
 
@@ -290,7 +275,7 @@ export class AgentCore {
     }
 
     private async buildPromptContext(
-        channelId: string,
+        allowedChannels: string[],
         platform: string,
         segment: DialogueSegment,
         analysis: FlowAnalysis,
@@ -299,7 +284,7 @@ export class AgentCore {
     ): Promise<PromptContext> {
         return {
             toolSchemas: this.toolService.getToolSchemas(),
-            worldState: await this.worldState.getWorldState([channelId]),
+            worldState: await this.worldState.getWorldState(allowedChannels),
             currentSegment: segment,
             agentState: {
                 lifeCycleStatus: "active",

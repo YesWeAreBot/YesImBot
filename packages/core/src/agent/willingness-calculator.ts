@@ -1,9 +1,8 @@
-//@ts-nocheck
 import { Context } from "koishi";
 import { FlowAnalysis } from "./conversation-flow-analyzer";
 
 export interface WillingnessConfig {
-    TestMode: boolean; // 每条消息都触发
+    TestMode: boolean;
     AtMentionProbability: number;
     Threshold: number;
     Weight: {
@@ -30,7 +29,7 @@ export class WillingnessCalculator {
     /**
      * 新的核心方法：计算行动意愿
      */
-    public calculate(analysis: FlowAnalysis /* TODO: 以后加入 agentState */): Willingness {
+    public calculate(analysis: FlowAnalysis, currentWillingness: number /* TODO: 以后加入 agentState */): Willingness {
         const weights = this.config.Weight;
         let baseWillingness = 0;
         const reasons: string[] = [];
@@ -42,19 +41,20 @@ export class WillingnessCalculator {
         }
 
         // 2. 基于对话强度的计算
-        const intensityBonus = analysis.intensity * weights.Intensity;
+        // const intensityBonus = analysis.intensity * weights.Intensity;
+        const intensityBonus = analysis.intensity * 1;
         baseWillingness += intensityBonus;
         reasons.push(`对话强度 ${analysis.intensity.toFixed(2)} (w+${intensityBonus.toFixed(2)})`);
 
         // 3. 基于对话节奏的调整
         let paceMultiplier = 1.0;
-        if (analysis.pace === "slow") {
-            paceMultiplier = weights.Pace.Slow;
-            reasons.push(`对话节奏缓慢 (w*${paceMultiplier})`);
-        } else if (analysis.pace === "fast") {
-            paceMultiplier = weights.Pace.Fast;
-            reasons.push(`对话节奏快 (w*${paceMultiplier})`);
-        }
+        // if (analysis.pace === "slow") {
+        //     paceMultiplier = weights.Pace.Slow;
+        //     reasons.push(`对话节奏缓慢 (w*${paceMultiplier})`);
+        // } else if (analysis.pace === "fast") {
+        //     paceMultiplier = weights.Pace.Fast;
+        //     reasons.push(`对话节奏快 (w*${paceMultiplier})`);
+        // }
         baseWillingness *= paceMultiplier;
 
         // 4. 基于关键词的计算 (此处简化，实际应与 analysis.keywords 结合)
