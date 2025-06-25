@@ -1,9 +1,11 @@
+import { Channel as KChannel } from "koishi";
+
 /**
  * 本文件定义了 WorldState 服务的核心领域对象。
  * 这些接口代表了业务逻辑操作的核心，由仓储层(Repository)负责从数据库数据(DTOs)构建。
  */
 
-import { TableName } from "./model";
+import { AgentTurnData, DialogueSegmentData } from "./model";
 
 // --- 基础实体 (Entities) ---
 
@@ -33,20 +35,6 @@ export interface Member extends PlatformUser {
 }
 
 /**
- * 代表一个独立的对话场景（群聊或私聊）。
- */
-export interface Channel {
-    id: string;
-    platform: string;
-    name: string;
-    type: "group" | "private";
-    description?: string;
-    members: Member[];
-    memberSummary: MemberSummary;
-    history: Turn[];
-}
-
-/**
  * 频道内成员的宏观统计信息。
  */
 export interface MemberSummary {
@@ -66,15 +54,44 @@ export interface WorldState {
     inactiveChannels: Channel[];
 }
 
-/**
- * 代表一次完整的“刺激-反应”循环。
- */
-export interface Turn {
+/** 新增：代表一个用户主导的连续对话片段 */
+export interface DialogueSegment {
     id: string;
-    status: "new" | "in_progress" | "completed" | "summarized";
+        /** 新增：所属的平台 */
+    platform: string;
+    /** 新增：所属的频道ID */
+    channelId: string;
+    status: DialogueSegmentData["status"];
     events: Event[];
-    responses: AgentResponse[];
     summary?: string;
+    // 添加 is_dialogue_segment 方便模板渲染
+    is_dialogue_segment: true;
+    is_agent_turn: false;
+}
+
+/** 重命名：代表一次 Agent 主导的完整 ReAct 循环 */
+export interface AgentTurn {
+    id: string;
+        /** 新增：所属的平台 */
+    platform: string;
+    /** 新增：所属的频道ID */
+    channelId: string;
+    stimulusSegmentId: string;
+    status: AgentTurnData["status"];
+    responses: AgentResponse[];
+    // 添加 is_agent_turn 方便模板渲染
+    is_agent_turn: true;
+    is_dialogue_segment: false;
+}
+
+export interface Channel extends KChannel {
+    name: string;
+    type: "group" | "private";
+    description?: string;
+    members: Member[];
+    memberSummary: MemberSummary;
+    /** 修改：历史记录现在是两种类型对象的混合数组 */
+    history: (DialogueSegment | AgentTurn)[];
 }
 
 // --- 事件系统 (Event System) ---
