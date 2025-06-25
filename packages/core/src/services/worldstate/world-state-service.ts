@@ -32,7 +32,7 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
     private cleanupTimer?: NodeJS.Timeout; // 用于持有定时器的引用
 
-    private disposer: (() => boolean)[];
+    private disposer: (() => boolean)[] = [];
 
     constructor(ctx: Context, config: WorldStateConfig) {
         super(ctx, Services.WorldState, true);
@@ -111,17 +111,47 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
             // 2. 准备事件负载
             const payload = {
-                /* ... */
+                quote: session.quote,
+                sender: {
+                    id: session.userId,
+                    name: session.author.name,
+                    avatar: session.author.avatar,
+                    nick: session.author.nick,
+                },
+                content: session.content,
+                messageId: session.messageId,
             };
 
             // 3. 将事件持久化到数据库
             await this.ctx.database.create(TableName.Events, {
-                id: `evt_${Date.now()}_${session.messageId}`,
+                id: `${session.messageId}`,
                 segmentId: segment.id, // 修改
                 type: "message",
                 timestamp: new Date(session.timestamp),
                 payload,
             });
+
+            const [kUser] = await this.ctx.database.get("binding", { platform: session.platform, pid: session.author.id });
+            if (!kUser) return;
+
+            // 更新用户信息
+            await this.ctx.database.upsert("user", [
+                {
+                    id: kUser.aid,
+                    name: session.author.name,
+                },
+            ]);
+
+            // 更新成员信息
+            await this.ctx.database.upsert(TableName.Members, [
+                {
+                    uid: kUser.aid,
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    pid: session.author.id,
+                    lastActive: new Date(),
+                },
+            ]);
 
             // 4. 更新活跃状态
             await this.updateChannelActivity(session);
@@ -130,7 +160,8 @@ export class WorldStateService extends Service<WorldStateConfig> {
             // 广播片段更新事件
             this.ctx.parallel("worldstate:segment-updated", session, segment.id, session.channelId, session.platform);
         } catch (error) {
-            this.ctx.logger.error("Error handling message event:", error);
+            this.ctx.logger.error("Error handling message event:", error.message);
+            this.ctx.logger.error(error.stack);
         }
     }
 
@@ -340,7 +371,7 @@ export class WorldStateService extends Service<WorldStateConfig> {
     }
 
     public async createAgentTurn(segment: DialogueSegment) {
-        this.ctx.database.create(TableName.AgentTurns, {
+        return this.ctx.database.create(TableName.AgentTurns, {
             id: `turn_${Date.now()}_${Random.id(8)}`,
             stimulusSegmentId: segment.id,
             channelId: segment.channelId,

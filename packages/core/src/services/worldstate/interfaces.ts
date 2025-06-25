@@ -114,7 +114,7 @@ export interface BaseEvent<T extends string, P extends object> {
 export type MessageEvent = BaseEvent<
     "message",
     {
-        actor: Member; // 消息发送者
+        sender: Member;
         content: string;
         messageId: string;
         quote?: { messageId: string; content?: string; actor: Member };

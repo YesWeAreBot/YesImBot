@@ -94,14 +94,18 @@ export class MemberRepository {
      * @param pid 平台用户ID
      */
     public async updateMemberActivity(platform: string, channelId: string, pid: string): Promise<void> {
-        await this.ctx.database.upsert(TableName.Members, [
-            {
+        const lastActivity = await this.ctx.database.get(TableName.Members, { platform, channelId, pid });
+        if (lastActivity.length === 0) {
+            await this.ctx.database.create(TableName.Members, {
+
                 pid,
                 platform,
                 channelId,
                 lastActive: new Date(),
-            },
-        ]);
+            });
+        } else {
+            await this.ctx.database.set(TableName.Members, { pid, platform, channelId }, { lastActive: new Date() });
+        }
     }
 
     /**

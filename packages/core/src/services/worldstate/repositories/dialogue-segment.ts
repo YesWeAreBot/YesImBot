@@ -90,7 +90,7 @@ export class DialogueSegmentRepository {
                         payload: {
                             content: payload.content,
                             messageId: payload.messageId,
-                            actor: memberMap.get(payload.actorId) ?? unknownUser(payload.actorId),
+                            sender: memberMap.get(payload) ?? unknownUser(payload.actorId),
                         },
                     } as MessageEvent;
                 case "member-joined":

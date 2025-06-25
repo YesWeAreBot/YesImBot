@@ -6,12 +6,12 @@ import { Services } from "../types";
 
 export class ChatModelSwitcher {
     private currentIndex = 0;
-    private currentModelDescriptors: ModelDescriptor[]; // 实际生效的模型列表
+    private currentModelDescriptors: ModelDescriptor[];
     private logger: Logger;
     private modelService: ModelService;
 
-    constructor(ctx: Context, initialModelDescriptors: ModelDescriptor[]) {
-        this.modelService = ctx[Services.Model];
+    constructor(ctx: Context, modelService: ModelService, initialModelDescriptors: ModelDescriptor[]) {
+        this.modelService = modelService;
         this.logger = ctx.logger("chat-model-switcher");
         this.currentModelDescriptors = initialModelDescriptors;
         this.logStatus();

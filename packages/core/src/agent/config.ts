@@ -10,7 +10,7 @@ interface ArousalConfig {
 }
 
 interface LlmProcessingConfig {
-    ChatModelId: string; // 使用模型标识符
+    UseModel: { ProviderName: string; ModelId: string }[];
     MaxHeartbeat: number;
     Retry: {
         MaxRetries: number;
@@ -20,27 +20,25 @@ interface LlmProcessingConfig {
     };
 }
 
-interface ToolExecutionConfig {
+interface ToolExecutorConfig {
     MaxRetry: number;
-    RetryDelayMs: number;
 }
 
-// 统一的 AgentConfig
 export interface AgentConfig {
-    MaxHeartbeat: number;
     Arousal: ArousalConfig;
     Willingness: WillingnessConfig;
     Llm: LlmProcessingConfig;
-    ToolExecutor: ToolExecutionConfig;
-    Prompt: PromptBuilderConfig;
+    ToolExecutor: ToolExecutorConfig;
+    Prompt: {
+        SystemTemplate: string;
+        UserTemplate: string;
+    };
     Debug: {
         LogDecisionDetails: boolean;
     };
 }
 
-// 使用 Schema 定义完整的配置结构
-export const AgentConfig: Schema<AgentConfig> = Schema.object({
-    MaxHeartbeat: Schema.number().min(1).max(10).default(3).role("slider").description("一次思考循环中最大连续对话次数。"),
+export const AgentConfigSchema: Schema<AgentConfig> = Schema.object({
     Arousal: Schema.object({
         AllowedChannelGroups: Schema.array(Schema.array(String).role("table")).description(
             "允许 Agent 响应的频道分组。同一组内的频道共享上下文。"
@@ -63,7 +61,15 @@ export const AgentConfig: Schema<AgentConfig> = Schema.object({
     }).description("意愿度模型配置"),
 
     Llm: Schema.object({
-        ChatModelId: Schema.string().default("default-chat-model").description("用于对话的中心化模型服务标识符。"),
+        UseModel: Schema.array(
+            Schema.object({
+                ProviderName: Schema.string().description("提供商名称"),
+                ModelId: Schema.string().description("模型ID"),
+            })
+        )
+            .role("table")
+            .required()
+            .description("对话使用的模型列表（按优先级）。"),
         MaxHeartbeat: Schema.number().min(1).max(10).default(3).role("slider").description("一次思考循环中最大连续对话次数。"),
         Retry: Schema.object({
             MaxRetries: Schema.number().min(0).max(10).default(2).description("LLM 请求的最大重试次数。"),
@@ -75,12 +81,17 @@ export const AgentConfig: Schema<AgentConfig> = Schema.object({
 
     ToolExecutor: Schema.object({
         MaxRetry: Schema.number().default(2).description("工具调用失败时的最大重试次数。"),
-        RetryDelayMs: Schema.number().default(1000).description("工具调用重试前的延迟时间（毫秒）。"),
     }).description("工具执行器配置"),
 
     Prompt: Schema.object({
-        SystemTemplate: Schema.string().default(SystemBaseTemplate).description("系统提示词模板。"),
-        UserTemplate: Schema.string().default(UserBaseTemplate).description("用户提示词模板。"),
+        SystemTemplate: Schema.string()
+            .role("textarea", { rows: [4, 8] })
+            .default(SystemBaseTemplate)
+            .description("系统提示词模板。"),
+        UserTemplate: Schema.string()
+            .role("textarea", { rows: [4, 8] })
+            .default(UserBaseTemplate)
+            .description("用户提示词模板。"),
     }).description("提示词模板配置"),
 
     Debug: Schema.object({

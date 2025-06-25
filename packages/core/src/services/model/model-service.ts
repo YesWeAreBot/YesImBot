@@ -1,12 +1,12 @@
 import { Context, Logger, Service } from "koishi";
 import { Services } from "../types"; // 假设 Services 是一个 enum 或 string literal type
-import { LLMAdapterManager } from "./adapter-manager"; // 导入适配器管理器
+import { AdapterSwitchingConfig, LLMAdapterManager } from "./adapter-manager"; // 导入适配器管理器
 import { ChatModelSwitcher } from "./chat-model-switcher";
 import { IProviderClient, IProviderFactory } from "./factories/base";
 import { ChatModel } from "./impl/chat-model";
 import { EmbedModel } from "./impl/embed-model";
 import { ProviderInstance } from "./impl/provider-instance";
-import { LLMRetryManager } from "./retry-manager"; // 导入重试管理器
+import { LLMRetryManager, RetryConfig } from "./retry-manager"; // 导入重试管理器
 
 // 注册工厂的映射
 import { AnthropicFactory } from "./factories/anthropic";
@@ -39,7 +39,7 @@ export class ModelService extends Service {
         this.initializeProviders();
 
         // 初始化模型切换器、重试管理器和适配器管理器
-        this.chatModelSwitcher = new ChatModelSwitcher(ctx, this.getEnabledModelDescriptors());
+        this.chatModelSwitcher = new ChatModelSwitcher(ctx, this, this.getEnabledModelDescriptors());
         const retryConfig = {
             maxRetries: 3, // 默认重试次数
             timeoutMs: 30000, // 默认超时时间 30s
@@ -178,8 +178,8 @@ export class ModelService extends Service {
         messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
         options: {
             modelPriority?: ModelDescriptor[]; // 指定模型切换顺序，否则使用全局配置
-            retryConfig?: Partial<LLMRetryManager["config"]>; // 覆盖默认重试配置
-            adapterSwitchingConfig?: Partial<LLMAdapterManager["config"]>; // 覆盖默认适配器切换配置
+            retryConfig?: Partial<RetryConfig>; // 覆盖默认重试配置
+            adapterSwitchingConfig?: Partial<AdapterSwitchingConfig>; // 覆盖默认适配器切换配置
             requestTimeoutMs?: number; // 单次请求的超时时间，会传递给 LLMRetryManager
             // ... 其他 ChatModel 需要的选项
         } = {}
@@ -245,6 +245,35 @@ export class ModelService extends Service {
      */
     public getChatModelSwitcher(): ChatModelSwitcher {
         return this.chatModelSwitcher;
+    }
+
+    public getAdapterManager(UseModel: { ProviderName: string; ModelId: string }[]): LLMAdapterManager {
+        return new LLMAdapterManager(this.ctx, this.chatModelSwitcher, { enabled: true, maxAttempts: 3 });
+    }
+
+    public getRetryManager(Retry: {
+        MaxRetries: number;
+        TimeoutMs: number;
+        RetryDelayMs: number;
+        ExponentialBackoff: boolean;
+    }): LLMRetryManager {
+        return new LLMRetryManager(this.ctx, {
+            maxRetries: Retry.MaxRetries,
+            timeoutMs: Retry.TimeoutMs,
+            retryDelayMs: Retry.RetryDelayMs,
+            exponentialBackoff: Retry.ExponentialBackoff,
+            retryableErrors: [
+                "ECONNREFUSED",
+                "ECONNRESET",
+                "ETIMEDOUT",
+                "ENOTFOUND",
+                "EPIPE",
+                "XSAIError",
+                "NetworkError",
+                "TimeoutError",
+                "AbortError",
+            ],
+        });
     }
 
     // 在服务停止时进行清理
