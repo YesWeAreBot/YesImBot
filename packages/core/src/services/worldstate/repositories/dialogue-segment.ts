@@ -40,14 +40,13 @@ export class DialogueSegmentRepository {
         // --- 步骤 1: 获取此片段下的所有事件记录 ---
         const eventRecords = await this.ctx.database.get(TableName.Events, { segmentId: segmentRecord.id });
 
-        // --- 步骤 2 & 3: 收集PIDs并批量水合 (逻辑与旧版 _hydrateTurn 相同) ---
+        // --- 步骤 2 & 3: 收集PIDs并批量水合 ---
         const allPids = new Set<string>();
-        // ... 收集 pids 的逻辑 ...
         for (const event of eventRecords) {
             const payload = event.payload as any;
             if (payload.actorId) allPids.add(payload.actorId);
             if (payload.userId) allPids.add(payload.userId);
-            // 未来可扩展更多需要解析的ID字段
+            if (payload.sender?.id) allPids.add(payload.sender.id); // 新增对 sender 的支持
         }
         const memberMap = await this.memberRepo.hydrateMembers(platform, guildId, channelId, Array.from(allPids));
         const unknownUser = (pid: string): Member => ({ id: pid, name: `未知用户(${pid})` });
@@ -60,11 +59,13 @@ export class DialogueSegmentRepository {
         // --- 步骤 5: 组装最终的 DialogueSegment 对象 ---
         return {
             id: segmentRecord.id,
-            platform: segmentRecord.platform, // 添加此行
-            channelId: segmentRecord.channelId, // 添加此行
+            platform: segmentRecord.platform,
+            channelId: segmentRecord.channelId,
             status: segmentRecord.status,
             summary: segmentRecord.summary,
             events: hydratedEvents,
+            startTimestamp: segmentRecord.startTimestamp,
+            endTimestamp: segmentRecord.endTimestamp,
             is_dialogue_segment: true,
             is_agent_turn: false,
         };
@@ -90,7 +91,7 @@ export class DialogueSegmentRepository {
                         payload: {
                             content: payload.content,
                             messageId: payload.messageId,
-                            sender: memberMap.get(payload) ?? unknownUser(payload.actorId),
+                            actor: memberMap.get(payload.actor.id) ?? unknownUser(payload.actor.id),
                         },
                     } as MessageEvent;
                 case "member-joined":
@@ -110,7 +111,8 @@ export class DialogueSegmentRepository {
                     return { ...baseEvent, payload } as GenericEvent;
             }
         } catch (error) {
-            this.ctx.logger("worldstate").warn(`Failed to hydrate event ${record.id}:`, error);
+            this.ctx.logger("worldstate").warn(`Failed to hydrate event ${record.id}:`, error.message);
+            this.ctx.logger("worldstate").warn(error.stack);
             return null; // 避免单个事件的水合失败导致整个流程中断
         }
     }
