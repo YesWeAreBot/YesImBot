@@ -1,54 +1,20 @@
 import { Context, Service } from "koishi";
-import { MEMORY_TABLE } from "../../shared";
-import { ModelDescriptor } from "../model";
-import { ChatModel } from "../model/impl/ChatModel";
+import { ChatModel } from "../model";
 import { Services } from "../types";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
-import { ArchivalEntry, ArchivalSearchResult, IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
+
+import { CoreMemoryBlockConfig, MEMORY_TABLE, MemoryServiceConfig } from "./config";
+import { IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
 import { MemoryBlock } from "./MemoryBlock";
 import { MemoryError } from "./MemoryError";
-
-export interface CoreMemoryBlockConfig {
-    limit?: number;
-    initialValue?: string[];
-    filePathToBind?: string;
-}
-
-export interface MemoryCompressionConfig {
-    CompressionWhen?: "Lines" | "Characters" | "IntervalMessages" | "IntervalMinutes";
-    Lines?: number;
-    Characters?: number;
-    IntervalMessages?: number;
-    IntervalMinutes?: number;
-    CustomPrompt?: string;
-    CompressibleBlocks?: string[];
-}
-
-export interface BackupConfig {
-    Enabled: boolean;
-    BackupPath: string;
-}
-
-export interface MemoryServiceConfig {
-    CoreBlockDefaults?: {
-        persona?: CoreMemoryBlockConfig;
-        human?: CoreMemoryBlockConfig;
-        [key: string]: CoreMemoryBlockConfig | undefined;
-    };
-    Compression?: MemoryCompressionConfig;
-    // Extract?: Config["Memory"]["Extract"];
-    Backup?: BackupConfig;
-    UseModel?: ModelDescriptor;
-}
-
-interface MemoryBlockCompressionState {
-    messageCount: number; // 用于 IntervalMessages 计数
-    lastCompressionTime: Date; // 用于 IntervalMinutes 计数
-}
+import { ArchivalEntry, ArchivalSearchResult, MemoryBlockCompressionState, MemoryBlockData } from "./types";
 
 declare module "koishi" {
     interface Context {
         [Services.Memory]: MemoryService;
+    }
+    interface Tables {
+        [MEMORY_TABLE]: MemoryBlockData;
     }
 }
 
