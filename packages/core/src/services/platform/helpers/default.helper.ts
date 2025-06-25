@@ -1,5 +1,6 @@
 import { Session } from 'koishi';
-import { IPlatformHelper } from '../platform.interface';
+
+import { IPlatformHelper } from '../interfaces';
 import { RichGuildInfo, RichMemberInfo, RichUserInfo } from '../types';
 
 export class DefaultPlatformHelper implements IPlatformHelper {
