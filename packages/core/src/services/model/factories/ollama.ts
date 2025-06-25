@@ -1,5 +1,5 @@
 import { createOllama } from "../../../dependencies/xsai";
-import { ProviderConfig } from "../types";
+import { ProviderConfig } from "../config";
 import { IProviderClient, IProviderFactory } from "./base";
 
 export class OllamaFactory implements IProviderFactory {
