@@ -1,5 +1,5 @@
 import type { ChatProvider, EmbedProvider, ImageProvider, SpeechProvider, TranscriptionProvider } from "@xsai-ext/shared-providers";
-import { ProviderConfig } from "../types";
+import { ProviderConfig } from "../config";
 
 /**
  * @interface IProviderClient

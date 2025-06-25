@@ -1,5 +1,5 @@
 import { createOpenAI } from "../../../dependencies/xsai";
-import { ProviderConfig } from "../types";
+import { ProviderConfig } from "../config";
 import { IProviderClient, IProviderFactory } from "./base";
 
 export class OpenAIFactory implements IProviderFactory {

@@ -1,5 +1,5 @@
 import { createAnthropic } from "../../../dependencies/xsai";
-import { ProviderConfig } from "../types";
+import { ProviderConfig } from "../config";
 import type { IProviderClient, IProviderFactory } from "./base";
 
 export class AnthropicFactory implements IProviderFactory {

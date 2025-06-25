@@ -1,19 +1,24 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedOptions } from "xsai";
-
 import { embed, embedMany } from "../../../dependencies/xsai";
-import { ModelConfig } from "../types";
+
+import { Context, Logger } from "koishi";
+import { ModelConfig } from "../config";
 
 export class EmbedModel {
-    constructor(private embedProvider: EmbedProvider, private modelConfig: ModelConfig, private fetch: typeof globalThis.fetch) {
-        // The constructor is now cleaner. All necessary info is in modelConfig.
+    private readonly logger: Logger;
+
+    constructor(
+        private ctx: Context,
+        private readonly embedProvider: EmbedProvider,
+        private readonly modelConfig: ModelConfig,
+        private readonly fetch: typeof globalThis.fetch
+    ) {
+        this.logger = ctx.logger("model").extend(this.modelConfig.ModelID);
     }
 
-    /**
-     * Creates an embedding for a single piece of text.
-     * @param text The text to embed.
-     */
     public async embed(text: string): Promise<ReturnType<typeof embed>> {
+        this.logger.debug(`Embedding single text: "${text.substring(0, 50)}..."`);
         const embedOptions: EmbedOptions = {
             fetch: this.fetch,
             input: text,
@@ -22,11 +27,8 @@ export class EmbedModel {
         return await embed(embedOptions);
     }
 
-    /**
-     * Creates embeddings for multiple pieces of text in a single batch.
-     * @param texts The array of texts to embed.
-     */
     public async embedMany(texts: string[]): Promise<ReturnType<typeof embedMany>> {
+        this.logger.debug(`Embedding ${texts.length} texts.`);
         const embedManyOptions: EmbedManyOptions = {
             fetch: this.fetch,
             input: texts,
@@ -36,10 +38,10 @@ export class EmbedModel {
     }
 }
 
+// 包含相似度计算函数
 /**
  * Calculates the cosine similarity between two vectors.
  * The similarity is normalized to a [0, 1] range.
- *
  * @param vec1 The first vector.
  * @param vec2 The second vector.
  * @returns A similarity score between 0 (not similar) and 1 (identical).
@@ -56,7 +58,6 @@ export function calculateCosineSimilarity(vec1: number[], vec2: number[]): numbe
         return 0;
     }
 
-    // Cosine similarity is in [-1, 1]. We normalize it to [0, 1] for easier use.
     const similarity = dotProduct / (magnitude1 * magnitude2);
-    return (similarity + 1) / 2;
+    return (similarity + 1) / 2; // Normalize from [-1, 1] to [0, 1]
 }
