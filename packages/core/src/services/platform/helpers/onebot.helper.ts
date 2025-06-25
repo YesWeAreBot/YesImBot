@@ -1,7 +1,7 @@
 import { Session } from "koishi";
 import { } from "koishi-plugin-adapter-onebot";
 import type { AccountInfo, StatusInfo, VersionInfo } from "koishi-plugin-adapter-onebot/lib/types";
-import { IPlatformHelper } from "../platform.interface";
+import { IPlatformHelper } from "../interfaces";
 import { RichGuildInfo, RichMemberInfo, RichUserInfo } from "../types";
 
 export class OneBotPlatformHelper implements IPlatformHelper {

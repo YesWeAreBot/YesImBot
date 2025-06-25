@@ -2,7 +2,7 @@ import { Context, Service, Session } from "koishi";
 import { LRUCache } from "lru-cache";
 import { Services } from "../types";
 import { PlatformServiceConfig } from "./config";
-import { IPlatformHelper } from "./platform.interface";
+import { IPlatformHelper } from "./interfaces";
 import { RichGuildInfo } from "./types";
 
 interface CachedData<T> {
@@ -68,5 +68,9 @@ export class PlatformService extends Service<PlatformServiceConfig> {
             this.ctx.logger.warn(`Helper for '${platform}' failed to get guild info:`, error);
             return null;
         }
+    }
+
+    executeCommand(session: Session, cmd: any, targetChannel: any) {
+
     }
 }
