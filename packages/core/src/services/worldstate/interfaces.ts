@@ -57,7 +57,7 @@ export interface WorldState {
 /** 新增：代表一个用户主导的连续对话片段 */
 export interface DialogueSegment {
     id: string;
-        /** 新增：所属的平台 */
+    /** 新增：所属的平台 */
     platform: string;
     /** 新增：所属的频道ID */
     channelId: string;
@@ -72,7 +72,7 @@ export interface DialogueSegment {
 /** 重命名：代表一次 Agent 主导的完整 ReAct 循环 */
 export interface AgentTurn {
     id: string;
-        /** 新增：所属的平台 */
+    /** 新增：所属的平台 */
     platform: string;
     /** 新增：所属的频道ID */
     channelId: string;
@@ -156,11 +156,14 @@ export interface AgentResponse {
     thoughts: { observe: string; analyze_infer: string; plan: string };
     actions: Action[];
     observations: ActionResult[];
+    request_heartbeat: boolean;
 }
+
 export interface Action {
     function: string;
     params: Record<string, unknown>;
 }
+
 export interface ActionResult {
     function: string;
     result: any;

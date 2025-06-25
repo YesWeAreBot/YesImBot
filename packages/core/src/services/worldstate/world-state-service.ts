@@ -14,7 +14,7 @@ declare module "koishi" {
 
     interface Events {
         /** 当对话片段有更新时触发 */
-        "worldstate:segment-updated"(segmentId: string, channelId: string, platform: string): void;
+        "worldstate:segment-updated"(session: Session, segmentId: string, channelId: string, platform: string): void;
     }
 }
 
@@ -128,7 +128,7 @@ export class WorldStateService extends Service<WorldStateConfig> {
             await this.members.updateMemberActivity(session.platform, session.channelId, session.author.id);
 
             // 广播片段更新事件
-            this.ctx.parallel("worldstate:segment-updated", segment.id, session.channelId, session.platform);
+            this.ctx.parallel("worldstate:segment-updated", session, segment.id, session.channelId, session.platform);
         } catch (error) {
             this.ctx.logger.error("Error handling message event:", error);
         }
