@@ -1,8 +1,8 @@
 import { $, Context, Random, Service, Session } from "koishi";
 import { Services } from "../types";
 import { WorldStateConfig } from "./config";
-import { Channel, DialogueSegment, Member, MemberSummary, WorldState } from "./interfaces";
-import { DialogueSegmentData, TableName } from "./model";
+import { AgentTurn, Channel, DialogueSegment, Member, MemberSummary, WorldState } from "./interfaces";
+import { AgentTurnData, DialogueSegmentData, TableName } from "./model";
 import { MemberRepository } from "./repositories";
 import { DialogueSegmentRepository } from "./repositories/dialogue-segment";
 
@@ -56,33 +56,14 @@ export class WorldStateService extends Service<WorldStateConfig> {
         // 监听所有消息事件
         this.disposer.push(this.ctx.on("message", (session) => this.onMessage(session), true));
 
-        // this.ctx.on("guild-added", (session) => this.onChannelUpdated(session));
-
         // 监听成员加入事件
         this.disposer.push(this.ctx.on("guild-member-added", (session) => this.onMemberJoined(session)));
 
         // 监听成员离开事件
         this.disposer.push(this.ctx.on("guild-member-removed", (session) => this.onMemberLeft(session)));
 
-        // this.ctx.on("guild-member-request", (session) => this.onMessageReacted(session));
-
-        // this.ctx.on("guild-member-updated", (session) => this.onMessageReacted(session));
-
-        // this.ctx.on("guild-removed", (session) => this.onChannelUpdated(session));
-
-        // this.ctx.on("guild-request", (session) => this.onChannelUpdated(session));
-
         // 监听群组信息更新事件
         this.disposer.push(this.ctx.on("guild-updated", (session) => this.onChannelUpdated(session)));
-
-        // TODO: 可在此处扩展监听更多事件，如消息撤回、用户资料更新等
-        // this.ctx.on("message-deleted", (session) => this.onMessageDeleted(session));
-
-        // this.ctx.on("message-updated", (session) => this.onMessageUpdated(session));
-
-        // this.ctx.on("message-pinned", (session) => this.onMessagePinned(session));
-
-        // this.ctx.on("message-unpinned", (session) => this.onMessageUnpinned(session));
 
         // --- 启动定期清理任务 ---
         this.startCleanupTask();
@@ -106,13 +87,12 @@ export class WorldStateService extends Service<WorldStateConfig> {
     private async onMessage(session: Session): Promise<void> {
         if (session.selfId === session.userId) return;
         try {
-            // 1. 获取或创建当前开放的对话片段
             const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
 
-            // 2. 准备事件负载
             const payload = {
                 quote: session.quote,
-                sender: {
+                actor: {
+                    // 使用 actor 字段
                     id: session.userId,
                     name: session.author.name,
                     avatar: session.author.avatar,
@@ -122,10 +102,9 @@ export class WorldStateService extends Service<WorldStateConfig> {
                 messageId: session.messageId,
             };
 
-            // 3. 将事件持久化到数据库
             await this.ctx.database.create(TableName.Events, {
                 id: `${session.messageId}`,
-                segmentId: segment.id, // 修改
+                segmentId: segment.id,
                 type: "message",
                 timestamp: new Date(session.timestamp),
                 payload,
@@ -134,7 +113,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
             const [kUser] = await this.ctx.database.get("binding", { platform: session.platform, pid: session.author.id });
             if (!kUser) return;
 
-            // 更新用户信息
             await this.ctx.database.upsert("user", [
                 {
                     id: kUser.aid,
@@ -142,7 +120,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
                 },
             ]);
 
-            // 更新成员信息
             await this.ctx.database.upsert(TableName.Members, [
                 {
                     uid: kUser.aid,
@@ -153,11 +130,9 @@ export class WorldStateService extends Service<WorldStateConfig> {
                 },
             ]);
 
-            // 4. 更新活跃状态
             await this.updateChannelActivity(session);
             await this.members.updateMemberActivity(session.platform, session.channelId, session.author.id);
 
-            // 广播片段更新事件
             this.ctx.parallel("worldstate:segment-updated", session, segment.id, session.channelId, session.platform);
         } catch (error) {
             this.ctx.logger.error("Error handling message event:", error.message);
@@ -167,14 +142,14 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
     private async onMemberJoined(session: Session): Promise<void> {
         try {
-            const turn = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
+            const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
             const payload = {
-                actorId: session.operatorId || "system", // 操作者，如果未知则为 'system'
-                userId: session.userId, // 加入的成员
+                actorId: session.operatorId || "system",
+                userId: session.userId,
             };
             await this.ctx.database.create(TableName.Events, {
                 id: `evt_${Date.now()}_${session.userId}`,
-                segmentId: turn.id,
+                segmentId: segment.id,
                 type: "member-joined",
                 timestamp: new Date(session.timestamp),
                 payload,
@@ -187,14 +162,14 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
     private async onMemberLeft(session: Session): Promise<void> {
         try {
-            const turn = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
+            const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
             const payload = {
-                actorId: session.operatorId || session.userId, // 如果是自己退群，操作者就是自己
-                userId: session.userId, // 离开的成员
+                actorId: session.operatorId || session.userId,
+                userId: session.userId,
             };
             await this.ctx.database.create(TableName.Events, {
                 id: `evt_${Date.now()}_${session.userId}`,
-                segmentId: turn.id,
+                segmentId: segment.id,
                 type: "member-left",
                 timestamp: new Date(session.timestamp),
                 payload,
@@ -206,7 +181,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
     }
 
     private async onChannelUpdated(session: Session): Promise<void> {
-        // 当频道信息（如名称）更新时，同步到我们的数据库
         const platformChannel = session.event.channel;
         if (!platformChannel) return;
 
@@ -216,7 +190,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
                     id: platformChannel.id,
                     platform: session.platform,
                     name: platformChannel.name,
-                    // 如果能获取到描述等信息，也在此处更新
                 },
             ]);
         } catch (error) {
@@ -224,26 +197,18 @@ export class WorldStateService extends Service<WorldStateConfig> {
         }
     }
 
-    // --- 状态更新辅助方法 ---
-
-    /** 更新频道的最后活跃时间和名称（如果需要） */
     private async updateChannelActivity(session: Session): Promise<void> {
         await this.ctx.database.upsert("channel", [
             {
                 id: session.channelId,
                 platform: session.platform,
-                guildId: session.guildId, // 确保 guildId 也被存储
+                guildId: session.guildId,
                 lastActivityAt: new Date(),
-                // 如果消息事件中的频道名是最新的，可以在此更新
                 name: session.event?.channel?.name,
             },
         ]);
     }
 
-    /**
-     * 更新频道的成员总数。
-     * 注意：这是一个开销较大的操作，只在成员变动时调用。
-     */
     private async updateChannelMemberCount(session: Session): Promise<void> {
         if (!session.guildId) return;
         try {
@@ -265,31 +230,20 @@ export class WorldStateService extends Service<WorldStateConfig> {
         }
     }
 
-    /**
-     * 获取当前完整的世界状态快照。
-     * 这是提供给 Agent 使用的核心入口点。
-     * @param allowedChannelIds 一个包含所有允许被 Agent 感知的频道ID的数组。
-     * @returns 一个包含活跃和非活跃频道的完整 WorldState 对象。
-     */
     public async getWorldState(allowedChannelIds: string[]): Promise<WorldState> {
         this.ctx.logger.info(`Generating world state for ${allowedChannelIds.length} allowed channels...`);
 
-        // 从数据库中获取所有允许的频道的基础信息
         const allChannelRecords = await this.ctx.database.get("channel", { id: allowedChannelIds });
 
-        // 根据配置和最后活跃时间，将频道分为“活跃”和“非活跃”两类
-        // 注意: 这里的 '1 * 60 * 60 * 1000' (1小时) 应该是一个可配置项，暂时硬编码
-        const activeThreshold = new Date(Date.now() - 1 * 60 * 60 * 1000);
+        const activeThreshold = new Date(Date.now() - this.config.ActiveChannelHours * 60 * 60 * 1000);
 
         const activeChannelPromises: Promise<Channel>[] = [];
         const inactiveChannelRecords: Partial<Channel>[] = [];
 
         for (const record of allChannelRecords) {
-            // 如果频道活跃且未达到显示上限，则获取其完整信息
-            if (record.lastActivityAt > activeThreshold /* && activeChannelPromises.length < this.config.ActiveChannelLimit */) {
+            if (record.lastActivityAt > activeThreshold) {
                 activeChannelPromises.push(this.getFullChannel(record.platform, record.id));
             } else {
-                // 对于不活跃的频道，只提供基础信息以节省Token和性能
                 inactiveChannelRecords.push({
                     id: record.id,
                     platform: record.platform,
@@ -299,7 +253,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
             }
         }
 
-        // 并行地、高效地获取所有活跃频道的完整上下文
         const activeChannels = await Promise.all(activeChannelPromises);
 
         this.ctx
@@ -309,37 +262,28 @@ export class WorldStateService extends Service<WorldStateConfig> {
         return {
             timestamp: new Date().toISOString(),
             activeChannels,
-            inactiveChannels: inactiveChannelRecords as Channel[], // 类型断言，因为我们只提供了部分字段
+            inactiveChannels: inactiveChannelRecords as Channel[],
         };
     }
 
-    /**
-     * 获取单个频道的完整、深度上下文信息。
-     * [阶段一简化版]
-     */
     public async getFullChannel(platform: string, channelId: string): Promise<Channel> {
         const [channelRecord] = await this.ctx.database.get("channel", { id: channelId, platform });
-        if (!channelRecord || !channelRecord.guildId) throw new Error(/* ... */);
+        if (!channelRecord || !channelRecord.guildId) throw new Error(`Channel record not found for ${platform}:${channelId}`);
 
-        // 获取最近的 DialogueSegment 记录
         const segmentRecords = await this.ctx.database.get(
             TableName.DialogueSegments,
             { platform, channelId },
-            { limit: 10 /* this.config.MaxSegmentsPerChannel */, sort: { startTimestamp: "desc" } }
+            { limit: this.config.MaxTurnsPerChannel, sort: { startTimestamp: "desc" } }
         );
 
-        // 并行地水合所有片段
-        const historySegments = await Promise.all(
-            segmentRecords.map((seg) => this.segments.hydrateSegment(seg, platform, channelRecord.guildId, channelId))
-        );
-
-        // ... 组装 Member, MemberSummary 等信息 (逻辑与旧版类似) ...
-        // --- 步骤 2: 提取历史事件中所有相关的成员 ---
-        // 虽然事件在仓储层已被水合，但我们可能需要一个独立的、在频道层面展示的成员列表
-        // 这里可以根据策略（如最近发言者、被@者）来决定展示哪些成员
+        const history: (DialogueSegment | AgentTurn)[] = [];
         const recentActors = new Map<string, Member>();
-        for (const turn of historySegments) {
-            for (const event of turn.events) {
+
+        for (const segRecord of segmentRecords) {
+            const segment = await this.segments.hydrateSegment(segRecord, platform, channelRecord.guildId, channelId);
+            history.push(segment);
+
+            for (const event of segment.events) {
                 const actor = (event.payload as any).actor;
                 if (actor && !recentActors.has(actor.id)) {
                     recentActors.set(actor.id, actor);
@@ -349,16 +293,23 @@ export class WorldStateService extends Service<WorldStateConfig> {
                     recentActors.set(user.id, user);
                 }
             }
+
+            const agentTurnRecord = await this.ctx.database.get(TableName.AgentTurns, { stimulusSegmentId: segRecord.id });
+            if (agentTurnRecord.length > 0) {
+                const agentTurn = await this.hydrateAgentTurn(agentTurnRecord[0]);
+                history.push(agentTurn);
+            }
         }
+
+        history.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime());
 
         return {
             ...channelRecord,
             name: channelRecord.name || `频道 ${channelRecord.id}`,
             type: this.determineChannelType(channelRecord),
-            // ... 其他频道信息 ...
             members: Array.from(recentActors.values()),
             memberSummary: await this.getMemberSummary(platform, channelId),
-            history: historySegments, // [阶段一] history 只包含 DialogueSegment
+            history,
         };
     }
 
@@ -370,8 +321,8 @@ export class WorldStateService extends Service<WorldStateConfig> {
         return this.ctx.database.get("channel", { id: channelId, platform }).then((res) => res[0]) as Promise<Channel>;
     }
 
-    public async createAgentTurn(segment: DialogueSegment) {
-        return this.ctx.database.create(TableName.AgentTurns, {
+    public async createAgentTurn(segment: DialogueSegment): Promise<AgentTurnData> {
+        const agentTurnData: AgentTurnData = {
             id: `turn_${Date.now()}_${Random.id(8)}`,
             stimulusSegmentId: segment.id,
             channelId: segment.channelId,
@@ -379,22 +330,37 @@ export class WorldStateService extends Service<WorldStateConfig> {
             status: "in_progress",
             startTimestamp: new Date(),
             endTimestamp: new Date(),
-        });
+        };
+        await this.ctx.database.create(TableName.AgentTurns, agentTurnData);
+        return agentTurnData;
     }
 
-    // --- 状态获取辅助方法 ---
+    private async hydrateAgentTurn(turnRecord: AgentTurnData): Promise<AgentTurn> {
+        const responses = await this.ctx.database.get(TableName.AgentResponses, { turnId: turnRecord.id });
+        return {
+            id: turnRecord.id,
+            platform: turnRecord.platform,
+            channelId: turnRecord.channelId,
+            stimulusSegmentId: turnRecord.stimulusSegmentId,
+            status: turnRecord.status,
+            responses: responses.map((r) => ({
+                thoughts: r.thoughts as any,
+                actions: r.actions as any,
+                observations: r.observations as any,
+                request_heartbeat: false, // This needs to be stored in the DB
+            })),
+            startTimestamp: turnRecord.startTimestamp,
+            endTimestamp: turnRecord.endTimestamp,
+            is_agent_turn: true,
+            is_dialogue_segment: false,
+        };
+    }
 
-    /**
-     * 获取频道的成员宏观统计信息。
-     */
     private async getMemberSummary(platform: string, channelId: string): Promise<MemberSummary> {
-        // 注意: 这里的 '7 * 24 * ...' (7天) 应该是一个可配置项
         const recentThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
         const [totalCount, recentActiveCount] = await Promise.all([
-            // 获取总成员数
             this.ctx.database.eval(TableName.Members, (row) => $.count(row.uid), { platform, channelId }),
-            // 获取近期活跃成员数
             this.ctx.database.eval(TableName.Members, (row) => $.count(row.uid), {
                 platform,
                 channelId,
@@ -404,23 +370,18 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
         return {
             totalCount,
-            onlineCount: 0, // 在线状态难以获取，暂时设为0
+            onlineCount: 0,
             recentActiveCount,
         };
     }
 
-    /**
-     * 根据数据库中的频道记录确定其类型。
-     */
     private determineChannelType(channelRecord: import("koishi").Channel): "group" | "private" {
-        return channelRecord.flag & 1 ? "private" : "group"; // Koishi 使用 flag & 1 判断是否为私聊
+        return channelRecord.flag & 1 ? "private" : "group";
     }
 
     private startCleanupTask(): void {
-        // 定时器每24小时执行一次
         const intervalMs = 24 * 60 * 60 * 1000;
 
-        // 立即执行一次，然后再设置定时器
         this.performDataCleanup().catch((error) => this.ctx.logger.error("Initial data cleanup failed:", error));
 
         this.cleanupTimer = setInterval(() => {
@@ -438,10 +399,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
         }
     }
 
-    /**
-     * 执行数据清理任务。
-     * 公开此方法，也方便通过指令手动触发。
-     */
     public async performDataCleanup(): Promise<{ deletedTurns: number; deletedEvents: number; deletedResponses: number }> {
         this.ctx.logger.info("Performing data cleanup...");
 
@@ -453,7 +410,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
         const retentionDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-        // 1. 查找所有过期的回合 (Turns)
         const expiredTurns = await this.ctx.database.get(TableName.AgentTurns, {
             endTimestamp: { $lt: retentionDate },
         });
@@ -465,13 +421,11 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
         const expiredTurnIds = expiredTurns.map((t) => t.id);
 
-        // 2. 使用过期的回合ID，批量删除所有相关的子表记录
         const [eventRemoveResult, responseRemoveResult] = await Promise.all([
             this.ctx.database.remove(TableName.Events, { segmentId: { $in: expiredTurnIds } }),
             this.ctx.database.remove(TableName.AgentResponses, { turnId: { $in: expiredTurnIds } }),
         ]);
 
-        // 3. 最后删除过期的回合主表记录
         const turnRemoveResult = await this.ctx.database.remove(TableName.AgentTurns, { id: { $in: expiredTurnIds } });
 
         const result = {

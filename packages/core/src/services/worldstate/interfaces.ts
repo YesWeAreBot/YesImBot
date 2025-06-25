@@ -64,6 +64,8 @@ export interface DialogueSegment {
     status: DialogueSegmentData["status"];
     events: Event[];
     summary?: string;
+    startTimestamp: Date;
+    endTimestamp: Date;
     // 添加 is_dialogue_segment 方便模板渲染
     is_dialogue_segment: true;
     is_agent_turn: false;
@@ -79,6 +81,8 @@ export interface AgentTurn {
     stimulusSegmentId: string;
     status: AgentTurnData["status"];
     responses: AgentResponse[];
+    startTimestamp: Date;
+    endTimestamp: Date;
     // 添加 is_agent_turn 方便模板渲染
     is_agent_turn: true;
     is_dialogue_segment: false;
@@ -114,7 +118,7 @@ export interface BaseEvent<T extends string, P extends object> {
 export type MessageEvent = BaseEvent<
     "message",
     {
-        sender: Member;
+        actor: Member; // 统一使用 actor
         content: string;
         messageId: string;
         quote?: { messageId: string; content?: string; actor: Member };
