@@ -1,17 +1,12 @@
 import { Context } from "koishi";
 
-/**
- * 定义数据库中所有自定义表的名称，以常量形式管理，避免硬编码。
- * 表名统一使用 'yesimbot.' 前缀，以明确归属并防止与 Koishi 内置或其他插件的表名冲突。
- */
 export enum TableName {
-    /** 存储特定用户在特定频道中的上下文相关状态 */
     Members = "yesimbot.members",
-    /** 组织对话流，记录一次完整的“刺激-反应”循环 */
-    Turns = "yesimbot.turns",
-    /** 原子化地记录所有发生的具体事件 */
+    /** 新增：存储用户主导的连续对话流 */
+    DialogueSegments = "yesimbot.dialogue_segments",
+    /** 重命名：存储 Agent 的思考和行动回合 */
+    AgentTurns = "yesimbot.agent_turns",
     Events = "yesimbot.events",
-    /** 存储 Agent 的思考过程和行动决策 */
     AgentResponses = "yesimbot.agent_responses",
 }
 
@@ -44,85 +39,70 @@ export interface MemberData {
     nickOverride: string;
 }
 
-/**
- * `yesimbot.turns` 表的数据结构。
- * 宏观上组织一次完整的对话交互。
- */
-export interface TurnData {
-    /** 回合的唯一ID，主键 */
+/** 新增：yesimbot.dialogue_segments 表的数据结构 */
+export interface DialogueSegmentData {
     id: string;
-    /** 所属的频道ID */
     channelId: string;
-    /** 所属的平台 */
     platform: string;
     /**
-     * 回合的生命周期状态:
-     * - new: 新创建，等待Agent处理。
-     * - in_progress: Agent正在处理中（例如，链式思考）。
-     * - completed: Agent处理完成。
-     * - summarized: (未来扩展) 已被摘要，用于节省上下文。
+     * 片段的生命周期状态:
+     * - open: 开放中，正在接收新事件。
+     * - closed_by_agent: 被 Agent 的一个回合所关闭。
+     * - closed_by_timeout: 因长时间无活动被后台关闭。
+     * - closed_by_lifecycle: 因 Agent 生命周期变化被关闭。
      */
-    status: "new" | "in_progress" | "completed" | "summarized";
-    /** (未来扩展) 对此回合的摘要内容 */
+    status: "open" | "closed_by_agent" | "closed_by_timeout" | "closed_by_lifecycle" | "summarized";
     summary: string;
-    /** 回合开始时间戳 */
     startTimestamp: Date;
-    /** 回合结束时间戳 */
     endTimestamp: Date;
 }
 
-/**
- * `yesimbot.events` 表的数据结构。
- * 原子化地记录每一个发生的事件。
- */
-export interface EventData {
-    /** 事件的唯一ID，主键 (推荐使用ULID或UUID) */
+/** 重命名：yesimbot.agent_turns 表的数据结构 */
+export interface AgentTurnData {
     id: string;
-    /** 所属回合的ID，外键 */
-    turnId: string;
+    /** 外键，关联到触发此回合的对话片段 */
+    stimulusSegmentId: string;
+    channelId: string;
+    platform: string;
     /**
-     * 事件类型，用于解析 'payload' 字段。
-     * 例如: 'message', 'member-joined', 'member-left'
+     * Agent 回合的生命周期状态:
+     * - in_progress: Agent 正在处理中。
+     * - completed: Agent 处理完成。
      */
+    status: "in_progress" | "completed";
+    startTimestamp: Date;
+    endTimestamp: Date;
+}
+
+export interface EventData {
+    id: string;
+    /** 修改：外键现在指向 DialogueSegment */
+    segmentId: string;
     type: string;
-    /** 事件发生的时间戳 */
     timestamp: Date;
-    /**
-     * 存储事件具体信息的JSON对象。
-     * 其结构由事件的 'type' 决定，只包含关联ID和核心数据。
-     */
     payload: object;
 }
 
-/**
- * `yesimbot.agent_responses` 表的数据结构。
- * 记录 Agent 在一个回合中的每一次思考、决策和行动。
- */
 export interface AgentResponseData {
-    /** 自增主键 */
     id: number;
-    /** 所属回合的ID，外键 */
+    /** 修改：外键现在指向 AgentTurn */
     turnId: string;
-    /** 结构化的思考过程 (Observe, Analyze/Infer, Plan) */
     thoughts: object;
-    /** 计划执行的工具调用列表 */
     actions: object;
-    /** 工具调用后的结果观察列表 */
     observations: object;
 }
 
-/**
- * 使用 TypeScript 的模块扩展 (Module Augmentation) 功能，
- * 将我们自定义的表结构注入到 Koishi 的 `Tables` 接口中。
- * 这使得 `ctx.database.get('yesimbot.members', ...)` 等调用能够获得完整的类型提示。
- */
 declare module "koishi" {
     interface Tables {
         [TableName.Members]: MemberData;
-        [TableName.Turns]: TurnData;
+        /** 新增 */
+        [TableName.DialogueSegments]: DialogueSegmentData;
+        /** 重命名 */
+        [TableName.AgentTurns]: AgentTurnData;
         [TableName.Events]: EventData;
         [TableName.AgentResponses]: AgentResponseData;
     }
+    // ... Channel 接口扩展保持不变 ...
 
     interface Channel {
         name: string;
@@ -132,11 +112,6 @@ declare module "koishi" {
     }
 }
 
-/**
- * 插件的 `apply` 方法，用于在 Koishi 上下文中定义和扩展数据库模型。
- * Koishi 会在启动时自动执行此函数，根据定义创建或更新数据库表。
- * @param ctx Koishi 的上下文对象
- */
 export function apply(ctx: Context) {
     // --- 1. 扩展 Koishi 内置的 'channel' 表 ---
     ctx.model.extend("channel", {
@@ -156,10 +131,6 @@ export function apply(ctx: Context) {
          */
         meta: "json",
     });
-
-    // --- 2. 定义我们的自定义表 ---
-
-    // 定义 'yesimbot.members' 表
     ctx.model.extend(
         TableName.Members,
         {
@@ -182,9 +153,11 @@ export function apply(ctx: Context) {
         }
     );
 
-    // 定义 'yesimbot.turns' 表
+    // --- 2. 定义我们的自定义表 ---
+
+    /** 新增：定义 'yesimbot.dialogue_segments' 表 */
     ctx.model.extend(
-        TableName.Turns,
+        TableName.DialogueSegments,
         {
             id: "string(64)",
             channelId: "string(255)",
@@ -194,45 +167,62 @@ export function apply(ctx: Context) {
             startTimestamp: "timestamp",
             endTimestamp: "timestamp",
         },
+        { primary: "id" }
+    );
+
+    /** 重命名并修改：定义 'yesimbot.agent_turns' 表 */
+    ctx.model.extend(
+        TableName.AgentTurns,
+        {
+            id: "string(64)",
+            stimulusSegmentId: "string(64)",
+            channelId: "string(255)",
+            platform: "string(255)",
+            status: "string(32)",
+            startTimestamp: "timestamp",
+            endTimestamp: "timestamp",
+        },
         {
             primary: "id",
+            foreign: {
+                stimulusSegmentId: [TableName.DialogueSegments, "id"],
+            },
         }
     );
 
-    // 定义 'yesimbot.events' 表
+    /** 修改：定义 'yesimbot.events' 表 */
     ctx.model.extend(
         TableName.Events,
         {
             id: "string(64)",
-            turnId: "string(64)",
+            segmentId: "string(64)", // 修改
             type: "string(64)",
             timestamp: "timestamp",
             payload: "json",
         },
         {
             primary: "id",
-            // 声明外键关系，有助于 ORM 理解模型关联，但部分数据库插件可能不强制执行
             foreign: {
-                turnId: [TableName.Turns, "id"],
+                segmentId: [TableName.DialogueSegments, "id"], // 修改
             },
         }
     );
 
-    // 定义 'yesimbot.agent_responses' 表
+    /** 修改：定义 'yesimbot.agent_responses' 表 */
     ctx.model.extend(
         TableName.AgentResponses,
         {
             id: "unsigned",
-            turnId: "string(64)",
+            turnId: "string(64)", // 指向 AgentTurn 的 ID
             thoughts: "json",
             actions: "json",
             observations: "json",
         },
         {
-            autoInc: true, // 使用自增ID作为主键
+            autoInc: true,
             primary: "id",
             foreign: {
-                turnId: [TableName.Turns, "id"],
+                turnId: [TableName.AgentTurns, "id"], // 修改
             },
         }
     );

@@ -1,9 +1,10 @@
-import { $, Context, Service, Session } from "koishi";
+import { $, Context, Random, Service, Session } from "koishi";
 import { Services } from "../types";
-import { WorldStateConfig } from "./config"; // 假设已创建 config.ts
-import { Channel, Member, MemberSummary, WorldState } from "./interfaces";
-import { TableName } from "./model";
-import { MemberRepository, TurnRepository } from "./repositories";
+import { WorldStateConfig } from "./config";
+import { Channel, DialogueSegment, Member, MemberSummary, WorldState } from "./interfaces";
+import { DialogueSegmentData, TableName } from "./model";
+import { MemberRepository } from "./repositories";
+import { DialogueSegmentRepository } from "./repositories/dialogue-segment";
 
 // 在 Koishi 的 Context 接口上声明我们的服务，以获得完整的类型提示
 declare module "koishi" {
@@ -12,8 +13,8 @@ declare module "koishi" {
     }
 
     interface Events {
-        // 每次有新事件被记录到某个回合时，就触发此事件
-        "worldstate/turn-updated"(turnId: string, channelId: string, platform: string): void;
+        /** 当对话片段有更新时触发 */
+        "worldstate:segment-updated"(segmentId: string, channelId: string, platform: string): void;
     }
 }
 
@@ -26,15 +27,14 @@ declare module "koishi" {
  * 3. 对外提供获取完整世界状态快照(WorldState)的接口，供 Agent 使用。
  */
 export class WorldStateService extends Service<WorldStateConfig> {
-    private members: MemberRepository;
-    private turns: TurnRepository;
+    public readonly members: MemberRepository;
+    public readonly segments: DialogueSegmentRepository;
 
     private cleanupTimer?: NodeJS.Timeout; // 用于持有定时器的引用
 
     private disposer: (() => boolean)[];
 
     constructor(ctx: Context, config: WorldStateConfig) {
-        // 将服务注入到 ctx['yesimbot.worldState']
         super(ctx, Services.WorldState, true);
         this.config = config;
 
@@ -43,7 +43,7 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
         // 实例化仓储层，并传入 ctx
         this.members = new MemberRepository(ctx);
-        this.turns = new TurnRepository(ctx, this.members);
+        this.segments = new DialogueSegmentRepository(ctx, this.members);
     }
 
     /**
@@ -103,37 +103,32 @@ export class WorldStateService extends Service<WorldStateConfig> {
     }
 
     // --- 事件处理器 ---
-
     private async onMessage(session: Session): Promise<void> {
-        // 机器人自己发送的消息通常不需要记录为触发事件
         if (session.selfId === session.userId) return;
-
         try {
-            // 1. 获取或创建当前回合
-            const turn = await this.turns.getOrCreateCurrentTurn(session.platform, session.channelId);
+            // 1. 获取或创建当前开放的对话片段
+            const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
 
-            // 2. 准备事件负载 (Payload)
+            // 2. 准备事件负载
             const payload = {
-                actorId: session.userId,
-                messageId: session.messageId,
-                content: session.content,
+                /* ... */
             };
 
             // 3. 将事件持久化到数据库
             await this.ctx.database.create(TableName.Events, {
                 id: `evt_${Date.now()}_${session.messageId}`,
-                turnId: turn.id,
+                segmentId: segment.id, // 修改
                 type: "message",
                 timestamp: new Date(session.timestamp),
                 payload,
             });
 
-            // 4. 更新频道和成员的活跃状态
+            // 4. 更新活跃状态
             await this.updateChannelActivity(session);
             await this.members.updateMemberActivity(session.platform, session.channelId, session.author.id);
 
-            // 在记录完成后，广播回合更新事件
-            this.ctx.parallel("worldstate/turn-updated", turn.id, session.channelId, session.platform);
+            // 广播片段更新事件
+            this.ctx.parallel("worldstate:segment-updated", segment.id, session.channelId, session.platform);
         } catch (error) {
             this.ctx.logger.error("Error handling message event:", error);
         }
@@ -141,14 +136,14 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
     private async onMemberJoined(session: Session): Promise<void> {
         try {
-            const turn = await this.turns.getOrCreateCurrentTurn(session.platform, session.channelId);
+            const turn = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
             const payload = {
                 actorId: session.operatorId || "system", // 操作者，如果未知则为 'system'
                 userId: session.userId, // 加入的成员
             };
             await this.ctx.database.create(TableName.Events, {
                 id: `evt_${Date.now()}_${session.userId}`,
-                turnId: turn.id,
+                segmentId: turn.id,
                 type: "member-joined",
                 timestamp: new Date(session.timestamp),
                 payload,
@@ -161,14 +156,14 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
     private async onMemberLeft(session: Session): Promise<void> {
         try {
-            const turn = await this.turns.getOrCreateCurrentTurn(session.platform, session.channelId);
+            const turn = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
             const payload = {
                 actorId: session.operatorId || session.userId, // 如果是自己退群，操作者就是自己
                 userId: session.userId, // 离开的成员
             };
             await this.ctx.database.create(TableName.Events, {
                 id: `evt_${Date.now()}_${session.userId}`,
-                turnId: turn.id,
+                segmentId: turn.id,
                 type: "member-left",
                 timestamp: new Date(session.timestamp),
                 payload,
@@ -289,31 +284,30 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
     /**
      * 获取单个频道的完整、深度上下文信息。
-     * 这个方法负责编排各个仓储，将所有数据融合为一个 `Channel` 领域对象。
-     * @param platform 平台名称
-     * @param channelId 频道ID
-     * @returns 一个包含完整历史和成员信息的 Channel 对象。
+     * [阶段一简化版]
      */
     public async getFullChannel(platform: string, channelId: string): Promise<Channel> {
-        // --- 步骤 1: 并行获取所有需要的数据 ---
-        const [channelRecord, turnHistory, memberSummary] = await Promise.all([
-            // a. 获取频道的基础信息
-            this.ctx.database.get("channel", { id: channelId, platform }).then((res) => res[0]),
-            // b. 使用 TurnRepository 获取完整的回合历史 (每个事件都已被水合)
-            this.turns.getFullTurns(platform, channelId, { limit: 10 /* this.config.MaxTurnsPerChannel */ }),
-            // c. 获取成员的宏观统计信息
-            this.getMemberSummary(platform, channelId),
-        ]);
+        const [channelRecord] = await this.ctx.database.get("channel", { id: channelId, platform });
+        if (!channelRecord || !channelRecord.guildId) throw new Error(/* ... */);
 
-        if (!channelRecord) {
-            throw new Error(`Channel not found in database: ${platform}:${channelId}`);
-        }
+        // 获取最近的 DialogueSegment 记录
+        const segmentRecords = await this.ctx.database.get(
+            TableName.DialogueSegments,
+            { platform, channelId },
+            { limit: 10 /* this.config.MaxSegmentsPerChannel */, sort: { startTimestamp: "desc" } }
+        );
 
+        // 并行地水合所有片段
+        const historySegments = await Promise.all(
+            segmentRecords.map((seg) => this.segments.hydrateSegment(seg, platform, channelRecord.guildId, channelId))
+        );
+
+        // ... 组装 Member, MemberSummary 等信息 (逻辑与旧版类似) ...
         // --- 步骤 2: 提取历史事件中所有相关的成员 ---
         // 虽然事件在仓储层已被水合，但我们可能需要一个独立的、在频道层面展示的成员列表
         // 这里可以根据策略（如最近发言者、被@者）来决定展示哪些成员
         const recentActors = new Map<string, Member>();
-        for (const turn of turnHistory) {
+        for (const turn of historySegments) {
             for (const event of turn.events) {
                 const actor = (event.payload as any).actor;
                 if (actor && !recentActors.has(actor.id)) {
@@ -326,17 +320,35 @@ export class WorldStateService extends Service<WorldStateConfig> {
             }
         }
 
-        // --- 步骤 3: 组装最终的 Channel 对象 ---
         return {
-            id: channelRecord.id,
-            platform: channelRecord.platform,
+            ...channelRecord,
             name: channelRecord.name || `频道 ${channelRecord.id}`,
             type: this.determineChannelType(channelRecord),
-            description: (channelRecord.meta as any)?.description,
-            members: Array.from(recentActors.values()), // 暂时只显示最近活跃的成员
-            memberSummary,
-            history: turnHistory,
+            // ... 其他频道信息 ...
+            members: Array.from(recentActors.values()),
+            memberSummary: await this.getMemberSummary(platform, channelId),
+            history: historySegments, // [阶段一] history 只包含 DialogueSegment
         };
+    }
+
+    public async findOpenSegmentRecord(channelId: string, platform: string): Promise<DialogueSegmentData> {
+        return this.ctx.database.get(TableName.DialogueSegments, { channelId, platform, status: "open" }).then((res) => res[0]);
+    }
+
+    public async getChannelRecord(channelId: string, platform: string): Promise<Channel> {
+        return this.ctx.database.get("channel", { id: channelId, platform }).then((res) => res[0]) as Promise<Channel>;
+    }
+
+    public async createAgentTurn(segment: DialogueSegment) {
+        this.ctx.database.create(TableName.AgentTurns, {
+            id: `turn_${Date.now()}_${Random.id(8)}`,
+            stimulusSegmentId: segment.id,
+            channelId: segment.channelId,
+            platform: segment.platform,
+            status: "in_progress",
+            startTimestamp: new Date(),
+            endTimestamp: new Date(),
+        });
     }
 
     // --- 状态获取辅助方法 ---
@@ -411,7 +423,7 @@ export class WorldStateService extends Service<WorldStateConfig> {
         const retentionDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
         // 1. 查找所有过期的回合 (Turns)
-        const expiredTurns = await this.ctx.database.get(TableName.Turns, {
+        const expiredTurns = await this.ctx.database.get(TableName.AgentTurns, {
             endTimestamp: { $lt: retentionDate },
         });
 
@@ -424,12 +436,12 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
         // 2. 使用过期的回合ID，批量删除所有相关的子表记录
         const [eventRemoveResult, responseRemoveResult] = await Promise.all([
-            this.ctx.database.remove(TableName.Events, { turnId: { $in: expiredTurnIds } }),
+            this.ctx.database.remove(TableName.Events, { segmentId: { $in: expiredTurnIds } }),
             this.ctx.database.remove(TableName.AgentResponses, { turnId: { $in: expiredTurnIds } }),
         ]);
 
         // 3. 最后删除过期的回合主表记录
-        const turnRemoveResult = await this.ctx.database.remove(TableName.Turns, { id: { $in: expiredTurnIds } });
+        const turnRemoveResult = await this.ctx.database.remove(TableName.AgentTurns, { id: { $in: expiredTurnIds } });
 
         const result = {
             deletedTurns: turnRemoveResult.removed,
