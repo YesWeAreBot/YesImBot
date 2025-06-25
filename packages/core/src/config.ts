@@ -1,15 +1,16 @@
 import { Schema } from "koishi";
 
-import { ReplyConditionConfig } from "./middleware";
+import { AgentConfig } from "./agent/config";
+import { SystemBaseTemplate, UserBaseTemplate } from "./agent/prompt-builder";
 import {
     defaultCompressionPrompt,
     MemoryServiceConfig,
     ModelDescriptor,
     ModelServiceConfig,
     ModelServiceConfigSchema,
-    SystemBaseTemplate,
+    PlatformServiceConfig,
+    PlatformServiceConfigSchema,
     ToolServiceConfig,
-    UserBaseTemplate,
     WorldStateConfig,
     WorldStateConfigSchema,
 } from "./services";
@@ -22,7 +23,9 @@ export interface ChatConfig {
 }
 
 export interface Config {
-    ModelServiceConfig: ModelServiceConfig;
+    Agent: AgentConfig;
+    ModelService: ModelServiceConfig;
+    Platform: PlatformServiceConfig;
     Chat: ChatConfig;
     LLM: {
         RetryConfig: {
@@ -37,14 +40,13 @@ export interface Config {
             MaxAttempts: number;
         };
     };
-    ReplyCondition: ReplyConditionConfig;
     Memory: MemoryServiceConfig;
     ImageViewer: {
         UseModel?: [number, number];
         CustomPrompt?: string;
     };
     // Multimodal: MultimodalConfig;
-    ToolServiceConfig: ToolServiceConfig;
+    ToolService: ToolServiceConfig;
     ToolCall: {
         MaxRetry: number;
         Life: number;
@@ -74,69 +76,12 @@ export const ChatConfigSchema: Schema<ChatConfig> = Schema.object({
 }).description("对话行为配置");
 
 export const Config: Schema<Config> = Schema.object({
-    ModelServiceConfig: ModelServiceConfigSchema.description("模型服务"),
+    Agent: AgentConfig.description("Agent 配置"),
+    ModelService: ModelServiceConfigSchema.description("模型服务"),
 
     Chat: ChatConfigSchema,
 
-    ReplyCondition: Schema.object({
-        Channels: Schema.array(Schema.array(String).role("table")).description("允许回复的频道列表"),
-        TestMode: Schema.boolean().default(false).description("测试模式，每条消息都会触发回复"),
-
-        Strategies: Schema.object({
-            AtMention: Schema.object({
-                Enabled: Schema.boolean().default(true).description("启用@提及回复策略"),
-                Probability: Schema.number()
-                    .default(0.8)
-                    .min(0)
-                    .max(1)
-                    .step(0.05)
-                    .role("slider")
-                    .description("收到 @ 消息时立即回复的概率（0-1）"),
-            }).description("@提及回复策略配置"),
-
-            Threshold: Schema.object({
-                Enabled: Schema.boolean().default(true).description("启用阈值回复策略"),
-                Value: Schema.number().min(0).max(100).default(50).step(1).role("slider").description("触发回复的意愿阈值"),
-            }).description("阈值回复策略配置"),
-
-            ConversationFlow: Schema.object({
-                Enabled: Schema.boolean().default(true).description("启用对话流分析策略"),
-                ConfidenceThreshold: Schema.number()
-                    .min(0)
-                    .max(1)
-                    .default(0.6)
-                    .step(0.05)
-                    .role("slider")
-                    .description("对话流分析的置信度阈值"),
-            }).description("对话流分析策略配置"),
-        }).description("回复策略配置"),
-
-        Timing: Schema.object({
-            WaitTime: Schema.number().default(3000).min(0).max(10000).description("消息等待时间（毫秒），用于合并用户的连续消息"),
-            SameUserThreshold: Schema.number().default(5000).min(0).max(30000).description("判定为同一用户连续消息的时间阈值（毫秒）"),
-        }).description("时间控制配置"),
-
-        Advanced: Schema.object({
-            Willingness: Schema.object({
-                MessageIncrease: Schema.number().default(10).min(0).max(50).description("收到普通消息时增加的意愿值"),
-                AtIncrease: Schema.number().default(30).min(0).max(100).description("收到 @ 消息时增加的意愿值"),
-                DecayRate: Schema.number().default(2).min(0).max(20).description("意愿值每分钟衰减量"),
-                RetentionAfterReply: Schema.number()
-                    .default(0.3)
-                    .min(0)
-                    .max(1)
-                    .step(0.1)
-                    .role("slider")
-                    .description("回复后保留的意愿值比例"),
-                Keywords: Schema.object({
-                    List: Schema.array(String).description("关键词列表").collapse(),
-                    Increase: Schema.number().default(10).min(0).max(100).description("额外增加的意愿值"),
-                }).description("特定关键词配置"),
-            }).description("意愿值系统配置"),
-        })
-            .description("高级功能配置")
-            .collapse(),
-    }).description("回复条件配置"),
+    Platform: PlatformServiceConfigSchema,
 
     LLM: Schema.object({
         RetryConfig: Schema.object({
@@ -209,7 +154,7 @@ export const Config: Schema<Config> = Schema.object({
     //     MaxImagesPerPrompt: Schema.number().default(3),
     // }).description("多模态设置"),
 
-    ToolServiceConfig: Schema.object({
+    ToolService: Schema.object({
         autoLoad: Schema.boolean().default(true),
         extensionPaths: Schema.array(String).default([]),
         logLevel: Schema.union(["debug", "info", "warn", "error"]).default("info"),

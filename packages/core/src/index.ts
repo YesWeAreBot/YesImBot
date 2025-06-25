@@ -1,36 +1,12 @@
 import { Context, Service } from "koishi";
 
-import AgentCore from "./agent/agent";
+import { AgentCore } from "./agent";
 import { Config } from "./config";
-import { MemoryService, ModelService, PromptBuilder, ToolService, WorldStateService } from "./services";
-import {
-    ChatMessage,
-    IMAGE_TABLE,
-    ImageData,
-    Interaction,
-    INTERACTION_TABLE,
-    LAST_REPLY_TABLE,
-    MEMORY_TABLE,
-    MemoryBlockData,
-    MESSAGE_TABLE,
-} from "./shared";
+import { MemoryService, ModelService, PlatformService, ToolService, WorldStateService } from "./services";
 
 declare module "koishi" {
     interface Context {
         yesimbot: YesImBot;
-    }
-}
-
-declare module "koishi" {
-    interface Tables {
-        [MESSAGE_TABLE]: ChatMessage;
-        [MEMORY_TABLE]: MemoryBlockData;
-        [INTERACTION_TABLE]: Interaction;
-        [LAST_REPLY_TABLE]: {
-            channelId: string;
-            timestamp: Date;
-        };
-        [IMAGE_TABLE]: ImageData;
     }
 }
 
@@ -51,21 +27,19 @@ export default class YesImBot extends Service {
         ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
 
         // 注册工具管理器
-        ctx.plugin(ToolService, config.ToolServiceConfig);
+        ctx.plugin(ToolService, config.ToolService);
 
         // 注册模型服务
-        ctx.plugin(ModelService, config.ModelServiceConfig);
+        ctx.plugin(ModelService, config.ModelService);
 
         // 注册记忆管理层
         ctx.plugin(MemoryService, config.Memory);
 
         // 注册 WorldState 服务
-        this.ctx.plugin(WorldStateService, config.WorldState);
+        ctx.plugin(WorldStateService, config.WorldState);
 
-        // 注册提示词构建器服务
-        this.ctx.plugin(PromptBuilder, config.PromptTemplate);
-
-        this.registerTables();
+        // 注册平台适配器
+        ctx.plugin(PlatformService, config.Platform);
 
         ctx.on("ready", async () => {
             // 注册指令
@@ -75,87 +49,5 @@ export default class YesImBot extends Service {
 
             ctx.plugin(AgentCore, config);
         });
-    }
-
-    /**
-     * 注册所有数据库表
-     */
-    public registerTables(): void {
-        this.registerMessageTable();
-        this.registerInteractionTable();
-        this.registerLastReplyTable();
-        this.registerImageTable();
-
-        this.ctx.logger.info("[DatabaseManager] 所有数据库表注册完成");
-    }
-
-    private registerMessageTable(): void {
-        this.ctx.model.extend(
-            MESSAGE_TABLE,
-            {
-                messageId: "string",
-                sender: "object",
-                channel: "object",
-                timestamp: "timestamp",
-                content: "string",
-            },
-            {
-                primary: ["messageId"],
-                autoInc: false,
-            }
-        );
-    }
-
-    private registerInteractionTable(): void {
-        this.ctx.model.extend(
-            INTERACTION_TABLE,
-            {
-                id: "string",
-                emitter: "string",
-                emitter_channel_id: "string",
-                type: "string",
-                functionName: "string",
-                toolParams: "json",
-                toolResult: "object",
-                life: "integer",
-                timestamp: "timestamp",
-            },
-            {
-                primary: "id",
-            }
-        );
-    }
-
-    private registerLastReplyTable(): void {
-        this.ctx.model.extend(
-            LAST_REPLY_TABLE,
-            {
-                channelId: "string",
-                timestamp: "timestamp",
-            },
-            {
-                primary: "channelId",
-                autoInc: false,
-            }
-        );
-    }
-
-    private registerImageTable(): void {
-        this.ctx.model.extend(
-            IMAGE_TABLE,
-            {
-                id: "string",
-                mimeType: "string",
-                base64: "string",
-                summary: "string",
-                desc: "string",
-                size: "integer",
-                timestamp: "timestamp",
-            },
-            {
-                primary: "id",
-                autoInc: false,
-            }
-        );
     }
 }
