@@ -11,7 +11,7 @@ export const SimpleLogTool = createTool({
     parameters: Schema.object({
         message: Schema.string().description("要打印的消息"),
     }),
-    execute: async ({ message }, { koishiContext }) => {
+    execute: async ({ koishiContext }, { message }) => {
         koishiContext.logger.info(`[SimpleLogTool] ${message}`);
         return Success("日志已打印。");
     },
@@ -26,7 +26,7 @@ export const SimpleAddTool = createTool({
         a: Schema.number(),
         b: Schema.number(),
     }),
-    execute: async ({ a, b }) => {
+    execute: async (ctx, { a, b }) => {
         return Success({ result: a + b });
     },
 });

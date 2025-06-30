@@ -39,7 +39,7 @@ export class ToolService extends Service {
         super(ctx, Services.Tool, true);
 
         ctx.on("ready", async () => {
-            if (this.config?.autoLoad) await this.loadExtensions();
+            if (this.config?.AutoLoad) await this.loadExtensions();
         });
         ctx.on("dispose", () => this.cleanup());
     }
@@ -74,7 +74,7 @@ export class ToolService extends Service {
                 throw new ToolError(ToolErrorType.LOAD_ERROR, `文件 ${fileName} 未包含任何有效的扩展或工具导出。`);
             }
             await this.registerExtension(extensionDef);
-            if (this.config.hotReload) this.setupFileWatcher(filePath);
+            if (this.config.HotReload) this.setupFileWatcher(filePath);
         } catch (error) {
             this.ctx.logger.error(`✗ 扩展加载失败: ${fileName} - ${(error as Error).message}`);
             this.ctx.logger.debug((error as Error).stack);

@@ -9,12 +9,11 @@ export const DeleteMsg = createTool({
         message: Schema.string().required().description("要撤回的消息编号"),
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
-    execute: async ({ message, channel }, context) => {
-        const { koishiContext, koishiSession, platform } = context;
+    execute: async ({ koishiContext, koishiSession }, { message, channel }) => {
         if (isEmpty(message)) throw new Error("message is required");
         const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {
-            await platform.deleteMessage(message, targetChannel);
+            await koishiSession.bot.deleteMessage(targetChannel, message);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]撤回了消息: ${message}`);
             return Success();
         } catch (e) {
@@ -32,12 +31,12 @@ export const BanUser = createTool({
         duration: Schema.number().required().description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
-    execute: async ({ user_id, duration, channel }, context) => {
-        const { koishiContext, koishiSession, platform } = context;
+    execute: async (ctx, { user_id, duration, channel }) => {
+        const { koishiContext, koishiSession, platform } = ctx;
         if (isEmpty(user_id)) throw new Error("user_id is required");
         const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {
-            await platform.muteMember(user_id, targetChannel, duration);
+            await koishiSession.bot.muteGuildMember(targetChannel, user_id, duration * 60 * 1000);
             koishiContext.logger.info(`Bot[${koishiSession.selfId}]在频道 ${channel} 禁言用户: ${user_id}`);
             return Success();
         } catch (e) {

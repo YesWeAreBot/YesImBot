@@ -1,8 +1,8 @@
 import { Context, Query, Schema } from "koishi";
-import { ChatMessage, MESSAGE_TABLE } from "../../../shared";
 import { MemoryService } from "../../memory/MemoryService";
 import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
 import { ExtensionMetadata } from "../types";
+import { MessageData, TableName } from "../../worldstate";
 
 const metadata: ExtensionMetadata = {
     name: "Memory",
@@ -21,8 +21,8 @@ const CoreMemoryAppendTool = createTool({
             "The content to append. Each new piece of content should be a distinct thought or piece of information."
         ),
     }),
-    execute: async ({ label, content }, context) => {
-        const { koishiContext } = context;
+    execute: async (ctx, { label, content }) => {
+        const { koishiContext } = ctx;
         try {
             const result = await getMemory(koishiContext).appendToCoreMemory(label, content);
             return Success(result);
@@ -42,8 +42,8 @@ const CoreMemoryReplaceTool = createTool({
         old_content: Schema.string().description("The exact content to be replaced."),
         new_content: Schema.string().description("The new content to replace the old content. If empty, the old content will be deleted."),
     }),
-    execute: async ({ label, old_content, new_content }, context) => {
-        const { koishiContext } = context;
+    execute: async (ctx, { label, old_content, new_content }) => {
+        const { koishiContext } = ctx;
         try {
             const result = await getMemory(koishiContext).replaceInCoreMemory(label, old_content, new_content);
             return Success(result);
@@ -63,8 +63,8 @@ const ArchivalMemoryInsertTool = createTool({
         ),
         metadata: Schema.object(Schema.any).description("Optional key-value pairs to categorize or add context to the memory entry."),
     }),
-    execute: async ({ content, metadata }, context) => {
-        const { koishiContext } = context;
+    execute: async (ctx, { content, metadata }) => {
+        const { koishiContext } = ctx;
         try {
             const entry = await getMemory(koishiContext).storeInArchivalMemory(content, metadata);
             return Success(`Content stored in archival memory with ID: ${entry.id}.`, { entry_id: entry.id });
@@ -84,8 +84,8 @@ const ArchivalMemorySearchTool = createTool({
         pageSize: Schema.number().max(50).description("Number of results per page (default: 10, max: 50)."),
         filterMetadata: Schema.object(Schema.any).description("Key-value pairs to filter entries by their metadata."),
     }),
-    execute: async ({ query, page, pageSize, filterMetadata }, context) => {
-        const { koishiContext } = context;
+    execute: async (ctx, { query, page, pageSize, filterMetadata }) => {
+        const { koishiContext } = ctx;
         try {
             const searchResult = await getMemory(koishiContext).archivalStore.search(query, {
                 page: page,
@@ -115,10 +115,10 @@ const ConversationSearchTool = createTool({
         channel_id: Schema.string().description("Filter by a specific channel ID."),
         user_id: Schema.string().description("Filter by messages sent by a specific user ID (not the bot)."),
     }),
-    execute: async ({ query, limit, channel_id, user_id }, context) => {
-        const { koishiContext } = context;
+    execute: async (ctx, { query, limit, channel_id, user_id }) => {
+        const { koishiContext } = ctx;
         try {
-            const whereClauses: Query.Expr<ChatMessage>[] = []; // Message is your database model type for messages
+            const whereClauses: Query.Expr<MessageData>[] = [];
 
             // Basic text search across 'content'
             // For more advanced search, you might need full-text search capabilities in your DB
@@ -126,16 +126,16 @@ const ConversationSearchTool = createTool({
                 whereClauses.push({ content: { $regex: new RegExp(query, "i") } });
             }
             if (channel_id) {
-                whereClauses.push({ channel: { id: channel_id } });
+                whereClauses.push({ channelId: channel_id });
             }
             if (user_id) {
                 whereClauses.push({ sender: { id: user_id } });
             }
             // Combine clauses with $and if multiple are present
-            const finalQuery: Query<ChatMessage> = whereClauses.length > 1 ? { $and: whereClauses } : whereClauses[0] || {};
+            const finalQuery: Query<MessageData> = whereClauses.length > 1 ? { $and: whereClauses } : whereClauses[0] || {};
 
             const messages = await koishiContext.database
-                .select(MESSAGE_TABLE)
+                .select(TableName.Messages)
                 .where(finalQuery)
                 .limit(limit)
                 .orderBy("timestamp", "desc")
