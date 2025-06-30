@@ -43,11 +43,11 @@ export default class YesImBot extends Service {
 
         ctx.on("ready", async () => {
             // 注册指令
-            ctx.plugin(require("./commands/cache"));
+            // ctx.plugin(require("./commands/cache"));
             ctx.plugin(require("./commands/config"), config);
             ctx.plugin(require("./commands/extension"));
 
-            ctx.plugin(AgentCore, config);
+            ctx.plugin(AgentCore, config.Agent);
         });
     }
 }
