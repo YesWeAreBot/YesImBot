@@ -1,7 +1,5 @@
-// packages/core/src/services/agent/config.ts
-
 import { Schema } from "koishi";
-import { PromptBuilderConfig, SystemBaseTemplate, UserBaseTemplate } from "./prompt-builder";
+import { SystemBaseTemplate, UserBaseTemplate } from "./prompt-builder";
 import { WillingnessConfig } from "./willingness-calculator";
 
 interface ArousalConfig {
@@ -12,17 +10,6 @@ interface ArousalConfig {
     DebounceMs: number;
 }
 
-interface LlmProcessingConfig {
-    UseModel: { ProviderName: string; ModelId: string }[];
-    MaxHeartbeat: number;
-    Retry: {
-        MaxRetries: number;
-        TimeoutMs: number;
-        RetryDelayMs: number;
-        ExponentialBackoff: boolean;
-    };
-}
-
 interface ToolExecutorConfig {
     MaxRetry: number;
 }
@@ -30,7 +17,10 @@ interface ToolExecutorConfig {
 export interface AgentConfig {
     Arousal: ArousalConfig;
     Willingness: WillingnessConfig;
-    Llm: LlmProcessingConfig;
+    Chat: {
+        UseGroup: string;
+        MaxHeartbeat: number;
+    };
     ToolExecutor: ToolExecutorConfig;
     Prompt: {
         SystemTemplate: string;
@@ -50,8 +40,7 @@ export const AgentConfigSchema: Schema<AgentConfig> = Schema.object({
                     Id: Schema.string().description("频道ID"),
                 })
             ).role("table")
-        )
-        .description("允许 Agent 响应的频道分组。同一组内的频道共享上下文。"),
+        ).description("允许 Agent 响应的频道分组。同一组内的频道共享上下文。"),
         DebounceMs: Schema.number().default(2000).description("唤醒决策的防抖延迟（毫秒）。"),
     }).description("唤醒机制配置"),
 
@@ -69,24 +58,10 @@ export const AgentConfigSchema: Schema<AgentConfig> = Schema.object({
         Keywords: Schema.array(String).role("table").description("能够显著提升意愿值的关键词列表。"),
     }).description("意愿度模型配置"),
 
-    Llm: Schema.object({
-        UseModel: Schema.array(
-            Schema.object({
-                ProviderName: Schema.string().description("提供商名称"),
-                ModelId: Schema.string().description("模型ID"),
-            })
-        )
-            .role("table")
-            .required()
-            .description("对话使用的模型列表（按优先级）。"),
-        MaxHeartbeat: Schema.number().min(1).max(10).default(3).role("slider").description("一次思考循环中最大连续对话次数。"),
-        Retry: Schema.object({
-            MaxRetries: Schema.number().min(0).max(10).default(2).description("LLM 请求的最大重试次数。"),
-            TimeoutMs: Schema.number().default(60000).description("LLM 请求的超时时间（毫秒）。"),
-            RetryDelayMs: Schema.number().default(1500).description("LLM 请求重试的基础延迟（毫秒）。"),
-            ExponentialBackoff: Schema.boolean().default(true).description("是否对 LLM 请求重试使用指数退避策略。"),
-        }).description("LLM 请求重试配置"),
-    }).description("LLM 处理配置"),
+    Chat: Schema.object({
+        UseGroup: Schema.string().default("default").description("使用的模型组名称。"),
+        MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
+    }).description("对话行为配置"),
 
     ToolExecutor: Schema.object({
         MaxRetry: Schema.number().default(2).description("工具调用失败时的最大重试次数。"),
