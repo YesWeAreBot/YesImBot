@@ -1,10 +1,8 @@
 import { $, Context, Random, Service, Session } from "koishi";
 import { Services } from "../types";
 import { WorldStateConfig } from "./config";
-import { AgentTurn, Channel, DialogueSegment, Member, MemberSummary, WorldState } from "./interfaces";
-import { AgentTurnData, DialogueSegmentData, TableName } from "./model";
-import { MemberRepository } from "./repositories";
-import { DialogueSegmentRepository } from "./repositories/dialogue-segment";
+import { AgentTurn, Channel, DialogueSegment, WorldState } from "./interfaces";
+import { DialogueSegmentData, TableName } from "./model";
 
 // 在 Koishi 的 Context 接口上声明我们的服务，以获得完整的类型提示
 declare module "koishi" {
@@ -14,24 +12,14 @@ declare module "koishi" {
 
     interface Events {
         /** 当对话片段有更新时触发 */
-        "worldstate:segment-updated"(session: Session, segmentId: string, channelId: string, platform: string): void;
+        "worldstate:segment-updated"(session: Session, segment: DialogueSegment): void;
     }
 }
 
 /**
  * WorldState 服务
- *
- * 核心职责:
- * 1. 监听 Koishi 事件总线，捕获世界状态的变化（消息、成员变动等）。
- * 2. 调用仓储层(Repositories)，将这些变化以结构化的形式持久化到数据库。
- * 3. 对外提供获取完整世界状态快照(WorldState)的接口，供 Agent 使用。
  */
 export class WorldStateService extends Service<WorldStateConfig> {
-    public readonly members: MemberRepository;
-    public readonly segments: DialogueSegmentRepository;
-
-    private cleanupTimer?: NodeJS.Timeout; // 用于持有定时器的引用
-
     private disposer: (() => boolean)[] = [];
 
     constructor(ctx: Context, config: WorldStateConfig) {
@@ -40,10 +28,6 @@ export class WorldStateService extends Service<WorldStateConfig> {
 
         // 应用所有数据库模型定义
         ctx.plugin(require("./model"));
-
-        // 实例化仓储层，并传入 ctx
-        this.members = new MemberRepository(ctx);
-        this.segments = new DialogueSegmentRepository(ctx, this.members);
     }
 
     /**
@@ -56,389 +40,230 @@ export class WorldStateService extends Service<WorldStateConfig> {
         // 监听所有消息事件
         this.disposer.push(this.ctx.on("message", (session) => this.onMessage(session), true));
 
-        // 监听成员加入事件
-        this.disposer.push(this.ctx.on("guild-member-added", (session) => this.onMemberJoined(session)));
-
-        // 监听成员离开事件
-        this.disposer.push(this.ctx.on("guild-member-removed", (session) => this.onMemberLeft(session)));
-
-        // 监听群组信息更新事件
-        this.disposer.push(this.ctx.on("guild-updated", (session) => this.onChannelUpdated(session)));
-
-        // --- 启动定期清理任务 ---
-        this.startCleanupTask();
-    }
-
-    /**
-     * Koishi 服务生命周期方法，在插件停止时调用。
-     * 可用于清理资源，如定时器。
-     */
-    protected stop(): void {
-        this.ctx.logger.info("WorldState Service stopped.");
-
-        // -- 清理事件监听器 ---
-        this.disposer.forEach((dispose) => dispose());
-
-        // --- 停止清理任务，防止内存泄漏 ---
-        this.stopCleanupTask();
+        this.ctx.on("worldstate:segment-updated", (session, segment) => {});
     }
 
     // --- 事件处理器 ---
+    /**
+     * 消息处理流程
+     * 1. 获取或创建当前开放的对话片段
+     * 2. 准备事件负载
+     * 3. 持久化事件
+     * 4. 触发 worldstate:segment-updated 事件，将构造好的 DialogueSegment 对象传递给监听器
+     */
     private async onMessage(session: Session): Promise<void> {
-        if (session.selfId === session.userId) return;
-        try {
-            const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
+        // 更新频道及成员信息
 
-            const payload = {
-                quote: session.quote,
-                actor: {
-                    // 使用 actor 字段
-                    id: session.userId,
-                    name: session.author.name,
-                    avatar: session.author.avatar,
-                    nick: session.author.nick,
-                },
-                content: session.content,
-                messageId: session.messageId,
-            };
+        // 内置用户表
+        const [binding] = await this.ctx.database.get("binding", { platform: session.platform, pid: session.userId });
+        const [kUser] = await this.ctx.database.get("user", { id: binding.bid });
 
-            await this.ctx.database.create(TableName.Events, {
-                id: `${session.messageId}`,
-                segmentId: segment.id,
-                type: "message",
-                timestamp: new Date(session.timestamp),
-                payload,
-            });
-
-            const [kUser] = await this.ctx.database.get("binding", { platform: session.platform, pid: session.author.id });
-            if (!kUser) return;
-
-            await this.ctx.database.upsert("user", [
-                {
-                    id: kUser.aid,
-                    name: session.author.name,
-                },
-            ]);
-
+        // 只有群聊环境更新
+        // 主要是确认哪个群组中包含哪些用户
+        // 其他信息可以通过平台适配器实时获取
+        if (session.guildId) {
             await this.ctx.database.upsert(TableName.Members, [
                 {
-                    uid: kUser.aid,
+                    uid: kUser.id,
+                    pid: session.userId,
                     platform: session.platform,
-                    channelId: session.channelId,
-                    pid: session.author.id,
+                    channelId: session.guildId,
+                    name: session.author.name,
+                    nick: session.author.nick,
+                    roles: session.author.roles,
+                    avatar: session.author.avatar,
+                    title: session.author.title,
+                    joinedAt: new Date(session.author.joinedAt),
                     lastActive: new Date(),
                 },
             ]);
-
-            await this.updateChannelActivity(session);
-            await this.members.updateMemberActivity(session.platform, session.channelId, session.author.id);
-
-            this.ctx.parallel("worldstate:segment-updated", session, segment.id, session.channelId, session.platform);
-        } catch (error) {
-            this.ctx.logger.error("Error handling message event:", error.message);
-            this.ctx.logger.error(error.stack);
         }
-    }
 
-    private async onMemberJoined(session: Session): Promise<void> {
-        try {
-            const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
-            const payload = {
-                actorId: session.operatorId || "system",
-                userId: session.userId,
-            };
-            await this.ctx.database.create(TableName.Events, {
-                id: `evt_${Date.now()}_${session.userId}`,
-                segmentId: segment.id,
-                type: "member-joined",
-                timestamp: new Date(session.timestamp),
-                payload,
-            });
-            await this.updateChannelMemberCount(session);
-        } catch (error) {
-            this.ctx.logger.error("Error handling member-joined event:", error);
-        }
-    }
+        // 获取或创建当前开放的对话片段
+        const segmentRecord = await this.getOrCreateOpenSegment(session.platform, session.channelId);
 
-    private async onMemberLeft(session: Session): Promise<void> {
-        try {
-            const segment = await this.segments.getOrCreateOpenSegment(session.platform, session.channelId);
-            const payload = {
-                actorId: session.operatorId || session.userId,
-                userId: session.userId,
-            };
-            await this.ctx.database.create(TableName.Events, {
-                id: `evt_${Date.now()}_${session.userId}`,
-                segmentId: segment.id,
-                type: "member-left",
-                timestamp: new Date(session.timestamp),
-                payload,
-            });
-            await this.updateChannelMemberCount(session);
-        } catch (error) {
-            this.ctx.logger.error("Error handling member-left event:", error);
-        }
-    }
-
-    private async onChannelUpdated(session: Session): Promise<void> {
-        const platformChannel = session.event.channel;
-        if (!platformChannel) return;
-
-        try {
-            await this.ctx.database.upsert("channel", [
-                {
-                    id: platformChannel.id,
-                    platform: session.platform,
-                    name: platformChannel.name,
-                },
-            ]);
-        } catch (error) {
-            this.ctx.logger.error("Error handling channel-updated event:", error);
-        }
-    }
-
-    private async updateChannelActivity(session: Session): Promise<void> {
-        await this.ctx.database.upsert("channel", [
-            {
-                id: session.channelId,
-                platform: session.platform,
-                guildId: session.guildId,
-                lastActivityAt: new Date(),
-                name: session.event?.channel?.name,
+        // 消息入库
+        await this.ctx.database.create(TableName.Messages, {
+            id: session.messageId,
+            sid: segmentRecord.id,
+            channelId: session.channelId,
+            platform: session.platform,
+            sender: {
+                id: session.userId,
+                name: session.author.name,
+                nick: session.author.nick,
+                roles: session.author.roles,
             },
-        ]);
+            timestamp: new Date(session.timestamp),
+            content: session.content,
+            quoteId: session.quote?.id,
+        });
+
+        const dialogueSegment = await this.constructFullSegmentById(session.platform, session.channelId, segmentRecord.id);
+
+        // 触发 worldstate:segment-updated 事件
+        this.ctx.emit("worldstate:segment-updated", session, dialogueSegment);
     }
 
-    private async updateChannelMemberCount(session: Session): Promise<void> {
-        if (!session.guildId) return;
-        try {
-            const memberCount = await session.bot
-                .getGuild(session.guildId)
-                .then((g) => 0)
-                .catch(() => null);
-            if (memberCount !== null) {
-                await this.ctx.database.upsert("channel", [
-                    {
-                        id: session.channelId,
-                        platform: session.platform,
-                        memberCount,
-                    },
-                ]);
-            }
-        } catch (error) {
-            this.ctx.logger.warn(`Failed to update member count for channel ${session.channelId}:`, error);
-        }
-    }
+    public async getWorldState(allowedChannels: { Platform: string; Id: string }[]): Promise<WorldState> {
+        const activeChannels = await Promise.all(
+            allowedChannels.map(({ Platform, Id }) => {
 
-    public async getWorldState(allowedChannelIds: string[]): Promise<WorldState> {
-        this.ctx.logger.info(`Generating world state for ${allowedChannelIds.length} allowed channels...`);
-
-        const allChannelRecords = await this.ctx.database.get("channel", { id: allowedChannelIds });
-
-        const activeThreshold = new Date(Date.now() - this.config.ActiveChannelHours * 60 * 60 * 1000);
-
-        const activeChannelPromises: Promise<Channel>[] = [];
-        const inactiveChannelRecords: Partial<Channel>[] = [];
-
-        for (const record of allChannelRecords) {
-            if (record.lastActivityAt > activeThreshold) {
-                activeChannelPromises.push(this.getFullChannel(record.platform, record.id));
-            } else {
-                inactiveChannelRecords.push({
-                    id: record.id,
-                    platform: record.platform,
-                    name: record.name,
-                    type: this.determineChannelType(record),
-                });
-            }
-        }
-
-        const activeChannels = await Promise.all(activeChannelPromises);
-
-        this.ctx
-            .logger("worldstate")
-            .info(`World state generated. Active: ${activeChannels.length}, Inactive: ${inactiveChannelRecords.length}.`);
+                return this.buildFullContextForChannel(Platform, Id);
+            })
+        );
 
         return {
             timestamp: new Date().toISOString(),
-            activeChannels,
-            inactiveChannels: inactiveChannelRecords as Channel[],
+            activeChannels: activeChannels,
+            inactiveChannels: [],
         };
     }
 
-    public async getFullChannel(platform: string, channelId: string): Promise<Channel> {
-        const [channelRecord] = await this.ctx.database.get("channel", { id: channelId, platform });
-        if (!channelRecord || !channelRecord.guildId) throw new Error(`Channel record not found for ${platform}:${channelId}`);
+    async buildFullContextForChannel(platform: string, channelId: string): Promise<Channel> {
+        const memberRecords = await this.ctx.database.get(TableName.Members, { platform, channelId });
 
-        const segmentRecords = await this.ctx.database.get(
-            TableName.DialogueSegments,
-            { platform, channelId },
-            { limit: this.config.MaxTurnsPerChannel, sort: { startTimestamp: "desc" } }
+        const dialogueSegmentRecords = await this.ctx.database
+            .select(TableName.DialogueSegments)
+            .where({ platform, channelId })
+            .orderBy("timestamp", "desc")
+            // .limit(10)
+            .execute();
+
+        const dialogueSegments = await Promise.all(
+            dialogueSegmentRecords.map((record) => this.constructFullSegmentById(record.platform, record.channelId, record.id))
         );
 
-        const history: (DialogueSegment | AgentTurn)[] = [];
-        const recentActors = new Map<string, Member>();
+        const agentTurnRecords = await this.ctx.database
+            .select(TableName.AgentTurns)
+            .where({ sid: dialogueSegmentRecords.map((record) => record.id) })
+            .orderBy("timestamp", "desc")
+            // .limit(10)
+            .execute();
 
-        for (const segRecord of segmentRecords) {
-            const segment = await this.segments.hydrateSegment(segRecord, platform, channelRecord.guildId, channelId);
-            history.push(segment);
+        const agentTurns = await Promise.all(
+            agentTurnRecords.map((record) => this.constructFullAgentTurnById(record.platform, record.channelId, record.id))
+        );
 
-            for (const event of segment.events) {
-                const actor = (event.payload as any).actor;
-                if (actor && !recentActors.has(actor.id)) {
-                    recentActors.set(actor.id, actor);
-                }
-                const user = (event.payload as any).user;
-                if (user && !recentActors.has(user.id)) {
-                    recentActors.set(user.id, user);
-                }
-            }
-
-            const agentTurnRecord = await this.ctx.database.get(TableName.AgentTurns, { stimulusSegmentId: segRecord.id });
-            if (agentTurnRecord.length > 0) {
-                const agentTurn = await this.hydrateAgentTurn(agentTurnRecord[0]);
-                history.push(agentTurn);
-            }
-        }
-
-        history.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime());
+        // 按时间戳合并消息和 Agent 回合
+        const history: (DialogueSegment | AgentTurn)[] = [...dialogueSegments, ...agentTurns]
+            .filter(Boolean)
+            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         return {
-            ...channelRecord,
-            name: channelRecord.name || `频道 ${channelRecord.id}`,
-            type: this.determineChannelType(channelRecord),
-            members: Array.from(recentActors.values()),
-            memberSummary: await this.getMemberSummary(platform, channelId),
-            history,
+            id: channelId,
+            name: channelId,
+            type: "guild",
+            platform: platform,
+            meta: {},
+            members: memberRecords.map((record) => ({
+                id: record.pid,
+                name: record.name,
+                nick: record.nick,
+                avatar: record.avatar,
+                title: record.title,
+                roles: record.roles,
+                joinedAt: record.joinedAt?.getTime(),
+            })),
+            history: history,
         };
     }
 
-    public async findOpenSegmentRecord(channelId: string, platform: string): Promise<DialogueSegmentData> {
-        return this.ctx.database.get(TableName.DialogueSegments, { channelId, platform, status: "open" }).then((res) => res[0]);
-    }
-
-    public async getChannelRecord(channelId: string, platform: string): Promise<Channel> {
-        return this.ctx.database.get("channel", { id: channelId, platform }).then((res) => res[0]) as Promise<Channel>;
-    }
-
-    public async createAgentTurn(segment: DialogueSegment): Promise<AgentTurnData> {
-        const agentTurnData: AgentTurnData = {
+    async createAgentTurn(segment: DialogueSegment): Promise<AgentTurn> {
+        const turnRecord = await this.ctx.database.create(TableName.AgentTurns, {
             id: `turn_${Date.now()}_${Random.id(8)}`,
-            stimulusSegmentId: segment.id,
+            sid: segment.id,
             channelId: segment.channelId,
             platform: segment.platform,
             status: "in_progress",
-            startTimestamp: new Date(),
-            endTimestamp: new Date(),
-        };
-        await this.ctx.database.create(TableName.AgentTurns, agentTurnData);
-        return agentTurnData;
-    }
-
-    private async hydrateAgentTurn(turnRecord: AgentTurnData): Promise<AgentTurn> {
-        const responses = await this.ctx.database.get(TableName.AgentResponses, { turnId: turnRecord.id });
-        return {
-            id: turnRecord.id,
-            platform: turnRecord.platform,
-            channelId: turnRecord.channelId,
-            stimulusSegmentId: turnRecord.stimulusSegmentId,
-            status: turnRecord.status,
-            responses: responses.map((r) => ({
-                thoughts: r.thoughts as any,
-                actions: r.actions as any,
-                observations: r.observations as any,
-                request_heartbeat: false, // This needs to be stored in the DB
-            })),
-            startTimestamp: turnRecord.startTimestamp,
-            endTimestamp: turnRecord.endTimestamp,
-            is_agent_turn: true,
-            is_dialogue_segment: false,
-        };
-    }
-
-    private async getMemberSummary(platform: string, channelId: string): Promise<MemberSummary> {
-        const recentThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-        const [totalCount, recentActiveCount] = await Promise.all([
-            this.ctx.database.eval(TableName.Members, (row) => $.count(row.uid), { platform, channelId }),
-            this.ctx.database.eval(TableName.Members, (row) => $.count(row.uid), {
-                platform,
-                channelId,
-                lastActive: { $gte: recentThreshold },
-            }),
-        ]);
-
-        return {
-            totalCount,
-            onlineCount: 0,
-            recentActiveCount,
-        };
-    }
-
-    private determineChannelType(channelRecord: import("koishi").Channel): "group" | "private" {
-        return channelRecord.flag & 1 ? "private" : "group";
-    }
-
-    private startCleanupTask(): void {
-        const intervalMs = 24 * 60 * 60 * 1000;
-
-        this.performDataCleanup().catch((error) => this.ctx.logger.error("Initial data cleanup failed:", error));
-
-        this.cleanupTimer = setInterval(() => {
-            this.performDataCleanup().catch((error) => this.ctx.logger.error("Scheduled data cleanup failed:", error));
-        }, intervalMs);
-
-        this.ctx.logger.info("Scheduled data cleanup task started.");
-    }
-
-    private stopCleanupTask(): void {
-        if (this.cleanupTimer) {
-            clearInterval(this.cleanupTimer);
-            this.cleanupTimer = undefined;
-            this.ctx.logger.info("Scheduled data cleanup task stopped.");
-        }
-    }
-
-    public async performDataCleanup(): Promise<{ deletedTurns: number; deletedEvents: number; deletedResponses: number }> {
-        this.ctx.logger.info("Performing data cleanup...");
-
-        const retentionDays = this.config.DataRetentionDays;
-        if (!retentionDays || retentionDays <= 0) {
-            this.ctx.logger.info("Data retention is disabled. Skipping cleanup.");
-            return { deletedTurns: 0, deletedEvents: 0, deletedResponses: 0 };
-        }
-
-        const retentionDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-
-        const expiredTurns = await this.ctx.database.get(TableName.AgentTurns, {
-            endTimestamp: { $lt: retentionDate },
+            timestamp: new Date(),
         });
 
-        if (expiredTurns.length === 0) {
-            this.ctx.logger.info("No expired data to clean up.");
-            return { deletedTurns: 0, deletedEvents: 0, deletedResponses: 0 };
+        return this.constructFullAgentTurnById(segment.platform, segment.channelId, turnRecord.id);
+    }
+
+    public async getOrCreateOpenSegment(platform: string, channelId: string): Promise<DialogueSegmentData> {
+        const openSegments = await this.ctx.database
+            .select(TableName.DialogueSegments)
+            .where({ platform, channelId, status: "open" })
+            .orderBy("timestamp", "desc")
+            .limit(1)
+            .execute();
+
+        if (openSegments.length > 0) {
+            return openSegments[0];
         }
 
-        const expiredTurnIds = expiredTurns.map((t) => t.id);
+        const newSegment: DialogueSegmentData = {
+            id: `seg_${Date.now()}_${Random.id(8)}`,
+            channelId,
+            platform,
+            status: "open",
+            timestamp: new Date(),
+        };
+        await this.ctx.database.create(TableName.DialogueSegments, newSegment);
+        return newSegment;
+    }
 
-        const [eventRemoveResult, responseRemoveResult] = await Promise.all([
-            this.ctx.database.remove(TableName.Events, { segmentId: { $in: expiredTurnIds } }),
-            this.ctx.database.remove(TableName.AgentResponses, { turnId: { $in: expiredTurnIds } }),
-        ]);
+    /**
+     * 根据对话片段ID构造完整的 DialogueSegment 对象。
+     * @param segmentId
+     */
+    async constructFullSegmentById(platform: string, channelId: string, segmentId: string): Promise<DialogueSegment> {
+        const [segmentRecord] = await this.ctx.database.get(TableName.DialogueSegments, { id: segmentId });
+        if (!segmentRecord) throw new Error(`Segment not found: ${segmentId}`);
 
-        const turnRemoveResult = await this.ctx.database.remove(TableName.AgentTurns, { id: { $in: expiredTurnIds } });
+        // 获取此片段的消息记录
+        const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: segmentRecord.id });
 
-        const result = {
-            deletedTurns: turnRemoveResult.removed,
-            deletedEvents: eventRemoveResult.removed,
-            deletedResponses: responseRemoveResult.removed,
+        // 获取此片段的系统事件记录
+        const systemEventRecords = await this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id });
+
+        // 构造 DialogueSegment 对象
+        const dialogueSegment: DialogueSegment = {
+            id: segmentRecord.id,
+            platform: platform,
+            channelId: channelId,
+            status: segmentRecord.status,
+            dialogue: messageRecords,
+            systemEvents: systemEventRecords.map((record) => ({
+                id: record.id,
+                type: record.type,
+                timestamp: record.timestamp,
+                payload: record.payload,
+
+                /**
+                 * 可选的类型守卫属性，例如 `is_member_join_event: true`，
+                 * 便于在代码中进行类型收窄。
+                 */
+                [`is_${record.type}`]: true,
+            })),
+            timestamp: segmentRecord.timestamp,
+            is_dialogue_segment: true,
         };
 
-        this.ctx
-            .logger("worldstate")
-            .info(
-                `Data cleanup completed. Deleted ${result.deletedTurns} turns, ${result.deletedEvents} events, and ${result.deletedResponses} agent responses.`
-            );
-        return result;
+        return dialogueSegment;
+    }
+
+    async constructFullAgentTurnById(platform: string, channelId: string, id: string): Promise<AgentTurn> {
+        const [turnRecord] = await this.ctx.database.get(TableName.AgentTurns, { id });
+        if (!turnRecord) throw new Error(`AgentTurn not found: ${id}`);
+
+        // 获取此回合的响应记录
+        const responseRecords = await this.ctx.database.get(TableName.AgentResponses, { turnId: turnRecord.id });
+
+        // 构造 AgentTurn 对象
+        const agentTurn: AgentTurn = {
+            id: turnRecord.id,
+            platform: platform,
+            channelId: channelId,
+            stimulusSegmentId: turnRecord.sid,
+            status: turnRecord.status,
+            responses: responseRecords,
+            timestamp: turnRecord.timestamp,
+            is_agent_turn: true,
+        };
+
+        return agentTurn;
     }
 }
