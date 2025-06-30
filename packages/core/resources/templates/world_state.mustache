@@ -1,76 +1,79 @@
 {{#WORLD_STATE}}
 <world_state timestamp="{{timestamp}}">
-  <active_channels>
-    {{#activeChannels}}
-    <channel id="{{id}}" type="{{type}}">
-      <name>{{name}}</name>
-      <members>
-        {{#allMembers}}
-        <user id="{{id}}"{{#role}} role="{{.}}"{{/role}}>{{name}}</user>
-        {{/allMembers}}
-      </members>
-      <history>
+  {{#activeChannels}}
+  <channel id="{{id}}" type="{{type}}" platform="{{platform}}">
+    <name>{{name}}</name>
+    {{#meta.description}}
+    <description>{{.}}</description>
+    {{/meta.description}}
+    {{#members.length}}
+    <members>
+      {{#members}}
+      <user id="{{id}}"{{#nick}} nick="{{.}}"{{/nick}}{{#roles}} roles="{{_toString}}"{{/roles}}>{{name}}</user>
+      {{/members}}
+    </members>
+    {{/members.length}}
+    <history>
       {{#history}}
-        <turn id="{{id}}" status="{{status}}">
-          <events>
-          {{#events}}
-            <event type="{{type}}" timestamp="{{timestamp}}">
-              {{! 渲染消息事件 }}
-              {{#is_message}}
-                <sender id="{{sender.id}}">{{sender.name}}</sender>{{#quote}}{{/quote}}
-                <content id="{{messageId}}">{{content}}</content>
-              {{/is_message}}
-              {{! 渲染成员加入事件 }}
-              {{#is_member_join}}
-                <user_joined id="{{user_joined.id}}">{{user_joined.name}}</user_joined>
-              {{/is_member_join}}
-              {{! 渲染用户被禁言事件 }}
-              {{#is_user_muted}}
-                <muter id="{{muter.id}}">{{muter.name}}</muter>
-                <muted_user id="{{muted_user.id}}">{{muted_user.name}}</muted_user>
-                <duration_minutes>{{duration_minutes}}</duration_minutes>
-                {{#reason}}<reason>{{.}}</reason>{{/reason}}
-              {{/is_user_muted}}
-              {{! 当你需要添加新事件类型时，比如 member_leave }}
-              {{#is_member_leave}}
-                {{! ... 在这里添加新事件的渲染逻辑 ... }}
-              {{/is_member_leave}}
-            </event>
-          {{/events}}
-          </events>
-          <responses>
-          {{#responses}}
-            <response>
-              {{#thoughts}}
-              <thoughts>
-                <obverse>{{obverse}}</obverse>
-                <analyze_infer>{{analyze_infer}}</analyze_infer>
-                <plan>{{plan}}</plan>
-              </thoughts>
-              {{/thoughts}}
-              <actions>
-              {{#actions}}
-                <action>{"function":"{{function}}","params":{{renderParams}}}</action>
-              {{/actions}}
-              </actions>
-              <observations>
-              {{#observations}}
-                <observation function="{{function}}" success="{{result.success}}">{{renderResult}}</observation>
-              {{/observations}}
-              </observations>
-            </response>
-          {{/responses}}
-          </responses>
-        </turn>
+      {{#is_dialogue_segment}}
+      <dialogue status="{{status}}" timestamp="{{timestamp}}">
+        {{#dialogue}}
+        [{{id}}] {{timestamp}} {{sender.name}}: {{content}}
+        {{/dialogue}}
+      </dialogue>
+      {{#systemEvents.length}}
+      <system_events>
+        {{#systemEvents}}
+        <event type="{{type}}" timestamp="{{timestamp}}">{{payload}}</event>
+        {{/systemEvents}}
+      </system_events>
+      {{/systemEvents.length}}
+      {{/is_dialogue_segment}}
+      {{#is_agent_turn}}
+      {{#responses.length}}
+      <agent_turn status="{{status}}" timestamp="{{timestamp}}">
+        {{#responses}}
+        <response>
+        <thoughts>
+          <observe>{{thoughts.observe}}</observe>
+          <analyze_infer>{{thoughts.analyze_infer}}</analyze_infer>
+          <plan>{{thoughts.plan}}</plan>
+        </thoughts>
+        <actions>
+          {{#actions}}
+          <action id="{{function}}">
+            <function>{{function}}</function>
+            <params>{{_renderParams}}</params>
+          </action>
+          {{/actions}}
+        </actions>
+        <observations>
+          {{#observations}}
+          <observation id="{{function}}">
+            <function>{{function}}</function>
+            <status>{{result.status}}</status>
+            {{#result.result}}
+            <result>{{_toString}}</result>
+            {{/result.result}}
+            {{#result.error}}
+            <error>{{_toString}}</error>
+            {{/result.error}}
+          </observation>
+          {{/observations}}
+        </observations>
+        </response>
+        {{/responses}}
+      </agent_turn>
+      {{/responses.length}}
+      {{/is_agent_turn}}
       {{/history}}
-      </history>
-    </channel>
-    {{/activeChannels}}
-  </active_channels>
+    </history>
+  </channel>
+  {{/activeChannels}}
+  {{#inactiveChannels}}
   <inactive_channels>
-    {{#inactiveChannels}}
     <channel_id>{{id}}</channel_id>
-    {{/inactiveChannels}}
   </inactive_channels>
+  {{/inactiveChannels}}
 </world_state>
 {{/WORLD_STATE}}
