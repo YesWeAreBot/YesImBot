@@ -13,11 +13,12 @@ export const WebSearch = createTool({
         query: Schema.string().required().description("搜索关键词或查询内容。"),
     }),
 
-    execute: async ({ query }, context) => {
+    execute: async (ctx, { query }) => {
         try {
-            const searchUrl = `https://search.yesimbot.chat/search?q=${encodeURIComponent(
-                query
-            )}&engines=baidu,github,bing,presearch&format=json`;
+            const endpoint = "https://search.yesimbot.chat/search";
+            const engines = ["baidu", "github", "bing", "presearch"];
+            const format = "json";
+            const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines.join(",")}&format=${format}`;
 
             const response = await fetch(searchUrl);
             if (!response.ok) {
@@ -47,7 +48,7 @@ export const WebSearch = createTool({
 
             return Success(resultText);
         } catch (error) {
-            context.koishiContext.logger.error(`网络搜索失败: ${error.message}`);
+            ctx.koishiContext.logger.error(`网络搜索失败: ${error.message}`);
             return Failed(`搜索过程中发生错误: ${error.message}`);
         }
     },

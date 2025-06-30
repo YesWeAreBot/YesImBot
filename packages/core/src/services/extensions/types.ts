@@ -89,8 +89,8 @@ export interface ToolDefinition<TParams extends Schema = any, TReturns = any, TC
     metadata?: ToolMetadata;
     parameters: TParams | { properties: { [key: string]: { type: StaticRange; description: string } } };
     execute: (
+        context: ToolExecutionContext<TConfig>,
         params: Schemastery.TypeS<TParams>,
-        context: ToolExecutionContext<TConfig>
     ) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
     hooks?: {
         onRegister?: (context: ToolExecutionContext<TConfig>) => Promise<void> | void;
@@ -147,15 +147,15 @@ export interface ExecutableTool<TParams extends Schema<any> = any, TReturns = an
  * 工具管理器配置
  */
 export interface ToolServiceConfig {
-    MaxRetry?: any;
+    MaxRetry?: number;
     RetryDelayMs?: number;
-    autoLoad?: boolean;
-    extensionPaths?: string[];
-    logLevel?: "debug" | "info" | "warn" | "error";
-    enableMetrics?: boolean;
-    timeout?: number;
-    hotReload?: boolean;
-    validateTypes?: boolean;
+    AutoLoad?: boolean;
+    ExtensionPaths?: string[];
+    LogLevel?: "debug" | "info" | "warn" | "error";
+    EnableMetrics?: boolean;
+    Timeout?: number;
+    HotReload?: boolean;
+    ValidateTypes?: boolean;
 }
 
 /**

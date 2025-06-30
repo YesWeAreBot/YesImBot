@@ -53,7 +53,7 @@ export function createExtension<TConfig extends Schema<any>>(config: ExtensionDe
  */
 export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): ToolCallResult<T> {
     return {
-        status: "status",
+        status: "success",
         result,
         metadata,
     };
@@ -122,7 +122,7 @@ export function defineExecutableTool<TParams extends Schema<any>, TReturns = any
             let result;
 
             try {
-                result = await definition.execute(params, mergedContext);
+                result = await definition.execute(mergedContext, params);
             } catch (error) {
                 await definition?.hooks?.onError?.(error, mergedContext);
             } finally {

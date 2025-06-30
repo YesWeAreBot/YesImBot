@@ -19,7 +19,7 @@ export default createExtension({
             parameters: Schema.object({
                 cmd: Schema.string().description("要执行的指令内容"),
             }),
-            execute: async ({ cmd }, { koishiSession, extensionConfig }) => {
+            execute: async ({ koishiSession, extensionConfig }, { cmd }) => {
                 if (!extensionConfig.allowExecution) {
                     return Failed("指令执行功能已被禁用。");
                 }

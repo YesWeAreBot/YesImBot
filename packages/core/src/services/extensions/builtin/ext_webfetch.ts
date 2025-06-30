@@ -25,7 +25,7 @@ export const FetchWebPage = createTool({
         include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),
         max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
     }),
-    execute: async ({ url, format, max_length, include_links, max_links }, context) => {
+    execute: async (ctx, { url, format, max_length, include_links, max_links }) => {
         if (isEmpty(url)) return Failed("url is required");
 
         try {
@@ -35,7 +35,7 @@ export const FetchWebPage = createTool({
                 return Failed("只支持HTTP和HTTPS协议");
             }
 
-            context.koishiContext.logger.info(`Bot正在获取网页: ${url}`);
+            ctx.koishiContext.logger.info(`Bot正在获取网页: ${url}`);
 
             const response = await fetch(url, {
                 headers: {
@@ -96,11 +96,11 @@ export const FetchWebPage = createTool({
                 });
             }
 
-            context.koishiContext.logger.info(`Bot成功获取网页内容，长度: ${content.length}, 链接数: ${links.length}`);
+            ctx.koishiContext.logger.info(`Bot成功获取网页内容，长度: ${content.length}, 链接数: ${links.length}`);
 
             return Success(result);
         } catch (error) {
-            context.koishiContext.logger.error(`Bot获取网页失败: ${url} - `, error.message);
+            ctx.koishiContext.logger.error(`Bot获取网页失败: ${url} - `, error.message);
 
             if (error.name === "TimeoutError") {
                 return Failed("请求超时，网页响应时间过长");
