@@ -8,20 +8,18 @@ export enum Ability {
     Embedding = 1 << 4, // 嵌入
 }
 
-// 模型配置接口，包含模型自身的参数
 export interface ModelConfig {
     ModelID: string;
     Ability: number;
     // 模型特定的参数
     Temperature?: number;
-    TopP?: number; // 使用 PascalCase
+    TopP?: number;
     Stream?: boolean;
     CustomParameters?: { key: string; type: "文本" | "数字" | "布尔值" | "JSON"; value: string }[];
 }
 
-// Provider 配置接口，只关心连接和模型列表
 export interface ProviderConfig {
-    Name: string; // 新增一个唯一的名称，用于引用
+    Name: string;
     Enabled?: boolean;
     Type:
         | "OpenAI"
@@ -45,14 +43,17 @@ export interface ProviderConfig {
 
 export interface ModelServiceConfig {
     Providers: ProviderConfig[];
-    // 全局的工具调用模式，如果模型有特定设置则覆盖
-    ToolUseMode: "function" | "prompt";
+    ModelGroup: {
+        Name: string;
+        Models: ModelDescriptor[];
+    }[];
+    ChatModelGroup: string;
+    EmbedModelGroup: string;
+    SummarizationModelGroup: string;
 }
 
-// 使用清晰的描述符，用于模型切换器
 export type ModelDescriptor = { ProviderName: string; ModelId: string };
 
-// 定义单个模型的 Schema，包含所有可配置参数
 export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     ModelID: Schema.string().required().description("模型 ID"),
     Ability: Schema.bitset(Ability).default(Ability.FunctionCalling).description("选择模型能力组合"),
@@ -76,7 +77,6 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         .collapse(),
 }).description("模型配置");
 
-// 定义单个 Provider 的 Schema
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.object({
     Name: Schema.string().required().description("提供商的唯一名称，例如 'my-openai'"),
     Enabled: Schema.boolean().default(true).description("是否启用此提供商"),
@@ -107,8 +107,22 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.object({
         .description("代理地址"),
 }).collapse(true);
 
-// 定义 ModelService 的总配置 Schema
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
     Providers: Schema.array(ProviderConfigSchema).description("模型提供商列表"),
-    ToolUseMode: Schema.union(["function", "prompt"]).default("function").description("全局工具调用模式"),
+    ModelGroup: Schema.array(
+        Schema.object({
+            Name: Schema.string().required().description("模型组名称"),
+            Models: Schema.array(
+                Schema.object({
+                    ProviderName: Schema.string().required().description("提供商名称"),
+                    ModelId: Schema.string().required().description("模型ID"),
+                })
+            )
+            .role("table")
+            .description("该组包含的模型列表"),
+        })
+    ).description("模型组列表"),
+    ChatModelGroup: Schema.string().required().description("默认对话模型组"),
+    EmbedModelGroup: Schema.string().required().description("默认嵌入模型组"),
+    SummarizationModelGroup: Schema.string().required().description("默认摘要模型组"),
 }).description("模型服务全局配置");
