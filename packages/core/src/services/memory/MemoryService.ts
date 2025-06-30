@@ -3,7 +3,7 @@ import { ChatModel } from "../model";
 import { Services } from "../types";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
 
-import { CoreMemoryBlockConfig, MEMORY_TABLE, MemoryServiceConfig } from "./config";
+import { MemoryBlockConfig, MEMORY_TABLE, MemoryServiceConfig } from "./config";
 import { IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
 import { MemoryBlock } from "./MemoryBlock";
 import { MemoryError } from "./MemoryError";
@@ -56,15 +56,11 @@ export class MemoryService extends Service {
 
     protected async start() {
         this.ctx.logger.info("Starting MemoryService and initializing core blocks...");
-        if (this.config.CoreBlockDefaults) {
-            for (const label in this.config.CoreBlockDefaults) {
-                if (Object.prototype.hasOwnProperty.call(this.config.CoreBlockDefaults, label)) {
-                    const blockConfig = this.config.CoreBlockDefaults[label] || {};
-                    await this.getOrCreateCoreMemoryBlock(label, {
-                        limit: blockConfig.limit,
-                        initialValue: blockConfig.initialValue,
-                        filePathToBind: blockConfig.filePathToBind,
-                    });
+        if (this.config.Block) {
+            for (const label in this.config.Block) {
+                if (Object.prototype.hasOwnProperty.call(this.config.Block, label)) {
+                    const blockConfig = this.config.Block[label] || {};
+                    await this.getOrCreateCoreMemoryBlock(label, blockConfig);
                     this.ctx.logger.info(`Core memory block "${label}" ensured.`);
 
                     // 为所有核心块初始化压缩状态
@@ -87,16 +83,16 @@ export class MemoryService extends Service {
             }
         } else {
             this.ctx.logger.info(
-                `No coreBlockDefaults configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.`
+                `No Block configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.`
             );
         }
     }
 
-    public async getOrCreateCoreMemoryBlock(label: string, customConfig: CoreMemoryBlockConfig = {}): Promise<MemoryBlock> {
+    public async getOrCreateCoreMemoryBlock(label: string, customConfig: MemoryBlockConfig = {}): Promise<MemoryBlock> {
         if (this.coreMemoryBlocks.has(label)) {
             const existingBlock = this.coreMemoryBlocks.get(label)!;
             // Optionally update config like limit if provided for an existing block
-            if (customConfig.limit !== undefined && existingBlock.limit !== customConfig.limit) {
+            if (customConfig.Limit !== undefined && existingBlock.limit !== customConfig.Limit) {
                 // This would require MemoryBlock to have a setLimit method and persist it
                 this.ctx.logger.warn(`Limit change for existing block ${label} not yet implemented.`);
             }
@@ -107,10 +103,10 @@ export class MemoryService extends Service {
             this.ctx,
             { label },
             {
-                defaultLimit: customConfig.limit ?? 5000, // A general default if not specified
-                initialValue: customConfig.initialValue,
+                defaultLimit: customConfig.Limit ?? 5000, // A general default if not specified
+                initialValue: [],
                 store: this.memoryBlockStore,
-                filePathToBind: customConfig.filePathToBind,
+                filePathToBind: customConfig.FilePathToBind,
             }
         );
         this.coreMemoryBlocks.set(label, block);
@@ -135,12 +131,19 @@ export class MemoryService extends Service {
     public async getProvider(): Promise<{
         lastModified: string;
         archivalCount: number;
-        memoryBlocks: MemoryBlock[];
+        memoryBlocks: MemoryBlockData[];
     }> {
         return {
             lastModified: this.lastModified.toISOString(),
             archivalCount: await this.archivalStore.count(),
-            memoryBlocks: Array.from(this.coreMemoryBlocks.values()),
+            memoryBlocks: Array.from(this.coreMemoryBlocks.values()).map((block) => {
+                return {
+                    id: block.id,
+                    label: block.label,
+                    content: block.content as string[],
+                    limit: block.limit,
+                };
+            }),
         };
     }
 

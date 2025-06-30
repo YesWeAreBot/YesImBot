@@ -2,10 +2,9 @@ import { ModelDescriptor } from "../model";
 
 export const MEMORY_TABLE = "yesimbot.memory_block";
 
-export interface CoreMemoryBlockConfig {
-    limit?: number;
-    initialValue?: string[];
-    filePathToBind?: string;
+export interface MemoryBlockConfig {
+    Limit?: number;
+    FilePathToBind?: string;
 }
 
 export interface MemoryCompressionConfig {
@@ -24,10 +23,10 @@ export interface BackupConfig {
 }
 
 export interface MemoryServiceConfig {
-    CoreBlockDefaults?: {
-        persona?: CoreMemoryBlockConfig;
-        human?: CoreMemoryBlockConfig;
-        [key: string]: CoreMemoryBlockConfig | undefined;
+    Block?: {
+        persona?: MemoryBlockConfig;
+        human?: MemoryBlockConfig;
+        [key: string]: MemoryBlockConfig | undefined;
     };
     Compression?: MemoryCompressionConfig;
     // Extract?: Config["Memory"]["Extract"];
