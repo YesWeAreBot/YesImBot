@@ -1,5 +1,5 @@
 import { Context } from "koishi";
-import { DialogueSegment, Event } from "../services";
+import { DialogueSegment, SystemEvent } from "../services";
 
 // 定义分析结果的接口
 export interface FlowAnalysis {
@@ -21,7 +21,7 @@ export class ConversationFlowAnalyzer {
      * 新的核心方法：分析整个对话片段
      */
     public analyze(segment: DialogueSegment): FlowAnalysis {
-        const events = segment.events;
+        const events = segment.systemEvents;
         if (events.length === 0) {
             return this.defaultAnalysis();
         }
@@ -58,7 +58,7 @@ export class ConversationFlowAnalyzer {
         };
     }
 
-    private calculatePace(events: Event[]): "fast" | "normal" | "slow" {
+    private calculatePace(events: SystemEvent[]): "fast" | "normal" | "slow" {
         if (events.length < 2) return "slow";
         const lastTwoEvents = events.slice(-2);
         const intervalMs = lastTwoEvents[1].timestamp.getTime() - lastTwoEvents[0].timestamp.getTime();
@@ -68,7 +68,7 @@ export class ConversationFlowAnalyzer {
         return "normal";
     }
 
-    private calculateIntensity(events: Event[]): number {
+    private calculateIntensity(events: SystemEvent[]): number {
         // 简单的强度计算：基于最近5分钟内的消息数量
         const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
         const recentEvents = events.filter((e) => e.timestamp.getTime() > fiveMinutesAgo);
@@ -76,7 +76,7 @@ export class ConversationFlowAnalyzer {
         return Math.min(1, recentEvents.length / 10);
     }
 
-    private checkForMentions(events: Event[]): boolean {
+    private checkForMentions(events: SystemEvent[]): boolean {
         // 从旧代码的 isDirectMention 迁移逻辑
         const agentNames = ["letta", "莱塔", "机器人", "bot"]; // 应从配置读取
         return events.some((e) => {
@@ -89,14 +89,14 @@ export class ConversationFlowAnalyzer {
         });
     }
 
-    private determineTopicStatus(events: Event[]): "developing" | "stable" | "cooling" | "ended" {
+    private determineTopicStatus(events: SystemEvent[]): "developing" | "stable" | "cooling" | "ended" {
         // 从旧代码的 determineTopicStatus 迁移简化逻辑
         if (events.length >= 5) return "stable";
         if (events.length >= 2) return "developing";
         return "cooling";
     }
 
-    private extractKeywordsFromEvents(events: Event[]): string[] {
+    private extractKeywordsFromEvents(events: SystemEvent[]): string[] {
         // TODO: 实现从事件内容中提取关键词的逻辑
         return [];
     }

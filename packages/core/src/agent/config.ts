@@ -5,7 +5,10 @@ import { PromptBuilderConfig, SystemBaseTemplate, UserBaseTemplate } from "./pro
 import { WillingnessConfig } from "./willingness-calculator";
 
 interface ArousalConfig {
-    AllowedChannelGroups: string[][];
+    AllowedChannelGroups: {
+        Platform: string;
+        Id: string;
+    }[][];
     DebounceMs: number;
 }
 
@@ -40,9 +43,15 @@ export interface AgentConfig {
 
 export const AgentConfigSchema: Schema<AgentConfig> = Schema.object({
     Arousal: Schema.object({
-        AllowedChannelGroups: Schema.array(Schema.array(String).role("table")).description(
-            "允许 Agent 响应的频道分组。同一组内的频道共享上下文。"
-        ),
+        AllowedChannelGroups: Schema.array(
+            Schema.array(
+                Schema.object({
+                    Platform: Schema.string().description("平台名称"),
+                    Id: Schema.string().description("频道ID"),
+                })
+            ).role("table")
+        )
+        .description("允许 Agent 响应的频道分组。同一组内的频道共享上下文。"),
         DebounceMs: Schema.number().default(2000).description("唤醒决策的防抖延迟（毫秒）。"),
     }).description("唤醒机制配置"),
 
