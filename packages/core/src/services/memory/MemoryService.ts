@@ -1,5 +1,5 @@
 import { Context, Service } from "koishi";
-import { ChatModel } from "../model";
+import { ChatModel, ModelGroup } from "../model";
 import { Services } from "../types";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
 
@@ -50,7 +50,7 @@ export class MemoryService extends Service {
 
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
-        this.chatModel = ctx[Services.Model].getChatModel(config.UseModel);
+        this.chatModel = ctx[Services.Model].useGroup(ModelGroup.Summarization)?.getCurrent();
         ctx.logger.info("MemoryService initialized.");
     }
 

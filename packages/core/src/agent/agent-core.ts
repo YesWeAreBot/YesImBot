@@ -1,18 +1,13 @@
-import { Context, Random, Schema, Session } from "koishi";
+import { Context, Schema, Session } from "koishi";
 import {
-    Action,
-    ActionResult,
     AgentResponse,
     AgentTurn,
-    ChatModel,
     createTool,
     DialogueSegment,
-    ExecutableTool,
     Failed,
-    LLMAdapterManager,
-    LLMRetryManager,
-    MemoryBlockData,
+    ModelGroup,
     ModelService,
+    ModelSwitcher,
     Services,
     Success,
     TableName,
@@ -40,6 +35,7 @@ export class AgentCore {
     private willingnessCalculator: WillingnessCalculator;
     private promptBuilder: PromptBuilder;
     private parser: JsonParser<AgentResponse>;
+    private modelSwitcher: ModelSwitcher;
 
     // 内部状态
     private allowedChannels = new Set<string>();
@@ -61,6 +57,7 @@ export class AgentCore {
         this.willingnessCalculator = new WillingnessCalculator(this.ctx, this.config.Willingness);
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.Prompt);
         this.parser = new JsonParser<AgentResponse>();
+        this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
 
         ctx.on("ready", async () => {
             await this.start();
@@ -160,12 +157,12 @@ export class AgentCore {
         analysis: FlowAnalysis,
         willingness: Willingness
     ): Promise<void> {
-        const agentTurnRecord = await this.worldState.createAgentTurn(segment);
+        const agentTurnRecord = await this.worldState.createAgentTurn(segment.platform, segment.channelId);
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         const agentTurnHistory: AgentTurn[] = [];
 
-        while (shouldContinueHeartbeat && heartbeatCount < this.config.Llm.MaxHeartbeat) {
+        while (shouldContinueHeartbeat && heartbeatCount < this.config.Chat.MaxHeartbeat) {
             heartbeatCount++;
             this.ctx.logger.info(`[THINK] ❤️ Heartbeat #${heartbeatCount} for turn ${agentTurnRecord.id}`);
 
@@ -188,25 +185,12 @@ export class AgentCore {
             );
             const { system, user } = await this.promptBuilder.build(promptContext);
 
-            // [REFACTOR] 使用 ModelService 进行 LLM 调用
-            const llmRawResponse = await this.modelService.chat(
-                [
-                    { role: "system", content: system },
-                    { role: "user", content: user },
-                ],
-                {
-                    retryConfig: {
-                        maxRetries: this.config.Llm.Retry.MaxRetries,
-                        timeoutMs: this.config.Llm.Retry.TimeoutMs,
-                        retryDelayMs: this.config.Llm.Retry.RetryDelayMs,
-                        exponentialBackoff: this.config.Llm.Retry.ExponentialBackoff,
-                    },
-                    adapterSwitchingConfig: {
-                        enabled: true,
-                        maxAttempts: 3,
-                    },
-                }
-            );
+            const chatModel = this.modelSwitcher.getCurrent();
+
+            const llmRawResponse = await chatModel.chat([
+                { role: "system", content: system },
+                { role: "user", content: user },
+            ]);
 
             const llmParsedResponse = this.parser.parse(llmRawResponse.text);
 
@@ -230,7 +214,7 @@ export class AgentCore {
             const observations = await Promise.all(
                 validResponse.actions.map(async (action) => {
                     const result = await this.toolService.executeToolCall(context, action.function, action.params);
-                    return { function: action.function, result };
+                    return { function: action.function, status: result.status, result: result.result, error: result.error };
                 })
             );
 
@@ -244,31 +228,19 @@ export class AgentCore {
 
             // [FIX] 填充 agentTurnHistory 以便在循环中使用
             //const hydratedResponse = await this.worldState.hydrateAgentResponse(agentResponse);
-            agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse], is_agent_turn: true });
+            agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse] });
 
             shouldContinueHeartbeat = validResponse.request_heartbeat;
         }
 
         // 3. 结束循环并更新状态
-        if (heartbeatCount >= this.config.Llm.MaxHeartbeat) {
+        if (heartbeatCount >= this.config.Chat.MaxHeartbeat) {
             this.ctx.logger.warn(`[THINK] Max heartbeat reached for turn ${agentTurnRecord.id}.`);
         }
 
-        await this.ctx.database.set(
-            TableName.AgentTurns,
-            { id: agentTurnRecord.id },
-            {
-                status: "completed",
-            }
-        );
+        await this.ctx.database.set(TableName.AgentTurns, { id: agentTurnRecord.id }, { status: "completed" });
 
-        await this.ctx.database.set(
-            TableName.DialogueSegments,
-            { id: segment.id },
-            {
-                status: "closed_by_agent",
-            }
-        );
+        await this.ctx.database.set(TableName.DialogueSegments, { id: segment.id }, { status: "closed" });
 
         this.ctx.logger.info(`[THINK] ✅ Turn ${agentTurnRecord.id} completed.`);
     }
