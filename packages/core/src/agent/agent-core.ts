@@ -1,16 +1,22 @@
-import { Context, Random, Session } from "koishi";
+import { Context, Random, Schema, Session } from "koishi";
 import {
     Action,
     ActionResult,
     AgentResponse,
     AgentTurn,
     ChatModel,
+    createTool,
     DialogueSegment,
+    ExecutableTool,
+    Failed,
     LLMAdapterManager,
     LLMRetryManager,
+    MemoryBlockData,
     ModelService,
     Services,
+    Success,
     TableName,
+    ToolDefinition,
     ToolExecutionContext,
     ToolService,
     WorldStateService,
@@ -34,12 +40,10 @@ export class AgentCore {
     private willingnessCalculator: WillingnessCalculator;
     private promptBuilder: PromptBuilder;
     private parser: JsonParser<AgentResponse>;
-    private retryManager: LLMRetryManager;
-    private adapterManager: LLMAdapterManager;
 
     // 内部状态
     private allowedChannels = new Set<string>();
-    private channelGroupMap = new Map<string, string[]>();
+    private channelGroupMap = new Map<string, { Platform: string; Id: string }[]>();
     private channelWillingness = new Map<string, number>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private debounceTimers = new Map<string, NodeJS.Timeout>();
@@ -58,12 +62,8 @@ export class AgentCore {
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.Prompt);
         this.parser = new JsonParser<AgentResponse>();
 
-        // [FIX] 从 ModelService 获取重试和适配器管理器
-        this.retryManager = this.modelService.getRetryManager(this.config.Llm.Retry);
-        this.adapterManager = this.modelService.getAdapterManager(this.config.Llm.UseModel);
-
-        ctx.on("ready", () => {
-            this.start();
+        ctx.on("ready", async () => {
+            await this.start();
         });
 
         ctx.on("dispose", () => {
@@ -71,17 +71,19 @@ export class AgentCore {
         });
     }
 
-    protected start(): void {
+    protected async start(): Promise<void> {
         this.ctx.logger.info("Agent Service started.");
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
-        this.ctx.on("worldstate:segment-updated", (session, segmentId, channelId, platform) => {
-            if (!this.isChannelAllowed(channelId)) return;
-            this.handleSegmentUpdate(session, segmentId, channelId, platform);
+        this.ctx.on("worldstate:segment-updated", (session, segment) => {
+            if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
+            this.handleSegmentUpdate(session, segment);
         });
 
         this.startWillingnessDecay();
+
+        this.toolService.registerTool(await this.createMessageTool());
     }
 
     protected stop(): void {
@@ -94,14 +96,14 @@ export class AgentCore {
     private updateAllowedChannels(): void {
         this.allowedChannels.clear();
         this.config.Arousal.AllowedChannelGroups.forEach((group) => {
-            group.forEach((channelId) => {
-                this.allowedChannels.add(channelId);
+            group.forEach(({ Platform, Id }) => {
+                this.allowedChannels.add(`${Platform}:${Id}`);
             });
         });
     }
 
-    private isChannelAllowed(channelId: string): boolean {
-        return this.allowedChannels.has(channelId);
+    private isChannelAllowed(platform: string, channelId: string): boolean {
+        return this.allowedChannels.has(`${platform}:${channelId}`);
     }
 
     private startWillingnessDecay(): void {
@@ -113,8 +115,8 @@ export class AgentCore {
         }, 60000);
     }
 
-    private handleSegmentUpdate(session: Session, segmentId: string, channelId: string, platform: string): void {
-        const channelKey = `${platform}:${channelId}`;
+    private handleSegmentUpdate(session: Session, segment: DialogueSegment): void {
+        const channelKey = `${segment.platform}:${segment.channelId}`;
         if (this.debounceTimers.has(channelKey)) {
             clearTimeout(this.debounceTimers.get(channelKey));
         }
@@ -122,31 +124,22 @@ export class AgentCore {
             channelKey,
             setTimeout(() => {
                 this.ctx.logger.info(`Debounce timer triggered for channel ${channelKey}. Starting decision process...`);
-                this.decideToAct(session, channelId, platform);
+                this.decideToAct(session, segment);
                 this.debounceTimers.delete(channelKey);
             }, this.config.Arousal.DebounceMs)
         );
     }
 
-    private async decideToAct(session: Session, channelId: string, platform: string): Promise<void> {
-        this.ctx.logger.info(`[DECISION] Evaluating channel ${platform}:${channelId}`);
-        const segmentRecord = await this.worldState.findOpenSegmentRecord(channelId, platform);
-        if (!segmentRecord) {
-            this.ctx.logger.warn(`[DECISION] No open segment found for ${platform}:${channelId}. Aborting.`);
-            return;
-        }
+    private async decideToAct(session: Session, segment: DialogueSegment): Promise<void> {
+        this.ctx.logger.info(`[DECISION] Evaluating channel ${segment.platform}:${segment.channelId}`);
 
-        const channelRecord = await this.worldState.getChannelRecord(channelId, platform);
-        if (!channelRecord || !channelRecord.guildId) return;
-
-        const segmentToAnalyze = await this.worldState.segments.hydrateSegment(segmentRecord, platform, channelRecord.guildId, channelId);
-        const analysis = this.flowAnalyzer.analyze(segmentToAnalyze);
-        const currentWillingness = this.channelWillingness.get(channelId) || 0;
+        const analysis = this.flowAnalyzer.analyze(segment);
+        const currentWillingness = this.channelWillingness.get(segment.channelId) || 0;
         const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
 
         if (this.config.Debug.LogDecisionDetails) {
             this.ctx.logger.info(
-                `[DECISION] ${channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
+                `[DECISION] ${segment.channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
                     willingness.threshold
                 } | Act: ${willingness.shouldAct} | R: ${willingness.reasons.join("; ")}`
             );
@@ -154,10 +147,10 @@ export class AgentCore {
 
         if (willingness.shouldAct) {
             const retainedWillingness = willingness.value * this.config.Willingness.RetentionAfterReply;
-            this.channelWillingness.set(channelId, retainedWillingness);
-            await this.executeThinkingCycle(session, segmentToAnalyze, analysis, willingness);
+            this.channelWillingness.set(segment.channelId, retainedWillingness);
+            await this.executeThinkingCycle(session, segment, analysis, willingness);
         } else {
-            this.channelWillingness.set(channelId, willingness.value);
+            this.channelWillingness.set(segment.channelId, willingness.value);
         }
     }
 
@@ -176,9 +169,17 @@ export class AgentCore {
             heartbeatCount++;
             this.ctx.logger.info(`[THINK] ❤️ Heartbeat #${heartbeatCount} for turn ${agentTurnRecord.id}`);
 
-            const channelGroup = this.channelGroupMap.get(segment.channelId) || [segment.channelId];
+            let allowedChannels = this.channelGroupMap.get(segment.channelId);
+
+            if (!allowedChannels) {
+                allowedChannels = this.config.Arousal.AllowedChannelGroups.find((group) =>
+                    group.some((channel) => channel.Platform === segment.platform && channel.Id === segment.channelId)
+                );
+                this.channelGroupMap.set(segment.channelId, allowedChannels);
+            }
+
             const promptContext = await this.buildPromptContext(
-                channelGroup,
+                allowedChannels,
                 session.platform,
                 segment,
                 analysis,
@@ -243,7 +244,7 @@ export class AgentCore {
 
             // [FIX] 填充 agentTurnHistory 以便在循环中使用
             //const hydratedResponse = await this.worldState.hydrateAgentResponse(agentResponse);
-            agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse], is_agent_turn: true, is_dialogue_segment: false });
+            agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse], is_agent_turn: true });
 
             shouldContinueHeartbeat = validResponse.request_heartbeat;
         }
@@ -258,7 +259,6 @@ export class AgentCore {
             { id: agentTurnRecord.id },
             {
                 status: "completed",
-                endTimestamp: new Date(),
             }
         );
 
@@ -267,7 +267,6 @@ export class AgentCore {
             { id: segment.id },
             {
                 status: "closed_by_agent",
-                endTimestamp: new Date(),
             }
         );
 
@@ -275,7 +274,7 @@ export class AgentCore {
     }
 
     private async buildPromptContext(
-        allowedChannels: string[],
+        allowedChannels: { Platform: string; Id: string }[],
         platform: string,
         segment: DialogueSegment,
         analysis: FlowAnalysis,
@@ -284,6 +283,7 @@ export class AgentCore {
     ): Promise<PromptContext> {
         return {
             toolSchemas: this.toolService.getToolSchemas(),
+            memory: await this.ctx["yesimbot.memory"].getProvider(),
             worldState: await this.worldState.getWorldState(allowedChannels),
             currentSegment: segment,
             agentState: {
@@ -293,5 +293,30 @@ export class AgentCore {
             },
             agentTurnHistory: agentTurnHistory,
         };
+    }
+
+    private async createMessageTool(): Promise<ToolDefinition> {
+        return createTool({
+            name: "send_message",
+            description: "Sends a message to the human user.",
+            parameters: Schema.object({
+                inner_thoughts: Schema.string().description("仅供自己参考的内心独白。"),
+                message: Schema.string().description("Message content"),
+                channel_id: Schema.string().description("The ID of the channel where the message should be sent"),
+            }),
+            execute: async ({ koishiSession }, { message, channel_id }) => {
+                if (!koishiSession) {
+                    return Failed("Missing session object");
+                }
+
+                let channelId = channel_id || koishiSession.channelId;
+                try {
+                    const result = await koishiSession.bot.sendMessage(channelId, message);
+                    return Success();
+                } catch (error) {
+                    return Failed(`Failed to send message: ${error.message}`);
+                }
+            },
+        });
     }
 }
