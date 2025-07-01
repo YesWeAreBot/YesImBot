@@ -63,7 +63,12 @@ export class WillingnessCalculator {
         // 5. 限制最终值在 0-1 之间
         const finalWillingness = Math.max(0, Math.min(1, baseWillingness));
         const threshold = this.config.Threshold;
-        const shouldAct = finalWillingness >= threshold;
+        let shouldAct = finalWillingness >= threshold;
+
+        if (this.config.TestMode) {
+            shouldAct = true;
+            reasons.push("测试模式，强制回复");
+        }
 
         return {
             value: finalWillingness,

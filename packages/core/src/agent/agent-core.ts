@@ -74,8 +74,12 @@ export class AgentCore {
         this.ctx.on("config", () => this.updateAllowedChannels());
 
         this.ctx.on("worldstate:segment-updated", (session, segment) => {
-            if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
-            this.handleSegmentUpdate(session, segment);
+            try {
+                if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
+                this.handleSegmentUpdate(session, segment);
+            } catch (e) {
+                this.ctx.logger.info(e.message);
+            }
         });
 
         this.startWillingnessDecay();
@@ -157,14 +161,13 @@ export class AgentCore {
         analysis: FlowAnalysis,
         willingness: Willingness
     ): Promise<void> {
-        const agentTurnRecord = await this.worldState.createAgentTurn(segment.platform, segment.channelId);
+        let agentTurnRecord: AgentTurn;
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         const agentTurnHistory: AgentTurn[] = [];
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.Chat.MaxHeartbeat) {
             heartbeatCount++;
-            this.ctx.logger.info(`[THINK] ❤️ Heartbeat #${heartbeatCount} for turn ${agentTurnRecord.id}`);
 
             let allowedChannels = this.channelGroupMap.get(segment.channelId);
 
@@ -187,10 +190,16 @@ export class AgentCore {
 
             const chatModel = this.modelSwitcher.getCurrent();
 
-            const llmRawResponse = await chatModel.chat([
-                { role: "system", content: system },
-                { role: "user", content: user },
-            ]);
+            const llmRawResponse = await chatModel.chat(
+                [
+                    { role: "system", content: system },
+                    { role: "user", content: user },
+                ],
+                {
+                    debug: this.config.Debug.LogDecisionDetails,
+                    logger: this.ctx.logger("AgentCore"),
+                }
+            );
 
             const llmParsedResponse = this.parser.parse(llmRawResponse.text);
 
@@ -198,6 +207,11 @@ export class AgentCore {
                 this.ctx.logger.warn(`[THINK] Failed to parse LLM response: ${llmParsedResponse.error}. Raw: ${llmRawResponse.text}`);
                 shouldContinueHeartbeat = false;
                 continue;
+            }
+
+            // 请求成功后再新建助手回合
+            if (!agentTurnRecord) {
+                agentTurnRecord = await this.worldState.createAgentTurn(segment);
             }
 
             const validResponse = llmParsedResponse.data;
@@ -210,7 +224,6 @@ export class AgentCore {
                 extensionConfig: {},
             };
 
-            // [REFACTOR] 使用 ToolService 执行工具调用
             const observations = await Promise.all(
                 validResponse.actions.map(async (action) => {
                     const result = await this.toolService.executeToolCall(context, action.function, action.params);
@@ -226,8 +239,7 @@ export class AgentCore {
                 observations: agentResponse.observations,
             });
 
-            // [FIX] 填充 agentTurnHistory 以便在循环中使用
-            //const hydratedResponse = await this.worldState.hydrateAgentResponse(agentResponse);
+            // 填充 agentTurnHistory 以便在循环中使用
             agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse] });
 
             shouldContinueHeartbeat = validResponse.request_heartbeat;
