@@ -1,7 +1,6 @@
-import { Context, Schema, Session } from "koishi";
+import { Context, Random, Schema, Service, Session } from "koishi";
 import {
     AgentResponse,
-    AgentTurn,
     createTool,
     DialogueSegment,
     Failed,
@@ -10,11 +9,10 @@ import {
     ModelSwitcher,
     Services,
     Success,
-    TableName,
     ToolDefinition,
     ToolExecutionContext,
     ToolService,
-    WorldStateService,
+    WorldStateService
 } from "../services";
 import { JsonParser } from "../shared";
 import { AgentConfig } from "./config";
@@ -22,32 +20,36 @@ import { ConversationFlowAnalyzer, FlowAnalysis } from "./conversation-flow-anal
 import { PromptBuilder, PromptContext } from "./prompt-builder";
 import { Willingness, WillingnessCalculator } from "./willingness-calculator";
 
-export class AgentCore {
+const LOG_PREFIX = "[AgentCore]";
+
+export class AgentCore extends Service {
     static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Platform];
 
     // 依赖的服务
-    private worldState: WorldStateService;
-    private modelService: ModelService;
-    private toolService: ToolService;
+    private readonly worldState: WorldStateService;
+    private readonly modelService: ModelService;
+    private readonly toolService: ToolService;
 
     // 内部组件
-    private flowAnalyzer: ConversationFlowAnalyzer;
-    private willingnessCalculator: WillingnessCalculator;
-    private promptBuilder: PromptBuilder;
-    private parser: JsonParser<AgentResponse>;
-    private modelSwitcher: ModelSwitcher;
+    private readonly flowAnalyzer: ConversationFlowAnalyzer;
+    private readonly willingnessCalculator: WillingnessCalculator;
+    private readonly promptBuilder: PromptBuilder;
+    private readonly parser: JsonParser<AgentResponse>;
+    private readonly modelSwitcher: ModelSwitcher;
 
     // 内部状态
-    private allowedChannels = new Set<string>();
-    private channelGroupMap = new Map<string, { Platform: string; Id: string }[]>();
-    private channelWillingness = new Map<string, number>();
+    private readonly allowedChannels = new Set<string>();
+    private readonly channelGroupMap = new Map<string, { Platform: string; Id: string }[]>();
+    private readonly channelWillingness = new Map<string, number>();
     private willingnessDecayTimer: NodeJS.Timeout;
-    private debounceTimers = new Map<string, NodeJS.Timeout>();
+    private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
 
-    constructor(private ctx: Context, private config: AgentConfig) {
+    constructor(ctx: Context, config: AgentConfig) {
+        super(ctx, "agent", true);
+        this.ctx = ctx;
         this.config = config;
+        this.ctx.logger.name = LOG_PREFIX;
 
-        // [REFACTOR] 通过 inject 获取服务实例
         this.worldState = this.ctx[Services.WorldState];
         this.modelService = this.ctx[Services.Model];
         this.toolService = this.ctx[Services.Tool];
@@ -58,18 +60,9 @@ export class AgentCore {
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.Prompt);
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
-
-        ctx.on("ready", async () => {
-            await this.start();
-        });
-
-        ctx.on("dispose", () => {
-            this.stop();
-        });
     }
 
     protected async start(): Promise<void> {
-        this.ctx.logger.info("Agent Service started.");
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
@@ -77,23 +70,22 @@ export class AgentCore {
             try {
                 if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
                 this.handleSegmentUpdate(session, segment);
-            } catch (e) {
-                this.ctx.logger.info(e.message);
+            } catch (error) {
+                this.handleError(error, "handling segment update");
             }
         });
 
         this.startWillingnessDecay();
-
         this.toolService.registerTool(await this.createMessageTool());
+        this.ctx.logger.info("Service started.");
     }
 
     protected stop(): void {
-        this.ctx.logger.info("Agent Service stopped.");
         this.debounceTimers.forEach(clearTimeout);
         clearInterval(this.willingnessDecayTimer);
+        this.ctx.logger.info("Service stopped.");
     }
 
-    // [ADD] 新增和完善的私有方法
     private updateAllowedChannels(): void {
         this.allowedChannels.clear();
         this.config.Arousal.AllowedChannelGroups.forEach((group) => {
@@ -101,6 +93,7 @@ export class AgentCore {
                 this.allowedChannels.add(`${Platform}:${Id}`);
             });
         });
+        this.ctx.logger.debug(`Allowed channels updated. Total: ${this.allowedChannels.size}`);
     }
 
     private isChannelAllowed(platform: string, channelId: string): boolean {
@@ -109,9 +102,9 @@ export class AgentCore {
 
     private startWillingnessDecay(): void {
         this.willingnessDecayTimer = setInterval(() => {
-            for (const [channelId, willingness] of this.channelWillingness) {
+            for (const [channelKey, willingness] of this.channelWillingness) {
                 const decayed = Math.max(0, willingness - this.config.Willingness.DecayPerMinute);
-                this.channelWillingness.set(channelId, decayed);
+                this.channelWillingness.set(channelKey, decayed);
             }
         }, 60000);
     }
@@ -132,151 +125,208 @@ export class AgentCore {
     }
 
     private async decideToAct(session: Session, segment: DialogueSegment): Promise<void> {
-        this.ctx.logger.info(`[DECISION] Evaluating channel ${segment.platform}:${segment.channelId}`);
+        this.ctx.logger.info(`[Decision] Evaluating channel ${segment.platform}:${segment.channelId}, segment: ${segment.id}`);
 
-        const analysis = this.flowAnalyzer.analyze(segment);
-        const currentWillingness = this.channelWillingness.get(segment.channelId) || 0;
-        const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
+        try {
+            const analysis = this.flowAnalyzer.analyze(segment);
+            const currentWillingness = this.channelWillingness.get(segment.channelId) || 0;
+            const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
 
-        if (this.config.Debug.LogDecisionDetails) {
-            this.ctx.logger.info(
-                `[DECISION] ${segment.channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
-                    willingness.threshold
-                } | Act: ${willingness.shouldAct} | R: ${willingness.reasons.join("; ")}`
-            );
-        }
+            if (this.config.Debug.LogDecisionDetails) {
+                this.ctx.logger.info(
+                    `[Decision] ${segment.channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
+                        willingness.threshold
+                    } | Act: ${willingness.shouldAct} | R: ${willingness.reasons.join("; ")}`
+                );
+            }
 
-        if (willingness.shouldAct) {
-            const retainedWillingness = willingness.value * this.config.Willingness.RetentionAfterReply;
-            this.channelWillingness.set(segment.channelId, retainedWillingness);
-            await this.executeThinkingCycle(session, segment, analysis, willingness);
-        } else {
-            this.channelWillingness.set(segment.channelId, willingness.value);
+            if (willingness.shouldAct) {
+                const retainedWillingness = willingness.value * this.config.Willingness.RetentionAfterReply;
+                this.channelWillingness.set(segment.channelId, retainedWillingness);
+                await this.runAgentCycle(session, segment, analysis, willingness);
+            } else {
+                this.channelWillingness.set(segment.channelId, willingness.value);
+            }
+        } catch (error) {
+            this.handleError(error, `in decision process for segment ${segment.id}`);
         }
     }
 
-    public async executeThinkingCycle(
+    private async runAgentCycle(
         session: Session,
         segment: DialogueSegment,
         analysis: FlowAnalysis,
         willingness: Willingness
     ): Promise<void> {
-        let agentTurnRecord: AgentTurn;
+        this.ctx.logger.info(`[Cycle] Starting for segment ${segment.id}`);
+        const collectedResponses: AgentResponse[] = [];
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
-        const agentTurnHistory: AgentTurn[] = [];
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.Chat.MaxHeartbeat) {
             heartbeatCount++;
+            this.ctx.logger.debug(`[Cycle] Heartbeat #${heartbeatCount} for segment ${segment.id}`);
 
-            let allowedChannels = this.channelGroupMap.get(segment.channelId);
+            try {
+                const promptContext = await this.buildPromptContext(segment, analysis, willingness, collectedResponses);
+                const { system, user } = await this.promptBuilder.build(promptContext);
 
-            if (!allowedChannels) {
-                allowedChannels = this.config.Arousal.AllowedChannelGroups.find((group) =>
-                    group.some((channel) => channel.Platform === segment.platform && channel.Id === segment.channelId)
+                const chatModel = this.modelSwitcher.getCurrent();
+                const llmRawResponse = await chatModel.chat(
+                    [
+                        { role: "system", content: system },
+                        { role: "user", content: user },
+                    ],
+                    { debug: this.config.Debug.LogDecisionDetails, logger: this.ctx.logger("llm") }
                 );
-                this.channelGroupMap.set(segment.channelId, allowedChannels);
-            }
 
-            const promptContext = await this.buildPromptContext(
-                allowedChannels,
-                session.platform,
-                segment,
-                analysis,
-                willingness,
-                agentTurnHistory
-            );
-            const { system, user } = await this.promptBuilder.build(promptContext);
+                const llmParsedResponse = this.parser.parse(llmRawResponse.text);
 
-            const chatModel = this.modelSwitcher.getCurrent();
-
-            const llmRawResponse = await chatModel.chat(
-                [
-                    { role: "system", content: system },
-                    { role: "user", content: user },
-                ],
-                {
-                    debug: this.config.Debug.LogDecisionDetails,
-                    logger: this.ctx.logger("AgentCore"),
+                if (llmParsedResponse.error || !llmParsedResponse.data) {
+                    this.ctx.logger.warn(`[Cycle] Failed to parse LLM response: ${llmParsedResponse.error}. Raw: ${llmRawResponse.text}`);
+                    shouldContinueHeartbeat = false; // 停止循环
+                    continue;
                 }
-            );
 
-            const llmParsedResponse = this.parser.parse(llmRawResponse.text);
+                const agentResponseData = llmParsedResponse.data;
 
-            if (llmParsedResponse.error || !llmParsedResponse.data) {
-                this.ctx.logger.warn(`[THINK] Failed to parse LLM response: ${llmParsedResponse.error}. Raw: ${llmRawResponse.text}`);
-                shouldContinueHeartbeat = false;
-                continue;
+                // 验证响应格式
+                if (!Array.isArray(agentResponseData.actions)) {
+                    this.ctx.logger.warn(`[Cycle] Invalid actions format. Expected array, got ${typeof agentResponseData.actions}`);
+                    shouldContinueHeartbeat = false; // 停止循环
+                    continue;
+                }
+
+                const observations = await this.executeActions(session, agentResponseData.actions);
+
+                const fullResponse: AgentResponse = { ...agentResponseData, observations };
+                collectedResponses.push(fullResponse);
+
+                // [NEW] 核心逻辑：检查成功的 send_message 操作并记录
+                await this.recordSentMessages(segment.id, session, agentResponseData.actions, observations);
+
+                shouldContinueHeartbeat = agentResponseData.request_heartbeat;
+            } catch (error) {
+                this.handleError(error, `during heartbeat #${heartbeatCount} for segment ${segment.id}`);
+                shouldContinueHeartbeat = false; // 出现意外错误，停止循环
             }
-
-            // 请求成功后再新建助手回合
-            if (!agentTurnRecord) {
-                agentTurnRecord = await this.worldState.createAgentTurn(segment);
-            }
-
-            const validResponse = llmParsedResponse.data;
-
-            const context: ToolExecutionContext = {
-                koishiContext: this.ctx,
-                koishiSession: session,
-                platform: this.ctx[Services.Platform],
-                logger: this.ctx.logger("tool-exec"),
-                extensionConfig: {},
-            };
-
-            const observations = await Promise.all(
-                validResponse.actions.map(async (action) => {
-                    const result = await this.toolService.executeToolCall(context, action.function, action.params);
-                    return { function: action.function, status: result.status, result: result.result, error: result.error };
-                })
-            );
-
-            const agentResponse: AgentResponse = { ...validResponse, observations };
-            await this.ctx.database.create(TableName.AgentResponses, {
-                turnId: agentTurnRecord.id,
-                thoughts: agentResponse.thoughts,
-                actions: agentResponse.actions,
-                observations: agentResponse.observations,
-            });
-
-            // 填充 agentTurnHistory 以便在循环中使用
-            agentTurnHistory.push({ ...agentTurnRecord, responses: [agentResponse] });
-
-            shouldContinueHeartbeat = validResponse.request_heartbeat;
         }
 
-        // 3. 结束循环并更新状态
+        // 无论循环如何结束，只要有响应，就记录下来
+        if (collectedResponses.length > 0) {
+            this.ctx.logger.info(`[Cycle] Saving ${collectedResponses.length} responses for segment ${segment.id}`);
+            await this.worldState.recordAgentTurn(segment, collectedResponses);
+            this.ctx.logger.info(`[Cycle] ✅ Completed for segment ${segment.id}.`);
+        } else {
+            this.ctx.logger.warn(`[Cycle] ⚠️ Completed for segment ${segment.id} with no actions taken.`);
+        }
+
         if (heartbeatCount >= this.config.Chat.MaxHeartbeat) {
-            this.ctx.logger.warn(`[THINK] Max heartbeat reached for turn ${agentTurnRecord.id}.`);
+            this.ctx.logger.warn(`[Cycle] Max heartbeat reached for segment ${segment.id}.`);
         }
+    }
 
-        await this.ctx.database.set(TableName.AgentTurns, { id: agentTurnRecord.id }, { status: "completed" });
+    private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {
+        const context: ToolExecutionContext = {
+            koishiContext: this.ctx,
+            koishiSession: session,
+            platform: this.ctx[Services.Platform],
+            logger: this.ctx.logger("tool-exec"),
+            extensionConfig: {},
+        };
 
-        await this.ctx.database.set(TableName.DialogueSegments, { id: segment.id }, { status: "closed" });
-
-        this.ctx.logger.info(`[THINK] ✅ Turn ${agentTurnRecord.id} completed.`);
+        return Promise.all(
+            actions.map(async (action) => {
+                const result = await this.toolService.executeToolCall(context, action.function, action.params);
+                return { function: action.function, status: result.status, result: result.result, error: result.error };
+            })
+        );
     }
 
     private async buildPromptContext(
-        allowedChannels: { Platform: string; Id: string }[],
-        platform: string,
         segment: DialogueSegment,
         analysis: FlowAnalysis,
         willingness: Willingness,
-        agentTurnHistory: AgentTurn[]
+        previousResponses: AgentResponse[]
     ): Promise<PromptContext> {
+        const allowedChannels =
+            this.channelGroupMap.get(segment.channelId) ||
+            this.config.Arousal.AllowedChannelGroups.find((group) =>
+                group.some((channel) => channel.Platform === segment.platform && channel.Id === segment.channelId)
+            );
+        if (allowedChannels && !this.channelGroupMap.has(segment.channelId)) {
+            this.channelGroupMap.set(segment.channelId, allowedChannels);
+        }
+
+        const worldState = await this.worldState.getWorldState(allowedChannels || []);
+
+        // [NEW] 核心逻辑：在 worldState 中查找并标记当前 segment
+        for (const channel of worldState.activeChannels) {
+            const currentSegmentInHistory = channel.history.find((s) => s.id === segment.id);
+            if (currentSegmentInHistory) {
+                // 添加一个 Mustache 可以识别的标记
+                (currentSegmentInHistory as any).is_current = true;
+                break; // 找到后即可退出循环
+            }
+        }
+
         return {
             toolSchemas: this.toolService.getToolSchemas(),
-            memory: await this.ctx["yesimbot.memory"].getProvider(),
-            worldState: await this.worldState.getWorldState(allowedChannels),
-            currentSegment: segment,
+            memory: await this.ctx[Services.Memory].getProvider(),
+            worldState: worldState, // 传递已标记的 worldState
+            // currentSegment 不再需要
             agentState: {
                 lifeCycleStatus: "active",
                 analysis: analysis,
                 willingness: willingness,
             },
-            agentTurnHistory: agentTurnHistory,
+            previousResponses: previousResponses,
         };
+    }
+
+    // [NEW] 统一的错误处理函数
+    private handleError(error: unknown, context: string): void {
+        if (error instanceof Error) {
+            this.ctx.logger.error(`An error occurred ${context}: ${error.message}\n${error.stack}`);
+        } else {
+            this.ctx.logger.error(`An unknown error occurred ${context}:`, error);
+        }
+    }
+
+    // [NEW] 新增一个方法，专门负责处理和记录AI发送的消息
+    private async recordSentMessages(
+        segmentId: string,
+        session: Session,
+        actions: AgentResponse["actions"],
+        observations: AgentResponse["observations"]
+    ): Promise<void> {
+        for (let i = 0; i < actions.length; i++) {
+            const action = actions[i];
+            const observation = observations[i];
+
+            if (action.function === "send_message" && observation.status === "success") {
+                const params = action.params as { message: string; channel_id?: string };
+                const messages = params.message.split("<sep/>").filter(Boolean);
+                const channelId = params.channel_id || session.channelId;
+
+                for (const msgContent of messages) {
+                    // 为每条消息创建一个唯一的ID
+                    const messageId = `ai_${Date.now()}_${Random.id(8)}`;
+
+                    await this.worldState.recordMessage(segmentId, {
+                        id: messageId,
+                        platform: session.platform,
+                        channelId: channelId,
+                        sender: {
+                            pid: session.selfId,
+                            name: session.bot.user.name,
+                        },
+                        content: msgContent,
+                        timestamp: new Date(),
+                    });
+                }
+            }
+        }
     }
 
     private async createMessageTool(): Promise<ToolDefinition> {
@@ -285,26 +335,26 @@ export class AgentCore {
             description: "Sends a message to the human user.",
             parameters: Schema.object({
                 inner_thoughts: Schema.string().description("仅供自己参考的内心独白。"),
-                message: Schema.string().description("Message content"),
-                channel_id: Schema.string().description("The ID of the channel where the message should be sent"),
+                message: Schema.string().description("Message content to send. You can use '<sep/>' to send multiple messages."),
+                channel_id: Schema.string().description("Optional. The ID of the channel where the message should be sent."),
             }),
             execute: async ({ koishiSession }, { message, channel_id }) => {
                 if (!koishiSession) {
+                    this.ctx.logger.warn("SendMessageTool called without a valid session.");
                     return Failed("Missing session object");
                 }
 
-                const messages = message.split("<sep/>");
-
-                let channelId = channel_id || koishiSession.channelId;
-
-                const result = [];
                 try {
+                    const messages = message.split("<sep/>");
+                    const channelId = channel_id || koishiSession.channelId;
                     for (const msg of messages) {
-                        result.push(await koishiSession.bot.sendMessage(channelId, msg));
+                        if (msg) {
+                            const ids = await koishiSession.bot.sendMessage(channelId, msg);
+                        }
                     }
-
                     return Success();
                 } catch (error) {
+                    this.handleError(error, `sending message to channel ${channel_id || koishiSession.channelId}`);
                     return Failed(`Failed to send message: ${error.message}`);
                 }
             },
