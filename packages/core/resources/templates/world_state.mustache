@@ -51,13 +51,13 @@
           {{#observations}}
           <observation id="{{function}}">
             <function>{{function}}</function>
-            <status>{{result.status}}</status>
-            {{#result.result}}
+            <status>{{status}}</status>
+            {{#result}}
             <result>{{_toString}}</result>
-            {{/result.result}}
-            {{#result.error}}
+            {{/result}}
+            {{#error}}
             <error>{{_toString}}</error>
-            {{/result.error}}
+            {{/error}}
           </observation>
           {{/observations}}
         </observations>
