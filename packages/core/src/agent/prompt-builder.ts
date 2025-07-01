@@ -1,6 +1,6 @@
 import { Context } from "koishi";
 import Mustache from "mustache";
-import { WorldState, DialogueSegment, AgentTurn, MemoryBlockData } from "../services";
+import { WorldState, DialogueSegment, AgentTurn, MemoryBlockData, AgentResponse } from "../services";
 import { FlowAnalysis } from "./conversation-flow-analyzer";
 import { Willingness } from "./willingness-calculator";
 import { readFileSync } from "fs";
@@ -20,14 +20,13 @@ export interface PromptContext {
         memoryBlocks: MemoryBlockData[];
     };
     worldState: WorldState; // 世界状态快照
-    currentSegment: DialogueSegment; // 当前正在处理的对话片段
     agentState: {
         // Agent 的内部状态
         lifeCycleStatus: "active" | "sleeping";
         analysis: FlowAnalysis; // 对话流分析
         willingness: Willingness; // 用户意愿评估
     };
-    agentTurnHistory: AgentTurn[]; // Agent 最近的回合历史
+    previousResponses: AgentResponse[]; // Agent 最近的回合历史
 }
 
 export class PromptBuilder {
@@ -64,7 +63,7 @@ export class PromptBuilder {
         this.registerPartial("CORE_MEMORY", load("core_memory"));
         this.registerPartial("TOOL_DEFINITION", load("tool_definition"));
         this.registerPartial("WORLD_STATE", load("world_state"));
-        // Add other partials if needed
+        this.registerPartial("CURRENT_TURN_HISTORY", load("current_turn_history"));
     }
 
     /**
@@ -76,29 +75,29 @@ export class PromptBuilder {
         this.partials.set(name, template);
     }
 
-    /**
-     * 构建系统和用户提示词。
-     * @param context 构建提示词所需的上下文信息
-     * @returns 包含系统提示词和用户提示词的对象
-     */
     public async build(context: PromptContext): Promise<{ system: string; user: string }> {
         // --- 1. 准备渲染视图数据 ---
-        // 视图对象将传递给 Mustache 进行模板渲染
+
+        // [NEW] 预处理 worldState，为当前 segment 添加标记
+        // 我们需要一个方法来识别哪个是当前 segment。假设它是最后一个 'open' 的 segment
+        // 在 AgentCore 调用时，它知道当前 segment 的 ID，所以我们可以直接用 ID 匹配。
+        // 为了简化，我们假设 `context.worldState` 已经被标记好了。
+        // 一个更好的实现是在 AgentCore 中标记它。
+
+        // 我们在 AgentCore 的 buildPromptContext 中处理这个标记逻辑。
+        // 这里我们假设它已经被处理。
+
         const view = {
-            TOOL_DEFINITION: { tools: context.toolSchemas }, // 可用工具的 schema
-            CORE_MEMORY: context.memory, // 核心记忆快照
-            WORLD_STATE: context.worldState, // 世界状态快照
-            AGENT_SELF_ASSESSMENT: context.agentState, // Agent 的自我评估和状态
+            TOOL_DEFINITION: { tools: context.toolSchemas },
+            CORE_MEMORY: context.memory,
+            WORLD_STATE: context.worldState,
+            AGENT_SELF_ASSESSMENT: context.agentState,
             CURRENT_CONVERSATION: {
-                segment: context.currentSegment, // 当前对话片段
-                // Agent 回合历史，用于提供上下文
-                // 注意：原始代码没有将 AgentTurn 传递给 history，这里需要确保传递的是 AgentTurn 列表
-                history: context.agentTurnHistory,
+                history: context.previousResponses,
             },
             _toString: function () {
                 return _toString(this);
             },
-
             _renderParams: function () {
                 const content = [];
                 for (let param of Object.keys(this.params)) {
@@ -108,10 +107,8 @@ export class PromptBuilder {
             },
         };
 
-        // 将 Map 转换为对象以供 Mustache 使用
         const partials = Object.fromEntries(this.partials);
 
-        // --- 2. 渲染模板 ---
         const systemPrompt = Mustache.render(this.systemTemplate, view, partials);
         const userPrompt = Mustache.render(this.userTemplate, view, partials);
 
