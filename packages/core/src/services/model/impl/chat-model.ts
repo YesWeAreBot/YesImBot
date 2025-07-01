@@ -1,14 +1,7 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
 import { Context, Logger } from "koishi";
-import {
-    CompletionToolCall,
-    generateText,
-    streamText,
-    type ChatOptions,
-    type GenerateTextResult,
-    type Message,
-    type ToolResult,
-} from "xsai";
+import type { ChatOptions, CompletionToolCall, GenerateTextResult, Message } from "xsai";
+import { generateText, streamText } from "../../../dependencies/xsai";
 import { isEmpty, isNotEmpty, toBoolean } from "../../../shared/utils";
 import { ToolDefinition } from "../../extensions";
 import { ModelConfig } from "../config";
@@ -20,7 +13,6 @@ export interface RequestOptions {
     abortSignal?: AbortSignal;
     onStreamStart?: () => void;
     tools?: ToolDefinition[]; // 定义模型可以使用哪些工具
-    toolResults?: ToolResult[]; // 工具执行后的结果，用于多轮工具调用
 }
 
 /**
@@ -84,7 +76,7 @@ export class ChatModel {
      * @returns 一个包含 LLM 响应的 Promise。
      */
     public async chat(messages: Message[], options: RequestOptions = {}): Promise<GenerateTextResult> {
-        const { logger, abortSignal, onStreamStart, tools, toolResults, debug } = options;
+        const { logger, abortSignal, onStreamStart, tools, debug } = options;
         const effectiveLogger = logger?.extend(this.id) || this.logger; // 使用传入的 logger 或实例的 logger
         const log = (message: string) => debug && effectiveLogger.info(message);
 
@@ -116,7 +108,6 @@ export class ChatModel {
             abortSignal: options.abortSignal,
             messages,
             tools: options.tools,
-            toolResults: options.toolResults,
 
             // 应用模型配置中的参数，以及运行时传入的参数
             temperature: this.modelConfig.Temperature,

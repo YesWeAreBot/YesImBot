@@ -1,5 +1,3 @@
-import { ModelDescriptor } from "../model";
-
 export const MEMORY_TABLE = "yesimbot.memory_block";
 
 export interface MemoryBlockConfig {
@@ -31,5 +29,4 @@ export interface MemoryServiceConfig {
     Compression?: MemoryCompressionConfig;
     // Extract?: Config["Memory"]["Extract"];
     Backup?: BackupConfig;
-    UseModel?: ModelDescriptor;
 }
