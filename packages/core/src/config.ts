@@ -51,10 +51,6 @@ export const Config: Schema<Config> = Schema.object({
                 persona: { Limit: 2000, FilePathToBind: "data/yesimbot/memory/persona.txt" },
             })
             .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
-        UseModel: Schema.object({
-            ProviderName: Schema.string().description("提供商名称"),
-            ModelId: Schema.string().description("模型ID"),
-        }).description("压缩记忆使用的模型"),
         Compression: Schema.object({
             Lines: Schema.number().min(0).default(500).description("记忆块内容超过多少行时触发压缩汇总 (0为禁用)"),
             Characters: Schema.number().min(0).default(20000).description("记忆块内容超过多少字符时触发压缩汇总 (0为禁用)"),

@@ -295,9 +295,8 @@ export class MemoryService extends Service {
     private async _performCompression(label: string, block: MemoryBlock, state: MemoryBlockCompressionState): Promise<void> {
         const compressionConfig = this.config.Compression;
         const backupConfig = this.config.Backup;
-        const modelConfig = this.config.UseModel; // 使用 MemoryServiceConfig 中的 UseModel
 
-        if (!compressionConfig || !modelConfig || !backupConfig) {
+        if (!compressionConfig || !this.chatModel || !backupConfig) {
             this.ctx.logger.error(`[Compression] Missing configuration for compression for block ${label}. Skipping compression.`);
             return;
         }
