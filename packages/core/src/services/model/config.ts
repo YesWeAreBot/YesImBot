@@ -73,6 +73,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             value: Schema.string().required().description("参数值"),
         })
     )
+        .role("table")
         .description("自定义参数（例如：stop、presence_penalty 等）")
         .collapse(),
 }).description("模型配置");
@@ -118,8 +119,8 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
                     ModelId: Schema.string().required().description("模型ID"),
                 })
             )
-            .role("table")
-            .description("该组包含的模型列表"),
+                .role("table")
+                .description("该组包含的模型列表"),
         })
     ).description("模型组列表"),
     ChatModelGroup: Schema.string().required().description("默认对话模型组"),

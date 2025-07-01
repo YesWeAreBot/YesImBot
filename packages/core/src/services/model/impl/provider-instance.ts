@@ -1,37 +1,30 @@
-import { ProxyAgent, fetch as ufetch } from "undici";
 import { Context, Logger } from "koishi";
+import { ProxyAgent, fetch as ufetch } from "undici";
 import { isNotEmpty } from "../../../shared/utils";
+import { Ability, ProviderConfig } from "../config";
 import { IProviderClient } from "../factories/base";
-import { ProviderConfig, Ability } from "../config";
 import { ChatModel } from "./chat-model";
 import { EmbedModel } from "./embed-model";
-
 
 export class ProviderInstance {
     public readonly name: string;
     private readonly fetch: typeof globalThis.fetch;
     private logger: Logger;
 
-    constructor(
-        private ctx: Context,
-        public readonly config: ProviderConfig,
-        private readonly client: IProviderClient, // 依赖注入！
-
-    ) {
+    constructor(private ctx: Context, public readonly config: ProviderConfig, private readonly client: IProviderClient) {
         this.name = config.Name;
-        this.logger = ctx.logger("model").extend(this.name); // 为每个 ProviderInstance 创建一个子 logger
+        this.logger = ctx.logger("model").extend(this.name);
         this.logger.info(`初始化提供商实例: "${this.name}"`);
 
-        // 设置支持代理的 fetch 函数
-        this.fetch = (async (input, init) => {
-            const proxy = this.config.Proxy;
-            if (isNotEmpty(proxy)) {
-                this.logger.debug(`使用代理 "${proxy}"`);
-                init = { ...init, dispatcher: new ProxyAgent(proxy) };
-            }
-            // 使用 undici 的 fetch，它通常更高效且支持 ProxyAgent
-            return await ufetch(input, init);
-        }) as unknown as typeof globalThis.fetch;
+        if (isNotEmpty(this.config.Proxy)) {
+            // 设置支持代理的 fetch 函数
+            this.fetch = (async (input, init) => {
+                this.logger.debug(`使用代理 "${this.config.Proxy}"`);
+                init = { ...init, dispatcher: new ProxyAgent(this.config.Proxy) };
+
+                return await ufetch(input, init);
+            }) as unknown as typeof globalThis.fetch;
+        }
     }
 
     /**
