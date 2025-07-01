@@ -1,1 +1,5 @@
 {{> WORLD_STATE}}
+
+{{> CURRENT_TURN_HISTORY}}
+
+Your task is to respond to the conversation. Find the dialogue segment in the history with `is_current="true"`. This is the segment you need to react to.
