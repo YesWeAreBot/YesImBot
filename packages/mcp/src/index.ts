@@ -1,8 +1,6 @@
 import { Context } from "koishi";
-import { promises as fs } from "node:fs";
+import fs from "fs/promises";
 import path from "path";
-
-import {} from "koishi-plugin-yesimbot/lib/extensions";
 
 import { BinaryInstaller } from "./BinaryInstaller";
 import { CommandResolver } from "./CommandResolver";
