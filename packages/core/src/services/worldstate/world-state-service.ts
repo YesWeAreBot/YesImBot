@@ -1,8 +1,10 @@
 import { Context, Random, Service, Session } from "koishi";
+import { ChatModel, ModelGroup } from "../model";
 import { Services } from "../types";
+import { AgentResponse } from "./agent-response-types";
 import { WorldStateConfig } from "./config";
-import { AgentTurnData, DialogueSegmentData, TableName } from "./database-models";
-import { AgentTurn, Channel, DialogueSegment, WorldState } from "./interfaces";
+import { DialogueSegmentData, TableName } from "./database-models";
+import { AgentTurn, Channel, DialogueSegment, GuildMember, Sender, WorldState } from "./interfaces";
 
 declare module "koishi" {
     interface Context {
@@ -22,37 +24,33 @@ declare module "koishi" {
 export class WorldStateService extends Service {
     static readonly inject = [Services.Model];
     private disposer: (() => boolean)[] = [];
+    private maintenanceInterval: NodeJS.Timeout;
+    private chatModel: ChatModel;
 
-    constructor(ctx: Context, config: WorldStateConfig) {
+    constructor(ctx: Context, public config: WorldStateConfig) {
         super(ctx, Services.WorldState, true);
-        this.config = config;
+        this.chatModel = ctx[Services.Model].useGroup(ModelGroup.Summarization)?.getCurrent();
     }
 
-    /**
-     * Koishi 服务生命周期方法，在插件启动时调用。
-     * 在这里注册事件监听器和后台定时任务。
-     */
     protected start(): void {
         this.registerDatabaseModels();
         this.ctx.logger.info("WorldState Service started, listening to events...");
-
-        // 监听所有消息事件
         this.disposer.push(this.ctx.on("message", (session) => this.onMessage(session), true));
+        this.maintenanceInterval = setInterval(() => this.handleMaintenance(), this.config.CleanupInterval);
     }
 
     protected stop(): void {
         this.disposer.forEach((dispose) => dispose());
+        if (this.maintenanceInterval) {
+            clearInterval(this.maintenanceInterval);
+        }
         this.ctx.logger.info("WorldState Service stopped.");
     }
 
-    /**
-     * 初始化方法，注册数据库模型。
-     */
     private registerDatabaseModels() {
         this.ctx.model.extend(
             TableName.Members,
             {
-                uid: "unsigned",
                 pid: "string(255)",
                 platform: "string(255)",
                 guildId: "string(255)",
@@ -65,9 +63,9 @@ export class WorldStateService extends Service {
             },
             {
                 autoInc: false,
-                primary: ["uid", "platform", "guildId"],
+                primary: ["pid", "platform", "guildId"],
                 foreign: {
-                    uid: ["user", "id"],
+                    pid: ["binding", "pid"],
                 },
             }
         );
@@ -81,25 +79,10 @@ export class WorldStateService extends Service {
                 guildId: "string(255)",
                 status: "string(32)",
                 summary: "text",
+                agentTurn: "json",
                 timestamp: "timestamp",
             },
             { primary: "id" }
-        );
-
-        this.ctx.model.extend(
-            TableName.AgentTurns,
-            {
-                id: "string(64)",
-                sid: "string(64)",
-                platform: "string(255)",
-                channelId: "string(255)",
-                status: "string(32)",
-                timestamp: "timestamp",
-            },
-            {
-                primary: "id",
-                foreign: { sid: [TableName.DialogueSegments, "id"] },
-            }
         );
 
         this.ctx.model.extend(
@@ -134,34 +117,20 @@ export class WorldStateService extends Service {
                 foreign: { sid: [TableName.DialogueSegments, "id"] },
             }
         );
-
-        this.ctx.model.extend(
-            TableName.AgentResponses,
-            {
-                id: "unsigned",
-                turnId: "string(64)",
-                thoughts: "json",
-                actions: "json",
-                observations: "json",
-                request_heartbeat: "boolean",
-            },
-            {
-                autoInc: true,
-                primary: "id",
-                foreign: { turnId: [TableName.AgentTurns, "id"] },
-            }
-        );
     }
 
     // --- 公共 API ---
 
     /**
-     * 获取指定频道集合的完整世界状态。
+     * [REFACTOR] 获取指定频道集合的完整世界状态。
+     * 这个方法现在非常简洁，因为它依赖 buildFullDialogueSegment 来处理上下文策略。
      * @param allowedChannels 允许 Agent 访问的频道列表
      * @returns WorldState 对象
      */
     public async getWorldState(allowedChannels: { Platform: string; Id: string }[]): Promise<WorldState> {
         const activeChannels = await Promise.all(allowedChannels.map(({ Platform, Id }) => this.buildFullContextForChannel(Platform, Id)));
+
+        // [FIX] 那个低效的后处理循环被彻底移除了！
 
         return {
             timestamp: new Date().toISOString(),
@@ -170,40 +139,83 @@ export class WorldStateService extends Service {
         };
     }
 
-    private async buildFullContextForChannel(Platform: string, Id: string): Promise<Channel> {
-        const bot = this.ctx.bots.find((bot) => bot.platform === Platform);
-
-        // 群聊
-        const channelInfo = await bot.getChannel(Id);
-        //const channelRecord = await this.ctx.database.get("channel", { id: Id, platform: Platform }).then((res) => res[0]);
-        //const members = await this.ctx.database.get(TableName.Members, { platform: Platform, guildId: Id });
-
-        // 获取所有未被物理删除的对话片段
-        const segmentRecord = await this.ctx.database.get(TableName.DialogueSegments, {
-            platform: Platform,
-            channelId: Id,
-            status: { $ne: "archived" },
+    /**
+     * [NEW] 新增一个公共方法，用于将一条消息记录到指定的对话片段中。
+     * 这个方法可以被内部（onMessage）和外部（AgentCore）调用。
+     * @param segmentId 目标对话片段的 ID
+     * @param message 消息对象
+     */
+    public async recordMessage(
+        segmentId: string,
+        message: { id: string; platform: string; channelId: string; sender: Sender; content: string; timestamp: Date; quoteId?: string }
+    ): Promise<void> {
+        await this.ctx.database.create(TableName.Messages, {
+            id: message.id,
+            sid: segmentId,
+            platform: message.platform,
+            channelId: message.channelId,
+            sender: message.sender,
+            content: message.content,
+            timestamp: message.timestamp,
+            quoteId: message.quoteId,
         });
+        this.ctx.logger.debug(`Recorded message ${message.id} into segment ${segmentId}`);
+    }
 
-        const dialogueSegments: DialogueSegment[] = await Promise.all(segmentRecord.map((record) => this.buildFullDialogueSegment(record)));
+    private async buildFullContextForChannel(Platform: string, Id: string): Promise<Channel> {
+        // [REFACTOR] 增强此方法以注入机器人自身的信息
+        const bot = this.ctx.bots.find((b) => b.platform === Platform && b.isActive);
+        if (!bot) {
+            this.ctx.logger.warn(`Could not find an online bot for platform "${Platform}" to build channel context.`);
+            // 即使找不到机器人，也应继续尝试构建上下文，只是没有机器人自身的信息
+        }
 
-        // 获取所有与这些片段关联的 Agent 回合
-        const agentTurnRecords = await this.ctx.database.get(TableName.AgentTurns, { sid: segmentRecord.map((record) => record.id) });
+        const channelInfo = await this.ctx.bots.find((b) => b.platform === Platform)?.getChannel(Id);
+        if (!channelInfo) {
+            // 如果无法获取频道信息，可以返回一个基础的 Channel 对象或抛出错误
+            this.ctx.logger.warn(`Failed to get channel info for ${Platform}:${Id}`);
+            return { id: Id, platform: Platform, name: `Channel ${Id}`, type: "guild", meta: {}, members: [], history: [] };
+        }
 
-        const agentTurns: AgentTurn[] = await Promise.all(agentTurnRecords.map((record) => this.buildFullAgentTurn(record)));
+        const segmentRecords = await this.ctx.database
+            .get(TableName.DialogueSegments, {
+                platform: Platform,
+                channelId: Id,
+                status: { $ne: "archived" },
+            })
+            .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
 
-        const history = [...dialogueSegments, ...agentTurns].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const history: DialogueSegment[] = await Promise.all(segmentRecords.map((record) => this.buildFullDialogueSegment(record)));
 
-        const memberIds = [];
-
-        // 获取所有参与过对话的成员
-        dialogueSegments.forEach((segment) => {
+        const memberIds = new Set<string>();
+        history.forEach((segment) => {
             segment.dialogue.forEach((message) => {
-                memberIds.push(message.sender.pid);
+                // 确保我们只添加非 AI 的成员 ID
+                if (message.sender.pid !== "agent") {
+                    memberIds.add(message.sender.pid);
+                }
             });
         });
 
-        const members = await this.ctx.database.get(TableName.Members, { platform: Platform, guildId: Id, pid: { $in: memberIds } });
+        // 从数据库获取所有人类成员
+        const humanMembers =
+            memberIds.size > 0
+                ? await this.ctx.database.get(TableName.Members, { platform: Platform, guildId: Id, pid: { $in: Array.from(memberIds) } })
+                : [];
+
+        // [NEW] 创建并注入机器人自身作为成员
+        let allMembers: GuildMember[] = humanMembers;
+        if (bot) {
+            const botAsMember: GuildMember = {
+                pid: bot.selfId,
+                name: bot.user.name,
+                nick: bot.user.nick || bot.user.name,
+                roles: ["assistant", "bot"],
+                isSelf: true, // 关键标记
+            };
+            // 将机器人添加到列表开头，并确保没有重复
+            allMembers = [botAsMember, ...humanMembers.filter((m) => m.pid !== bot.selfId)];
+        }
 
         const channel: Channel = {
             id: Id,
@@ -211,105 +223,98 @@ export class WorldStateService extends Service {
             type: "guild",
             platform: Platform,
             meta: {},
-            members: members,
+            members: allMembers, // 使用包含机器人的新成员列表
             history: history,
         };
         return channel;
     }
 
     /**
-     * 根据数据库记录构建完整的 DialogueSegment 对象。
+     * [REFACTOR] 根据数据库记录和其状态，高效地构建完整的 DialogueSegment 对象。
+     * 这是实现上下文策略的核心。
      * @param segmentRecord
      * @returns
      */
     private async buildFullDialogueSegment(segmentRecord: DialogueSegmentData): Promise<DialogueSegment> {
-        const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: segmentRecord.id });
-        const systemEventRecords = await this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id });
-
         const dialogueSegment: DialogueSegment = {
             type: "dialogue-segment",
-            //@ts-ignore
-            is_dialogue_segment: true,
             id: segmentRecord.id,
             platform: segmentRecord.platform,
             channelId: segmentRecord.channelId,
             guildId: segmentRecord.guildId,
             status: segmentRecord.status,
-            dialogue: messageRecords.map((record) => ({
+            summary: segmentRecord.summary,
+            timestamp: segmentRecord.timestamp,
+            agentTurn: segmentRecord.agentTurn,
+            // 先用空值初始化
+            dialogue: [],
+            systemEvents: [],
+        };
+
+        // [FIX] 核心优化：根据状态决定是否查询数据库
+        if (segmentRecord.status === "summarized") {
+            // 对于已总结的片段，不加载任何对话细节，大大提升性能
+            dialogueSegment.agentTurn = null; // 总结片段不应有关联的 Agent 回合
+        } else {
+            // 对于 open, closed, folded 状态，加载对话细节
+            const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: segmentRecord.id });
+            const systemEventRecords = await this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id });
+
+            dialogueSegment.dialogue = messageRecords.map((record) => ({
                 id: record.id,
                 content: record.content,
                 timestamp: record.timestamp,
                 quoteId: record.quoteId,
                 sender: record.sender,
-            })),
-            systemEvents: systemEventRecords.map((record) => ({
+            }));
+            dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
                 id: record.id,
                 type: record.type,
                 timestamp: record.timestamp,
                 payload: record.payload,
-            })),
-            summary: segmentRecord.summary,
-            timestamp: segmentRecord.timestamp,
-        };
+            }));
+
+            // 对于 folded 状态，隐藏 agentTurn 的细节
+            if (segmentRecord.status === "folded" && dialogueSegment.agentTurn) {
+                dialogueSegment.agentTurn.responses = [];
+            }
+        }
 
         return dialogueSegment;
     }
-    /**
-     *
-     * @param record
-     * @returns
-     */
-    private async buildFullAgentTurn(record: AgentTurnData): Promise<AgentTurn> {
-        // 获取此回合的响应记录
-        const responseRecords = await this.ctx.database.get(TableName.AgentResponses, { turnId: record.id });
 
-        const turn: AgentTurn = {
-            type: "agent-turn",
-            //@ts-ignore
-            is_agent_turn: true,
-            id: record.id,
-            platform: record.platform,
-            channelId: record.channelId,
-            stimulusSegmentId: record.sid,
-            status: record.status,
-            responses: responseRecords,
-            timestamp: record.timestamp,
+    // ... 后续方法 (recordAgentTurn, getOpenSegment, onMessage, handleMaintenance, etc.) 保持不变 ...
+    public async recordAgentTurn(segment: DialogueSegment, responses: AgentResponse[]): Promise<DialogueSegment> {
+        const agentTurn: AgentTurn = {
+            responses,
+            timestamp: new Date(),
         };
-        return turn;
-    }
 
-    /**
-     * 创建一个新的 Agent 回合。
-     * 此操作会关闭当前频道的开放对话片段。
-     * @param platform 平台名称
-     * @param channelId 频道ID
-     * @returns 创建的 AgentTurn 对象
-     */
-    public async createAgentTurn(segment: DialogueSegment): Promise<AgentTurn> {
-        // 关闭当前开放的对话片段
-        await this.ctx.database.set(TableName.DialogueSegments, { id: segment.id }, { status: "closed" });
+        await this.ctx.database.set(TableName.DialogueSegments, { id: segment.id }, { status: "closed", agentTurn: agentTurn });
+        this.ctx.logger.debug(`Segment ${segment.id} closed and agent turn recorded.`);
 
-        // 创建新的 Agent 回合记录
-        const turnRecord = await this.ctx.database.create(TableName.AgentTurns, {
-            id: `turn_${Date.now()}_${Random.id(8)}`,
-            sid: segment.id,
+        const closedSegments = await this.ctx.database.get(TableName.DialogueSegments, {
             channelId: segment.channelId,
             platform: segment.platform,
-            status: "in_progress",
-            timestamp: new Date(),
+            status: "closed",
         });
 
-        // 构造并返回完整的 AgentTurn 对象
-        return this.buildFullAgentTurn(turnRecord);
+        if (closedSegments.length > this.config.FullContextSegmentCount) {
+            const segmentsToFold = closedSegments
+                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+                .slice(0, closedSegments.length - this.config.FullContextSegmentCount);
+
+            const idsToFold = segmentsToFold.map((s) => s.id);
+            if (idsToFold.length > 0) {
+                await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: idsToFold } }, { status: "folded" });
+                this.ctx.logger.info(`Folded ${idsToFold.length} segments in channel ${segment.channelId}.`);
+            }
+        }
+
+        const updatedSegmentRecord = await this.ctx.database.get(TableName.DialogueSegments, { id: segment.id }).then((res) => res[0]);
+        return this.buildFullDialogueSegment(updatedSegmentRecord);
     }
 
-    /**
-     * 获取或创建当前开放的对话片段。
-     * @param platform 平台名称
-     * @param channelId 频道ID
-     * @param guildId 群组ID
-     * @returns
-     */
     public async getOpenSegment(platform: string, channelId: string, guildId?: string): Promise<DialogueSegmentData> {
         const openSegments = await this.ctx.database
             .select(TableName.DialogueSegments)
@@ -328,46 +333,36 @@ export class WorldStateService extends Service {
             channelId,
             guildId,
             status: "open",
+            agentTurn: null,
             timestamp: new Date(),
         };
         await this.ctx.database.create(TableName.DialogueSegments, newSegment);
         return newSegment;
     }
 
-    // --- 事件处理器 ---
-
-    /**
-     * 消息处理流程
-     */
     private async onMessage(session: Session): Promise<void> {
-        // 更新或创建成员信息
         if (session.guildId) {
-            const [binding] = await this.ctx.database.get("binding", { platform: session.platform, pid: session.userId });
-            if (binding) {
-                await this.ctx.database.upsert(TableName.Members, [
-                    {
-                        uid: binding.aid,
-                        pid: session.userId,
-                        platform: session.platform,
-                        guildId: session.guildId,
-                        name: session.author.nick || session.author.name,
-                        username: session.author.username,
-                        roles: session.author.roles,
-                        avatar: session.author.avatar,
-                        lastActive: new Date(),
-                    },
-                ]);
-            }
+            await this.ctx.database.upsert(TableName.Members, [
+                {
+                    pid: session.userId,
+                    platform: session.platform,
+                    guildId: session.guildId,
+                    name: session.author.nick || session.author.name,
+                    username: session.author.username,
+                    roles: session.author.roles,
+                    avatar: session.author.avatar,
+                    lastActive: new Date(),
+                },
+            ]);
         }
 
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
 
-        // 消息入库
-        await this.ctx.database.create(TableName.Messages, {
+        // 使用新的 recordMessage 方法
+        await this.recordMessage(segmentRecord.id, {
             id: session.messageId,
-            sid: segmentRecord.id,
-            channelId: session.channelId,
             platform: session.platform,
+            channelId: session.channelId,
             sender: {
                 pid: session.userId,
                 name: session.author.nick || session.author.name,
@@ -378,8 +373,123 @@ export class WorldStateService extends Service {
             quoteId: session.quote?.id,
         });
 
-        // 此处可以触发事件，但注意避免在事件处理中再次进行昂贵的数据库查询
         const dialogueSegment = await this.buildFullDialogueSegment(segmentRecord);
         this.ctx.emit("worldstate:segment-updated", session, dialogueSegment);
+    }
+
+    private async handleMaintenance() {
+        if (!this.config.EnableSummarization) return;
+        this.ctx.logger.debug("Running worldstate maintenance task...");
+
+        try {
+            const channelsToSummarize = await this.findChannelsWithSufficientFoldedSegments();
+
+            for (const channel of channelsToSummarize) {
+                await this.summarizeAndArchive(channel.platform, channel.channelId);
+            }
+        } catch (error) {
+            this.ctx.logger.error("Error during worldstate maintenance task:", error);
+        }
+    }
+
+    private async findChannelsWithSufficientFoldedSegments(): Promise<{ platform: string; channelId: string }[]> {
+        const allFoldedSegments = await this.ctx.database.get(TableName.DialogueSegments, {
+            status: "folded",
+        });
+
+        const channelCounts: Record<string, number> = {};
+        const channelMetas: Record<string, { platform: string; channelId: string }> = {};
+
+        for (const segment of allFoldedSegments) {
+            const key = `${segment.platform}:${segment.channelId}`;
+            if (!channelCounts[key]) {
+                channelCounts[key] = 0;
+                channelMetas[key] = { platform: segment.platform, channelId: segment.channelId };
+            }
+            channelCounts[key]++;
+        }
+
+        const channelsToProcess: { platform: string; channelId: string }[] = [];
+        for (const key in channelCounts) {
+            if (channelCounts[key] >= this.config.SummarizationTriggerCount) {
+                channelsToProcess.push(channelMetas[key]);
+            }
+        }
+
+        return channelsToProcess;
+    }
+
+    private async summarizeAndArchive(platform: string, channelId: string) {
+        const foldedSegments = await this.ctx.database.get(TableName.DialogueSegments, {
+            platform,
+            channelId,
+            status: "folded",
+        });
+
+        if (foldedSegments.length < this.config.SummarizationTriggerCount) return;
+
+        foldedSegments.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const groupIds = foldedSegments.map((s) => s.id);
+        const latestTimestamp = foldedSegments[foldedSegments.length - 1].timestamp;
+
+        const dialogueText = await this.renderGroupToText(foldedSegments);
+        const prompt = this.config.SummarizationPrompt.replace("{dialogueText}", dialogueText);
+
+        const summaryText = await this.chatModel.chat([{ role: "user", content: prompt }]).then((res) => res.text);
+        if (!summaryText) {
+            this.ctx.logger.warn(`Summarization failed for channel ${channelId}, no response from model.`);
+            return;
+        }
+
+        const summarySegment: DialogueSegmentData = {
+            id: `sum_${Date.now()}_${Random.id(8)}`,
+            platform: platform,
+            channelId: channelId,
+            guildId: foldedSegments[0].guildId,
+            status: "summarized",
+            summary: summaryText,
+            timestamp: latestTimestamp,
+            agentTurn: null,
+        };
+
+        await this.ctx.database.withTransaction(async (db) => {
+            await db.create(TableName.DialogueSegments, summarySegment);
+            await db.set(TableName.DialogueSegments, { id: { $in: groupIds } }, { status: "archived" });
+        });
+
+        this.ctx.logger.info(`Successfully summarized ${groupIds.length} segments into one for channel ${channelId}.`);
+    }
+
+    /**
+     * [REFACTOR] 彻底重构此方法，使其依赖单一事实来源（messages 表），
+     * 不再手动解析 AgentTurn，从而确保 AI 自己的消息被正确包含。
+     * @param group 一组需要被渲染为文本的对话片段数据。
+     * @returns 格式化后的完整对话历史字符串。
+     */
+    private async renderGroupToText(group: DialogueSegmentData[]): Promise<string> {
+        if (!group || group.length === 0) {
+            return "";
+        }
+
+        // 1. 收集所有需要查询的 segment ID
+        const segmentIds = group.map((segment) => segment.id);
+
+        // 2. 一次性从数据库中获取所有相关的消息（包括用户和 AI 的）
+        const allMessages = await this.ctx.database.get(TableName.Messages, {
+            sid: { $in: segmentIds },
+        });
+
+        // 3. 按时间戳对所有消息进行排序，以构建正确的对话流
+        allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        // 4. 将排序后的消息格式化为最终的文本字符串
+        const dialogueLines = allMessages.map((msg) => {
+            // 使用 sender.name，它对于 AI 和用户都已正确设置
+            const senderName = msg.sender.name || "Unknown";
+            const timestampStr = new Date(msg.timestamp).toLocaleString();
+            return `[${timestampStr}] ${senderName}: ${msg.content}`;
+        });
+
+        return dialogueLines.join("\n");
     }
 }
