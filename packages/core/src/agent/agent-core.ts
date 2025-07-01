@@ -293,9 +293,16 @@ export class AgentCore {
                     return Failed("Missing session object");
                 }
 
+                const messages = message.split("<sep/>");
+
                 let channelId = channel_id || koishiSession.channelId;
+
+                const result = [];
                 try {
-                    const result = await koishiSession.bot.sendMessage(channelId, message);
+                    for (const msg of messages) {
+                        result.push(await koishiSession.bot.sendMessage(channelId, msg));
+                    }
+
                     return Success();
                 } catch (error) {
                     return Failed(`Failed to send message: ${error.message}`);
