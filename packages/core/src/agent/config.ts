@@ -18,7 +18,6 @@ export interface AgentConfig {
     Arousal: ArousalConfig;
     Willingness: WillingnessConfig;
     Chat: {
-        UseGroup: string;
         MaxHeartbeat: number;
     };
     ToolExecutor: ToolExecutorConfig;
@@ -59,7 +58,6 @@ export const AgentConfigSchema: Schema<AgentConfig> = Schema.object({
     }).description("意愿度模型配置"),
 
     Chat: Schema.object({
-        UseGroup: Schema.string().default("default").description("使用的模型组名称。"),
         MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
     }).description("对话行为配置"),
 

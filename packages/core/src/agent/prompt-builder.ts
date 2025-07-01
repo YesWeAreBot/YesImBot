@@ -96,14 +96,13 @@ export class PromptBuilder {
                 history: context.agentTurnHistory,
             },
             _toString: function () {
-                if (typeof this === "string") return this;
-                return JSON.stringify(this);
+                return _toString(this);
             },
 
             _renderParams: function () {
                 const content = [];
                 for (let param of Object.keys(this.params)) {
-                    content.push(`<${param}>${this.params[param]}</${param}>`);
+                    content.push(`<${param}>${_toString(this.params[param])}</${param}>`);
                 }
                 return content.join("");
             },
@@ -118,6 +117,11 @@ export class PromptBuilder {
 
         return { system: systemPrompt, user: userPrompt };
     }
+}
+
+function _toString(obj) {
+    if (typeof obj === "string") return obj;
+    return JSON.stringify(obj);
 }
 
 // 默认的系统和用户模板文件路径
