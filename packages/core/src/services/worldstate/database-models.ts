@@ -3,8 +3,8 @@
  * @description 定义插件的数据库模型 (DTOs) 和表结构。
  */
 import { Action, ActionResult, AgentResponse } from "./agent-response-types";
-import { EventName } from "./event-types";
-import { AgentTurnStatus, DialogueSegmentStatus, Sender } from "./interfaces";
+import { EventName } from './event-types';
+import { DialogueSegmentStatus, Sender, AgentTurn } from './interfaces';
 
 /**
  * 集中管理所有数据库表的名称，防止拼写错误并方便重构。
@@ -12,10 +12,8 @@ import { AgentTurnStatus, DialogueSegmentStatus, Sender } from "./interfaces";
 export enum TableName {
     Members = "worldstate.members",
     DialogueSegments = "worldstate.dialogue_segments",
-    AgentTurns = "worldstate.agent_turns",
     Messages = "worldstate.messages",
     SystemEvents = "worldstate.system_events",
-    AgentResponses = "worldstate.agent_responses",
 }
 
 // --- 数据库表的数据传输对象 (DTOs) ---
@@ -25,7 +23,6 @@ export enum TableName {
  * 存储用户在一个特定服务器 (Guild) 内的身份信息。
  */
 export interface MemberData {
-    uid: number;
     pid: string;
     platform: string;
     guildId: string;
@@ -45,22 +42,11 @@ export interface DialogueSegmentData {
     id: string;
     platform: string;
     channelId: string;
-    guildId?: string; // 新增字段
+    guildId?: string;
     status: DialogueSegmentStatus;
     summary?: string;
     timestamp: Date;
-}
-
-/**
- * `worldstate.agent_turns` 表的数据结构。
- */
-export interface AgentTurnData {
-    id: string;
-    sid: string; // stimulusSegmentId
-    platform: string;
-    channelId: string;
-    status: AgentTurnStatus;
-    timestamp: Date;
+    agentTurn?: AgentTurn;
 }
 
 /**
@@ -104,9 +90,7 @@ declare module "koishi" {
     interface Tables {
         [TableName.Members]: MemberData;
         [TableName.DialogueSegments]: DialogueSegmentData;
-        [TableName.AgentTurns]: AgentTurnData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
-        [TableName.AgentResponses]: AgentResponseData;
     }
 }

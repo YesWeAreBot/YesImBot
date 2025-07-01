@@ -17,8 +17,6 @@ import { AgentResponse } from "./agent-response-types";
  * 代表一个群组或服务器中的成员，是用户在特定群组上下文中的表现。
  */
 export interface GuildMember {
-    /** 关联的 Koishi 内部用户 ID (uid) */
-    uid: number;
     /** 关联的用户平台 ID (pid) */
     pid: string;
     /** 成员在群内的显示名称 (通常是昵称)。 */
@@ -29,6 +27,8 @@ export interface GuildMember {
     roles?: string[];
     /** 加入群组的时间戳。 */
     joinedAt?: Date;
+    /** [NEW] 一个布尔值，用于明确标记此成员是否为机器人自身 */
+    isSelf?: boolean;
 }
 
 /**
@@ -63,10 +63,10 @@ export interface Channel {
     members?: GuildMember[];
     /**
      * 频道的历史记录流。
-     * 这是一个包含用户主导的对话片段 (DialogueSegment) 和 Agent 完整回合 (AgentTurn) 的有序数组，
+     * 这是一个包含对话片段 (DialogueSegment) 的有序数组，
      * 共同构成了 Agent 感知到的频道交互全貌。
      */
-    history: (DialogueSegment | AgentTurn)[];
+    history: DialogueSegment[];
 }
 
 /**
@@ -102,6 +102,15 @@ export interface ContextualMessage {
 export type DialogueSegmentStatus = "open" | "closed" | "folded" | "summarized" | "archived";
 
 /**
+ * Agent 的一个完整处理回合，通常对应一次或多次 ReAct 循环。
+ */
+export interface AgentTurn {
+    /** 此回合中发生的所有响应步骤（思考->行动->观察）。 */
+    responses: AgentResponse[];
+    /** Agent 回合完成的时间戳。 */
+    timestamp: Date;
+}
+/**
  * 用户对话片段，聚合了一段时间内的相关消息和系统事件。
  */
 export interface DialogueSegment {
@@ -122,30 +131,8 @@ export interface DialogueSegment {
     dialogue: ContextualMessage[];
     systemEvents: SystemEvent[];
     summary?: string;
-    timestamp: Date;
-}
-
-export type AgentTurnStatus = "in_progress" | "completed";
-
-/**
- * Agent 的一个完整处理回合，通常对应一次 ReAct 循环。
- */
-export interface AgentTurn {
-    type: "agent-turn"; // 类型守卫字段
-    id: string;
-    platform: string;
-    channelId: string;
-    /** 触发此 Agent 回合的对话片段ID。 */
-    stimulusSegmentId: string;
-    /**
-     * Agent 回合的生命周期状态。
-     * - `in_progress`: Agent 正在处理中。
-     * - `completed`: Agent 处理完成。
-     */
-    status: AgentTurnStatus;
-    /** 此回合中发生的所有响应步骤（思考->行动->观察）。 */
-    responses: AgentResponse[];
-    timestamp: Date;
+    timestamp: Date; // 片段的创建/开启时间
+    agentTurn?: AgentTurn; // 由此片段触发的 Agent 回合，是可选的
 }
 
 /**
