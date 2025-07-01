@@ -7,7 +7,7 @@ import {
     type ChatOptions,
     type GenerateTextResult,
     type Message,
-    type ToolResult
+    type ToolResult,
 } from "xsai";
 import { isEmpty, isNotEmpty, toBoolean } from "../../../shared/utils";
 import { ToolDefinition } from "../../extensions";
@@ -97,7 +97,7 @@ export class ChatModel {
         });
 
         // 如果模型配置明确指定了 Stream，则优先使用它
-        const useStream = this.modelConfig.Stream ?? options.debug; // 如果配置了 Stream 就用配置的，否则看 debug 选项
+        const useStream = this.modelConfig.Stream;
 
         if (useStream) {
             return this._executeStream(chatOptions, log, onStreamStart);
@@ -111,7 +111,7 @@ export class ChatModel {
      */
     private buildChatOptions(messages: Message[], options: RequestOptions): ChatOptions {
         return {
-            ...this.chatProvider.chat(this.modelConfig.ModelID), // 获取提供商特定的基础配置
+            ...this.chatProvider.chat(this.modelConfig.ModelID),
             fetch: this.fetch, // 使用支持代理的 fetch
             abortSignal: options.abortSignal,
             messages,
@@ -119,8 +119,8 @@ export class ChatModel {
             toolResults: options.toolResults,
 
             // 应用模型配置中的参数，以及运行时传入的参数
-            temperature: this.modelConfig.Temperature ?? 0.7, // 如果模型配置未定义，使用默认值
-            topP: this.modelConfig.TopP ?? 1.0, // 如果模型配置未定义，使用默认值
+            temperature: this.modelConfig.Temperature,
+            topP: this.modelConfig.TopP,
 
             // 合并所有自定义参数
             ...this.customParameters,
