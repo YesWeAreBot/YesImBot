@@ -9,63 +9,68 @@
     {{#members.length}}
     <members>
       {{#members}}
-      <user id="{{id}}"{{#nick}} nick="{{.}}"{{/nick}}{{#roles}} roles="{{_toString}}"{{/roles}}>{{name}}</user>
+      <user id="{{pid}}"{{#nick}} nick="{{.}}"{{/nick}}{{#roles}} roles="{{_toString}}"{{/roles}}{{#isSelf}} self="true"{{/isSelf}}>{{name}}</user>
       {{/members}}
     </members>
     {{/members.length}}
     <history>
       {{#history}}
-      {{#is_dialogue_segment}}
-      <dialogue status="{{status}}" timestamp="{{timestamp}}">
+      <dialogue_segment id="{{id}}" status="{{status}}" timestamp="{{timestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
+        {{#summary}}
+        <summary>{{.}}</summary>
+        {{/summary}}
+        {{#dialogue.length}}
+        <dialogue>
         {{#dialogue}}
-        [{{id}}] {{timestamp}} {{sender.name}}: {{content}}
+          [{{timestamp}}] {{sender.name}}: {{content}}
         {{/dialogue}}
-      </dialogue>
-      {{#systemEvents.length}}
-      <system_events>
+        </dialogue>
+        {{/dialogue.length}}
+        {{#systemEvents.length}}
+        <system_events>
         {{#systemEvents}}
-        <event type="{{type}}" timestamp="{{timestamp}}">{{payload}}</event>
+          <event type="{{type}}" timestamp="{{timestamp}}">{{payload}}</event>
         {{/systemEvents}}
-      </system_events>
-      {{/systemEvents.length}}
-      {{/is_dialogue_segment}}
-      {{#is_agent_turn}}
-      {{#responses.length}}
-      <agent_turn status="{{status}}" timestamp="{{timestamp}}">
-        {{#responses}}
-        <response>
-        <thoughts>
-          <observe>{{thoughts.observe}}</observe>
-          <analyze_infer>{{thoughts.analyze_infer}}</analyze_infer>
-          <plan>{{thoughts.plan}}</plan>
-        </thoughts>
-        <actions>
-          {{#actions}}
-          <action id="{{function}}">
-            <function>{{function}}</function>
-            <params>{{_renderParams}}</params>
-          </action>
-          {{/actions}}
-        </actions>
-        <observations>
-          {{#observations}}
-          <observation id="{{function}}">
-            <function>{{function}}</function>
-            <status>{{status}}</status>
-            {{#result}}
-            <result>{{_toString}}</result>
-            {{/result}}
-            {{#error}}
-            <error>{{_toString}}</error>
-            {{/error}}
-          </observation>
-          {{/observations}}
-        </observations>
-        </response>
-        {{/responses}}
-      </agent_turn>
-      {{/responses.length}}
-      {{/is_agent_turn}}
+        </system_events>
+        {{/systemEvents.length}}
+        {{#agentTurn.responses.length}}
+        {{#agentTurn}}
+        <agent_turn timestamp="{{timestamp}}">
+          {{#responses}}
+          <response>
+            <thoughts>
+              <observe>{{thoughts.observe}}</observe>
+              <analyze_infer>{{thoughts.analyze_infer}}</analyze_infer>
+              <plan>{{thoughts.plan}}</plan>
+            </thoughts>
+            <actions>
+              {{#actions}}
+              <action>
+                <function>{{function}}</function>
+                <params>{{_renderParams}}</params>
+              </action>
+              {{/actions}}
+            </actions>
+            <observations>
+              {{#observations}}
+              <observation>
+                <function>{{function}}</function>
+                <status>{{status}}</status>
+                {{#result}}
+                <result>{{_toString}}</result>
+                {{/result}}
+                {{#error}}
+                <error>{{_toString}}</error>
+                {{/error}}
+              </observation>
+              {{/observations}}
+            </observations>
+          </response>
+          {{/responses}}
+        </agent_turn>
+        {{/agentTurn}}
+        {{/agentTurn.responses.length}}
+      </dialogue_segment>
       {{/history}}
     </history>
   </channel>

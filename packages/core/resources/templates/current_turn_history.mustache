@@ -1,0 +1,36 @@
+{{#CURRENT_CONVERSATION.history.length}}
+<current_turn_history>
+  <memo>This is the history of thoughts, actions, and observations within the CURRENT thinking cycle. Use this immediate feedback to plan your next step.</memo>
+  {{#CURRENT_CONVERSATION.history}}
+  <response>
+    <thoughts>
+      <observe>{{thoughts.observe}}</observe>
+      <analyze_infer>{{thoughts.analyze_infer}}</analyze_infer>
+      <plan>{{thoughts.plan}}</plan>
+    </thoughts>
+    <actions>
+      {{#actions}}
+      <action>
+        <function>{{function}}</function>
+        <params>{{_renderParams}}</params>
+      </action>
+      {{/actions}}
+    </actions>
+    <observations>
+      {{#observations}}
+      <observation>
+        <function>{{function}}</function>
+        <status>{{status}}</status>
+        {{#result}}
+        <result>{{_toString}}</result>
+        {{/result}}
+        {{#error}}
+        <error>{{_toString}}</error>
+        {{/error}}
+      </observation>
+      {{/observations}}
+    </observations>
+  </response>
+  {{/CURRENT_CONVERSATION.history}}
+</current_turn_history>
+{{/CURRENT_CONVERSATION.history.length}}
