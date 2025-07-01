@@ -7,6 +7,8 @@ import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
 
+import type { ToolCallResult } from "koishi-plugin-yesimbot/services";
+
 // MCP 连接管理器
 export class MCPManager {
     private logger: Logger;
@@ -136,7 +138,7 @@ export class MCPManager {
                 description: tool.description,
             },
             parameters: enhancedSchema,
-            execute: async (params: any) => {
+            execute: async (ctx: any, params: any) => {
                 return await this.executeTool(client, tool.name, params);
             },
         });
@@ -148,7 +150,7 @@ export class MCPManager {
     /**
      * 执行工具
      */
-    private async executeTool(client: Client, toolName: string, params: any): Promise<any> {
+    private async executeTool(client: Client, toolName: string, params: any): Promise<ToolCallResult> {
         let timer: NodeJS.Timeout | null = null;
         let timeoutTriggered = false;
 
@@ -181,15 +183,15 @@ export class MCPManager {
             if (result.isError) {
                 const errorMsg = result.error || content;
                 this.logger.error(`工具执行失败: ${errorMsg}`);
-                return { success: false, error: errorMsg };
+                return { status: "failed", error: errorMsg as string };
             }
 
             this.logger.success(`工具 ${toolName} 执行成功`);
-            return { success: true, result: content };
+            return { status: "success", result: content as any };
         } catch (error) {
             if (timer) clearTimeout(timer);
             this.logger.error(`工具执行异常: ${error.message}`);
-            return { success: false, error: error.message };
+            return { status: "failed", error: error.message };
         }
     }
 

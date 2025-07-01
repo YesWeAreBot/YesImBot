@@ -29,6 +29,17 @@
     "url": "git+https://github.com/HydroGest/YesImBot.git",
     "directory": "packages/core"
   },
+  "exports": {
+    "./package.json": "./package.json",
+    "./services": {
+      "import": "./lib/services/index.js",
+      "types": "./lib/services/index.d.ts"
+    },
+    "./shared": {
+      "import": "./lib/shared/index.js",
+      "types": "./lib/shared/index.d.ts"
+    }
+  },
   "dependencies": {
     "jsonrepair": "^3.12.0",
     "lru-cache": "^11.1.0",
@@ -42,12 +53,12 @@
     "@xsai-ext/providers-local": "^0.2.2",
     "@xsai-ext/shared-providers": "^0.2.2",
     "@xsai/utils-reasoning": "^0.2.2",
-    "koishi": "^4.18.7",
+    "koishi": "^4.18.8",
     "koishi-plugin-adapter-onebot": "^6.8.0",
     "xsai": "^0.2.2"
   },
   "peerDependencies": {
-    "koishi": "^4.18.7"
+    "koishi": "^4.18.8"
   },
   "koishi": {
     "description": {
