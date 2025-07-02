@@ -1,6 +1,7 @@
 import { Schema } from "koishi";
 import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
 import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extensions";
+import { ImageServiceConfig, ImageServiceConfigSchema } from "./services/image";
 import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
 import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
@@ -80,6 +81,8 @@ export interface Config {
         /** 对话历史记录的管理方式 */
         history: HistoryConfig;
     };
+    /** 图片服务配置 */ // 新增
+    imageService: ImageServiceConfig; // 新增
     /** 系统缓存、调试等底层设置 */
     system: SystemConfig;
 }
@@ -92,5 +95,6 @@ export const Config: Schema<Config> = Schema.object({
         tools: ToolServiceConfigSchema.description("工具能力配置"),
         history: HistoryConfigSchema.description("对话历史记录的管理方式"),
     }),
+    imageService: ImageServiceConfigSchema.description("图片服务配置"),
     system: SystemConfigSchema,
 });

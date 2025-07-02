@@ -81,6 +81,22 @@ export const WillingnessConfigSchema = Schema.object({
         .description("高级选项"),
 });
 
+/** [新增] 视觉与多模态相关配置 */
+export interface VisionConfig {
+    /** 允许在上下文中包含的最大图片数量 */
+    maxImagesInContext: number;
+    /**
+     * 图片在上下文中的最大生命周期。
+     * 一张图片在上下文中出现 N 次后将被视为“过期”，除非它被引用。
+     */
+    imageLifecycleCount: number;
+}
+
+export const VisionConfigSchema = Schema.object({
+    maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量。"),
+    imageLifecycleCount: Schema.number().default(2).description("图片的上下文生命周期（出现次数）。超过此次数的图片将被忽略，除非被引用。"),
+}).description("视觉与多模态配置");
+
 /**
  * 智能体行为总体配置
  * UI 建议: 分成 "唤醒条件" 和 "响应意愿" 两个子板块。
@@ -93,6 +109,7 @@ export interface AgentBehaviorConfig {
         systemTemplate: string;
         userTemplate: string;
     };
+    vision: VisionConfig;
     readonly system?: SystemConfig;
 }
 
@@ -110,4 +127,6 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
             .role("textarea", { rows: [2, 4] })
             .description("用户提示词模板"),
     }).description("提示词模板"),
+    /** [新增] 视觉配置 Schema */
+    vision: VisionConfigSchema,
 });

@@ -2,19 +2,10 @@
  * @file database-models.ts
  * @description 定义插件的数据库模型 (DTOs) 和表结构。
  */
+import { TableName } from "../types";
 import { Action, ActionResult, AgentResponse } from "./agent-response-types";
-import { EventName } from './event-types';
-import { DialogueSegmentStatus, Sender, AgentTurn } from './interfaces';
-
-/**
- * 集中管理所有数据库表的名称，防止拼写错误并方便重构。
- */
-export enum TableName {
-    Members = "worldstate.members",
-    DialogueSegments = "worldstate.dialogue_segments",
-    Messages = "worldstate.messages",
-    SystemEvents = "worldstate.system_events",
-}
+import { EventName } from "./event-types";
+import { DialogueSegmentStatus, Sender, AgentTurn } from "./interfaces";
 
 // --- 数据库表的数据传输对象 (DTOs) ---
 
