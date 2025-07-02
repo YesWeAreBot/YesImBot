@@ -1,11 +1,11 @@
 import { Context, Random, Service, Session } from "koishi";
+import { ChannelDescriptor } from "../../agent";
 import { ChatModel, ModelGroup } from "../model";
-import { Services } from "../types";
+import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
-import { DialogueSegmentData, TableName } from "./database-models";
+import { DialogueSegmentData } from "./database-models";
 import { AgentTurn, Channel, DialogueSegment, GuildMember, Sender, WorldState } from "./interfaces";
-import { ChannelDescriptor } from "../../agent";
 
 declare module "koishi" {
     interface Context {
@@ -23,7 +23,7 @@ declare module "koishi" {
  * 负责收集、管理和提供 Agent 所需的上下文信息。
  */
 export class WorldStateService extends Service<HistoryConfig> {
-    static readonly inject = [Services.Model];
+    static readonly inject = [Services.Model, Services.Image];
     private disposer: (() => boolean)[] = [];
     private maintenanceInterval: NodeJS.Timeout;
     private chatModel: ChatModel;
@@ -285,7 +285,6 @@ export class WorldStateService extends Service<HistoryConfig> {
         return dialogueSegment;
     }
 
-    // ... 后续方法 (recordAgentTurn, getOpenSegment, onMessage, handleMaintenance, etc.) 保持不变 ...
     public async recordAgentTurn(segment: DialogueSegment, responses: AgentResponse[]): Promise<DialogueSegment> {
         const agentTurn: AgentTurn = {
             responses,
@@ -376,9 +375,18 @@ export class WorldStateService extends Service<HistoryConfig> {
             ]);
         }
 
+        // [核心修改] 调用转换函数
+        const transformedContent = await this._transformMessageContent(session);
+
+        // 如果转换后内容为空 (例如，只发送了一张加载失败的图片)，则不处理
+        if (!transformedContent) {
+            this.ctx.logger.debug(`Message ${session.messageId} resulted in empty content after transformation. Ignoring.`);
+            return;
+        }
+
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
 
-        // 使用新的 recordMessage 方法
+        // 使用新的 recordMessage 方法，并传入转换后的内容
         await this.recordMessage(segmentRecord.id, {
             id: session.messageId,
             platform: session.platform,
@@ -389,12 +397,48 @@ export class WorldStateService extends Service<HistoryConfig> {
                 roles: session.author.roles,
             },
             timestamp: new Date(session.timestamp),
-            content: session.content,
+            content: transformedContent, // 使用转换后的内容
             quoteId: session.quote?.id,
         });
 
         const dialogueSegment = await this.buildFullDialogueSegment(segmentRecord);
         this.ctx.emit("worldstate:segment-updated", session, dialogueSegment);
+    }
+
+    /**
+     * [重构] 转换会话内容，将图片等非文本元素处理为占位符
+     * @param session 当前会话
+     * @returns 转换后的纯文本内容
+     */
+    private async _transformMessageContent(session: Session): Promise<string> {
+        const imageService = this.ctx[Services.Image];
+        const contentParts: string[] = [];
+
+        for (const element of session.elements) {
+            switch (element.type) {
+                case "img":
+                    // 调用 ImageService 处理图片
+                    const placeholder = await imageService.processImageElement(element, session);
+                    if (placeholder) {
+                        contentParts.push(placeholder);
+                    }
+                    break;
+                case "at":
+                    // 保留 @ 信息
+                    contentParts.push(`<at id="${element.attrs.id}" name="${element.attrs.name}"/>`);
+                    break;
+                case "text":
+                    if (element.attrs.content) {
+                        contentParts.push(element.attrs.content.trim());
+                    }
+                    break;
+                default:
+                    // 对于其他未知元素，可以生成一个简单的占位符
+                    contentParts.push(`[${element.type}]`);
+                    break;
+            }
+        }
+        return contentParts.join(" ").trim();
     }
 
     private async handleMaintenance() {

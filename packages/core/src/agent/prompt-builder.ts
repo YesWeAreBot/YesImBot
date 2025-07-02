@@ -1,11 +1,12 @@
+import { readFileSync } from "fs";
 import { Context } from "koishi";
 import Mustache from "mustache";
-import { WorldState, DialogueSegment, AgentTurn, MemoryBlockData, AgentResponse } from "../services";
+import path from "path";
+import type { ImagePart, TextPart } from "xsai";
+import { AgentResponse, MemoryBlockData, WorldState } from "../services";
+import { AgentBehaviorConfig } from "./config";
 import { FlowAnalysis } from "./conversation-flow-analyzer";
 import { Willingness } from "./willingness-calculator";
-import { readFileSync } from "fs";
-import path from "path";
-import { AgentBehaviorConfig } from "./config";
 
 // 定义 PromptBuilder 需要的完整上下文
 export interface PromptContext {
@@ -23,6 +24,9 @@ export interface PromptContext {
         willingness: Willingness; // 用户意愿评估
     };
     previousResponses: AgentResponse[]; // Agent 最近的回合历史
+    multiModalData: {
+        images: (ImagePart | TextPart)[];
+    };
 }
 
 export class PromptBuilder {
@@ -71,7 +75,7 @@ export class PromptBuilder {
         this.partials.set(name, template);
     }
 
-    public async build(context: PromptContext): Promise<{ system: string; user: string }> {
+    public async build(context: PromptContext): Promise<{ system: string; user: string | (ImagePart | TextPart)[] }> {
         // --- 1. 准备渲染视图数据 ---
 
         // [NEW] 预处理 worldState，为当前 segment 添加标记
@@ -108,7 +112,25 @@ export class PromptBuilder {
         const systemPrompt = Mustache.render(this.systemTemplate, view, partials);
         const userPrompt = Mustache.render(this.userTemplate, view, partials);
 
-        return { system: systemPrompt, user: userPrompt };
+        let userMessage: string | (ImagePart | TextPart)[];
+
+        // 判断是否为多模态场景
+        if (context.multiModalData && context.multiModalData.images.length > 0) {
+            // --- 多模态路径 ---
+            this.ctx.logger.info("Building prompt for multimodal scenario.");
+
+            userMessage = [
+                { type: "text", text: MultiModalSystemBaseTemplate },
+                ...context.multiModalData.images,
+                { type: "text", text: userPrompt },
+            ];
+        } else {
+            // --- 纯文本路径 (保持旧逻辑) ---
+            this.ctx.logger.info("Building prompt for text-only scenario.");
+            userMessage = userPrompt;
+        }
+
+        return { system: systemPrompt, user: userMessage };
     }
 }
 
@@ -121,3 +143,4 @@ function _toString(obj) {
 // TODO: 确保这些文件路径是正确的，并且模板内容已包含对 new WorldState 结构的支持
 export const SystemBaseTemplate = readFileSync(path.resolve(__dirname, "../../resources/prompts/memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(__dirname, "../../resources/prompts/user_base.txt"), "utf-8");
+export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'. In the subsequent conversation text, placeholders in the format <image id="[ID]"/> will be used to refer to these images. Please participate in the conversation considering the full context of both images and text.`;

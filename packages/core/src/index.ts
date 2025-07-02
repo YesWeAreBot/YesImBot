@@ -1,7 +1,7 @@
 import { Context, Service } from "koishi";
 import { AgentCore } from "./agent";
 import { Config } from "./config";
-import { MemoryService, ModelService, ToolService, WorldStateService } from "./services";
+import { ImageService, MemoryService, ModelService, ToolService, WorldStateService } from "./services";
 
 declare module "koishi" {
     interface Context {
@@ -20,6 +20,9 @@ export default class YesImBot extends Service<Config> {
 官方交流 & 测试群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)`;
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
+
+        // [新增] 注册图片服务，应在 WorldStateService 之前
+        ctx.plugin(ImageService, config.imageService);
 
         // 注册工具管理器
         ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });
@@ -44,8 +47,8 @@ export default class YesImBot extends Service<Config> {
         ctx.on("ready", async () => {
             // 注册指令
             // ctx.plugin(require("./commands/cache"));
-            ctx.plugin(require("./commands/config"), config);
-            ctx.plugin(require("./commands/extension"));
+            // ctx.plugin(require("./commands/config"), config);
+            // ctx.plugin(require("./commands/extension"));
 
             ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
         });

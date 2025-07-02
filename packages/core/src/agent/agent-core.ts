@@ -1,4 +1,4 @@
-import { Context, Random, Schema, Service, Session } from "koishi";
+import { Context, h, Random, Schema, Service, Session } from "koishi";
 import {
     AgentResponse,
     createTool,
@@ -19,11 +19,12 @@ import { ConversationFlowAnalyzer, FlowAnalysis } from "./conversation-flow-anal
 import { PromptBuilder, PromptContext } from "./prompt-builder";
 import { Willingness, WillingnessCalculator } from "./willingness-calculator";
 import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
+import { ImagePart, TextPart } from "xsai";
 
 const LOG_PREFIX = "[AgentCore]";
 
 export class AgentCore extends Service<AgentBehaviorConfig> {
-    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory];
+    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;
@@ -69,7 +70,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         this.ctx.on("worldstate:segment-updated", (session, segment) => {
             try {
-                if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
+                // 从 worldstate 接收到的消息即为过滤后的，在回复列表中
+                // if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
                 this.handleSegmentUpdate(session, segment);
             } catch (error) {
                 this.handleError(error, "handling segment update");
@@ -95,10 +97,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             });
         });
         this.ctx.logger.debug(`Allowed channels updated. Total: ${this.allowedChannels.size}`);
-    }
-
-    private isChannelAllowed(platform: string, channelId: string): boolean {
-        return this.allowedChannels.has(`${platform}:${channelId}`);
     }
 
     private startWillingnessDecay(): void {
@@ -263,6 +261,46 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         const worldState = await this.worldState.getWorldState(allowedChannels || []);
 
+        // [核心修改] 提取图片并构建多模态内容
+        const imageService = this.ctx[Services.Image];
+        const imagePlaceholders = new Set<string>();
+
+        // 1. 扫描历史记录，提取所有唯一的图片ID，并构建纯文本历史
+        for (const channel of worldState.activeChannels) {
+            for (const seg of channel.history) {
+                for (const msg of seg.dialogue) {
+                    const elements = h.parse(msg.content);
+                    const imageElements = elements.filter((e) => e.type === "img" || e.type === "image");
+                    if (imageElements.length > 0) {
+                        for (const img of imageElements) {
+                            imagePlaceholders.add(img.attrs.id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 根据图片ID获取图片内容
+        const multiModalContent: (ImagePart | TextPart)[] = [];
+        if (imagePlaceholders.size > 0) {
+            this.logger.info(`Found ${imagePlaceholders.size} unique images in context.`);
+            const imageFetchPromises = Array.from(imagePlaceholders).map((id) => imageService.getImageDataWithContent(id));
+            const imageDataResults = await Promise.all(imageFetchPromises);
+
+            for (const result of imageDataResults) {
+                if (result) {
+                    multiModalContent.push({
+                        type: "text",
+                        text: `Image #${result.data.id}`,
+                    });
+                    multiModalContent.push({
+                        type: "image_url",
+                        image_url: { url: result.content },
+                    });
+                }
+            }
+        }
+
         // [NEW] 核心逻辑：在 worldState 中查找并标记当前 segment
         for (const channel of worldState.activeChannels) {
             const currentSegmentInHistory = channel.history.find((s) => s.id === segment.id);
@@ -283,7 +321,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 analysis: analysis,
                 willingness: willingness,
             },
+
             previousResponses: previousResponses,
+            multiModalData: {
+                images: multiModalContent,
+            },
         };
     }
 
