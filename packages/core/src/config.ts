@@ -1,88 +1,96 @@
 import { Schema } from "koishi";
+import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
+import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extensions";
+import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
+import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
+import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
 
-import { AgentConfig, AgentConfigSchema } from "./agent/config";
-import {
-    defaultCompressionPrompt,
-    MemoryServiceConfig,
-    ModelServiceConfig,
-    ModelServiceConfigSchema,
-    PlatformServiceConfig,
-    PlatformServiceConfigSchema,
-    ToolServiceConfig,
-    WorldStateConfig,
-    WorldStateConfigSchema,
-} from "./services";
+/**
+ * 定义日志级别
+ */
+export type LogLevel = "debug" | "info" | "warn" | "error";
 
-export interface Config {
-    Agent: AgentConfig;
-    ModelService: ModelServiceConfig;
-    Platform: PlatformServiceConfig;
-    Memory: MemoryServiceConfig;
-    ToolService: ToolServiceConfig;
-    WorldState: WorldStateConfig;
-    Debug: {
-        EnableDebug: boolean;
-        UploadDump: boolean;
+/**
+ * 全局日志配置
+ */
+export interface LoggingConfig {
+    /**
+     * 全局日志级别。各个服务可以有自己的覆盖设置。
+     * UI 建议: 一个下拉菜单
+     */
+    level: LogLevel;
+
+    /**
+     * 是否在 Agent 响应中包含详细的决策过程信息。
+     * 这个配置与 Agent 行为紧密相关，但从控制日志的角度看，放在这里作为全局开关更合适。
+     */
+    logDecisionDetails: boolean;
+}
+
+export interface SystemConfig {
+    /** 平台服务缓存配置 */
+    cache: {
+        ttlSeconds: number;
+        maxSize: number;
+    };
+    /** 全局日志配置 */
+    logging: LoggingConfig;
+    /** 调试与诊断 */
+    debug: {
+        /**
+         * 启用全局调试模式。会覆盖 logging.level 为 'debug'。
+         * 这通常意味着更详细的内部状态输出。
+         */
+        enable: boolean;
+        /** 应用出错时自动上报详细日志给开发者 */
+        uploadDump: boolean;
     };
 }
 
+export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
+    cache: Schema.object({
+        ttlSeconds: Schema.number()
+            .default(6 * 60 * 60)
+            .description("缓存存活时间 (秒)"),
+        maxSize: Schema.number().default(1000).description("缓存最大项目数"),
+    }).description("平台服务缓存配置"),
+    logging: Schema.object({
+        level: Schema.union(["debug", "info", "warn", "error"]).default("info").description("全局日志级别"),
+        logDecisionDetails: Schema.boolean().default(false).description("在 Agent 响应中包含详细的决策过程信息"),
+    }).description("日志配置"),
+    debug: Schema.object({
+        enable: Schema.boolean().default(false).description("启用全局调试模式"),
+        uploadDump: Schema.boolean().default(false).description("应用出错时自动上报详细日志给开发者（包含聊天内容和 LLM 输出）"),
+    }).description("调试与诊断"),
+});
+
+// =================================================================
+// 3. 根配置对象 (Root Configuration Object)
+// =================================================================
+
+export interface Config {
+    /** AI 模型、API密钥和模型组配置 */
+    modelService: ModelServiceConfig;
+    /** 智能体的性格、唤醒和响应逻辑 */
+    agentBehavior: AgentBehaviorConfig;
+    /** 记忆、工具等扩展能力配置 */
+    capabilities: {
+        memory: MemoryConfig;
+        tools: ToolServiceConfig;
+        /** 对话历史记录的管理方式 */
+        history: HistoryConfig;
+    };
+    /** 系统缓存、调试等底层设置 */
+    system: SystemConfig;
+}
+
 export const Config: Schema<Config> = Schema.object({
-    Agent: AgentConfigSchema.description("Agent 配置"),
-
-    ModelService: ModelServiceConfigSchema.description("模型服务"),
-
-    Platform: PlatformServiceConfigSchema,
-
-    Memory: Schema.object({
-        Block: Schema.dict(
-            Schema.object({
-                Limit: Schema.number().min(0).default(5000).description("长度限制"),
-                FilePathToBind: Schema.path({
-                    allowCreate: true,
-                    filters: ["directory", { name: "text", extensions: ["txt"] }],
-                })
-                    .required()
-                    .description("文件路径"),
-            }).description("记忆类型")
-        )
-            .role("table")
-            .default({
-                human: { Limit: 5000, FilePathToBind: "data/yesimbot/memory/human.txt" },
-                persona: { Limit: 2000, FilePathToBind: "data/yesimbot/memory/persona.txt" },
-            })
-            .description("记忆文件存储路径配置，键为记忆类型，值为文件路径"),
-        Compression: Schema.object({
-            Lines: Schema.number().min(0).default(500).description("记忆块内容超过多少行时触发压缩汇总 (0为禁用)"),
-            Characters: Schema.number().min(0).default(20000).description("记忆块内容超过多少字符时触发压缩汇总 (0为禁用)"),
-            IntervalMessages: Schema.number().min(0).default(0).description("每追加多少条消息后触发压缩汇总 (0为禁用)"),
-            IntervalMinutes: Schema.number().min(0).default(0).description("每间隔多少分钟后触发压缩汇总 (0为禁用)"),
-            CompressibleBlocks: Schema.array(String).default(["human"]).description("哪些 core memory block 启用压缩"),
-            CustomPrompt: Schema.string()
-                .default(defaultCompressionPrompt)
-                .role("textarea", { rows: [2, 4] })
-                .description("自定义提示词"),
-        }).description("记忆压缩配置"),
-        Backup: Schema.object({
-            Enabled: Schema.boolean().default(true),
-            BackupPath: Schema.string().default("data/yesimbot/memory/.backup"),
-        }),
-    }).description("记忆设置"),
-
-    ToolService: Schema.object({
-        MaxRetry: Schema.number().min(0).default(3).description("工具调用最大重试次数"),
-        RetryDelayMs: Schema.number().min(0).default(1000).description("工具调用重试延迟时间（毫秒）"),
-        AutoLoad: Schema.boolean().default(true),
-        ExtensionPaths: Schema.array(String).default([]),
-        LogLevel: Schema.union(["debug", "info", "warn", "error"]).default("info"),
-        Timeout: Schema.number().default(30000),
-        HotReload: Schema.boolean().default(true),
-        ValidateTypes: Schema.boolean().default(true),
+    modelService: ModelServiceConfigSchema.description("AI 模型、API密钥和模型组配置"),
+    agentBehavior: AgentBehaviorConfigSchema,
+    capabilities: Schema.object({
+        memory: MemoryConfigSchema.description("记忆能力配置"),
+        tools: ToolServiceConfigSchema.description("工具能力配置"),
+        history: HistoryConfigSchema.description("对话历史记录的管理方式"),
     }),
-
-    WorldState: WorldStateConfigSchema,
-
-    Debug: Schema.object({
-        EnableDebug: Schema.boolean().default(false).description("在控制台显示详细的调试信息"),
-        UploadDump: Schema.boolean().default(false).description("应用出错时自动上报详细日志给开发者（包含聊天内容和 LLM 输出）"),
-    }).description("调试和诊断配置"),
+    system: SystemConfigSchema,
 });

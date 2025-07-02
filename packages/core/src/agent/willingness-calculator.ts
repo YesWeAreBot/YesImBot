@@ -1,19 +1,6 @@
 import { Context } from "koishi";
 import { FlowAnalysis } from "./conversation-flow-analyzer";
-
-export interface WillingnessConfig {
-    TestMode: boolean;
-    AtMentionProbability: number;
-    Threshold: number;
-    Weight: {
-        BaseMessage: number;
-        AtMention: number;
-        Keyword: number;
-    };
-    DecayPerMinute: number;
-    RetentionAfterReply: number;
-    Keywords: string[];
-}
+import { WillingnessConfig } from "./config";
 
 // 定义意愿计算结果的接口
 export interface Willingness {
@@ -30,14 +17,14 @@ export class WillingnessCalculator {
      * 新的核心方法：计算行动意愿
      */
     public calculate(analysis: FlowAnalysis, currentWillingness: number /* TODO: 以后加入 agentState */): Willingness {
-        const weights = this.config.Weight;
+        const weights = this.config.weights;
         let baseWillingness = 0;
         const reasons: string[] = [];
 
         // 1. 基于 @提及 的计算
         if (analysis.isAgentMentioned) {
-            baseWillingness += weights.AtMention;
-            reasons.push(`Agent被提及 (w+${weights.AtMention})`);
+            baseWillingness += weights.atMention;
+            reasons.push(`Agent被提及 (w+${weights.atMention})`);
         }
 
         // 2. 基于对话强度的计算
@@ -62,10 +49,10 @@ export class WillingnessCalculator {
 
         // 5. 限制最终值在 0-1 之间
         const finalWillingness = Math.max(0, Math.min(1, baseWillingness));
-        const threshold = this.config.Threshold;
+        const threshold = this.config.threshold;
         let shouldAct = finalWillingness >= threshold;
 
-        if (this.config.TestMode) {
+        if (this.config.advanced.testMode) {
             shouldAct = true;
             reasons.push("测试模式，强制回复");
         }

@@ -4,9 +4,9 @@ import { IProviderClient, IProviderFactory } from "./base";
 
 export class OllamaFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { BaseURL } = config;
+        const { baseURL } = config;
         // Ollama 提供 Chat 和 Embedding
-        const client = createOllama(BaseURL);
+        const client = createOllama(baseURL);
         return {
             chat: client,
             embed: client,

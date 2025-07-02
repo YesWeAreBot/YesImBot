@@ -1,129 +1,138 @@
 import { Schema } from "koishi";
+import { SystemConfig } from "../../config";
 
-export enum Ability {
-    Vision = 1 << 0, // 视觉
-    WebSearch = 1 << 1, // 联网
-    Reasoning = 1 << 2, // 推理
-    FunctionCalling = 1 << 3, // 工具
-    Embedding = 1 << 4, // 嵌入
+// =================================================================
+// 1. 核心与共享类型 (Core & Shared Types)
+// =================================================================
+
+/** 描述一个模型在特定提供商中的位置 */
+export type ModelDescriptor = {
+    providerName: string;
+    modelId: string;
+};
+
+/** 定义模型支持的能力 (使用位操作) */
+export enum ModelAbility {
+    Vision = 1 << 0,
+    WebSearch = 1 << 1,
+    Reasoning = 1 << 2,
+    FunctionCalling = 1 << 3,
+    Embedding = 1 << 4,
 }
+
+// =================================================================
+// 2. 配置项 - 按UI逻辑分组
+// =================================================================
+
+// ------------------- 模块一: 模型服务 (Model Service) - 用户最先关心的部分 -------------------
 
 export interface ModelConfig {
-    ModelID: string;
-    Ability: number;
-    // 模型特定的参数
-    Temperature?: number;
-    TopP?: number;
-    Stream?: boolean;
-    CustomParameters?: { key: string; type: "文本" | "数字" | "布尔值" | "JSON"; value: string }[];
+    modelId: string;
+    abilities: ModelAbility[];
+    parameters?: {
+        temperature?: number;
+        topP?: number;
+        stream?: boolean;
+        custom?: { [key: string]: { type: "string" | "number" | "boolean" | "object"; value: any } };
+    };
 }
+
+export const ModelConfigSchema = Schema.object({
+    modelId: Schema.string().required(),
+    abilities: Schema.array(
+        Schema.union([
+            Schema.const(ModelAbility.Vision).description("视觉能力"),
+            Schema.const(ModelAbility.WebSearch).description("网络搜索能力"),
+            Schema.const(ModelAbility.Reasoning).description("推理能力"),
+            Schema.const(ModelAbility.FunctionCalling).description("函数调用能力"),
+            Schema.const(ModelAbility.Embedding).description("嵌入能力"),
+        ])
+    )
+        .role("checkbox")
+        .default([ModelAbility.FunctionCalling])
+        .description("模型支持的能力"),
+    parameters: Schema.object({
+        temperature: Schema.number().default(1.36),
+        topP: Schema.number().default(0.8),
+        stream: Schema.boolean().default(true).description("流式传输"),
+        custom: Schema.dict(
+            Schema.object({
+                type: Schema.union(["string", "number", "boolean", "object"]).required(),
+                value: Schema.any().required(),
+            })
+        )
+            .role("table")
+            .description("自定义参数"),
+    }),
+})
+    .collapse()
+    .description("单个模型配置");
 
 export interface ProviderConfig {
-    Name: string;
-    Enabled?: boolean;
-    Type:
-        | "OpenAI"
-        | "OpenAI Compatible"
-        | "Anthropic"
-        | "Google Gemini"
-        | "OpenRouter"
-        | "SiliconFlow"
-        | "XAI"
-        | "DeepSeek"
-        | "Zhipu"
-        | "LMStudio"
-        | "Ollama"
-        | "Qwen"
-        | "Cloudflare WorkersAI";
-    BaseURL?: string;
-    APIKey: string;
-    Proxy?: string;
-    Models: ModelConfig[];
+    name: string; // 唯一标识符
+    enabled?: boolean;
+    type: "OpenAI" | "Anthropic" | "Google Gemini" | "Ollama" | "OpenAI Compatible";
+    baseURL?: string;
+    apiKey: string;
+    proxy?: string;
+    models: ModelConfig[];
 }
 
+export const ProviderConfigSchema = Schema.object({
+    name: Schema.string().required().description("提供商名称"),
+    enabled: Schema.boolean().default(true).description("是否启用"),
+    type: Schema.union(["OpenAI", "Anthropic", "Google Gemini", "Ollama", "OpenAI Compatible"]).default("OpenAI").description("提供商类型"),
+    baseURL: Schema.string().description("提供商的 API 地址"),
+    apiKey: Schema.string().required().role("secret").description("提供商的 API 密钥"),
+    proxy: Schema.string().description("代理地址"),
+    models: Schema.array(ModelConfigSchema).description("模型列表"),
+})
+    .collapse()
+    .description("提供商配置");
+
+/**
+ * 模型服务总体配置
+ * UI 建议:
+ * 1. "Providers" 部分让用户添加、编辑、删除提供商列表。
+ * 2. "Model Groups" 部分让用户创建新组，并从已启用的 Provider 的模型中拖拽或选择模型加入。
+ * 3. "Task Assignments" 部分为每个任务提供一个下拉菜单，选项为上面创建的 Model Groups。
+ */
 export interface ModelServiceConfig {
-    Providers: ProviderConfig[];
-    ModelGroup: {
-        Name: string;
-        Models: ModelDescriptor[];
-    }[];
-    ChatModelGroup: string;
-    EmbedModelGroup: string;
-    SummarizationModelGroup: string;
+    /** 配置你的 AI 模型提供商，如 OpenAI, Anthropic 等 */
+    providers: ProviderConfig[];
+    /** 创建模型组，用于故障转移或分类。键是组名。 */
+    modelGroups: Record<string, ModelDescriptor[]>;
+    /** 为不同核心任务分配一个模型组 */
+    taskAssignments: {
+        /** 主要聊天功能使用的模型组 */
+        chat: string;
+        /** 生成文本嵌入(Embedding)时使用的模型组 */
+        embedding: string;
+        /** 对话历史总结时使用的模型组 */
+        summarization: string;
+    };
+    readonly system?: SystemConfig;
 }
-
-export type ModelDescriptor = { ProviderName: string; ModelId: string };
-
-export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
-    ModelID: Schema.string().required().description("模型 ID"),
-    Ability: Schema.bitset(Ability).default(Ability.FunctionCalling).description("选择模型能力组合"),
-    Temperature: Schema.number()
-        .min(0)
-        .max(2)
-        .default(0.7)
-        .role("slider")
-        .step(0.01)
-        .description("模型温度 | 生成文本的随机性，值越大越随机。"),
-    TopP: Schema.number().min(0).max(1).default(0.9).role("slider").step(0.01).description("Top-p 采样参数，控制生成文本的多样性"),
-    Stream: Schema.boolean().default(true).description("是否启用流式输出"),
-    CustomParameters: Schema.array(
-        Schema.object({
-            key: Schema.string().required().description("参数名"),
-            type: Schema.union(["文本", "数字", "布尔值", "JSON"]).default("文本").description("参数类型"),
-            value: Schema.string().required().description("参数值"),
-        })
-    )
-        .role("table")
-        .description("自定义参数（例如：stop、presence_penalty 等）")
-        .collapse(),
-}).description("模型配置");
-
-export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.object({
-    Name: Schema.string().required().description("提供商的唯一名称，例如 'my-openai'"),
-    Enabled: Schema.boolean().default(true).description("是否启用此提供商"),
-    Type: Schema.union([
-        "OpenAI",
-        "OpenAI Compatible",
-        "Anthropic",
-        "Google Gemini",
-        "OpenRouter",
-        "SiliconFlow",
-        "XAI",
-        "DeepSeek",
-        "Zhipu",
-        "LMStudio",
-        "Ollama",
-        "Qwen",
-        "Cloudflare WorkersAI",
-    ])
-        .default("OpenAI")
-        .description("提供商类型"),
-    BaseURL: Schema.string().default("https://api.openai.com/v1").description("API 服务地址"),
-    APIKey: Schema.string().required().role("secret").description("API 密钥"),
-    Models: Schema.array(ModelConfigSchema).description("该提供商下的模型列表"),
-    Proxy: Schema.string()
-        .pattern(
-            /^(?:(http[s]?|socks[45]|ftp|ssh):\/\/)?(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])|localhost|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}|[a-zA-Z0-9-]{1,63}\):(?:6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9]\d{0,3})$/i
-        )
-        .description("代理地址"),
-}).collapse(true);
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
-    Providers: Schema.array(ProviderConfigSchema).description("模型提供商列表"),
-    ModelGroup: Schema.array(
-        Schema.object({
-            Name: Schema.string().required().description("模型组名称"),
-            Models: Schema.array(
-                Schema.object({
-                    ProviderName: Schema.string().required().description("提供商名称"),
-                    ModelId: Schema.string().required().description("模型ID"),
-                })
-            )
-                .role("table")
-                .description("该组包含的模型列表"),
-        })
-    ).description("模型组列表"),
-    ChatModelGroup: Schema.string().required().description("默认对话模型组"),
-    EmbedModelGroup: Schema.string().required().description("默认嵌入模型组"),
-    SummarizationModelGroup: Schema.string().required().description("默认摘要模型组"),
-}).description("模型服务全局配置");
+    providers: Schema.array(ProviderConfigSchema)
+        .required()
+        .role("table")
+        .collapse()
+        .description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
+    modelGroups: Schema.dict(
+        Schema.array(
+            Schema.object({
+                providerName: Schema.string().required().description("提供商名称"),
+                modelId: Schema.string().required().description("模型ID"),
+            })
+        ).role("table")
+    )
+        .required()
+        .description("创建模型组，用于故障转移或分类。键是组名。"),
+    taskAssignments: Schema.object({
+        chat: Schema.string().required().description("主要聊天功能使用的模型组"),
+        embedding: Schema.string().required().description("生成文本嵌入(Embedding)时使用的模型组"),
+        summarization: Schema.string().required().description("对话历史总结时使用的模型组"),
+    }).description("为不同核心任务分配一个模型组"),
+});

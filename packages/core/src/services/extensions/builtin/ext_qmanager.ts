@@ -32,7 +32,7 @@ export const BanUser = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async (ctx, { user_id, duration, channel }) => {
-        const { koishiContext, koishiSession, platform } = ctx;
+        const { koishiContext, koishiSession } = ctx;
         if (isEmpty(user_id)) throw new Error("user_id is required");
         const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {

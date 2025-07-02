@@ -1,5 +1,4 @@
 import { Context, Logger, Schema, Session } from "koishi";
-import { PlatformService } from "../platform";
 
 /**
  * 扩展元数据
@@ -53,8 +52,6 @@ export interface ToolExecutionContext<TConfig = any> {
     koishiContext: Context;
     /** Koishi 会话 */
     koishiSession: Session;
-    /** 平台适配器 */
-    platform: PlatformService;
     /** 日志记录器 */
     logger?: Logger;
     /** 该工具所属扩展的配置 */
@@ -90,7 +87,7 @@ export interface ToolDefinition<TParams extends Schema = any, TReturns = any, TC
     parameters: TParams | { properties: { [key: string]: { type: StaticRange; description: string } } };
     execute: (
         context: ToolExecutionContext<TConfig>,
-        params: Schemastery.TypeS<TParams>,
+        params: Schemastery.TypeS<TParams>
     ) => Promise<ToolCallResult<TReturns>> | ToolCallResult<TReturns>;
     hooks?: {
         onRegister?: (context: ToolExecutionContext<TConfig>) => Promise<void> | void;
@@ -141,21 +138,6 @@ export interface ExecutableTool<TParams extends Schema<any> = any, TReturns = an
         };
     };
     execute: (params: Schemastery.TypeS<TParams>, runtimeContext: Partial<ToolExecutionContext>) => Promise<ToolCallResult<TReturns>>;
-}
-
-/**
- * 工具管理器配置
- */
-export interface ToolServiceConfig {
-    MaxRetry?: number;
-    RetryDelayMs?: number;
-    AutoLoad?: boolean;
-    ExtensionPaths?: string[];
-    LogLevel?: "debug" | "info" | "warn" | "error";
-    EnableMetrics?: boolean;
-    Timeout?: number;
-    HotReload?: boolean;
-    ValidateTypes?: boolean;
 }
 
 /**

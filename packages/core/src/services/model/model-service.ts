@@ -6,7 +6,7 @@ import { ProviderInstance } from "./impl/provider-instance";
 
 import { AnthropicFactory, OllamaFactory, OpenAIFactory } from "./factories";
 
-import { ModelDescriptor, ModelServiceConfig } from "./config";
+import { ModelConfigSchema, ModelDescriptor, ModelServiceConfig } from "./config";
 import { ChatModel } from "./impl/chat-model";
 
 declare module "koishi" {
@@ -15,14 +15,17 @@ declare module "koishi" {
     }
 }
 
-export class ModelService extends Service {
+export class ModelService extends Service<ModelServiceConfig> {
     // 工厂注册表
     private readonly providerFactories = new Map<string, IProviderFactory>();
     // 实例化的 Provider 缓存
     private readonly providerInstances = new Map<string, ProviderInstance>();
 
-    constructor(ctx: Context, public config: ModelServiceConfig) {
+    constructor(ctx: Context, config: ModelServiceConfig) {
         super(ctx, Services.Model, true);
+
+        this.ctx = ctx;
+        this.config = config;
 
         this.registerFactories();
         this.initializeProviders();
@@ -36,15 +39,15 @@ export class ModelService extends Service {
     }
 
     private initializeProviders(): void {
-        for (const providerConfig of this.config.Providers) {
-            if (!providerConfig.Enabled) {
-                this.ctx.logger.info("跳过禁用的提供商: {0}", providerConfig.Name);
+        for (const providerConfig of this.config.providers) {
+            if (!providerConfig.enabled) {
+                this.ctx.logger.info("跳过禁用的提供商: {0}", providerConfig.name);
                 continue;
             }
 
-            const factory = this.providerFactories.get(providerConfig.Type);
+            const factory = this.providerFactories.get(providerConfig.type);
             if (!factory) {
-                this.ctx.logger.warn("不支持的提供商类型: {0}", providerConfig.Type);
+                this.ctx.logger.warn("不支持的提供商类型: {0}", providerConfig.type);
                 continue;
             }
 
@@ -61,20 +64,20 @@ export class ModelService extends Service {
 
     public useGroup(name: string | symbol): ModelSwitcher {
         if (typeof name === "string") {
-            const group = this.config.ModelGroup.find((g) => g.Name === name);
+            const group = this.config.modelGroups[name];
             if (!group) {
                 this.ctx.logger.warn("未找到模型组: {0}", name);
                 return;
             }
-            return new ModelSwitcher(this.ctx, this, group.Models);
+            return new ModelSwitcher(this.ctx, this, group);
         } else {
             switch (name) {
                 case ModelGroup.Chat:
-                    return this.useGroup(this.config.ChatModelGroup);
+                    return this.useGroup(this.config.taskAssignments.chat);
                 case ModelGroup.Embedding:
-                    return this.useGroup(this.config.EmbedModelGroup);
+                    return this.useGroup(this.config.taskAssignments.embedding);
                 case ModelGroup.Summarization:
-                    return this.useGroup(this.config.SummarizationModelGroup);
+                    return this.useGroup(this.config.taskAssignments.summarization);
                 default:
                     this.ctx.logger.warn("未找到模型组: {0}", name);
                     return;
@@ -103,7 +106,7 @@ export class ModelSwitcher {
 
         this.models = modelGroup
             .map((descriptor) => {
-                const model = this.modelService.getChatModel(descriptor.ProviderName, descriptor.ModelId);
+                const model = this.modelService.getChatModel(descriptor.providerName, descriptor.modelId);
                 if (!model) {
                     this.ctx.logger.warn("未找到模型: {0}", descriptor);
                 }

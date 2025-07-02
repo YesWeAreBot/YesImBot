@@ -1,6 +1,7 @@
 import { Context, Service } from "koishi";
 import path from "path";
 import { Services } from "../types";
+import { ToolServiceConfig } from "./config";
 import { createExtension, defineExecutableTool, Failed, isValidExtension, isValidTool } from "./helpers";
 import {
     ExecutableTool,
@@ -12,7 +13,6 @@ import {
     ToolErrorType,
     ToolExecutionContext,
     ToolRegistrationOptions,
-    ToolServiceConfig,
 } from "./types";
 import { getExtensionFiles } from "./utils";
 
@@ -22,7 +22,7 @@ declare module "koishi" {
     }
 }
 
-export class ToolService extends Service {
+export class ToolService extends Service<ToolServiceConfig> {
     private loaded = false;
     private fileWatchers = new Map<string, any>();
 
@@ -35,11 +35,13 @@ export class ToolService extends Service {
     private categories = new Map<string, Set<string>>();
     private extensionConfigs = new Map<string, any>();
 
-    constructor(ctx: Context, public config: ToolServiceConfig) {
+    constructor(ctx: Context, config: ToolServiceConfig) {
         super(ctx, Services.Tool, true);
+        this.ctx = ctx;
+        this.config = config;
 
         ctx.on("ready", async () => {
-            if (this.config?.AutoLoad) await this.loadExtensions();
+            if (this.config?.autoLoad) await this.loadExtensions();
         });
         ctx.on("dispose", () => this.cleanup());
     }
@@ -74,7 +76,7 @@ export class ToolService extends Service {
                 throw new ToolError(ToolErrorType.LOAD_ERROR, `文件 ${fileName} 未包含任何有效的扩展或工具导出。`);
             }
             await this.registerExtension(extensionDef);
-            if (this.config.HotReload) this.setupFileWatcher(filePath);
+            if (this.config.advanced.hotReload) this.setupFileWatcher(filePath);
         } catch (error) {
             this.ctx.logger.error(`✗ 扩展加载失败: ${fileName} - ${(error as Error).message}`);
             this.ctx.logger.debug((error as Error).stack);
@@ -258,11 +260,11 @@ export class ToolService extends Service {
 
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
-        for (let attempt = 1; attempt <= this.config.MaxRetry + 1; attempt++) {
+        for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
             try {
                 if (attempt > 1) {
-                    this.ctx.logger.info(`  - Retrying (${attempt - 1}/${this.config.MaxRetry})...`);
-                    await new Promise((resolve) => setTimeout(resolve, this.config.RetryDelayMs));
+                    this.ctx.logger.info(`  - Retrying (${attempt - 1}/${this.config.advanced.maxRetry})...`);
+                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelayMs));
                 }
 
                 // 假设 tool.execute 需要一个上下文对象
@@ -287,7 +289,7 @@ export class ToolService extends Service {
         }
 
         this.ctx.logger.error(
-            `[TOOL_EXEC] ❌ Failed (Retries Exhausted) ← Tool '${functionName}' failed after ${this.config.MaxRetry} retries.`
+            `[TOOL_EXEC] ❌ Failed (Retries Exhausted) ← Tool '${functionName}' failed after ${this.config.advanced.maxRetry} retries.`
         );
         return lastResult;
     }

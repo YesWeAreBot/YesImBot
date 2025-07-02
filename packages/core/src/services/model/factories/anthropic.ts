@@ -4,8 +4,8 @@ import type { IProviderClient, IProviderFactory } from "./base";
 
 export class AnthropicFactory implements IProviderFactory {
     public createClient(config: ProviderConfig): IProviderClient {
-        const { APIKey, BaseURL } = config;
-        const client = createAnthropic(APIKey, BaseURL);
+        const { apiKey, baseURL } = config;
+        const client = createAnthropic(apiKey, baseURL);
 
         // Anthropic 的 xsai 实现目前只支持 chat
         return {

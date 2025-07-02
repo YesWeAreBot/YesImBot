@@ -1,8 +1,7 @@
 import { Context, Service } from "koishi";
-
 import { AgentCore } from "./agent";
 import { Config } from "./config";
-import { MemoryService, ModelService, PlatformService, ToolService, WorldStateService } from "./services";
+import { MemoryService, ModelService, ToolService, WorldStateService } from "./services";
 
 declare module "koishi" {
     interface Context {
@@ -27,19 +26,24 @@ export default class YesImBot extends Service {
         ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
 
         // 注册工具管理器
-        ctx.plugin(ToolService, config.ToolService);
+        ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });
 
         // 注册模型服务
-        ctx.plugin(ModelService, config.ModelService);
+        ctx.plugin(ModelService, { ...config.modelService, system: config.system });
 
         // 注册记忆管理层
-        ctx.plugin(MemoryService, config.Memory);
+        ctx.plugin(MemoryService, { ...config.capabilities.memory, system: config.system });
+
+        const allowedChannels: Set<string> = new Set();
+
+        for (const channelGroup of config.agentBehavior.arousal.allowedChannelGroups) {
+            for (const channel of channelGroup) {
+                allowedChannels.add(`${channel.platform}:${channel.id}`);
+            }
+        }
 
         // 注册 WorldState 服务
-        ctx.plugin(WorldStateService, config.WorldState);
-
-        // 注册平台适配器
-        ctx.plugin(PlatformService, config.Platform);
+        ctx.plugin(WorldStateService, { ...config.capabilities.history, allowedChannels, system: config.system });
 
         ctx.on("ready", async () => {
             // 注册指令
@@ -47,7 +51,7 @@ export default class YesImBot extends Service {
             ctx.plugin(require("./commands/config"), config);
             ctx.plugin(require("./commands/extension"));
 
-            ctx.plugin(AgentCore, config.Agent);
+            ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
         });
     }
 }

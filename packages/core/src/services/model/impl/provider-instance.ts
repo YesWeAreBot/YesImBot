@@ -1,7 +1,7 @@
 import { Context, Logger } from "koishi";
 import { ProxyAgent, fetch as ufetch } from "undici";
 import { isNotEmpty } from "../../../shared/utils";
-import { Ability, ProviderConfig } from "../config";
+import { ModelAbility, ProviderConfig } from "../config";
 import { IProviderClient } from "../factories/base";
 import { ChatModel } from "./chat-model";
 import { EmbedModel } from "./embed-model";
@@ -12,15 +12,15 @@ export class ProviderInstance {
     private logger: Logger;
 
     constructor(private ctx: Context, public readonly config: ProviderConfig, private readonly client: IProviderClient) {
-        this.name = config.Name;
+        this.name = config.name;
         this.logger = ctx.logger("model").extend(this.name);
         this.logger.info(`初始化提供商实例: "${this.name}"`);
 
-        if (isNotEmpty(this.config.Proxy)) {
+        if (isNotEmpty(this.config.proxy)) {
             // 设置支持代理的 fetch 函数
             this.fetch = (async (input, init) => {
-                this.logger.debug(`使用代理 "${this.config.Proxy}"`);
-                init = { ...init, dispatcher: new ProxyAgent(this.config.Proxy) };
+                this.logger.debug(`使用代理 "${this.config.proxy}"`);
+                init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
 
                 return await ufetch(input, init);
             }) as unknown as typeof globalThis.fetch;
@@ -40,7 +40,7 @@ export class ProviderInstance {
         }
 
         // 2. 在该 Provider 的配置中查找模型
-        const modelConfig = this.config.Models.find((m) => m.ModelID === modelId);
+        const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
             this.logger.debug(`未在提供商 "${this.name}" 中找到模型 ID "${modelId}"。`);
             return null;
@@ -64,14 +64,14 @@ export class ProviderInstance {
         }
 
         // 2. 在该 Provider 的配置中查找模型
-        const modelConfig = this.config.Models.find((m) => m.ModelID === modelId);
+        const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
             this.logger.debug(`未在提供商 "${this.name}" 中找到模型 ID "${modelId}"。`);
             return null;
         }
 
         // 3. 检查模型是否具有嵌入能力 (Ability.Embedding)
-        if (!(modelConfig.Ability & Ability.Embedding)) {
+        if (!modelConfig.abilities.includes(ModelAbility.Embedding)) {
             this.logger.debug(`模型 "${modelId}" 在提供商 "${this.name}" 中未声明 Embedding 能力。`);
             return null;
         }

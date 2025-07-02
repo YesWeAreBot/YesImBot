@@ -2,9 +2,10 @@ import { Context, Random, Service, Session } from "koishi";
 import { ChatModel, ModelGroup } from "../model";
 import { Services } from "../types";
 import { AgentResponse } from "./agent-response-types";
-import { WorldStateConfig } from "./config";
+import { HistoryConfig } from "./config";
 import { DialogueSegmentData, TableName } from "./database-models";
 import { AgentTurn, Channel, DialogueSegment, GuildMember, Sender, WorldState } from "./interfaces";
+import { ChannelDescriptor } from "../../agent";
 
 declare module "koishi" {
     interface Context {
@@ -21,14 +22,16 @@ declare module "koishi" {
  * WorldState 服务
  * 负责收集、管理和提供 Agent 所需的上下文信息。
  */
-export class WorldStateService extends Service {
+export class WorldStateService extends Service<HistoryConfig> {
     static readonly inject = [Services.Model];
     private disposer: (() => boolean)[] = [];
     private maintenanceInterval: NodeJS.Timeout;
     private chatModel: ChatModel;
 
-    constructor(ctx: Context, public config: WorldStateConfig) {
+    constructor(ctx: Context, config: HistoryConfig) {
         super(ctx, Services.WorldState, true);
+        this.ctx = ctx;
+        this.config = config;
         this.chatModel = ctx[Services.Model].useGroup(ModelGroup.Summarization)?.getCurrent();
     }
 
@@ -36,7 +39,7 @@ export class WorldStateService extends Service {
         this.registerDatabaseModels();
         this.ctx.logger.info("WorldState Service started, listening to events...");
         this.disposer.push(this.ctx.on("message", (session) => this.onMessage(session), true));
-        this.maintenanceInterval = setInterval(() => this.handleMaintenance(), this.config.CleanupInterval);
+        this.maintenanceInterval = setInterval(() => this.handleMaintenance(), this.config.advanced.cleanupIntervalMs);
     }
 
     protected stop(): void {
@@ -55,7 +58,6 @@ export class WorldStateService extends Service {
                 platform: "string(255)",
                 guildId: "string(255)",
                 name: "string(255)",
-                username: "string(255)",
                 roles: "json",
                 avatar: "string(255)",
                 joinedAt: "timestamp",
@@ -127,8 +129,8 @@ export class WorldStateService extends Service {
      * @param allowedChannels 允许 Agent 访问的频道列表
      * @returns WorldState 对象
      */
-    public async getWorldState(allowedChannels: { Platform: string; Id: string }[]): Promise<WorldState> {
-        const activeChannels = await Promise.all(allowedChannels.map(({ Platform, Id }) => this.buildFullContextForChannel(Platform, Id)));
+    public async getWorldState(allowedChannels: ChannelDescriptor[]): Promise<WorldState> {
+        const activeChannels = await Promise.all(allowedChannels.map(({ platform, id }) => this.buildFullContextForChannel(platform, id)));
 
         // [FIX] 那个低效的后处理循环被彻底移除了！
 
@@ -299,10 +301,10 @@ export class WorldStateService extends Service {
             status: "closed",
         });
 
-        if (closedSegments.length > this.config.FullContextSegmentCount) {
+        if (closedSegments.length > this.config.fullContextSegmentCount) {
             const segmentsToFold = closedSegments
                 .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-                .slice(0, closedSegments.length - this.config.FullContextSegmentCount);
+                .slice(0, closedSegments.length - this.config.fullContextSegmentCount);
 
             const idsToFold = segmentsToFold.map((s) => s.id);
             if (idsToFold.length > 0) {
@@ -341,6 +343,25 @@ export class WorldStateService extends Service {
     }
 
     private async onMessage(session: Session): Promise<void> {
+        // 检查是否在允许的频道中
+        let allowed = false;
+        if (this.config.allowedChannels.has(session.cid)) {
+            allowed = true;
+        } else if (this.config.allowedChannels.has("*:*")) {
+            allowed = true;
+        } else if (this.config.allowedChannels.has(`${session.platform}:*`)) {
+            allowed = true;
+        } else if (this.config.allowedChannels.has(`${session.platform}:all`)) {
+            allowed = true;
+        }
+
+        if (!allowed) {
+            if (this.config.system.debug.enable) {
+                this.ctx.logger.info(`Message from ${session.author.name} in ${session.cid} ignored.`);
+            }
+            return;
+        }
+
         if (session.guildId) {
             await this.ctx.database.upsert(TableName.Members, [
                 {
@@ -348,7 +369,6 @@ export class WorldStateService extends Service {
                     platform: session.platform,
                     guildId: session.guildId,
                     name: session.author.nick || session.author.name,
-                    username: session.author.username,
                     roles: session.author.roles,
                     avatar: session.author.avatar,
                     lastActive: new Date(),
@@ -378,7 +398,7 @@ export class WorldStateService extends Service {
     }
 
     private async handleMaintenance() {
-        if (!this.config.EnableSummarization) return;
+        if (!this.config.enableSummarization) return;
         this.ctx.logger.debug("Running worldstate maintenance task...");
 
         try {
@@ -411,7 +431,7 @@ export class WorldStateService extends Service {
 
         const channelsToProcess: { platform: string; channelId: string }[] = [];
         for (const key in channelCounts) {
-            if (channelCounts[key] >= this.config.SummarizationTriggerCount) {
+            if (channelCounts[key] >= this.config.summarizationTriggerCount) {
                 channelsToProcess.push(channelMetas[key]);
             }
         }
@@ -426,14 +446,14 @@ export class WorldStateService extends Service {
             status: "folded",
         });
 
-        if (foldedSegments.length < this.config.SummarizationTriggerCount) return;
+        if (foldedSegments.length < this.config.summarizationTriggerCount) return;
 
         foldedSegments.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         const groupIds = foldedSegments.map((s) => s.id);
         const latestTimestamp = foldedSegments[foldedSegments.length - 1].timestamp;
 
         const dialogueText = await this.renderGroupToText(foldedSegments);
-        const prompt = this.config.SummarizationPrompt.replace("{dialogueText}", dialogueText);
+        const prompt = this.config.summarizationPrompt.replace("{dialogueText}", dialogueText);
 
         const summaryText = await this.chatModel.chat([{ role: "user", content: prompt }]).then((res) => res.text);
         if (!summaryText) {
