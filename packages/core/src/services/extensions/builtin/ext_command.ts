@@ -26,7 +26,7 @@ const ExecuteTool = createTool({
         },
     },
     execute: async (ctx, { cmd, channel }) => {
-        const { koishiContext, koishiSession, platform } = ctx;
+        const { koishiContext, koishiSession } = ctx;
 
         if (isEmpty(cmd)) return Failed("cmd is required");
 

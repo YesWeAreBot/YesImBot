@@ -1,82 +1,113 @@
 import { Schema } from "koishi";
 import { SystemBaseTemplate, UserBaseTemplate } from "./prompt-builder";
-import { WillingnessConfig } from "./willingness-calculator";
+import { SystemConfig } from "../config";
 
-interface ArousalConfig {
-    AllowedChannelGroups: {
-        Platform: string;
-        Id: string;
-    }[][];
-    DebounceMs: number;
+// ------------------- 模块二: 智能体行为 (Agent Behavior) -------------------
+
+export type ChannelDescriptor = {
+    platform: string;
+    id: string;
+};
+
+/** Agent 的唤醒条件配置 */
+export interface ArousalConfig {
+    /**
+     * 允许 Agent 响应的频道。
+     * 这是一个 "OR" 关系的列表，其中每个子列表是 "AND" 关系。
+     * UI 建议: 提供一个可动态增减的列表，每个列表项里又能动态增减频道，会非常直观。
+     */
+    allowedChannelGroups: ChannelDescriptor[][];
+    /** 消息防抖时间 (毫秒)，防止短时间内对相同模式的重复响应 */
+    debounceMs: number;
 }
 
-interface ToolExecutorConfig {
-    MaxRetry: number;
+export const ArousalConfigSchema = Schema.object({
+    allowedChannelGroups: Schema.array(
+        Schema.array(
+            Schema.object({
+                platform: Schema.string().required().description("平台"),
+                id: Schema.string().required().description("频道 ID"),
+            })
+        ).role("table")
+    )
+        .required()
+        .description("允许 Agent 响应的频道"),
+    debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
+});
+
+/** Agent 的响应意愿配置 (决定是否响应) */
+export interface WillingnessConfig {
+    /** 意愿得分超过此阈值时，Agent 才会响应 */
+    threshold: number;
+    /** 计算意愿得分时不同触发方式的权重 */
+    weights: {
+        /** 基础消息的权重 */
+        baseMessage: number;
+        /** 被 @ 提及时增加的权重 */
+        atMention: number;
+        /** 命中关键词时增加的权重 */
+        keyword: number;
+    };
+    /** 触发意愿得分的关键词列表 */
+    keywords: string[];
+    /** 高级选项 */
+    advanced: {
+        /** 是否开启测试模式，将无视阈值直接响应 */
+        testMode: boolean;
+        /** 被 @ 提及时，有多大概率会无视阈值强制响应 (0-1) */
+        atMentionProbability: number;
+        /** 意愿得分每分钟衰减的百分比 (0-1) */
+        decayPerMinute: number;
+        /** Agent 回复后，意愿得分保留的比例 (0-1) */
+        retentionAfterReply: number;
+    };
 }
 
-export interface AgentConfig {
-    Arousal: ArousalConfig;
-    Willingness: WillingnessConfig;
-    Chat: {
-        MaxHeartbeat: number;
+export const WillingnessConfigSchema = Schema.object({
+    threshold: Schema.number().default(0.5).description("意愿阈值"),
+    weights: Schema.object({
+        baseMessage: Schema.number().default(1).description("基础消息权重"),
+        atMention: Schema.number().default(1).description("被 @ 提及权重"),
+        keyword: Schema.number().default(1).description("命中关键词权重"),
+    }),
+    keywords: Schema.array(Schema.string()).role("table").description("触发意愿的关键词"),
+    advanced: Schema.object({
+        testMode: Schema.boolean().default(false).description("测试模式"),
+        atMentionProbability: Schema.number().default(0.5).description("被 @ 提及概率"),
+        decayPerMinute: Schema.number().default(0.01).description("每分钟意愿衰减"),
+        retentionAfterReply: Schema.number().default(0.5).description("回复后意愿保留"),
+    })
+        .collapse()
+        .description("高级选项"),
+});
+
+/**
+ * 智能体行为总体配置
+ * UI 建议: 分成 "唤醒条件" 和 "响应意愿" 两个子板块。
+ */
+export interface AgentBehaviorConfig {
+    arousal: ArousalConfig;
+    willingness: WillingnessConfig;
+    heartbeat: number;
+    prompt: {
+        systemTemplate: string;
+        userTemplate: string;
     };
-    ToolExecutor: ToolExecutorConfig;
-    Prompt: {
-        SystemTemplate: string;
-        UserTemplate: string;
-    };
-    Debug: {
-        LogDecisionDetails: boolean;
-    };
+    readonly system?: SystemConfig;
 }
 
-export const AgentConfigSchema: Schema<AgentConfig> = Schema.object({
-    Arousal: Schema.object({
-        AllowedChannelGroups: Schema.array(
-            Schema.array(
-                Schema.object({
-                    Platform: Schema.string().description("平台名称"),
-                    Id: Schema.string().description("频道ID"),
-                })
-            ).role("table")
-        ).description("允许 Agent 响应的频道分组。同一组内的频道共享上下文。"),
-        DebounceMs: Schema.number().default(2000).description("唤醒决策的防抖延迟（毫秒）。"),
-    }).description("唤醒机制配置"),
-
-    Willingness: Schema.object({
-        TestMode: Schema.boolean().default(false).description("【调试】测试模式，所有来自允许频道的消息都将触发响应。"),
-        AtMentionProbability: Schema.number().min(0).max(1).default(1.0).role("slider").description("当被@时，直接触发响应的概率。"),
-        Threshold: Schema.number().min(0).max(1).default(0.7).role("slider").description("触发 Agent 行动的意愿值阈值。"),
-        Weight: Schema.object({
-            BaseMessage: Schema.number().default(0.1).description("每条普通消息增加的基础意愿值。"),
-            AtMention: Schema.number().default(0.8).description("被@时增加的基础意愿值。"),
-            Keyword: Schema.number().default(0.5).description("消息包含关键词时增加的基础意愿值。"),
-        }).description("意愿值权重"),
-        DecayPerMinute: Schema.number().default(0.2).description("意愿值每分钟自然衰减的量。"),
-        RetentionAfterReply: Schema.number().min(0).max(1).default(0.3).role("slider").description("Agent 回复后，保留的意愿值比例。"),
-        Keywords: Schema.array(String).role("table").description("能够显著提升意愿值的关键词列表。"),
-    }).description("意愿度模型配置"),
-
-    Chat: Schema.object({
-        MaxHeartbeat: Schema.number().min(1).max(6).default(2).step(1).role("slider").description("最大心跳次数，控制对话的活跃度"),
-    }).description("对话行为配置"),
-
-    ToolExecutor: Schema.object({
-        MaxRetry: Schema.number().default(2).description("工具调用失败时的最大重试次数。"),
-    }).description("工具执行器配置"),
-
-    Prompt: Schema.object({
-        SystemTemplate: Schema.string()
-            .role("textarea", { rows: [4, 8] })
+export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.object({
+    arousal: ArousalConfigSchema.description("唤醒条件"),
+    willingness: WillingnessConfigSchema.description("响应意愿"),
+    heartbeat: Schema.number().min(1).max(10).default(3).role("slider").step(1).description("每轮对话最大心跳次数"),
+    prompt: Schema.object({
+        systemTemplate: Schema.string()
             .default(SystemBaseTemplate)
-            .description("系统提示词模板。"),
-        UserTemplate: Schema.string()
-            .role("textarea", { rows: [4, 8] })
+            .role("textarea", { rows: [2, 4] })
+            .description("系统提示词模板"),
+        userTemplate: Schema.string()
             .default(UserBaseTemplate)
-            .description("用户提示词模板。"),
-    }).description("提示词模板配置"),
-
-    Debug: Schema.object({
-        LogDecisionDetails: Schema.boolean().default(true).description("在控制台打印详细的意愿决策过程。"),
-    }).description("调试配置"),
+            .role("textarea", { rows: [2, 4] })
+            .description("用户提示词模板"),
+    }).description("提示词模板"),
 });

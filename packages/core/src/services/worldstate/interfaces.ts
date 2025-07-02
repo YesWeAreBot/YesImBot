@@ -7,9 +7,9 @@
  * 这些对象是 Agent 感知世界和进行决策的基础。
  */
 
-import { Element, User } from "koishi";
-import { SystemEvent } from "./event-types";
+import { Element } from "koishi";
 import { AgentResponse } from "./agent-response-types";
+import { SystemEvent } from "./event-types";
 
 // --- 基础实体 (Entities) ---
 

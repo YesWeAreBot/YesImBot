@@ -31,7 +31,7 @@ export class ChatModel {
         private readonly modelConfig: ModelConfig, // 该模型的配置
         private readonly fetch: typeof globalThis.fetch // 支持代理的 fetch
     ) {
-        this.id = this.modelConfig.ModelID;
+        this.id = this.modelConfig.modelId;
         this.logger = ctx.logger("model").extend(this.id);
         this.parseCustomParameters();
     }
@@ -40,30 +40,31 @@ export class ChatModel {
      * 解析并缓存模型配置中的自定义参数。
      */
     private parseCustomParameters(): void {
-        if (!this.modelConfig.CustomParameters) return;
+        if (!this.modelConfig.parameters.custom) return;
 
-        for (const param of this.modelConfig.CustomParameters) {
+        for (const key of Object.keys(this.modelConfig.parameters.custom)) {
+            const param = this.modelConfig.parameters.custom[key];
             try {
                 let parsedValue: any;
                 switch (param.type) {
-                    case "文本":
+                    case "string":
                         parsedValue = String(param.value);
                         break;
-                    case "数字":
+                    case "number":
                         parsedValue = Number(param.value);
                         break;
-                    case "布尔值":
+                    case "boolean":
                         parsedValue = toBoolean(param.value);
                         break;
-                    case "JSON":
+                    case "object":
                         parsedValue = JSON.parse(param.value);
                         break;
                     default:
                         parsedValue = param.value;
                 }
-                this.customParameters[param.key] = parsedValue;
+                this.customParameters[key] = parsedValue;
             } catch (error) {
-                this.logger.warn(`解析自定义参数 "${param.key}" (值为: "${param.value}") 时出错: ${error.message}`);
+                this.logger.warn(`解析自定义参数 "${key}" (值为: "${param.value}") 时出错: ${error.message}`);
             }
         }
         this.logger.debug(`已加载自定义参数: ${JSON.stringify(this.customParameters)}`);
@@ -81,7 +82,7 @@ export class ChatModel {
         const log = (message: string) => debug && effectiveLogger.info(message);
 
         log("开始执行聊天请求...");
-        log(`模型: ${this.id}, 流式输出: ${this.modelConfig.Stream ?? true}`);
+        log(`模型: ${this.id}, 流式输出: ${this.modelConfig.parameters.stream ?? true}`);
 
         const chatOptions: ChatOptions = this.buildChatOptions(messages, {
             ...options, // 传递其他选项
@@ -89,7 +90,7 @@ export class ChatModel {
         });
 
         // 如果模型配置明确指定了 Stream，则优先使用它
-        const useStream = this.modelConfig.Stream;
+        const useStream = this.modelConfig.parameters.stream;
 
         if (useStream) {
             return this._executeStream(chatOptions, log, onStreamStart);
@@ -103,15 +104,15 @@ export class ChatModel {
      */
     private buildChatOptions(messages: Message[], options: RequestOptions): ChatOptions {
         return {
-            ...this.chatProvider.chat(this.modelConfig.ModelID),
+            ...this.chatProvider.chat(this.modelConfig.modelId),
             fetch: this.fetch, // 使用支持代理的 fetch
             abortSignal: options.abortSignal,
             messages,
             tools: options.tools,
 
             // 应用模型配置中的参数，以及运行时传入的参数
-            temperature: this.modelConfig.Temperature,
-            topP: this.modelConfig.TopP,
+            temperature: this.modelConfig.parameters.temperature,
+            topP: this.modelConfig.parameters.topP,
 
             // 合并所有自定义参数
             ...this.customParameters,

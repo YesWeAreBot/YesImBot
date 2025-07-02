@@ -3,5 +3,5 @@ export enum Services {
     Memory = "yesimbot.memory",
     WorldState = "yesimbot.world-state",
     Tool = "yesimbot.tool",
-    Platform = "yesimbot.platform",
+    // Platform = "yesimbot.platform",
 }

@@ -19,3 +19,6 @@ export {
 
 // 导出装饰器
 export * from "./decorators";
+
+// 导出配置
+export * from "./config"

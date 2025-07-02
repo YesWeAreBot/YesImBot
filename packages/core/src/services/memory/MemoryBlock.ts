@@ -7,8 +7,8 @@ import { isEmpty } from "../../shared";
 import { ChatModel } from "../model";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
 import { MemoryError } from "./MemoryError";
-import { BackupConfig, MEMORY_TABLE, MemoryCompressionConfig } from "./config";
 import { MemoryBlockData } from "./types";
+import { MEMORY_TABLE } from "./config";
 
 export class MemoryBlock {
     private _id: string;
@@ -299,67 +299,6 @@ export class MemoryBlock {
     public async disposeFileWatcher(): Promise<void> {
         this.logger.debug(`Disposing file watcher for ${this._label}`);
         await this.stopWatching();
-    }
-
-    // New method for compression
-    public async compress(
-        ctx: Context, // Pass the full context to access services like chat
-        chatModel: ChatModel,
-        compressionConfig: MemoryCompressionConfig,
-        backupConfig: BackupConfig
-    ): Promise<void> {
-        const logger = ctx.logger(MemoryBlock.name + ".Compression");
-        logger.info(`Attempting to compress ${this._label}. Original content: ${this._content.length} lines, ${this.currentSize} chars.`);
-
-        // 1. Backup logic
-        if (backupConfig.Enabled) {
-            const backupDir = path.resolve(backupConfig.BackupPath);
-            // Format timestamp: YYYY-MM-DDTHH_MM_SS (remove invalid chars for filename)
-            const timestamp = new Date().toISOString().replace(/[:.]/g, "-").replace(/[TZ]/g, "_").substring(0, 19);
-            const backupFileName = `${this._label}_${timestamp}.txt`;
-            const backupFilePath = path.join(backupDir, backupFileName);
-
-            try {
-                if (!fs.existsSync(backupDir)) {
-                    await mkdir(backupDir, { recursive: true });
-                }
-                await writeFile(backupFilePath, this._content.join("\n"), "utf-8");
-                logger.info(`Backed up ${this._label} to ${backupFilePath} before compression.`);
-            } catch (error) {
-                logger.error(`Failed to backup ${this._label} to ${backupFilePath}: ${error.message}`);
-                // Don't throw, compression can still proceed.
-            }
-        }
-
-        // 2. Prepare prompt for LLM
-        const memoriesContent = this._content.join("\n");
-        const compressionPrompt = compressionConfig.CustomPrompt || defaultCompressionPrompt;
-        const fullPrompt = `${compressionPrompt}\n\nMemories:\n${memoriesContent}`;
-
-        // 3. Call LLM
-        try {
-            if (!chatModel) {
-                throw new MemoryError(`LLM model not found for compression`, { label: this._label });
-            }
-
-            logger.info(`Sending ${memoriesContent.length} chars to LLM for compression of ${this._label}...`);
-            const { text } = await chatModel.chat([{ role: "user", content: fullPrompt }]);
-            const compressedContent = text.trim();
-
-            if (isEmpty(compressedContent)) {
-                logger.warn(`LLM returned empty summary for ${this._label}. Keeping original content.`);
-                return; // Don't replace with empty content
-            }
-
-            // 4. Update _content and persist
-            this._content = [compressedContent]; // Replace all lines with the single summarized line
-            this.lastModifiedInMemory = new Date();
-            await this.persistToStoreAndFile(); // This will save to DB and file system
-            logger.info(`Successfully compressed ${this._label}. New content: ${this._content.length} lines, ${this.currentSize} chars.`);
-        } catch (error) {
-            logger.error(`Failed to compress ${this._label} using LLM: ${error.message}`);
-            throw new MemoryError(`Compression failed for ${this._label}`, { error: error.message, label: this._label });
-        }
     }
 
     static async getOrCreate(

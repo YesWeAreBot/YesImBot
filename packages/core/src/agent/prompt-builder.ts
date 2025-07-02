@@ -5,11 +5,7 @@ import { FlowAnalysis } from "./conversation-flow-analyzer";
 import { Willingness } from "./willingness-calculator";
 import { readFileSync } from "fs";
 import path from "path";
-
-export interface PromptBuilderConfig {
-    SystemTemplate: string;
-    UserTemplate: string;
-}
+import { AgentBehaviorConfig } from "./config";
 
 // 定义 PromptBuilder 需要的完整上下文
 export interface PromptContext {
@@ -34,13 +30,13 @@ export class PromptBuilder {
     private userTemplate: string;
     private partials = new Map<string, string>(); // 用于存储局部模板
 
-    constructor(private ctx: Context, private config: PromptBuilderConfig) {
+    constructor(private ctx: Context, private config: AgentBehaviorConfig["prompt"]) {
         // 禁用 Mustache 的 HTML 转义，使模板内容原样输出
         Mustache.escape = (text) => text;
 
         // 加载系统和用户模板
-        this.systemTemplate = config.SystemTemplate;
-        this.userTemplate = config.UserTemplate;
+        this.systemTemplate = config.systemTemplate;
+        this.userTemplate = config.userTemplate;
 
         // 注册默认的局部模板
         this.registerDefaultPartials();

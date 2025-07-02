@@ -1,7 +1,8 @@
 import { Schema } from "koishi";
+import { } from "koishi-plugin-adapter-onebot";
+import { isEmpty } from "../../../shared";
 import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
 import { ExtensionMetadata } from "../types";
-import { isEmpty } from "../../../shared";
 
 const metadata: ExtensionMetadata = {
     name: "Interactions",
@@ -20,7 +21,7 @@ const Reaction = createTool({
         emoji_id: Schema.number().required().description("表态编号"),
     }),
     execute: async (ctx, { message_id, emoji_id }) => {
-        const { koishiContext, koishiSession, platform } = ctx;
+        const { koishiContext, koishiSession } = ctx;
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
             await koishiSession.bot.createReaction(koishiSession.channelId, message_id, emoji_id);
@@ -43,7 +44,7 @@ const Essence = createTool({
         message_id: Schema.string().required().description("消息 ID"),
     }),
     execute: async (ctx, { message_id }) => {
-        const { koishiContext, koishiSession, platform } = ctx;
+        const { koishiContext, koishiSession } = ctx;
         if (isEmpty(String(message_id))) return Failed("message_id is required");
         try {
             await koishiSession.onebot.setEssenceMsg(message_id);
@@ -67,7 +68,7 @@ const Poke = createTool({
         channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
     }),
     execute: async (ctx, { user_id, channel }) => {
-        const { koishiContext, koishiSession, platform } = ctx;
+        const { koishiContext, koishiSession } = ctx;
         if (isEmpty(String(user_id))) return Failed("user_id is required");
         const targetChannel = isEmpty(channel) ? koishiSession.channelId : channel;
         try {

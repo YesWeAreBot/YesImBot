@@ -14,7 +14,7 @@ export class EmbedModel {
         private readonly modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        this.logger = ctx.logger("model").extend(this.modelConfig.ModelID);
+        this.logger = ctx.logger("model").extend(this.modelConfig.modelId);
     }
 
     public async embed(text: string): Promise<ReturnType<typeof embed>> {
@@ -22,7 +22,7 @@ export class EmbedModel {
         const embedOptions: EmbedOptions = {
             fetch: this.fetch,
             input: text,
-            ...this.embedProvider.embed(this.modelConfig.ModelID),
+            ...this.embedProvider.embed(this.modelConfig.modelId),
         };
         return await embed(embedOptions);
     }
@@ -32,7 +32,7 @@ export class EmbedModel {
         const embedManyOptions: EmbedManyOptions = {
             fetch: this.fetch,
             input: texts,
-            ...this.embedProvider.embed(this.modelConfig.ModelID),
+            ...this.embedProvider.embed(this.modelConfig.modelId),
         };
         return await embedMany(embedManyOptions);
     }

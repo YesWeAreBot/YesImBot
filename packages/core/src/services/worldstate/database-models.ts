@@ -28,7 +28,6 @@ export interface MemberData {
     guildId: string;
 
     name: string;
-    username?: string;
     roles?: string[];
     avatar?: string;
     joinedAt?: Date;

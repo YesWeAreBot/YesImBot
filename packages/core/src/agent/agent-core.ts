@@ -12,18 +12,18 @@ import {
     ToolDefinition,
     ToolExecutionContext,
     ToolService,
-    WorldStateService
+    WorldStateService,
 } from "../services";
 import { JsonParser } from "../shared";
-import { AgentConfig } from "./config";
 import { ConversationFlowAnalyzer, FlowAnalysis } from "./conversation-flow-analyzer";
 import { PromptBuilder, PromptContext } from "./prompt-builder";
 import { Willingness, WillingnessCalculator } from "./willingness-calculator";
+import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
 
 const LOG_PREFIX = "[AgentCore]";
 
-export class AgentCore extends Service {
-    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Platform];
+export class AgentCore extends Service<AgentBehaviorConfig> {
+    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;
@@ -39,15 +39,16 @@ export class AgentCore extends Service {
 
     // 内部状态
     private readonly allowedChannels = new Set<string>();
-    private readonly channelGroupMap = new Map<string, { Platform: string; Id: string }[]>();
+    private readonly channelGroupMap = new Map<string, ChannelDescriptor[]>();
     private readonly channelWillingness = new Map<string, number>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
 
-    constructor(ctx: Context, config: AgentConfig) {
+    constructor(ctx: Context, config: AgentBehaviorConfig) {
         super(ctx, "agent", true);
         this.ctx = ctx;
         this.config = config;
+
         this.ctx.logger.name = LOG_PREFIX;
 
         this.worldState = this.ctx[Services.WorldState];
@@ -56,8 +57,8 @@ export class AgentCore extends Service {
 
         // 实例化内部组件
         this.flowAnalyzer = new ConversationFlowAnalyzer(this.ctx);
-        this.willingnessCalculator = new WillingnessCalculator(this.ctx, this.config.Willingness);
-        this.promptBuilder = new PromptBuilder(this.ctx, this.config.Prompt);
+        this.willingnessCalculator = new WillingnessCalculator(this.ctx, this.config.willingness);
+        this.promptBuilder = new PromptBuilder(this.ctx, this.config.prompt);
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
     }
@@ -88,9 +89,9 @@ export class AgentCore extends Service {
 
     private updateAllowedChannels(): void {
         this.allowedChannels.clear();
-        this.config.Arousal.AllowedChannelGroups.forEach((group) => {
-            group.forEach(({ Platform, Id }) => {
-                this.allowedChannels.add(`${Platform}:${Id}`);
+        this.config.arousal.allowedChannelGroups.forEach((group) => {
+            group.forEach(({ platform, id }) => {
+                this.allowedChannels.add(`${platform}:${id}`);
             });
         });
         this.ctx.logger.debug(`Allowed channels updated. Total: ${this.allowedChannels.size}`);
@@ -103,7 +104,7 @@ export class AgentCore extends Service {
     private startWillingnessDecay(): void {
         this.willingnessDecayTimer = setInterval(() => {
             for (const [channelKey, willingness] of this.channelWillingness) {
-                const decayed = Math.max(0, willingness - this.config.Willingness.DecayPerMinute);
+                const decayed = Math.max(0, willingness - this.config.willingness.advanced.decayPerMinute);
                 this.channelWillingness.set(channelKey, decayed);
             }
         }, 60000);
@@ -120,7 +121,7 @@ export class AgentCore extends Service {
                 this.ctx.logger.info(`Debounce timer triggered for channel ${channelKey}. Starting decision process...`);
                 this.decideToAct(session, segment);
                 this.debounceTimers.delete(channelKey);
-            }, this.config.Arousal.DebounceMs)
+            }, this.config.arousal.debounceMs)
         );
     }
 
@@ -132,7 +133,7 @@ export class AgentCore extends Service {
             const currentWillingness = this.channelWillingness.get(segment.channelId) || 0;
             const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
 
-            if (this.config.Debug.LogDecisionDetails) {
+            if (this.config.willingness.advanced.testMode) {
                 this.ctx.logger.info(
                     `[Decision] ${segment.channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
                         willingness.threshold
@@ -141,7 +142,7 @@ export class AgentCore extends Service {
             }
 
             if (willingness.shouldAct) {
-                const retainedWillingness = willingness.value * this.config.Willingness.RetentionAfterReply;
+                const retainedWillingness = willingness.value * this.config.willingness.advanced.retentionAfterReply;
                 this.channelWillingness.set(segment.channelId, retainedWillingness);
                 await this.runAgentCycle(session, segment, analysis, willingness);
             } else {
@@ -163,7 +164,7 @@ export class AgentCore extends Service {
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
 
-        while (shouldContinueHeartbeat && heartbeatCount < this.config.Chat.MaxHeartbeat) {
+        while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
             this.ctx.logger.debug(`[Cycle] Heartbeat #${heartbeatCount} for segment ${segment.id}`);
 
@@ -177,14 +178,17 @@ export class AgentCore extends Service {
                         { role: "system", content: system },
                         { role: "user", content: user },
                     ],
-                    { debug: this.config.Debug.LogDecisionDetails, logger: this.ctx.logger("llm") }
+                    {
+                        debug: this.config.system.debug.enable,
+                        logger: this.ctx.logger("[LLM]"),
+                    }
                 );
 
                 const llmParsedResponse = this.parser.parse(llmRawResponse.text);
 
                 if (llmParsedResponse.error || !llmParsedResponse.data) {
                     this.ctx.logger.warn(`[Cycle] Failed to parse LLM response: ${llmParsedResponse.error}. Raw: ${llmRawResponse.text}`);
-                    shouldContinueHeartbeat = false; // 停止循环
+                    shouldContinueHeartbeat = false;
                     continue;
                 }
 
@@ -193,7 +197,7 @@ export class AgentCore extends Service {
                 // 验证响应格式
                 if (!Array.isArray(agentResponseData.actions)) {
                     this.ctx.logger.warn(`[Cycle] Invalid actions format. Expected array, got ${typeof agentResponseData.actions}`);
-                    shouldContinueHeartbeat = false; // 停止循环
+                    shouldContinueHeartbeat = false;
                     continue;
                 }
 
@@ -221,7 +225,7 @@ export class AgentCore extends Service {
             this.ctx.logger.warn(`[Cycle] ⚠️ Completed for segment ${segment.id} with no actions taken.`);
         }
 
-        if (heartbeatCount >= this.config.Chat.MaxHeartbeat) {
+        if (heartbeatCount >= this.config.heartbeat) {
             this.ctx.logger.warn(`[Cycle] Max heartbeat reached for segment ${segment.id}.`);
         }
     }
@@ -230,7 +234,6 @@ export class AgentCore extends Service {
         const context: ToolExecutionContext = {
             koishiContext: this.ctx,
             koishiSession: session,
-            platform: this.ctx[Services.Platform],
             logger: this.ctx.logger("tool-exec"),
             extensionConfig: {},
         };
@@ -251,8 +254,8 @@ export class AgentCore extends Service {
     ): Promise<PromptContext> {
         const allowedChannels =
             this.channelGroupMap.get(segment.channelId) ||
-            this.config.Arousal.AllowedChannelGroups.find((group) =>
-                group.some((channel) => channel.Platform === segment.platform && channel.Id === segment.channelId)
+            this.config.arousal.allowedChannelGroups.find((group) =>
+                group.some((channel) => channel.platform === segment.platform && channel.id === segment.channelId)
             );
         if (allowedChannels && !this.channelGroupMap.has(segment.channelId)) {
             this.channelGroupMap.set(segment.channelId, allowedChannels);
