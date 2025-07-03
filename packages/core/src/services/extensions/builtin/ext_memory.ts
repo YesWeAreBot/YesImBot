@@ -1,8 +1,9 @@
 import { Context, Query, Schema } from "koishi";
 import { MemoryService } from "../../memory/MemoryService";
+import { TableName } from "../../types";
+import { MessageData } from "../../worldstate";
 import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
 import { ExtensionMetadata } from "../types";
-import { MessageData, TableName } from "../../worldstate";
 
 const metadata: ExtensionMetadata = {
     name: "Memory",
