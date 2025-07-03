@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-yesimbot",
   "description": "Yes! I'm Bot! 机械壳，人类心",
-  "version": "3.0.0-beta.0",
+  "version": "3.0.0-beta.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/HydroGest/YesImBot",
@@ -30,6 +30,7 @@
     "directory": "packages/core"
   },
   "exports": {
+    ".": "./lib/index.js",
     "./package.json": "./package.json",
     "./services": {
       "import": "./lib/services/index.js",
@@ -48,7 +49,6 @@
   },
   "devDependencies": {
     "@koishijs/plugin-mock": "^2.6.6",
-    "@types/mustache": "^4",
     "@xsai-ext/providers-cloud": "^0.2.2",
     "@xsai-ext/providers-local": "^0.2.2",
     "@xsai-ext/shared-providers": "^0.2.2",
