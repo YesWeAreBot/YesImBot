@@ -39,14 +39,23 @@ export const ArousalConfigSchema = Schema.object({
 export interface WillingnessConfig {
     /** 意愿得分超过此阈值时，Agent 才会响应 */
     threshold: number;
-    /** 计算意愿得分时不同触发方式的权重 */
+    /**
+     * 计算意愿得分时不同触发方式的权重。
+     * 分数会累加，总分达到阈值即可触发响应。
+     */
     weights: {
-        /** 基础消息的权重 */
-        baseMessage: number;
-        /** 被 @ 提及时增加的权重 */
+        /** 被 @ 提及时增加的分数 */
         atMention: number;
-        /** 命中关键词时增加的权重 */
+        /** 包含关键词时增加的分数 */
         keyword: number;
+        /** 包含普通文本消息时增加的分数 */
+        textMessage: number;
+        /** 包含图片时增加的分数 */
+        imageMessage: number;
+        /** 作为引用/回复出现时增加的分数 */
+        quoteMessage: number;
+        /** 由指令调用触发时增加的分数 (例如，其他插件或用户调用了与Agent交互的指令) */
+        commandInvocation: number;
     };
     /** 触发意愿得分的关键词列表 */
     keywords: string[];
@@ -54,28 +63,29 @@ export interface WillingnessConfig {
     advanced: {
         /** 是否开启测试模式，将无视阈值直接响应 */
         testMode: boolean;
-        /** 被 @ 提及时，有多大概率会无视阈值强制响应 (0-1) */
-        atMentionProbability: number;
-        /** 意愿得分每分钟衰减的百分比 (0-1) */
+        /** 意愿得分每分钟衰减的量 */
         decayPerMinute: number;
         /** Agent 回复后，意愿得分保留的比例 (0-1) */
         retentionAfterReply: number;
     };
+    readonly system?: SystemConfig;
 }
 
 export const WillingnessConfigSchema = Schema.object({
-    threshold: Schema.number().default(0.5).description("意愿阈值"),
+    threshold: Schema.number().default(0.5).min(0).max(1).description("意愿阈值。当分数累加超过此值时触发响应。"),
     weights: Schema.object({
-        baseMessage: Schema.number().default(1).description("基础消息权重"),
-        atMention: Schema.number().default(1).description("被 @ 提及权重"),
-        keyword: Schema.number().default(1).description("命中关键词权重"),
-    }),
-    keywords: Schema.array(Schema.string()).role("table").description("触发意愿的关键词"),
+        atMention: Schema.number().default(1).description("被 @ 提及时增加的分数。通常应较高以保证必回。"),
+        keyword: Schema.number().default(0.3).description("命中关键词时增加的分数。"),
+        textMessage: Schema.number().default(0.1).description("包含普通文本消息时增加的分数。"),
+        imageMessage: Schema.number().default(0.15).description("包含图片时增加的分数。"),
+        quoteMessage: Schema.number().default(0.2).description("作为引用/回复出现时增加的分数。"),
+        commandInvocation: Schema.number().default(0.1).description("由指令调用触发时增加的分数。"),
+    }).description("不同事件的权重(分数)配置"),
+    keywords: Schema.array(Schema.string()).role("table").description("触发意愿的关键词。"),
     advanced: Schema.object({
-        testMode: Schema.boolean().default(false).description("测试模式"),
-        atMentionProbability: Schema.number().default(0.5).description("被 @ 提及概率"),
-        decayPerMinute: Schema.number().default(0.01).description("每分钟意愿衰减"),
-        retentionAfterReply: Schema.number().default(0.5).description("回复后意愿保留"),
+        testMode: Schema.boolean().default(false).description("测试模式(强制回复)。"),
+        decayPerMinute: Schema.number().default(0).description("每分钟意愿衰减值。"),
+        retentionAfterReply: Schema.number().default(0.2).description("回复后意愿保留比例。"),
     })
         .collapse()
         .description("高级选项"),
@@ -91,7 +101,7 @@ export interface VisionConfig {
      */
     imageLifecycleCount: number;
 
-    detail: "low"  | "high" | "auto"
+    detail: "low" | "high" | "auto";
 }
 
 export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
