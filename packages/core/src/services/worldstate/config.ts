@@ -30,7 +30,7 @@ export interface HistoryConfig {
 export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
     enableSummarization: Schema.boolean().default(true).description("启用对话历史总结功能"),
     summarizationPrompt: Schema.string().description("用于生成对话摘要的提示词模板。必须包含 `{dialogueText}`。"),
-    fullContextSegmentCount: Schema.number().default(3).description("在上下文中保留的最新“完整”对话片段数量"),
+    fullContextSegmentCount: Schema.number().default(2).description("在上下文中保留的最新“完整”对话片段数量"),
     summarizationTriggerCount: Schema.number().default(10).description("当待总结的片段达到此数量时，触发总结任务"),
     advanced: Schema.object({
         maxHistoryItemsPerChannel: Schema.number().default(30).description("每个频道在上下文中最多包含的历史项目数"),

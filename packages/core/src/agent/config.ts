@@ -121,7 +121,7 @@ export interface AgentBehaviorConfig {
 export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.object({
     arousal: ArousalConfigSchema.description("唤醒条件"),
     willingness: WillingnessConfigSchema.description("响应意愿"),
-    heartbeat: Schema.number().min(1).max(10).default(3).role("slider").step(1).description("每轮对话最大心跳次数"),
+    heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
     prompt: Schema.object({
         systemTemplate: Schema.string()
             .default(SystemBaseTemplate)
