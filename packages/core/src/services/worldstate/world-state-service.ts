@@ -277,6 +277,20 @@ export class WorldStateService extends Service<HistoryConfig> {
             await this.updateMemberInfo(session);
         }
 
+        const transformedContent = await h
+            .transformAsync(session.elements, async (element) => {
+                switch (element.type) {
+                    case "text":
+                        return h.escape(element.attrs.content);
+                    case "img":
+                    case "image":
+                        return await this.ctx[Services.Image].processImageElement(element, session);
+                    default:
+                        return element;
+                }
+            })
+            .then((res) => res.join(" ").trim());
+
         await this.recordMessage(segmentRecord.id, {
             id: session.messageId,
             platform: session.platform,
@@ -286,7 +300,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 name: session.author.nick || session.author.name,
                 roles: session.author.roles,
             },
-            content: session.content,
+            content: transformedContent,
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         });
@@ -666,21 +680,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             members: allMembers,
             history: history,
         };
-    }
-
-    /**
-     * 将 Koishi 消息元素（XML字符串）转换为可渲染的 h() 对象，并注入 onetime_code。
-     * @param source 消息内容的 XML 字符串。
-     * @param onetimeCode 要注入的一次性代码。
-     * @returns 转换后的 Element 数组。
-     */
-    private transformMessageContent(source: string, onetimeCode?: string): string {
-        return h.transform(source, (element) => {
-            if (element.type !== "text") {
-                element.attrs.onetime_code = onetimeCode;
-            }
-            return element;
-        });
     }
 
     /**
