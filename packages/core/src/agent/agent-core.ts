@@ -128,11 +128,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.ctx.logger.info(`[Decision] Evaluating channel ${segment.platform}:${segment.channelId}, segment: ${segment.id}`);
 
         try {
-            const analysis = this.flowAnalyzer.analyze(segment);
+            const analysis = this.flowAnalyzer.analyze(segment, this.config.willingness.keywords);
+            analysis.isAgentMentioned = session.stripped.atSelf;
             const currentWillingness = this.channelWillingness.get(segment.channelId) || 0;
             const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
 
-            if (this.config.willingness.advanced.testMode) {
+            if (this.config.system.debug.enable) {
                 this.ctx.logger.info(
                     `[Decision] ${segment.channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
                         willingness.threshold

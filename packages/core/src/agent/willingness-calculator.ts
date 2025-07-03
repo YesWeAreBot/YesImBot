@@ -4,8 +4,8 @@ import { WillingnessConfig } from "./config";
 
 // 定义意愿计算结果的接口
 export interface Willingness {
-    value: number; // 0-1 的最终意愿值
-    threshold: number; // 触发行动所需的阈值
+    value: number; // 最终意愿分数
+    threshold: number; // 触发行动所需的分数阈值
     shouldAct: boolean; // 最终决策
     reasons: string[]; // 决策理由，用于日志和调试
 }
@@ -16,49 +16,57 @@ export class WillingnessCalculator {
     /**
      * 新的核心方法：计算行动意愿
      */
-    public calculate(analysis: FlowAnalysis, currentWillingness: number /* TODO: 以后加入 agentState */): Willingness {
+    public calculate(analysis: FlowAnalysis, currentWillingness: number): Willingness {
         const weights = this.config.weights;
-        let baseWillingness = 0;
-        const reasons: string[] = [];
+        let score = currentWillingness; // 从当前的意愿值开始累加
+        const reasons: string[] = [`Initial score: ${currentWillingness.toFixed(2)}`];
 
         // 1. 基于 @提及 的计算
         if (analysis.isAgentMentioned) {
-            baseWillingness += weights.atMention;
-            reasons.push(`Agent被提及 (w+${weights.atMention})`);
+            score += weights.atMention;
+            reasons.push(`Agent mentioned (+${weights.atMention})`);
         }
 
-        // 2. 基于对话强度的计算
-        // const intensityBonus = analysis.intensity * weights.Intensity;
-        const intensityBonus = analysis.intensity * 1;
-        baseWillingness += intensityBonus;
-        reasons.push(`对话强度 ${analysis.intensity.toFixed(2)} (w+${intensityBonus.toFixed(2)})`);
+        // 2. 基于消息类型
+        if (analysis.hasTextMessage) {
+            score += weights.textMessage;
+            reasons.push(`Text message (+${weights.textMessage})`);
+        }
+        if (analysis.hasImageMessage) {
+            score += weights.imageMessage;
+            reasons.push(`Image message (+${weights.imageMessage})`);
+        }
+        if (analysis.hasQuote) {
+            score += weights.quoteMessage;
+            reasons.push(`Quote message (+${weights.quoteMessage})`);
+        }
 
-        // 3. 基于对话节奏的调整
-        let paceMultiplier = 1.0;
-        // if (analysis.pace === "slow") {
-        //     paceMultiplier = weights.Pace.Slow;
-        //     reasons.push(`对话节奏缓慢 (w*${paceMultiplier})`);
-        // } else if (analysis.pace === "fast") {
-        //     paceMultiplier = weights.Pace.Fast;
-        //     reasons.push(`对话节奏快 (w*${paceMultiplier})`);
-        // }
-        baseWillingness *= paceMultiplier;
+        // 3. 基于系统事件
+        if (analysis.hasCommandInvocation) {
+            score += weights.commandInvocation;
+            reasons.push(`Command invoked (+${weights.commandInvocation})`);
+        }
 
-        // 4. 基于关键词的计算 (此处简化，实际应与 analysis.keywords 结合)
-        // TODO: 添加关键词匹配逻辑
+        // 4. 基于关键词的计算
+        if (analysis.matchingKeywords.length > 0) {
+            score += weights.keyword;
+            reasons.push(`Keywords matched: ${analysis.matchingKeywords.join(", ")} (+${weights.keyword})`);
+        }
 
-        // 5. 限制最终值在 0-1 之间
-        const finalWillingness = Math.max(0, Math.min(1, baseWillingness));
+        // 5. 限制最终值在 0 以上
+        const finalScore = Math.max(0, score);
         const threshold = this.config.threshold;
-        let shouldAct = finalWillingness >= threshold;
+        let shouldAct = finalScore >= threshold;
+
+        reasons.push(`Final Score: ${finalScore.toFixed(2)} / ${threshold}`);
 
         if (this.config.advanced.testMode) {
             shouldAct = true;
-            reasons.push("测试模式，强制回复");
+            reasons.push("Test mode enabled, forcing action.");
         }
 
         return {
-            value: finalWillingness,
+            value: finalScore,
             threshold: threshold,
             shouldAct: shouldAct,
             reasons: reasons,
