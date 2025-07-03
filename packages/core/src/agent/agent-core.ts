@@ -1,4 +1,5 @@
 import { Context, h, Random, Schema, Service, Session } from "koishi";
+import type { ImagePart, TextPart } from "xsai";
 import {
     AgentResponse,
     createTool,
@@ -12,14 +13,14 @@ import {
     ToolDefinition,
     ToolExecutionContext,
     ToolService,
+    WorldState,
     WorldStateService,
 } from "../services";
 import { JsonParser } from "../shared";
+import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
 import { ConversationFlowAnalyzer, FlowAnalysis } from "./conversation-flow-analyzer";
 import { PromptBuilder, PromptContext } from "./prompt-builder";
 import { Willingness, WillingnessCalculator } from "./willingness-calculator";
-import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
-import { ImagePart, TextPart } from "xsai";
 
 const LOG_PREFIX = "[AgentCore]";
 
@@ -168,19 +169,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
             try {
                 const promptContext = await this.buildPromptContext(segment, analysis, willingness, collectedResponses);
-                const { system, user } = await this.promptBuilder.build(promptContext);
+                const { messages } = await this.promptBuilder.build(promptContext);
 
                 const chatModel = this.modelSwitcher.getCurrent();
-                const llmRawResponse = await chatModel.chat(
-                    [
-                        { role: "system", content: system },
-                        { role: "user", content: user },
-                    ],
-                    {
-                        debug: this.config.system.debug.enable,
-                        logger: this.ctx.logger("[LLM]"),
-                    }
-                );
+                const llmRawResponse = await chatModel.chat(messages, {
+                    debug: this.config.system.debug.enable,
+                    logger: this.ctx.logger("[LLM]"),
+                });
 
                 const llmParsedResponse = this.parser.parse(llmRawResponse.text);
 
@@ -261,72 +256,134 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         const worldState = await this.worldState.getWorldState(allowedChannels || []);
 
-        // [核心修改] 提取图片并构建多模态内容
-        const imageService = this.ctx[Services.Image];
-        const imagePlaceholders = new Set<string>();
+        // 图片智能筛选与上下文构建
+        const { images: multiModalContent } = await this.buildMultimodalContext(worldState);
 
-        // 1. 扫描历史记录，提取所有唯一的图片ID，并构建纯文本历史
-        for (const channel of worldState.activeChannels) {
-            for (const seg of channel.history) {
-                for (const msg of seg.dialogue) {
-                    const elements = h.parse(msg.content);
-                    const imageElements = elements.filter((e) => e.type === "img" || e.type === "image");
-                    if (imageElements.length > 0) {
-                        for (const img of imageElements) {
-                            imagePlaceholders.add(img.attrs.id);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. 根据图片ID获取图片内容
-        const multiModalContent: (ImagePart | TextPart)[] = [];
-        if (imagePlaceholders.size > 0) {
-            this.logger.info(`Found ${imagePlaceholders.size} unique images in context.`);
-            const imageFetchPromises = Array.from(imagePlaceholders).map((id) => imageService.getImageDataWithContent(id));
-            const imageDataResults = await Promise.all(imageFetchPromises);
-
-            for (const result of imageDataResults) {
-                if (result) {
-                    multiModalContent.push({
-                        type: "text",
-                        text: `Image #${result.data.id}`,
-                    });
-                    multiModalContent.push({
-                        type: "image_url",
-                        image_url: { url: result.content },
-                    });
-                }
-            }
-        }
-
-        // [NEW] 核心逻辑：在 worldState 中查找并标记当前 segment
+        // 在 worldState 中查找并标记当前 segment
         for (const channel of worldState.activeChannels) {
             const currentSegmentInHistory = channel.history.find((s) => s.id === segment.id);
             if (currentSegmentInHistory) {
-                // 添加一个 Mustache 可以识别的标记
                 (currentSegmentInHistory as any).is_current = true;
-                break; // 找到后即可退出循环
+                break;
             }
         }
 
         return {
             toolSchemas: this.toolService.getToolSchemas(),
             memory: await this.ctx[Services.Memory].getProvider(),
-            worldState: worldState, // 传递已标记的 worldState
-            // currentSegment 不再需要
+            worldState: worldState,
             agentState: {
                 lifeCycleStatus: "active",
                 analysis: analysis,
                 willingness: willingness,
             },
-
             previousResponses: previousResponses,
             multiModalData: {
                 images: multiModalContent,
+                // 传递处理后的纯文本历史
+                // textualHistory: textualHistory,
             },
         };
+    }
+
+    /**
+     * [新增] 构建多模态上下文的核心方法
+     * @param worldState 当前的世界状态
+     * @returns 包含筛选后的图片内容和处理后的文本历史的对象
+     */
+    private async buildMultimodalContext(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
+        // 1. 扁平化所有消息，并建立索引
+        const allMessages = worldState.activeChannels.flatMap((c) => c.history.flatMap((s) => s.dialogue));
+        allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const messageMap = new Map(allMessages.map((m) => [m.id, m]));
+
+        // 2. 计算图片生命周期
+        const imageLifecycleTracker = new Map<string, number>();
+        for (const seg of worldState.activeChannels.flatMap((c) => c.history)) {
+            if (seg.agentTurn) {
+                // 只在 Agent 实际响应过的回合计算
+                for (const msg of seg.dialogue) {
+                    const elements = h.parse(msg.content);
+                    const imageIds = elements.filter((e) => e.type === "image" && e.attrs.id).map((e) => e.attrs.id as string);
+                    for (const id of imageIds) {
+                        imageLifecycleTracker.set(id, (imageLifecycleTracker.get(id) || 0) + 1);
+                    }
+                }
+            }
+        }
+
+        // 3. 智能筛选图片ID
+        const finalImageIds = new Set<string>();
+
+        // 遍历所有消息，优先添加被引用的图片
+        for (const msg of allMessages) {
+            if (msg.quoteId && messageMap.has(msg.quoteId)) {
+                const quotedMsg = messageMap.get(msg.quoteId);
+                const elements = h.parse(quotedMsg.content);
+                const imageIds = elements.filter((e) => e.type === "image" && e.attrs.id).map((e) => e.attrs.id as string);
+                for (const id of imageIds) {
+                    if (finalImageIds.size < this.config.vision.maxImagesInContext) {
+                        finalImageIds.add(id);
+                    }
+                }
+            }
+        }
+
+        // 从最新消息开始向后遍历，添加常规图片，直到上限
+        for (let i = allMessages.length - 1; i >= 0; i--) {
+            if (finalImageIds.size >= this.config.vision.maxImagesInContext) break;
+            const msg = allMessages[i];
+            const elements = h.parse(msg.content);
+            const imageIds = elements.filter((e) => e.type === "image" && e.attrs.id).map((e) => e.attrs.id as string);
+            for (const id of imageIds) {
+                // 检查生命周期和上限
+                if ((imageLifecycleTracker.get(id) || 0) < this.config.vision.imageLifecycleCount) {
+                    if (finalImageIds.size < this.config.vision.maxImagesInContext) {
+                        finalImageIds.add(id);
+                    }
+                }
+            }
+        }
+
+        // 4. 获取图片数据并生成带引用的文本历史
+        const imageService = this.ctx[Services.Image];
+        const imageFetchPromises = Array.from(finalImageIds).map((id) => imageService.getImageDataWithContent(id));
+        const imageDataResults = await Promise.all(imageFetchPromises);
+
+        const finalImages: (ImagePart | TextPart)[] = [];
+
+        for (const result of imageDataResults) {
+            if (result) {
+                finalImages.push({ type: "text", text: `Image #${result.data.id}:` });
+                finalImages.push({ type: "image_url", image_url: { url: result.content, detail: this.config.vision.detail } });
+            }
+        }
+
+        // 构建带有引用标记的纯文本历史
+        // const textualHistoryLines: string[] = [];
+        // for (const channel of worldState.activeChannels) {
+        //     textualHistoryLines.push(`--- Conversation History in Channel #${channel.name} ---`);
+        //     for (const seg of channel.history) {
+        //         for (const msg of seg.dialogue) {
+        //             let content = msg.content;
+        //             const elements = h.parse(content);
+        //             // 替换占位符为带引用的格式
+        //             for (const el of elements) {
+        //                 if (el.type === "image" && el.attrs.id) {
+        //                     const refNum = imageIdToRefNum.get(el.attrs.id as string);
+        //                     if (refNum !== undefined) {
+        //                         content = content.replace(`<image id="${el.attrs.id}"/>`, `[Image #${refNum}]`);
+        //                     } else {
+        //                         content = content.replace(`<image id="${el.attrs.id}"/>`, `[Omitted Image]`);
+        //                     }
+        //                 }
+        //             }
+        //             textualHistoryLines.push(`${msg.sender.name || "Unknown"}: ${content}`);
+        //         }
+        //     }
+        // }
+
+        return { images: finalImages };
     }
 
     // [NEW] 统一的错误处理函数
@@ -338,7 +395,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
     }
 
-    // [NEW] 新增一个方法，专门负责处理和记录AI发送的消息
+    // 处理和记录AI发送的消息
     private async recordSentMessages(
         segmentId: string,
         session: Session,
@@ -381,9 +438,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             parameters: Schema.object({
                 inner_thoughts: Schema.string().description("仅供自己参考的内心独白。"),
                 message: Schema.string().description("Message content to send. You can use '<sep/>' to send multiple messages."),
-                channel_id: Schema.string().description("Optional. The ID of the channel where the message should be sent."),
+                target: Schema.string().description(
+                    "Optional but important. The Platform and ID of the channel where the message should be sent. If the channel you want to send message to is not the current channel, you must specify this parameter. The target structure is 'platform:channel_id'. e.g. 'onebot:123456789'. If not provided, the message will default to the current channel."
+                ),
             }),
-            execute: async ({ koishiSession }, { message, channel_id }) => {
+            execute: async ({ koishiSession }, { message, target }) => {
                 if (!koishiSession) {
                     this.ctx.logger.warn("SendMessageTool called without a valid session.");
                     return Failed("Missing session object");
@@ -391,15 +450,36 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 try {
                     const messages = message.split("<sep/>");
-                    const channelId = channel_id || koishiSession.channelId;
-                    for (const msg of messages) {
-                        if (msg) {
-                            const ids = await koishiSession.bot.sendMessage(channelId, msg);
+
+                    // 如果没有指定 target，或者 target 与当前频道相同，使用 session 直接回复
+                    if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
+                        for (const msg of messages) {
+                            await koishiSession.sendQueued(msg);
                         }
+                        return Success();
+                    }
+
+                    // 如果指定了不同的 target，使用 bot 发送消息
+                    // 一个平台可能有多个 bot 客户端，后期需要判断代理人选择合适的 bot
+                    // 私聊 channel_id 为 platform:private:user_id，群聊为 platform:group_id
+                    // 可能需要不同的处理逻辑
+                    const parts = target.split(":");
+                    const platform = parts[0];
+                    const channelId = parts.slice(1).join(":");
+
+                    const bot = this.ctx.bots.find((b) => b.platform === platform);
+                    if (!bot) {
+                        const platforms = this.ctx.bots.map((b) => b.platform).join(", ");
+                        this.ctx.logger.warn(`Bot not found for platform ${platform}, platforms must be one of ${platforms}`);
+                        return Failed(`Bot not found for platform ${platform}`);
+                    }
+
+                    for (const msg of messages) {
+                        await bot.sendMessage(channelId, msg);
                     }
                     return Success();
                 } catch (error) {
-                    this.handleError(error, `sending message to channel ${channel_id || koishiSession.channelId}`);
+                    this.handleError(error, `sending message to channel ${target || koishiSession.channelId}`);
                     return Failed(`Failed to send message: ${error.message}`);
                 }
             },

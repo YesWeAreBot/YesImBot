@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { Context } from "koishi";
 import Mustache from "mustache";
 import path from "path";
-import type { ImagePart, TextPart } from "xsai";
+import type { ImagePart, Message, TextPart } from "xsai";
 import { AgentResponse, MemoryBlockData, WorldState } from "../services";
 import { AgentBehaviorConfig } from "./config";
 import { FlowAnalysis } from "./conversation-flow-analyzer";
@@ -75,7 +75,9 @@ export class PromptBuilder {
         this.partials.set(name, template);
     }
 
-    public async build(context: PromptContext): Promise<{ system: string; user: string | (ImagePart | TextPart)[] }> {
+    public async build(context: PromptContext): Promise<{ messages: Message[] }> {
+        const { multiModalData, agentState, previousResponses, toolSchemas, worldState, memory } = context;
+        const messages: Message[] = [];
         // --- 1. 准备渲染视图数据 ---
 
         // [NEW] 预处理 worldState，为当前 segment 添加标记
@@ -88,12 +90,12 @@ export class PromptBuilder {
         // 这里我们假设它已经被处理。
 
         const view = {
-            TOOL_DEFINITION: { tools: context.toolSchemas },
-            CORE_MEMORY: context.memory,
-            WORLD_STATE: context.worldState,
-            AGENT_SELF_ASSESSMENT: context.agentState,
+            TOOL_DEFINITION: { tools: toolSchemas },
+            CORE_MEMORY: memory,
+            WORLD_STATE: worldState,
+            AGENT_SELF_ASSESSMENT: agentState,
             CURRENT_CONVERSATION: {
-                history: context.previousResponses,
+                history: previousResponses,
             },
             _toString: function () {
                 return _toString(this);
@@ -112,16 +114,18 @@ export class PromptBuilder {
         const systemPrompt = Mustache.render(this.systemTemplate, view, partials);
         const userPrompt = Mustache.render(this.userTemplate, view, partials);
 
+        messages.push({ role: "system", content: systemPrompt });
+
         let userMessage: string | (ImagePart | TextPart)[];
 
         // 判断是否为多模态场景
-        if (context.multiModalData && context.multiModalData.images.length > 0) {
+        if (multiModalData && multiModalData.images.length > 0) {
             // --- 多模态路径 ---
             this.ctx.logger.info("Building prompt for multimodal scenario.");
 
             userMessage = [
                 { type: "text", text: MultiModalSystemBaseTemplate },
-                ...context.multiModalData.images,
+                ...multiModalData.images,
                 { type: "text", text: userPrompt },
             ];
         } else {
@@ -130,7 +134,9 @@ export class PromptBuilder {
             userMessage = userPrompt;
         }
 
-        return { system: systemPrompt, user: userMessage };
+        messages.push({ role: "user", content: userMessage });
+
+        return { messages };
     }
 }
 

@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
-import { SystemBaseTemplate, UserBaseTemplate } from "./prompt-builder";
 import { SystemConfig } from "../config";
+import { MultiModalSystemBaseTemplate, SystemBaseTemplate, UserBaseTemplate } from "./prompt-builder";
 
 // ------------------- 模块二: 智能体行为 (Agent Behavior) -------------------
 
@@ -90,11 +90,14 @@ export interface VisionConfig {
      * 一张图片在上下文中出现 N 次后将被视为“过期”，除非它被引用。
      */
     imageLifecycleCount: number;
+
+    detail: "low"  | "high" | "auto"
 }
 
-export const VisionConfigSchema = Schema.object({
+export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
     maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量。"),
     imageLifecycleCount: Schema.number().default(2).description("图片的上下文生命周期（出现次数）。超过此次数的图片将被忽略，除非被引用。"),
+    detail: Schema.union(["low", "high", "auto"]).default("auto").description("图片细节程度"),
 }).description("视觉与多模态配置");
 
 /**
@@ -108,6 +111,8 @@ export interface AgentBehaviorConfig {
     prompt: {
         systemTemplate: string;
         userTemplate: string;
+        // 新增多模态系统提示词，使其可配置
+        multiModalSystemTemplate: string;
     };
     vision: VisionConfig;
     readonly system?: SystemConfig;
@@ -126,6 +131,10 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
             .default(UserBaseTemplate)
             .role("textarea", { rows: [2, 4] })
             .description("用户提示词模板"),
+        multiModalSystemTemplate: Schema.string()
+            .default(MultiModalSystemBaseTemplate)
+            .role("textarea", { rows: [2, 4] })
+            .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
     /** [新增] 视觉配置 Schema */
     vision: VisionConfigSchema,
