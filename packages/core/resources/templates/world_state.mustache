@@ -15,21 +15,21 @@
     {{/members.length}}
     <history>
       {{#history}}
-      <dialogue_segment id="{{id}}" status="{{status}}" timestamp="{{timestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
+      <segment id="{{id}}" status="{{status}}" timestamp="{{timestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
         {{#summary}}
         <summary>{{.}}</summary>
         {{/summary}}
         {{#dialogue.length}}
         <dialogue>
         {{#dialogue}}
-          <message id="{{id}}" timestamp="{{date}}" sender="{{sender.pid}}"{{#quoteId}} quote="{{.}}"{{/quoteId}}><content>{{content}}</content></message>
+          <message id="{{id}}" timestamp="{{date}}" sender="{{sender.pid}}"{{#quoteId}} quote="{{.}}"{{/quoteId}}>{{content}}</message>
         {{/dialogue}}
         </dialogue>
         {{/dialogue.length}}
         {{#systemEvents.length}}
         <system_events>
         {{#systemEvents}}
-          <event type="{{type}}" timestamp="{{date}}">{{payload}}</event>
+          <event type="{{type}}" timestamp="{{date}}">{{#payload}}{{_toString}}{{/payload}}</event>
         {{/systemEvents}}
         </system_events>
         {{/systemEvents.length}}
@@ -70,7 +70,7 @@
         </agent_turn>
         {{/agentTurn}}
         {{/agentTurn.responses.length}}
-      </dialogue_segment>
+      </segment>
       {{/history}}
     </history>
   </channel>

@@ -45,7 +45,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly channelWillingness = new Map<string, number>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
-    private readonly onetimeCode: string;
 
     constructor(ctx: Context, config: AgentBehaviorConfig) {
         super(ctx, "agent", true);
@@ -64,19 +63,16 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.prompt);
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
-
-        this.onetimeCode = Random.id(8);
     }
 
     protected async start(): Promise<void> {
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
-        this.ctx.on("worldstate:segment-updated", async (session, segmentRecord) => {
+        this.ctx.on("worldstate:segment-updated", async (session, segment) => {
             try {
                 // 从 worldstate 接收到的消息即为过滤后的，在回复列表中
                 // if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
-                const segment = await this.worldState.buildFullDialogueSegment(segmentRecord, this.onetimeCode);
                 this.handleSegmentUpdate(session, segment);
             } catch (error) {
                 this.handleError(error, "handling segment update");
@@ -203,9 +199,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 const fullResponse: AgentResponse = { ...agentResponseData, observations };
                 collectedResponses.push(fullResponse);
 
-                // [NEW] 核心逻辑：检查成功的 send_message 操作并记录
-                await this.recordSentMessages(segment.id, session, agentResponseData.actions, observations);
-
                 shouldContinueHeartbeat = agentResponseData.request_heartbeat;
             } catch (error) {
                 this.handleError(error, `during heartbeat #${heartbeatCount} for segment ${segment.id}`);
@@ -258,7 +251,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this.channelGroupMap.set(segment.channelId, allowedChannels);
         }
 
-        const worldState = await this.worldState.getWorldState(allowedChannels || [], this.onetimeCode);
+        const onetimeCode = Random.id(8);
+
+        const worldState = await this.worldState.getWorldState(allowedChannels || [], onetimeCode);
 
         // 图片智能筛选与上下文构建
         const { images: multiModalContent } = await this.buildMultimodalContext(worldState);
@@ -287,7 +282,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 // 传递处理后的纯文本历史
                 // textualHistory: textualHistory,
             },
-            onetimeCode: this.onetimeCode,
+            onetimeCode,
         };
     }
 
@@ -400,42 +395,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
     }
 
-    // 处理和记录AI发送的消息
-    private async recordSentMessages(
-        segmentId: string,
-        session: Session,
-        actions: AgentResponse["actions"],
-        observations: AgentResponse["observations"]
-    ): Promise<void> {
-        for (let i = 0; i < actions.length; i++) {
-            const action = actions[i];
-            const observation = observations[i];
-
-            if (action.function === "send_message" && observation.status === "success") {
-                const params = action.params as { message: string; channel_id?: string };
-                const messages = params.message.split("<sep/>").filter(Boolean);
-                const channelId = params.channel_id || session.channelId;
-
-                for (const msgContent of messages) {
-                    // 为每条消息创建一个唯一的ID
-                    const messageId = `ai_${Date.now()}_${Random.id(8)}`;
-
-                    await this.worldState.recordMessage(segmentId, {
-                        id: messageId,
-                        platform: session.platform,
-                        channelId: channelId,
-                        sender: {
-                            pid: session.selfId,
-                            name: session.bot.user.name,
-                        },
-                        content: msgContent,
-                        timestamp: new Date(),
-                    });
-                }
-            }
-        }
-    }
-
     private async createMessageTool(): Promise<ToolDefinition> {
         return createTool({
             name: "send_message",
@@ -475,8 +434,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     const bot = this.ctx.bots.find((b) => b.platform === platform);
                     if (!bot) {
                         const platforms = this.ctx.bots.map((b) => b.platform).join(", ");
-                        this.ctx.logger.warn(`Bot not found for platform ${platform}, platforms must be one of ${platforms}`);
-                        return Failed(`Bot not found for platform ${platform}`);
+                        return Failed(`Bot not found for platform ${platform}, platform must be one of ${platforms}`);
                     }
 
                     for (const msg of messages) {
