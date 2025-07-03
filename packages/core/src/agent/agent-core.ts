@@ -45,6 +45,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly channelWillingness = new Map<string, number>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
+    private readonly onetimeCode: string;
 
     constructor(ctx: Context, config: AgentBehaviorConfig) {
         super(ctx, "agent", true);
@@ -63,16 +64,19 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.prompt);
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
+
+        this.onetimeCode = Random.id(8);
     }
 
     protected async start(): Promise<void> {
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
-        this.ctx.on("worldstate:segment-updated", (session, segment) => {
+        this.ctx.on("worldstate:segment-updated", async (session, segmentRecord) => {
             try {
                 // 从 worldstate 接收到的消息即为过滤后的，在回复列表中
                 // if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
+                const segment = await this.worldState.buildFullDialogueSegment(segmentRecord, this.onetimeCode);
                 this.handleSegmentUpdate(session, segment);
             } catch (error) {
                 this.handleError(error, "handling segment update");
@@ -254,7 +258,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this.channelGroupMap.set(segment.channelId, allowedChannels);
         }
 
-        const worldState = await this.worldState.getWorldState(allowedChannels || []);
+        const worldState = await this.worldState.getWorldState(allowedChannels || [], this.onetimeCode);
 
         // 图片智能筛选与上下文构建
         const { images: multiModalContent } = await this.buildMultimodalContext(worldState);
@@ -283,6 +287,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 // 传递处理后的纯文本历史
                 // textualHistory: textualHistory,
             },
+            onetimeCode: this.onetimeCode,
         };
     }
 

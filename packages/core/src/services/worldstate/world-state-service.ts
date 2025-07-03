@@ -1,4 +1,4 @@
-import { Context, Random, Service, Session } from "koishi";
+import { Context, Element, h, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
 import { ChatModel, ModelGroup } from "../model";
 import { Services, TableName } from "../types";
@@ -14,7 +14,7 @@ declare module "koishi" {
 
     interface Events {
         /** 当对话片段有更新时触发 */
-        "worldstate:segment-updated"(session: Session, segment: DialogueSegment): void;
+        "worldstate:segment-updated"(session: Session, segmentRecord: DialogueSegmentData): void;
     }
 }
 
@@ -129,8 +129,10 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param allowedChannels 允许 Agent 访问的频道列表
      * @returns WorldState 对象
      */
-    public async getWorldState(allowedChannels: ChannelDescriptor[]): Promise<WorldState> {
-        const activeChannels = await Promise.all(allowedChannels.map(({ platform, id }) => this.buildFullContextForChannel(platform, id)));
+    public async getWorldState(allowedChannels: ChannelDescriptor[], onetimeCode: string): Promise<WorldState> {
+        const activeChannels = await Promise.all(
+            allowedChannels.map(({ platform, id }) => this.buildFullContextForChannel(platform, id, onetimeCode))
+        );
 
         // [FIX] 那个低效的后处理循环被彻底移除了！
 
@@ -164,7 +166,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.ctx.logger.debug(`Recorded message ${message.id} into segment ${segmentId}`);
     }
 
-    private async buildFullContextForChannel(Platform: string, Id: string): Promise<Channel> {
+    private async buildFullContextForChannel(Platform: string, Id: string, onetimeCode: string): Promise<Channel> {
         // [REFACTOR] 增强此方法以注入机器人自身的信息
         const bot = this.ctx.bots.find((b) => b.platform === Platform && b.isActive);
         if (!bot) {
@@ -187,7 +189,9 @@ export class WorldStateService extends Service<HistoryConfig> {
             })
             .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
 
-        const history: DialogueSegment[] = await Promise.all(segmentRecords.map((record) => this.buildFullDialogueSegment(record)));
+        const history: DialogueSegment[] = await Promise.all(
+            segmentRecords.map((record) => this.buildFullDialogueSegment(record, onetimeCode))
+        );
 
         const memberIds = new Set<string>();
         history.forEach((segment) => {
@@ -237,7 +241,7 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param segmentRecord
      * @returns
      */
-    private async buildFullDialogueSegment(segmentRecord: DialogueSegmentData): Promise<DialogueSegment> {
+    public async buildFullDialogueSegment(segmentRecord: DialogueSegmentData, onetimeCode: string): Promise<DialogueSegment> {
         const dialogueSegment: DialogueSegment = {
             type: "dialogue-segment",
             id: segmentRecord.id,
@@ -262,10 +266,26 @@ export class WorldStateService extends Service<HistoryConfig> {
             const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: segmentRecord.id });
             const systemEventRecords = await this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id });
 
+            function transform(source: string) {
+                const warp = (element: Element, onecode: string) => {
+                    element.attrs.onetime_code = onecode;
+                    return element;
+                };
+                return h.transform(source, (element) => {
+                    switch (element.type) {
+                        case "text":
+                            return h.text(element.attrs.content);
+                        default:
+                            return warp(element, onetimeCode);
+                    }
+                });
+            }
+
             dialogueSegment.dialogue = messageRecords.map((record) => ({
                 id: record.id,
-                content: record.content,
+                content: transform(record.content),
                 timestamp: record.timestamp,
+                date: formatDate(record.timestamp),
                 quoteId: record.quoteId,
                 sender: record.sender,
             }));
@@ -273,6 +293,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 id: record.id,
                 type: record.type,
                 timestamp: record.timestamp,
+                date: formatDate(record.timestamp),
                 payload: record.payload,
             }));
 
@@ -285,18 +306,18 @@ export class WorldStateService extends Service<HistoryConfig> {
         return dialogueSegment;
     }
 
-    public async recordAgentTurn(segment: DialogueSegment, responses: AgentResponse[]): Promise<DialogueSegment> {
+    public async recordAgentTurn(segmentRecord: DialogueSegmentData, responses: AgentResponse[]): Promise<void> {
         const agentTurn: AgentTurn = {
             responses,
             timestamp: new Date(),
         };
 
-        await this.ctx.database.set(TableName.DialogueSegments, { id: segment.id }, { status: "closed", agentTurn: agentTurn });
-        this.ctx.logger.debug(`Segment ${segment.id} closed and agent turn recorded.`);
+        await this.ctx.database.set(TableName.DialogueSegments, { id: segmentRecord.id }, { status: "closed", agentTurn: agentTurn });
+        this.ctx.logger.debug(`Segment ${segmentRecord.id} closed and agent turn recorded.`);
 
         const closedSegments = await this.ctx.database.get(TableName.DialogueSegments, {
-            channelId: segment.channelId,
-            platform: segment.platform,
+            channelId: segmentRecord.channelId,
+            platform: segmentRecord.platform,
             status: "closed",
         });
 
@@ -308,12 +329,11 @@ export class WorldStateService extends Service<HistoryConfig> {
             const idsToFold = segmentsToFold.map((s) => s.id);
             if (idsToFold.length > 0) {
                 await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: idsToFold } }, { status: "folded" });
-                this.ctx.logger.info(`Folded ${idsToFold.length} segments in channel ${segment.channelId}.`);
+                this.ctx.logger.info(`Folded ${idsToFold.length} segments in channel ${segmentRecord.channelId}.`);
             }
         }
 
-        const updatedSegmentRecord = await this.ctx.database.get(TableName.DialogueSegments, { id: segment.id }).then((res) => res[0]);
-        return this.buildFullDialogueSegment(updatedSegmentRecord);
+        // const updatedSegmentRecord = await this.ctx.database.get(TableName.DialogueSegments, { id: segment.id }).then((res) => res[0]);
     }
 
     public async getOpenSegment(platform: string, channelId: string, guildId?: string): Promise<DialogueSegmentData> {
@@ -375,8 +395,20 @@ export class WorldStateService extends Service<HistoryConfig> {
             ]);
         }
 
-        // [核心修改] 调用转换函数
-        const transformedContent = await this._transformMessageContent(session);
+        /**  */
+        const transformedContent = await h
+            .transformAsync(session.elements, async (element) => {
+                switch (element.type) {
+                    case "text":
+                        return h.escape(element.attrs.content);
+                    case "img":
+                    case "image":
+                        return await this.ctx[Services.Image].processImageElement(element, session);
+                    default:
+                        return element;
+                }
+            })
+            .then((res) => res.join(" ").trim());
 
         // 如果转换后内容为空 (例如，只发送了一张加载失败的图片)，则不处理
         if (!transformedContent) {
@@ -397,48 +429,11 @@ export class WorldStateService extends Service<HistoryConfig> {
                 roles: session.author.roles,
             },
             timestamp: new Date(session.timestamp),
-            content: transformedContent, // 使用转换后的内容
+            content: transformedContent,
             quoteId: session.quote?.id,
         });
 
-        const dialogueSegment = await this.buildFullDialogueSegment(segmentRecord);
-        this.ctx.emit("worldstate:segment-updated", session, dialogueSegment);
-    }
-
-    /**
-     * [重构] 转换会话内容，将图片等非文本元素处理为占位符
-     * @param session 当前会话
-     * @returns 转换后的纯文本内容
-     */
-    private async _transformMessageContent(session: Session): Promise<string> {
-        const imageService = this.ctx[Services.Image];
-        const contentParts: string[] = [];
-
-        for (const element of session.elements) {
-            switch (element.type) {
-                case "img":
-                    // 调用 ImageService 处理图片
-                    const placeholder = await imageService.processImageElement(element, session);
-                    if (placeholder) {
-                        contentParts.push(placeholder);
-                    }
-                    break;
-                case "at":
-                    // 保留 @ 信息
-                    contentParts.push(`<at id="${element.attrs.id}" name="${element.attrs.name}"/>`);
-                    break;
-                case "text":
-                    if (element.attrs.content) {
-                        contentParts.push(element.attrs.content.trim());
-                    }
-                    break;
-                default:
-                    // 对于其他未知元素，可以生成一个简单的占位符
-                    contentParts.push(`[${element.type}]`);
-                    break;
-            }
-        }
-        return contentParts.join(" ").trim();
+        this.ctx.emit("worldstate:segment-updated", session, segmentRecord);
     }
 
     private async handleMaintenance() {
@@ -556,4 +551,28 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         return dialogueLines.join("\n");
     }
+}
+
+function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss") {
+    const pad = (num) => String(num).padStart(2, "0");
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const seconds = date.getSeconds();
+
+    return format
+        .replace(/YYYY/g, year.toString())
+        .replace(/YY/g, String(year).slice(-2))
+        .replace(/MM/g, pad(month))
+        .replace(/M/g, month.toString())
+        .replace(/DD/g, pad(day))
+        .replace(/D/g, day.toString())
+        .replace(/HH/g, pad(hours))
+        .replace(/H/g, hours.toString())
+        .replace(/mm/g, pad(minutes))
+        .replace(/m/g, minutes.toString())
+        .replace(/ss/g, pad(seconds))
+        .replace(/s/g, seconds.toString());
 }
