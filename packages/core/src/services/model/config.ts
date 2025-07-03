@@ -13,11 +13,11 @@ export type ModelDescriptor = {
 
 /** 定义模型支持的能力 (使用位操作) */
 export enum ModelAbility {
-    Vision = 1 << 0,
-    WebSearch = 1 << 1,
-    Reasoning = 1 << 2,
-    FunctionCalling = 1 << 3,
-    Embedding = 1 << 4,
+    Vision,
+    WebSearch,
+    Reasoning,
+    FunctionCalling,
+    Embedding,
 }
 
 // =================================================================
