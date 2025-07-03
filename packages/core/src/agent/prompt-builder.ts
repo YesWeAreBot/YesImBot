@@ -27,6 +27,7 @@ export interface PromptContext {
     multiModalData: {
         images: (ImagePart | TextPart)[];
     };
+    onetimeCode: string;
 }
 
 export class PromptBuilder {
@@ -76,7 +77,7 @@ export class PromptBuilder {
     }
 
     public async build(context: PromptContext): Promise<{ messages: Message[] }> {
-        const { multiModalData, agentState, previousResponses, toolSchemas, worldState, memory } = context;
+        const { multiModalData, agentState, previousResponses, toolSchemas, worldState, memory, onetimeCode } = context;
         const messages: Message[] = [];
         // --- 1. 准备渲染视图数据 ---
 
@@ -97,6 +98,7 @@ export class PromptBuilder {
             CURRENT_CONVERSATION: {
                 history: previousResponses,
             },
+            ONETIME_CODE: onetimeCode,
             _toString: function () {
                 return _toString(this);
             },
@@ -149,4 +151,6 @@ function _toString(obj) {
 // TODO: 确保这些文件路径是正确的，并且模板内容已包含对 new WorldState 结构的支持
 export const SystemBaseTemplate = readFileSync(path.resolve(__dirname, "../../resources/prompts/memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(__dirname, "../../resources/prompts/user_base.txt"), "utf-8");
-export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'. In the subsequent conversation text, placeholders in the format <image id="[ID]"/> will be used to refer to these images. Please participate in the conversation considering the full context of both images and text.`;
+export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'.
+In the subsequent conversation text, placeholders in the format <image id="[ID]" onetime-code="{{ ONETIME_CODE }}"/> will be used to refer to these images.
+Please participate in the conversation considering the full context of both images and text.`;

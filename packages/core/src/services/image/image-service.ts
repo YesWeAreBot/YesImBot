@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { Context, Element, Service, Session } from "koishi";
+import { Context, Element, h, Service, Session } from "koishi";
 import path from "path";
 import { fetch } from "undici";
 import { Services, TableName } from "../types";
@@ -55,7 +55,7 @@ export class ImageService extends Service<ImageServiceConfig> {
      * @param session 当前会话，用于记录来源信息
      * @returns 成功则返回占位符字符串，失败则返回 null
      */
-    public async processImageElement(element: Element, session: Session): Promise<string | null> {
+    public async processImageElement(element: Element, session: Session): Promise<Element | null> {
         const url = element.attrs.src;
         if (!url) {
             this.logger.warn("Image element is missing 'src' attribute.");
@@ -95,10 +95,10 @@ export class ImageService extends Service<ImageServiceConfig> {
                 this.logger.debug(`Image already exists in cache: ${md5}`);
             }
 
-            return `<image id="${md5}"/>`;
+            return h("image", { id: md5 });
         } catch (error) {
             this.logger.error(`Failed to process image from URL: ${url}`, error);
-            return `[图片加载失败: ${url}]`;
+            return h.text(`[图片加载失败: ${url}]`);
         }
     }
 

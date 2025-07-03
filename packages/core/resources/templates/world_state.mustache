@@ -22,14 +22,14 @@
         {{#dialogue.length}}
         <dialogue>
         {{#dialogue}}
-          [{{timestamp}}] {{sender.name}}: {{content}}
+          <message id="{{id}}" timestamp="{{date}}" sender="{{sender.pid}}"{{#quoteId}} quote="{{.}}"{{/quoteId}}><content>{{content}}</content></message>
         {{/dialogue}}
         </dialogue>
         {{/dialogue.length}}
         {{#systemEvents.length}}
         <system_events>
         {{#systemEvents}}
-          <event type="{{type}}" timestamp="{{timestamp}}">{{payload}}</event>
+          <event type="{{type}}" timestamp="{{date}}">{{payload}}</event>
         {{/systemEvents}}
         </system_events>
         {{/systemEvents.length}}
