@@ -1,9 +1,8 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
-import type { EmbedManyOptions, EmbedOptions } from "xsai";
-import { embed, embedMany } from "../../../dependencies/xsai";
-
 import { Context, Logger } from "koishi";
-import { ModelConfig } from "../config";
+import type { EmbedManyOptions, EmbedOptions } from "xsai";
+import { embed, embedMany } from "../../dependencies/xsai";
+import { ModelConfig } from "./config";
 
 export class EmbedModel {
     private readonly logger: Logger;

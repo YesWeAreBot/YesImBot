@@ -1,10 +1,11 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
-import { Context, Logger } from "koishi";
+import { Context, isEmpty, Logger } from "koishi";
 import type { ChatOptions, CompletionToolCall, GenerateTextResult, Message } from "xsai";
-import { generateText, streamText } from "../../../dependencies/xsai";
-import { isEmpty, isNotEmpty, toBoolean } from "../../../shared/utils";
-import { ToolDefinition } from "../../extensions";
-import { ModelConfig } from "../config";
+
+import { generateText, streamText } from "../../dependencies/xsai";
+import { isNotEmpty, toBoolean } from "../../shared";
+import { ToolDefinition } from "../extensions";
+import { ModelConfig } from "./config";
 
 // 运行时选项，用于控制请求行为
 export interface RequestOptions {

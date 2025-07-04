@@ -1,10 +1,10 @@
 import { Context, Logger } from "koishi";
 import { ProxyAgent, fetch as ufetch } from "undici";
-import { isNotEmpty } from "../../../shared/utils";
-import { ModelAbility, ProviderConfig } from "../config";
-import { IProviderClient } from "../factories/base";
+import { isNotEmpty } from "../../shared/utils";
 import { ChatModel } from "./chat-model";
+import { ModelAbility, ProviderConfig } from "./config";
 import { EmbedModel } from "./embed-model";
+import { IProviderClient } from "./factories";
 
 export class ProviderInstance {
     public readonly name: string;
