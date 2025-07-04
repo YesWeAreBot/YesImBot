@@ -46,7 +46,7 @@ export class MemoryService extends Service {
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
 
-        this._logger = ctx.logger(`[记忆服务]`);
+        this._logger = ctx[Services.Logger].getLogger("[记忆服务]");
 
         this._logger.info("服务已启动");
     }
