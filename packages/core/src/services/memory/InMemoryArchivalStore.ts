@@ -1,5 +1,6 @@
 import { Context, Logger } from "koishi";
 import { ArchivalEntry, ArchivalSearchResult } from "./types";
+import { Services } from "../types";
 
 export interface IArchivalMemoryStore {
     store(content: string, metadata?: Record<string, any>): Promise<ArchivalEntry>;
@@ -23,7 +24,7 @@ export class InMemoryArchivalStore implements IArchivalMemoryStore {
     private readonly logger: Logger;
 
     constructor(ctx: Context) {
-        this.logger = ctx.logger(InMemoryArchivalStore.name);
+        this.logger = ctx[Services.Logger].getLogger("[记忆服务] [归档存储]");
     }
 
     async store(content: string, metadata?: Record<string, any>): Promise<ArchivalEntry> {

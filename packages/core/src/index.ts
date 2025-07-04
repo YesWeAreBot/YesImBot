@@ -1,4 +1,4 @@
-import { Context, Service } from "koishi";
+import { Context, ForkScope, Service, sleep } from "koishi";
 import { AgentCore } from "./agent";
 import { Config } from "./config";
 import { ImageService, LoggerService, MemoryService, ModelService, ToolService, WorldStateService } from "./services";
@@ -53,6 +53,13 @@ export default class YesImBot extends Service<Config> {
             });
 
             const agentCore = ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
+
+            const services = [loggerService, imageService, toolService, modelService, memoryService, worldStateService, agentCore];
+
+            waitForServices(services).then(() => {
+                this.ctx.logger.info("所有服务已就绪");
+                this.ctx.logger.info(`Version: ${require("../package.json").version}`);
+            });
         } catch (error) {
             this.ctx.logger.error("初始化时发生错误:", error.message);
             this.ctx.logger.error(error.stack);
@@ -62,4 +69,18 @@ export default class YesImBot extends Service<Config> {
             this.ctx.logger.info("配置已更新");
         });
     }
+}
+
+async function waitForServices(services: ForkScope[]) {
+    await sleep(1000);
+    return new Promise<void>((resolve) => {
+        const check = () => {
+            if (services.every((service) => service.isActive)) {
+                resolve();
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
 }
