@@ -1,13 +1,9 @@
 import { Context, Service } from "koishi";
 import { Services } from "../types";
-
-import { IProviderFactory } from "./factories/base";
-import { ProviderInstance } from "./impl/provider-instance";
-
-import { AnthropicFactory, OllamaFactory, OpenAIFactory } from "./factories";
-
-import { ModelConfigSchema, ModelDescriptor, ModelServiceConfig } from "./config";
-import { ChatModel } from "./impl/chat-model";
+import { ChatModel } from "./chat-model";
+import { ModelDescriptor, ModelServiceConfig } from "./config";
+import { AnthropicFactory, IProviderFactory, OllamaFactory, OpenAIFactory } from "./factories";
+import { ProviderInstance } from "./provider-instance";
 
 declare module "koishi" {
     interface Context {
@@ -26,6 +22,38 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         this.ctx = ctx;
         this.config = config;
+
+        /**
+         * 验证是否有无效配置
+         * 1. 至少有一个 Provider
+         * 2. 每个 Provider 至少有一个模型
+         * 3. 每个模型组至少有一个模型，且模型存在于已启用的 Provider 中
+         * 4. 为核心任务分配的模型组存在
+         */
+
+        if (this.config.providers.length === 0) {
+            throw new Error("至少需要配置一个提供商");
+        }
+
+        for (const providerConfig of this.config.providers) {
+            if (providerConfig.models.length === 0) {
+                throw new Error(`提供商 ${providerConfig.name} 至少需要配置一个模型`);
+            }
+        }
+
+        for (const groupName in this.config.modelGroups) {
+            const group = this.config.modelGroups[groupName];
+            if (group.length === 0) {
+                throw new Error(`模型组 ${groupName} 至少需要包含一个模型`);
+            }
+        }
+
+        for (const task in this.config.taskAssignments) {
+            const group = this.config.modelGroups[this.config.taskAssignments[task]];
+            if (!group) {
+                throw new Error(`为核心任务 ${task} 分配的模型组 ${this.config.taskAssignments[task]} 不存在`);
+            }
+        }
 
         this.registerFactories();
         this.initializeProviders();
@@ -62,11 +90,20 @@ export class ModelService extends Service<ModelServiceConfig> {
         }
     }
 
-    public useGroup(name: string | symbol): ModelSwitcher {
+    /**
+     * 通过模型组名称获取一个模型切换器，包含了该组中的所有模型。
+     * @param name 模型组名称或预定义的模型组符号。
+     * @throws
+     * @returns
+     */
+    public useGroup(name: string | symbol): ModelSwitcher | undefined {
         if (typeof name === "string") {
             const group = this.config.modelGroups[name];
             if (!group) {
-                this.ctx.logger.warn("未找到模型组: {0}", name);
+                this.ctx.logger.warn(`未找到模型组: ${name}`);
+                return;
+            } else if (group.length === 0) {
+                this.ctx.logger.warn(`模型组 ${name} 中未定义任何模型`);
                 return;
             }
             return new ModelSwitcher(this.ctx, this, group);
@@ -79,7 +116,7 @@ export class ModelService extends Service<ModelServiceConfig> {
                 case ModelGroup.Summarization:
                     return this.useGroup(this.config.taskAssignments.summarization);
                 default:
-                    this.ctx.logger.warn("未找到模型组: {0}", name);
+                    this.ctx.logger.warn(`未找到模型组: ${Symbol.keyFor(name)}`);
                     return;
             }
         }
@@ -113,6 +150,10 @@ export class ModelSwitcher {
                 return model;
             })
             .filter(Boolean);
+
+        if (this.models.length === 0) {
+            this.ctx.logger.error("未找到任何可用模型");
+        }
     }
 
     public getCurrent(): ChatModel {

@@ -13,11 +13,11 @@ export type ModelDescriptor = {
 
 /** 定义模型支持的能力 (使用位操作) */
 export enum ModelAbility {
-    Vision,
-    WebSearch,
-    Reasoning,
-    FunctionCalling,
-    Embedding,
+    Vision = 1 << 0,
+    WebSearch = 1 << 1,
+    Reasoning = 1 << 2,
+    FunctionCalling = 1 << 3,
+    Embedding = 1 << 4,
 }
 
 // =================================================================
@@ -29,6 +29,7 @@ export enum ModelAbility {
 export interface ModelConfig {
     modelId: string;
     abilities: ModelAbility[];
+    // abilities: number;
     parameters?: {
         temperature?: number;
         topP?: number;
@@ -37,8 +38,8 @@ export interface ModelConfig {
     };
 }
 
-export const ModelConfigSchema = Schema.object({
-    modelId: Schema.string().required(),
+export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
+    modelId: Schema.string().required().description("模型ID"),
     abilities: Schema.array(
         Schema.union([
             Schema.const(ModelAbility.Vision).description("视觉能力"),
@@ -49,8 +50,9 @@ export const ModelConfigSchema = Schema.object({
         ])
     )
         .role("checkbox")
-        .default([ModelAbility.FunctionCalling])
+        .default([])
         .description("模型支持的能力"),
+
     parameters: Schema.object({
         temperature: Schema.number().default(1.36),
         topP: Schema.number().default(0.8),
