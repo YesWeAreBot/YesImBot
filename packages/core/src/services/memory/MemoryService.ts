@@ -1,13 +1,11 @@
-import { Context, Service } from "koishi";
-import { ChatModel, ModelGroup } from "../model";
+import { Context, Logger, Service } from "koishi";
+import { AppError, ErrorCodes } from "../../shared";
 import { Services } from "../types";
+import { MEMORY_TABLE, MemoryBlockConfig, MemoryConfig } from "./config";
 import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
-
 import { IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
 import { MemoryBlock } from "./MemoryBlock";
-import { MemoryError } from "./MemoryError";
-import { ArchivalEntry, ArchivalSearchResult, MemoryBlockCompressionState, MemoryBlockData } from "./types";
-import { MEMORY_TABLE, MemoryBlockConfig, MemoryConfig } from "./config";
+import { ArchivalEntry, ArchivalSearchResult, MemoryBlockData } from "./types";
 
 declare module "koishi" {
     interface Context {
@@ -19,12 +17,14 @@ declare module "koishi" {
 }
 
 export class MemoryService extends Service {
-    static readonly inject = [Services.Model];
+    static readonly inject = [Services.Model, Services.Logger];
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
     private lastModified: Date = new Date();
     private readonly memoryBlockStore: IMemoryBlockStore;
     public readonly archivalStore: IArchivalMemoryStore;
+
+    private _logger: Logger;
 
     constructor(ctx: Context, public readonly config: MemoryConfig) {
         super(ctx, Services.Memory, true);
@@ -46,33 +46,30 @@ export class MemoryService extends Service {
         this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
         this.archivalStore = new InMemoryArchivalStore(ctx);
 
-        ctx.logger.info("MemoryService initialized.");
+        this._logger = ctx.logger(`[记忆服务]`);
+
+        this._logger.info("服务已启动");
     }
 
     protected async start() {
-        this.ctx.logger.info("Starting MemoryService and initializing core blocks...");
         if (this.config.blocks) {
             for (const label in this.config.blocks) {
                 if (Object.prototype.hasOwnProperty.call(this.config.blocks, label)) {
                     const blockConfig = this.config.blocks[label];
                     await this.getOrCreateCoreMemoryBlock(label, blockConfig);
-                    this.ctx.logger.info(`Core memory block "${label}" ensured.`);
                 }
             }
         } else {
-            this.ctx.logger.info(
-                `No Block configured. Standard blocks like "persona" or "human" should be explicitly created if needed or defined in config.`
-            );
+            this._logger.warn("未配置任何核心记忆块");
         }
     }
 
     public async getOrCreateCoreMemoryBlock(label: string, customConfig: MemoryBlockConfig): Promise<MemoryBlock> {
         if (this.coreMemoryBlocks.has(label)) {
             const existingBlock = this.coreMemoryBlocks.get(label)!;
-            // Optionally update config like limit if provided for an existing block
+
             if (customConfig.limit !== undefined && existingBlock.limit !== customConfig.limit) {
-                // This would require MemoryBlock to have a setLimit method and persist it
-                this.ctx.logger.warn(`Limit change for existing block ${label} not yet implemented.`);
+                this._logger.warn(`核心记忆块 "${label}" 已存在，但配置中的大小限制与现有值不同。使用现有值。`);
             }
             return existingBlock;
         }
@@ -81,14 +78,14 @@ export class MemoryService extends Service {
             this.ctx,
             { label },
             {
-                defaultLimit: customConfig.limit ?? 5000, // A general default if not specified
+                defaultLimit: customConfig.limit ?? 5000,
                 initialValue: [],
                 store: this.memoryBlockStore,
                 filePathToBind: customConfig.filePathToBind,
             }
         );
         this.coreMemoryBlocks.set(label, block);
-        this.ctx.logger.debug(`Core memory block "${label}" loaded/created.`);
+        this._logger.info(`核心记忆块 "${label}" 已创建`);
         return block;
     }
 
@@ -100,8 +97,13 @@ export class MemoryService extends Service {
         const block = this.coreMemoryBlocks.get(label);
         if (!block) {
             const available = Array.from(this.coreMemoryBlocks.keys()).join(", ") || "None";
-            this.ctx.logger.error(`Core memory block "${label}" not found. Available: [${available}]`);
-            throw new MemoryError("Core memory block not found", { label, availableLabels: Array.from(this.coreMemoryBlocks.keys()) });
+
+            this._logger.error(`核心记忆块 "${label}" 不存在。可用的有: [${available}]`);
+
+            throw new AppError(`核心记忆块 "${label}" 不存在`, {
+                code: ErrorCodes.RESOURCE.NOT_FOUND,
+                context: { resourceType: "MemoryBlock", resourceId: label, available },
+            });
         }
         return block;
     }
@@ -129,7 +131,6 @@ export class MemoryService extends Service {
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.append(content);
         this.lastModified = new Date();
-        this.ctx.logger.info(`Appended to core memory "${label}".`);
 
         return `Successfully appended to core memory block <${label}>.`;
     }
@@ -138,7 +139,7 @@ export class MemoryService extends Service {
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.replace(oldContent, newContent);
         this.lastModified = new Date();
-        this.ctx.logger.info(`Replaced in core memory "${label}".`);
+
         return `Successfully replaced content in core memory block <${label}>.`;
     }
 
@@ -146,11 +147,14 @@ export class MemoryService extends Service {
         try {
             const entry = await this.archivalStore.store(content, metadata);
             this.lastModified = new Date();
-            this.ctx.logger.info(`Stored in archival memory. ID: ${entry.id}`);
+
             return entry;
         } catch (error) {
-            this.ctx.logger.error(`Failed to store in archival memory: ${error.message}`);
-            throw new MemoryError(`Store in archival memory failed`, { content, metadata, error });
+            throw new AppError(`Store in archival memory failed`, {
+                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
+                context: { content, metadata },
+                cause: error,
+            });
         }
     }
 
@@ -160,27 +164,26 @@ export class MemoryService extends Service {
     ): Promise<ArchivalSearchResult> {
         try {
             const searchResult = await this.archivalStore.search(query, options);
-            this.ctx.logger.info(
-                `Archival search for "${query}" returned ${searchResult.results.length} of ${searchResult.total} results.`
-            );
-            return searchResult; // Return raw results; formatting can be done by the tool/caller
+
+            return searchResult;
         } catch (error) {
-            this.ctx.logger.error(`Failed to search archival memory: ${error.message}`);
-            throw new MemoryError(`Search archival memory failed`, { query, options, error });
+            throw new AppError(`Search archival memory failed`, {
+                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
+                context: { query, options },
+                cause: error,
+            });
         }
     }
 
     protected async stop() {
-        this.ctx.logger.info("Stopping MemoryService...");
-
         for (const block of this.coreMemoryBlocks.values()) {
-            await block.disposeFileWatcher().catch((e) => this.ctx.logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
+            await block.disposeFileWatcher().catch((e) => this._logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
         }
         this.coreMemoryBlocks.clear();
 
         if (this.archivalStore.clearAll) {
             await this.archivalStore.clearAll().catch((e) => this.ctx.logger.warn(`Error clearing archival store: ${e.message}`));
         }
-        this.ctx.logger.info("MemoryService stopped and resources cleaned up.");
+        this._logger.info("服务已停止");
     }
 }

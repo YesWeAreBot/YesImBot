@@ -1,6 +1,6 @@
-import { Argv, Context, Element, h, Random, Service, Session } from "koishi";
+import { Argv, Context, Element, h, Logger, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
-import { ChatModel } from "../model";
+import { ChatModel, ModelGroup } from "../model";
 import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
@@ -99,7 +99,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         roles: ["human", "operator"],
     };
 
-    static readonly inject = [Services.Model, Services.Image];
+    static readonly inject = [Services.Model, Services.Image, Services.Logger];
 
     // #endregion
 
@@ -107,6 +107,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     // #region 实例属性
     // =================================================================================
 
+    private _logger: Logger;
     private chatModel: ChatModel;
     private disposers: (() => boolean)[] = [];
     private maintenanceInterval: NodeJS.Timeout;
@@ -128,6 +129,14 @@ export class WorldStateService extends Service<HistoryConfig> {
         super(ctx, Services.WorldState, true);
         this.ctx = ctx;
         this.config = config;
+
+        this._logger = ctx[Services.Logger].getLogger("[世界状态]");
+
+        this.chatModel = this.ctx[Services.Model].useGroup(ModelGroup.Summarization)?.getCurrent();
+
+        if (!this.chatModel) {
+            this._logger.warn("未找到任何可用的总结模型，自动总结功能将不可用");
+        }
     }
 
     /**
@@ -147,7 +156,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.handleMaintenance();
         }, this.config.advanced.cleanupIntervalMs);
 
-        this.ctx.logger.info("WorldState Service started, using middleware for user messages.");
+        // this._logger.info("WorldState Service started, using middleware for user messages.");
+        this._logger.info("服务已启动");
     }
 
     /**
@@ -159,7 +169,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         if (this.maintenanceInterval) {
             clearInterval(this.maintenanceInterval);
         }
-        this.ctx.logger.info("WorldState Service stopped.");
+        // this._logger.info("WorldState Service stopped.");
+        this._logger.info("服务已停止");
     }
 
     // #endregion
@@ -200,7 +211,8 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 将当前片段状态更新为 'closed' 并记录 agentTurn
         await this.ctx.database.set(TableName.DialogueSegments, { id: segmentRecord.id }, { status: "closed", agentTurn });
-        this.ctx.logger.debug(`Segment ${segmentRecord.id} closed and agent turn recorded.`);
+        // this._logger.debug(`Segment ${segmentRecord.id} closed and agent turn recorded.`);
+        this._logger.debug(`片段 ${segmentRecord.id} 已关闭，并记录了 Agent 回合。`);
 
         // 应用上下文折叠策略
         await this.applyFoldingPolicy(segmentRecord.platform, segmentRecord.channelId);
@@ -265,12 +277,13 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         if (!allowed) {
             if (this.config.system.debug.enable) {
-                this.ctx.logger.info(`Message from ${session.author.name} in ${session.cid} ignored.`);
+                // this._logger.info(`Message from ${session.author.name} in ${session.cid} ignored.`);
             }
             return;
         }
 
-        this.ctx.logger.debug(`[WorldState] Handling user message via middleware: ${session.messageId}`);
+        // this._logger.debug(`[WorldState] Handling user message via middleware: ${session.messageId}`);
+
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
 
         if (session.guildId) {
@@ -317,7 +330,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         const { session, command, args, options, source } = argv;
         if (!session) return;
 
-        this.ctx.logger.debug(`[WorldState] Handling command invocation: ${command.name}`);
+        // this._logger.debug(`[WorldState] Handling command invocation: ${command.name}`);
+
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
 
         // 1. 在数据库中创建事件
@@ -362,7 +376,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         }
 
         // 如果没有匹配，则为普通AI消息（如 ReAct 的 send_message）
-        this.ctx.logger.debug(`[WorldState] Recording a regular programmatic AI message.`);
+        this._logger.debug(`[WorldState] Recording a regular programmatic AI message.`);
         const openSegment = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
         if (!openSegment) return;
 
@@ -388,7 +402,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 任何到达这里的机器人消息都可被视为操作员消息。
         // （未来可加入更复杂的去重逻辑，但目前此简化是健壮的）
 
-        this.ctx.logger.debug(`[WorldState] Handling operator message: ${session.messageId}`);
+        this._logger.debug(`[WorldState] Handling operator message: ${session.messageId}`);
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
 
         await this.recordMessage(segmentRecord.id, {
@@ -446,7 +460,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 await this.summarizeAndArchive(session.platform, session.channelId);
                 return "手动总结任务已触发并完成。";
             } catch (error) {
-                this.ctx.logger.error(error);
+                this._logger.error(error);
                 return "总结任务失败，请检查日志。";
             }
         });
@@ -541,7 +555,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             timestamp: message.timestamp,
             quoteId: message.quoteId,
         });
-        this.ctx.logger.debug(`Recorded message ${message.id} into segment ${segmentId}`);
+        this._logger.debug(`Recorded message ${message.id} into segment ${segmentId}`);
     }
 
     /**
@@ -578,7 +592,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         if (pendingIndex !== -1) {
             const pendingCmd = pendingInChannel[pendingIndex];
-            this.ctx.logger.debug(`[WorldState] Matched bot message to pending command event: ${pendingCmd.commandEventId}`);
+            this._logger.debug(`[WorldState] Matched bot message to pending command event: ${pendingCmd.commandEventId}`);
 
             // 更新数据库事件并完成状态
             await this.addResultToCommandEvent(pendingCmd.commandEventId, session.content);
@@ -613,12 +627,12 @@ export class WorldStateService extends Service<HistoryConfig> {
         const { platform, id } = channel;
         const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
         if (!bot) {
-            this.ctx.logger.warn(`Could not find an online bot for platform "${platform}" to build channel context.`);
+            this._logger.warn(`Could not find an online bot for platform "${platform}" to build channel context.`);
         }
 
         const channelInfo = await bot?.getChannel(id);
         if (!channelInfo) {
-            this.ctx.logger.warn(`Failed to get channel info for ${platform}:${id}`);
+            this._logger.warn(`Failed to get channel info for ${platform}:${id}`);
             // 即使获取失败，也返回一个基础对象以保证健壮性
             return { id, platform: platform, name: `Channel ${id}`, type: "guild", meta: {}, members: [], history: [] };
         }
@@ -773,7 +787,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             const idsToFold = segmentsToFold.map((s) => s.id);
             if (idsToFold.length > 0) {
                 await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: idsToFold } }, { status: "folded" });
-                this.ctx.logger.info(`Folded ${idsToFold.length} segments in channel ${channelId}.`);
+                this._logger.info(`Folded ${idsToFold.length} segments in channel ${channelId}.`);
             }
         }
     }
@@ -785,13 +799,13 @@ export class WorldStateService extends Service<HistoryConfig> {
     // =================================================================================
 
     private handleMaintenance(): void {
-        this.ctx.logger.debug("Running maintenance tasks...");
+        this._logger.debug("Running maintenance tasks...");
 
         this.cleanupPendingCommands();
 
-        if (this.config.enableSummarization) {
+        if (this.config.enableSummarization && this.chatModel) {
             this.triggerSummarizationForEligibleChannels().catch((error) => {
-                this.ctx.logger.error("Error during summarization maintenance task:", error);
+                this._logger.error("Error during summarization maintenance task:", error);
             });
         }
     }
@@ -872,7 +886,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const summaryText = summaryResponse?.text;
 
         if (!summaryText) {
-            this.ctx.logger.warn(`Summarization failed for channel ${channelId}: no response from model.`);
+            this._logger.warn(`Summarization failed for channel ${channelId}: no response from model.`);
             return;
         }
 
@@ -894,7 +908,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             await db.set(TableName.DialogueSegments, { id: { $in: groupIds } }, { status: "archived" });
         });
 
-        this.ctx.logger.info(`Successfully summarized ${groupIds.length} segments into one for channel ${channelId}.`);
+        this._logger.info(`Successfully summarized ${groupIds.length} segments into one for channel ${channelId}.`);
     }
 
     /**

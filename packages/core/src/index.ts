@@ -1,7 +1,7 @@
 import { Context, Service } from "koishi";
 import { AgentCore } from "./agent";
 import { Config } from "./config";
-import { ImageService, MemoryService, ModelService, ToolService, WorldStateService } from "./services";
+import { ImageService, LoggerService, MemoryService, ModelService, ToolService, WorldStateService } from "./services";
 
 declare module "koishi" {
     interface Context {
@@ -21,36 +21,45 @@ export default class YesImBot extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
-        // [新增] 注册图片服务，应在 WorldStateService 之前
-        ctx.plugin(ImageService, config.imageService);
+        try {
+            // 注册日志服务
+            const loggerService = ctx.plugin(LoggerService, config.system.logging);
 
-        // 注册工具管理器
-        ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });
+            const imageService = ctx.plugin(ImageService, config.imageService);
 
-        // 注册模型服务
-        ctx.plugin(ModelService, { ...config.modelService, system: config.system });
+            // 注册工具管理器
+            const toolService = ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });
 
-        // 注册记忆管理层
-        ctx.plugin(MemoryService, { ...config.capabilities.memory, system: config.system });
+            // 注册模型服务
+            const modelService = ctx.plugin(ModelService, { ...config.modelService, system: config.system });
 
-        const allowedChannels: Set<string> = new Set();
+            // 注册记忆管理层
+            const memoryService = ctx.plugin(MemoryService, { ...config.capabilities.memory, system: config.system });
 
-        for (const channelGroup of config.agentBehavior.arousal.allowedChannelGroups) {
-            for (const channel of channelGroup) {
-                allowedChannels.add(`${channel.platform}:${channel.id}`);
+            // 转换 allowedChannelGroups 为 Set
+            const allowedChannels: Set<string> = new Set();
+
+            for (const channelGroup of config.agentBehavior.arousal.allowedChannelGroups) {
+                for (const channel of channelGroup) {
+                    allowedChannels.add(`${channel.platform}:${channel.id}`);
+                }
             }
+
+            // 注册 WorldState 服务
+            const worldStateService = ctx.plugin(WorldStateService, {
+                ...config.capabilities.history,
+                allowedChannels,
+                system: config.system,
+            });
+
+            const agentCore = ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
+        } catch (error) {
+            this.ctx.logger.error("初始化时发生错误:", error.message);
+            this.ctx.logger.error(error.stack);
         }
 
-        // 注册 WorldState 服务
-        ctx.plugin(WorldStateService, { ...config.capabilities.history, allowedChannels, system: config.system });
-
-        ctx.on("ready", async () => {
-            // 注册指令
-            // ctx.plugin(require("./commands/cache"));
-            // ctx.plugin(require("./commands/config"), config);
-            // ctx.plugin(require("./commands/extension"));
-
-            ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
+        ctx.on("internal/update", (scope, oldConfig) => {
+            this.ctx.logger.info("配置已更新");
         });
     }
 }

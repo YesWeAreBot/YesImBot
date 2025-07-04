@@ -1,6 +1,7 @@
 import { Context, Logger } from "koishi";
 import { ProxyAgent, fetch as ufetch } from "undici";
 import { isNotEmpty } from "../../shared/utils";
+import { Services } from "../types";
 import { ChatModel } from "./chat-model";
 import { ModelAbility, ProviderConfig } from "./config";
 import { EmbedModel } from "./embed-model";
@@ -13,15 +14,14 @@ export class ProviderInstance {
 
     constructor(private ctx: Context, public readonly config: ProviderConfig, private readonly client: IProviderClient) {
         this.name = config.name;
-        this.logger = ctx.logger("model").extend(this.name);
-        this.logger.info(`初始化提供商实例: "${this.name}"`);
+
+        this.logger = ctx[Services.Logger].getLogger(`[提供商] [${this.name}]`);
+        this.logger.info(`[初始化] 🔌 提供商实例已创建`);
 
         if (isNotEmpty(this.config.proxy)) {
-            // 设置支持代理的 fetch 函数
             this.fetch = (async (input, init) => {
-                this.logger.debug(`使用代理 "${this.config.proxy}"`);
+                this.logger.debug(`[网络] 🌐 使用代理 | 地址: ${this.config.proxy}`);
                 init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
-
                 return await ufetch(input, init);
             }) as unknown as typeof globalThis.fetch;
         }
@@ -33,21 +33,18 @@ export class ProviderInstance {
      * @returns ChatModel 实例或 null。
      */
     public getChatModel(modelId: string): ChatModel | null {
-        // 1. 检查 Provider 是否支持 chat 能力
         if (!this.client.chat) {
-            this.logger.debug(`提供商 "${this.name}" 不支持聊天能力。`);
+            this.logger.debug(`[获取模型] 💬 跳过 | 原因: 不支持聊天能力`);
             return null;
         }
 
-        // 2. 在该 Provider 的配置中查找模型
         const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
-            this.logger.debug(`未在提供商 "${this.name}" 中找到模型 ID "${modelId}"。`);
+            this.logger.debug(`[获取模型] 💬 未找到 | 模型ID: ${modelId}`);
             return null;
         }
 
-        // 3. 创建并返回 ChatModel 实例
-        this.logger.debug(`成功获取聊天模型 "${modelId}"。`);
+        this.logger.debug(`[获取模型] 💬 成功 | 模型ID: ${modelId}`);
         return new ChatModel(this.ctx, this.client.chat, modelConfig, this.fetch);
     }
 
@@ -57,29 +54,23 @@ export class ProviderInstance {
      * @returns EmbedModel 实例或 null。
      */
     public getEmbedModel(modelId: string): EmbedModel | null {
-        // 1. 检查 Provider 是否支持 embed 能力
         if (!this.client.embed) {
-            this.logger.debug(`提供商 "${this.name}" 不支持嵌入能力。`);
+            this.logger.debug(`[获取模型] 🔗 跳过 | 原因: 不支持嵌入能力`);
             return null;
         }
 
-        // 2. 在该 Provider 的配置中查找模型
         const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
-            this.logger.debug(`未在提供商 "${this.name}" 中找到模型 ID "${modelId}"。`);
+            this.logger.debug(`[获取模型] 🔗 未找到 | 模型ID: ${modelId}`);
             return null;
         }
 
-        // 3. 检查模型是否具有嵌入能力 (Ability.Embedding)
         if (!modelConfig.abilities.includes(ModelAbility.Embedding)) {
-            this.logger.debug(`模型 "${modelId}" 在提供商 "${this.name}" 中未声明 Embedding 能力。`);
+            this.logger.debug(`[获取模型] 🔗 跳过 | 模型 ${modelId} 未声明嵌入能力`);
             return null;
         }
 
-        // 4. 创建并返回 EmbedModel 实例
-        this.logger.debug(`成功获取嵌入模型 "${modelId}"。`);
+        this.logger.debug(`[获取模型] 🔗 成功 | 模型ID: ${modelId}`);
         return new EmbedModel(this.ctx, this.client.embed, modelConfig, this.fetch);
     }
-
-    // TODO: 添加对其他能力 (image, speech 等) 的 get 方法，如果需要的话
 }

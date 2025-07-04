@@ -1,6 +1,6 @@
 import { Context } from "koishi";
 
-import { MemoryError } from "./MemoryError";
+import { AppError, ErrorCodes } from "../../shared";
 import { MEMORY_TABLE } from "./config";
 import { MemoryBlockData } from "./types";
 
@@ -29,7 +29,12 @@ export class DatabaseMemoryBlockStore implements IMemoryBlockStore {
         } catch (error) {
             const errMsg = `DatabaseStore: Failed to load memory block ${label} (ID: ${id}): ${error.message}`;
             this.ctx.logger.error(errMsg);
-            throw new MemoryError(errMsg, { id, label, error });
+            // throw new MemoryError(errMsg, { id, label, error });
+            throw new AppError(errMsg, {
+                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
+                context: { id, label },
+                cause: error,
+            });
         }
     }
 
@@ -47,7 +52,12 @@ export class DatabaseMemoryBlockStore implements IMemoryBlockStore {
         } catch (error) {
             const errMsg = `DatabaseStore: Failed to save memory block ${data.label} (ID: ${data.id}): ${error.message}`;
             this.ctx.logger.error(errMsg);
-            throw new MemoryError(errMsg, { id: data.id, label: data.label, error });
+            // throw new MemoryError(errMsg, { id: data.id, label: data.label, error });
+            throw new AppError(errMsg, {
+                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
+                context: { id: data.id, label: data.label },
+                cause: error,
+            });
         }
     }
 
@@ -58,7 +68,12 @@ export class DatabaseMemoryBlockStore implements IMemoryBlockStore {
         } catch (error) {
             const errMsg = `DatabaseStore: Failed to remove memory block ${label} (ID: ${id}): ${error.message}`;
             this.ctx.logger.error(errMsg);
-            throw new MemoryError(errMsg, { id, label, error });
+            // throw new MemoryError(errMsg, { id, label, error });
+            throw new AppError(errMsg, {
+                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
+                context: { id, label },
+                cause: error,
+            });
         }
     }
 
@@ -69,7 +84,12 @@ export class DatabaseMemoryBlockStore implements IMemoryBlockStore {
         } catch (error) {
             const errMsg = `DatabaseStore: Failed to check existence for ${label} (ID: ${id}): ${error.message}`;
             this.ctx.logger.error(errMsg);
-            throw new MemoryError(errMsg, { id, label, error });
+            // throw new MemoryError(errMsg, { id, label, error });
+            throw new AppError(errMsg, {
+                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
+                context: { id, label },
+                cause: error,
+            });
         }
     }
 }
