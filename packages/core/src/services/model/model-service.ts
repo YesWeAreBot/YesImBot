@@ -1,4 +1,5 @@
-import { Context, Service } from "koishi";
+import { Context, Logger, Service } from "koishi";
+import { AppError, ErrorCodes } from "../../shared";
 import { Services } from "../types";
 import { ChatModel } from "./chat-model";
 import { ModelDescriptor, ModelServiceConfig } from "./config";
@@ -12,51 +13,56 @@ declare module "koishi" {
 }
 
 export class ModelService extends Service<ModelServiceConfig> {
+    static readonly inject = [Services.Logger];
     // 工厂注册表
     private readonly providerFactories = new Map<string, IProviderFactory>();
     // 实例化的 Provider 缓存
     private readonly providerInstances = new Map<string, ProviderInstance>();
+    private readonly _logger: Logger;
 
     constructor(ctx: Context, config: ModelServiceConfig) {
         super(ctx, Services.Model, true);
-
-        this.ctx = ctx;
         this.config = config;
+        this._logger = ctx[Services.Logger].getLogger("[模型服务]");
 
-        /**
-         * 验证是否有无效配置
-         * 1. 至少有一个 Provider
-         * 2. 每个 Provider 至少有一个模型
-         * 3. 每个模型组至少有一个模型，且模型存在于已启用的 Provider 中
-         * 4. 为核心任务分配的模型组存在
-         */
+        this.validateConfig();
+        this.registerFactories();
+        this.initializeProviders();
+    }
 
+    /**
+     * 验证是否有无效配置
+     * 1. 至少有一个 Provider
+     * 2. 每个 Provider 至少有一个模型
+     * 3. 每个模型组至少有一个模型，且模型存在于已启用的 Provider 中
+     * 4. 为核心任务分配的模型组存在
+     */
+    private validateConfig(): void {
+        this._logger.debug("[配置] ⚙️ 开始验证服务配置...");
         if (this.config.providers.length === 0) {
-            throw new Error("至少需要配置一个提供商");
+            throw new Error("配置错误: 至少需要配置一个提供商。");
         }
 
         for (const providerConfig of this.config.providers) {
             if (providerConfig.models.length === 0) {
-                throw new Error(`提供商 ${providerConfig.name} 至少需要配置一个模型`);
+                throw new Error(`配置错误: 提供商 ${providerConfig.name} 至少需要配置一个模型。`);
             }
         }
 
         for (const groupName in this.config.modelGroups) {
             const group = this.config.modelGroups[groupName];
             if (group.length === 0) {
-                throw new Error(`模型组 ${groupName} 至少需要包含一个模型`);
+                throw new Error(`配置错误: 模型组 ${groupName} 至少需要包含一个模型。`);
             }
         }
 
         for (const task in this.config.taskAssignments) {
-            const group = this.config.modelGroups[this.config.taskAssignments[task]];
-            if (!group) {
-                throw new Error(`为核心任务 ${task} 分配的模型组 ${this.config.taskAssignments[task]} 不存在`);
+            const groupName = this.config.taskAssignments[task];
+            if (!this.config.modelGroups[groupName]) {
+                throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
             }
         }
-
-        this.registerFactories();
-        this.initializeProviders();
+        this._logger.debug("[配置] ⚙️ 配置验证通过。");
     }
 
     private registerFactories(): void {
@@ -64,18 +70,20 @@ export class ModelService extends Service<ModelServiceConfig> {
         this.providerFactories.set("OpenAI Compatible", new OpenAIFactory());
         this.providerFactories.set("Ollama", new OllamaFactory());
         this.providerFactories.set("Anthropic", new AnthropicFactory());
+        this._logger.debug(`[初始化] 注册了 ${this.providerFactories.size} 个提供商工厂`);
     }
 
     private initializeProviders(): void {
+        this._logger.info("[初始化] 开始初始化提供商...");
         for (const providerConfig of this.config.providers) {
             if (!providerConfig.enabled) {
-                this.ctx.logger.info("跳过禁用的提供商: {0}", providerConfig.name);
+                this._logger.info(`[初始化] 🔌 跳过 (未启用) | 提供商: ${providerConfig.name}`);
                 continue;
             }
 
             const factory = this.providerFactories.get(providerConfig.type);
             if (!factory) {
-                this.ctx.logger.warn("不支持的提供商类型: {0}", providerConfig.type);
+                this._logger.error(`[初始化] ✖ 工厂未找到 | 类型: ${providerConfig.type}`);
                 continue;
             }
 
@@ -83,9 +91,9 @@ export class ModelService extends Service<ModelServiceConfig> {
                 const client = factory.createClient(providerConfig);
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this.ctx.logger.info("成功初始化提供商: {0}", instance.name);
+                this._logger.success(`[初始化] ✔ 提供商成功 | 名称: ${instance.name}`);
             } catch (error) {
-                this.ctx.logger.error("初始化提供商时出错: {0}", error.message);
+                this._logger.error(`[初始化] ✖ 提供商失败 | 名称: ${providerConfig.name} | 错误: ${error.message}`);
             }
         }
     }
@@ -97,28 +105,43 @@ export class ModelService extends Service<ModelServiceConfig> {
      * @returns
      */
     public useGroup(name: string | symbol): ModelSwitcher | undefined {
+        let groupName: string;
+        let group: ModelDescriptor[];
+
         if (typeof name === "string") {
-            const group = this.config.modelGroups[name];
-            if (!group) {
-                this.ctx.logger.warn(`未找到模型组: ${name}`);
-                return;
-            } else if (group.length === 0) {
-                this.ctx.logger.warn(`模型组 ${name} 中未定义任何模型`);
-                return;
-            }
-            return new ModelSwitcher(this.ctx, this, group);
+            groupName = name;
+            group = this.config.modelGroups[groupName];
         } else {
             switch (name) {
                 case ModelGroup.Chat:
-                    return this.useGroup(this.config.taskAssignments.chat);
+                    group = this.config.modelGroups[this.config.taskAssignments.chat];
+                    break;
                 case ModelGroup.Embedding:
-                    return this.useGroup(this.config.taskAssignments.embedding);
+                    group = this.config.modelGroups[this.config.taskAssignments.embedding];
+                    break;
                 case ModelGroup.Summarization:
-                    return this.useGroup(this.config.taskAssignments.summarization);
+                    group = this.config.modelGroups[this.config.taskAssignments.summarization];
+                    break;
                 default:
-                    this.ctx.logger.warn(`未找到模型组: ${Symbol.keyFor(name)}`);
-                    return;
+                    this._logger.warn(`[切换器] ⚠ 任务未分配模型组 | 任务: ${Symbol.keyFor(name)}`);
+                    return undefined;
             }
+        }
+
+        if (!group) {
+            this._logger.warn(`[切换器] ⚠ 组未找到 | 名称: ${groupName}`);
+            return undefined;
+        } else if (group.length === 0) {
+            this._logger.warn(`[切换器] ⚠ 组为空 | 名称: ${groupName}`);
+            return undefined;
+        }
+
+        try {
+            return new ModelSwitcher(this.ctx, this, group, groupName);
+        } catch (error) {
+            // ModelSwitcher 构造函数中的错误会被捕获，这里只记录一下上下文
+            this._logger.error(`[切换器] ✖ 创建失败 | 组: ${groupName} | 错误: ${error.message}`);
+            return undefined;
         }
     }
 
@@ -134,26 +157,33 @@ export const ModelGroup = {
 };
 
 export class ModelSwitcher {
-    private ctx: Context;
-    private models: ChatModel[];
+    private readonly models: ChatModel[];
     private currentIndex = 0;
+    private readonly _logger: Logger;
 
-    constructor(ctx: Context, private modelService: ModelService, modelGroup: ModelDescriptor[]) {
-        this.ctx = ctx;
+    constructor(private ctx: Context, private modelService: ModelService, modelDescriptors: ModelDescriptor[], private groupName: string) {
+        this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupName}]`);
+        this._logger.debug(`[加载] 开始加载模型组...`);
 
-        this.models = modelGroup
+        this.models = modelDescriptors
             .map((descriptor) => {
                 const model = this.modelService.getChatModel(descriptor.providerName, descriptor.modelId);
                 if (!model) {
-                    this.ctx.logger.warn("未找到模型: {0}", descriptor);
+                    this._logger.warn(`[加载] ⚠ 模型未找到 | ID: ${descriptor.modelId}, 提供商: ${descriptor.providerName}`);
+                    return null;
                 }
                 return model;
             })
-            .filter(Boolean);
+            .filter((model): model is ChatModel => model !== null);
 
         if (this.models.length === 0) {
-            this.ctx.logger.error("未找到任何可用模型");
+            this._logger.error("[加载] ✖ 致命错误 | 模型组中无任何可用模型");
+            throw new AppError("模型组中未找到任何可用的模型", {
+                code: ErrorCodes.RESOURCE.NOT_FOUND,
+                context: { resourceType: "Model", resourceId: `group:${groupName}` },
+            });
         }
+        this._logger.debug(`[加载] ✔ 加载成功 | 可用模型数: ${this.models.length}`);
     }
 
     public getCurrent(): ChatModel {
@@ -161,7 +191,11 @@ export class ModelSwitcher {
     }
 
     public switchToNext(): ChatModel {
+        const oldIndex = this.currentIndex;
         this.currentIndex = (this.currentIndex + 1) % this.models.length;
+        const oldModel = this.models[oldIndex].id;
+        const newModel = this.getCurrent().id;
+        this._logger.info(`[切换] 模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
         return this.getCurrent();
     }
 }

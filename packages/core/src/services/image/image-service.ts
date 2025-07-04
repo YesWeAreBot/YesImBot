@@ -1,13 +1,12 @@
 import { createHash } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { Context, Element, h, Service, Session } from "koishi";
+import { Context, Element, h, Logger, Service, Session } from "koishi";
 import path from "path";
 import { fetch } from "undici";
+import { truncate } from "../../shared";
 import { Services, TableName } from "../types";
 import { ImageServiceConfig } from "./config";
 import { ImageData } from "./database-models";
-
-const LOG_PREFIX = "[ImageService]";
 
 declare module "koishi" {
     interface Context {
@@ -16,20 +15,20 @@ declare module "koishi" {
 }
 
 export class ImageService extends Service<ImageServiceConfig> {
+    static readonly inject = [Services.Logger];
+    private _logger: Logger;
+
     constructor(ctx: Context, config: ImageServiceConfig) {
         super(ctx, Services.Image, true);
-        this.ctx = ctx;
         this.config = config;
-
-        this.ctx.logger.name = LOG_PREFIX;
+        this._logger = ctx[Services.Logger].getLogger("[图片服务]");
     }
 
     protected async start() {
-        this.logger.info("Starting ImageService...");
-        // 确保存储目录存在
+        this._logger.info("[核心] 🚀 服务正在启动...");
         await mkdir(this.config.storagePath, { recursive: true });
+        this._logger.debug(`[核心] 存储目录已确认: ${this.config.storagePath}`);
 
-        // 注册数据库模型
         this.ctx.model.extend(
             TableName.Images,
             {
@@ -42,11 +41,10 @@ export class ImageService extends Service<ImageServiceConfig> {
                 description: "text",
                 source: "json",
             },
-            {
-                primary: "id",
-            }
+            { primary: "id" }
         );
-        this.logger.info("ImageService started and database model registered.");
+        this._logger.debug("[核心] 数据库模型已注册");
+        this._logger.info("[核心] 🚀 服务已成功启动");
     }
 
     /**
@@ -58,9 +56,11 @@ export class ImageService extends Service<ImageServiceConfig> {
     public async processImageElement(element: Element, session: Session): Promise<Element | null> {
         const url = element.attrs.src;
         if (!url) {
-            this.logger.warn("Image element is missing 'src' attribute.");
+            this._logger.warn("[处理] ⚠ 跳过 | 图片元素缺少 'src' 属性");
             return null;
         }
+
+        this._logger.info(`[处理] 🖼️ 开始处理新图片 | URL: ${truncate(url)}`);
 
         try {
             const { buffer, mimeType } = await this._downloadImage(url);
@@ -68,10 +68,9 @@ export class ImageService extends Service<ImageServiceConfig> {
             const extension = this._getExtensionFromMimeType(mimeType);
             const localPath = path.join(this.config.storagePath, `${md5}.${extension}`);
 
-            // 检查图片是否已存在
             const existing = await this.ctx.database.get(TableName.Images, { id: md5 });
             if (existing.length === 0) {
-                // 不存在则写入文件并创建数据库记录
+                this._logger.debug(`[缓存] ❌ 未命中 | ID: ${md5}`);
                 await writeFile(localPath, buffer);
 
                 const imageData: ImageData = {
@@ -90,14 +89,14 @@ export class ImageService extends Service<ImageServiceConfig> {
                     },
                 };
                 await this.ctx.database.create(TableName.Images, imageData);
-                this.logger.info(`New image saved: ${md5} from ${url}`);
+                this._logger.info(`[存储] ✔ 新图片已保存 | ID: ${md5}`);
             } else {
-                this.logger.debug(`Image already exists in cache: ${md5}`);
+                this._logger.debug(`[缓存] ✔ 命中 | ID: ${md5}`);
             }
 
             return h("image", { id: md5 });
         } catch (error) {
-            this.logger.error(`Failed to process image from URL: ${url}`, error);
+            this._logger.error(`[处理] 💥 处理失败 | URL: ${url} | 错误: ${error.message}`, error);
             return h.text(`[图片加载失败: ${url}]`);
         }
     }
@@ -110,27 +109,30 @@ export class ImageService extends Service<ImageServiceConfig> {
     public async getImageDataWithContent(id: string): Promise<{ data: ImageData; content: string } | null> {
         const [imageData] = await this.ctx.database.get(TableName.Images, { id });
         if (!imageData) {
-            this.logger.warn(`Could not find image metadata for ID: ${id}`);
+            this._logger.warn(`[读取] ⚠ 元数据未找到 | ID: ${id}`);
             return null;
         }
 
         try {
             const buffer = await readFile(imageData.localPath);
             const base64Content = `data:${imageData.mimeType};base64,${buffer.toString("base64")}`;
+            this._logger.debug(`[读取] ✔ 成功获取图片内容 | ID: ${id}`);
             return { data: imageData, content: base64Content };
         } catch (error) {
-            this.logger.error(`Failed to read image file for ID ${id} at path ${imageData.localPath}`, error);
+            this._logger.error(`[读取] 💥 文件读取失败 | ID: ${id} | 路径: ${imageData.localPath}`, error);
             return null;
         }
     }
 
     private async _downloadImage(url: string): Promise<{ buffer: Buffer; mimeType: string }> {
+        this._logger.debug(`[网络] 📥 正在下载图片 | URL: ${url}`);
         const response = await fetch(url);
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status} for URL: ${url}`);
+            throw new Error(`HTTP 错误! 状态: ${response.status}`);
         }
         const buffer = Buffer.from(await response.arrayBuffer());
         const mimeType = response.headers.get("content-type") || "application/octet-stream";
+        this._logger.debug(`[网络] ✔ 下载完成 | 大小: ${(buffer.length / 1024).toFixed(2)} KB, 类型: ${mimeType}`);
         return { buffer, mimeType };
     }
 
@@ -139,6 +141,7 @@ export class ImageService extends Service<ImageServiceConfig> {
     }
 
     private _getExtensionFromMimeType(mimeType: string): string {
+        // 简单的从 'image/jpeg' 中提取 'jpeg'
         const parts = mimeType.split("/");
         return parts[1] || "bin";
     }

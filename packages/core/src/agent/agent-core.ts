@@ -1,4 +1,4 @@
-import { Context, h, Random, Schema, Service, Session } from "koishi";
+import { Context, h, Logger, Random, Schema, Service, Session } from "koishi";
 import type { ImagePart, TextPart } from "xsai";
 import {
     AgentResponse,
@@ -16,16 +16,14 @@ import {
     WorldState,
     WorldStateService,
 } from "../services";
-import { JsonParser } from "../shared";
+import { JsonParser, truncate } from "../shared";
 import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
 import { ConversationFlowAnalyzer, FlowAnalysis } from "./conversation-flow-analyzer";
 import { PromptBuilder, PromptContext } from "./prompt-builder";
 import { Willingness, WillingnessCalculator } from "./willingness-calculator";
 
-const LOG_PREFIX = "[AgentCore]";
-
 export class AgentCore extends Service<AgentBehaviorConfig> {
-    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image];
+    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image, Services.Logger];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;
@@ -33,6 +31,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly toolService: ToolService;
 
     // 内部组件
+    private readonly _logger: Logger;
     private readonly flowAnalyzer: ConversationFlowAnalyzer;
     private readonly willingnessCalculator: WillingnessCalculator;
     private readonly promptBuilder: PromptBuilder;
@@ -50,8 +49,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         super(ctx, "agent", true);
         this.ctx = ctx;
         this.config = config;
-
-        this.ctx.logger.name = LOG_PREFIX;
+        this._logger = ctx[Services.Logger].getLogger("[智能体核心]");
 
         this.worldState = this.ctx[Services.WorldState];
         this.modelService = this.ctx[Services.Model];
@@ -75,19 +73,19 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 // if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
                 this.handleSegmentUpdate(session, segment);
             } catch (error) {
-                this.handleError(error, "handling segment update");
+                this.handleError(error, `处理段落更新时 (ID: ${segment.id})`);
             }
         });
 
         this.startWillingnessDecay();
         this.toolService.registerTool(await this.createMessageTool());
-        this.ctx.logger.info("Service started.");
+        this._logger.info("[核心] 🚀 服务已启动");
     }
 
     protected stop(): void {
         this.debounceTimers.forEach(clearTimeout);
         clearInterval(this.willingnessDecayTimer);
-        this.ctx.logger.info("Service stopped.");
+        this._logger.info("[核心] 🛑 服务已停止");
     }
 
     private updateAllowedChannels(): void {
@@ -97,7 +95,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 this.allowedChannels.add(`${platform}:${id}`);
             });
         });
-        this.ctx.logger.debug(`Allowed channels updated. Total: ${this.allowedChannels.size}`);
+        this._logger.debug(`[配置] ⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
     private startWillingnessDecay(): void {
@@ -117,7 +115,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.debounceTimers.set(
             channelKey,
             setTimeout(() => {
-                this.ctx.logger.info(`Debounce timer triggered for channel ${channelKey}. Starting decision process...`);
+                this._logger.debug(`[响应] ⏳ 防抖计时结束，开始决策 | 频道: ${channelKey}`);
                 this.decideToAct(session, segment);
                 this.debounceTimers.delete(channelKey);
             }, this.config.arousal.debounceMs)
@@ -125,31 +123,31 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     private async decideToAct(session: Session, segment: DialogueSegment): Promise<void> {
-        this.ctx.logger.info(`[Decision] Evaluating channel ${segment.platform}:${segment.channelId}, segment: ${segment.id}`);
+        const channelKey = `${segment.platform}:${segment.channelId}`;
+        this._logger.debug(`[决策] 🤔 开始评估 | 频道: ${channelKey}, 段落ID: ${segment.id}`);
 
         try {
             const analysis = this.flowAnalyzer.analyze(segment, this.config.willingness.keywords);
             analysis.isAgentMentioned = session.stripped.atSelf;
-            const currentWillingness = this.channelWillingness.get(segment.channelId) || 0;
+            const currentWillingness = this.channelWillingness.get(channelKey) || 0;
             const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
 
-            if (this.config.system.debug.enable) {
-                this.ctx.logger.info(
-                    `[Decision] ${segment.channelId} | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | T: ${
-                        willingness.threshold
-                    } | Act: ${willingness.shouldAct} | R: ${willingness.reasons.join("; ")}`
-                );
-            }
+            const action = willingness.shouldAct ? "✔ 行动" : "❌ 忽略";
+            this._logger.debug(
+                `[决策] 📊 意愿度评估 | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | 阈值: ${
+                    willingness.threshold
+                } | 决策: ${action} | 原因: ${willingness.reasons.join(";")}`
+            );
 
             if (willingness.shouldAct) {
                 const retainedWillingness = willingness.value * this.config.willingness.advanced.retentionAfterReply;
-                this.channelWillingness.set(segment.channelId, retainedWillingness);
+                this.channelWillingness.set(channelKey, retainedWillingness);
                 await this.runAgentCycle(session, segment, analysis, willingness);
             } else {
-                this.channelWillingness.set(segment.channelId, willingness.value);
+                this.channelWillingness.set(channelKey, willingness.value);
             }
         } catch (error) {
-            this.handleError(error, `in decision process for segment ${segment.id}`);
+            this.handleError(error, `决策过程中 (段落ID: ${segment.id})`);
         }
     }
 
@@ -159,29 +157,45 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         analysis: FlowAnalysis,
         willingness: Willingness
     ): Promise<void> {
-        this.ctx.logger.info(`[Cycle] Starting for segment ${segment.id}`);
+        this._logger.debug(`[循环] 🌀 → 开始 | 段落ID: ${segment.id}`);
         const collectedResponses: AgentResponse[] = [];
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
-            this.ctx.logger.debug(`[Cycle] Heartbeat #${heartbeatCount} for segment ${segment.id}`);
+            this._logger.debug(`[心跳] ❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
 
             try {
                 const promptContext = await this.buildPromptContext(segment, analysis, willingness, collectedResponses);
                 const { messages } = await this.promptBuilder.build(promptContext);
 
                 const chatModel = this.modelSwitcher.getCurrent();
-                const llmRawResponse = await chatModel.chat(messages, {
-                    debug: this.config.system.debug.enable,
-                    logger: this.ctx.logger("[LLM]"),
-                });
 
-                const llmParsedResponse = this.parser.parse(llmRawResponse.text);
+                if (!chatModel) {
+                    this._logger.error(`[心跳] ✖ 模型未找到，停止回复 | 段落ID: ${segment.id}`);
+                    shouldContinueHeartbeat = false;
+                    continue;
+                }
+
+                const stime = Date.now();
+
+                const llmRawResponse = await chatModel.chat(messages);
+
+                this._logger.info(`[心跳] 💬 响应时间: ${Date.now() - stime}ms | 段落ID: ${segment.id}`);
+
+                const { text, usage } = llmRawResponse;
+
+                this._logger.info(
+                    `[心跳] 💰 Token 消耗 | 输入: ${usage?.prompt_tokens || "N/A"} | 输出: ${usage?.completion_tokens || "N/A"}`
+                );
+
+                const llmParsedResponse = this.parser.parse(text);
 
                 if (llmParsedResponse.error || !llmParsedResponse.data) {
-                    this.ctx.logger.warn(`[Cycle] Failed to parse LLM response: ${llmParsedResponse.error}. Raw: ${llmRawResponse.text}`);
+                    this._logger.warn(
+                        `[心跳] ✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100)}`
+                    );
                     shouldContinueHeartbeat = false;
                     continue;
                 }
@@ -190,7 +204,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 // 验证响应格式
                 if (!Array.isArray(agentResponseData.actions)) {
-                    this.ctx.logger.warn(`[Cycle] Invalid actions format. Expected array, got ${typeof agentResponseData.actions}`);
+                    this._logger.warn(`[心跳] ✖ 格式无效 | actions应为数组，实际为 ${typeof agentResponseData.actions}`);
                     shouldContinueHeartbeat = false;
                     continue;
                 }
@@ -202,22 +216,21 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 shouldContinueHeartbeat = agentResponseData.request_heartbeat;
             } catch (error) {
-                this.handleError(error, `during heartbeat #${heartbeatCount} for segment ${segment.id}`);
-                shouldContinueHeartbeat = false; // 出现意外错误，停止循环
+                this.handleError(error, `心跳 #${heartbeatCount} 期间 (段落ID: ${segment.id})`);
+                shouldContinueHeartbeat = false;
             }
         }
 
-        // 无论循环如何结束，只要有响应，就记录下来
         if (collectedResponses.length > 0) {
-            this.ctx.logger.info(`[Cycle] Saving ${collectedResponses.length} responses for segment ${segment.id}`);
+            this._logger.debug(`[循环] 💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
             await this.worldState.recordAgentTurn(segment, collectedResponses);
-            this.ctx.logger.info(`[Cycle] ✅ Completed for segment ${segment.id}.`);
+            this._logger.debug(`[循环] ✅ 完成 | 段落ID: ${segment.id}`);
         } else {
-            this.ctx.logger.warn(`[Cycle] ⚠️ Completed for segment ${segment.id} with no actions taken.`);
+            this._logger.warn(`[循环] ⚠️ 完成 (无行动) | 段落ID: ${segment.id}`);
         }
 
         if (heartbeatCount >= this.config.heartbeat) {
-            this.ctx.logger.warn(`[Cycle] Max heartbeat reached for segment ${segment.id}.`);
+            this._logger.warn(`[循环] ⚠️ 已达最大心跳次数 | 段落ID: ${segment.id}`);
         }
     }
 
@@ -225,7 +238,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const context: ToolExecutionContext = {
             koishiContext: this.ctx,
             koishiSession: session,
-            logger: this.ctx.logger("tool-exec"),
+            logger: this.ctx[Services.Logger].getLogger("tool-exec"),
             extensionConfig: {},
         };
 
@@ -353,8 +366,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         const finalImages: (ImagePart | TextPart)[] = [];
 
+        const allowedImageTypes = ["image/jpeg", "image/png"];
+
         for (const result of imageDataResults) {
-            if (result) {
+            if (result && allowedImageTypes.includes(result.data?.mimeType)) {
                 finalImages.push({ type: "text", text: `Image #${result.data.id}:` });
                 finalImages.push({ type: "image_url", image_url: { url: result.content, detail: this.config.vision.detail } });
             }
@@ -386,13 +401,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         return { images: finalImages };
     }
-
-    // [NEW] 统一的错误处理函数
     private handleError(error: unknown, context: string): void {
         if (error instanceof Error) {
-            this.ctx.logger.error(`An error occurred ${context}: ${error.message}\n${error.stack}`);
+            this._logger.error(`[错误] 💥 在 ${context} 发生错误 | 信息: ${error.message}\n${error.stack}`);
         } else {
-            this.ctx.logger.error(`An unknown error occurred ${context}:`, error);
+            this._logger.error(`[错误] 💥 在 ${context} 发生未知错误:`, error);
         }
     }
 
@@ -408,20 +421,22 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 ),
             }),
             execute: async ({ koishiSession }, { message, target }) => {
+                const toolLogger = this._logger.extend("send_message");
                 if (!koishiSession) {
-                    this.ctx.logger.warn("SendMessageTool called without a valid session.");
-                    return Failed("Missing session object");
+                    toolLogger.warn("✖ 缺少有效会话，无法发送消息。");
+                    return Failed("缺少会话对象");
                 }
 
                 try {
                     const messages = message.split("<sep/>");
+                    const finalTarget = target || `${koishiSession.platform}:${koishiSession.channelId}`;
 
-                    // 如果没有指定 target，或者 target 与当前频道相同，使用 session 直接回复
                     if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
+                        toolLogger.debug(`→ 发送至当前会话 | 目标: ${finalTarget}`);
                         for (const msg of messages) {
                             await koishiSession.sendQueued(msg);
                         }
-                        return Success();
+                        return Success("消息已发送至当前频道");
                     }
 
                     // 如果指定了不同的 target，使用 bot 发送消息
@@ -432,19 +447,21 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     const platform = parts[0];
                     const channelId = parts.slice(1).join(":");
 
+                    toolLogger.debug(`→ 发送至指定目标 | 目标: ${finalTarget}`);
                     const bot = this.ctx.bots.find((b) => b.platform === platform);
                     if (!bot) {
                         const platforms = this.ctx.bots.map((b) => b.platform).join(", ");
-                        return Failed(`Bot not found for platform ${platform}, platform must be one of ${platforms}`);
+                        toolLogger.warn(`✖ 未找到平台对应的机器人 | 目标平台: ${platform}, 可用平台: ${platforms}`);
+                        return Failed(`未找到平台 ${platform} 的机器人，可用平台: ${platforms}`);
                     }
 
                     for (const msg of messages) {
                         await bot.sendMessage(channelId, msg);
                     }
-                    return Success();
+                    return Success(`消息已发送至 ${target}`);
                 } catch (error) {
-                    this.handleError(error, `sending message to channel ${target || koishiSession.channelId}`);
-                    return Failed(`Failed to send message: ${error.message}`);
+                    this.handleError(error, `发送消息至 ${target || koishiSession.channelId}`);
+                    return Failed(`发送消息失败: ${error.message}`);
                 }
             },
         });

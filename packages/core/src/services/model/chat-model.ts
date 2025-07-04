@@ -1,50 +1,39 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
-import { Context, isEmpty, Logger } from "koishi";
-import type { ChatOptions, CompletionToolCall, GenerateTextResult, Message } from "xsai";
+import { Context, Logger } from "koishi";
+import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, GenerateTextStepResult, Message } from "xsai";
 
 import { generateText, streamText } from "../../dependencies/xsai";
-import { isNotEmpty, toBoolean } from "../../shared";
+import { toBoolean, truncate } from "../../shared"; // 假设 truncate 在 shared 中
 import { ToolDefinition } from "../extensions";
+import { Services } from "../types";
 import { ModelConfig } from "./config";
 
-// 运行时选项，用于控制请求行为
 export interface RequestOptions {
-    debug?: boolean;
-    logger?: Logger;
     abortSignal?: AbortSignal;
     onStreamStart?: () => void;
-    tools?: ToolDefinition[]; // 定义模型可以使用哪些工具
+    tools?: ToolDefinition[];
 }
 
-/**
- * @class ChatModel
- * @description 代表一个具体、可执行的聊天模型实例。
- * 这个类封装了与 xsai 库交互的所有细节，为上层应用提供一个统一的 `chat` 接口。
- */
 export class ChatModel {
-    public readonly id: string; // 模型 ID
+    public readonly id: string;
     private readonly customParameters: Record<string, unknown> = {};
     private readonly logger: Logger;
 
     constructor(
-        ctx: Context,
-        private readonly chatProvider: ChatProvider, // xsai 提供的聊天能力接口
-        private readonly modelConfig: ModelConfig, // 该模型的配置
-        private readonly fetch: typeof globalThis.fetch // 支持代理的 fetch
+        private ctx: Context,
+        private readonly chatProvider: ChatProvider,
+        private readonly modelConfig: ModelConfig,
+        private readonly fetch: typeof globalThis.fetch
     ) {
         this.id = this.modelConfig.modelId;
-        this.logger = ctx.logger("model").extend(this.id);
+        this.logger = ctx[Services.Logger].getLogger(`[聊天模型] [${this.id}]`);
         this.parseCustomParameters();
     }
 
-    /**
-     * 解析并缓存模型配置中的自定义参数。
-     */
     private parseCustomParameters(): void {
         if (!this.modelConfig.parameters.custom) return;
 
-        for (const key of Object.keys(this.modelConfig.parameters.custom)) {
-            const param = this.modelConfig.parameters.custom[key];
+        for (const [key, param] of Object.entries(this.modelConfig.parameters.custom)) {
             try {
                 let parsedValue: any;
                 switch (param.type) {
@@ -65,163 +54,171 @@ export class ChatModel {
                 }
                 this.customParameters[key] = parsedValue;
             } catch (error) {
-                this.logger.warn(`解析自定义参数 "${key}" (值为: "${param.value}") 时出错: ${error.message}`);
+                this.logger.warn(`[配置] ⚙️ 解析自定义参数失败 | 键: "${key}" | 错误: ${error.message}`);
             }
         }
-        this.logger.debug(`已加载自定义参数: ${JSON.stringify(this.customParameters)}`);
-    }
-
-    /**
-     * 执行一次聊天请求。
-     * @param messages - 对话历史消息。
-     * @param options - 运行时选项，如工具、日志、调试、中止信号等。
-     * @returns 一个包含 LLM 响应的 Promise。
-     */
-    public async chat(messages: Message[], options: RequestOptions = {}): Promise<GenerateTextResult> {
-        const { logger, abortSignal, onStreamStart, tools, debug } = options;
-        const effectiveLogger = logger?.extend(this.id) || this.logger; // 使用传入的 logger 或实例的 logger
-        const log = (message: string) => debug && effectiveLogger.info(message);
-
-        log("开始执行聊天请求...");
-        log(`模型: ${this.id}, 流式输出: ${this.modelConfig.parameters.stream ?? true}`);
-
-        const chatOptions: ChatOptions = this.buildChatOptions(messages, {
-            ...options, // 传递其他选项
-            logger: effectiveLogger, // 将 logger 传递给 xsai
-        });
-
-        // 如果模型配置明确指定了 Stream，则优先使用它
-        const useStream = this.modelConfig.parameters.stream;
-
-        if (useStream) {
-            return this._executeStream(chatOptions, log, onStreamStart);
-        } else {
-            return this._executeNonStream(chatOptions, log);
+        if (Object.keys(this.customParameters).length > 0) {
+            this.logger.debug(`[配置] ⚙️ 加载自定义参数 | 参数: ${JSON.stringify(this.customParameters)}`);
         }
     }
 
-    /**
-     * 构建传递给 xsai 的 ChatOptions 对象。
-     */
+    public async chat(messages: Message[], options: RequestOptions = {}): Promise<GenerateTextResult> {
+        const useStream = this.modelConfig.parameters.stream ?? true;
+        this.logger.info(`[执行] 💬 开始 | 流式: ${useStream}`);
+        const chatOptions: ChatOptions = this.buildChatOptions(messages, options);
+
+        try {
+            if (useStream) {
+                return await this._executeStream(chatOptions, options.onStreamStart);
+            } else {
+                return await this._executeNonStream(chatOptions);
+            }
+        } catch (error) {
+            this.logger.error(`[执行] 💥 致命异常 | 错误: ${error.message}`, error);
+            throw error; // 重新抛出，让上层捕获
+        }
+    }
+
     private buildChatOptions(messages: Message[], options: RequestOptions): ChatOptions {
         return {
             ...this.chatProvider.chat(this.modelConfig.modelId),
-            fetch: this.fetch, // 使用支持代理的 fetch
+            fetch: this.fetch,
             abortSignal: options.abortSignal,
             messages,
             tools: options.tools,
-
-            // 应用模型配置中的参数，以及运行时传入的参数
             temperature: this.modelConfig.parameters.temperature,
             topP: this.modelConfig.parameters.topP,
-
-            // 合并所有自定义参数
             ...this.customParameters,
         };
     }
 
-    /**
-     * 处理非流式聊天请求。
-     */
-    private async _executeNonStream(chatOptions: ChatOptions, log: (message: string) => void): Promise<GenerateTextResult> {
-        log("使用非流式模式执行。");
+    private async _executeNonStream(chatOptions: ChatOptions): Promise<GenerateTextResult> {
+        this.logger.debug("[执行] → 非流式请求");
         const result = await generateText(chatOptions);
 
         if (result.toolCalls && result.toolCalls.length > 0) {
-            log(`收到工具调用请求: ${result.toolCalls.map((tc: CompletionToolCall) => tc.toolName).join(", ")}`);
+            const toolNames = result.toolCalls.map((tc: CompletionToolCall) => tc.toolName).join(", ");
+            this.logger.success(`[执行] ✔ 工具调用 ← 名称: ${toolNames}`);
         } else {
-            log(`收到文本响应: ${result.text.substring(0, 100)}...`);
+            this.logger.success(`[执行] ✔ 文本响应 ← 内容: "${truncate(result.text, 80)}"`);
         }
         return result;
     }
 
     /**
-     * 处理流式聊天请求。
+     * 处理流式聊天请求，并实现打字机效果。
+     * 这种实现方式可以并发处理多个流（文本、步骤），并在所有流结束后组装完整结果。
      */
-    private async _executeStream(
-        chatOptions: ChatOptions,
-        log: (message: string) => void,
-        onStreamStart?: () => void
-    ): Promise<GenerateTextResult> {
-        log("使用流式模式执行。");
+    private async _executeStream(chatOptions: ChatOptions, onStreamStart?: () => void): Promise<GenerateTextResult> {
+        this.logger.debug("[执行] → 流式请求 (并发处理)");
         let streamStarted = false;
-        let textStreamContent = "";
-        let finalResult: GenerateTextResult | null = null;
 
-        // 用于处理分行日志的缓冲区
-        let currentLineBuffer = "";
+        const stream = await streamText({
+            ...chatOptions,
+            streamOptions: {
+                includeUsage: true,
+            },
+            onChunk: (chunk) => {
+                if (!streamStarted) {
+                    onStreamStart?.();
+                    streamStarted = true;
+                    this.logger.debug("[执行] 🌊 流式传输已开始 (首包到达)");
+                    // 打印一个换行符，为打字机效果准备一个干净的起始行
+                    process.stdout.write("\n");
+                }
+            },
+        });
 
-        try {
-            const stream = await streamText({
-                ...chatOptions,
-                streamOptions: { includeUsage: true },
-                onChunk: () => {
-                    if (!streamStarted) {
-                        onStreamStart?.(); // 调用外部提供的回调，可能用于取消重试定时器
-                        streamStarted = true;
-                        log("流式传输已开始。");
-                    }
-                },
-            });
+        // --- 并发处理流的核心逻辑 ---
 
-            // xsai 的 streamText 返回一个包含 textStream 和 stepStream 的对象
-            const textStream: ReadableStream<string> = stream["textStream"];
-            // const stepStream: ReadableStream<any> = stream["stepStream"]; // 如果需要处理工具调用等，需要解析 stepStream
+        // 1. 定义用于聚合最终结果的变量
+        const finalContentParts: string[] = [];
+        let finalSteps: GenerateTextResult["steps"] = [];
+        let finalMessages: Message[] = [];
+        let finalToolCalls: CompletionToolCall[] = [];
+        let finalToolResults: CompletionToolResult[] = [];
+        let finalUsage: GenerateTextResult["usage"];
+        let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
-            log(`正在接收来自模型 "${this.id}" 的文本流...`);
+        // 2. 创建一个 async 函数来处理文本流 (打字机效果)
+        const textProcessor = async () => {
+            for await (const textPart of stream.textStream) {
+                process.stdout.write(textPart); // 实时打字效果
+                finalContentParts.push(textPart); // 收集文本块
+            }
+        };
 
-            const reader = textStream.getReader();
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                if (isEmpty(value)) continue;
-                textStreamContent += value;
-                currentLineBuffer += value;
-
-                // 处理分行日志
-                if (currentLineBuffer.includes("\n")) {
-                    const lines = currentLineBuffer.split("\n");
-                    // 如果 buffer 以换行符结尾，说明是一行完整的
-                    if (currentLineBuffer.endsWith("\n")) {
-                        lines.forEach((line) => {
-                            if (isNotEmpty(line)) log(line);
-                        });
-                        currentLineBuffer = "";
-                    } else {
-                        // 否则，最后一行是未完成的，保留到下次
-                        lines.slice(0, -1).forEach((line) => {
-                            if (isNotEmpty(line)) log(line);
-                        });
-                        currentLineBuffer = lines[lines.length - 1];
+        // 3. 创建另一个 async 函数来处理步骤流 (元数据和工具调用)
+        const stepProcessor = async () => {
+            for await (const step of stream.stepStream) {
+                // 聚合步骤
+                finalSteps.push(step as GenerateTextStepResult);
+                // 聚合工具调用
+                if (step.toolCalls && step.toolCalls.length > 0) {
+                    finalToolCalls.push(...step.toolCalls);
+                }
+                // 聚合工具结果
+                if (step.toolResults && step.toolResults.length > 0) {
+                    finalToolResults.push(...step.toolResults);
+                }
+                // 持续更新使用量，最后一次的为最终值
+                // if (step.usage) {
+                //     finalUsage = step.usage;
+                // }
+                // 从 choice 中获取最终的停止原因
+                if (step.choices && step.choices.length > 0) {
+                    // 通常最后一个 choice 包含最终的停止原因
+                    const lastChoice = step.choices[step.choices.length - 1];
+                    if (lastChoice.finishReason) {
+                        finalFinishReason = lastChoice.finishReason;
                     }
                 }
+
+                // 聚合消息
+                if (step.messages && step.messages.length > 0) {
+                    // 通常最后一个 messages 包含最终消息列表
+                    finalMessages = step.messages;
+                }
             }
-            // 输出最后可能未完全刷新的行
-            if (isNotEmpty(currentLineBuffer)) log(currentLineBuffer);
+        };
 
-            log(`模型 "${this.id}" 的文本流接收完毕。`);
+        const chunkProcessor = async () => {
+            for await (const chunk of stream.chunkStream) {
+                if (chunk.usage) {
+                    finalUsage = chunk.usage;
+                }
+            }
+        };
 
-            // 在这里可以处理 stepStream 来获取工具调用、finishReason 等信息
-            // 示例：如果需要处理工具调用，需要解析 stepStream
-            // for await (const step of stream["stepStream"]) { ... }
-            // 最终返回的结果结构应与 GenerateTextResult 兼容
+        // 4. 使用 Promise.all 来并发执行这两个处理器
+        // 这将确保我们同时监听文本和步骤，直到两个流都结束
+        await Promise.all([textProcessor(), stepProcessor(), chunkProcessor()]);
 
-            // 对于目前的简要实现，我们只返回收集到的文本和使用情况
-            finalResult = {
-                text: textStreamContent,
-                // usage: stream.usage, // 假设 usage 在顶层返回
-                toolCalls: [], // 根据 stepStream 解析
-                finishReason: "stop", // 假设默认是 stop，除非从 stepStream 获取到其他原因
-            } as unknown as GenerateTextResult;
+        // --- 流处理结束，组装并返回结果 ---
 
-            // 如果有工具调用发生，需要更复杂的处理逻辑
-            // 例如，在 streamText 的 onChunk/onStep 中捕获 tool calls
+        // 打字机效果结束后，打印一个换行符，将光标移到下一行
+        process.stdout.write("\n\n");
+        this.logger.debug("[执行] 🌊 流式传输完毕");
 
-            return finalResult as GenerateTextResult; // 强制类型断言，实际可能需要更精确的类型处理
-        } catch (error: any) {
-            log(`流式处理过程中发生错误: ${error.message || error}`);
-            throw error; // 将错误传递给上层处理
+        // 5. 组装成一个完整的 GenerateTextResult 对象
+        const finalResult: GenerateTextResult = {
+            steps: finalSteps,
+            messages: finalMessages,
+            text: finalContentParts.join(""),
+            toolCalls: finalToolCalls,
+            toolResults: finalToolResults,
+            usage: finalUsage,
+            finishReason: finalFinishReason,
+        };
+
+        // 记录总结性日志
+        if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
+            const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
+            this.logger.success(`[执行] ✔ 工具调用 (流) ← 名称: ${toolNames}`);
+        } else {
+            this.logger.success(`[执行] ✔ 文本响应 (流) ← 总长度: ${finalResult.text.length}, 停止原因: ${finalResult.finishReason}`);
         }
+
+        return finalResult;
     }
 }

@@ -25,3 +25,9 @@ export function randomString(length: number): string {
 	}
 	return result;
 }
+
+// 辅助函数：截断长字符串以便于日志显示
+export const truncate = (str: string, length = 80) => {
+    if (str.length <= length) return str;
+    return `${str.slice(0, length)}...`;
+};

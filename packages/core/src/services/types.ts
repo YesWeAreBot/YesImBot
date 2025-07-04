@@ -18,4 +18,5 @@ export enum Services {
     WorldState = "yesimbot.world-state",
     Tool = "yesimbot.tool",
     Image = "yesimbot.image",
+    Logger = "yesimbot.logger",
 }
