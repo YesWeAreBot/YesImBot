@@ -29,8 +29,11 @@ export class WillingnessCalculator {
 
         // 2. 基于消息类型
         if (analysis.hasTextMessage) {
-            score += weights.textMessage;
-            reasons.push(`Text message (+${weights.textMessage})`);
+            // 如果匹配了关键词，则其权重单独计算，不与基本文本消息权重叠加
+            if (analysis.matchingKeywords.length === 0) {
+                score += weights.textMessage;
+                reasons.push(`Text message (+${weights.textMessage})`);
+            }
         }
         if (analysis.hasImageMessage) {
             score += weights.imageMessage;

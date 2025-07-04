@@ -354,7 +354,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const finalImages: (ImagePart | TextPart)[] = [];
 
         for (const result of imageDataResults) {
-            if (result) {
+            if (result && result.data.mime !== 'image/gif') {
                 finalImages.push({ type: "text", text: `Image #${result.data.id}:` });
                 finalImages.push({ type: "image_url", image_url: { url: result.content, detail: this.config.vision.detail } });
             }
@@ -418,9 +418,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                     // 如果没有指定 target，或者 target 与当前频道相同，使用 session 直接回复
                     if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
-                        for (const msg of messages) {
-                            await koishiSession.sendQueued(msg);
-                        }
+                        await Promise.all(messages.map(msg => koishiSession.sendQueued(msg)));
                         return Success();
                     }
 
@@ -438,9 +436,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                         return Failed(`Bot not found for platform ${platform}, platform must be one of ${platforms}`);
                     }
 
-                    for (const msg of messages) {
-                        await bot.sendMessage(channelId, msg);
-                    }
+                    await Promise.all(messages.map(msg => bot.sendMessage(channelId, msg)));
                     return Success();
                 } catch (error) {
                     this.handleError(error, `sending message to channel ${target || koishiSession.channelId}`);
