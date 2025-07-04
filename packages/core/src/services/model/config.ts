@@ -11,13 +11,13 @@ export type ModelDescriptor = {
     modelId: string;
 };
 
-/** 定义模型支持的能力 (使用位操作) */
+/** 定义模型支持的能力 */
 export enum ModelAbility {
-    Vision = 1 << 0,
-    WebSearch = 1 << 1,
-    Reasoning = 1 << 2,
-    FunctionCalling = 1 << 3,
-    Embedding = 1 << 4,
+    Vision = "视觉能力",
+    WebSearch = "网络搜索能力",
+    Reasoning = "推理能力",
+    FunctionCalling = "函数调用能力",
+    Embedding = "嵌入能力",
 }
 
 // =================================================================
@@ -42,15 +42,15 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     modelId: Schema.string().required().description("模型ID"),
     abilities: Schema.array(
         Schema.union([
-            Schema.const(ModelAbility.Vision).description("视觉能力"),
-            Schema.const(ModelAbility.WebSearch).description("网络搜索能力"),
-            Schema.const(ModelAbility.Reasoning).description("推理能力"),
-            Schema.const(ModelAbility.FunctionCalling).description("函数调用能力"),
-            Schema.const(ModelAbility.Embedding).description("嵌入能力"),
+            ModelAbility.Vision,
+            ModelAbility.WebSearch,
+            ModelAbility.Reasoning,
+            ModelAbility.FunctionCalling,
+            ModelAbility.Embedding,
         ])
     )
         .role("checkbox")
-        .default([])
+        .default([ModelAbility.FunctionCalling])
         .description("模型支持的能力"),
 
     parameters: Schema.object({

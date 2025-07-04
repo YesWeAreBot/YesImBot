@@ -113,6 +113,7 @@ export class ChatModel {
         this.logger.debug("[执行] → 流式请求 (并发处理)");
         let streamStarted = false;
 
+        const stime = Date.now();
         const stream = await streamText({
             ...chatOptions,
             streamOptions: {
@@ -122,7 +123,7 @@ export class ChatModel {
                 if (!streamStarted) {
                     onStreamStart?.();
                     streamStarted = true;
-                    this.logger.debug("[执行] 🌊 流式传输已开始 (首包到达)");
+                    this.logger.debug(`[执行] 🌊 流式传输已开始 (首包到达) | 首字延迟: ${Date.now() - stime}ms`);
                     // 打印一个换行符，为打字机效果准备一个干净的起始行
                     process.stdout.write("\n");
                 }
