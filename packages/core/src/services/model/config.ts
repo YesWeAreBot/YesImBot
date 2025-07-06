@@ -1,5 +1,8 @@
+import { readFileSync, unlinkSync } from "fs";
 import { Schema } from "koishi";
+import path from "path";
 import { SystemConfig } from "../../config";
+import { isNotEmpty } from "../../shared";
 
 // =================================================================
 // 1. 核心与共享类型 (Core & Shared Types)
@@ -116,6 +119,21 @@ export interface ModelServiceConfig {
     readonly system?: SystemConfig;
 }
 
+let selectableModels: Schema<ModelDescriptor>[] = [];
+
+try {
+    const models: (ModelDescriptor & { desc: string })[] = JSON.parse(readFileSync(path.resolve(__dirname, "./models.json"), "utf-8"));
+
+    selectableModels = models
+        .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
+        .map((m) => {
+            return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
+        });
+} catch (error) {
+    unlinkSync(path.resolve(__dirname, "./models.json"));
+    console.error("加载模型列表失败");
+}
+
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
     providers: Schema.array(ProviderConfigSchema)
         .required()
@@ -124,11 +142,18 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         .description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
     modelGroups: Schema.dict(
         Schema.array(
-            Schema.object({
-                providerName: Schema.string().required().description("提供商名称"),
-                modelId: Schema.string().required().description("模型ID"),
-            })
-        ).role("table")
+            Schema.union([
+                ...selectableModels,
+                Schema.object({
+                    providerName: Schema.string().required().description("提供商名称"),
+                    modelId: Schema.string().required().description("模型ID"),
+                })
+                    .role("table")
+                    .description("自定义模型"),
+            ]).default({ providerName: "", modelId: "" })
+        )
+            .role("table")
+            .description("此模型组包含的模型")
     )
         .required()
         .description("创建模型组，用于故障转移或分类。键是组名。"),
