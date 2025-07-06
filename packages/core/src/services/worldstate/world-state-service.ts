@@ -1,12 +1,12 @@
-import { Argv, Context, Element, h, Logger, Random, Service, Session } from "koishi";
+import { Argv, Bot, Context, Element, h, Logger, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
 import { ChatModel, ModelGroup } from "../model";
 import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
-import { DialogueSegmentData } from "./database-models";
+import { DialogueSegmentData, MessageData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
-import { AgentTurn, Channel, DialogueSegment, GuildMember, Sender, WorldState } from "./interfaces";
+import { AgentTurn, Channel, DialogueSegment, GuildMember, WorldState } from "./interfaces";
 
 /**
  *
@@ -84,20 +84,6 @@ export class WorldStateService extends Service<HistoryConfig> {
     // =================================================================================
     // #region 静态属性和依赖注入
     // =================================================================================
-
-    /** 代表由 AI 逻辑（如 send_message 工具）产生的消息发送者。 */
-    public static readonly AI_SENDER: Sender = {
-        pid: "agent",
-        name: "Assistant",
-        roles: ["ai", "assistant"],
-    };
-
-    /** 代表人类操作员使用机器人账号发送的消息的发送者。 */
-    public static readonly OPERATOR_SENDER: Sender = {
-        pid: "operator",
-        name: "Operator",
-        roles: ["human", "operator"],
-    };
 
     static readonly inject = [Services.Model, Services.Image, Services.Logger];
 
@@ -308,11 +294,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
-            sender: {
-                pid: session.userId,
-                name: session.author.nick || session.author.name,
-                roles: session.author.roles,
-            },
+            senderId: session.userId,
             content: transformedContent,
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
@@ -384,7 +366,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: `bot_intent_${Random.id(12)}`,
             platform: session.platform,
             channelId: session.channelId,
-            sender: WorldStateService.AI_SENDER,
+            senderId: session.bot.selfId,
             content: session.content,
             timestamp: new Date(),
         });
@@ -409,11 +391,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
-            sender: {
-                ...WorldStateService.OPERATOR_SENDER,
-                pid: session.bot.selfId,
-                name: session.bot.user.name || "Operator",
-            },
+            senderId: session.userId,
             content: session.content,
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
@@ -513,7 +491,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 platform: "string(255)",
                 sid: "string(64)",
                 channelId: "string(255)",
-                sender: "json",
+                senderId: "string(255)",
                 timestamp: "timestamp",
                 content: "text",
                 quoteId: "string(255)",
@@ -541,16 +519,13 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param segmentId 目标对话片段的 ID。
      * @param message 包含消息所有必要信息对象。
      */
-    public async recordMessage(
-        segmentId: string,
-        message: { id: string; platform: string; channelId: string; sender: Sender; content: string; timestamp: Date; quoteId?: string }
-    ): Promise<void> {
+    public async recordMessage(segmentId: string, message: Omit<MessageData, "sid">): Promise<void> {
         await this.ctx.database.create(TableName.Messages, {
             id: message.id,
             sid: segmentId,
             platform: message.platform,
             channelId: message.channelId,
-            sender: message.sender,
+            senderId: message.senderId,
             content: message.content,
             timestamp: message.timestamp,
             quoteId: message.quoteId,
@@ -617,83 +592,187 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     /**
-     * 为单个频道构建完整的上下文信息，包括频道元数据、成员列表和历史记录。
-     * @param platform 平台名称。
-     * @param channelId 频道 ID。
+     * 为单个频道构建完整的上下文信息。
+     * 这是一个分发器，根据频道ID的格式决定是构建公会频道还是私聊频道的上下文。
+     * @param channel 频道描述符，包含平台和频道ID。
      * @param onetimeCode 一次性代码。
      * @returns 一个完整的 `Channel` 对象。
      */
     private async buildFullContextForChannel(channel: ChannelDescriptor, onetimeCode: string): Promise<Channel> {
         const { platform, id } = channel;
         const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
+
         if (!bot) {
             this._logger.warn(`Could not find an online bot for platform "${platform}" to build channel context.`);
+            // 在没有可用 bot 的情况下，返回一个最基础的表示
+            return {
+                id,
+                platform,
+                name: `Offline Channel ${id}`,
+                type: id.startsWith("private:") ? "private" : "unknown",
+                meta: {},
+                members: [],
+                history: [],
+            };
         }
 
-        const channelInfo = await bot?.getChannel(id);
+        if (id.startsWith("private:")) {
+            return this._buildPrivateChannelContext(bot, channel, onetimeCode);
+        } else {
+            return this._buildGuildChannelContext(bot, channel, onetimeCode);
+        }
+    }
+
+    /**
+     * 构建私聊频道的上下文。
+     * @param bot 可用的机器人实例。
+     * @param channel 频道描述符。
+     * @param onetimeCode 一次性代码。
+     * @returns 一个私聊频道的 `Channel` 对象。
+     */
+    private async _buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor, onetimeCode: string): Promise<Channel> {
+        const { platform, id } = channel;
+        const userId = id.substring("private:".length);
+
+        // 并行获取对方用户信息和会话历史
+        const [user, history] = await Promise.all([
+            bot.getUser(userId).catch((e) => {
+                this._logger.error(`Failed to get user info for ${platform}:${userId}`, e);
+                return null; // 容错处理
+            }),
+            this._fetchAndBuildHistory(channel, onetimeCode),
+        ]);
+
+        const userName = user?.name || user?.nick || userId;
+
+        const botAsMember: GuildMember = {
+            pid: bot.selfId,
+            name: bot.user.name,
+            nick: bot.user.nick || bot.user.name,
+            roles: ["assistant", "bot"],
+            isSelf: true,
+        };
+
+        const userAsMember: GuildMember = {
+            pid: userId,
+            name: userName,
+            nick: user?.nick || userName,
+            roles: ["user"],
+            isSelf: false,
+        };
+
+        return {
+            id,
+            platform,
+            name: `与 ${userName} 的私聊`,
+            type: "private",
+            meta: {},
+            members: [botAsMember, userAsMember],
+            history,
+        };
+    }
+
+    /**
+     * 构建公会频道的上下文。
+     * @param bot 可用的机器人实例。
+     * @param channel 频道描述符。
+     * @param onetimeCode 一次性代码。
+     * @returns 一个公会频道的 `Channel` 对象。
+     */
+    private async _buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor, onetimeCode: string): Promise<Channel> {
+        const { platform, id } = channel;
+
+        // 并行获取频道信息和会话历史
+        const [channelInfo, history] = await Promise.all([
+            bot.getChannel(id).catch((e) => {
+                this._logger.error(`Failed to get channel info for ${platform}:${id}`, e);
+                return null;
+            }),
+            this._fetchAndBuildHistory(channel, onetimeCode),
+        ]);
+
         if (!channelInfo) {
-            this._logger.warn(`Failed to get channel info for ${platform}:${id}`);
-            // 即使获取失败，也返回一个基础对象以保证健壮性
-            return { id, platform: platform, name: `Channel ${id}`, type: "guild", meta: {}, members: [], history: [] };
+            this._logger.warn(`Failed to get channel info for ${platform}:${id}. Returning a basic object.`);
+            return {
+                id,
+                platform,
+                name: `Channel ${id}`,
+                type: "guild",
+                meta: {},
+                members: [],
+                history,
+            };
         }
 
-        // 1. 获取所有非归档的对话片段记录
+        const members = await this._getMembersFromHistory(bot, history, platform, id);
+
+        return {
+            id,
+            platform,
+            name: channelInfo.name,
+            type: "guild", // 此处可根据 channelInfo.type 进一步细化
+            meta: { ...channelInfo }, // 存储完整的频道元数据
+            members,
+            history,
+        };
+    }
+
+    /**
+     * 从数据库获取并构建完整的对话历史记录。
+     * @param channel 频道描述符。
+     * @param onetimeCode 一次性代码。
+     * @returns 对话片段数组。
+     */
+    private async _fetchAndBuildHistory(channel: ChannelDescriptor, onetimeCode: string): Promise<DialogueSegment[]> {
         const segmentRecords = await this.ctx.database
             .get(TableName.DialogueSegments, {
-                platform: platform,
-                channelId: id,
+                platform: channel.platform,
+                channelId: channel.id,
                 status: { $ne: "archived" },
             })
             .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
 
-        // 2. 并行构建所有对话片段的完整内容
-        const history: DialogueSegment[] = await Promise.all(
-            segmentRecords.map((record) => this.buildDialogueSegment(record, onetimeCode))
-        );
+        return Promise.all(segmentRecords.map((record) => this.buildDialogueSegment(record, onetimeCode)));
+    }
 
-        // 3. 从构建好的历史中收集所有人类成员的 ID
+    /**
+     * 根据历史记录获取相关成员列表，并注入机器人自身。
+     * @param bot 机器人实例。
+     * @param history 对话历史。
+     * @param platform 平台。
+     * @param guildId 公会ID。
+     * @returns 成员列表。
+     */
+    private async _getMembersFromHistory(bot: Bot, history: DialogueSegment[], platform: string, guildId: string): Promise<GuildMember[]> {
         const memberIds = new Set<string>();
         history.forEach((segment) => {
             segment.dialogue.forEach((message) => {
+                // 排除特殊身份的发送者
                 if (message.sender.pid !== "agent" && message.sender.pid !== "operator") {
                     memberIds.add(message.sender.pid);
                 }
             });
         });
 
-        // 4. 一次性从数据库查询所有相关成员信息
         const humanMembers: GuildMember[] =
             memberIds.size > 0
                 ? await this.ctx.database.get(TableName.Members, {
                       platform: platform,
-                      guildId: id,
+                      guildId: guildId,
                       pid: { $in: Array.from(memberIds) },
                   })
                 : [];
 
-        // 5. 注入机器人自身作为成员
-        const allMembers: GuildMember[] = [...humanMembers];
-        if (bot) {
-            const botAsMember: GuildMember = {
-                pid: bot.selfId,
-                name: bot.user.name,
-                nick: bot.user.nick || bot.user.name,
-                roles: ["assistant", "bot"],
-                isSelf: true,
-            };
-            // 插入到列表开头
-            allMembers.unshift(botAsMember);
-        }
-
-        return {
-            id,
-            name: channelInfo.name,
-            type: "guild", // 此处可根据 channelInfo 进一步细化
-            platform: platform,
-            meta: {},
-            members: allMembers,
-            history: history,
+        const botAsMember: GuildMember = {
+            pid: bot.selfId,
+            name: bot.user.name,
+            nick: bot.user.nick || bot.user.name,
+            roles: ["assistant", "bot"],
+            isSelf: true,
         };
+
+        // 使用 unshift 将机器人放在列表开头，并返回新数组
+        return [botAsMember, ...humanMembers];
     }
 
     /**
@@ -729,6 +808,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id }),
         ]);
 
+        const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
+
         function transform(source: string) {
             const warp = (element: Element, onecode: string) => {
                 element.attrs.onetime_code = onecode;
@@ -748,9 +829,11 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: record.id,
             content: transform(record.content),
             timestamp: record.timestamp,
-            date: formatDate(record.timestamp),
+            date: formatDate(record.timestamp, "YYYY-MM-DD"),
+            time: formatDate(record.timestamp, "HH:mm:ss"),
+            quoted: quotedMsgIds.has(record.id),
             quoteId: record.quoteId,
-            sender: record.sender,
+            sender: { pid: record.senderId },
         }));
 
         dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
@@ -868,9 +951,9 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param channelId 频道 ID。
      */
     private async summarizeAndArchive(platform: string, channelId: string): Promise<void> {
-        const foldedSegments = (await this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "folded" })).sort(
-            (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
-        );
+        const foldedSegments = await this.ctx.database
+            .get(TableName.DialogueSegments, { platform, channelId, status: "folded" })
+            .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
 
         if (foldedSegments.length < this.config.summarizationTriggerCount) return;
 
@@ -882,11 +965,17 @@ export class WorldStateService extends Service<HistoryConfig> {
         if (!dialogueText) return;
 
         const prompt = this.config.summarizationPrompt.replace("{dialogueText}", dialogueText);
-        const summaryResponse = await this.chatModel.chat([{ role: "user", content: prompt }]);
+        const summaryResponse = await this.chatModel.chat([{ role: "user", content: prompt }]).catch((e) => {
+            this._logger.error(`Summarization failed for channel ${channelId}: ${e.message}`, e);
+            return null;
+        });
         const summaryText = summaryResponse?.text;
 
         if (!summaryText) {
             this._logger.warn(`Summarization failed for channel ${channelId}: no response from model.`);
+
+            // 即使总结失败，也标记为已归档
+            await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: groupIds } }, { status: "archived" });
             return;
         }
 
@@ -931,16 +1020,24 @@ export class WorldStateService extends Service<HistoryConfig> {
         allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         // 3. 格式化为文本
-        const dialogueLines = allMessages.map((msg) => {
-            const senderName = msg.sender.name || "Unknown";
-            const timestampStr = formatDate(msg.timestamp);
-            // 将 h 元素转换为纯文本
-            const contentText = h
-                .parse(msg.content)
-                .map((el) => el.toString())
-                .join("");
-            return `[${timestampStr}] ${senderName}: ${contentText}`;
-        });
+        const dialogueLines = await Promise.all(
+            allMessages.map(async (msg) => {
+                const sender = await this.ctx.database
+                    .get(TableName.Members, {
+                        pid: msg.senderId,
+                        platform: msg.platform,
+                    })
+                    .then((res) => res[0]);
+                const senderName = sender?.name || "Unknown";
+                const timestampStr = formatDate(msg.timestamp);
+                // 将 h 元素转换为纯文本
+                const contentText = h
+                    .parse(msg.content)
+                    .map((el) => el.toString())
+                    .join("");
+                return `[${timestampStr}] ${senderName}: ${contentText}`;
+            })
+        );
 
         return dialogueLines.join("\n");
     }
