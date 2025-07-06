@@ -36,9 +36,9 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
         .role("textarea", { rows: [2, 4] })
         .description("用于生成对话摘要的提示词模板。必须包含 `{dialogueText}`。"),
     fullContextSegmentCount: Schema.number().default(2).description("在上下文中保留的最新“完整”对话片段数量"),
-    summarizationTriggerCount: Schema.number().default(10).description("当待总结的片段达到此数量时，触发总结任务"),
+    summarizationTriggerCount: Schema.number().default(6).description("当待总结的片段达到此数量时，触发总结任务"),
     advanced: Schema.object({
-        maxHistoryItemsPerChannel: Schema.number().default(30).description("每个频道在上下文中最多包含的历史项目数"),
+        maxHistoryItemsPerChannel: Schema.number().default(15).description("每个频道在上下文中最多包含的历史项目数"),
         dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
         cleanupIntervalMs: Schema.number().default(60000).description("后台清理任务的执行频率（毫秒）"),
     })
