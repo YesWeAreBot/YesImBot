@@ -18,9 +18,7 @@ import {
 } from "../services";
 import { JsonParser, truncate } from "../shared";
 import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
-import { ConversationFlowAnalyzer, FlowAnalysis } from "./conversation-flow-analyzer";
 import { PromptBuilder, PromptContext } from "./prompt-builder";
-import { Willingness, WillingnessCalculator } from "./willingness-calculator";
 
 export class AgentCore extends Service<AgentBehaviorConfig> {
     static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image, Services.Logger];
@@ -32,8 +30,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
     // 内部组件
     private readonly _logger: Logger;
-    private readonly flowAnalyzer: ConversationFlowAnalyzer;
-    private readonly willingnessCalculator: WillingnessCalculator;
+
     private readonly promptBuilder: PromptBuilder;
     private readonly parser: JsonParser<AgentResponse>;
     private readonly modelSwitcher: ModelSwitcher;
@@ -41,9 +38,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     // 内部状态
     private readonly allowedChannels = new Set<string>();
     private readonly channelGroupMap = new Map<string, ChannelDescriptor[]>();
-    private readonly channelWillingness = new Map<string, number>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
+
+    private runningTask = new Map<string, boolean>();
 
     constructor(ctx: Context, config: AgentBehaviorConfig) {
         super(ctx, "agent", true);
@@ -56,8 +54,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.toolService = this.ctx[Services.Tool];
 
         // 实例化内部组件
-        this.flowAnalyzer = new ConversationFlowAnalyzer(this.ctx);
-        this.willingnessCalculator = new WillingnessCalculator(this.ctx, this.config.willingness);
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.prompt);
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
@@ -68,16 +64,20 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.ctx.on("config", () => this.updateAllowedChannels());
 
         this.ctx.on("worldstate:segment-updated", async (session, segment) => {
+            if (this.runningTask.has(session.cid)) return;
+
             try {
                 // 从 worldstate 接收到的消息即为过滤后的，在回复列表中
                 // if (!this.isChannelAllowed(segment.platform, segment.channelId)) return;
-                this.handleSegmentUpdate(session, segment);
+                this.runningTask.set(session.cid, true);
+                await this.handleSegmentUpdate(session, segment);
             } catch (error) {
                 this.handleError(error, `处理段落更新时 (ID: ${segment.id})`);
+            } finally {
+                this.runningTask.delete(session.cid);
             }
         });
 
-        this.startWillingnessDecay();
         this.toolService.registerTool(await this.createMessageTool());
         this._logger.info("[核心] 🚀 服务已启动");
     }
@@ -98,65 +98,28 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this._logger.debug(`[配置] ⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
-    private startWillingnessDecay(): void {
-        this.willingnessDecayTimer = setInterval(() => {
-            for (const [channelKey, willingness] of this.channelWillingness) {
-                const decayed = Math.max(0, willingness - this.config.willingness.advanced.decayPerMinute);
-                this.channelWillingness.set(channelKey, decayed);
-            }
-        }, 60000);
-    }
-
-    private handleSegmentUpdate(session: Session, segment: DialogueSegment): void {
-        const channelKey = `${segment.platform}:${segment.channelId}`;
-        if (this.debounceTimers.has(channelKey)) {
-            clearTimeout(this.debounceTimers.get(channelKey));
-        }
-        this.debounceTimers.set(
-            channelKey,
-            setTimeout(() => {
-                this._logger.debug(`[响应] ⏳ 防抖计时结束，开始决策 | 频道: ${channelKey}`);
-                this.decideToAct(session, segment);
-                this.debounceTimers.delete(channelKey);
-            }, this.config.arousal.debounceMs)
-        );
-    }
-
-    private async decideToAct(session: Session, segment: DialogueSegment): Promise<void> {
+    private async handleSegmentUpdate(session: Session, segment: DialogueSegment): Promise<void> {
         const channelKey = `${segment.platform}:${segment.channelId}`;
         this._logger.debug(`[决策] 🤔 开始评估 | 频道: ${channelKey}, 段落ID: ${segment.id}`);
 
         try {
-            const analysis = this.flowAnalyzer.analyze(segment, this.config.willingness.keywords);
-            analysis.isAgentMentioned = session.stripped.atSelf;
-            const currentWillingness = this.channelWillingness.get(channelKey) || 0;
-            const willingness = this.willingnessCalculator.calculate(analysis, currentWillingness);
+            // 1. 调用意愿管理器进行决策
 
-            const action = willingness.shouldAct ? "✔ 行动" : "❌ 忽略";
-            this._logger.debug(
-                `[决策] 📊 意愿度评估 | W: ${currentWillingness.toFixed(2)} -> ${willingness.value.toFixed(2)} | 阈值: ${
-                    willingness.threshold
-                } | 决策: ${action} | 原因: ${willingness.reasons.join(";")}`
-            );
+            // if (willingness.shouldAct) {
+            const shouldAct = session.stripped.atSelf || session.isDirect;
 
-            if (willingness.shouldAct) {
-                const retainedWillingness = willingness.value * this.config.willingness.advanced.retentionAfterReply;
-                this.channelWillingness.set(channelKey, retainedWillingness);
-                await this.runAgentCycle(session, segment, analysis, willingness);
-            } else {
-                this.channelWillingness.set(channelKey, willingness.value);
+            if (shouldAct) {
+                // 2. 执行行动前后钩子和核心循环
+                // this.willingnessManager.beforeAct(segment.channelId);
+                await this.runAgentCycle(session, segment);
+                // this.willingnessManager.afterAct(segment.channelId);
             }
         } catch (error) {
             this.handleError(error, `决策过程中 (段落ID: ${segment.id})`);
         }
     }
 
-    private async runAgentCycle(
-        session: Session,
-        segment: DialogueSegment,
-        analysis: FlowAnalysis,
-        willingness: Willingness
-    ): Promise<void> {
+    private async runAgentCycle(session: Session, segment: DialogueSegment): Promise<void> {
         this._logger.debug(`[循环] 🌀 → 开始 | 段落ID: ${segment.id}`);
         const collectedResponses: AgentResponse[] = [];
         let shouldContinueHeartbeat = true;
@@ -167,7 +130,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this._logger.debug(`[心跳] ❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
 
             try {
-                const promptContext = await this.buildPromptContext(segment, analysis, willingness, collectedResponses);
+                const promptContext = await this.buildPromptContext(segment, collectedResponses);
                 const { messages } = await this.promptBuilder.build(promptContext);
 
                 const chatModel = this.modelSwitcher.getCurrent();
@@ -209,6 +172,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     continue;
                 }
 
+                const thoughts: AgentResponse["thoughts"] = agentResponseData.thoughts;
+
+                if (thoughts) {
+                    this.displayThoughts(thoughts);
+                }
+
                 const observations = await this.executeActions(session, agentResponseData.actions);
 
                 const fullResponse: AgentResponse = { ...agentResponseData, observations };
@@ -234,6 +203,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
     }
 
+    private displayThoughts(thoughts: AgentResponse["thoughts"]) {
+        const { observe, analyze_infer, plan } = thoughts;
+        this._logger.debug(`[观察] ${observe}`);
+        this._logger.debug(`[分析] ${analyze_infer}`);
+        this._logger.debug(`[计划] ${plan}`);
+    }
+
     private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {
         const context: ToolExecutionContext = {
             koishiContext: this.ctx,
@@ -250,12 +226,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         );
     }
 
-    private async buildPromptContext(
-        segment: DialogueSegment,
-        analysis: FlowAnalysis,
-        willingness: Willingness,
-        previousResponses: AgentResponse[]
-    ): Promise<PromptContext> {
+    private async buildPromptContext(segment: DialogueSegment, previousResponses: AgentResponse[]): Promise<PromptContext> {
         const allowedChannels =
             this.channelGroupMap.get(segment.channelId) ||
             this.config.arousal.allowedChannelGroups.find((group) =>
@@ -270,7 +241,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const worldState = await this.worldState.getWorldState(allowedChannels || [], onetimeCode);
 
         // 图片智能筛选与上下文构建
-        const { images: multiModalContent } = await this.buildMultimodalContext(worldState);
+        const { images: multiModalContent } = this.config.vision.enabled ? await this.buildMultimodalContext(worldState) : { images: [] };
 
         // 在 worldState 中查找并标记当前 segment
         for (const channel of worldState.activeChannels) {
@@ -285,11 +256,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             toolSchemas: this.toolService.getToolSchemas(),
             memory: await this.ctx[Services.Memory].getProvider(),
             worldState: worldState,
-            agentState: {
-                lifeCycleStatus: "active",
-                analysis: analysis,
-                willingness: willingness,
-            },
             previousResponses: previousResponses,
             multiModalData: {
                 images: multiModalContent,
@@ -301,7 +267,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     /**
-     * [新增] 构建多模态上下文的核心方法
+     * 构建多模态上下文的核心方法
      * @param worldState 当前的世界状态
      * @returns 包含筛选后的图片内容和处理后的文本历史的对象
      */
@@ -366,7 +332,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         const finalImages: (ImagePart | TextPart)[] = [];
 
-        const allowedImageTypes = ["image/jpeg", "image/png"];
+        const allowedImageTypes = this.config.vision.allowedImageTypes;
 
         for (const result of imageDataResults) {
             if (result && allowedImageTypes.includes(result.data?.mimeType)) {
@@ -375,32 +341,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             }
         }
 
-        // 构建带有引用标记的纯文本历史
-        // const textualHistoryLines: string[] = [];
-        // for (const channel of worldState.activeChannels) {
-        //     textualHistoryLines.push(`--- Conversation History in Channel #${channel.name} ---`);
-        //     for (const seg of channel.history) {
-        //         for (const msg of seg.dialogue) {
-        //             let content = msg.content;
-        //             const elements = h.parse(content);
-        //             // 替换占位符为带引用的格式
-        //             for (const el of elements) {
-        //                 if (el.type === "image" && el.attrs.id) {
-        //                     const refNum = imageIdToRefNum.get(el.attrs.id as string);
-        //                     if (refNum !== undefined) {
-        //                         content = content.replace(`<image id="${el.attrs.id}"/>`, `[Image #${refNum}]`);
-        //                     } else {
-        //                         content = content.replace(`<image id="${el.attrs.id}"/>`, `[Omitted Image]`);
-        //                     }
-        //                 }
-        //             }
-        //             textualHistoryLines.push(`${msg.sender.name || "Unknown"}: ${content}`);
-        //         }
-        //     }
-        // }
-
         return { images: finalImages };
     }
+
     private handleError(error: unknown, context: string): void {
         if (error instanceof Error) {
             this._logger.error(`[错误] 💥 在 ${context} 发生错误 | 信息: ${error.message}\n${error.stack}`);
@@ -414,10 +357,16 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             name: "send_message",
             description: "Sends a message to the human user.",
             parameters: Schema.object({
-                inner_thoughts: Schema.string().description("仅供自己参考的内心独白。"),
-                message: Schema.string().description("Message content to send. You can use '<sep/>' to send multiple messages."),
+                inner_thoughts: Schema.string().description("Your internal monologue for self-reflection. This content will not be sent."),
+
+                message: Schema.string().description(
+                    "The message content to send. To mimic human-like chatting behavior (people rarely send very long messages at once), you can use the `<sep/>` separator to split a long response into multiple, shorter messages. For example: `'Hello there<sep/>The weather is great today!'` will be sent as two separate messages in sequence."
+                ),
+
                 target: Schema.string().description(
-                    "Optional but important. The Platform and ID of the channel where the message should be sent. If the channel you want to send message to is not the current channel, you must specify this parameter. The target structure is 'platform:channel_id'. e.g. 'onebot:123456789'. If not provided, the message will default to the current channel."
+                    "Specifies where to send the message, using the format `platform:id`. Defaults to the current channel. This parameter is crucial if you need to send a message to a different channel or in a private chat.\n" +
+                        "- **For Guild/Group Channels**: Use `platform:channel_id`. Example: `onebot:123456789`\n" +
+                        "- **For Private Chats**: Use `platform:private:user_id`. Example: `discord:private:987654321`"
                 ),
             }),
             execute: async ({ koishiSession }, { message, target }) => {
