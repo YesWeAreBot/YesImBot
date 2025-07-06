@@ -22,7 +22,7 @@
         {{#dialogue.length}}
         <dialogue>
         {{#dialogue}}
-          <message id="{{id}}" timestamp="{{date}}" sender="{{sender.pid}}"{{#quoteId}} quote="{{.}}"{{/quoteId}}>{{content}}</message>
+          <message{{#quoted}} id="{{id}}"{{/quoted}} time="{{time}}" sender="{{sender.pid}}">{{#quoteId}}<quote id="{{.}}"/>{{/quoteId}}{{#content}}{{_truncate}}{{/content}}</message>
         {{/dialogue}}
         </dialogue>
         {{/dialogue.length}}
