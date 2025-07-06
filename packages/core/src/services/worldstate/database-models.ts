@@ -47,7 +47,7 @@ export interface MessageData {
     platform: string; // 用于构成复合主键
     sid: string;
     channelId: string;
-    sender: Sender;
+    senderId: string;
     timestamp: Date;
     content: string; // 关键变更: 从 string(255) 变为 text
     quoteId?: string;
