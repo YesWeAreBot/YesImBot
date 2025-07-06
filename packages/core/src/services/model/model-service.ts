@@ -1,4 +1,6 @@
+import { writeFile } from "fs/promises";
 import { Context, Logger, Service } from "koishi";
+import path from "path";
 import { AppError, ErrorCodes } from "../../shared";
 import { Services } from "../types";
 import { ChatModel } from "./chat-model";
@@ -38,7 +40,7 @@ export class ModelService extends Service<ModelServiceConfig> {
      * 4. 为核心任务分配的模型组存在
      */
     private validateConfig(): void {
-        this._logger.debug("[配置] ⚙️ 开始验证服务配置...");
+        this._logger.debug("⚙️ 开始验证服务配置...");
         if (this.config.providers.length === 0) {
             throw new Error("配置错误: 至少需要配置一个提供商。");
         }
@@ -62,7 +64,17 @@ export class ModelService extends Service<ModelServiceConfig> {
                 throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
             }
         }
-        this._logger.debug("[配置] ⚙️ 配置验证通过。");
+        this._logger.debug("⚙️ 配置验证通过。");
+
+        const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
+
+        writeFile(path.resolve(__dirname, "./models.json"), JSON.stringify(models, null, 2))
+            .then(() => {
+                this._logger.debug("⚙️ 模型列表已更新");
+            })
+            .catch((error) => {
+                this._logger.error("⚙️ 更新模型列表失败", error.message);
+            });
     }
 
     private registerFactories(): void {
@@ -70,20 +82,20 @@ export class ModelService extends Service<ModelServiceConfig> {
         this.providerFactories.set("OpenAI Compatible", new OpenAIFactory());
         this.providerFactories.set("Ollama", new OllamaFactory());
         this.providerFactories.set("Anthropic", new AnthropicFactory());
-        this._logger.debug(`[初始化] 注册了 ${this.providerFactories.size} 个提供商工厂`);
+        this._logger.debug(`注册了 ${this.providerFactories.size} 个提供商工厂`);
     }
 
     private initializeProviders(): void {
-        this._logger.info("[初始化] 开始初始化提供商...");
+        this._logger.info("开始初始化提供商...");
         for (const providerConfig of this.config.providers) {
             if (!providerConfig.enabled) {
-                this._logger.info(`[初始化] 🔌 跳过 (未启用) | 提供商: ${providerConfig.name}`);
+                this._logger.info(`🔌 跳过 (未启用) | 提供商: ${providerConfig.name}`);
                 continue;
             }
 
             const factory = this.providerFactories.get(providerConfig.type);
             if (!factory) {
-                this._logger.error(`[初始化] ✖ 工厂未找到 | 类型: ${providerConfig.type}`);
+                this._logger.error(`✖ 不支持的提供商类型 | 类型: ${providerConfig.type}`);
                 continue;
             }
 
@@ -91,9 +103,9 @@ export class ModelService extends Service<ModelServiceConfig> {
                 const client = factory.createClient(providerConfig);
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this._logger.success(`[初始化] ✔ 提供商成功 | 名称: ${instance.name}`);
+                this._logger.success(`✔ 提供商初始化成功 | 名称: ${instance.name}`);
             } catch (error) {
-                this._logger.error(`[初始化] ✖ 提供商失败 | 名称: ${providerConfig.name} | 错误: ${error.message}`);
+                this._logger.error(`✖ 提供商初始化失败 | 名称: ${providerConfig.name} | 错误: ${error.message}`);
             }
         }
     }
@@ -114,18 +126,19 @@ export class ModelService extends Service<ModelServiceConfig> {
         } else {
             switch (name) {
                 case ModelGroup.Chat:
-                    group = this.config.modelGroups[this.config.taskAssignments.chat];
+                    groupName = this.config.taskAssignments.chat;
                     break;
                 case ModelGroup.Embedding:
-                    group = this.config.modelGroups[this.config.taskAssignments.embedding];
+                    groupName = this.config.taskAssignments.embedding;
                     break;
                 case ModelGroup.Summarization:
-                    group = this.config.modelGroups[this.config.taskAssignments.summarization];
+                    groupName = this.config.taskAssignments.summarization;
                     break;
                 default:
                     this._logger.warn(`[切换器] ⚠ 任务未分配模型组 | 任务: ${Symbol.keyFor(name)}`);
                     return undefined;
             }
+            group = this.config.modelGroups[groupName];
         }
 
         if (!group) {
@@ -163,13 +176,13 @@ export class ModelSwitcher {
 
     constructor(private ctx: Context, private modelService: ModelService, modelDescriptors: ModelDescriptor[], private groupName: string) {
         this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupName}]`);
-        this._logger.debug(`[加载] 开始加载模型组...`);
+        this._logger.debug(`开始加载模型组...`);
 
         this.models = modelDescriptors
             .map((descriptor) => {
                 const model = this.modelService.getChatModel(descriptor.providerName, descriptor.modelId);
                 if (!model) {
-                    this._logger.warn(`[加载] ⚠ 模型未找到 | ID: ${descriptor.modelId}, 提供商: ${descriptor.providerName}`);
+                    this._logger.warn(`⚠ 模型未找到 | ID: ${descriptor.modelId}, 提供商: ${descriptor.providerName}`);
                     return null;
                 }
                 return model;
@@ -177,13 +190,13 @@ export class ModelSwitcher {
             .filter((model): model is ChatModel => model !== null);
 
         if (this.models.length === 0) {
-            this._logger.error("[加载] ✖ 致命错误 | 模型组中无任何可用模型");
+            this._logger.error("✖ 致命错误 | 模型组中无任何可用模型");
             throw new AppError("模型组中未找到任何可用的模型", {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
                 context: { resourceType: "Model", resourceId: `group:${groupName}` },
             });
         }
-        this._logger.debug(`[加载] ✔ 加载成功 | 可用模型数: ${this.models.length}`);
+        this._logger.debug(`✔ 加载成功 | 可用模型数: ${this.models.length}`);
     }
 
     public getCurrent(): ChatModel {
@@ -195,7 +208,7 @@ export class ModelSwitcher {
         this.currentIndex = (this.currentIndex + 1) % this.models.length;
         const oldModel = this.models[oldIndex].id;
         const newModel = this.getCurrent().id;
-        this._logger.info(`[切换] 模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
+        this._logger.info(`模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
         return this.getCurrent();
     }
 }
