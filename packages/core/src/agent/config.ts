@@ -91,8 +91,12 @@ export const WillingnessConfigSchema = Schema.object({
         .description("高级选项"),
 });
 
-/** [新增] 视觉与多模态相关配置 */
+/** 视觉与多模态相关配置 */
 export interface VisionConfig {
+    /** 是否启用视觉功能 */
+    enabled: boolean;
+    /** 允许的图片类型 */
+    allowedImageTypes: string[];
     /** 允许在上下文中包含的最大图片数量 */
     maxImagesInContext: number;
     /**
@@ -105,9 +109,11 @@ export interface VisionConfig {
 }
 
 export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
+    enabled: Schema.boolean().default(false).description("是否启用视觉功能"),
+    allowedImageTypes: Schema.array(Schema.string()).default(["image/jpeg", "image/png"]).description("允许的图片类型"),
     maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量。"),
     imageLifecycleCount: Schema.number().default(2).description("图片的上下文生命周期（出现次数）。超过此次数的图片将被忽略，除非被引用。"),
-    detail: Schema.union(["low", "high", "auto"]).default("auto").description("图片细节程度"),
+    detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
 }).description("视觉与多模态配置");
 
 /**
@@ -146,6 +152,5 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
             .role("textarea", { rows: [2, 4] })
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
-    /** [新增] 视觉配置 Schema */
     vision: VisionConfigSchema,
 });
