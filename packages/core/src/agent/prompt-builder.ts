@@ -5,8 +5,6 @@ import path from "path";
 import type { ImagePart, Message, TextPart } from "xsai";
 import { AgentResponse, MemoryBlockData, WorldState } from "../services";
 import { AgentBehaviorConfig } from "./config";
-import { FlowAnalysis } from "./conversation-flow-analyzer";
-import { Willingness } from "./willingness-calculator";
 
 // 定义 PromptBuilder 需要的完整上下文
 export interface PromptContext {
@@ -17,12 +15,6 @@ export interface PromptContext {
         memoryBlocks: MemoryBlockData[];
     };
     worldState: WorldState; // 世界状态快照
-    agentState: {
-        // Agent 的内部状态
-        lifeCycleStatus: "active" | "sleeping";
-        analysis: FlowAnalysis; // 对话流分析
-        willingness: Willingness; // 用户意愿评估
-    };
     previousResponses: AgentResponse[]; // Agent 最近的回合历史
     multiModalData: {
         images: (ImagePart | TextPart)[];
@@ -77,7 +69,7 @@ export class PromptBuilder {
     }
 
     public async build(context: PromptContext): Promise<{ messages: Message[] }> {
-        const { multiModalData, agentState, previousResponses, toolSchemas, worldState, memory, onetimeCode } = context;
+        const { multiModalData, previousResponses, toolSchemas, worldState, memory, onetimeCode } = context;
         const messages: Message[] = [];
         // --- 1. 准备渲染视图数据 ---
 
@@ -94,7 +86,6 @@ export class PromptBuilder {
             TOOL_DEFINITION: { tools: toolSchemas },
             CORE_MEMORY: memory,
             WORLD_STATE: worldState,
-            AGENT_SELF_ASSESSMENT: agentState,
             CURRENT_CONVERSATION: {
                 history: previousResponses,
             },
@@ -108,6 +99,13 @@ export class PromptBuilder {
                     content.push(`<${param}>${_toString(this.params[param])}</${param}>`);
                 }
                 return content.join("");
+            },
+            _truncate: function () {
+                const length = 500;
+                if (this.length > length) {
+                    return this.slice(0, length) + `...（内容过长，已省略${this.length - length}字符）`;
+                }
+                return this;
             },
         };
 
