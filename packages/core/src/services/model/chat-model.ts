@@ -64,7 +64,7 @@ export class ChatModel {
 
     public async chat(messages: Message[], options: RequestOptions = {}): Promise<GenerateTextResult> {
         const useStream = this.modelConfig.parameters.stream ?? true;
-        this.logger.info(`[执行] 💬 开始 | 流式: ${useStream}`);
+        this.logger.info(`💬 开始 | 流式: ${useStream}`);
         const chatOptions: ChatOptions = this.buildChatOptions(messages, options);
 
         try {
@@ -74,7 +74,7 @@ export class ChatModel {
                 return await this._executeNonStream(chatOptions);
             }
         } catch (error) {
-            this.logger.error(`[执行] 💥 致命异常 | 错误: ${error.message}`, error);
+            this.logger.error(`💥 致命异常 | 错误: ${error.message}`, error);
             throw error; // 重新抛出，让上层捕获
         }
     }
@@ -93,14 +93,14 @@ export class ChatModel {
     }
 
     private async _executeNonStream(chatOptions: ChatOptions): Promise<GenerateTextResult> {
-        this.logger.debug("[执行] → 非流式请求");
+        this.logger.debug("→ 非流式请求");
         const result = await generateText(chatOptions);
 
         if (result.toolCalls && result.toolCalls.length > 0) {
             const toolNames = result.toolCalls.map((tc: CompletionToolCall) => tc.toolName).join(", ");
-            this.logger.success(`[执行] ✔ 工具调用 ← 名称: ${toolNames}`);
+            this.logger.success(`✔ 工具调用 ← 名称: ${toolNames}`);
         } else {
-            this.logger.success(`[执行] ✔ 文本响应 ← 内容: "${truncate(result.text, 80)}"`);
+            this.logger.success(`✔ 文本响应 ← 内容: "${truncate(result.text, 80)}"`);
         }
         return result;
     }
@@ -110,7 +110,7 @@ export class ChatModel {
      * 这种实现方式可以并发处理多个流（文本、步骤），并在所有流结束后组装完整结果。
      */
     private async _executeStream(chatOptions: ChatOptions, onStreamStart?: () => void): Promise<GenerateTextResult> {
-        this.logger.debug("[执行] → 流式请求 (并发处理)");
+        this.logger.debug("→ 流式请求 (并发处理)");
         let streamStarted = false;
 
         const stime = Date.now();
@@ -123,7 +123,7 @@ export class ChatModel {
                 if (!streamStarted) {
                     onStreamStart?.();
                     streamStarted = true;
-                    this.logger.debug(`[执行] 🌊 流式传输已开始 (首包到达) | 首字延迟: ${Date.now() - stime}ms`);
+                    this.logger.debug(`🌊 流式传输已开始 | 首字延迟: ${Date.now() - stime}ms`);
                     // 打印一个换行符，为打字机效果准备一个干净的起始行
                     process.stdout.write("\n");
                 }
@@ -199,7 +199,7 @@ export class ChatModel {
 
         // 打字机效果结束后，打印一个换行符，将光标移到下一行
         process.stdout.write("\n\n");
-        this.logger.debug("[执行] 🌊 流式传输完毕");
+        this.logger.debug(`🌊 流式传输完毕 | 总耗时: ${Date.now() - stime}ms`);
 
         // 5. 组装成一个完整的 GenerateTextResult 对象
         const finalResult: GenerateTextResult = {
@@ -215,9 +215,9 @@ export class ChatModel {
         // 记录总结性日志
         if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
             const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
-            this.logger.success(`[执行] ✔ 工具调用 (流) ← 名称: ${toolNames}`);
+            this.logger.success(`✔ 工具调用 (流) ← 名称: ${toolNames}`);
         } else {
-            this.logger.success(`[执行] ✔ 文本响应 (流) ← 总长度: ${finalResult.text.length}, 停止原因: ${finalResult.finishReason}`);
+            this.logger.success(`✔ 文本响应 (流) ← 总长度: ${finalResult.text.length}, 停止原因: ${finalResult.finishReason}`);
         }
 
         return finalResult;
