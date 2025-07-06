@@ -52,7 +52,7 @@ export interface Channel {
     /** 频道名称。群聊时为群名，私聊时可格式化为 "与 <用户名> 的私聊"。 */
     name: string;
     /** 频道类型：'guild' (群组频道) 或 'private' (私聊)。 */
-    type: "guild" | "private";
+    type: "guild" | "private" | string;
     /** 所属平台名称 (如 'onebot', 'discord')。 */
     platform: string;
     /** 扩展元信息。 */
@@ -88,7 +88,7 @@ export interface Sender {
 export interface ContextualMessage {
     id: string;
     /** 消息内容 */
-    content?: string;
+    content: string;
     elements?: Element[];
     /** 消息发送的时间戳 */
     timestamp: Date;
