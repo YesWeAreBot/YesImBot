@@ -1,5 +1,6 @@
 import { Context, ForkScope, Service, sleep } from "koishi";
 import { AgentCore } from "./agent";
+import { ConfiguratorService } from "./commands/configurator";
 import { Config } from "./config";
 import { ImageService, LoggerService, MemoryService, ModelService, ToolService, WorldStateService } from "./services";
 
@@ -65,9 +66,7 @@ export default class YesImBot extends Service<Config> {
             this.ctx.logger.error(error.stack);
         }
 
-        ctx.on("internal/update", (scope, oldConfig) => {
-            this.ctx.logger.info("配置已更新");
-        });
+        ctx.plugin(ConfiguratorService, config);
     }
 }
 
