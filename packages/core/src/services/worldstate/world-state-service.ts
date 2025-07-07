@@ -294,7 +294,11 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
-            senderId: session.userId,
+            sender: {
+                id: session.userId,
+                name: session.author.nick || session.author.name,
+                roles: session.author.roles,
+            },
             content: transformedContent,
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
@@ -357,16 +361,21 @@ export class WorldStateService extends Service<HistoryConfig> {
             return;
         }
 
+        if (!session.messageId) return;
+
         // 如果没有匹配，则为普通AI消息（如 ReAct 的 send_message）
         this._logger.debug(`[WorldState] Recording a regular programmatic AI message.`);
         const openSegment = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
         if (!openSegment) return;
 
         await this.recordMessage(openSegment.id, {
-            id: `bot_intent_${Random.id(12)}`,
+            id: session.messageId || Random.id(16),
             platform: session.platform,
             channelId: session.channelId,
-            senderId: session.bot.selfId,
+            sender: {
+                id: session.bot.selfId,
+                name: session.bot.user.nick || session.bot.user.name,
+            },
             content: session.content,
             timestamp: new Date(),
         });
@@ -391,7 +400,10 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
-            senderId: session.userId,
+            sender: {
+                id: session.userId,
+                name: session.author.nick || session.author.name,
+            },
             content: session.content,
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
@@ -421,6 +433,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 3. 机器人程序化输出事件
         this.disposers.push(this.ctx.on("before-send", (session) => this.handleBotProgrammaticMessage(session), true));
+        this.disposers.push(this.ctx.on("after-send", (session) => this.handleBotProgrammaticMessage(session), true));
 
         // 4. 边缘案例：操作员手动消息
         this.disposers.push(
@@ -491,12 +504,12 @@ export class WorldStateService extends Service<HistoryConfig> {
                 platform: "string(255)",
                 sid: "string(64)",
                 channelId: "string(255)",
-                senderId: "string(255)",
+                sender: "object",
                 timestamp: "timestamp",
                 content: "text",
                 quoteId: "string(255)",
             },
-            { primary: ["id", "platform"], foreign: { sid: [TableName.DialogueSegments, "id"] } }
+            { foreign: { sid: [TableName.DialogueSegments, "id"] } }
         );
 
         this.ctx.model.extend(
@@ -525,7 +538,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             sid: segmentId,
             platform: message.platform,
             channelId: message.channelId,
-            senderId: message.senderId,
+            sender: message.sender,
             content: message.content,
             timestamp: message.timestamp,
             quoteId: message.quoteId,
@@ -748,8 +761,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         history.forEach((segment) => {
             segment.dialogue.forEach((message) => {
                 // 排除特殊身份的发送者
-                if (message.sender.pid !== "agent" && message.sender.pid !== "operator") {
-                    memberIds.add(message.sender.pid);
+                if (message.sender.id !== "agent" && message.sender.id !== "operator") {
+                    memberIds.add(message.sender.id);
                 }
             });
         });
@@ -833,7 +846,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             time: formatDate(record.timestamp, "HH:mm:ss"),
             quoted: quotedMsgIds.has(record.id),
             quoteId: record.quoteId,
-            sender: { pid: record.senderId },
+            sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
         }));
 
         dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
@@ -1024,11 +1037,11 @@ export class WorldStateService extends Service<HistoryConfig> {
             allMessages.map(async (msg) => {
                 const sender = await this.ctx.database
                     .get(TableName.Members, {
-                        pid: msg.senderId,
                         platform: msg.platform,
+                        pid: msg.sender.id,
                     })
                     .then((res) => res[0]);
-                const senderName = sender?.name || "Unknown";
+                const senderName = sender?.name || msg.sender.name || msg.sender.id;
                 const timestampStr = formatDate(msg.timestamp);
                 // 将 h 元素转换为纯文本
                 const contentText = h

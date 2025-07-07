@@ -75,7 +75,7 @@ export interface Channel {
  */
 export interface Sender {
     /** 用户的平台唯一ID (pid) */
-    pid: string;
+    id: string;
     /** 发送消息时用户的显示名称 (昵称) */
     name?: string;
     /** 发送消息时用户的角色 */
