@@ -1,7 +1,5 @@
-import { writeFile } from "fs/promises";
-import { Context, Logger, Service } from "koishi";
-import path from "path";
-import { AppError, ErrorCodes } from "../../shared";
+import { Context, Logger, Schema, Service } from "koishi";
+import { AppError, ErrorCodes, isNotEmpty } from "../../shared";
 import { Services } from "../types";
 import { BaseModel } from "./base-model";
 import { IChatModel } from "./chat-model";
@@ -28,7 +26,6 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         this.validateConfig();
         this.initializeProviders();
-        this.updateModelsJson();
     }
 
     /**
@@ -67,22 +64,33 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
 
-        writeFile(path.resolve(__dirname, "./models.json"), JSON.stringify(models, null, 2))
-            .then(() => {
-                this._logger.debug("⚙️ 模型列表已更新");
-            })
-            .catch((error) => {
-                this._logger.error("⚙️ 更新模型列表失败", error.message);
+        const selectableModels = models
+            .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
+            .map((m) => {
+                return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
             });
-    }
-    private updateModelsJson(): void {
-        const models = this.config.providers
-            .filter((p) => p.enabled)
-            .flatMap((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId })));
 
-        writeFile(path.resolve(__dirname, "./models.json"), JSON.stringify(models, null, 2))
-            .then(() => this._logger.debug("⚙️ 模型列表已更新"))
-            .catch((error) => this._logger.error("⚙️ 更新模型列表失败", error.message));
+        this.ctx.schema.set(
+            "modelService.selectableGroup",
+            Schema.union([
+                ...selectableModels,
+                Schema.object({
+                    providerName: Schema.string().required().description("提供商名称"),
+                    modelId: Schema.string().required().description("模型ID"),
+                })
+                    .role("table")
+                    .description("自定义模型"),
+            ]).default({ providerName: "", modelId: "" })
+        );
+
+        this.ctx.schema.set(
+            "modelService.availableGroups",
+            Schema.union(
+                Object.keys(this.config.modelGroups).map((groupName) => {
+                    return Schema.const(groupName).description(groupName);
+                })
+            ).required()
+        );
     }
 
     private initializeProviders(): void {

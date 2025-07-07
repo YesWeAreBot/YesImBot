@@ -151,26 +151,12 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         .role("table")
         .collapse()
         .description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
-    modelGroups: Schema.dict(
-        Schema.array(
-            Schema.union([
-                ...selectableModels,
-                Schema.object({
-                    providerName: Schema.string().required().description("提供商名称"),
-                    modelId: Schema.string().required().description("模型ID"),
-                })
-                    .role("table")
-                    .description("自定义模型"),
-            ]).default({ providerName: "", modelId: "" })
-        )
-            .role("table")
-            .description("此模型组包含的模型")
-    )
+    modelGroups: Schema.dict(Schema.array(Schema.dynamic("modelService.selectableGroup")).role("table").description("此模型组包含的模型"))
         .required()
         .description("创建模型组，用于故障转移或分类。键是组名。"),
     taskAssignments: Schema.object({
-        [TaskType.Chat]: Schema.string().required().description("主要聊天功能使用的模型组"),
-        [TaskType.Embedding]: Schema.string().required().description("生成文本嵌入(Embedding)时使用的模型组"),
-        [TaskType.Summarization]: Schema.string().required().description("对话历史总结时使用的模型组"),
+        [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型组"),
+        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型组"),
+        [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型组"),
     }).description("为不同核心任务分配一个模型组"),
 });
