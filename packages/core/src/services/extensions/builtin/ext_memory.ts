@@ -1,4 +1,5 @@
 import { Context, Query, Schema } from "koishi";
+import { formatDate, truncate } from "../../../shared";
 import { MemoryService } from "../../memory/MemoryService";
 import { TableName } from "../../types";
 import { MessageData } from "../../worldstate";
@@ -130,7 +131,7 @@ const ConversationSearchTool = createTool({
                 whereClauses.push({ channelId: channel_id });
             }
             if (user_id) {
-                whereClauses.push({ sender: { pid: user_id } });
+                whereClauses.push({ sender: { id: user_id } });
             }
             // Combine clauses with $and if multiple are present
             const finalQuery: Query<MessageData> = whereClauses.length > 1 ? { $and: whereClauses } : whereClauses[0] || {};
@@ -147,7 +148,11 @@ const ConversationSearchTool = createTool({
             }
 
             const formattedResults = messages.map(
-                (msg) => `[${new Date(msg.timestamp).toISOString()}] ` + `${msg.sender.name || msg.sender.pid}: ${msg.content}`
+                (msg) =>
+                    `[${msg.id}|${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm:ss")}|${msg.sender.name}(${msg.sender.id})] ${truncate(
+                        msg.content,
+                        100
+                    )}`
             );
             return Success({ results_count: messages.length, results: formattedResults });
         } catch (e: any) {
