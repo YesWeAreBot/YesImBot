@@ -3,9 +3,11 @@ import { Context, Logger, Service } from "koishi";
 import path from "path";
 import { AppError, ErrorCodes } from "../../shared";
 import { Services } from "../types";
-import { ChatModel } from "./chat-model";
-import { ModelDescriptor, ModelServiceConfig } from "./config";
-import { AnthropicFactory, IProviderFactory, OllamaFactory, OpenAIFactory } from "./factories";
+import { BaseModel } from "./base-model";
+import { IChatModel } from "./chat-model";
+import { ModelDescriptor, ModelServiceConfig, TaskType } from "./config";
+import { IEmbedModel } from "./embed-model";
+import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
 
 declare module "koishi" {
@@ -16,9 +18,6 @@ declare module "koishi" {
 
 export class ModelService extends Service<ModelServiceConfig> {
     static readonly inject = [Services.Logger];
-    // 工厂注册表
-    private readonly providerFactories = new Map<string, IProviderFactory>();
-    // 实例化的 Provider 缓存
     private readonly providerInstances = new Map<string, ProviderInstance>();
     private readonly _logger: Logger;
 
@@ -28,8 +27,8 @@ export class ModelService extends Service<ModelServiceConfig> {
         this._logger = ctx[Services.Logger].getLogger("[模型服务]");
 
         this.validateConfig();
-        this.registerFactories();
         this.initializeProviders();
+        this.updateModelsJson();
     }
 
     /**
@@ -76,13 +75,14 @@ export class ModelService extends Service<ModelServiceConfig> {
                 this._logger.error("⚙️ 更新模型列表失败", error.message);
             });
     }
+    private updateModelsJson(): void {
+        const models = this.config.providers
+            .filter((p) => p.enabled)
+            .flatMap((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId })));
 
-    private registerFactories(): void {
-        this.providerFactories.set("OpenAI", new OpenAIFactory());
-        this.providerFactories.set("OpenAI Compatible", new OpenAIFactory());
-        this.providerFactories.set("Ollama", new OllamaFactory());
-        this.providerFactories.set("Anthropic", new AnthropicFactory());
-        this._logger.debug(`注册了 ${this.providerFactories.size} 个提供商工厂`);
+        writeFile(path.resolve(__dirname, "./models.json"), JSON.stringify(models, null, 2))
+            .then(() => this._logger.debug("⚙️ 模型列表已更新"))
+            .catch((error) => this._logger.error("⚙️ 更新模型列表失败", error.message));
     }
 
     private initializeProviders(): void {
@@ -93,7 +93,7 @@ export class ModelService extends Service<ModelServiceConfig> {
                 continue;
             }
 
-            const factory = this.providerFactories.get(providerConfig.type);
+            const factory = ProviderFactoryRegistry.get(providerConfig.type);
             if (!factory) {
                 this._logger.error(`✖ 不支持的提供商类型 | 类型: ${providerConfig.type}`);
                 continue;
@@ -110,87 +110,100 @@ export class ModelService extends Service<ModelServiceConfig> {
         }
     }
 
-    /**
-     * 通过模型组名称获取一个模型切换器，包含了该组中的所有模型。
-     * @param name 模型组名称或预定义的模型组符号。
-     * @throws
-     * @returns
-     */
-    public useGroup(name: string | symbol): ModelSwitcher | undefined {
-        let groupName: string;
-        let group: ModelDescriptor[];
+    private getModel<T extends BaseModel>(
+        providerName: string,
+        modelId: string,
+        getter: (instance: ProviderInstance, modelId: string) => T | null
+    ): T | null {
+        const instance = this.providerInstances.get(providerName);
+        return instance ? getter(instance, modelId) : null;
+    }
 
-        if (typeof name === "string") {
-            groupName = name;
-            group = this.config.modelGroups[groupName];
-        } else {
-            switch (name) {
-                case ModelGroup.Chat:
-                    groupName = this.config.taskAssignments.chat;
-                    break;
-                case ModelGroup.Embedding:
-                    groupName = this.config.taskAssignments.embedding;
-                    break;
-                case ModelGroup.Summarization:
-                    groupName = this.config.taskAssignments.summarization;
-                    break;
-                default:
-                    this._logger.warn(`[切换器] ⚠ 任务未分配模型组 | 任务: ${Symbol.keyFor(name)}`);
-                    return undefined;
-            }
-            group = this.config.modelGroups[groupName];
-        }
+    public getChatModel(providerName: string, modelId: string): IChatModel | null {
+        return this.getModel(providerName, modelId, (instance, id) => instance.getChatModel(id));
+    }
 
+    public getEmbedModel(providerName: string, modelId: string): IEmbedModel | null {
+        return this.getModel(providerName, modelId, (instance, id) => instance.getEmbedModel(id));
+    }
+
+    private _createSwitcher<T extends BaseModel>(
+        groupName: string,
+        modelGetter: (provider: string, modelId: string) => T | null
+    ): ModelSwitcher<T> | undefined {
+        const group = this.config.modelGroups[groupName];
         if (!group) {
             this._logger.warn(`[切换器] ⚠ 组未找到 | 名称: ${groupName}`);
-            return undefined;
-        } else if (group.length === 0) {
-            this._logger.warn(`[切换器] ⚠ 组为空 | 名称: ${groupName}`);
             return undefined;
         }
 
         try {
-            return new ModelSwitcher(this.ctx, this, group, groupName);
+            // 在这里传入模型获取函数，实现泛型
+            return new ModelSwitcher<T>(this.ctx, group, groupName, modelGetter);
         } catch (error) {
-            // ModelSwitcher 构造函数中的错误会被捕获，这里只记录一下上下文
             this._logger.error(`[切换器] ✖ 创建失败 | 组: ${groupName} | 错误: ${error.message}`);
             return undefined;
         }
     }
 
-    public getChatModel(providerName: string, modelId: string): ChatModel | null {
-        return this.providerInstances.get(providerName)?.getChatModel(modelId) ?? null;
+    public useChatGroup(name: TaskType): ModelSwitcher<IChatModel> | undefined {
+        const groupName = this.resolveGroupName(name);
+        if (!groupName) return undefined;
+        return this._createSwitcher(groupName, this.getChatModel.bind(this));
+    }
+
+    public useEmbeddingGroup(name: TaskType): ModelSwitcher<IEmbedModel> | undefined {
+        const groupName = this.resolveGroupName(name);
+        if (!groupName) return undefined;
+        return this._createSwitcher(groupName, this.getEmbedModel.bind(this));
+    }
+
+    private resolveGroupName(name: TaskType): string | undefined {
+        if (this.config.taskAssignments[name]) {
+            return this.config.taskAssignments[name];
+        }
+
+        if (this.config.modelGroups[name]) {
+            return name;
+        }
+
+        this._logger.warn(`[切换器] ⚠ 无效的任务符号 | 任务: ${name}`);
+        return undefined;
     }
 }
 
-export const ModelGroup = {
-    Chat: Symbol("Chat"),
-    Embedding: Symbol("Embedding"),
-    Summarization: Symbol("Summarization"),
-};
-
-export class ModelSwitcher {
-    private readonly models: ChatModel[];
+/**
+ * 泛型模型切换器
+ * 支持代理任何继承自 BaseModel 的模型类型，并在初始化时验证其能力。
+ */
+export class ModelSwitcher<T extends BaseModel> {
+    private readonly models: T[];
     private currentIndex = 0;
     private readonly _logger: Logger;
 
-    constructor(private ctx: Context, private modelService: ModelService, modelDescriptors: ModelDescriptor[], private groupName: string) {
+    constructor(
+        ctx: Context,
+        modelDescriptors: ModelDescriptor[],
+        private groupName: string,
+        modelGetter: (providerName: string, modelId: string) => T | null
+    ) {
         this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupName}]`);
         this._logger.debug(`开始加载模型组...`);
 
         this.models = modelDescriptors
             .map((descriptor) => {
-                const model = this.modelService.getChatModel(descriptor.providerName, descriptor.modelId);
+                const model = modelGetter(descriptor.providerName, descriptor.modelId);
                 if (!model) {
-                    this._logger.warn(`⚠ 模型未找到 | ID: ${descriptor.modelId}, 提供商: ${descriptor.providerName}`);
+                    // getModel 方法内部已经记录了详细日志 (未找到/能力不匹配)
+                    // this._logger.warn(`⚠ 模型不可用 | ID: ${descriptor.modelId}, 提供商: ${descriptor.providerName}`);
                     return null;
                 }
                 return model;
             })
-            .filter((model): model is ChatModel => model !== null);
+            .filter((model): model is T => model !== null);
 
         if (this.models.length === 0) {
-            this._logger.error("✖ 致命错误 | 模型组中无任何可用模型");
+            this._logger.error("✖ 致命错误 | 模型组中无任何可用的模型 (请检查模型配置和能力声明)");
             throw new AppError("模型组中未找到任何可用的模型", {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
                 context: { resourceType: "Model", resourceId: `group:${groupName}` },
@@ -199,11 +212,12 @@ export class ModelSwitcher {
         this._logger.debug(`✔ 加载成功 | 可用模型数: ${this.models.length}`);
     }
 
-    public getCurrent(): ChatModel {
+    public getCurrent(): T {
         return this.models[this.currentIndex];
     }
 
-    public switchToNext(): ChatModel {
+    public switchToNext(): T {
+        if (this.models.length <= 1) return this.getCurrent(); // 如果只有一个模型，不切换
         const oldIndex = this.currentIndex;
         this.currentIndex = (this.currentIndex + 1) % this.models.length;
         const oldModel = this.models[oldIndex].id;

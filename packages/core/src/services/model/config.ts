@@ -8,12 +8,6 @@ import { isNotEmpty } from "../../shared";
 // 1. 核心与共享类型 (Core & Shared Types)
 // =================================================================
 
-/** 描述一个模型在特定提供商中的位置 */
-export type ModelDescriptor = {
-    providerName: string;
-    modelId: string;
-};
-
 /** 定义模型支持的能力 */
 export enum ModelAbility {
     Vision = "视觉能力",
@@ -21,18 +15,32 @@ export enum ModelAbility {
     Reasoning = "推理能力",
     FunctionCalling = "函数调用能力",
     Embedding = "嵌入能力",
+    Chat = "聊天能力",
 }
+
+/**
+ * @enum TaskType
+ * @description 定义了系统中的核心AI任务类型，用于类型安全地分配模型组。
+ */
+export enum TaskType {
+    Chat = "chat",
+    Embedding = "embedding",
+    Summarization = "summarization",
+}
+
+/** 描述一个模型在特定提供商中的位置 */
+export type ModelDescriptor = {
+    providerName: string;
+    modelId: string;
+};
 
 // =================================================================
 // 2. 配置项 - 按UI逻辑分组
 // =================================================================
 
-// ------------------- 模块一: 模型服务 (Model Service) - 用户最先关心的部分 -------------------
-
 export interface ModelConfig {
     modelId: string;
     abilities: ModelAbility[];
-    // abilities: number;
     parameters?: {
         temperature?: number;
         topP?: number;
@@ -45,6 +53,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     modelId: Schema.string().required().description("模型ID"),
     abilities: Schema.array(
         Schema.union([
+            ModelAbility.Chat,
             ModelAbility.Vision,
             ModelAbility.WebSearch,
             ModelAbility.Reasoning,
@@ -53,7 +62,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         ])
     )
         .role("checkbox")
-        .default([ModelAbility.FunctionCalling])
+        .default([ModelAbility.Chat, ModelAbility.FunctionCalling])
         .description("模型支持的能力"),
 
     parameters: Schema.object({
@@ -73,48 +82,52 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     .collapse()
     .description("单个模型配置");
 
+export const PROVIDER_TYPES = [
+    "OpenAI",
+    "Anthropic",
+    "Google Gemini",
+    "Ollama",
+    "OpenAI Compatible",
+    "Fireworks",
+    "DeepSeek",
+    "LM Studio",
+    "Workers AI",
+    "Zhipu",
+    "Silicon Flow",
+    "Qwen",
+] as const;
+
+export type ProviderType = (typeof PROVIDER_TYPES)[number];
+
 export interface ProviderConfig {
-    name: string; // 唯一标识符
+    name: string;
     enabled?: boolean;
-    type: "OpenAI" | "Anthropic" | "Google Gemini" | "Ollama" | "OpenAI Compatible";
+    type: ProviderType;
     baseURL?: string;
     apiKey: string;
     proxy?: string;
     models: ModelConfig[];
 }
 
-export const ProviderConfigSchema = Schema.object({
+export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.object({
     name: Schema.string().required().description("提供商名称"),
     enabled: Schema.boolean().default(true).description("是否启用"),
-    type: Schema.union(["OpenAI", "Anthropic", "Google Gemini", "Ollama", "OpenAI Compatible"]).default("OpenAI").description("提供商类型"),
+    type: Schema.union(PROVIDER_TYPES).default("OpenAI").description("提供商类型"),
     baseURL: Schema.string().description("提供商的 API 地址"),
-    apiKey: Schema.string().required().role("secret").description("提供商的 API 密钥"),
+    apiKey: Schema.string().role("secret").description("提供商的 API 密钥"),
     proxy: Schema.string().description("代理地址"),
     models: Schema.array(ModelConfigSchema).description("模型列表"),
 })
     .collapse()
     .description("提供商配置");
 
-/**
- * 模型服务总体配置
- * UI 建议:
- * 1. "Providers" 部分让用户添加、编辑、删除提供商列表。
- * 2. "Model Groups" 部分让用户创建新组，并从已启用的 Provider 的模型中拖拽或选择模型加入。
- * 3. "Task Assignments" 部分为每个任务提供一个下拉菜单，选项为上面创建的 Model Groups。
- */
 export interface ModelServiceConfig {
-    /** 配置你的 AI 模型提供商，如 OpenAI, Anthropic 等 */
     providers: ProviderConfig[];
-    /** 创建模型组，用于故障转移或分类。键是组名。 */
     modelGroups: Record<string, ModelDescriptor[]>;
-    /** 为不同核心任务分配一个模型组 */
     taskAssignments: {
-        /** 主要聊天功能使用的模型组 */
-        chat: string;
-        /** 生成文本嵌入(Embedding)时使用的模型组 */
-        embedding: string;
-        /** 对话历史总结时使用的模型组 */
-        summarization: string;
+        [TaskType.Chat]: string;
+        [TaskType.Embedding]: string;
+        [TaskType.Summarization]: string;
     };
     readonly system?: SystemConfig;
 }
@@ -123,15 +136,13 @@ let selectableModels: Schema<ModelDescriptor>[] = [];
 
 try {
     const models: (ModelDescriptor & { desc: string })[] = JSON.parse(readFileSync(path.resolve(__dirname, "./models.json"), "utf-8"));
-
     selectableModels = models
         .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
         .map((m) => {
             return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
         });
 } catch (error) {
-    unlinkSync(path.resolve(__dirname, "./models.json"));
-    console.error("加载模型列表失败");
+    console.error("加载模型列表失败，可能是首次启动或文件损坏。");
 }
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
@@ -158,8 +169,8 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         .required()
         .description("创建模型组，用于故障转移或分类。键是组名。"),
     taskAssignments: Schema.object({
-        chat: Schema.string().required().description("主要聊天功能使用的模型组"),
-        embedding: Schema.string().required().description("生成文本嵌入(Embedding)时使用的模型组"),
-        summarization: Schema.string().required().description("对话历史总结时使用的模型组"),
+        [TaskType.Chat]: Schema.string().required().description("主要聊天功能使用的模型组"),
+        [TaskType.Embedding]: Schema.string().required().description("生成文本嵌入(Embedding)时使用的模型组"),
+        [TaskType.Summarization]: Schema.string().required().description("对话历史总结时使用的模型组"),
     }).description("为不同核心任务分配一个模型组"),
 });
