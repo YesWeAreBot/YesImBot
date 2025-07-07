@@ -1,6 +1,6 @@
 import { Argv, Bot, Context, Element, h, Logger, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
-import { ChatModel, ModelGroup } from "../model";
+import { IChatModel, TaskType } from "../model";
 import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
@@ -94,7 +94,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     // =================================================================================
 
     private _logger: Logger;
-    private chatModel: ChatModel;
+    private chatModel: IChatModel;
     private disposers: (() => boolean)[] = [];
     private maintenanceInterval: NodeJS.Timeout;
 
@@ -118,10 +118,10 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         this._logger = ctx[Services.Logger].getLogger("[世界状态]");
 
-        this.chatModel = this.ctx[Services.Model].useGroup(ModelGroup.Summarization)?.getCurrent();
+        this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Summarization)?.getCurrent();
 
         if (!this.chatModel) {
-            this._logger.warn("未找到任何可用的总结模型，自动总结功能将不可用");
+            this._logger.warn("未找到任何可用的总结模型，自动总结功能将不可用。");
         }
     }
 

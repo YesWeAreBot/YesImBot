@@ -1,43 +1,46 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
-import { Context, Logger } from "koishi";
-import type { EmbedManyOptions, EmbedOptions } from "xsai";
+import { Context } from "koishi";
+import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "xsai";
 import { embed, embedMany } from "../../dependencies/xsai";
+import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 
-export class EmbedModel {
-    private readonly logger: Logger;
+export interface IEmbedModel extends BaseModel {
+    embed(text: string): Promise<EmbedResult>;
+    embedMany(texts: string[]): Promise<EmbedManyResult>;
+}
 
+export class EmbedModel extends BaseModel implements IEmbedModel {
     constructor(
-        private ctx: Context,
-        private readonly embedProvider: EmbedProvider,
-        private readonly modelConfig: ModelConfig,
+        ctx: Context,
+        private readonly embedProvider: EmbedProvider["embed"],
+        modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        this.logger = ctx.logger("model").extend(this.modelConfig.modelId);
+        super(ctx, modelConfig, `[嵌入模型] [${modelConfig.modelId}]`);
     }
 
-    public async embed(text: string): Promise<ReturnType<typeof embed>> {
+    public async embed(text: string): Promise<EmbedResult> {
         this.logger.debug(`Embedding single text: "${text.substring(0, 50)}..."`);
         const embedOptions: EmbedOptions = {
+            ...this.embedProvider(this.config.modelId),
             fetch: this.fetch,
             input: text,
-            ...this.embedProvider.embed(this.modelConfig.modelId),
         };
-        return await embed(embedOptions);
+        return embed(embedOptions);
     }
 
-    public async embedMany(texts: string[]): Promise<ReturnType<typeof embedMany>> {
+    public async embedMany(texts: string[]): Promise<EmbedManyResult> {
         this.logger.debug(`Embedding ${texts.length} texts.`);
         const embedManyOptions: EmbedManyOptions = {
+            ...this.embedProvider(this.config.modelId),
             fetch: this.fetch,
             input: texts,
-            ...this.embedProvider.embed(this.modelConfig.modelId),
         };
-        return await embedMany(embedManyOptions);
+        return embedMany(embedManyOptions);
     }
 }
 
-// 包含相似度计算函数
 /**
  * Calculates the cosine similarity between two vectors.
  * The similarity is normalized to a [0, 1] range.

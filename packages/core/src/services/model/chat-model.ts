@@ -1,11 +1,10 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
-import { Context, Logger } from "koishi";
+import { Context } from "koishi";
 import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, GenerateTextStepResult, Message } from "xsai";
-
 import { generateText, streamText } from "../../dependencies/xsai";
-import { toBoolean, truncate } from "../../shared"; // 假设 truncate 在 shared 中
+import { toBoolean, truncate } from "../../shared";
 import { ToolDefinition } from "../extensions";
-import { Services } from "../types";
+import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 
 export interface RequestOptions {
@@ -14,26 +13,27 @@ export interface RequestOptions {
     tools?: ToolDefinition[];
 }
 
-export class ChatModel {
-    public readonly id: string;
+export interface IChatModel extends BaseModel {
+    chat(messages: Message[], options?: RequestOptions): Promise<GenerateTextResult>;
+}
+
+export class ChatModel extends BaseModel implements IChatModel {
     private readonly customParameters: Record<string, unknown> = {};
-    private readonly logger: Logger;
 
     constructor(
-        private ctx: Context,
-        private readonly chatProvider: ChatProvider,
-        private readonly modelConfig: ModelConfig,
+        ctx: Context,
+        private readonly chatProvider: ChatProvider["chat"],
+        modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        this.id = this.modelConfig.modelId;
-        this.logger = ctx[Services.Logger].getLogger(`[聊天模型] [${this.id}]`);
+        super(ctx, modelConfig, `[聊天模型] [${modelConfig.modelId}]`);
         this.parseCustomParameters();
     }
 
     private parseCustomParameters(): void {
-        if (!this.modelConfig.parameters.custom) return;
+        if (!this.config.parameters.custom) return;
 
-        for (const [key, param] of Object.entries(this.modelConfig.parameters.custom)) {
+        for (const [key, param] of Object.entries(this.config.parameters.custom)) {
             try {
                 let parsedValue: any;
                 switch (param.type) {
@@ -63,7 +63,7 @@ export class ChatModel {
     }
 
     public async chat(messages: Message[], options: RequestOptions = {}): Promise<GenerateTextResult> {
-        const useStream = this.modelConfig.parameters.stream ?? true;
+        const useStream = this.config.parameters.stream ?? true;
         this.logger.info(`💬 开始 | 流式: ${useStream}`);
         const chatOptions: ChatOptions = this.buildChatOptions(messages, options);
 
@@ -75,19 +75,19 @@ export class ChatModel {
             }
         } catch (error) {
             this.logger.error(`💥 致命异常 | 错误: ${error.message}`, error);
-            throw error; // 重新抛出，让上层捕获
+            throw error;
         }
     }
 
     private buildChatOptions(messages: Message[], options: RequestOptions): ChatOptions {
         return {
-            ...this.chatProvider.chat(this.modelConfig.modelId),
+            ...this.chatProvider(this.config.modelId),
             fetch: this.fetch,
             abortSignal: options.abortSignal,
             messages,
             tools: options.tools,
-            temperature: this.modelConfig.parameters.temperature,
-            topP: this.modelConfig.parameters.topP,
+            temperature: this.config.parameters.temperature,
+            topP: this.config.parameters.topP,
             ...this.customParameters,
         };
     }
