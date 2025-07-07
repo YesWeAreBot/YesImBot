@@ -1,15 +1,16 @@
-import { Context, h, Logger, Random, Schema, Service, Session } from "koishi";
+import { Bot, Context, h, Logger, Random, Schema, Service, Session, sleep } from "koishi";
 import type { ImagePart, TextPart } from "xsai";
 import {
     AgentResponse,
     createTool,
     DialogueSegment,
     Failed,
-    ModelGroup,
+    IChatModel,
     ModelService,
     ModelSwitcher,
     Services,
     Success,
+    TaskType,
     ToolDefinition,
     ToolExecutionContext,
     ToolService,
@@ -19,6 +20,12 @@ import {
 import { JsonParser, truncate } from "../shared";
 import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
 import { PromptBuilder, PromptContext } from "./prompt-builder";
+
+declare module "koishi" {
+    interface Events {
+        "after-send": (session: Session) => void;
+    }
+}
 
 export class AgentCore extends Service<AgentBehaviorConfig> {
     static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image, Services.Logger];
@@ -33,7 +40,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
     private readonly promptBuilder: PromptBuilder;
     private readonly parser: JsonParser<AgentResponse>;
-    private readonly modelSwitcher: ModelSwitcher;
+    private readonly modelSwitcher: ModelSwitcher<IChatModel>;
 
     // 内部状态
     private readonly allowedChannels = new Set<string>();
@@ -56,7 +63,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 实例化内部组件
         this.promptBuilder = new PromptBuilder(this.ctx, this.config.prompt);
         this.parser = new JsonParser<AgentResponse>();
-        this.modelSwitcher = this.modelService.useGroup(ModelGroup.Chat);
+        this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
     }
 
     protected async start(): Promise<void> {
@@ -355,64 +362,176 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private async createMessageTool(): Promise<ToolDefinition> {
         return createTool({
             name: "send_message",
-            description: "Sends a message to the human user.",
+            description: "Sends a message to a user or channel, mimicking human-like behavior.",
             parameters: Schema.object({
                 inner_thoughts: Schema.string().description("Your internal monologue for self-reflection. This content will not be sent."),
-
                 message: Schema.string().description(
-                    "The message content to send. To mimic human-like chatting behavior (people rarely send very long messages at once), you can use the `<sep/>` separator to split a long response into multiple, shorter messages. For example: `'Hello there<sep/>The weather is great today!'` will be sent as two separate messages in sequence."
+                    "The message content to send. Use `<sep/>` to split a long response into multiple, shorter messages, which will be sent with natural delays. E.g., 'Hello there<sep/>How are you?'"
                 ),
-
                 target: Schema.string().description(
-                    "Specifies where to send the message, using the format `platform:id`. Defaults to the current channel. This parameter is crucial if you need to send a message to a different channel or in a private chat.\n" +
-                        "- **For Guild/Group Channels**: Use `platform:channel_id`. Example: `onebot:123456789`\n" +
-                        "- **For Private Chats**: Use `platform:private:user_id`. Example: `discord:private:987654321`"
+                    "Optional. Specifies where to send the message, using `platform:id` format. Defaults to the current channel. E.g., `onebot:123456789` for a group, or `discord:private:987654321` for a private chat."
                 ),
             }),
             execute: async ({ koishiSession }, { message, target }) => {
                 const toolLogger = this._logger.extend("send_message");
+
                 if (!koishiSession) {
                     toolLogger.warn("✖ 缺少有效会话，无法发送消息。");
                     return Failed("缺少会话对象");
                 }
 
+                const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
+                if (messages.length === 0) {
+                    toolLogger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容。");
+                    return Failed("消息内容为空");
+                }
+
                 try {
-                    const messages = message.split("<sep/>");
-                    const finalTarget = target || `${koishiSession.platform}:${koishiSession.channelId}`;
+                    const { bot, channelId, finalTarget } = this.determineTarget(koishiSession, target);
 
-                    if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
-                        toolLogger.debug(`→ 发送至当前会话 | 目标: ${finalTarget}`);
-                        for (const msg of messages) {
-                            await koishiSession.sendQueued(msg);
-                        }
-                        return Success("消息已发送至当前频道");
-                    }
-
-                    // 如果指定了不同的 target，使用 bot 发送消息
-                    // 一个平台可能有多个 bot 客户端，后期需要判断代理人选择合适的 bot
-                    // 私聊 channel_id 为 platform:private:user_id，群聊为 platform:group_id
-                    // 可能需要不同的处理逻辑
-                    const parts = target.split(":");
-                    const platform = parts[0];
-                    const channelId = parts.slice(1).join(":");
-
-                    toolLogger.debug(`→ 发送至指定目标 | 目标: ${finalTarget}`);
-                    const bot = this.ctx.bots.find((b) => b.platform === platform);
                     if (!bot) {
-                        const platforms = this.ctx.bots.map((b) => b.platform).join(", ");
-                        toolLogger.warn(`✖ 未找到平台对应的机器人 | 目标平台: ${platform}, 可用平台: ${platforms}`);
-                        return Failed(`未找到平台 ${platform} 的机器人，可用平台: ${platforms}`);
+                        const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
+                        toolLogger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
+                        return Failed(`未找到平台 ${target} 对应的机器人实例。`);
                     }
 
-                    for (const msg of messages) {
-                        await bot.sendMessage(channelId, msg);
-                    }
-                    return Success(`消息已发送至 ${target}`);
+                    toolLogger.info(`🚀 准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
+
+                    await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, koishiSession);
+
+                    return Success(`✅ 消息已成功发送至 ${finalTarget}`);
                 } catch (error) {
-                    this.handleError(error, `发送消息至 ${target || koishiSession.channelId}`);
+                    this.handleError(error, `发送消息至 ${target || "当前频道"} 时发生错误`);
                     return Failed(`发送消息失败: ${error.message}`);
                 }
             },
         });
+    }
+
+    /**
+     * 决定消息的最终目标和使用的机器人实例
+     */
+    private determineTarget(koishiSession: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
+        if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
+            // 发送至当前会话
+            return {
+                bot: koishiSession.bot,
+                channelId: koishiSession.channelId,
+                finalTarget: `${koishiSession.platform}:${koishiSession.channelId}`,
+            };
+        } else {
+            // 发送至指定目标
+            const parts = target.split(":");
+            const platform = parts[0];
+            const channelId = parts.slice(1).join(":");
+            const bot = this.ctx.bots.find((b) => b.platform === platform);
+            return { bot, channelId, finalTarget: target };
+        }
+    }
+
+    /**
+     * 带有“人性化”延迟的消息发送执行器
+     * @param messages 要发送的消息数组
+     * @param bot 用于发送的机器人实例
+     * @param channelId 目标频道ID
+     * @param originalSession 原始会话，用于创建after-send事件
+     */
+    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
+        const toolLogger = this._logger.extend("send_message_executor");
+
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i].trim();
+            if (!msg) continue;
+
+            // --- 人性化延迟的核心部分 ---
+            const delay = this.getTypingDelay(msg);
+            //toolLogger.debug(`Simulating typing... Delaying for ${delay}ms before sending: "${msg}"`);
+
+            await sleep(delay);
+
+            // --- 发送消息 ---
+            const messageIds = await bot.sendMessage(channelId, msg);
+
+            // --- 发送后处理（例如发射事件）---
+            // 使用 then 回调不是最佳实践，async/await 更清晰
+            if (messageIds && messageIds.length > 0) {
+                this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
+                //toolLogger.debug(`✔ Message sent with ID: ${messageIds[0]}`);
+            }
+
+            // 如果还有下一条消息，增加一个“段落间隔”延迟
+            if (i < messages.length - 1) {
+                const paragraphDelay = 1000 + Math.random() * 1500; // 1秒到2.5秒的随机停顿
+                //toolLogger.debug(`Pausing for ${paragraphDelay}ms between messages.`);
+                await sleep(paragraphDelay);
+            }
+        }
+    }
+
+    /**
+     * 封装 after-send 事件的发射逻辑
+     */
+    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): void {
+        const session = bot.session({
+            ...originalSession.event,
+            type: "after-send",
+            message: {
+                id: messageId,
+                content: content,
+                elements: h.parse(content),
+                timestamp: Date.now(),
+                user: bot.user,
+            },
+            channel: {
+                id: channelId,
+                type: originalSession.guildId ? 0 : 1,
+            },
+        });
+        this.ctx.emit("after-send", session as Session);
+    }
+
+    private getTypingDelay(text: string): number {
+        // --- 可配置参数 ---
+        const BASE_DELAY = this.config.typing.baseDelay;
+
+        // 中文输入模拟 (拼音输入法)
+        const DELAY_PER_CHINESE_CHAR = this.config.typing.charPerSecond;
+        const CHINESE_RANDOM_FACTOR = 0.5;
+
+        // 英文输入模拟
+        const DELAY_PER_ENGLISH_CHAR = this.config.typing.charPerSecond * 1.5;
+        const ENGLISH_RANDOM_FACTOR = 0.3; // 英文输入的随机性较小
+
+        // 延迟上下限
+        const MIN_DELAY = this.config.typing.minDelay;
+        const MAX_DELAY = this.config.typing.maxDelay;
+
+        // --- 逻辑实现 ---
+
+        // 1. 统计中英文字符数
+        let chineseCharCount = 0;
+        let englishCharCount = 0;
+
+        // 使用正则表达式匹配中文字符 (Unicode范围)
+        const chineseRegex = /[\u4e00-\u9fa5]/g;
+        const chineseMatches = text.match(chineseRegex);
+        chineseCharCount = chineseMatches ? chineseMatches.length : 0;
+
+        // 英文及其他字符（数字、符号等）可以大致归为一类
+        englishCharCount = text.length - chineseCharCount;
+
+        // 2. 分别计算中英文部分的延迟
+        const chineseDelay = chineseCharCount * DELAY_PER_CHINESE_CHAR;
+        const englishDelay = englishCharCount * DELAY_PER_ENGLISH_CHAR;
+
+        // 3. 计算总延迟并加入随机性
+        // 随机性的大小也与中英文字符数量有关，让节奏更真实
+        const totalRandomness = (chineseCharCount * CHINESE_RANDOM_FACTOR + englishCharCount * ENGLISH_RANDOM_FACTOR) / text.length;
+        const randomFactor = 1 + (Math.random() - 0.5) * 2 * totalRandomness; // 在 (1-totalRandomness) 到 (1+totalRandomness) 之间
+
+        const calculatedDelay = BASE_DELAY + (chineseDelay + englishDelay) * randomFactor;
+
+        // 4. 应用延迟上下限
+        return Math.max(MIN_DELAY, Math.min(calculatedDelay, MAX_DELAY));
     }
 }
