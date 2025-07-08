@@ -54,8 +54,16 @@ export class MCPManager {
         try {
             // 创建传输层
             if (server.url) {
+                if (server.url.includes("http://") || server.url.includes("https://")) {
+                    transport = new StreamableHTTPClientTransport(new URL(server.url));
+                } else if (server.url.includes("sse://")) {
+                    transport = new SSEClientTransport(new URL(server.url));
+                } else {
+                    this.logger.error(`不支持的服务器 URL: ${server.url}`);
+                    return;
+                }
+
                 this.logger.info(`连接 URL 服务器: ${serverName}`);
-                transport = new SSEClientTransport(new URL(server.url));
             } else if (server.command) {
                 this.logger.info(`启动命令服务器: ${serverName}`);
                 const enableTransform = server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
