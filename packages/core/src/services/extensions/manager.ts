@@ -1,5 +1,6 @@
 import { Context, Logger, Service } from "koishi";
 import path from "path";
+import { stringify, truncate } from "../../shared";
 import { Services } from "../types";
 import { ToolServiceConfig } from "./config";
 import { createExtension, defineExecutableTool, Failed, isValidExtension, isValidTool } from "./helpers";
@@ -15,7 +16,6 @@ import {
     ToolRegistrationOptions,
 } from "./types";
 import { getExtensionFiles } from "./utils";
-import { truncate } from "../../shared";
 
 declare module "koishi" {
     interface Context {
@@ -215,7 +215,7 @@ export class ToolService extends Service<ToolServiceConfig> {
             return Failed(`Tool ${functionName} not found`);
         }
 
-        const stringifyParams = truncate(JSON.stringify(params), 100);
+        const stringifyParams = truncate(stringify(params), 100);
         this._logger.info(`[执行] → 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
@@ -226,8 +226,8 @@ export class ToolService extends Service<ToolServiceConfig> {
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelayMs));
                 }
 
-                lastResult = await tool.execute(params, context);
-                const resultString = truncate(JSON.stringify(lastResult), 120);
+                lastResult = await tool.execute(params, context) || Failed("Tool call did not execute.");
+                const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
                     this._logger.success(`[执行] ✔ 成功 ← 返回: ${resultString}`);
@@ -239,7 +239,8 @@ export class ToolService extends Service<ToolServiceConfig> {
                 }
                 this._logger.warn(`[执行] ⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
             } catch (error) {
-                this._logger.error(`[执行] 💥 异常 | 调用 ${functionName} 时出错`, error);
+                this._logger.error(`[执行] 💥 异常 | 调用 ${functionName} 时出错`, error.message);
+                this._logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);
                 return lastResult;
             }

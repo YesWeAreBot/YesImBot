@@ -119,13 +119,25 @@ export function defineExecutableTool<TParams extends Schema<any>, TReturns = any
             const mergedContext = { ...baseContext, ...runtimeContext } as ToolExecutionContext<TConfig>;
             await definition?.hooks?.onBeforeExecute?.(params, mergedContext);
 
-            let result;
+            let result: ToolCallResult;
 
             try {
                 result = await definition.execute(mergedContext, params);
             } catch (error) {
                 await definition?.hooks?.onError?.(error, mergedContext);
+
+                // 将错误包装成 ToolCallResult
+                result = {
+                    status: "failed",
+                    error: `工具 '${definition.metadata.name}' 执行时发生未捕获的异常: ${error instanceof Error ? error.message : String(error)}`,
+                    retryable: false, // 内部崩溃通常是不可重试的
+                    metadata: {
+                        source: "tool_executor_wrapper",
+                        error_stack: error instanceof Error ? error.stack : undefined,
+                    },
+                };
             } finally {
+                // finally 块现在可以安全地假设 result 总是一个有效的 ToolCallResult 对象
                 await definition?.hooks?.onAfterExecute?.(result, mergedContext);
                 return result;
             }
