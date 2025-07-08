@@ -101,10 +101,10 @@ export class PromptBuilder {
                 return content.join("");
             },
             _truncate: function () {
-                const length = 500;
-                if (this.length > length) {
-                    return this.slice(0, length) + `...（内容过长，已省略${this.length - length}字符）`;
-                }
+                // const length = 500;
+                // if (this.length > length) {
+                //     return this.slice(0, length) + `...（内容过长，已省略${this.length - length}字符）`;
+                // }
                 return this;
             },
         };
