@@ -26,6 +26,7 @@ export enum TaskType {
     Chat = "chat",
     Embedding = "embedding",
     Summarization = "summarization",
+    CodeGeneration = "code_generation",
 }
 
 /** 描述一个模型在特定提供商中的位置 */
@@ -128,21 +129,9 @@ export interface ModelServiceConfig {
         [TaskType.Chat]: string;
         [TaskType.Embedding]: string;
         [TaskType.Summarization]: string;
+        [TaskType.CodeGeneration]: string;
     };
     readonly system?: SystemConfig;
-}
-
-let selectableModels: Schema<ModelDescriptor>[] = [];
-
-try {
-    const models: (ModelDescriptor & { desc: string })[] = JSON.parse(readFileSync(path.resolve(__dirname, "./models.json"), "utf-8"));
-    selectableModels = models
-        .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
-        .map((m) => {
-            return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
-        });
-} catch (error) {
-    console.error("加载模型列表失败，可能是首次启动或文件损坏。");
 }
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
@@ -158,5 +147,6 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型组"),
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型组"),
         [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型组"),
+        [TaskType.CodeGeneration]: Schema.dynamic("modelService.availableGroups").description("代码生成时使用的模型组"),
     }).description("为不同核心任务分配一个模型组"),
 });
