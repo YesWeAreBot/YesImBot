@@ -1,6 +1,7 @@
-import { Schema } from "koishi";
+import { Context, h, Schema, Session } from "koishi";
 import { } from "koishi-plugin-adapter-onebot";
-import { isEmpty } from "../../../shared";
+import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
+import { formatDate, isEmpty } from "../../../shared";
 import { createExtension, createTool, Failed, Success, withCommonParams } from "../helpers";
 import { ExtensionMetadata } from "../types";
 
@@ -13,7 +14,7 @@ const metadata: ExtensionMetadata = {
 
 const Reaction = createTool({
     metadata: {
-        name: "reaction-create",
+        name: "reaction_create",
         description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
     },
     parameters: withCommonParams({
@@ -36,7 +37,7 @@ const Reaction = createTool({
 
 const Essence = createTool({
     metadata: {
-        name: "essence-create",
+        name: "essence_create",
         description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
     },
 
@@ -59,7 +60,7 @@ const Essence = createTool({
 
 const Poke = createTool({
     metadata: {
-        name: "send-poke",
+        name: "send_poke",
         description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
     },
 
@@ -82,82 +83,68 @@ const Poke = createTool({
     },
 });
 
-// const GetForwardMsg = createTool({
-//     metadata: {
-//         name: "get_forward_msg",
-//         description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
-//     },
+const GetForwardMsg = createTool({
+    metadata: {
+        name: "get_forward_msg",
+        description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
+    },
 
-//     parameters: withCommonParams({
-//         id: Schema.string().required().description("合并转发 ID，如在 `[转发聊天记录 #12345]` 中的 12345 即是其 ID"),
-//     }),
-//     execute: async (ctx, { id }) => {
-//         const { koishiContext, koishiSession, platform } = ctx;
-//         try {
-//             const result = await platform.getForwardMessage(id);
-//             const formattedResult = await formatForwardMessage(result, koishiContext);
+    parameters: withCommonParams({
+        id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
+    }),
+    execute: async (ctx, { id }) => {
+        const { koishiContext, koishiSession } = ctx;
+        try {
+            const forwardMessages: ForwardMessage[] = await koishiSession.onebot.getForwardMsg(id);
+            const formattedResult = await formatForwardMessage(koishiContext, koishiSession, forwardMessages);
 
-//             context.koishiContext.logger.info(`Bot[${koishiSession.selfId}]获取转发消息 ${id} 成功`);
+            return Success(formattedResult);
+        } catch (e) {
+            koishiContext.logger.error(`Bot[${koishiSession.selfId}]获取转发消息失败: ${id} - `, e.message);
+            return Failed(`获取转发消息失败： ${e.message}`);
+        }
+    },
+});
 
-//             return Success(formattedResult);
-//         } catch (e) {
-//             context.koishiContext.logger.error(`Bot[${koishiSession.selfId}]获取转发消息失败: ${id} - `, e.message);
-//             return Failed(`获取转发消息失败： ${e.message}`);
-//         }
-//     },
-// });
+async function formatForwardMessage(ctx: Context, session: Session, formatForwardMessages: ForwardMessage[]): Promise<string> {
+    try {
+        const formattedMessages = await Promise.all(
+            formatForwardMessages.map(async (message) => {
+                const { time, sender, content } = message;
 
-// async function formatForwardMessage(apiResponse: any, ctx: any): Promise<string> {
-//     try {
-//         // 兼容不同响应结构
-//         const messages = apiResponse.data?.message || apiResponse.message || [];
+                const contentParts = await Promise.all(
+                    h.parse(content).map(async (element) => {
+                        switch (element.type) {
+                            case "text":
+                                return element.attrs.content;
 
-//         if (!Array.isArray(messages)) {
-//             return "无效的消息格式";
-//         }
+                            case "image":
+                                return await ctx["yesimbot.image"].processImageElement(element, session);
 
-//         const imageProcessor = new ImageProcessor(ctx);
+                            case "at":
+                                return `@${element.attrs.id}`;
 
-//         const formattedMessages = await Promise.all(
-//             messages.map(async (node: any) => {
-//                 if (node?.type !== "node") return "";
+                            case "forward":
+                                return `<forward id="${element.attrs.id}"/>`;
 
-//                 const { user_id, nickname, content } = node.data || {};
-//                 if (!content) return `${nickname || "未知用户"}(${user_id || "?"}): [空内容]`;
+                            default:
+                                return element;
+                        }
+                    })
+                );
 
-//                 const contentParts = await Promise.all(
-//                     content.map(async (item: any) => {
-//                         try {
-//                             if (!item?.type) return "[未知消息类型]";
+                return `[${formatDate(new Date(time), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join(" ")}}`;
+            })
+        );
 
-//                             switch (item.type) {
-//                                 case "image":
-//                                     const imageData = await imageProcessor.process(item.data?.url);
-//                                     return `[图片 #${imageData.id}]`;
-//                                 case "text":
-//                                     return item.data?.text || "";
-//                                 default:
-//                                     return item.data?.summary || `[${item.type}消息]`;
-//                             }
-//                         } catch (e) {
-//                             ctx.logger.error("格式化消息部分失败:", e);
-//                             return "[内容解析错误]";
-//                         }
-//                     })
-//                 );
-
-//                 return `${nickname || "未知用户"}(${user_id || "?"}): ${contentParts.join("")}`;
-//             })
-//         );
-
-//         return formattedMessages.filter((msg) => msg.trim()).join("\n") || "无有效消息内容";
-//     } catch (e) {
-//         ctx.logger.error("格式化转发消息失败:", e);
-//         return "消息格式化失败";
-//     }
-// }
+        return formattedMessages.filter(Boolean).join("\n") || "无有效消息内容";
+    } catch (e) {
+        ctx.logger.error("格式化转发消息失败:", e);
+        return "消息格式化失败";
+    }
+}
 
 export default createExtension({
     metadata,
-    tools: [Reaction, Essence, Poke],
+    tools: [Reaction, Essence, Poke, GetForwardMsg],
 });
