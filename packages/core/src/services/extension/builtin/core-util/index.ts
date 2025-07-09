@@ -20,7 +20,7 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
         charPerSecond: Schema.number().default(5).description("每秒字符数"),
         minDelay: Schema.number().default(800).description("最小延迟 (毫秒)"),
         maxDelay: Schema.number().default(4000).description("最大延迟 (毫秒)"),
-    }).description("打字效果"),
+    }),
 });
 
 @Extension({
