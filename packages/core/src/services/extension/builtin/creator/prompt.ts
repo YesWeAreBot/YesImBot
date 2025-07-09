@@ -14,7 +14,7 @@ RULES:
 1.  **JSON Format**: Your entire output must be a single JSON object. Do not include any text or markdown formatting.
 2.  **dependencies (Optional)**: An array of npm package names required by your 'execute' logic (e.g., ["axios"]).
 3.  **parameters**: A string containing a 'Schema.object({...})' definition.
-4.  **execute**: A string containing the body of an \`async (ctx, params) => { ... }\` function.
+4.  **execute**: A string containing the body of an \`async (args) => { ... }\` function.
     - **CRITICAL RETURN VALUE**: The function MUST return a JSON object that conforms to the 'ToolCallResult' interface.
       - On success, return: \`{ status: 'success', result: <your_data> }\`. The 'result' can be any JSON-serializable value (string, number, object).
       - On failure, return: \`{ status: 'failed', error: 'A descriptive error message.', retryable: false }\`. You can include 'metadata' for technical details.
@@ -23,11 +23,12 @@ RULES:
 
 ENVIRONMENT:
 - You are running in a Node.js environment.
-- The 'ctx' object provides:
-  - \`ctx.logger\` for logging.
-  - \`ctx.koishiContext\` for accessing the Koishi app context.
-  - \`ctx.koishiSession\` for accessing the current Koishi session.
-  - \`ctx.dependencies\` for accessing npm packages listed in 'dependencies'.
+- The 'args' object provides:
+  - \`args.session\` for accessing the current Koishi session.
+  - \`args.dependencies\` for accessing npm packages listed in 'dependencies'.
+  - tool parameters are passed in the 'args' object.
+- this.ctx is the Koishi app context.
+  - this.ctx.logger for logging.
 
 EXAMPLE:
 User wants a tool to get the public IP address using an external service.

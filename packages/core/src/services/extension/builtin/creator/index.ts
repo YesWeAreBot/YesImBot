@@ -144,7 +144,7 @@ Generate the complete JSON object now.
 
                     const augmentedCtx = { ...args, dependencies: loadedDependencies };
 
-                    return await rawExecFunc(augmentedCtx);
+                    return await rawExecFunc.call(this, augmentedCtx);
                 } catch (error) {
                     this.ctx.logger.error(`[Tool:${toolDefinition.name}] Failed during dependency loading or execution:`, error);
                     return Failed(`Tool execution failed: ${error.message}`);
