@@ -19,10 +19,11 @@
     "lint": "turbo run lint"
   },
   "devDependencies": {
-    "@types/node": "^22.15.31",
-    "esbuild": "^0.25.5",
+    "@types/node": "^22.16.2",
+    "esbuild": "^0.25.6",
     "tsc-alias": "^1.8.16",
     "turbo": "^2.5.4",
-    "typescript": "5.8.3"
+    "typescript": "^5.8.3",
+    "yml-register": "^1.2.5"
   }
 }

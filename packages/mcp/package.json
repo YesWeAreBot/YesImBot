@@ -14,7 +14,7 @@
     "build": "tsc && node esbuild.config.js",
     "dev": "tsc -w --preserveWatchOutput",
     "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo"
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"
   },
   "license": "MIT",
   "contributors": [
@@ -38,11 +38,11 @@
   },
   "devDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0-beta.1"
+    "koishi-plugin-yesimbot": "workspace:*"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0-beta.1"
+    "koishi-plugin-yesimbot": "workspace:*"
   },
   "koishi": {
     "description": {
