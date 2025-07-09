@@ -1,15 +1,18 @@
-import { Extension, Tool } from "@/services/experimental/extension/decorators";
-import { Failed, Success } from "@/services/experimental/extension/helpers";
-import { BaseExtension, Infer } from "@/services/experimental/extension/types";
+import { h, Schema } from "koishi";
+
+import { Extension, Tool } from "@/services/extension/decorators";
+import { BaseExtension, Failed, Success } from "@/services/extension/helpers";
+import { Infer } from "@/services/extension/types";
 import { isEmpty } from "@/shared";
-import { Context, h, Schema } from "koishi";
 
 @Extension({
     name: "command",
     description: "执行Koishi指令",
     version: "1.0.0",
 })
-class CommandExtension extends BaseExtension<any> {
+export default class CommandExtension extends BaseExtension<any> {
+    static readonly Config = Schema.object({});
+
     @Tool({
         name: "send_platform_command",
         description:
@@ -34,16 +37,4 @@ class CommandExtension extends BaseExtension<any> {
             return Failed(`执行指令失败 - ${e.message}`);
         }
     }
-}
-
-export function apply(ctx: Context, config: any) {
-    ctx.on("ready", async () => {
-        ctx["tool"].register(CommandExtension, config);
-        ctx.logger.info("CommandExtension 已加载");
-    });
-
-    ctx.on("dispose", () => {
-        ctx["tool"].unregister(CommandExtension.prototype.metadata.name);
-        ctx.logger.info("CommandExtension 已卸载");
-    });
 }
