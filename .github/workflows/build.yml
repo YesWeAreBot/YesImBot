@@ -3,22 +3,38 @@ name: Build
 on:
   push:
   pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: ["main"]
+    types: [opened, synchronize]
 
 jobs:
   build:
+    name: Build and Test
+    timeout-minutes: 15
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Check out code
+        uses: actions/checkout@v4
         with:
-          node-version: "20"
+          fetch-depth: 2
+
+      - name: Cache turbo build setup
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.0
 
       - name: Install dependencies
-        run: yarn install
+        run: bun install
 
-      - name: Lint JavaScript
-        run: yarn build
+      - name: Build
+        run: bun run build
+
+    #   - name: Test
+    #     run: bun run test
