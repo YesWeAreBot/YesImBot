@@ -1,7 +1,21 @@
 // --- 核心类型定义 ---
 
-import { Session } from "inspector";
-import { Context, Schema } from "koishi";
+import { Context, Schema, Session } from "koishi";
+
+export interface Param {
+    type: string;
+    description?: string;
+    default?: any;
+    required?: boolean;
+    // 用于 object 类型
+    properties?: Properties;
+    // 用于 union/enum 类型
+    enum?: any[];
+    // (可选扩展) 用于 array 类型
+    items?: Param;
+}
+
+export type Properties = Record<string, Param>;
 
 /**
  * 扩展包元数据接口，用于描述一个扩展包的基本信息。
@@ -37,9 +51,10 @@ export interface ToolDefinition<TParams = any> {
  * 扩展包实例需要实现的接口。
  */
 export interface IExtension<TConfig = any> {
+    ctx: Context;
     config: TConfig;
-    metadata?: ExtensionMetadata; // 扩展元数据 (可选)
-    tools?: Map<string, ToolDefinition>; // 工具集 (可选)
+    metadata: ExtensionMetadata;
+    tools: Map<string, ToolDefinition>;
 }
 
 // 一个辅助类型，用于推断并合并 session 到参数中
@@ -52,9 +67,11 @@ export type Infer<T> = T & { session?: Session };
  * 它处理了从原型复制元数据和自动绑定工具方法中 `this` 的通用逻辑。
  */
 export abstract class BaseExtension<TConfig = any> implements IExtension<TConfig> {
+    public static Config: Schema<any> = Schema.object({});
+
     // 实例的自有属性
-    public metadata?: ExtensionMetadata;
-    public tools?: Map<string, ToolDefinition>;
+    public metadata: ExtensionMetadata;
+    public tools: Map<string, ToolDefinition>;
 
     constructor(public ctx: Context, public config: TConfig) {
         // 1. 从类的原型上获取由 @Extension 装饰器附加的元数据，并将其设为实例的自有属性。
@@ -69,10 +86,7 @@ export abstract class BaseExtension<TConfig = any> implements IExtension<TConfig
             // 遍历原型上的所有工具定义
             for (const [name, tool] of protoTools.entries()) {
                 // 创建一个新工具对象，其 execute 方法通过 .bind(this) 永久绑定到当前实例
-                this.tools.set(name, {
-                    ...tool,
-                    execute: tool.execute.bind(this),
-                });
+                this.tools.set(name, Object.assign({}, tool, { execute: tool.execute.bind(this) }));
             }
         }
     }

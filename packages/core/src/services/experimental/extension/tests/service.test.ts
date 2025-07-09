@@ -3,7 +3,7 @@
 import { Schema, Context } from "koishi";
 import { ToolService } from "../service";
 import { BaseExtension, type Infer } from "../types";
-import { Extension, Tool } from "../decorators";
+import { Extension, Support, Tool } from "../decorators";
 
 /**
  * 天气查询扩展的具体实现。
@@ -19,20 +19,17 @@ interface WeatherConfig {
     version: "1.0.0",
 })
 class WeatherExtension extends BaseExtension<WeatherConfig> {
-    // Koishi 插件的标准配置定义
     public static readonly Config: Schema<WeatherConfig> = Schema.object({
-        apiKey: Schema.string().description("天气服务的 API Key").required(),
+        apiKey: Schema.string().required().description("天气服务的 API Key"),
         defaultCity: Schema.string().description("默认查询城市").default("上海"),
     });
 
-    // 构造函数，只需调用父类的构造函数即可
     constructor(ctx: Context, config: WeatherConfig) {
         super(ctx, config);
     }
 
     /**
-     * @Tool 装饰器将此方法声明为一个工具。
-     * 所有关于 `this` 的复杂性都已由 BaseExtension 处理。
+     * 声明为一个工具。
      */
     @Tool({
         name: "get_weather",
@@ -41,11 +38,46 @@ class WeatherExtension extends BaseExtension<WeatherConfig> {
             city: Schema.string().description("城市名称"),
         }),
     })
+    @Support((session) => session.platform === "qq")
     protected async getWeather(args: Infer<{ city: string }>) {
-        // 这里的 `this` 已经被正确绑定，可以安全地访问 `this.config`
         const apiKey = this.config.apiKey;
         console.log(`[getWeather] 正在使用 API Key "${apiKey}" 查询 "${args.city}" 的天气...`);
         return { city: args.city, weather: "晴朗" };
+    }
+
+    @Tool({
+        name: "get_weather_by_ip",
+        description: "根据 IP 地址获取天气信息",
+        parameters: Schema.object({
+            ip: Schema.string().description("IP 地址"),
+        }),
+    })
+    protected async getWeatherByIP(args: Infer<{ ip: string }>) {
+        return { ip: args.ip, weather: "多云" };
+    }
+}
+
+@Extension({
+    name: "test",
+    description: "测试扩展",
+    version: "1.0.0",
+})
+class TestExtension extends BaseExtension<any> {
+    // public static readonly Config: Schema<any> = Schema.object({});
+
+    constructor(ctx: Context, config: any) {
+        super(ctx, config);
+    }
+
+    @Tool({
+        name: "test_tool",
+        description: "测试工具",
+        parameters: Schema.object({
+            test: Schema.string().description("测试参数"),
+        }),
+    })
+    protected async testTool(args: Infer<{ test: string }>) {
+        return { test: args.test };
     }
 }
 
@@ -53,6 +85,7 @@ async function main() {
     console.log("--- 系统初始化 ---");
     const toolManager = new ToolService(new Context(), {});
     toolManager.register(WeatherExtension, { apiKey: "your-secret-api-key", defaultCity: "北京" });
+    toolManager.register(TestExtension, {});
 
     console.log("\n--- 测试从 ToolManager 获取并执行工具 ---");
     const tool = toolManager.getTool("get_weather");
@@ -65,8 +98,13 @@ async function main() {
     }
 
     console.log("\n--- 测试获取扩展实例 ---");
-    const ext = toolManager.getExt("weather");
-    console.log("获取到的扩展实例配置:", ext?.config);
+    const ext = toolManager.getExtension("weather");
+    if (ext) {
+        console.log("获取到的扩展实例配置:", ext.config);
+    } else {
+        console.error("错误：找不到名为 'weather' 的扩展。");
+    }
+    return;
 }
 
 main();
