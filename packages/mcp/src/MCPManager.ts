@@ -2,27 +2,26 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Context } from "koishi";
+import { Schema } from "koishi";
+import type { Infer, ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
-
-import type { ToolCallResult } from "koishi-plugin-yesimbot/services";
 
 // MCP 连接管理器
 export class MCPManager {
     private logger: Logger;
     private commandResolver: CommandResolver;
-    private toolManager: Context["yesimbot.tool"];
+    private toolService: ToolService;
     private config: Config;
     private clients: Client[] = [];
     private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
     private registeredTools: string[] = [];
 
-    constructor(logger: Logger, commandResolver: CommandResolver, toolManager: Context["yesimbot.tool"], config: Config) {
+    constructor(logger: Logger, commandResolver: CommandResolver, toolService: ToolService, config: Config) {
         this.logger = logger;
         this.commandResolver = commandResolver;
-        this.toolManager = toolManager;
+        this.toolService = toolService;
         this.config = config;
     }
 
@@ -117,42 +116,22 @@ export class MCPManager {
             }
 
             for (const tool of tools) {
-                await this.registerSingleTool(client, tool, serverName);
+                this.toolService.registerTool({
+                    name: tool.name,
+                    description: tool.description,
+
+                    parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
+                    execute: async (args: any) => {
+                        return await this.executeTool(client, tool.name, args);
+                    },
+                });
+
+                this.registeredTools.push(tool.name);
+                this.logger.success(`已注册工具: ${tool.name} (来自 ${serverName})`);
             }
         } catch (error) {
             this.logger.error(`注册工具失败: ${error.message}`);
         }
-    }
-
-    /**
-     * 注册单个工具
-     */
-    private async registerSingleTool(client: Client, tool: any, serverName: string): Promise<void> {
-        // 增强工具模式
-        const enhancedSchema = {
-            properties: {
-                inner_thoughts: {
-                    type: "string",
-                    description: "Deep inner monologue private to you only.",
-                },
-                ...tool.inputSchema.properties,
-            },
-        };
-
-        this.toolManager.registerTool({
-            metadata: {
-                name: tool.name,
-                version: "1.0.0",
-                description: tool.description,
-            },
-            parameters: enhancedSchema,
-            execute: async (ctx: any, params: any) => {
-                return await this.executeTool(client, tool.name, params);
-            },
-        });
-
-        this.registeredTools.push(tool.name);
-        this.logger.success(`已注册工具: ${tool.name} (来自 ${serverName})`);
     }
 
     /**
@@ -212,7 +191,7 @@ export class MCPManager {
         // 注销工具
         for (const toolName of this.registeredTools) {
             try {
-                this.toolManager.unregisterTool(toolName);
+                this.toolService.unregisterTool(toolName);
                 this.logger.debug(`注销工具: ${toolName}`);
             } catch (error) {
                 this.logger.warn(`注销工具失败: ${error.message}`);
@@ -239,4 +218,81 @@ export class MCPManager {
 
         this.logger.success("MCP 清理完成");
     }
+}
+
+/**
+ * 将 JSON Schema 对象递归转换为 Schemastery 模式。
+ *
+ * @param {object} jsonSchema 要转换的 JSON Schema。
+ * @returns {Schema} 对应的 Schemastery 模式实例。
+ */
+function convertJsonSchemaToSchemastery(jsonSchema) {
+    let schema: Schema<any>;
+
+    // 1. 处理 `enum` - 它的优先级最高，直接转换为 union 类型
+    if (jsonSchema.enum) {
+        schema = Schema.union(jsonSchema.enum);
+    } else {
+        // 2. 根据 `type` 属性处理主要类型
+        switch (jsonSchema.type) {
+            case "string":
+                schema = Schema.string();
+                break;
+
+            case "number":
+                schema = Schema.number();
+                const { minimum, maximum } = jsonSchema;
+                if (typeof minimum === "number" || typeof maximum === "number") {
+                    if (minimum !== undefined) {
+                        schema = schema.min(minimum);
+                    }
+                    if (maximum !== undefined) {
+                        schema = schema.max(maximum);
+                    }
+                }
+                break;
+
+            case "boolean":
+                schema = Schema.boolean();
+                break;
+
+            case "array":
+                // 递归转换 'items' 定义的子模式
+                const itemSchema = jsonSchema.items ? convertJsonSchemaToSchemastery(jsonSchema.items) : Schema.any();
+                schema = Schema.array(itemSchema);
+                break;
+
+            case "object":
+                const properties = jsonSchema.properties || {};
+                const requiredFields = new Set(jsonSchema.required || []);
+                const schemasteryProperties = {};
+
+                // 遍历所有属性，递归转换它们，并根据需要应用 .required()
+                for (const key in properties) {
+                    let propSchema = convertJsonSchemaToSchemastery(properties[key]);
+                    if (requiredFields.has(key)) {
+                        propSchema = propSchema.required();
+                    }
+                    schemasteryProperties[key] = propSchema;
+                }
+                schema = Schema.object(schemasteryProperties);
+                break;
+
+            default:
+                // 如果类型未指定或未知，默认为 any
+                schema = Schema.any();
+                break;
+        }
+    }
+
+    // 3. 应用通用修饰器（description 和 default）
+    if (jsonSchema.description) {
+        schema = schema.description(jsonSchema.description);
+    }
+
+    if (jsonSchema.default !== undefined) {
+        schema = schema.default(jsonSchema.default);
+    }
+
+    return schema;
 }
