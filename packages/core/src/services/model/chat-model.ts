@@ -3,7 +3,7 @@ import { Context } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
 import { toBoolean, truncate } from "@/shared";
-import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, GenerateTextStepResult, Message } from "xsai";
+import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, Message, StreamTextStep, Usage } from "xsai";
 import { ToolDefinition } from "../extension";
 import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
@@ -86,7 +86,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             fetch: this.fetch,
             abortSignal: options.abortSignal,
             messages,
-            tools: options.tools,
+            // tools: options.tools,
             temperature: this.config.parameters.temperature,
             topP: this.config.parameters.topP,
             ...this.customParameters,
@@ -154,7 +154,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const stepProcessor = async () => {
             for await (const step of stream.stepStream) {
                 // 聚合步骤
-                finalSteps.push(step as GenerateTextStepResult);
+                finalSteps.push(step as StreamTextStep & { usage: Usage });
                 // 聚合工具调用
                 if (step.toolCalls && step.toolCalls.length > 0) {
                     finalToolCalls.push(...step.toolCalls);
