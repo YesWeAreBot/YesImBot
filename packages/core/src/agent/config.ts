@@ -130,13 +130,6 @@ export interface AgentBehaviorConfig {
         // 新增多模态系统提示词，使其可配置
         multiModalSystemTemplate: string;
     };
-    typing: {
-        baseDelay: number;
-        charPerSecond: number;
-
-        minDelay: number;
-        maxDelay: number;
-    };
     vision: VisionConfig;
     readonly system?: SystemConfig;
 }
@@ -159,11 +152,5 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
             .role("textarea", { rows: [2, 4] })
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
-    typing: Schema.object({
-        baseDelay: Schema.number().default(500).description("基础延迟 (毫秒)"),
-        charPerSecond: Schema.number().default(5).description("每秒字符数"),
-        minDelay: Schema.number().default(800).description("最小延迟 (毫秒)"),
-        maxDelay: Schema.number().default(4000).description("最大延迟 (毫秒)"),
-    }).description("打字效果"),
     vision: VisionConfigSchema,
 });
