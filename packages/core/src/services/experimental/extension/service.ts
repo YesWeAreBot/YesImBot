@@ -6,6 +6,12 @@ import { IExtension, ToolDefinition } from "./types";
 
 type ExtensionConstructor = new (ctx: Context, config: any) => IExtension;
 
+declare module "koishi" {
+    interface Context {
+        tool: ToolService;
+    }
+}
+
 /**
  * ToolService
  * 负责注册、管理和提供所有扩展和工具。
@@ -95,6 +101,10 @@ export class ToolService extends Service<ToolServiceConfig> {
             return undefined;
         }
         return tool;
+    }
+
+    public getAvailableTools(session: Session){
+        return Array.from(this.tools.values()).filter((tool) => !tool.isSupported || tool.isSupported(session));
     }
 
     public getExtension(name: string): IExtension | undefined {

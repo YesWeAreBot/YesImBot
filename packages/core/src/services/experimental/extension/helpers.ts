@@ -1,5 +1,27 @@
 import { Schema } from "koishi";
-import { Param, Properties } from "./types";
+import { Param, Properties, ToolCallResult } from "./types";
+
+/**
+ * 成功结果辅助函数
+ */
+export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): ToolCallResult<T> {
+    return {
+        status: "success",
+        result,
+        metadata,
+    };
+}
+
+/**
+ * 失败结果辅助函数
+ */
+export function Failed(error: string, metadata?: ToolCallResult["metadata"]): ToolCallResult {
+    return {
+        status: "failed",
+        error,
+        metadata,
+    };
+}
 
 /**
  * 从 Koishi Schema 中提取元信息。

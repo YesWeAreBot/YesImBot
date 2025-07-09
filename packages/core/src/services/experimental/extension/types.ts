@@ -48,6 +48,21 @@ export interface ToolDefinition<TParams = any> {
 }
 
 /**
+ * 工具调用结果
+ */
+export interface ToolCallResult<TResult = any> {
+    status: "success" | "failed" | string;
+    /** 返回结果 */
+    result?: TResult;
+    /** 错误信息 */
+    error?: string;
+    /** 是否可重试 */
+    retryable?: boolean;
+    /** 附加元数据，如执行时间等 */
+    metadata?: Record<string, any>;
+}
+
+/**
  * 扩展包实例需要实现的接口。
  */
 export interface IExtension<TConfig = any> {
