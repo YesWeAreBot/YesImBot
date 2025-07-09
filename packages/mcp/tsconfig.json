@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base",
+  "extends": "@root/yesimbot/tsconfig.base",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib",

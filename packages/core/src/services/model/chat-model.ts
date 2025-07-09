@@ -1,9 +1,10 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
 import { Context } from "koishi";
+
+import { generateText, streamText } from "@/dependencies/xsai";
+import { toBoolean, truncate } from "@/shared";
 import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, GenerateTextStepResult, Message } from "xsai";
-import { generateText, streamText } from "../../dependencies/xsai";
-import { toBoolean, truncate } from "../../shared";
-import { ToolDefinition } from "../extensions";
+import { ToolDefinition } from "../extension";
 import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 

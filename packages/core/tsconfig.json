@@ -1,13 +1,19 @@
 {
-  "extends": "../../tsconfig.base",
+  "extends": "@root/yesimbot/tsconfig.base",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib",
+    "baseUrl": ".",
     "emitDeclarationOnly": false,
     "moduleResolution": "node",
     "module": "CommonJS",
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "paths": {
+      "@/*": [
+        "src/*"
+      ]
+    }
   },
   "include": [
     "src"
