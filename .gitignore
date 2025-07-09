@@ -12,6 +12,7 @@ package-lock.json
 yarn.lock
 package.tgz
 
+.turbo
 .eslintcache
 .DS_Store
 .idea

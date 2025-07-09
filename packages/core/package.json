@@ -15,7 +15,10 @@
     "Dispure <3116716016@qq.com>"
   ],
   "scripts": {
-    "bundle": "node scripts/bundle.js"
+    "build": "tsc && tsc-alias && node scripts/bundle.js",
+    "dev": "tsc -w --preserveWatchOutput",
+    "lint": "eslint . --ext .ts",
+    "clean": "rm -rf lib .turbo"
   },
   "license": "MIT",
   "keywords": [
@@ -53,12 +56,12 @@
     "@xsai-ext/providers-local": "^0.2.2",
     "@xsai-ext/shared-providers": "^0.2.2",
     "@xsai/utils-reasoning": "^0.2.2",
-    "koishi": "^4.18.8",
+    "koishi": "^4.18.7",
     "koishi-plugin-adapter-onebot": "^6.8.0",
     "xsai": "^0.2.2"
   },
   "peerDependencies": {
-    "koishi": "^4.18.8"
+    "koishi": "^4.18.7"
   },
   "koishi": {
     "description": {
