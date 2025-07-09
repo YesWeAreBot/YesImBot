@@ -3,12 +3,12 @@ import { Context } from "koishi";
 import Mustache from "mustache";
 import path from "path";
 import type { ImagePart, Message, TextPart } from "xsai";
-import { AgentResponse, MemoryBlockData, WorldState } from "../services";
+import { AgentResponse, MemoryBlockData, Properties, ToolSchema, WorldState } from "../services";
 import { AgentBehaviorConfig } from "./config";
 
 // 定义 PromptBuilder 需要的完整上下文
 export interface PromptContext {
-    toolSchemas: any[]; // 可用的工具定义
+    toolSchemas: ToolSchema[];
     memory: {
         lastModified: string;
         archivalCount: number;
@@ -83,7 +83,7 @@ export class PromptBuilder {
         // 这里我们假设它已经被处理。
 
         const view = {
-            TOOL_DEFINITION: { tools: toolSchemas },
+            TOOL_DEFINITION: { tools: prepareDataForTemplate(toolSchemas) },
             CORE_MEMORY: memory,
             WORLD_STATE: worldState,
             CURRENT_CONVERSATION: {
@@ -143,6 +143,47 @@ export class PromptBuilder {
 function _toString(obj) {
     if (typeof obj === "string") return obj;
     return JSON.stringify(obj);
+}
+
+function prepareDataForTemplate(tools: ToolSchema[]) {
+    // 递归函数，处理参数并添加缩进
+    const processParams = (params: Properties, indent = ''): any[] => {
+        return Object.entries(params).map(([key, param]) => {
+            const processedParam: any = {
+                ...param,
+                key: key,
+                indent: indent,
+            };
+
+            // 如果是对象，递归处理其属性
+            if (param.properties) {
+                processedParam.properties = processParams(param.properties, indent + '    ');
+            }
+
+            // 如果是数组且数组成员是复杂对象，递归处理
+            if (param.items) {
+                // 将单个 item 包装成数组，以便局部模板可以统一处理
+                processedParam.items = [
+                    {
+                        ...param.items,
+                        key: 'item', // 为数组项提供一个通用名称
+                        indent: indent + '    ',
+                        // 递归处理数组项的属性（如果它是一个对象）
+                        ...(param.items.properties && {
+                            properties: processParams(param.items.properties, indent + '        ')
+                        })
+                    }
+                ];
+            }
+            return processedParam;
+        });
+    };
+
+    // 转换每个工具的参数
+    return tools.map(tool => ({
+        ...tool,
+        parameters: tool.parameters ? processParams(tool.parameters) : [],
+    }));
 }
 
 // 默认的系统和用户模板文件路径

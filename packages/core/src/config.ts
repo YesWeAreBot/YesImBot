@@ -1,7 +1,7 @@
 import { Schema } from "koishi";
 import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
 import { LoggingConfig, LoggingConfigSchema } from "./services";
-import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extensions";
+import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extension";
 import { ImageServiceConfig, ImageServiceConfigSchema } from "./services/image";
 import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
