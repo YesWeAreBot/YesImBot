@@ -11,7 +11,7 @@ import { Services } from "../types";
 export abstract class BaseExtension<TConfig = any> implements IExtension<TConfig> {
     public static Config: Schema<any> = Schema.object({});
 
-    public static inject: string[];
+    public static inject = [Services.Tool];
 
     // 实例的自有属性
     public metadata: ExtensionMetadata;

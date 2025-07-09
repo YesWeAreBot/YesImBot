@@ -5,9 +5,14 @@ import { Context, Logger, Schema, Service, Session } from "koishi";
 import { Services } from "../types";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
+import CreatorExtension from "./builtin/creator";
+import InteractionsExtension from "./builtin/interactions";
+import MemoryExtension from "./builtin/memory";
+import QManagerExtension from "./builtin/qmanager";
+import SearchExtension from "./builtin/search";
 import { ToolServiceConfig } from "./config";
 import { extractMetaFromSchema, Failed } from "./helpers";
-import { ExtensionMetadata, IExtension, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+import { IExtension, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
 
 declare module "koishi" {
     interface Context {
@@ -35,6 +40,12 @@ export class ToolService extends Service<ToolServiceConfig> {
     protected async start() {
         this.ctx.plugin(CoreUtilExtension, this.config.extensionConfigs["core-util"]?.config);
         this.ctx.plugin(CommandExtension, this.config.extensionConfigs["command"]?.config);
+        this.ctx.plugin(CreatorExtension, this.config.extensionConfigs["creator"]?.config);
+        this.ctx.plugin(MemoryExtension, this.config.extensionConfigs["memory"]?.config);
+        this.ctx.plugin(QManagerExtension, this.config.extensionConfigs["qmanager"]?.config);
+        this.ctx.plugin(SearchExtension, this.config.extensionConfigs["search"]?.config);
+        this.ctx.plugin(InteractionsExtension, this.config.extensionConfigs["interactions"]?.config);
+
         this._logger.info("服务已启动");
     }
 
