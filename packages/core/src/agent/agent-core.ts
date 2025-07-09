@@ -1,5 +1,5 @@
 import { Context, h, Logger, Random, Service, Session } from "koishi";
-import type { ImagePart, TextPart } from "xsai";
+import type { ImagePart, Message, TextPart } from "xsai";
 import {
     AgentResponse,
     DialogueSegment,
@@ -10,7 +10,7 @@ import {
     TaskType,
     ToolService,
     WorldState,
-    WorldStateService
+    WorldStateService,
 } from "../services";
 import { JsonParser, truncate } from "../shared";
 import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
@@ -80,13 +80,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             }
         });
 
-        this._logger.info("[核心] 🚀 服务已启动");
+        this._logger.info("🚀 服务已启动");
     }
 
     protected stop(): void {
         this.debounceTimers.forEach(clearTimeout);
         clearInterval(this.willingnessDecayTimer);
-        this._logger.info("[核心] 🛑 服务已停止");
+        this._logger.info("🛑 服务已停止");
     }
 
     private updateAllowedChannels(): void {
@@ -96,12 +96,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 this.allowedChannels.add(`${platform}:${id}`);
             });
         });
-        this._logger.debug(`[配置] ⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
+        this._logger.debug(`⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
     private async handleSegmentUpdate(session: Session, segment: DialogueSegment): Promise<void> {
         const channelKey = `${segment.platform}:${segment.channelId}`;
-        this._logger.debug(`[决策] 🤔 开始评估 | 频道: ${channelKey}, 段落ID: ${segment.id}`);
+        this._logger.debug(`🤔 开始评估 | 频道: ${channelKey}, 段落ID: ${segment.id}`);
 
         try {
             // 1. 调用意愿管理器进行决策
@@ -121,14 +121,14 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     private async runAgentCycle(session: Session, segment: DialogueSegment): Promise<void> {
-        this._logger.debug(`[循环] 🌀 → 开始 | 段落ID: ${segment.id}`);
+        this._logger.debug(`🌀 → 开始 | 段落ID: ${segment.id}`);
         const collectedResponses: AgentResponse[] = [];
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
-            this._logger.debug(`[心跳] ❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
+            this._logger.debug(`❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
 
             try {
                 const promptContext = await this.buildPromptContext(segment, collectedResponses);
@@ -137,7 +137,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 const chatModel = this.modelSwitcher.getCurrent();
 
                 if (!chatModel) {
-                    this._logger.error(`[心跳] ✖ 模型未找到，停止回复 | 段落ID: ${segment.id}`);
+                    this._logger.error(`✖ 模型未找到，停止回复 | 段落ID: ${segment.id}`);
                     shouldContinueHeartbeat = false;
                     continue;
                 }
@@ -146,19 +146,31 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 const llmRawResponse = await chatModel.chat(messages);
 
-                this._logger.info(`[心跳] 💬 响应时间: ${Date.now() - stime}ms | 段落ID: ${segment.id}`);
+                this._logger.info(`💬 响应时间: ${Date.now() - stime}ms | 段落ID: ${segment.id}`);
 
                 const { text, usage } = llmRawResponse;
 
+                const getContentLength = (messages: Message[]): number => {
+                    const parts = messages.flatMap((msg) => {
+                        if (typeof msg.content === "string") {
+                            return msg.content;
+                        } else {
+                            return msg.content.map((part) => part.text);
+                        }
+                    });
+
+                    return parts.join("").length;
+                };
+
                 this._logger.info(
-                    `[心跳] 💰 Token 消耗 | 输入: ${usage?.prompt_tokens || "N/A"} | 输出: ${usage?.completion_tokens || "N/A"}`
+                    `💰 Token 消耗 | 输入: ${usage?.prompt_tokens || `${getContentLength(messages)}字符`} | 输出: ${usage?.completion_tokens || `${text.length}字符`}`
                 );
 
                 const llmParsedResponse = this.parser.parse(text);
 
                 if (llmParsedResponse.error || !llmParsedResponse.data) {
                     this._logger.warn(
-                        `[心跳] ✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100)}`
+                        `✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100)}`
                     );
                     shouldContinueHeartbeat = false;
                     continue;
@@ -168,7 +180,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 // 验证响应格式
                 if (!Array.isArray(agentResponseData.actions)) {
-                    this._logger.warn(`[心跳] ✖ 格式无效 | actions应为数组，实际为 ${typeof agentResponseData.actions}`);
+                    this._logger.warn(`✖ 格式无效 | actions应为数组，实际为 ${typeof agentResponseData.actions}`);
                     shouldContinueHeartbeat = false;
                     continue;
                 }
@@ -192,15 +204,15 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
 
         if (collectedResponses.length > 0) {
-            this._logger.debug(`[循环] 💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
+            this._logger.debug(`💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
             await this.worldState.recordAgentTurn(segment, collectedResponses);
-            this._logger.debug(`[循环] ✅ 完成 | 段落ID: ${segment.id}`);
+            this._logger.debug(`✅ 完成 | 段落ID: ${segment.id}`);
         } else {
-            this._logger.warn(`[循环] ⚠️ 完成 (无行动) | 段落ID: ${segment.id}`);
+            this._logger.warn(`⚠️ 完成 (无行动) | 段落ID: ${segment.id}`);
         }
 
         if (heartbeatCount >= this.config.heartbeat) {
-            this._logger.warn(`[循环] ⚠️ 已达最大心跳次数 | 段落ID: ${segment.id}`);
+            this._logger.warn(`⚠️ 已达最大心跳次数 | 段落ID: ${segment.id}`);
         }
     }
 
