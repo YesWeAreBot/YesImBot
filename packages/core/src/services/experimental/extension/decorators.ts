@@ -1,5 +1,6 @@
 // --- 装饰器定义 ---
 
+import { Session } from "koishi";
 import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types";
 
 /**
@@ -9,7 +10,7 @@ import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types"
  */
 export function Extension(metadata: ExtensionMetadata) {
     return function (target: any) {
-        // target 是类的构造函数，我们将 metadata 附加到其原型 (prototype) 上
+        // target 是类的构造函数，将 metadata 附加到其 prototype 上
         // 这样，所有实例都能通过原型链访问到它
         target.prototype.metadata = metadata;
     };
@@ -26,16 +27,35 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
             return;
         }
 
-        // target 是类的原型。我们在这里初始化或获取原型上的 tools Map。
-        // 注意：这个 Map 在所有实例之间是共享的，但我们会在 BaseExtension 中解决这个问题。
         target.tools ??= new Map<string, ToolDefinition>();
 
         const toolDefinition: ToolDefinition<TParams> = {
             name: metadata.name || propertyKey,
             description: metadata.description,
             parameters: metadata.parameters,
-            execute: descriptor.value, // 此时的 execute 方法是未绑定 this 的
+            execute: descriptor.value,
         };
         target.tools.set(toolDefinition.name, toolDefinition);
+    };
+}
+
+/**
+ * @Support 方法装饰器
+ * 用于指定工具是否在特定会话中可用。
+ * @param predicate
+ * @returns
+ */
+export function Support(predicate: (session: Session) => boolean) {
+    return function (target: any, propertyKey: string, descriptor: TypedPropertyDescriptor<(args: any) => Promise<any>>) {
+        if (!descriptor.value) {
+            return;
+        }
+
+        target.tools ??= new Map<string, ToolDefinition>();
+
+        const toolDefinition = target.tools.get(propertyKey);
+        if (toolDefinition) {
+            toolDefinition.isSupported = predicate;
+        }
     };
 }

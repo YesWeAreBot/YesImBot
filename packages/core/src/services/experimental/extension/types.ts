@@ -29,6 +29,7 @@ export interface ToolDefinition<TParams = any> {
     name: string;
     description: string;
     parameters: Schema<TParams>;
+    isSupported?: (session: Session) => boolean;
     execute: (args: Infer<TParams>) => Promise<any>;
 }
 
