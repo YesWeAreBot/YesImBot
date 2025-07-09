@@ -10,6 +10,12 @@
     "dist",
     "resources"
   ],
+  "scripts": {
+    "build": "tsc && node esbuild.config.js",
+    "dev": "tsc -w --preserveWatchOutput",
+    "lint": "eslint . --ext .ts",
+    "clean": "rm -rf lib .turbo"
+  },
   "license": "MIT",
   "contributors": [
     "MiaowFISH <miaow233@qq.com>"

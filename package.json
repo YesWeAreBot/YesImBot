@@ -1,6 +1,7 @@
 {
   "name": "@root/yesimbot",
   "version": "0.0.0",
+  "packageManager": "bun@1.2.0",
   "private": true,
   "homepage": "https://github.com/HydroGest/YesImBot",
   "contributors": [
@@ -12,22 +13,16 @@
     "packages/*"
   ],
   "scripts": {
-    "clean": "yakumo clean",
-    "build": "yakumo build",
-    "build:core": "yakumo build core",
-    "bump": "yakumo version",
-    "dep": "yakumo upgrade",
-    "pub": "yakumo publish",
-    "pub:core": "yakumo publish core"
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
   },
   "devDependencies": {
     "@types/node": "^22.15.31",
-    "cross-env": "^7.0.3",
     "esbuild": "^0.25.5",
-    "typescript": "5.8.3",
-    "yakumo": "^1.0.0",
-    "yakumo-esbuild": "^1.0.0",
-    "yakumo-tsc": "^1.0.0",
-    "yml-register": "^1.2.5"
+    "tsc-alias": "^1.8.16",
+    "turbo": "^2.5.4",
+    "typescript": "5.8.3"
   }
 }
