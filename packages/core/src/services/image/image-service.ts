@@ -25,7 +25,6 @@ export class ImageService extends Service<ImageServiceConfig> {
     }
 
     protected async start() {
-        this._logger.info("[核心] 🚀 服务正在启动...");
         await mkdir(this.config.storagePath, { recursive: true });
         this._logger.debug(`[核心] 存储目录已确认: ${this.config.storagePath}`);
 
@@ -43,8 +42,7 @@ export class ImageService extends Service<ImageServiceConfig> {
             },
             { primary: "id" }
         );
-        this._logger.debug("[核心] 数据库模型已注册");
-        this._logger.info("[核心] 🚀 服务已成功启动");
+        this._logger.info("服务已启动");
     }
 
     /**

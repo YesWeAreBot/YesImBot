@@ -63,7 +63,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                 return;
             }
 
-            this._logger.info(`[ToolManager] 正在注册扩展: "${extensionInstance.metadata.name}"`);
+            this._logger.info(`正在注册扩展: "${extensionInstance.metadata.name}"`);
             this.extensions.set(extensionInstance.metadata.name, extensionInstance);
 
             if (extensionInstance.tools) {
@@ -90,7 +90,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                 )
             );
         } catch (error) {
-            this._logger.error(`[ToolManager] 扩展配置验证失败: ${error.message}`);
+            this._logger.error(`扩展配置验证失败: ${error.message}`);
             return;
         }
     }
@@ -98,14 +98,14 @@ export class ToolService extends Service<ToolServiceConfig> {
     public unregister(name: string): boolean {
         const ext = this.extensions.get(name);
         if (!ext) {
-            this._logger.warn(`[ToolManager] 尝试卸载不存在的扩展: "${name}"`);
+            this._logger.warn(`尝试卸载不存在的扩展: "${name}"`);
             return false;
         }
         this.extensions.delete(name);
         for (const tool of ext.tools.values()) {
             this.tools.delete(tool.name);
         }
-        this._logger.info(`[ToolManager] 已卸载扩展: "${name}"`);
+        this._logger.info(`已卸载扩展: "${name}"`);
         return true;
     }
 

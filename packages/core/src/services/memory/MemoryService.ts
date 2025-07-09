@@ -85,7 +85,7 @@ export class MemoryService extends Service {
             }
         );
         this.coreMemoryBlocks.set(label, block);
-        this._logger.info(`核心记忆块 "${label}" 已创建`);
+        this._logger.debug(`核心记忆块 "${label}" 已创建`);
         return block;
     }
 

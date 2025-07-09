@@ -8,6 +8,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "emitDeclarationOnly": false,
     "rootDir": "src",
     "outDir": "lib",
     "baseUrl": ".",
