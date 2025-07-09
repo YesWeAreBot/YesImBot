@@ -1,21 +1,28 @@
 {
-  "extends": "@root/yesimbot/tsconfig.base",
+  "extends": "../../tsconfig.base",
   "compilerOptions": {
+    "target": "es2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "rootDir": "src",
     "outDir": "lib",
     "baseUrl": ".",
-    "emitDeclarationOnly": false,
-    "moduleResolution": "node",
-    "module": "CommonJS",
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
     "paths": {
       "@/*": [
         "src/*"
       ]
-    }
+    },
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "node_modules"
   ]
 }

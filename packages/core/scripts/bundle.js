@@ -7,6 +7,7 @@ const { dependencies } = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
 const allDeps = Object.keys(dependencies || {});
 // 保留的依赖
 const include = [
+    '@xsai/stream-object',
     '@xsai-ext/providers-cloud',
     '@xsai-ext/providers-local',
     '@xsai-ext/shared-providers',
