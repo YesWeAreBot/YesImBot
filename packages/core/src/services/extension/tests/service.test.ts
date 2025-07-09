@@ -1,9 +1,10 @@
 // --- 运行与测试 ---
 
-import { Schema, Context } from "koishi";
-import { ToolService } from "../service";
-import { BaseExtension, type Infer } from "../types";
+import { Context, Schema } from "koishi";
 import { Extension, Support, Tool } from "../decorators";
+import { BaseExtension } from "../helpers";
+import { ToolService } from "../service";
+import { type Infer } from "../types";
 
 /**
  * 天气查询扩展的具体实现。
@@ -83,9 +84,9 @@ class TestExtension extends BaseExtension<any> {
 
 async function main() {
     console.log("--- 系统初始化 ---");
-    const toolManager = new ToolService(new Context(), {});
-    toolManager.register(WeatherExtension, { apiKey: "your-secret-api-key", defaultCity: "北京" });
-    toolManager.register(TestExtension, {});
+    const toolManager = new ToolService(new Context(), { advanced: { validateTypes: false } });
+    // toolManager.register(WeatherExtension, { apiKey: "your-secret-api-key", defaultCity: "北京" });
+    // toolManager.register(TestExtension, {});
 
     console.log("\n--- 测试从 ToolManager 获取并执行工具 ---");
     const tool = toolManager.getTool("get_weather");
