@@ -94,7 +94,7 @@ export class MemoryBlock {
         this._content = [];
         this.lastModifiedInMemory = new Date();
         await this.persistToStoreAndFile();
-        this.logger.info(`记忆块已清空`);
+        this.logger.debug(`记忆块已清空`);
     }
 
     private checkMemoryLimitOrThrow(additionalContentLength: number): void {
@@ -209,7 +209,7 @@ export class MemoryBlock {
 
     private async syncFromFileToMemoryAndStore(): Promise<void> {
         if (!this.filePath) return;
-        this.logger.info(`[文件同步] 开始 | 文件 -> 内存 & 数据库`);
+        this.logger.debug(`[文件同步] 开始 | 文件 -> 内存 & 数据库`);
         try {
             const fileContent = await this.loadFromFileInternal();
             this._content = fileContent;
@@ -235,7 +235,7 @@ export class MemoryBlock {
             }
             const fstat = await stat(this.filePath);
             this.lastModifiedFileMs = fstat.mtimeMs;
-            this.logger.info(`[文件监视] 启动 | 路径: ${this.filePath}`);
+            this.logger.debug(`[文件监视] 启动 | 路径: ${this.filePath}`);
             this.watcher = fs.watch(this.filePath, async (eventType) => {
                 if (this.debounceTimer) clearTimeout(this.debounceTimer);
                 this.debounceTimer = setTimeout(async () => {
@@ -247,7 +247,7 @@ export class MemoryBlock {
                         }
                         const currentFstat = await stat(this.filePath);
                         if (currentFstat.mtimeMs > this.lastModifiedFileMs) {
-                            this.logger.info(`[文件监视] 文件变更，开始同步 | 路径: ${this.filePath}`);
+                            this.logger.debug(`[文件监视] 文件变更，开始同步 | 路径: ${this.filePath}`);
                             this.lastModifiedFileMs = currentFstat.mtimeMs;
                             await this.syncFromFileToMemoryAndStore();
                         }
@@ -271,7 +271,7 @@ export class MemoryBlock {
         if (this.watcher) {
             this.watcher.close();
             this.watcher = undefined;
-            this.logger.info(`[文件监视] 停止 | 路径: ${this.filePath}`);
+            this.logger.debug(`[文件监视] 停止 | 路径: ${this.filePath}`);
         }
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
@@ -325,7 +325,7 @@ export class MemoryBlock {
             if (!blockId) {
                 blockId = `block-${blockLabel}-${Date.now()}-${Math.random().toString(36).substring(2)}`;
             }
-            logger.info(`[GetOrCreate] 创建新实例 | 标签: "${blockLabel}", ID: "${blockId}"`);
+            logger.debug(`[GetOrCreate] 创建新实例 | 标签: "${blockLabel}", ID: "${blockId}"`);
             const newBlockData: MemoryBlockData = { id: blockId, label: blockLabel, content: initialValue, limit: defaultLimit };
             await effectiveStore.save(newBlockData);
             return new MemoryBlock(ctx, newBlockData, effectiveStore, config.filePathToBind);

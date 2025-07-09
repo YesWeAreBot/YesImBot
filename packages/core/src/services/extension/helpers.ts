@@ -37,13 +37,13 @@ export abstract class BaseExtension<TConfig = any> implements IExtension<TConfig
         ctx.on("ready", () => {
             const toolService = ctx[Services.Tool];
             toolService.register(this, config);
-            ctx.logger.info(`Tool Extension [${this.metadata.name}] loaded.`);
+            ctx.logger.debug(`扩展 "${this.metadata.name}" 已加载。`);
         });
 
         ctx.on("dispose", () => {
             const toolService = ctx[Services.Tool];
             toolService.unregister(this.metadata.name);
-            ctx.logger.info(`Tool Extension [${this.metadata.name}] unloaded.`);
+            ctx.logger.debug(`扩展 "${this.metadata.name}" 已卸载。`);
         });
     }
 }
