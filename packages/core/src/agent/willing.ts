@@ -167,14 +167,14 @@ export class WillingnessManager {
 
         // 策略1：直接大幅降低意愿值
         // 这种做法模拟了“我说完这个话题了”
-        // let currentWillingness = this.willingnessScores.get(chatId) || 0;
-        // currentWillingness -= replyCost; // 基础成本
-        // this.willingnessScores.set(chatId, Math.max(0, currentWillingness));
+        let currentWillingness = this.willingnessScores.get(chatId) || 0;
+        currentWillingness -= replyCost; // 基础成本
+        this.willingnessScores.set(chatId, Math.max(0, currentWillingness));
 
         // 策略2：更狠一点，直接清零或设置为一个很低的基础值
         // 这种做法可以有效防止AI在一次回复后，因为意愿值依然很高而立即对下一条消息做出反应，从而避免“连麦”
-        this.willingnessScores.set(chatId, 0); // 直接清零，等待新刺激
-        this.logger.debug(`[${chatId}] 回复成功，意愿值已重置。`);
+        //this.willingnessScores.set(chatId, 0); // 直接清零，等待新刺激
+        //this.logger.debug(`[${chatId}] 回复成功，意愿值已重置。`);
 
         // 策略3：动态成本（高级）
         // 回复得越长，消耗的“精力”越多
