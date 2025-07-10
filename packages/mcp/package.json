@@ -11,7 +11,7 @@
     "resources"
   ],
   "scripts": {
-    "build": "tsc && node esbuild.config.js",
+    "build": "tsc && node esbuild.config.mjs",
     "dev": "tsc -w --preserveWatchOutput",
     "lint": "eslint . --ext .ts",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"

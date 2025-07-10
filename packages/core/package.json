@@ -15,7 +15,7 @@
     "Dispure <3116716016@qq.com>"
   ],
   "scripts": {
-    "build": "tsc && tsc-alias && node scripts/bundle.js",
+    "build": "tsc && tsc-alias && node scripts/bundle.mjs",
     "dev": "tsc -w --preserveWatchOutput",
     "lint": "eslint . --ext .ts",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"
@@ -51,7 +51,9 @@
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@koishijs/plugin-mock": "^2.6.6",
+    "@xsai-ext/providers-cloud": "^0.3.0-beta.8",
+    "@xsai-ext/providers-local": "^0.3.0-beta.8",
+    "@xsai-ext/shared-providers": "^0.3.0-beta.8",
     "koishi": "^4.18.7",
     "koishi-plugin-adapter-onebot": "^6.8.0",
     "xsai": "^0.3.0-beta.8"
