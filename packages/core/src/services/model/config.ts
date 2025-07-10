@@ -1,8 +1,5 @@
-import { readFileSync, unlinkSync } from "fs";
 import { Schema } from "koishi";
-import path from "path";
 import { SystemConfig } from "../../config";
-import { isNotEmpty } from "../../shared";
 
 // =================================================================
 // 1. 核心与共享类型 (Core & Shared Types)

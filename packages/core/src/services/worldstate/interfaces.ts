@@ -66,7 +66,13 @@ export interface Channel {
      * 这是一个包含对话片段 (DialogueSegment) 的有序数组，
      * 共同构成了 Agent 感知到的频道交互全貌。
      */
-    history: DialogueSegment[];
+    history: History;
+}
+
+export interface History {
+    pending: DialogueSegment[];
+    folded?: FoldedDialogueSegment;
+    summarized?: SummarizedDialogueSegment[];
 }
 
 /**
@@ -133,6 +139,28 @@ export interface DialogueSegment {
     summary?: string;
     timestamp: Date; // 片段的创建/开启时间
     agentTurn?: AgentTurn; // 由此片段触发的 Agent 回合，是可选的
+}
+
+/**
+ * 状态为 `folded` 的对话片段集合，将所有折叠片段整合为一个。
+ */
+export interface FoldedDialogueSegment extends DialogueSegment {
+    status: "folded";
+    agentTurn?: undefined;
+    endTimestamp: Date;
+}
+
+/**
+ * 状态为 `summarized` 的对话片段，包含一个总结文本，不包含详细对话内容。
+ * 通常是一个 `folded` 片段总结而来。
+ */
+export interface SummarizedDialogueSegment extends DialogueSegment {
+    status: "summarized";
+    summary: string;
+    dialogue: [];
+    systemEvents: [];
+    agentTurn: undefined;
+    endTimestamp: Date;
 }
 
 /**

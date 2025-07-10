@@ -14,11 +14,31 @@
     </members>
     {{/members.length}}
     <history>
-      {{#history}}
-      <segment id="{{id}}" status="{{status}}" timestamp="{{timestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
-        {{#summary}}
-        <summary>{{.}}</summary>
-        {{/summary}}
+      {{#history.summarized}}
+      <segment status="{{status}}" timestamp="{{timestamp}}">
+        <summary>{{summary}}</summary>
+      </segment>
+      {{/history.summarized}}
+      {{#history.folded}}
+      <segment status="{{status}}" timestamp="{{timestamp}}" end_timestamp="{{endTimestamp}}">
+        {{#dialogue.length}}
+        <dialogue>
+        {{#dialogue}}
+          [{{id}}|{{time}}|{{sender.name}}({{sender.id}})]{{#quoteId}} <quote id="{{.}}"/>{{/quoteId}} {{#content}}{{_truncate}}{{/content}}
+        {{/dialogue}}
+        </dialogue>
+        {{/dialogue.length}}
+        {{#systemEvents.length}}
+        <system_events>
+        {{#systemEvents}}
+          <event type="{{type}}" timestamp="{{date}}">{{#payload}}{{_toString}}{{/payload}}</event>
+        {{/systemEvents}}
+        </system_events>
+        {{/systemEvents.length}}
+      </segment>
+      {{/history.folded}}
+      {{#history.pending}}
+      <segment status="{{status}}" timestamp="{{timestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
         {{#dialogue.length}}
         <dialogue>
         {{#dialogue}}
@@ -71,7 +91,7 @@
         {{/agentTurn}}
         {{/agentTurn.responses.length}}
       </segment>
-      {{/history}}
+      {{/history.pending}}
     </history>
   </channel>
   {{/activeChannels}}

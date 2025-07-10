@@ -1,3 +1,4 @@
+import { formatDate } from "@/shared/utils";
 import { Argv, Bot, Context, Element, h, Logger, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
 import { IChatModel, TaskType } from "../model";
@@ -6,37 +7,17 @@ import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
 import { DialogueSegmentData, MessageData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
-import { AgentTurn, Channel, DialogueSegment, GuildMember, WorldState } from "./interfaces";
-
-/**
- *
- * @param date
- * @param format
- * @returns
- */
-function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss"): string {
-    const pad = (num: number) => String(num).padStart(2, "0");
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    const seconds = date.getSeconds();
-
-    return format
-        .replace(/YYYY/g, String(year))
-        .replace(/YY/g, String(year).slice(-2))
-        .replace(/MM/g, pad(month))
-        .replace(/M/g, String(month))
-        .replace(/DD/g, pad(day))
-        .replace(/D/g, String(day))
-        .replace(/HH/g, pad(hours))
-        .replace(/H/g, String(hours))
-        .replace(/mm/g, pad(minutes))
-        .replace(/m/g, String(minutes))
-        .replace(/ss/g, pad(seconds))
-        .replace(/s/g, String(seconds));
-}
+import {
+    AgentTurn,
+    Channel,
+    ContextualMessage,
+    DialogueSegment,
+    FoldedDialogueSegment,
+    GuildMember,
+    SummarizedDialogueSegment,
+    WorldState,
+    History,
+} from "./interfaces";
 
 // 扩展 Koishi 的 Context 和 Events 接口
 declare module "koishi" {
@@ -142,7 +123,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.handleMaintenance();
         }, this.config.advanced.cleanupIntervalMs);
 
-        // this._logger.info("WorldState Service started, using middleware for user messages.");
         this._logger.info("服务已启动");
     }
 
@@ -155,7 +135,6 @@ export class WorldStateService extends Service<HistoryConfig> {
         if (this.maintenanceInterval) {
             clearInterval(this.maintenanceInterval);
         }
-        // this._logger.info("WorldState Service stopped.");
         this._logger.info("服务已停止");
     }
 
@@ -197,7 +176,6 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 将当前片段状态更新为 'closed' 并记录 agentTurn
         await this.ctx.database.set(TableName.DialogueSegments, { id: segmentRecord.id }, { status: "closed", agentTurn });
-        // this._logger.debug(`Segment ${segmentRecord.id} closed and agent turn recorded.`);
         this._logger.debug(`片段 ${segmentRecord.id} 已关闭，并记录了 Agent 回合。`);
 
         // 应用上下文折叠策略
@@ -625,7 +603,9 @@ export class WorldStateService extends Service<HistoryConfig> {
                 type: id.startsWith("private:") ? "private" : "unknown",
                 meta: {},
                 members: [],
-                history: [],
+                history: {
+                    pending: [],
+                },
             };
         }
 
@@ -736,16 +716,110 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param onetimeCode 一次性代码。
      * @returns 对话片段数组。
      */
-    private async _fetchAndBuildHistory(channel: ChannelDescriptor, onetimeCode: string): Promise<DialogueSegment[]> {
-        const segmentRecords = await this.ctx.database
-            .get(TableName.DialogueSegments, {
-                platform: channel.platform,
-                channelId: channel.id,
-                status: { $ne: "archived" },
-            })
-            .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
+    private async _fetchAndBuildHistory(
+        channel: ChannelDescriptor,
+        onetimeCode: string
+    ): Promise<{ pending: DialogueSegment[]; folded: FoldedDialogueSegment; summarized: SummarizedDialogueSegment[] }> {
+        // const segmentRecords = await this.ctx.database
+        //     .get(TableName.DialogueSegments, {
+        //         platform: channel.platform,
+        //         channelId: channel.id,
+        //         status: { $ne: "archived" },
+        //     })
+        //     .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
 
-        return Promise.all(segmentRecords.map((record) => this.buildDialogueSegment(record, onetimeCode)));
+        // return Promise.all(segmentRecords.map((record) => this.buildDialogueSegment(record, onetimeCode)));
+
+        const pendingSegments = await this.ctx.database
+            .select(TableName.DialogueSegments)
+            .where({ platform: channel.platform, channelId: channel.id })
+            .where({ status: { $ne: "archived" } })
+            .where({ status: { $ne: "folded" } })
+            .where({ status: { $ne: "summarized" } })
+            .orderBy("timestamp", "asc")
+            .execute();
+
+        const foldedSegments = await this.ctx.database
+            .select(TableName.DialogueSegments)
+            .where({ platform: channel.platform, channelId: channel.id })
+            .where({ status: "folded" })
+            .orderBy("timestamp", "asc")
+            .execute();
+
+        const summarizedSegments = await this.ctx.database
+            .select(TableName.DialogueSegments)
+            .where({ platform: channel.platform, channelId: channel.id })
+            .where({ status: "summarized" })
+            .orderBy("timestamp", "asc")
+            .execute();
+
+        const pending = await Promise.all(pendingSegments.map((record) => this.buildDialogueSegment(record, onetimeCode)));
+        const folded = foldedSegments.length > 0 ? await this.buildFoldedDialogueSegment(foldedSegments, onetimeCode) : undefined;
+        const summarized = await Promise.all(summarizedSegments.map((record) => this.buildSummarizedDialogueSegment(record, onetimeCode)));
+
+        return { pending, folded, summarized };
+    }
+
+    private async buildSummarizedDialogueSegment(record: DialogueSegmentData, onetimeCode: string): Promise<SummarizedDialogueSegment> {
+        return {
+            type: "dialogue-segment",
+            id: record.id,
+            platform: record.platform,
+            channelId: record.channelId,
+            guildId: record.guildId,
+            status: "summarized",
+            summary: record.summary,
+            timestamp: record.timestamp,
+            dialogue: [],
+            systemEvents: [],
+            agentTurn: undefined,
+            endTimestamp: record.timestamp,
+        };
+    }
+    /**
+     * 被折叠的对话片段集合
+     *
+     * 将多个折叠片段消息合并在一起，并剔除助手回合
+     * @param foldedSegments
+     * @param onetimeCode
+     */
+    async buildFoldedDialogueSegment(foldedSegments: DialogueSegmentData[], onetimeCode: string): Promise<FoldedDialogueSegment> {
+        // 收集所有消息
+        const allMessages = await this.ctx.database
+            .select(TableName.Messages)
+            .where({ sid: { $in: foldedSegments.map((s) => s.id) } })
+            .orderBy("timestamp", "asc")
+            .execute();
+
+        // 收集所有系统事件
+        const allSystemEvents = await this.ctx.database
+            .select(TableName.SystemEvents)
+            .where({ sid: { $in: foldedSegments.map((s) => s.id) } })
+            .orderBy("timestamp", "asc")
+            .execute();
+
+        // 时间窗口
+        const startTimestamp = foldedSegments[0].timestamp;
+        const endTimestamp = foldedSegments[foldedSegments.length - 1].timestamp;
+
+        return {
+            type: "dialogue-segment",
+            id: foldedSegments[0].id,
+            platform: foldedSegments[0].platform,
+            channelId: foldedSegments[0].channelId,
+            guildId: foldedSegments[0].guildId,
+            status: "folded",
+            dialogue: this.buildDialogueMessages(allMessages, onetimeCode),
+            systemEvents: allSystemEvents.map((record) => ({
+                id: record.id,
+                type: record.type,
+                timestamp: record.timestamp,
+                date: formatDate(record.timestamp),
+                payload: record.payload,
+            })),
+            timestamp: startTimestamp,
+            endTimestamp,
+        };
     }
 
     /**
@@ -756,16 +830,20 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param guildId 公会ID。
      * @returns 成员列表。
      */
-    private async _getMembersFromHistory(bot: Bot, history: DialogueSegment[], platform: string, guildId: string): Promise<GuildMember[]> {
+    private async _getMembersFromHistory(bot: Bot, history: History, platform: string, guildId: string): Promise<GuildMember[]> {
         const memberIds = new Set<string>();
-        history.forEach((segment) => {
+
+        history.pending.forEach((segment) => {
             segment.dialogue.forEach((message) => {
-                // 排除特殊身份的发送者
-                if (message.sender.id !== "agent" && message.sender.id !== "operator") {
-                    memberIds.add(message.sender.id);
-                }
+                memberIds.add(message.sender.id);
             });
         });
+
+        if (history.folded) {
+            history.folded.dialogue.forEach((message) => {
+                memberIds.add(message.sender.id);
+            });
+        }
 
         const humanMembers: GuildMember[] =
             memberIds.size > 0
@@ -786,6 +864,36 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 使用 unshift 将机器人放在列表开头，并返回新数组
         return [botAsMember, ...humanMembers];
+    }
+
+    private buildDialogueMessages(messageRecords: MessageData[], onetimeCode: string): ContextualMessage[] {
+        const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
+
+        function transform(source: string) {
+            const warp = (element: Element, onecode: string) => {
+                element.attrs.onetime_code = onecode;
+                return element;
+            };
+            return h.transform(source, (element) => {
+                switch (element.type) {
+                    case "text":
+                        return h.text(element.attrs.content);
+                    default:
+                        return warp(element, onetimeCode);
+                }
+            });
+        }
+
+        return messageRecords.map((record) => ({
+            id: record.id,
+            content: transform(record.content),
+            timestamp: record.timestamp,
+            date: formatDate(record.timestamp, "YYYY-MM-DD"),
+            time: formatDate(record.timestamp, "HH:mm:ss"),
+            quoted: quotedMsgIds.has(record.id),
+            quoteId: record.quoteId,
+            sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
+        }));
     }
 
     /**
@@ -821,33 +929,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id }),
         ]);
 
-        const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
-
-        function transform(source: string) {
-            const warp = (element: Element, onecode: string) => {
-                element.attrs.onetime_code = onecode;
-                return element;
-            };
-            return h.transform(source, (element) => {
-                switch (element.type) {
-                    case "text":
-                        return h.text(element.attrs.content);
-                    default:
-                        return warp(element, onetimeCode);
-                }
-            });
-        }
-
-        dialogueSegment.dialogue = messageRecords.map((record) => ({
-            id: record.id,
-            content: transform(record.content),
-            timestamp: record.timestamp,
-            date: formatDate(record.timestamp, "YYYY-MM-DD"),
-            time: formatDate(record.timestamp, "HH:mm:ss"),
-            quoted: quotedMsgIds.has(record.id),
-            quoteId: record.quoteId,
-            sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
-        }));
+        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords, onetimeCode);
 
         dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
             id: record.id,
