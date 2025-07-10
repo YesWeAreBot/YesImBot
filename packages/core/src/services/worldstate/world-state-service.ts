@@ -1,5 +1,5 @@
 import { formatDate } from "@/shared/utils";
-import { Argv, Bot, Context, Element, h, Logger, Random, Service, Session } from "koishi";
+import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
 import { IChatModel, TaskType } from "../model";
 import { Services, TableName } from "../types";
@@ -318,14 +318,176 @@ export class WorldStateService extends Service<HistoryConfig> {
             }
         });
 
-        this.ctx.command("history.clear", "清除当前频道的历史记录（标记为已归档）", { authority: 3 }).action(async ({ session }) => {
-            await this.ctx.database.set(
-                TableName.DialogueSegments,
-                { platform: session.platform, channelId: session.channelId },
-                { status: SegmentStatus.Archived }
-            );
-            return "✅ 频道历史记录已清除（标记为已归档）。";
-        });
+        this.ctx
+            .command("history.clear", "清除指定频道的历史记录", { authority: 3 })
+            .option("all", "-a <type:string> 清理全部指定类型的频道 (private, guild, all)", { authority: 3 })
+            .option("platform", "-p <platform:string> 指定平台", { authority: 3 })
+            .option("channel", "-c <channel:string> 指定频道ID (多个用逗号分隔)", { authority: 3 })
+            .option("target", "-t <target:string> 指定目标 'platform:channelId' (多个用逗号分隔)", { authority: 3 })
+            .option("delete", "--delete 永久删除记录(包括关联消息)，而非归档", { authority: 3, type: "boolean" })
+            .usage(
+                `清除历史记录的强大工具。
+默认操作是将消息标记为“已归档”，数据仍保留在数据库中。
+使用 --delete 选项会从数据库中永久移除相关对话、消息和系统事件，此操作不可恢复。
+
+当单独使用 -c 指定的频道ID存在于多个平台时，指令会要求您使用 -p 或 -t 来明确指定平台。`
+            )
+            .example(
+                [
+                    "",
+                    "history.clear                      # 清除当前频道的历史记录",
+                    "history.clear -c 12345678          # 清除频道 12345678 的历史记录",
+                    "history.clear -p discord -c 987654321 # 清除 discord 平台下频道 987654321 的记录",
+                    "history.clear -t onebot:private:10001 # 清除 onebot 平台下私聊 10001 的记录",
+                    "history.clear -a private           # 归档所有私聊频道的历史记录",
+                    "history.clear -a guild --delete    # 永久删除所有群聊对话及关联消息",
+                    "history.clear -a all --delete      # !! 永久删除所有历史记录，极度危险 !!",
+                ].join("\n")
+            )
+            .action(async ({ session, options }) => {
+                const isDelete = !!options.delete;
+                const actionPastTense = isDelete ? "已永久删除" : "已归档";
+                const results: string[] = [];
+
+                // 辅助函数：执行清理操作，现在支持事务和多表操作
+                const performClear = async (query: Query<DialogueSegmentData>, description: string) => {
+                    try {
+                        // 步骤1: 查找需要操作的对话片段及其ID
+                        const segmentsToClear = await this.ctx.database.get(TableName.DialogueSegments, query, ["id"]);
+
+                        if (segmentsToClear.length === 0) {
+                            results.push(`🟡 ${description} - 未找到匹配的历史记录。`);
+                            return;
+                        }
+                        const segmentIds = segmentsToClear.map((s) => s.id);
+
+                        // 步骤2: 使用事务执行数据库操作以保证原子性
+                        await this.ctx.database.transact(async (db) => {
+                            if (isDelete) {
+                                // 永久删除模式：删除所有三张表的数据
+                                // 使用 $in 操作符批量删除
+                                await db.remove(TableName.Messages, { sid: { $in: segmentIds } });
+                                await db.remove(TableName.SystemEvents, { sid: { $in: segmentIds } });
+                                await db.remove(TableName.DialogueSegments, { id: { $in: segmentIds } });
+                            } else {
+                                // 归档模式：只更新对话片段的状态
+                                await db.set(TableName.DialogueSegments, query, { status: SegmentStatus.Archived });
+                            }
+                        });
+
+                        const recordCount = segmentsToClear.length;
+                        results.push(`✅ ${description} - ${recordCount} 条对话片段已${actionPastTense}。`);
+                    } catch (error) {
+                        this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
+                        results.push(`❌ ${description} - 操作失败，数据库更改已回滚。`);
+                    }
+                };
+
+                // 选项解析和执行逻辑
+                // 1. 处理 -a, --all 选项
+                if (options.all) {
+                    if (!["private", "guild", "all"].includes(options.all)) {
+                        return "错误：-a, --all 的参数必须是 'private', 'guild', 或 'all'。";
+                    }
+                    let query: Query<DialogueSegmentData> = {};
+                    let description = "";
+
+                    switch (options.all) {
+                        case "private":
+                            query = { channelId: { $regex: /^private:/ } };
+                            description = "所有私聊频道";
+                            break;
+                        case "guild":
+                            query = { channelId: { $not: /^private:/ } };
+                            description = "所有群聊频道";
+                            break;
+                        case "all":
+                            query = {};
+                            description = "所有频道";
+                            break;
+                    }
+                    await performClear(query, description);
+                    return results.join("\n");
+                }
+
+                // 2. 收集需要处理的目标
+                const targetsToProcess: { platform: string; channelId: string }[] = [];
+                const ambiguousChannels: string[] = [];
+
+                // 从 -t, --target 解析
+                if (options.target) {
+                    const targets = options.target
+                        .split(",")
+                        .map((t) => t.trim())
+                        .filter(Boolean);
+                    for (const target of targets) {
+                        const parts = target.split(":");
+                        if (parts.length < 2) {
+                            results.push(`❌ 格式错误的目标: "${target}"，已跳过。`);
+                            continue;
+                        }
+                        const platform = parts[0];
+                        const channelId = parts.slice(1).join(":");
+                        targetsToProcess.push({ platform, channelId });
+                    }
+                }
+
+                // 从 -c, --channel 解析
+                if (options.channel) {
+                    const channels = options.channel
+                        .split(",")
+                        .map((c) => c.trim())
+                        .filter(Boolean);
+                    for (const channelId of channels) {
+                        if (options.platform) {
+                            targetsToProcess.push({ platform: options.platform, channelId });
+                        } else {
+                            // 未指定平台，需要查找
+                            const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, ["platform"]);
+                            const platforms = [...new Set(dialogues.map((d) => d.platform))];
+
+                            if (platforms.length === 0) {
+                                results.push(`🟡 频道 "${channelId}" 未找到任何历史记录，已跳过。`);
+                            } else if (platforms.length === 1) {
+                                targetsToProcess.push({ platform: platforms[0], channelId });
+                            } else {
+                                ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}。`);
+                            }
+                        }
+                    }
+                }
+
+                if (ambiguousChannels.length > 0) {
+                    return `操作已中止。存在需要明确指定的频道：\n${ambiguousChannels.join(
+                        "\n"
+                    )}\n请使用 -p <platform> 或 -t <platform:channelId> 来指定。`;
+                }
+
+                // 4. 如果没有指定任何目标，则清理当前会话
+                if (targetsToProcess.length === 0 && !options.target && !options.channel) {
+                    if (session.platform && session.channelId) {
+                        targetsToProcess.push({ platform: session.platform, channelId: session.channelId });
+                    } else {
+                        return "无法确定当前会话，请使用选项指定要清理的频道。";
+                    }
+                }
+
+                if (targetsToProcess.length === 0 && results.length === 0) {
+                    return "没有指定任何有效的清理目标。请使用 'help history.clear' 查看帮助。";
+                }
+
+                // 5. 执行清理操作
+                for (const target of targetsToProcess) {
+                    await performClear(
+                        { platform: target.platform, channelId: target.channelId },
+                        `目标 "${target.platform}:${target.channelId}"`
+                    );
+                }
+
+                // 6. 返回最终结果
+                const actionVerb = isDelete ? "永久删除" : "归档";
+                return `--- 清理报告 ---\n操作类型：${actionVerb}\n${results.join("\n")}`;
+            });
     }
 
     /**
