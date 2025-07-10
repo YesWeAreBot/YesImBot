@@ -21,9 +21,9 @@ export enum ModelAbility {
  */
 export enum TaskType {
     Chat = "chat",
-    Embedding = "embedding",
-    Summarization = "summarization",
-    CodeGeneration = "code_generation",
+    Embedding = "embed",
+    Summarization = "summarize",
+    CodeGeneration = "code",
 }
 
 /** 描述一个模型在特定提供商中的位置 */
@@ -114,15 +114,15 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.object({
     baseURL: Schema.string().description("提供商的 API 地址"),
     apiKey: Schema.string().role("secret").description("提供商的 API 密钥"),
     proxy: Schema.string().description("代理地址"),
-    models: Schema.array(ModelConfigSchema).description("模型列表"),
+    models: Schema.array(ModelConfigSchema).required().description("模型列表"),
 })
     .collapse()
     .description("提供商配置");
 
 export interface ModelServiceConfig {
     providers: ProviderConfig[];
-    modelGroups: Record<string, ModelDescriptor[]>;
-    taskAssignments: {
+    modelGroups: { name: string; models: ModelDescriptor[] }[];
+    task: {
         [TaskType.Chat]: string;
         [TaskType.Embedding]: string;
         [TaskType.Summarization]: string;
@@ -135,12 +135,19 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
     providers: Schema.array(ProviderConfigSchema)
         .required()
         .role("table")
-        .collapse()
         .description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
-    modelGroups: Schema.dict(Schema.array(Schema.dynamic("modelService.selectableGroup")).role("table").description("此模型组包含的模型"))
-        .required()
-        .description("创建模型组，用于故障转移或分类。键是组名。"),
-    taskAssignments: Schema.object({
+    modelGroups: Schema.array(
+        Schema.object({
+            name: Schema.string().required().description("模型组名称"),
+            models: Schema.array(Schema.dynamic("modelService.selectableGroup")).required().role("table").description("此模型组包含的模型"),
+        })
+    )
+        .role("table")
+        .description("创建模型组，用于故障转移或分类。"),
+    // modelGroups: Schema.object(Schema.string().required(), Schema.array(Schema.dynamic("modelService.selectableGroup")).role("table").description("此模型组包含的模型"))
+    //     .required()
+    //     .description("创建模型组，用于故障转移或分类。键是组名。"),
+    task: Schema.object({
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型组"),
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型组"),
         [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型组"),
