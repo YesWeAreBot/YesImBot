@@ -1,4 +1,4 @@
-import { Context, Logger, Schema, Service } from "koishi";
+import { Awaitable, Context, Logger, Schema, Service } from "koishi";
 import { AppError, ErrorCodes, isNotEmpty } from "../../shared";
 import { Services } from "../types";
 import { BaseModel } from "./base-model";
@@ -24,8 +24,45 @@ export class ModelService extends Service<ModelServiceConfig> {
         this.config = config;
         this._logger = ctx[Services.Logger].getLogger("[模型服务]");
 
-        this.validateConfig();
-        this.initializeProviders();
+        try {
+            this.validateConfig();
+            this.initializeProviders();
+        } catch (error) {
+            this._logger.error(`配置错误: ${error.message}`);
+            // throw error;
+        }
+    }
+
+    protected start(): Awaitable<void> {
+        const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
+
+        const selectableModels = models
+            .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
+            .map((m) => {
+                return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
+            });
+        this.ctx.schema.set(
+            "modelService.selectableGroup",
+            Schema.union([
+                ...selectableModels,
+                Schema.object({
+                    providerName: Schema.string().required().description("提供商名称"),
+                    modelId: Schema.string().required().description("模型ID"),
+                })
+                    .role("table")
+                    .description("自定义模型"),
+            ]).default({ providerName: "", modelId: "" })
+        );
+
+        this.ctx.schema.set(
+            "modelService.availableGroups",
+            Schema.union([
+                ...this.config.modelGroups.map((group) => {
+                    return Schema.const(group.name).description(group.name);
+                }),
+                Schema.string().description("自定义模型组"),
+            ]).default("default")
+        );
     }
 
     /**
@@ -47,50 +84,19 @@ export class ModelService extends Service<ModelServiceConfig> {
             }
         }
 
-        for (const groupName in this.config.modelGroups) {
-            const group = this.config.modelGroups[groupName];
-            if (group.length === 0) {
-                throw new Error(`配置错误: 模型组 ${groupName} 至少需要包含一个模型。`);
+        for (const group of this.config.modelGroups) {
+            if (group.models.length === 0) {
+                throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型。`);
             }
         }
 
-        for (const task in this.config.taskAssignments) {
-            const groupName = this.config.taskAssignments[task];
-            if (!this.config.modelGroups[groupName]) {
+        for (const task in this.config.task) {
+            const groupName = this.config.task[task];
+            if (!this.config.modelGroups.some((group) => group.name === groupName)) {
                 throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
             }
         }
         this._logger.debug("⚙️ 配置验证通过。");
-
-        const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
-
-        const selectableModels = models
-            .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
-            .map((m) => {
-                return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
-            });
-
-        this.ctx.schema.set(
-            "modelService.selectableGroup",
-            Schema.union([
-                ...selectableModels,
-                Schema.object({
-                    providerName: Schema.string().required().description("提供商名称"),
-                    modelId: Schema.string().required().description("模型ID"),
-                })
-                    .role("table")
-                    .description("自定义模型"),
-            ]).default({ providerName: "", modelId: "" })
-        );
-
-        this.ctx.schema.set(
-            "modelService.availableGroups",
-            Schema.union(
-                Object.keys(this.config.modelGroups).map((groupName) => {
-                    return Schema.const(groupName).description(groupName);
-                })
-            ).required()
-        );
     }
 
     private initializeProviders(): void {
@@ -139,7 +145,7 @@ export class ModelService extends Service<ModelServiceConfig> {
         groupName: string,
         modelGetter: (provider: string, modelId: string) => T | null
     ): ModelSwitcher<T> | undefined {
-        const group = this.config.modelGroups[groupName];
+        const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
             this._logger.warn(`[切换器] ⚠ 组未找到 | 名称: ${groupName}`);
             return undefined;
@@ -147,7 +153,7 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         try {
             // 在这里传入模型获取函数，实现泛型
-            return new ModelSwitcher<T>(this.ctx, group, groupName, modelGetter);
+            return new ModelSwitcher<T>(this.ctx, group.models, groupName, modelGetter);
         } catch (error) {
             this._logger.error(`[切换器] ✖ 创建失败 | 组: ${groupName} | 错误: ${error.message}`);
             return undefined;
@@ -167,8 +173,8 @@ export class ModelService extends Service<ModelServiceConfig> {
     }
 
     private resolveGroupName(name: TaskType): string | undefined {
-        if (this.config.taskAssignments[name]) {
-            return this.config.taskAssignments[name];
+        if (this.config.task[name]) {
+            return this.config.task[name];
         }
 
         if (this.config.modelGroups[name]) {
