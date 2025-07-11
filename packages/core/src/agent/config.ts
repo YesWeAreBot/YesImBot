@@ -137,19 +137,6 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
         interest: { keywords: ["难过", "伤心", "怎么办", "求助", "谢谢你", "太好了"], keywordMultiplier: 4.0, defaultMultiplier: 1.0 },
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 120, probabilityThreshold: 45, probabilityAmplifier: 0.07, replyCost: 15 },
     },
-    /**
-     * 玩世不恭的“梗小鬼” (Meme Lord & Joker)
-     *   性格特点: 对严肃话题不感兴趣，但对网络热梗、流行语和各种怪话反应迅速。喜欢发表情包和怪图。说话简短、俏皮，经常出其不意。
-     *   设计思路: 对文本的基础分很低，但对图片和表情分很高。关键词库充满网络烂梗。回复门槛时高时低（通过probabilityAmplifier调整），行为难以预测。衰减极快，热度来得快去得也快。
-     *   适用场景: Z世代用户群、游戏吹水群、任何需要“乐子人”角色的地方。
-     */
-    meme: {
-        name: "梗小鬼",
-        base: { text: 1, image: 20, emoji: 15, command: 100 },
-        attribute: { atMention: 80, isQuote: 5, isDirectMessage: 10 },
-        interest: { keywords: ["急了", "典", "绷不住", "启动", "遥遥领先", "抽象"], keywordMultiplier: 3.5, defaultMultiplier: 1.0 },
-        lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 30, probabilityThreshold: 50, probabilityAmplifier: 0.2, replyCost: 40 },
-    },
 };
 
 // 定义一个基础的可编辑的 Schema，用于“自定义”模式
@@ -193,7 +180,7 @@ const WillingnessForm: Schema<WillingnessConfig> = Schema.intersect([
             Schema.const(customOption).description("自定义"),
         ])
             .default("default")
-            .description("选择助手的性格预设。选择“自定义”以手动调整下方所有参数。"),
+            .description("选择发言行为预设。选择“自定义”以手动调整下方所有参数。此参数只影响发言频率。"),
     }),
     Schema.union([
         ...personalityOptions.map((presetName) => {
