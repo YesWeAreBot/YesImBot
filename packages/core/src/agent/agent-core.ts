@@ -23,6 +23,8 @@ declare module "koishi" {
     }
 }
 
+type WithDispose<T> = T & { dispose: () => void };
+
 export class AgentCore extends Service<AgentBehaviorConfig> {
     static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image, Services.Logger];
 
@@ -42,7 +44,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly allowedChannels = new Set<string>();
     private readonly channelGroupMap = new Map<string, ChannelDescriptor[]>();
     private willingnessDecayTimer: NodeJS.Timeout;
-    private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
+    private readonly debouncedReplyTasks: Map<string, WithDispose<() => void>> = new Map();
 
     private runningTasks: Set<string> = new Set();
 
@@ -93,51 +95,66 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 return; // 计算失败，直接退出
             }
 
-            // --- 第2步: 检查是否可以执行回复任务 (并发控制核心) ---
+            // --- 第2步: 检查决策并触发防抖任务 ---
             if (!decision) {
                 // 如果决策为不回复，则流程到此结束。
                 this._logger.debug(`[${channelKey}] 决策为不回复，任务终止。`);
                 return;
             }
 
-            // 防抖与任务锁定：如果决策为“是”，检查频道是否已在执行任务
-            if (this.runningTasks.has(channelKey)) {
-                this._logger.debug(`[${channelKey}] 决策为回复，但已有任务在运行。本次触发被忽略（防抖）。`);
-                return; // 放弃执行，但意愿值已更新
+            // 从 Map 中获取或创建当前频道的防抖函数
+            let debouncedTask = this.debouncedReplyTasks.get(channelKey);
+
+            if (!debouncedTask) {
+                // 如果该频道还没有对应的防杜函数，则创建一个
+                // ctx.debounce 的回调函数包含了原先需要被保护的“第3步”逻辑
+                debouncedTask = this.ctx.debounce(async () => {
+                    // --- 第3步: 执行回复任务 (加锁 -> 执行 -> 解锁) ---
+                    // 防抖成功后，这里的代码才会被执行
+                    try {
+                        // --- 加锁 ---
+                        if (this.runningTasks.has(channelKey)) {
+                            this._logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行被跳过。`);
+                            return;
+                        }
+                        this.runningTasks.add(channelKey);
+                        this._logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务。`);
+
+                        // 执行行动前钩子
+                        this.willing.handlePreReply(channelKey);
+
+                        // 核心循环
+                        const success = await this.runAgentCycle(session, segment);
+
+                        // 行动后钩子 (只在成功时调用)
+                        if (success) {
+                            const willingnessBeforeReply = this.willing.getCurrentWillingness(channelKey);
+                            this.willing.handlePostReply(channelKey);
+                            const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
+                            /* prettier-ignore */
+                            this._logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+                        }
+
+                        this._logger.debug(`[${channelKey}] 回复任务执行完毕。`);
+                    } catch (error) {
+                        // 捕获 runAgentCycle 或钩子函数中的任何错误
+                        this.handleError(error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${segment.id})`);
+                    } finally {
+                        // --- 解锁 ---
+                        // 无论成功还是失败，都必须在 finally 块中释放锁
+                        this.runningTasks.delete(channelKey);
+                        this._logger.debug(`[${channelKey}] 频道锁已释放。`);
+                    }
+                }, this.config.arousal.debounceMs); // 使用定义的延迟
+
+                // 将新创建的防抖函数存入 Map
+                this.debouncedReplyTasks.set(channelKey, debouncedTask);
             }
 
-            // --- 第3步: 执行回复任务 (加锁 -> 执行 -> 解锁) ---
-            try {
-                // --- 加锁 ---
-                // 这是关键的原子操作起点。一旦加锁，其他事件将被第2步拦截。
-                this.runningTasks.add(channelKey);
-                this._logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务。`);
-
-                // 执行行动前钩子
-                this.willing.handlePreReply(channelKey);
-
-                // 核心循环
-                const success = await this.runAgentCycle(session, segment);
-
-                // 行动后钩子 (只在成功时调用)
-                if (success) {
-                    const willingnessBeforeReply = this.willing.getCurrentWillingness(channelKey);
-                    this.willing.handlePostReply(channelKey);
-                    const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
-                    this._logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
-                }
-
-                this._logger.debug(`[${channelKey}] 回复任务执行完毕。`);
-            } catch (error) {
-                // 捕获 runAgentCycle 或钩子函数中的任何错误
-                // 注意：这里传递了更丰富的上下文给错误处理器
-                this.handleError(error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${segment.id})`);
-            } finally {
-                // --- 解锁 ---
-                // 无论成功还是失败，都必须在 finally 块中释放锁
-                this.runningTasks.delete(channelKey);
-                this._logger.debug(`[${channelKey}] 频道锁已释放。`);
-            }
+            // 触发防抖流程
+            // 每次调用都会重置计时器。只有当 DEBOUNCE_DELAY 毫秒内没有新的调用时，上面的回调才会执行。
+            this._logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）。`);
+            debouncedTask();
         });
 
         this.willing.startDecayCycle();
@@ -146,7 +163,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     protected stop(): void {
-        this.debounceTimers.forEach(clearTimeout);
+        this.debouncedReplyTasks.forEach((d) => d.dispose());
         clearInterval(this.willingnessDecayTimer);
         this.willing.stopDecayCycle();
         this._logger.info("🛑 服务已停止");
