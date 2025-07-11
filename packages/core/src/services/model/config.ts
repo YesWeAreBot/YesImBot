@@ -143,10 +143,8 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         })
     )
         .role("table")
+        .collapse()
         .description("创建模型组，用于故障转移或分类。"),
-    // modelGroups: Schema.object(Schema.string().required(), Schema.array(Schema.dynamic("modelService.selectableGroup")).role("table").description("此模型组包含的模型"))
-    //     .required()
-    //     .description("创建模型组，用于故障转移或分类。键是组名。"),
     task: Schema.object({
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型组"),
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型组"),
