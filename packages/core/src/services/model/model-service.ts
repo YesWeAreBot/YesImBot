@@ -198,7 +198,7 @@ export class ModelSwitcher<T extends BaseModel> {
     constructor(
         ctx: Context,
         modelDescriptors: ModelDescriptor[],
-        private groupName: string,
+        groupName: string,
         modelGetter: (providerName: string, modelId: string) => T | null
     ) {
         this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupName}]`);
