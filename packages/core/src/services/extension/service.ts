@@ -36,27 +36,68 @@ export class ToolService extends Service<ToolServiceConfig> {
     }
 
     protected async start() {
-        this.ctx.plugin(CoreUtilExtension, this.config.extensionConfigs["core-util"]?.config);
-        this.ctx.plugin(CommandExtension, this.config.extensionConfigs["command"]?.config);
-        this.ctx.plugin(CreatorExtension, this.config.extensionConfigs["creator"]?.config);
-        this.ctx.plugin(MemoryExtension, this.config.extensionConfigs["memory"]?.config);
-        this.ctx.plugin(QManagerExtension, this.config.extensionConfigs["qmanager"]?.config);
-        this.ctx.plugin(SearchExtension, this.config.extensionConfigs["search"]?.config);
-        this.ctx.plugin(InteractionsExtension, this.config.extensionConfigs["interactions"]?.config);
+        const builtinExtensions = [
+            CoreUtilExtension,
+            CommandExtension,
+            CreatorExtension,
+            MemoryExtension,
+            QManagerExtension,
+            SearchExtension,
+            InteractionsExtension,
+        ];
+        const loadedExtensions = new Map<string, ForkScope>();
+
+        for (const Ext of builtinExtensions) {
+            //@ts-ignore
+            // 不能在这里判断是否启用，否则无法生成配置
+            const name = Ext.prototype.metadata.name;
+            const config = this.config.extra[name];
+            // if (config && !config.enabled) {
+            //     this._logger.info(`跳过内置扩展: ${name}`);
+            //     continue;
+            // }
+            loadedExtensions.set(name, this.ctx.plugin(Ext, config));
+        }
         this._logger.info("服务已启动");
     }
 
     /**
      * 注册一个新的扩展。
      * @param ExtConstructor 扩展的构造函数
+     * @param enabled 是否启用此扩展
      * @param extConfig 传递给扩展实例的配置
      */
-    public register(extensionInstance: IExtension, extConfig: any) {
+    public register(extensionInstance: IExtension, enabled: boolean, extConfig: any) {
         const validate: Schema<any> = extensionInstance.constructor["Config"];
         const validatedConfig = validate ? validate(extConfig) : extConfig;
+
+        let availableExtensions = this.ctx.schema.get("toolService.availableExtensions");
+
+        if (availableExtensions.type !== "object") {
+            availableExtensions = Schema.object({});
+        }
+
         try {
             if (!extensionInstance.metadata || !extensionInstance.metadata.name) {
                 this._logger.warn("一个扩展在注册时缺少元数据或名称，已跳过。");
+                return;
+            }
+
+            const metadata = extensionInstance.metadata;
+
+            this.ctx.schema.set(
+                "toolService.availableExtensions",
+                availableExtensions.set(
+                    extensionInstance.metadata.name,
+                    Schema.object({
+                        enabled: Schema.boolean().default(true).description("是否启用此扩展"),
+                        config: validate && enabled ? validate.default(validatedConfig) : Schema.object({}),
+                    }).description(`${metadata.display || metadata.name} - ${metadata.description}`)
+                )
+            );
+
+            if (!enabled) {
+                this._logger.info(`扩展 "${metadata.name}" 已禁用。`);
                 return;
             }
 
@@ -70,22 +111,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                 }
             }
 
-            let availableExtensions = this.ctx.schema.get("toolService.availableExtensions");
-
-            if (availableExtensions.type !== "object") {
-                availableExtensions = Schema.object({});
-            }
-
-            this.ctx.schema.set(
-                "toolService.availableExtensions",
-                availableExtensions.set(
-                    extensionInstance.metadata.name,
-                    Schema.object({
-                        enabled: Schema.boolean().default(true).description("是否启用此扩展"),
-                        config: validate ? validate.default(validatedConfig) : undefined,
-                    }).description(`${extensionInstance.metadata.name} - ${extensionInstance.metadata.description}`)
-                )
-            );
+            this._logger.debug(`扩展 "${metadata.name}" 已加载。`);
         } catch (error) {
             this._logger.error(`扩展配置验证失败: ${error.message}`);
             return;

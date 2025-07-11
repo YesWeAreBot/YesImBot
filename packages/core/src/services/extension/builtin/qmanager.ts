@@ -5,11 +5,14 @@ import { Infer } from "../types";
 import { isEmpty } from "@/shared";
 
 @Extension({
-    name: "群管扩展",
+    name: "qmanager",
+    display: "频道管理",
     version: "1.0.0",
     description: "管理频道内用户和消息",
 })
 export default class QManagerExtension {
+    static readonly Config = Schema.object({});
+
     constructor(public ctx: Context, public config: any) {}
 
     @Tool({

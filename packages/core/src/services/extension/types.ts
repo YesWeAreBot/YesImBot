@@ -27,6 +27,7 @@ export interface ToolSchema {
  * 扩展包元数据接口，用于描述一个扩展包的基本信息。
  */
 export interface ExtensionMetadata {
+    display?: string; // 显示名称
     name: string; // 扩展包唯一标识，建议使用 npm 包名
     description: string; // 扩展包功能描述
     author?: string; // 作者
@@ -80,4 +81,3 @@ export interface IExtension<TConfig = any> extends Object {
 
 // 一个辅助类型，用于推断并合并 session 到参数中
 export type Infer<T> = T & { session?: Session };
-

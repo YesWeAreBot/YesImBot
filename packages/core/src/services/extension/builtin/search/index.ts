@@ -19,7 +19,8 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
 });
 
 @Extension({
-    name: "Search",
+    name: "search",
+    display: "网络搜索",
     version: "1.0.0",
     description: "搜索网络内容",
     author: "HydroGest",
