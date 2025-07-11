@@ -1,18 +1,20 @@
+import { promises as fs } from "fs";
 import { Context, Logger, Service } from "koishi";
-import { AppError, ErrorCodes } from "../../shared";
-import { Services } from "../types";
-import { MEMORY_TABLE, MemoryBlockConfig, MemoryConfig } from "./config";
-import { DatabaseMemoryBlockStore, IMemoryBlockStore } from "./DatabaseMemoryBlockStore";
-import { IArchivalMemoryStore, InMemoryArchivalStore } from "./InMemoryArchivalStore";
+import path from "path";
+
+import { Services } from "@/services/types";
+import { AppError, ErrorCodes } from "@/shared/errors";
+import { BasicArchivalStore, IArchivalMemoryStore } from "./BasicArchivalStore";
+import { ARCHIVAL_MEMORY_TABLE, MemoryConfig } from "./config";
 import { MemoryBlock } from "./MemoryBlock";
-import { ArchivalEntry, ArchivalSearchResult, MemoryBlockData } from "./types";
+import { ArchivalEntry, ArchivalMemoryData, ArchivalSearchResult } from "./types";
 
 declare module "koishi" {
     interface Context {
         [Services.Memory]: MemoryService;
     }
     interface Tables {
-        [MEMORY_TABLE]: MemoryBlockData;
+        [ARCHIVAL_MEMORY_TABLE]: ArchivalMemoryData;
     }
 }
 
@@ -21,85 +23,111 @@ export class MemoryService extends Service {
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
     private lastModified: Date = new Date();
-    private readonly memoryBlockStore: IMemoryBlockStore;
     public readonly archivalStore: IArchivalMemoryStore;
 
     private _logger: Logger;
 
     constructor(ctx: Context, public readonly config: MemoryConfig) {
         super(ctx, Services.Memory, true);
+        this._logger = ctx[Services.Logger].getLogger("[记忆服务]");
 
         ctx.model.extend(
-            MEMORY_TABLE,
+            ARCHIVAL_MEMORY_TABLE,
             {
                 id: "string",
-                label: "string",
-                content: "array",
-                limit: "integer",
+                content: "text",
+                timestamp: "timestamp",
+                metadata: "json",
+                embedding: "array",
             },
             {
-                primary: ["id", "label"],
-                autoInc: false,
+                primary: "id",
             }
         );
 
-        this.memoryBlockStore = new DatabaseMemoryBlockStore(ctx);
-        this.archivalStore = new InMemoryArchivalStore(ctx);
+        this.archivalStore = new BasicArchivalStore(ctx);
 
-        this._logger = ctx[Services.Logger].getLogger("[记忆服务]");
-
-        this._logger.info("服务已启动");
+        this._logger.info("服务已初始化");
     }
 
     protected async start() {
-        if (this.config.blocks) {
-            for (const label in this.config.blocks) {
-                if (Object.prototype.hasOwnProperty.call(this.config.blocks, label)) {
-                    const blockConfig = this.config.blocks[label];
-                    await this.getOrCreateCoreMemoryBlock(label, blockConfig);
-                }
-            }
-        } else {
-            this._logger.warn("未配置任何核心记忆块");
-        }
+        this._logger.info("服务启动中...");
+        await this.discoverAndLoadCoreMemoryBlocks();
+        this._logger.info(`服务已启动，加载了 ${this.coreMemoryBlocks.size} 个核心记忆块。`);
     }
 
-    public async getOrCreateCoreMemoryBlock(label: string, customConfig: MemoryBlockConfig): Promise<MemoryBlock> {
-        if (this.coreMemoryBlocks.has(label)) {
-            const existingBlock = this.coreMemoryBlocks.get(label)!;
+    private async discoverAndLoadCoreMemoryBlocks() {
+        const memoryPath = this.config.coreMemoryPath;
+        try {
+            await fs.mkdir(memoryPath, { recursive: true });
+            const files = await fs.readdir(memoryPath);
+            const memoryFiles = files.filter((file) => file.endsWith(".md") || file.endsWith(".txt"));
 
-            if (customConfig.limit !== undefined && existingBlock.limit !== customConfig.limit) {
-                this._logger.warn(`核心记忆块 "${label}" 已存在，但配置中的大小限制与现有值不同。使用现有值。`);
+            if (memoryFiles.length === 0) {
+                this._logger.warn(`核心记忆目录 '${memoryPath}' 为空，未加载任何记忆块。`);
+                return;
             }
-            return existingBlock;
+
+            for (const file of memoryFiles) {
+                const filePath = path.join(memoryPath, file);
+                try {
+                    const block = await MemoryBlock.createFromFile(this.ctx, filePath);
+                    if (this.coreMemoryBlocks.has(block.label)) {
+                        this._logger.warn(`发现重复的记忆块标签 '${block.label}'，来自文件 '${filePath}'。已忽略。`);
+                    } else {
+                        this.coreMemoryBlocks.set(block.label, block);
+                        this._logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'。`);
+                    }
+                } catch (error) {
+                    this._logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
+                }
+            }
+        } catch (error) {
+            this._logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
+            throw new AppError("Failed to discover core memory blocks", {
+                code: ErrorCodes.SERVICE.INITIALIZATION_FAILURE,
+                cause: error,
+            });
         }
-
-        const block = await MemoryBlock.getOrCreate(
-            this.ctx,
-            { label },
-            {
-                defaultLimit: customConfig.limit ?? 5000,
-                initialValue: [],
-                store: this.memoryBlockStore,
-                filePathToBind: customConfig.filePathToBind,
-            }
-        );
-        this.coreMemoryBlocks.set(label, block);
-        this._logger.debug(`核心记忆块 "${label}" 已创建`);
-        return block;
     }
 
     public getCoreMemoryBlock(label: string): MemoryBlock | undefined {
         return this.coreMemoryBlocks.get(label);
     }
 
+    public getAllCoreMemoryBlocks(): MemoryBlock[] {
+        return Array.from(this.coreMemoryBlocks.values());
+    }
+
+    public async getMemoryDataForRendering(): Promise<{
+        lastModified: string;
+        memoryBlocks: {
+            title: string;
+            label: string;
+            limit: number;
+            description: string;
+            content: string[];
+        }[];
+        archivalCount: number;
+    }> {
+        return {
+            lastModified: this.lastModified.toISOString(),
+            memoryBlocks: this.getAllCoreMemoryBlocks().map((block) => ({
+                title: block.title,
+                label: block.label,
+                limit: block.limit,
+                description: block.description,
+                content: block.content as string[],
+            })),
+            archivalCount: await this.archivalStore.count(),
+        };
+    }
+
     private getCoreMemoryBlockOrThrow(label: string): MemoryBlock {
         const block = this.coreMemoryBlocks.get(label);
         if (!block) {
             const available = Array.from(this.coreMemoryBlocks.keys()).join(", ") || "None";
-
             this._logger.error(`核心记忆块 "${label}" 不存在。可用的有: [${available}]`);
-
             throw new AppError(`核心记忆块 "${label}" 不存在`, {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
                 context: { resourceType: "MemoryBlock", resourceId: label, available },
@@ -108,30 +136,10 @@ export class MemoryService extends Service {
         return block;
     }
 
-    public async getProvider(): Promise<{
-        lastModified: string;
-        archivalCount: number;
-        memoryBlocks: MemoryBlockData[];
-    }> {
-        return {
-            lastModified: this.lastModified.toISOString(),
-            archivalCount: await this.archivalStore.count(),
-            memoryBlocks: Array.from(this.coreMemoryBlocks.values()).map((block) => {
-                return {
-                    id: block.id,
-                    label: block.label,
-                    content: block.content as string[],
-                    limit: block.limit,
-                };
-            }),
-        };
-    }
-
     public async appendToCoreMemory(label: string, content: string): Promise<string> {
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.append(content);
         this.lastModified = new Date();
-
         return `Successfully appended to core memory block <${label}>.`;
     }
 
@@ -139,40 +147,29 @@ export class MemoryService extends Service {
         const block = this.getCoreMemoryBlockOrThrow(label);
         await block.replace(oldContent, newContent);
         this.lastModified = new Date();
-
         return `Successfully replaced content in core memory block <${label}>.`;
     }
 
-    public async storeInArchivalMemory(content: string, metadata?: Record<string, any>): Promise<ArchivalEntry> {
-        try {
-            const entry = await this.archivalStore.store(content, metadata);
-            this.lastModified = new Date();
+    public async overwriteCoreMemory(label: string, newContent: string): Promise<string> {
+        const block = this.getCoreMemoryBlockOrThrow(label);
+        // Split content into lines, handling both \n and \r\n
+        const newContentLines = newContent.split(/\r?\n/);
+        await block.overwrite(newContentLines);
+        this.lastModified = new Date();
+        return `Successfully overwrote core memory block <${label}>.`;
+    }
 
-            return entry;
-        } catch (error) {
-            throw new AppError(`Store in archival memory failed`, {
-                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
-                context: { content, metadata },
-                cause: error,
-            });
-        }
+    public async storeInArchivalMemory(content: string, metadata?: Record<string, any>): Promise<ArchivalEntry> {
+        const entry = await this.archivalStore.store(content, metadata);
+        this.lastModified = new Date();
+        return entry;
     }
 
     public async searchArchivalMemory(
         query: string,
-        options?: { page?: number; pageSize?: number; filterMetadata?: Record<string, any> }
+        options?: { topK?: number; filterMetadata?: Record<string, any> }
     ): Promise<ArchivalSearchResult> {
-        try {
-            const searchResult = await this.archivalStore.search(query, options);
-
-            return searchResult;
-        } catch (error) {
-            throw new AppError(`Search archival memory failed`, {
-                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
-                context: { query, options },
-                cause: error,
-            });
-        }
+        return await this.archivalStore.search(query, options);
     }
 
     protected async stop() {
@@ -180,10 +177,6 @@ export class MemoryService extends Service {
             await block.disposeFileWatcher().catch((e) => this._logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
         }
         this.coreMemoryBlocks.clear();
-
-        if (this.archivalStore.clearAll) {
-            await this.archivalStore.clearAll().catch((e) => this.ctx.logger.warn(`Error clearing archival store: ${e.message}`));
-        }
         this._logger.info("服务已停止");
     }
 }

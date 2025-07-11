@@ -4,6 +4,12 @@
  * 格式: DOMAIN.CATEGORY_OR_DETAIL
  */
 export const ErrorCodes = {
+    // 服务相关错误
+    SERVICE: {
+        INITIALIZATION_FAILURE: "SERVICE.INITIALIZATION_FAILURE",
+        START_FAILURE: "SERVICE.START_FAILURE",
+        STOP_FAILURE: "SERVICE.STOP_FAILURE",
+    },
     // 通用系统错误
     SYSTEM: {
         UNKNOWN: "SYSTEM.UNKNOWN",
