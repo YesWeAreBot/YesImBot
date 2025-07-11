@@ -18,11 +18,13 @@ export interface MemoryConfig {
 }
 
 export const MemoryConfigSchema: Schema<MemoryConfig> = Schema.object({
-    coreMemoryPath: Schema.string()
+    coreMemoryPath: Schema.path({ filters: ["directory"], allowCreate: true })
         .default("data/yesimbot/memory/core")
         .description("核心记忆块文件的存放目录，服务启动时会自动扫描此目录下的 .md 文件。"),
     backup: Schema.object({
         enabled: Schema.boolean().default(false).description("是否启用备份"),
-        backupPath: Schema.string().default("data/yesimbot/memory/backup").description("备份路径"),
+        backupPath: Schema.path({ filters: ["directory"], allowCreate: true })
+            .default("data/yesimbot/memory/backup")
+            .description("备份路径"),
     }),
 });
