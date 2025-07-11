@@ -121,7 +121,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 // 行动后钩子 (只在成功时调用)
                 if (success) {
+                    const willingnessBeforeReply = this.willing.getCurrentWillingness(channelKey);
                     this.willing.handlePostReply(channelKey);
+                    const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
+                    this._logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                 }
 
                 this._logger.debug(`[${channelKey}] 回复任务执行完毕。`);
@@ -165,6 +168,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
 
+        let success = false;
+
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
             this._logger.debug(`❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
@@ -173,7 +178,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 const promptContext = await this.buildPromptContext(segment, collectedResponses);
                 const { messages } = await this.promptBuilder.build(promptContext);
 
-                const chatModel = this.modelSwitcher.getCurrent();
+                const chatModel = this.modelSwitcher.switchToNext();
 
                 if (!chatModel) {
                     this._logger.error(`✖ 模型未找到，停止回复 | 段落ID: ${segment.id}`);
@@ -213,17 +218,16 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     return parts.join("").length;
                 };
 
-                this._logger.info(
-                    `💰 Token 消耗 | 输入: ${usage?.prompt_tokens || `${getContentLength(messages)}字符`} | 输出: ${
-                        usage?.completion_tokens || `${text.length}字符`
-                    }`
-                );
+                /* prettier-ignore */
+                this._logger.info(`💰 Token 消耗 | 输入: ${usage?.prompt_tokens || `${getContentLength(messages)}字符`} | 输出: ${usage?.completion_tokens || `${text.length}字符`}`);
 
                 const llmParsedResponse = this.parser.parse(text);
 
                 if (llmParsedResponse.error || !llmParsedResponse.data) {
-                    this._logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100)}`);
+                    /* prettier-ignore */
+                    this._logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
                     shouldContinueHeartbeat = false;
+                    success = false;
                     continue;
                 }
 
@@ -251,10 +255,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             } catch (error) {
                 this.handleError(error, `心跳 #${heartbeatCount} 期间 (段落ID: ${segment.id})`);
                 shouldContinueHeartbeat = false;
+                success = false;
             }
         }
-
-        let success = false;
 
         if (collectedResponses.length > 0) {
             this._logger.debug(`💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
