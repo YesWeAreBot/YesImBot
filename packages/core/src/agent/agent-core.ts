@@ -85,6 +85,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 probability = result.probability;
                 const currentWillingnessAfter = this.willing.getCurrentWillingness(channelKey);
 
+                /* prettier-ignore */
                 this._logger.debug(`[${channelKey}] 意愿计算: ${currentWillingnessBefore.toFixed(2)} -> ${currentWillingnessAfter.toFixed(2)} | 回复概率: ${(probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
             } catch (error) {
                 // 意愿计算阶段的错误也需要捕获
@@ -279,12 +280,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {
-        return Promise.all(
-            actions.map(async (action) => {
-                const result = await this.toolService.invoke(action.function, action.params, session);
-                return { function: action.function, status: result.status, result: result.result, error: result.error };
-            })
-        );
+        let observations: AgentResponse["observations"] = [];
+        for await (const action of actions) {
+            const result = await this.toolService.invoke(action.function, action.params, session);
+            observations.push({ function: action.function, status: result.status, result: result.result, error: result.error });
+        }
+        return observations;
     }
 
     private async buildPromptContext(segment: DialogueSegment, previousResponses: AgentResponse[]): Promise<PromptContext> {
@@ -315,7 +316,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         return {
             toolSchemas: this.toolService.getToolSchemas(),
-            memory: await this.ctx[Services.Memory].getProvider(),
+            memory: await this.ctx[Services.Memory].getMemoryDataForRendering(),
             worldState: worldState,
             previousResponses: previousResponses,
             multiModalData: {
