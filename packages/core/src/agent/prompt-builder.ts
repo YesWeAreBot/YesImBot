@@ -3,7 +3,10 @@ import { Context } from "koishi";
 import Mustache from "mustache";
 import path from "path";
 import type { ImagePart, Message, TextPart } from "xsai";
-import { AgentResponse, MemoryBlockData, Properties, ToolSchema, WorldState } from "../services";
+
+import { Properties, ToolSchema } from "@/services/extension";
+import { MemoryBlockData } from "@/services/memory";
+import { AgentResponse, ContextualMessage, DialogueSegment, FoldedDialogueSegment, WorldState } from "@/services/worldstate";
 import { AgentBehaviorConfig } from "./config";
 
 // 定义 PromptBuilder 需要的完整上下文
@@ -121,7 +124,7 @@ export class PromptBuilder {
         // 判断是否为多模态场景
         if (multiModalData && multiModalData.images.length > 0) {
             // --- 多模态路径 ---
-            this.ctx.logger.info("Building prompt for multimodal scenario.");
+            // this.ctx.logger.info("Building prompt for multimodal scenario.");
 
             userMessage = [
                 { type: "text", text: MultiModalSystemBaseTemplate },
@@ -130,7 +133,7 @@ export class PromptBuilder {
             ];
         } else {
             // --- 纯文本路径 (保持旧逻辑) ---
-            this.ctx.logger.info("Building prompt for text-only scenario.");
+            // this.ctx.logger.info("Building prompt for text-only scenario.");
             userMessage = userPrompt;
         }
 
@@ -147,7 +150,7 @@ function _toString(obj) {
 
 function prepareDataForTemplate(tools: ToolSchema[]) {
     // 递归函数，处理参数并添加缩进
-    const processParams = (params: Properties, indent = ''): any[] => {
+    const processParams = (params: Properties, indent = ""): any[] => {
         return Object.entries(params).map(([key, param]) => {
             const processedParam: any = {
                 ...param,
@@ -157,7 +160,7 @@ function prepareDataForTemplate(tools: ToolSchema[]) {
 
             // 如果是对象，递归处理其属性
             if (param.properties) {
-                processedParam.properties = processParams(param.properties, indent + '    ');
+                processedParam.properties = processParams(param.properties, indent + "    ");
             }
 
             // 如果是数组且数组成员是复杂对象，递归处理
@@ -166,13 +169,13 @@ function prepareDataForTemplate(tools: ToolSchema[]) {
                 processedParam.items = [
                     {
                         ...param.items,
-                        key: 'item', // 为数组项提供一个通用名称
-                        indent: indent + '    ',
+                        key: "item", // 为数组项提供一个通用名称
+                        indent: indent + "    ",
                         // 递归处理数组项的属性（如果它是一个对象）
                         ...(param.items.properties && {
-                            properties: processParams(param.items.properties, indent + '        ')
-                        })
-                    }
+                            properties: processParams(param.items.properties, indent + "        "),
+                        }),
+                    },
                 ];
             }
             return processedParam;
@@ -180,7 +183,7 @@ function prepareDataForTemplate(tools: ToolSchema[]) {
     };
 
     // 转换每个工具的参数
-    return tools.map(tool => ({
+    return tools.map((tool) => ({
         ...tool,
         parameters: tool.parameters ? processParams(tool.parameters) : [],
     }));
