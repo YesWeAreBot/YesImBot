@@ -1,11 +1,11 @@
-import { formatDate } from "@/shared/utils";
+import { formatDate, truncate } from "@/shared/utils";
 import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 import { ChannelDescriptor } from "../../agent";
 import { IChatModel, TaskType } from "../model";
 import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
-import { DialogueSegmentData, MessageData, MemberData } from "./database-models";
+import { DialogueSegmentData, MemberData, MessageData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
 import {
     AgentTurn,
@@ -346,7 +346,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             )
             .action(async ({ session, options }) => {
                 const isDelete = !!options.delete;
-                const actionPastTense = isDelete ? "已永久删除" : "已归档";
+                const actionPastTense = isDelete ? "永久删除" : "归档";
                 const results: string[] = [];
 
                 // 辅助函数：执行清理操作，现在支持事务和多表操作
@@ -786,7 +786,7 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param session 消息会话。
      */
     private async _recordUserMessage(session: Session): Promise<void> {
-        this.logger.info(`捕获到用户消息 | 用户: ${session.author.name} | 内容: ${session.content}`);
+        this.logger.info(`捕获到用户消息 | 用户: ${session.author.name} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
 
@@ -954,7 +954,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             .where({ status: { $ne: "summarized" } })
             .orderBy("timestamp", "desc")
             .limit(this.config.fullContextSegmentCount)
-            .execute();
+            .execute()
+            .then((res) => res.reverse());
 
         const foldedSegments = await this.ctx.database
             .select(TableName.DialogueSegments)
@@ -962,7 +963,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             .where({ status: "folded" })
             .orderBy("timestamp", "desc")
             .limit(this.config.summarizationTriggerCount)
-            .execute();
+            .execute()
+            .then((res) => res.reverse());
 
         const summarizedSegments = await this.ctx.database
             .select(TableName.DialogueSegments)
@@ -972,7 +974,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             .limit(
                 this.config.advanced.maxHistoryItemsPerChannel - this.config.fullContextSegmentCount - this.config.summarizationTriggerCount
             )
-            .execute();
+            .execute()
+            .then((res) => res.reverse());
 
         const pending = await Promise.all(pendingSegments.map((record) => this.buildDialogueSegment(record, onetimeCode)));
         const folded = foldedSegments.length > 0 ? await this.buildFoldedDialogueSegment(foldedSegments, onetimeCode) : undefined;
