@@ -158,13 +158,19 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @returns 一个包含所有活动频道上下文的 `WorldState` 对象。
      */
     public async getWorldState(allowedChannels: ChannelDescriptor[], onetimeCode: string): Promise<WorldState> {
-        const activeChannels = await Promise.all(allowedChannels.map((channel) => this.buildFullContextForChannel(channel, onetimeCode)));
+        const allChannels = await Promise.all(allowedChannels.map((channel) => this.buildFullContextForChannel(channel, onetimeCode)));
 
-        return {
+        const activeChannels = allChannels.filter((c) => c.history.pending.length > 0);
+
+        const inactiveChannels = allChannels.filter((c) => c.history.pending.length === 0);
+
+        const worldState: WorldState = {
             timestamp: new Date().toISOString(),
-            activeChannels: activeChannels,
-            inactiveChannels: [], // `inactiveChannels` 的逻辑可以根据未来需求实现
+            activeChannels,
+            inactiveChannels,
         };
+
+        return pruneHistoryInWorldState(worldState, this.config.advanced.maxMessages);
     }
 
     /**
@@ -929,8 +935,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             id,
             platform,
             name: channelInfo.name,
-            type: "guild", // 此处可根据 channelInfo.type 进一步细化
-            meta: { ...channelInfo }, // 存储完整的频道元数据
+            type: "guild",
+            meta: { ...channelInfo },
             members,
             history,
         };
@@ -1391,4 +1397,77 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     // #endregion
+}
+
+/**
+ * 根据最大用户消息数限制，修剪世界状态中的历史记录。
+ *
+ * 此函数是不可变的：它不会修改原始的 worldState 对象，而是返回一个
+ * 经过修剪的新的 worldState 对象。
+ * 它会全局地考虑所有频道的对话片段，并从最旧的开始移除，直到
+ * 剩余的总消息数不超过限制。
+ *
+ * @param worldState 原始的世界状态。
+ * @param maxUserMessages 允许的最大用户消息总数。
+ * @returns 一个新的、历史记录被修剪过的 worldState 对象。
+ */
+function pruneHistoryInWorldState(worldState: WorldState, maxUserMessages: number): WorldState {
+    // 1. 收集所有相关的对话片段
+    const allSegments: (DialogueSegment | FoldedDialogueSegment)[] = worldState.activeChannels.flatMap((channel) =>
+        [...channel.history.pending, channel.history.folded].filter(
+            (segment): segment is DialogueSegment | FoldedDialogueSegment => !!segment
+        )
+    );
+
+    // 如果总片段为空，无需任何操作，直接返回原始状态的克隆
+    if (allSegments.length === 0) {
+        return structuredClone(worldState); // 使用 structuredClone 进行深拷贝
+    }
+
+    // 2. 按时间戳升序排序（从最旧到最新）
+    allSegments.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    // 3. 从最新的片段开始，确定要保留的片段ID
+    const keptSegmentIds = new Set<string>();
+    let currentMessageCount = 0;
+
+    for (let i = allSegments.length - 1; i >= 0; i--) {
+        const segment = allSegments[i];
+        const segmentMessageLength = segment.dialogue.length;
+
+        if (currentMessageCount + segmentMessageLength <= maxUserMessages) {
+            currentMessageCount += segmentMessageLength;
+            keptSegmentIds.add(segment.id);
+        } else {
+            // 已达到或超过限制，停止添加更旧的片段
+            break;
+        }
+    }
+
+    // 如果没有片段被保留（例如 maxUserMessages 为 0），直接创建一个清理过的 worldState
+    if (keptSegmentIds.size === 0) {
+        const emptyHistoryState = structuredClone(worldState);
+        emptyHistoryState.activeChannels.forEach((channel) => {
+            channel.history.pending = [];
+            channel.history.folded = undefined;
+        });
+        return emptyHistoryState;
+    }
+
+    // 4. 构建新的 worldState，只包含被保留的片段
+    // 使用 structuredClone 创建一个深拷贝，以保证不可变性
+    const newWorldState = structuredClone(worldState);
+
+    newWorldState.activeChannels.forEach((channel) => {
+        // 过滤 pending 列表
+        channel.history.pending = channel.history.pending.filter((segment) => keptSegmentIds.has(segment.id));
+
+        // 检查并可能移除 folded 片段
+        if (channel.history.folded && !keptSegmentIds.has(channel.history.folded.id)) {
+            channel.history.folded = undefined;
+        }
+    });
+
+    // 5. 返回修改后的新 worldState
+    return newWorldState;
 }
