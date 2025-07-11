@@ -1,9 +1,9 @@
 import { formatDate, isEmpty } from "@/shared";
 import { Context, h, Schema, Session } from "koishi";
-import { } from "koishi-plugin-adapter-onebot";
+import {} from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 import { Extension, Support, Tool } from "../decorators";
-import { BaseExtension, Failed, Success } from "../helpers";
+import { Failed, Success } from "../helpers";
 import { Infer } from "../types";
 
 interface InteractionsConfig {
@@ -26,8 +26,10 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({
     description: "允许大模型在聊群内进行交互",
     author: "HydroGest",
 })
-export default class InteractionsExtension extends BaseExtension {
+export default class InteractionsExtension {
     static readonly Config = InteractionsConfigSchema;
+
+    constructor(public ctx: Context, public config: InteractionsConfig) {}
 
     @Tool({
         name: "reaction_create",

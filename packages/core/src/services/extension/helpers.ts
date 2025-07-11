@@ -1,52 +1,5 @@
-import { Context, Schema } from "koishi";
-import { ExtensionMetadata, IExtension, Param, Properties, ToolCallResult, ToolDefinition } from "./types";
-import { Services } from "../types";
-
-// --- 核心抽象与实现 ---
-
-/**
- * 抽象基类，所有扩展都应继承它。
- * 它处理了从原型复制元数据和自动绑定工具方法中 `this` 的通用逻辑。
- */
-export abstract class BaseExtension<TConfig = any> implements IExtension<TConfig> {
-    public static Config: Schema<any> = Schema.object({});
-
-    public static inject = [Services.Tool];
-
-    // 实例的自有属性
-    public metadata: ExtensionMetadata;
-    public tools: Map<string, ToolDefinition>;
-
-    constructor(public ctx: Context, public config: TConfig) {
-        // 1. 从类的原型上获取由 @Extension 装饰器附加的元数据，并将其设为实例的自有属性。
-        this.metadata = this.constructor.prototype.metadata;
-
-        // 2. 关键步骤：处理工具的 `this` 绑定
-        const protoTools: Map<string, ToolDefinition> | undefined = this.constructor.prototype.tools;
-        if (protoTools) {
-            // 为当前实例创建一个全新的 Map，避免实例间共享
-            this.tools = new Map<string, ToolDefinition>();
-
-            // 遍历原型上的所有工具定义
-            for (const [name, tool] of protoTools.entries()) {
-                // 创建一个新工具对象，其 execute 方法通过 .bind(this) 永久绑定到当前实例
-                this.tools.set(name, Object.assign({}, tool, { execute: tool.execute.bind(this) }));
-            }
-        }
-
-        ctx.on("ready", () => {
-            const toolService = ctx[Services.Tool];
-            toolService.register(this, config);
-            ctx.logger.debug(`扩展 "${this.metadata.name}" 已加载。`);
-        });
-
-        ctx.on("dispose", () => {
-            const toolService = ctx[Services.Tool];
-            toolService.unregister(this.metadata.name);
-            ctx.logger.debug(`扩展 "${this.metadata.name}" 已卸载。`);
-        });
-    }
-}
+import { Schema } from "koishi";
+import { Param, Properties, ToolCallResult } from "./types";
 
 /**
  * 成功结果辅助函数

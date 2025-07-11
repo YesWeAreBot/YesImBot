@@ -1,7 +1,7 @@
 import { isEmpty } from "@/shared";
 import { Context, Schema } from "koishi";
 import { Extension, Tool } from "../../decorators";
-import { BaseExtension, Failed, Success } from "../../helpers";
+import { Failed, Success } from "../../helpers";
 import { Infer } from "../../types";
 
 interface SearchConfig {
@@ -24,12 +24,10 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
     description: "搜索网络内容",
     author: "HydroGest",
 })
-export default class SearchExtension extends BaseExtension<SearchConfig> {
+export default class SearchExtension {
     public static readonly Config = SearchConfigSchema;
 
-    constructor(ctx: Context, config: SearchConfig) {
-        super(ctx, config);
-    }
+    constructor(public ctx: Context, public config: SearchConfig) {}
 
     @Tool({
         name: "fetch_webpage",

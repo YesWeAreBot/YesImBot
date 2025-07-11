@@ -1,7 +1,7 @@
-import { h, Schema } from "koishi";
+import { Context, h, Schema } from "koishi";
 
 import { Extension, Tool } from "@/services/extension/decorators";
-import { BaseExtension, Failed, Success } from "@/services/extension/helpers";
+import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { isEmpty } from "@/shared";
 
@@ -10,8 +10,10 @@ import { isEmpty } from "@/shared";
     description: "执行Koishi指令",
     version: "1.0.0",
 })
-export default class CommandExtension extends BaseExtension<any> {
+export default class CommandExtension {
     static readonly Config = Schema.object({});
+
+    constructor(public ctx: Context, public config: any) {}
 
     @Tool({
         name: "send_platform_command",
