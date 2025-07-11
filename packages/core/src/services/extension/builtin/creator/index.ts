@@ -1,6 +1,6 @@
-import { Schema } from "koishi";
+import { Context, Schema } from "koishi";
 import { Extension, Tool } from "../../decorators";
-import { BaseExtension, Failed, Success } from "../../helpers";
+import { Failed, Success } from "../../helpers";
 import { Services } from "@/services/types";
 import { TaskType } from "@/services/model";
 import { TOOL_CREATOR_SYSTEM_PROMPT } from "./prompt";
@@ -22,9 +22,11 @@ const ToolCreatorConfigSchema: Schema<ToolCreatorConfig> = Schema.object({
     description: "使用LLM动态创建工具",
     author: "MiaowFISH",
 })
-export default class CreatorExtension extends BaseExtension {
+export default class CreatorExtension {
     static readonly inject = [Services.Model];
     static readonly Config = ToolCreatorConfigSchema;
+
+    constructor(public ctx: Context, public config: ToolCreatorConfig) {}
 
     @Tool({
         name: "tool_creator",

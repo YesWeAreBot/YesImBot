@@ -1,6 +1,6 @@
-import { Schema } from "koishi";
+import { Context, Schema } from "koishi";
 import { Extension, Tool } from "../decorators";
-import { BaseExtension, Failed, Success } from "../helpers";
+import { Failed, Success } from "../helpers";
 import { Infer } from "../types";
 import { isEmpty } from "@/shared";
 
@@ -9,7 +9,9 @@ import { isEmpty } from "@/shared";
     version: "1.0.0",
     description: "管理频道内用户和消息",
 })
-export default class QManagerExtension extends BaseExtension {
+export default class QManagerExtension {
+    constructor(public ctx: Context, public config: any) {}
+
     @Tool({
         name: "delmsg",
         description: `撤回一条消息。撤回用户/你自己的消息。当你认为别人刷屏或发表不当内容时，运行这条指令。`,

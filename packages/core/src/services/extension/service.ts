@@ -1,7 +1,5 @@
-// --- 服务与管理 ---
-
 import { stringify, truncate } from "@/shared/utils";
-import { Context, Logger, Schema, Service, Session } from "koishi";
+import { Context, ForkScope, Logger, Schema, Service, Session } from "koishi";
 import { Services } from "../types";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
@@ -45,7 +43,6 @@ export class ToolService extends Service<ToolServiceConfig> {
         this.ctx.plugin(QManagerExtension, this.config.extensionConfigs["qmanager"]?.config);
         this.ctx.plugin(SearchExtension, this.config.extensionConfigs["search"]?.config);
         this.ctx.plugin(InteractionsExtension, this.config.extensionConfigs["interactions"]?.config);
-
         this._logger.info("服务已启动");
     }
 

@@ -1,14 +1,13 @@
 import { Services } from "@/services/types";
 import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
 import { Extension, Tool } from "../../decorators";
-import { BaseExtension, Failed, Success } from "../../helpers";
+import { Failed, Success } from "../../helpers";
 import { Infer } from "../../types";
 
 interface CoreUtilConfig {
     typing: {
         baseDelay: number;
         charPerSecond: number;
-
         minDelay: number;
         maxDelay: number;
     };
@@ -28,15 +27,13 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
     description: "核心工具集",
     version: "1.0.0",
 })
-export default class CoreUtilExtension extends BaseExtension<CoreUtilConfig> {
+export default class CoreUtilExtension {
     static readonly Config = CoreUtilConfigSchema;
 
-    private readonly _logger: Logger;
+    private readonly logger: Logger;
 
-    constructor(ctx: Context, config: CoreUtilConfig) {
-        super(ctx, config);
-
-        this._logger = ctx[Services.Logger].getLogger("[核心工具]");
+    constructor(public ctx: Context, public config: CoreUtilConfig) {
+        this.logger = ctx[Services.Logger].getLogger("[核心工具]");
     }
 
     @Tool({
@@ -55,16 +52,14 @@ export default class CoreUtilExtension extends BaseExtension<CoreUtilConfig> {
     async sendMessage(args: Infer<{ inner_thoughts: string; message: string; target?: string }>) {
         const { session, inner_thoughts, message, target } = args;
 
-        const toolLogger = this._logger.extend("send_message");
-
         if (!session) {
-            toolLogger.warn("✖ 缺少有效会话，无法发送消息。");
+            this.logger.warn("✖ 缺少有效会话，无法发送消息。");
             return Failed("缺少会话对象");
         }
 
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
-            toolLogger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容。");
+            this.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容。");
             return Failed("消息内容为空");
         }
 
@@ -73,11 +68,11 @@ export default class CoreUtilExtension extends BaseExtension<CoreUtilConfig> {
 
             if (!bot) {
                 const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
-                toolLogger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
+                this.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
                 return Failed(`未找到平台 ${target} 对应的机器人实例。`);
             }
 
-            toolLogger.info(`🚀 准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
+            this.logger.info(`🚀 准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
 
             await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
 
@@ -161,15 +156,12 @@ export default class CoreUtilExtension extends BaseExtension<CoreUtilConfig> {
      * @param originalSession 原始会话，用于创建after-send事件
      */
     private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
-        const toolLogger = this._logger.extend("send_message_executor");
-
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
             if (!msg) continue;
 
             // --- 人性化延迟的核心部分 ---
             const delay = this.getTypingDelay(msg);
-            //toolLogger.debug(`Simulating typing... Delaying for ${delay}ms before sending: "${msg}"`);
 
             await sleep(delay);
 
@@ -180,13 +172,12 @@ export default class CoreUtilExtension extends BaseExtension<CoreUtilConfig> {
             // 使用 then 回调不是最佳实践，async/await 更清晰
             if (messageIds && messageIds.length > 0) {
                 this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
-                //toolLogger.debug(`✔ Message sent with ID: ${messageIds[0]}`);
             }
 
             // 如果还有下一条消息，增加一个“段落间隔”延迟
             if (i < messages.length - 1) {
                 const paragraphDelay = 1000 + Math.random() * 1500; // 1秒到2.5秒的随机停顿
-                //toolLogger.debug(`Pausing for ${paragraphDelay}ms between messages.`);
+
                 await sleep(paragraphDelay);
             }
         }
