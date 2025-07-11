@@ -18,6 +18,8 @@ export interface HistoryConfig {
     advanced: {
         /** 每个频道在上下文中最多包含的历史项目数 */
         maxHistoryItemsPerChannel: number;
+        /** 上下文中最多包含的用户消息数 */
+        maxMessages: number;
         /** 历史数据在被永久删除前的最大保留天数 */
         dataRetentionDays: number;
         /** 后台清理任务的执行频率（毫秒） */
@@ -39,6 +41,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
     summarizationTriggerCount: Schema.number().default(6).description("当待总结的片段达到此数量时，触发总结任务"),
     advanced: Schema.object({
         maxHistoryItemsPerChannel: Schema.number().default(15).description("每个频道在上下文中最多包含的历史项目数"),
+        maxMessages: Schema.number().min(1).default(30).description("上下文中最多包含的用户消息数"),
         dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
         cleanupIntervalMs: Schema.number().default(60000).description("后台清理任务的执行频率（毫秒）"),
     })
