@@ -9,12 +9,15 @@ import { Failed, Success } from "../helpers";
 import { Infer } from "../types";
 
 @Extension({
-    name: "Memory",
+    name: "memory",
+    display: "记忆管理",
     version: "2.0.0",
-    description: "Tools for the agent to manage its own memory, including core, archival, and recall memory.",
+    description: "管理智能体的记忆",
     author: "MiaowFISH",
 })
 export default class MemoryExtension {
+    static readonly Config = Schema.object({});
+
     constructor(public ctx: Context, public config: any) {}
 
     private get memoryService(): MemoryService {

@@ -12,12 +12,17 @@ interface ToolCreatorConfig {
 }
 
 const ToolCreatorConfigSchema: Schema<ToolCreatorConfig> = Schema.object({
+    prompt: Schema.string()
+        .description("创建工具时的系统提示词")
+        .role("textarea", { rows: [2, 4] })
+        .default(TOOL_CREATOR_SYSTEM_PROMPT),
     maxRetries: Schema.number().description("创建工具时的最大重试次数").default(2),
     timeoutMs: Schema.number().description("每次LLM调用的超时时间（毫秒）").default(30000),
 });
 
 @Extension({
-    name: "Creator",
+    name: "creator",
+    display: "工具创建",
     version: "1.0.0",
     description: "使用LLM动态创建工具",
     author: "MiaowFISH",

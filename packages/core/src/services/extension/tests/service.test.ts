@@ -2,7 +2,6 @@
 
 import { Context, Schema } from "koishi";
 import { Extension, Support, Tool } from "../decorators";
-import { BaseExtension } from "../helpers";
 import { ToolService } from "../service";
 import { type Infer } from "../types";
 
@@ -19,15 +18,13 @@ interface WeatherConfig {
     description: "获取天气信息",
     version: "1.0.0",
 })
-class WeatherExtension extends BaseExtension<WeatherConfig> {
+class WeatherExtension {
     public static readonly Config: Schema<WeatherConfig> = Schema.object({
         apiKey: Schema.string().required().description("天气服务的 API Key"),
         defaultCity: Schema.string().description("默认查询城市").default("上海"),
     });
 
-    constructor(ctx: Context, config: WeatherConfig) {
-        super(ctx, config);
-    }
+    constructor(public ctx: Context, public config: WeatherConfig) {}
 
     /**
      * 声明为一个工具。
@@ -63,12 +60,10 @@ class WeatherExtension extends BaseExtension<WeatherConfig> {
     description: "测试扩展",
     version: "1.0.0",
 })
-class TestExtension extends BaseExtension<any> {
+class TestExtension {
     // public static readonly Config: Schema<any> = Schema.object({});
 
-    constructor(ctx: Context, config: any) {
-        super(ctx, config);
-    }
+    constructor(public ctx: Context, public config: any) {}
 
     @Tool({
         name: "test_tool",

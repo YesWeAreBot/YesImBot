@@ -7,6 +7,7 @@ import { isEmpty } from "@/shared";
 
 @Extension({
     name: "command",
+    display: "指令执行",
     description: "执行Koishi指令",
     version: "1.0.0",
 })

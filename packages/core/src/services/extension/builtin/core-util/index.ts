@@ -23,8 +23,9 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
 });
 
 @Extension({
-    name: "core-util",
-    description: "核心工具集",
+    name: "core_util",
+    display: "核心工具集",
+    description: "必要工具",
     version: "1.0.0",
 })
 export default class CoreUtilExtension {

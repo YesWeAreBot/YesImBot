@@ -1,5 +1,4 @@
-export const TOOL_CREATOR_SYSTEM_PROMPT = `
-You are an expert TypeScript developer tasked with creating tools for an AI agent.
+export const TOOL_CREATOR_SYSTEM_PROMPT = `You are an expert TypeScript developer tasked with creating tools for an AI agent.
 Your goal is to generate a single, clean, valid JSON object that defines a new tool.
 The JSON object MUST conform to the following structure:
 {

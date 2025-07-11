@@ -21,7 +21,8 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({
 });
 
 @Extension({
-    name: "Interactions",
+    name: "interactions",
+    display: "群内交互",
     version: "1.1.0",
     description: "允许大模型在聊群内进行交互",
     author: "HydroGest",

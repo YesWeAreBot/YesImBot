@@ -2,7 +2,7 @@ import { SystemConfig } from "@/config";
 import { Schema } from "koishi";
 
 export interface ToolServiceConfig {
-    extensionConfigs?: Record<string, { enabled?: boolean; config?: any }>;
+    extra?: Record<string, { enabled?: boolean; config?: any }>;
     /** 高级选项 */
     advanced: {
         maxRetry?: number;
@@ -15,7 +15,7 @@ export interface ToolServiceConfig {
 }
 
 export const ToolServiceConfigSchema = Schema.object({
-    extensionConfigs: Schema.dynamic("toolService.availableExtensions").default({}),
+    extra: Schema.dynamic("toolService.availableExtensions").default({}),
 
     advanced: Schema.object({
         maxRetry: Schema.number().default(3).description("最大重试次数"),
