@@ -4,7 +4,9 @@
 
 Core memory shown below (limited in size, additional information stored in archival / recall memory):
 {{#memoryBlocks}}
-<{{label}} limit="{{limit}}" lastModified="{{lastModified}}">
+<{{label}} limit="{{limit}}">
+{{#title}}<title>{{.}}</title>{{/title}}
+{{#description}}<description>{{.}}</description>{{/description}}
   {{#content}}
   {{.}}
   {{/content}}
