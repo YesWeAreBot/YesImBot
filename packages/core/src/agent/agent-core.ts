@@ -347,9 +347,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         // 在 worldState 中查找并标记当前 segment
         for (const channel of worldState.activeChannels) {
-            const currentSegmentInHistory = channel.history.pending.find((s) => s.id === segment.id);
-            if (currentSegmentInHistory) {
-                (currentSegmentInHistory as any).is_current = true;
+            if (channel.history.pending && channel.history.pending.id === segment.id) {
+                (channel.history.pending as any).is_current = true;
                 break;
             }
         }
@@ -376,7 +375,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private async buildMultimodalContext(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
         // 1. 扁平化所有消息，并建立索引
         const allMessages = worldState.activeChannels
-            .flatMap((c) => [...c.history.pending, c.history.folded].filter(Boolean).map((s) => s.dialogue))
+            .flatMap((c) => [c.history.pending, ...c.history.closed, c.history.folded].filter(Boolean).map((s) => s.dialogue))
             .flat();
         allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));

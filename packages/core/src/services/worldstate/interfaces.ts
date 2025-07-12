@@ -69,8 +69,16 @@ export interface Channel {
     history: History;
 }
 
+/**
+ * 频道的历史记录流。
+ * pending: 包含新的、未处理的消息
+ * closed: 包含已处理的消息，但未被折叠
+ * folded: 包含已折叠的消息
+ * summarized: 包含已总结的消息
+ */
 export interface History {
-    pending: DialogueSegment[];
+    pending: DialogueSegment;
+    closed?: DialogueSegment[];
     folded?: FoldedDialogueSegment;
     summarized?: SummarizedDialogueSegment[];
 }
@@ -134,11 +142,21 @@ export interface DialogueSegment {
      * - `archived`: 已归档，记录在被物理删除前的最终状态，不参与上下文构建。
      */
     status: DialogueSegmentStatus;
-    dialogue: ContextualMessage[];
-    systemEvents: SystemEvent[];
+    dialogue?: ContextualMessage[];
+    systemEvents?: SystemEvent[];
     summary?: string;
     timestamp: Date; // 片段的创建/开启时间
     agentTurn?: AgentTurn; // 由此片段触发的 Agent 回合，是可选的
+}
+
+export interface PendingDialogueSegment extends DialogueSegment {
+    status: "open";
+    agentTurn?: undefined;
+}
+
+export interface ClosedDialogueSegment extends DialogueSegment {
+    status: "closed";
+    agentTurn: AgentTurn;
 }
 
 /**
