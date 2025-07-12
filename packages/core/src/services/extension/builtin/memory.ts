@@ -8,6 +8,16 @@ import { Extension, Tool } from "../decorators";
 import { Failed, Success } from "../helpers";
 import { Infer } from "../types";
 
+const MemoryTopics = Schema.union([
+    "personal_profile", // 个人信息
+    "user_preference", // 用户偏好
+    "technical_knowledge", // 技术知识
+    "project_details", // 项目细节
+    "daily_conversation", // 日常对话摘要
+    "key_decision", // 关键决策
+    "other", // 其他
+]).description("记忆的主要主题分类。");
+
 @Extension({
     name: "memory",
     display: "记忆管理",
@@ -16,7 +26,11 @@ import { Infer } from "../types";
     author: "MiaowFISH",
 })
 export default class MemoryExtension {
-    static readonly Config = Schema.object({});
+    static readonly Config = Schema.object({
+        // topics: Schema.array(Schema.string()).default().description("记忆的主要主题分类。"),
+    });
+
+    static readonly inject = [Services.Memory];
 
     constructor(public ctx: Context, public config: any) {}
 
@@ -28,7 +42,7 @@ export default class MemoryExtension {
     }
 
     private getAvailableCoreLabels(): string[] {
-        return this.memoryService.getAllCoreMemoryBlocks().map((b) => b.label);
+        return Array.from(this.memoryService.blocks.keys());
     }
 
     @Tool({
@@ -163,14 +177,13 @@ export default class MemoryExtension {
             ),
         }),
     })
-    async archivalMemoryInsert({ session, content, metadata }: Infer<{ content: string; metadata?: Record<string, any> }>) {
+    async archivalMemoryInsert({ content, metadata }: Infer<{ content: string; metadata?: Record<string, any> }>) {
         if (isEmpty(content)) return Failed("Parameter 'content' is required.");
         try {
-            const entry = await this.memoryService.storeInArchivalMemory(content, metadata);
-            this.ctx.logger.info(`[MemoryTool] Agent[${session.selfId}] inserted into archival memory: "${truncate(content)}"`);
-            return Success(`Content stored in archival memory with ID: ${entry.id}.`, { entry_id: entry.id });
+            const result = await this.memoryService.storeInArchivalMemory(content, metadata);
+            if (!result.success) return Failed(result.message);
+            return Success(result.message, result.data);
         } catch (e) {
-            this.ctx.logger.error(`[MemoryTool] Agent[${session.selfId}] failed to insert into archival memory:`, e.message);
             return Failed(`Failed to insert into archival memory: ${e.message}`);
         }
     }
@@ -181,18 +194,23 @@ export default class MemoryExtension {
             "Performs a semantic search on your archival memory to find the most relevant information based on a query. Returns a list of the most relevant entries.",
         parameters: Schema.object({
             query: Schema.string().required().description("The natural language query to search for relevant memories."),
-            top_k: Schema.number().default(10).max(50).description("Maximum number of the most relevant results to return (default: 10)."),
-            filterMetadata: Schema.object(Schema.any).description(
-                "Optional key-value pairs to filter entries by their metadata before searching."
-            ),
+            top_k: Schema.number().default(10).max(50).description("Maximum number of results to return (default: 10)."),
+            similarity_threshold: Schema.number()
+                .min(0)
+                .max(1)
+                .description("Minimum similarity score (0 to 1) for a result to be included."),
+            filterMetadata: Schema.object(Schema.any).description("Optional key-value pairs to filter entries by their metadata."),
         }),
     })
-    async archivalMemorySearch(args: Infer<{ query: string; top_k?: number; filterMetadata?: Record<string, any> }>) {
-        const { session, query, top_k, filterMetadata } = args;
+    async archivalMemorySearch(
+        args: Infer<{ query: string; top_k?: number; similarity_threshold?: number; filterMetadata?: Record<string, any> }>
+    ) {
+        const { session, query, top_k, similarity_threshold, filterMetadata } = args;
         if (isEmpty(query)) return Failed("Parameter 'query' is required.");
         try {
             const searchResult = await this.memoryService.searchArchivalMemory(query, {
                 topK: top_k,
+                similarityThreshold: similarity_threshold,
                 filterMetadata: filterMetadata,
             });
 
@@ -200,18 +218,15 @@ export default class MemoryExtension {
                 return Success("No relevant memories found in archival memory for your query.");
             }
 
-            const formattedResults = searchResult.results.map((entry) => this.memoryService.archivalStore.renderEntryText(entry));
+            // const formattedResults = searchResult.results
+            //     .map((entry) => this.memoryService.archivalStore.renderEntryText(entry))
+            //     .join("\n---\n");
 
             return Success({
-                total_entries_in_archival_memory: searchResult.total,
-                results_found: searchResult.results.length,
-                results: formattedResults,
+                summary: `Found ${searchResult.results.length} relevant memories (out of ${searchResult.total} total).`,
+                results: searchResult.results,
             });
         } catch (e) {
-            this.ctx.logger.error(
-                `[MemoryTool] Agent[${session.selfId}] failed to search archival memory with query "${query}":`,
-                e.message
-            );
             return Failed(`Failed to search archival memory: ${e.message}`);
         }
     }
@@ -228,7 +243,7 @@ export default class MemoryExtension {
         }),
     })
     async conversationSearch(args: Infer<{ query: string; limit?: number; channel_id?: string; user_id?: string }>) {
-        const { session, query, limit = 10, channel_id, user_id } = args;
+        const { query, limit = 10, channel_id, user_id } = args;
         if (isEmpty(query)) return Failed("Parameter 'query' is required.");
 
         try {
