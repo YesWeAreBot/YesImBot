@@ -44,9 +44,14 @@ export default class InteractionsExtension {
     async reactionCreate({ session, message_id, emoji_id }: Infer<{ message_id: string; emoji_id: number }>) {
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
-            await session.bot.createReaction(session.channelId, message_id, String(emoji_id));
+            const result = await session.onebot._request("set_msg_emoji_like", {
+                message_id: message_id,
+                emoji_id: emoji_id,
+            });
+
+            if (result["status"] === "failed") return Failed(result["message"]);
             this.ctx.logger.info(`Bot[${session.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
-            return Success();
+            return Success(result);
         } catch (e) {
             this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, e.message);
             return Failed(`对消息 ${message_id} 进行表态失败： ${e.message}`);
@@ -84,7 +89,7 @@ export default class InteractionsExtension {
     async essenceDelete({ session, message_id }: Infer<{ message_id: string }>) {
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
-            await session.onebot.deleteEssenceMsg(message_id);
+            const result = await session.onebot.deleteEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
         } catch (e) {
@@ -106,9 +111,12 @@ export default class InteractionsExtension {
         if (isEmpty(String(user_id))) return Failed("user_id is required");
         const targetChannel = isEmpty(channel) ? session.channelId : channel;
         try {
-            await session.onebot._request("send_poke", { user_id: user_id });
+            const result = await session.onebot._request("group_poke", { group_id: targetChannel, user_id: Number(user_id) });
+
+            if (result["status"] === "failed") return Failed(result["data"]);
+
             this.ctx.logger.info(`Bot[${session.selfId}]戳了戳 ${user_id}`);
-            return Success();
+            return Success(result);
         } catch (e) {
             this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
             return Failed(`戳了戳 ${user_id} 失败： ${e.message}`);
