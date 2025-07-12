@@ -102,7 +102,7 @@ export class LoggerService extends Service<LoggingConfig> {
     }
 
     public getLogger(name?: string): Logger {
-        const originalLogger = this.ctx.logger(name);
+        const originalLogger = this.ctx?.logger(name) || new Logger(name, {});
         return createLevelAwareLoggerProxy(originalLogger, this.config.level);
     }
 }

@@ -35,3 +35,15 @@ export const truncate = (str: string, length = 80) => {
 export function stringify(obj: any): string {
     return typeof obj === "string" ? obj || "" : JSON.stringify(obj);
 }
+
+export function trimStart(text: string) {
+    return text.replace(/^\s+/gm, "");
+}
+
+export function trimEnd(text: string) {
+    return text.replace(/\s+$/gm, "");
+}
+
+export function trim(text: string) {
+    return trimStart(trimEnd(text));
+}
