@@ -58,7 +58,7 @@ export default class CreatorExtension {
         this.ctx.logger.info(`开始创建工具: ${name}`);
 
         // 1. 获取一个擅长编码的LLM
-        const codeLLM = this.ctx[Services.Model].useChatGroup(TaskType.CodeGeneration)?.getCurrent();
+        const codeLLM = this.ctx[Services.Model].useChatGroup(TaskType.CodeGeneration).current;
         if (!codeLLM) {
             return Failed("没有可用的编码LLM模型。");
         }

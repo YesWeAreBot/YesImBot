@@ -154,6 +154,9 @@ export default class SearchExtension {
     })
     async webSearch(args: Infer<{ query: string }>) {
         const { query } = args;
+
+        if (isEmpty(query)) return Failed("query is required");
+
         try {
             const endpoint = this.config.endpoint;
             const engines = this.config.sources;
