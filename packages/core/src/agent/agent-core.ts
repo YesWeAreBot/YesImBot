@@ -196,7 +196,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 let multimodal = false;
 
-                if (promptContext.multiModalData?.images) {
+                if (promptContext.multiModalData?.images && promptContext.multiModalData.images.length > 0) {
                     // this._logger.debug(`[${segment.id}] 多模态场景检测到 ${promptContext.multiModalData.images.length} 张图片。`);
                     multimodal = true;
                 }
@@ -214,7 +214,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                         chatModel = this.modelSwitcher.next();
                     }
                     if (!chatModel.isVisionModel()) {
-                        this._logger.warn(`当前模型组中没有支持多模态的模型，跳过多模态处理`);
+                        this._logger.debug(`当前模型组中没有支持多模态的模型，跳过多模态处理`);
                         multimodal = false;
                         promptContext.multiModalData = { images: [] };
                     }
