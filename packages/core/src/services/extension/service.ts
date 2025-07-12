@@ -59,6 +59,165 @@ export class ToolService extends Service<ToolServiceConfig> {
             loadedExtensions.set(name, this.ctx.plugin(Ext, config));
         }
         this._logger.info("服务已启动");
+
+        this.ctx.command("tool", "工具管理指令集");
+        this.ctx.command("extension", "扩展管理指令集");
+
+        this.ctx
+            .command("tool.list", "列出所有可用工具", { authority: 3 })
+            .option("filter", "-f <keyword:string> 按名称或描述过滤工具")
+            .option("page", "--page <page:natural> 指定显示的页码 (默认为 1)", { fallback: 1 })
+            .option("size", "--size <size:natural> 指定每页显示的数量 (默认为 10)", { fallback: 10 })
+            .usage(`查询并展示当前所有已加载且可用的工具。\n支持通过关键词过滤和分页显示，方便在工具数量多时进行查找。`)
+            .example(
+                [
+                    "tool.list                      # 显示第一页的10个工具",
+                    `tool.list -f search            # 查找所有名称或描述中包含 "search" 的工具`,
+                    "tool.list --page 2 --size 5    # 显示第 2 页，每页 5 个工具",
+                    `tool.list -f memory --size 3   # 查找 "memory" 相关工具并每页显示 3 个`,
+                ].join("\n")
+            )
+            .action(async ({ session, options }) => {
+                // 1. 获取所有可用工具
+                let allTools = this.getAvailableTools(session);
+
+                // 2. 应用过滤器（如果提供了 filter 选项）
+                const filterKeyword = options.filter?.toLowerCase();
+                if (filterKeyword) {
+                    allTools = allTools.filter(
+                        (t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword)
+                    );
+                }
+
+                const totalCount = allTools.length;
+
+                // 3. 处理没有结果的情况
+                if (totalCount === 0) {
+                    return options.filter ? `没有找到与 "${options.filter}" 匹配的工具。` : "当前没有可用的工具。";
+                }
+
+                // 4. 计算分页参数
+                const { page, size } = options;
+                const totalPages = Math.ceil(totalCount / size);
+
+                if (page > totalPages) {
+                    return `请求的页码 (${page}) 超出范围。总共有 ${totalPages} 页。`;
+                }
+
+                // 5. 获取当前页的数据
+                const startIndex = (page - 1) * size;
+                const pagedTools = allTools.slice(startIndex, startIndex + size);
+
+                // 6. 格式化输出
+                const toolList = pagedTools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
+
+                const header = `发现 ${totalCount} 个${options.filter ? "匹配的" : ""}工具。正在显示第 ${page}/${totalPages} 页：\n`;
+
+                return header + toolList;
+            });
+
+        this.ctx
+            .command("tool.invoke <name:string> [...params:string]", "调用工具", { authority: 3 })
+            .usage(
+                `调用指定的工具并传递参数。\n参数格式为 "key=value"，多个参数用空格分隔。\n如果 value 包含空格，请使用引号将其包裹，例如：key="some value"`
+            )
+            .example(["tool.invoke search_web keyword=koishi"].join("\n"))
+            .action(async ({ session }, name, ...params) => {
+                if (!name) return "错误：未指定要调用的工具名称。";
+
+                const parsedParams: Record<string, any> = {};
+                try {
+                    // 更健壮的参数解析，支持 "key=value" 和 key="value with spaces"
+                    const paramString = params?.join(" ") || "";
+                    const regex = /(\w+)=("([^"]*)"|'([^']*)'|(\S+))/g;
+                    let match;
+                    while ((match = regex.exec(paramString)) !== null) {
+                        const key = match[1];
+                        const value = match[3] ?? match[4] ?? match[5]; // 优先取引号内的内容
+                        parsedParams[key] = value;
+                    }
+
+                    // 对于无法用正则匹配的简单场景做兼容
+                    if (Object.keys(parsedParams).length === 0 && params?.length > 0) {
+                        for (const param of params) {
+                            const parts = param.split("=", 2);
+                            if (parts.length === 2) {
+                                parsedParams[parts[0]] = parts[1];
+                            }
+                        }
+                    }
+                } catch (error) {
+                    return `参数解析失败：${error.message}\n请检查您的参数格式是否正确（key=value）。`;
+                }
+
+                const result = await this.invoke(name, parsedParams, session);
+
+                // 使用消息元素美化输出
+                // if (result.status === "success") {
+                //     const output = stringify(result.result, 2);
+                //     return `<fragment>
+                //             <p>✅ 工具 {name} 调用成功！</p>
+                //             <p>执行结果：</p>
+                //             <quote>{truncate(output, 1000)}</quote>
+                //         </fragment>`;
+                // } else {
+                //     return `<fragment>
+                //             <p>❌ 工具 {name} 调用失败。</p>
+                //             <p>原因：{result.error}</p>
+                //         </fragment>`;
+                // }
+
+                if (result.status === "success") {
+                    return `✅ 工具 ${name} 调用成功！\n执行结果：${
+                        typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2)
+                    }`;
+                } else {
+                    return `❌ 工具 ${name} 调用失败。\n原因：${result.error}`;
+                }
+            });
+
+        this.ctx
+            .command("tool.delete <name:string>", "删除一个已注册的工具", { authority: 3 })
+            .usage("根据工具名称，从工具服务中卸载一个工具。此操作是临时的，服务重启后可能会被重新加载。")
+            .example("tool.delete search.web")
+            .action(async ({ session }, name) => {
+                if (!name) return "错误：未指定要删除的工具名称。";
+                const result = this.unregisterTool(name);
+                return result ? `工具 "${name}" 已成功删除。` : `删除失败：未找到名为 "${name}" 的工具。`;
+            });
+
+        this.ctx
+            .command("extension.list", "列出所有已加载的扩展", { authority: 3 })
+            .usage("查询并展示当前所有已成功加载的扩展及其描述。")
+            .example("extension.list")
+            .action(async ({ session }) => {
+                const extensions = this.extensions;
+                if (extensions.size === 0) {
+                    return "当前没有已加载的扩展。";
+                }
+                const extList = Array.from(extensions.values())
+                    .map((e) => `- ${e.metadata.name}: ${e.metadata.description}`)
+                    .join("\n");
+                return `发现 ${extensions.size} 个已加载的扩展：\n${extList}`;
+            });
+
+        this.ctx.command("extension.enable <name:string>", "启用扩展").action(async ({ session }, name) => {
+            try {
+                const ext = (await import(name)) as IExtension;
+                if (!ext) {
+                    return `扩展未找到`;
+                }
+                this.register(ext, true, {});
+                return `启用成功`;
+            } catch (error) {
+                return `启用失败: ${error.message}`;
+            }
+        });
+
+        this.ctx.command("extension.disable <name:string>", "禁用扩展").action(async ({ session }, name) => {
+            const result = this.unregister(name);
+            return result ? `禁用成功` : `禁用失败`;
+        });
     }
 
     /**
@@ -137,7 +296,7 @@ export class ToolService extends Service<ToolServiceConfig> {
     }
 
     public unregisterTool(name: string) {
-        this.tools.delete(name);
+        return this.tools.delete(name);
     }
 
     public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
