@@ -195,6 +195,24 @@ export class ModelSwitcher<T extends BaseModel> {
     private currentIndex = 0;
     private readonly _logger: Logger;
 
+    get current(): T {
+        return this.models[this.currentIndex];
+    }
+
+    public next(): T {
+        if (this.models.length <= 1) return this.current; // 如果只有一个模型，不切换
+        const oldIndex = this.currentIndex;
+        this.currentIndex = (this.currentIndex + 1) % this.models.length;
+        const oldModel = this.models[oldIndex].id;
+        const newModel = this.current.id;
+        this._logger.info(`模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
+        return this.current;
+    }
+
+    get length(): number {
+        return this.models.length;
+    }
+
     constructor(
         ctx: Context,
         modelDescriptors: ModelDescriptor[],
@@ -224,19 +242,5 @@ export class ModelSwitcher<T extends BaseModel> {
             });
         }
         this._logger.debug(`✔ 加载成功 | 可用模型数: ${this.models.length}`);
-    }
-
-    public getCurrent(): T {
-        return this.models[this.currentIndex];
-    }
-
-    public switchToNext(): T {
-        if (this.models.length <= 1) return this.getCurrent(); // 如果只有一个模型，不切换
-        const oldIndex = this.currentIndex;
-        this.currentIndex = (this.currentIndex + 1) % this.models.length;
-        const oldModel = this.models[oldIndex].id;
-        const newModel = this.getCurrent().id;
-        this._logger.info(`模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
-        return this.getCurrent();
     }
 }
