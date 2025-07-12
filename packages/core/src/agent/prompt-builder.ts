@@ -1,12 +1,12 @@
 import { readFileSync } from "fs";
-import { Context } from "koishi";
+import { Context, h } from "koishi";
 import Mustache from "mustache";
 import path from "path";
 import type { ImagePart, Message, TextPart } from "xsai";
 
 import { Properties, ToolSchema } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
-import { AgentResponse, ContextualMessage, DialogueSegment, FoldedDialogueSegment, WorldState } from "@/services/worldstate";
+import { AgentResponse, WorldState } from "@/services/worldstate";
 import { AgentBehaviorConfig } from "./config";
 
 // 定义 PromptBuilder 需要的完整上下文
@@ -46,7 +46,6 @@ export class PromptBuilder {
      * 注册默认的 Mustache 局部模板。
      */
     private registerDefaultPartials(): void {
-        // 假设模板文件位于 ../../resources/templates/ 目录下
         const load = (name: string) => {
             try {
                 return readFileSync(path.resolve(__dirname, `../../resources/templates/${name}.mustache`), "utf-8");
@@ -104,8 +103,14 @@ export class PromptBuilder {
                 return content.join("");
             },
             _truncate: function () {
+                // 判定为长消息的阈值
+                // TODO: 从配置读取
                 const length = 100;
-                if (this.length > length) {
+                const text = h
+                    .parse(this)
+                    .filter((e) => e.type === "text")
+                    .join("");
+                if (text.length > length) {
                     return `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`;
                 }
                 return this;
@@ -123,17 +128,12 @@ export class PromptBuilder {
 
         // 判断是否为多模态场景
         if (multiModalData && multiModalData.images.length > 0) {
-            // --- 多模态路径 ---
-            // this.ctx.logger.info("Building prompt for multimodal scenario.");
-
             userMessage = [
                 { type: "text", text: MultiModalSystemBaseTemplate },
                 ...multiModalData.images,
                 { type: "text", text: userPrompt },
             ];
         } else {
-            // --- 纯文本路径 (保持旧逻辑) ---
-            // this.ctx.logger.info("Building prompt for text-only scenario.");
             userMessage = userPrompt;
         }
 

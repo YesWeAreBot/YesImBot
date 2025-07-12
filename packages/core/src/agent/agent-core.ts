@@ -193,12 +193,37 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
             try {
                 const promptContext = await this.buildPromptContext(segment, collectedResponses);
+
+                let multimodal = false;
+
+                if (promptContext.multiModalData?.images) {
+                    // this._logger.debug(`[${segment.id}] 多模态场景检测到 ${promptContext.multiModalData.images.length} 张图片。`);
+                    multimodal = true;
+                }
+
+                // 寻找当前模型组中支持多模态的模型，如果找不到则渲染纯文本提示词
+
+                let chatModel: IChatModel = this.modelSwitcher.current;
+
+                if (multimodal) {
+                    for (let i = 0; i < this.modelSwitcher.length; i++) {
+                        if (chatModel.isVisionModel()) {
+                            break;
+                        }
+                        this._logger.debug(`当前模型 ${chatModel.id} 不支持多模态，切换到下一个`);
+                        chatModel = this.modelSwitcher.next();
+                    }
+                    if (!chatModel.isVisionModel()) {
+                        this._logger.warn(`当前模型组中没有支持多模态的模型，跳过多模态处理`);
+                        multimodal = false;
+                        promptContext.multiModalData = { images: [] };
+                    }
+                }
+
                 const { messages } = await this.promptBuilder.build(promptContext);
 
-                const chatModel = this.modelSwitcher.switchToNext();
-
                 if (!chatModel) {
-                    this._logger.error(`✖ 模型未找到，停止回复 | 段落ID: ${segment.id}`);
+                    this._logger.error(`✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
                     shouldContinueHeartbeat = false;
                     continue;
                 }
@@ -214,12 +239,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 const onStreamStart = () => {
                     clearTimeout(timeout);
-                    this._logger.debug(`🌊 流式传输已开始 | 段落ID: ${segment.id}`);
+                    this._logger.debug(`🌊 流式传输已开始 | 频道 - ${session.cid}`);
                 };
 
                 const llmRawResponse = await chatModel.chat(messages, { abortSignal: abortController.signal, onStreamStart });
 
-                this._logger.info(`💬 响应时间: ${Date.now() - stime}ms | 段落ID: ${segment.id}`);
+                this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
 
                 const { text, usage } = llmRawResponse;
 
@@ -281,12 +306,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             await this.worldState.recordAgentTurn(segment, collectedResponses);
             this._logger.debug(`✅ 完成 | 段落ID: ${segment.id}`);
             success = true;
-        } else {
-            this._logger.warn(`⚠️ 完成 (无行动) | 段落ID: ${segment.id}`);
-        }
-
-        if (heartbeatCount >= this.config.heartbeat) {
-            this._logger.warn(`⚠️ 已达最大心跳次数 | 段落ID: ${segment.id}`);
         }
 
         return success;
@@ -294,9 +313,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
         const { observe, analyze_infer, plan } = thoughts;
-        this._logger.debug(`[观察] ${observe}`);
-        this._logger.debug(`[分析] ${analyze_infer}`);
-        this._logger.debug(`[计划] ${plan}`);
+        this._logger.info(`
+[观察] ${observe}
+[分析] ${analyze_infer}
+[计划] ${plan}]`);
     }
 
     private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {

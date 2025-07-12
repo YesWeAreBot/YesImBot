@@ -6,7 +6,7 @@ import { toBoolean, truncate } from "@/shared";
 import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, Message, StreamTextStep, Usage } from "xsai";
 import { ToolDefinition } from "../extension";
 import { BaseModel } from "./base-model";
-import { ModelConfig } from "./config";
+import { ModelAbility, ModelConfig } from "./config";
 
 export interface RequestOptions {
     abortSignal?: AbortSignal;
@@ -16,6 +16,8 @@ export interface RequestOptions {
 
 export interface IChatModel extends BaseModel {
     chat(messages: Message[], options?: RequestOptions): Promise<GenerateTextResult>;
+
+    isVisionModel(): boolean;
 }
 
 export class ChatModel extends BaseModel implements IChatModel {
@@ -29,6 +31,10 @@ export class ChatModel extends BaseModel implements IChatModel {
     ) {
         super(ctx, modelConfig, `[聊天模型] [${modelConfig.modelId}]`);
         this.parseCustomParameters();
+    }
+
+    public isVisionModel(): boolean {
+        return this.config.abilities.includes(ModelAbility.Vision);
     }
 
     private parseCustomParameters(): void {
