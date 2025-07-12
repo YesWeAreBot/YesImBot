@@ -1,4 +1,4 @@
-import { Context, Session } from "koishi";
+import { Context, merge, Session } from "koishi";
 
 import { Services } from "@/services/types";
 import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types";
@@ -45,6 +45,9 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                         //@ts-ignore
                         this.tools = tools;
                     }
+
+                    //@ts-ignore
+                    this.config = merge(this.config, config.config || {});
 
                     ctx.on("ready", () => {
                         const toolService = ctx[Services.Tool];
