@@ -1,10 +1,11 @@
-import { mkdir, readFile, stat, writeFile } from "fs/promises";
+import fs from "fs";
+import { readFile, stat, writeFile } from "fs/promises";
+import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 import path from "path";
-import matter from "gray-matter";
-import fs from "fs";
 
-import { AppError, ErrorCodes, isEmpty, truncate } from "../../shared";
+import { AppError, ErrorCodes } from "@/shared/errors";
+import { formatDate, isEmpty, truncate } from "@/shared/utils";
 import { Services } from "../types";
 import { MemoryBlockData, MemoryBlockMetadata } from "./types";
 
@@ -106,6 +107,13 @@ export class MemoryBlock {
         this.lastModifiedInMemory = new Date();
         await this.persistToFile();
         this.logger.debug(`记忆块内容已被完全覆盖`);
+    }
+
+    public async backup(backupPath: string): Promise<void> {
+        return writeFile(
+            path.resolve(backupPath, `${this.label}-${formatDate(new Date(), "YYYY-MM-DD HH-mm-ss")}.md`),
+            await readFile(this._filePath)
+        );
     }
 
     public async clear(): Promise<void> {
