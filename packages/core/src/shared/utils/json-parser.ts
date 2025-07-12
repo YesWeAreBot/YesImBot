@@ -80,31 +80,44 @@ export class JsonParser<T> {
             startIndex = firstBracket;
         }
 
-        if (startIndex > 0) {
-            this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的文本。`);
-            processedString = processedString.substring(startIndex);
-        }
-
-        // After initial stripping, find the last closing bracket/brace to remove trailing text
-        const lastBrace = processedString.lastIndexOf("}");
-        const lastBracket = processedString.lastIndexOf("]");
-        const endIndex = Math.max(lastBrace, lastBracket);
-
-        if (endIndex > -1 && endIndex < processedString.length - 1) {
-            this.log(`裁剪了 JSON 结束符号之后的多余文本。`);
-            processedString = processedString.substring(0, endIndex + 1);
-        }
-
         if (startIndex === -1) {
             this.log("未找到 JSON 起始符号，将尝试直接修复整个字符串。");
+        } else {
+             if (startIndex > 0) {
+                this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的文本。`);
+                processedString = processedString.substring(startIndex);
+            }
+        }
+
+        // 只有当括号/大括号是平衡的，我们才认为后面有多余文本。
+        // 否则，我们假设是JSON被截断，不进行裁剪。
+        const openBraces = (processedString.match(/{/g) || []).length;
+        const closeBraces = (processedString.match(/}/g) || []).length;
+        const openBrackets = (processedString.match(/\[/g) || []).length;
+        const closeBrackets = (processedString.match(/]/g) || []).length;
+
+        if (openBraces === closeBraces && openBrackets === closeBrackets) {
+            const lastBrace = processedString.lastIndexOf("}");
+            const lastBracket = processedString.lastIndexOf("]");
+            const endIndex = Math.max(lastBrace, lastBracket);
+
+            if (endIndex > -1 && endIndex < processedString.length - 1) {
+                this.log(`JSON 结构平衡，裁剪了结束符号之后的多余文本。`);
+                processedString = processedString.substring(0, endIndex + 1);
+            }
+        } else {
+             this.log(`JSON 结构不平衡，跳过后缀裁剪以保留可能被截断的数据。`);
         }
 
         try {
             const repaired = jsonrepair(processedString);
             const data = JSON.parse(repaired) as T;
 
-            if (typeof data === "string" && startIndex === -1) {
-                this.log("解析结果为字符串，但原始输入不像JSON，判定为解析失败。");
+            // 如果修复后只是一个字符串或数字，但原始输入明显不是一个独立的JSON字符串/数字，则判定为失败。
+            // 这是一个启发式规则，用于避免将"some text { ... }"中的"some text"误解析为成功。
+            // `startIndex === -1` 表示我们没有找到明确的 `{` 或 `[`，整个字符串都被拿来解析。
+            if (typeof data !== 'object' && startIndex === -1) {
+                this.log(`解析结果为非对象类型，但原始输入不像JSON，判定为解析失败。`);
                 return { data: null, error: "无法解析为有效的 JSON 对象或数组。", logs: this.logs };
             }
 
