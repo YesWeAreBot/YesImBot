@@ -105,6 +105,7 @@ export class PromptBuilder {
             _truncate: function () {
                 // 判定为长消息的阈值
                 // TODO: 从配置读取
+                // TODO: 自定义提示消息
                 const length = 100;
                 const text = h
                     .parse(this)

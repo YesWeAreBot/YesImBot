@@ -2,7 +2,6 @@ import { Context, h, Logger, Random, Service, Session } from "koishi";
 import type { ImagePart, Message, TextPart } from "xsai";
 import {
     AgentResponse,
-    DialogueSegment,
     IChatModel,
     ModelService,
     ModelSwitcher,
@@ -26,7 +25,14 @@ declare module "koishi" {
 type WithDispose<T> = T & { dispose: () => void };
 
 export class AgentCore extends Service<AgentBehaviorConfig> {
-    static readonly inject = [Services.WorldState, Services.Model, Services.Tool, Services.Memory, Services.Image, Services.Logger];
+    static readonly inject = [
+        Services.WorldState,
+        Services.Model,
+        Services.Tool,
+        Services.Memory,
+        Services.Image,
+        Services.Logger,
+    ];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;
@@ -44,7 +50,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly allowedChannels = new Set<string>();
     private readonly channelGroupMap = new Map<string, ChannelDescriptor[]>();
     private willingnessDecayTimer: NodeJS.Timeout;
-    private readonly debouncedReplyTasks: Map<string, WithDispose<() => void>> = new Map();
+    private readonly debouncedReplyTasks: Map<string, WithDispose<(sid: string) => void>> = new Map();
 
     private runningTasks: Set<string> = new Set();
 
@@ -72,7 +78,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
-        this.ctx.on("worldstate:segment-updated", async (session, segment) => {
+        this.ctx.on("worldstate:segment-updated", async (session, sid) => {
             const channelKey = session.cid;
 
             // --- 第1步: 意愿计算与决策 (无论如何都执行) ---
@@ -98,25 +104,25 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             // --- 第2步: 检查决策并触发防抖任务 ---
             if (!decision) {
                 // 如果决策为不回复，则流程到此结束。
-                this._logger.debug(`[${channelKey}] 决策为不回复，任务终止。`);
+                //this._logger.debug(`[${channelKey}] 决策为不回复，任务终止。`);
                 return;
             }
 
+            if (this.runningTasks.has(channelKey)) {
+                this._logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行被跳过。`);
+                return;
+            }
             // 从 Map 中获取或创建当前频道的防抖函数
             let debouncedTask = this.debouncedReplyTasks.get(channelKey);
 
             if (!debouncedTask) {
                 // 如果该频道还没有对应的防杜函数，则创建一个
                 // ctx.debounce 的回调函数包含了原先需要被保护的“第3步”逻辑
-                debouncedTask = this.ctx.debounce(async () => {
+                debouncedTask = this.ctx.debounce(async (sid) => {
                     // --- 第3步: 执行回复任务 (加锁 -> 执行 -> 解锁) ---
                     // 防抖成功后，这里的代码才会被执行
                     try {
                         // --- 加锁 ---
-                        if (this.runningTasks.has(channelKey)) {
-                            this._logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行被跳过。`);
-                            return;
-                        }
                         this.runningTasks.add(channelKey);
                         this._logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务。`);
 
@@ -124,7 +130,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                         this.willing.handlePreReply(channelKey);
 
                         // 核心循环
-                        const success = await this.runAgentCycle(session, segment);
+                        const success = await this.runAgentCycle(session, sid);
 
                         // 行动后钩子 (只在成功时调用)
                         if (success) {
@@ -134,11 +140,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                             /* prettier-ignore */
                             this._logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                         }
-
-                        this._logger.debug(`[${channelKey}] 回复任务执行完毕。`);
+                        // this._logger.debug(`[${channelKey}] 回复任务执行完毕。`);
                     } catch (error) {
                         // 捕获 runAgentCycle 或钩子函数中的任何错误
-                        this.handleError(error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${segment.id})`);
+                        /* prettier-ignore */
+                        this.handleError(error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${sid})`);
                     } finally {
                         // --- 解锁 ---
                         // 无论成功还是失败，都必须在 finally 块中释放锁
@@ -153,20 +159,21 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
             // 触发防抖流程
             // 每次调用都会重置计时器。只有当 DEBOUNCE_DELAY 毫秒内没有新的调用时，上面的回调才会执行。
+            /* prettier-ignore */
             this._logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）。`);
-            debouncedTask();
+            debouncedTask(sid);
         });
 
         this.willing.startDecayCycle();
 
-        this._logger.info("🚀 服务已启动");
+        this._logger.info("服务已启动");
     }
 
     protected stop(): void {
         this.debouncedReplyTasks.forEach((d) => d.dispose());
         clearInterval(this.willingnessDecayTimer);
         this.willing.stopDecayCycle();
-        this._logger.info("🛑 服务已停止");
+        this._logger.info("服务已停止");
     }
 
     private updateAllowedChannels(): void {
@@ -179,8 +186,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this._logger.debug(`⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
-    private async runAgentCycle(session: Session, segment: DialogueSegment): Promise<boolean> {
-        this._logger.debug(`🌀 → 开始 | 段落ID: ${segment.id}`);
+    private async runAgentCycle(session: Session, sid: string): Promise<boolean> {
+        // this._logger.debug(`🌀 → 开始 | 段落ID: ${segment.id}`);
         const collectedResponses: AgentResponse[] = [];
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
@@ -189,10 +196,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
-            this._logger.debug(`❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
+            // this._logger.debug(`❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
 
             try {
-                const promptContext = await this.buildPromptContext(segment, collectedResponses);
+                const promptContext = await this.buildPromptContext(session, sid, collectedResponses);
 
                 let multimodal = false;
 
@@ -239,10 +246,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 const onStreamStart = () => {
                     clearTimeout(timeout);
-                    this._logger.debug(`🌊 流式传输已开始 | 频道 - ${session.cid}`);
+                    // this._logger.debug(`🌊 流式传输已开始 | 频道 - ${session.cid}`);
                 };
 
-                const llmRawResponse = await chatModel.chat(messages, { abortSignal: abortController.signal, onStreamStart });
+                const llmRawResponse = await chatModel.chat(messages, {
+                    abortSignal: abortController.signal,
+                    onStreamStart,
+                });
 
                 this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
 
@@ -295,16 +305,16 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 shouldContinueHeartbeat = agentResponseData.request_heartbeat;
             } catch (error) {
-                this.handleError(error, `心跳 #${heartbeatCount} 期间 (段落ID: ${segment.id})`);
+                this.handleError(error, `心跳 #${heartbeatCount} 期间 (段落ID: ${sid})`);
                 shouldContinueHeartbeat = false;
                 success = false;
             }
         }
 
         if (collectedResponses.length > 0) {
-            this._logger.debug(`💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
-            await this.worldState.recordAgentTurn(segment, collectedResponses);
-            this._logger.debug(`✅ 完成 | 段落ID: ${segment.id}`);
+            // this._logger.debug(`💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
+            await this.worldState.recordAgentTurn(sid, collectedResponses);
+            // this._logger.debug(`✅ 完成 | 段落ID: ${segment.id}`);
             success = true;
         }
 
@@ -316,41 +326,44 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this._logger.info(`
 [观察] ${observe}
 [分析] ${analyze_infer}
-[计划] ${plan}]`);
+[计划] ${plan}`);
     }
 
-    private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {
+    private async executeActions(
+        session: Session,
+        actions: AgentResponse["actions"]
+    ): Promise<AgentResponse["observations"]> {
         let observations: AgentResponse["observations"] = [];
         for await (const action of actions) {
             const result = await this.toolService.invoke(action.function, action.params, session);
-            observations.push({ function: action.function, status: result.status, result: result.result, error: result.error });
+            observations.push({
+                function: action.function,
+                status: result.status,
+                result: result.result,
+                error: result.error,
+            });
         }
         return observations;
     }
 
-    private async buildPromptContext(segment: DialogueSegment, previousResponses: AgentResponse[]): Promise<PromptContext> {
-        const allowedChannels =
-            this.channelGroupMap.get(segment.channelId) ||
-            this.config.arousal.allowedChannelGroups.find((group) =>
-                group.some((channel) => channel.platform === segment.platform && channel.id === segment.channelId)
-            );
-        if (allowedChannels && !this.channelGroupMap.has(segment.channelId)) {
-            this.channelGroupMap.set(segment.channelId, allowedChannels);
-        }
-
+    private async buildPromptContext(
+        session: Session,
+        sid: string,
+        previousResponses: AgentResponse[]
+    ): Promise<PromptContext> {
         const onetimeCode = Random.id(8);
 
-        const worldState = await this.worldState.getWorldState(allowedChannels || [], onetimeCode);
+        const worldState = await this.worldState.getWorldState(session, onetimeCode);
 
         // 图片智能筛选与上下文构建
-        const { images: multiModalContent } = this.config.vision.enabled ? await this.buildMultimodalContext(worldState) : { images: [] };
+        const { images: multiModalContent } = this.config.vision.enabled
+            ? await this.buildMultimodalContext(structuredClone(worldState))
+            : { images: [] };
 
         // 在 worldState 中查找并标记当前 segment
-        for (const channel of worldState.activeChannels) {
-            if (channel.history.pending && channel.history.pending.id === segment.id) {
-                (channel.history.pending as any).is_current = true;
-                break;
-            }
+
+        if (worldState.channel.history.pending && worldState.channel.history.pending.id === sid) {
+            (worldState.channel.history.pending as any).is_current = true;
         }
 
         return {
@@ -374,10 +387,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
      */
     private async buildMultimodalContext(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
         // 1. 扁平化所有消息，并建立索引
-        const allMessages = worldState.activeChannels
-            .flatMap((c) => [c.history.pending, ...c.history.closed, c.history.folded].filter(Boolean).map((s) => s.dialogue))
-            .flat();
-        allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const allMessages = [worldState.channel.history.pending]
+            .concat(worldState.channel.history.closed || [])
+            .concat(worldState.channel.history.folded ? [worldState.channel.history.folded] : [])
+            .flatMap((s) => s.dialogue)
+            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
         // 3. 智能筛选图片ID
@@ -388,7 +403,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             if (msg.quoteId && messageMap.has(msg.quoteId)) {
                 const quotedMsg = messageMap.get(msg.quoteId);
                 const elements = h.parse(quotedMsg.content);
-                const imageIds = elements.filter((e) => e.type === "image" && e.attrs.id).map((e) => e.attrs.id as string);
+                const imageIds = elements
+                    .filter((e) => e.type === "image" && e.attrs.id)
+                    .map((e) => e.attrs.id as string);
                 for (const id of imageIds) {
                     if (finalImageIds.size < this.config.vision.maxImagesInContext) {
                         finalImageIds.add(id);
@@ -427,7 +444,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         for (const result of imageDataResults) {
             if (result && allowedImageTypes.includes(result.data?.mimeType)) {
                 finalImages.push({ type: "text", text: `Image #${result.data.id}:` });
-                finalImages.push({ type: "image_url", image_url: { url: result.content, detail: this.config.vision.detail } });
+                finalImages.push({
+                    type: "image_url",
+                    image_url: { url: result.content, detail: this.config.vision.detail },
+                });
             }
         }
 
@@ -442,6 +462,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private handleError(error: any, contextDescription: string): void {
         // 检查 error 是否是 Error 实例，以便能访问堆栈
         if (error instanceof Error) {
+            /* prettier-ignore */
             this._logger.error(`[错误] ${contextDescription}\n` + `错误信息: ${error.message}\n` + `堆栈追踪:\n${error.stack}`);
         } else {
             // 如果捕获到的不是标准Error对象（例如字符串或普通对象）
