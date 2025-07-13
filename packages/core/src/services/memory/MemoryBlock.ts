@@ -124,7 +124,7 @@ export class MemoryBlock {
     }
 
     public async disposeFileWatcher(): Promise<void> {
-        this.logger.debug(`[文件监视] 正在释放资源`);
+        this.logger.debug(`正在释放资源`);
         await this.stopWatching();
     }
 
@@ -135,7 +135,7 @@ export class MemoryBlock {
             const fileContent = matter.stringify(this._content.join("\n"), this._metadata);
             await writeFile(this._filePath, fileContent, "utf-8");
             const fstat = await stat(this._filePath);
-            this.lastModifiedFileMs = fstat.mtimeMs; // Update file modification time to prevent echo-sync
+            this.lastModifiedFileMs = fstat.mtimeMs;
             this.logger.debug(`持久化 | 已保存至文件: ${this.filePath}`);
         } catch (error) {
             this.logger.error(`持久化 | 保存失败: ${error.message}`);
@@ -150,44 +150,43 @@ export class MemoryBlock {
     // --- File Watching and Sync ---
 
     private async reloadFromFile(): Promise<void> {
-        this.logger.debug(`[文件同步] 开始 | 文件 -> 内存`);
+        this.logger.debug(`开始同步 | 文件 -> 内存`);
         try {
             const { data, content } = await MemoryBlock.loadDataFromFile(this._filePath);
             this._metadata = data;
             this._content = content;
             this.lastModifiedInMemory = new Date();
-            this.logger.debug(`[文件同步] 成功`);
+            this.logger.debug(`同步成功`);
         } catch (error) {
-            this.logger.error(`[文件同步] 失败 | 错误: ${error.message}`);
+            this.logger.error(`同步失败 | 错误: ${error.message}`);
         }
     }
 
     public async startWatching(): Promise<void> {
         if (this.watcher) return;
-        this.logger.debug(`[文件监视] 启动 | 路径: ${this.filePath}`);
+        // this.logger.debug(`[文件监视] 启动 | 路径: ${this.filePath}`);
         this.watcher = fs.watch(this._filePath, (eventType) => {
             if (this.debounceTimer) clearTimeout(this.debounceTimer);
             this.debounceTimer = setTimeout(async () => {
                 try {
                     if (!fs.existsSync(this.filePath)) {
-                        this.logger.warn(`[文件监视] 文件已删除，停止监视 | 路径: ${this.filePath}`);
+                        this.logger.warn(`文件已删除，停止监听 | 路径: ${this.filePath}`);
                         await this.stopWatching();
-                        // Optional: Notify MemoryService to remove this block
                         return;
                     }
                     const currentFstat = await stat(this.filePath);
                     if (currentFstat.mtimeMs > this.lastModifiedFileMs) {
-                        this.logger.debug(`[文件监视] 文件变更，开始同步 | 路径: ${this.filePath}`);
+                        this.logger.debug(`文件变更，开始同步 | 路径: ${this.filePath}`);
                         this.lastModifiedFileMs = currentFstat.mtimeMs;
                         await this.reloadFromFile();
                     }
                 } catch (error) {
-                    this.logger.error(`[文件监视] 处理变更时出错 | 错误: ${error.message}`);
+                    this.logger.error(`处理变更时出错 | 错误: ${error.message}`);
                 }
             }, 300);
         });
         this.watcher.on("error", (err) => {
-            this.logger.error(`[文件监视] 出现严重错误，已停止 | 错误: ${err.message}`);
+            this.logger.error(`出现严重错误，已停止 | 错误: ${err.message}`);
             this.stopWatching();
         });
     }
@@ -196,7 +195,7 @@ export class MemoryBlock {
         if (this.watcher) {
             this.watcher.close();
             this.watcher = undefined;
-            this.logger.debug(`[文件监视] 停止 | 路径: ${this.filePath}`);
+            // this.logger.debug(`[文件监视] 停止 | 路径: ${this.filePath}`);
         }
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
@@ -207,12 +206,12 @@ export class MemoryBlock {
     // --- Static Factory ---
 
     public static async createFromFile(ctx: Context, filePath: string): Promise<MemoryBlock> {
-        const logger = ctx.logger("MemoryBlock");
+        const logger = ctx[Services.Logger].getLogger("[记忆块]");
         try {
             const fileStats = await stat(filePath);
             const { data, content } = await this.loadDataFromFile(filePath);
 
-            logger.debug(`[CreateFromFile] 加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
+            logger.debug(`加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
             const block = new MemoryBlock(ctx, filePath, { ...data, content }, fileStats.mtimeMs);
 
             await block.startWatching();
@@ -220,7 +219,7 @@ export class MemoryBlock {
 
             return block;
         } catch (error) {
-            logger.error(`[CreateFromFile] 操作失败 | 路径: "${filePath}" | 错误: ${error.message}`);
+            logger.error(`操作失败 | 路径: "${filePath}" | 错误: ${error.message}`);
             throw new AppError(`Failed to create MemoryBlock from file: ${filePath}`, {
                 code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
                 context: { filePath },
@@ -234,8 +233,8 @@ export class MemoryBlock {
         const { data, content } = matter(rawContent);
 
         // Validate metadata
-        if (!data.label || !data.title || !data.limit) {
-            throw new Error(`文件 ${filePath} 的 YAML Front Matter 缺少必要的元数据字段 (title, label, limit)`);
+        if (!data.label || !data.limit) {
+            throw new Error(`文件 ${filePath} 的 YAML Front Matter 缺少必要的元数据字段 (label, limit)`);
         }
 
         return {
@@ -255,7 +254,12 @@ export class MemoryBlock {
             this.logger.warn(errorMsg);
             throw new AppError(errorMsg, {
                 code: ErrorCodes.RESOURCE.LIMIT_EXCEEDED,
-                context: { currentSize: this.currentSize, contentLength: additionalContentLength, limit: this.limit, label: this.label },
+                context: {
+                    currentSize: this.currentSize,
+                    contentLength: additionalContentLength,
+                    limit: this.limit,
+                    label: this.label,
+                },
             });
         }
     }

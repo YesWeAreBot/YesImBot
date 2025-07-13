@@ -26,6 +26,7 @@ export default class YesImBot extends Service<Config> {
             // 注册日志服务
             const loggerService = ctx.plugin(LoggerService, config.system.logging);
 
+            // 注册图片服务
             const imageService = ctx.plugin(ImageService, config.imageService);
 
             // 注册工具管理器
