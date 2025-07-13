@@ -1,5 +1,6 @@
 import { formatDate, truncate } from "@/shared/utils";
 import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
+import { randomUUID } from "node:crypto";
 import { ChannelDescriptor } from "../../agent";
 import { IChatModel, TaskType } from "../model";
 import { Services, TableName } from "../types";
@@ -10,6 +11,7 @@ import { CommandInvocationPayload } from "./event-types";
 import {
     AgentTurn,
     Channel,
+    ClosedDialogueSegment,
     ContextualMessage,
     DialogueSegment,
     FoldedDialogueSegment,
@@ -32,7 +34,7 @@ declare module "koishi" {
          * @param session 触发更新的会话对象
          * @param segment 更新后的对话片段的完整领域对象
          */
-        "worldstate:segment-updated"(session: Session, segment: DialogueSegment): void;
+        "worldstate:segment-updated"(session: Session, sid: string): void;
     }
 }
 
@@ -128,7 +130,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.runMaintenanceTasks();
         }, this.config.advanced.cleanupIntervalMs);
 
-        this._logger.info("🚀 服务已启动");
+        this._logger.info("服务已启动");
     }
 
     /**
@@ -140,7 +142,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         if (this.maintenanceInterval) {
             clearInterval(this.maintenanceInterval);
         }
-        this._logger.info("🛑 服务已停止");
+        this._logger.info("服务已停止");
     }
 
     // #endregion
@@ -157,18 +159,13 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param onetimeCode 一个一次性代码，用于在 h.transform 中进行特定处理。
      * @returns 一个包含所有活动频道上下文的 `WorldState` 对象。
      */
-    public async getWorldState(allowedChannels: ChannelDescriptor[], onetimeCode: string): Promise<WorldState> {
-        
-        const allChannels = await Promise.all(allowedChannels.map((channel) => this.buildFullContextForChannel(channel, onetimeCode)));
-
-        const activeChannels = allChannels.filter((c) => c.history["pending"]);
-
-        const inactiveChannels = allChannels.filter((c) => !c.history["pending"]);
-
+    public async getWorldState(session: Session, onetimeCode: string): Promise<WorldState> {
         const worldState: WorldState = {
             timestamp: new Date().toISOString(),
-            activeChannels,
-            inactiveChannels,
+            channel: await this.buildFullContextForChannel(
+                { platform: session.platform, id: session.channelId },
+                onetimeCode
+            ),
         };
 
         return pruneHistoryByMessages(worldState, this.config.advanced.maxMessages);
@@ -181,15 +178,23 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param segmentRecord 当前开放的对话片段记录。
      * @param responses Agent 生成的响应列表。
      */
-    public async recordAgentTurn(segmentRecord: DialogueSegmentData, responses: AgentResponse[]): Promise<void> {
+    public async recordAgentTurn(sid: string, responses: AgentResponse[]): Promise<void> {
         const agentTurn: AgentTurn = {
             responses,
             timestamp: new Date(),
         };
 
         // 将当前片段状态更新为 'closed' 并记录 agentTurn
-        await this.ctx.database.set(TableName.DialogueSegments, { id: segmentRecord.id }, { status: SegmentStatus.Closed, agentTurn });
-        this._logger.debug(`✅ 片段已关闭 | ID: ${segmentRecord.id} | 响应数: ${responses.length}`);
+        await this.ctx.database.set(
+            TableName.DialogueSegments,
+            { id: sid },
+            { status: SegmentStatus.Closed, agentTurn }
+        );
+        // this._logger.debug(`✅ 片段已关闭 | ID: ${segmentRecord.id} | 响应数: ${responses.length}`);
+
+        const segmentRecord = await this.ctx.database
+            .get(TableName.DialogueSegments, { id: sid })
+            .then((res) => res[0]);
 
         // 应用上下文折叠策略
         await this.applyFoldingPolicy(segmentRecord.platform, segmentRecord.channelId);
@@ -208,16 +213,26 @@ export class WorldStateService extends Service<HistoryConfig> {
             .select(TableName.DialogueSegments)
             .where({ platform, channelId, status: SegmentStatus.Open })
             .orderBy("timestamp", "desc")
-            .limit(1)
             .execute();
 
         if (openSegments.length > 0) {
-            return openSegments[0];
+            const openSegment = openSegments.shift();
+
+            if (openSegments.length > 0) {
+                // 关闭其他开放片段
+                await this.ctx.database.set(
+                    TableName.DialogueSegments,
+                    { id: { $in: openSegments.map((s) => s.id) } },
+                    { status: SegmentStatus.Closed }
+                );
+                this._logger.debug(`关闭了 ${openSegments.length} 个过期片段 | 频道: ${platform}:${channelId}`);
+            }
+            return openSegment;
         }
 
         // 如果没有开放的片段，则创建一个新的
         const newSegment: DialogueSegmentData = {
-            id: `seg_${Date.now()}_${Random.id(8)}`,
+            id: randomUUID(),
             platform,
             channelId,
             guildId,
@@ -237,17 +252,20 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param message 包含消息所有必要信息对象。
      */
     public async recordMessage(segmentId: string, message: Omit<MessageData, "sid">): Promise<void> {
-        await this.ctx.database.create(TableName.Messages, {
-            id: message.id,
-            sid: segmentId,
-            platform: message.platform,
-            channelId: message.channelId,
-            sender: message.sender,
-            content: message.content,
-            timestamp: message.timestamp,
-            quoteId: message.quoteId,
-        });
-        this._logger.debug(`记录新消息 | 消息ID: ${message.id} | 段落ID: ${segmentId}`);
+        try {
+            await this.ctx.database.create(TableName.Messages, {
+                id: message.id,
+                sid: segmentId,
+                platform: message.platform,
+                channelId: message.channelId,
+                sender: message.sender,
+                content: message.content,
+                timestamp: message.timestamp,
+                quoteId: message.quoteId,
+            });
+        } catch (error) {
+            this._logger.error(`记录消息时发生错误: ${error.message}`);
+        }
     }
 
     // #endregion
@@ -278,11 +296,15 @@ export class WorldStateService extends Service<HistoryConfig> {
                 // '__commandHandled' 标志由我们的 'command/before-execute' 监听器设置。
                 if (!session["__commandHandled"]) {
                     // 只有当没有指令处理时，才触发 segment-updated
-                    const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
-                    const dialogueSegment = await this.buildDialogueSegment(segmentRecord, "");
-                    this.ctx.emit("worldstate:segment-updated", session, dialogueSegment);
+                    const segmentRecord = await this.getOpenSegment(
+                        session.platform,
+                        session.channelId,
+                        session.guildId
+                    );
+                    //const dialogueSegment = await this.buildDialogueSegment(segmentRecord, "");
+                    this.ctx.emit("worldstate:segment-updated", session, segmentRecord.id);
                 }
-            }, true) // <-- true (prepend) 是此模式成功的关键
+            }, true)
         );
 
         // 2. 指令调用事件：除了记录事件，现在还负责设置标志
@@ -290,7 +312,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.ctx.on("command/before-execute", (argv) => {
                 // 设置标志，通知中间件此会话已被指令接管
                 argv.session["__commandHandled"] = true;
-                this._logger.debug(`指令已接管，将抑制Agent响应 | 指令: ${argv.command.name}`);
+                // this._logger.debug(`指令已接管，将抑制Agent响应 | 指令: ${argv.command.name}`);
+                this._logger.info(`捕获到指令调用 | 用户: ${argv.session.author.name} | 指令: ${argv.command.name}`);
 
                 // 仍然调用原始处理器来记录系统事件
                 this.handleCommandInvocation(argv);
@@ -315,23 +338,79 @@ export class WorldStateService extends Service<HistoryConfig> {
      * 注册服务的 CLI 指令。
      */
     private registerCommands(): void {
-        this.ctx.command("history.summarize", "手动触发当前频道的历史记录总结", { authority: 3 }).action(async ({ session }) => {
-            try {
-                await this.summarizeAndArchive(session.platform, session.channelId);
-                return "✅ 手动总结任务已触发并完成。";
-            } catch (error) {
-                this._logger.error(error, "❌ 手动总结任务失败");
-                return "❌ 总结任务失败，请检查日志。";
-            }
-        });
+        this.ctx.command("history", "历史记录管理指令集", { authority: 3 });
+
+        this.ctx
+            .command("history.count", "统计历史记录中激活的消息数量", { authority: 3 })
+            .option("platform", "-p <platform:string> 指定平台")
+            .option("channel", "-c <channel:string> 指定频道ID")
+            .option("target", "-t <target:string> 指定目标 'platform:channelId'")
+            .action(async ({ session, options }) => {
+                let platform = options.platform || session.platform;
+                let channelId = options.channel || session.channelId;
+
+                // 从 -t, --target 解析
+                if (options.target) {
+                    const parts = options.target.split(":");
+                    if (parts.length < 2) {
+                        return `❌ 格式错误的目标: "${options.target}"，已跳过。`;
+                    }
+                    platform = parts[0];
+                    channelId = parts.slice(1).join(":");
+                }
+
+                // 从 -c, --channel 解析
+                if (channelId) {
+                    if (!platform) {
+                        // 未指定平台，需要查找
+                        const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, [
+                            "platform",
+                        ]);
+                        const platforms = [...new Set(dialogues.map((d) => d.platform))];
+
+                        if (platforms.length === 0) {
+                            return `🟡 频道 "${channelId}" 未找到任何历史记录，已跳过。`;
+                        } else if (platforms.length === 1) {
+                            platform = platforms[0];
+                        } else {
+                            /* prettier-ignore */
+                            return `❌ 频道 "${channelId}" 存在于多个平台: ${platforms.join(", " )}。请使用 -p <platform> 来指定。`;
+                        }
+                    }
+                }
+
+                const segments = await this.ctx.database
+                    .select(TableName.DialogueSegments)
+                    .where({ platform, channelId, status: { $ne: "archived" } })
+                    .execute();
+
+                const allMessages = await this.ctx.database
+                    .select(TableName.Messages)
+                    .where({ sid: { $in: segments.map((s) => s.id) } })
+                    .execute();
+
+                return `在 ${platform}:${channelId} 中有 ${allMessages.length} 条激活的消息。`;
+            });
+
+        this.ctx
+            .command("history.summarize", "手动触发当前频道的历史记录总结", { authority: 3 })
+            .action(async ({ session }) => {
+                try {
+                    await this.summarizeAndArchive(session.platform, session.channelId);
+                    return "✅ 手动总结任务已触发并完成。";
+                } catch (error) {
+                    this._logger.error(error, "❌ 手动总结任务失败");
+                    return "❌ 总结任务失败，请检查日志。";
+                }
+            });
 
         this.ctx
             .command("history.clear", "清除指定频道的历史记录", { authority: 3 })
-            .option("all", "-a <type:string> 清理全部指定类型的频道 (private, guild, all)", { authority: 3 })
-            .option("platform", "-p <platform:string> 指定平台", { authority: 3 })
-            .option("channel", "-c <channel:string> 指定频道ID (多个用逗号分隔)", { authority: 3 })
-            .option("target", "-t <target:string> 指定目标 'platform:channelId' (多个用逗号分隔)", { authority: 3 })
-            .option("delete", "--delete 永久删除记录(包括关联消息)，而非归档", { authority: 3, type: "boolean" })
+            .option("all", "-a <type:string> 清理全部指定类型的频道 (private, guild, all)")
+            .option("platform", "-p <platform:string> 指定平台")
+            .option("channel", "-c <channel:string> 指定频道ID (多个用逗号分隔)")
+            .option("target", "-t <target:string> 指定目标 'platform:channelId' (多个用逗号分隔)")
+            .option("delete", "--delete 永久删除记录(包括关联消息)，而非归档", { type: "boolean" })
             .usage(
                 `清除历史记录的强大工具。
 默认操作是将消息标记为“已归档”，数据仍保留在数据库中。
@@ -450,7 +529,9 @@ export class WorldStateService extends Service<HistoryConfig> {
                             targetsToProcess.push({ platform: options.platform, channelId });
                         } else {
                             // 未指定平台，需要查找
-                            const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, ["platform"]);
+                            const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, [
+                                "platform",
+                            ]);
                             const platforms = [...new Set(dialogues.map((d) => d.platform))];
 
                             if (platforms.length === 0) {
@@ -465,9 +546,8 @@ export class WorldStateService extends Service<HistoryConfig> {
                 }
 
                 if (ambiguousChannels.length > 0) {
-                    return `操作已中止。存在需要明确指定的频道：\n${ambiguousChannels.join(
-                        "\n"
-                    )}\n请使用 -p <platform> 或 -t <platform:channelId> 来指定。`;
+                    /* prettier-ignore */
+                    return `操作已中止。存在需要明确指定的频道：\n${ambiguousChannels.join("\n")}\n请使用 -p <platform> 或 -t <platform:channelId> 来指定。`;
                 }
 
                 // 4. 如果没有指定任何目标，则清理当前会话
@@ -679,8 +759,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 只有非指令的纯消息才触发 segment-updated 事件，以供 Agent 响应。
         // 指令有自己的响应流程，不应触发此事件。
         if (!isCommand) {
-            const dialogueSegment = await this.buildDialogueSegment(segmentRecord, "");
-            this.ctx.emit("worldstate:segment-updated", session, dialogueSegment);
+            this.ctx.emit("worldstate:segment-updated", session, segmentRecord.id);
         }
     }
 
@@ -691,49 +770,43 @@ export class WorldStateService extends Service<HistoryConfig> {
     private async _updateMemberInfo(session: Session): Promise<void> {
         if (!session.guildId || !session.author) return;
 
-        await this.ctx.database.upsert(TableName.Members, [
-            {
+        try {
+            const existingMember = await this.ctx.database.get(TableName.Members, {
                 pid: session.userId,
                 platform: session.platform,
                 guildId: session.guildId,
-                name: session.author.nick || session.author.name,
-                roles: session.author.roles,
-                avatar: session.author.avatar,
-                lastActive: new Date(),
-            },
-        ]);
-    }
+            });
 
-    /**
-     * 尝试将一条程序化消息与一个待定的指令进行匹配，并更新事件记录。
-     * @param session 带有 scope 的消息会话。
-     * @returns 如果匹配并处理成功，返回 true，否则 false。
-     */
-    private async _tryMatchAndRecordCommandResult(session: Session): Promise<boolean> {
-        const pendingInChannel = this.pendingCommands.get(session.channelId);
-        if (!pendingInChannel || pendingInChannel.length === 0) return false;
-
-        // 从后往前找，因为最新的调用最可能先被回复。
-        // 精确匹配 scope 和调用者 ID，避免多用户并发指令时混淆
-        const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope && p.invokerId === session.userId);
-
-        if (pendingIndex !== -1) {
-            const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
-            this._logger.debug(`✅ 匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
-
-            // 更新数据库中的指令事件，加入 result 字段
-            const existingEvent = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
-            if (existingEvent.length > 0) {
-                const updatedPayload: CommandInvocationPayload = {
-                    ...existingEvent[0].payload,
-                    result: session.content,
-                } as CommandInvocationPayload;
-                await this.ctx.database.set(TableName.SystemEvents, { id: pendingCmd.commandEventId }, { payload: updatedPayload });
+            if (existingMember.length > 0) {
+                await this.ctx.database.set(
+                    TableName.Members,
+                    {
+                        pid: session.userId,
+                        platform: session.platform,
+                        guildId: session.guildId,
+                    },
+                    {
+                        name: session.author.nick || session.author.name,
+                        roles: session.author.roles,
+                        avatar: session.author.avatar,
+                        lastActive: new Date(),
+                    }
+                );
+                return;
+            } else {
+                await this.ctx.database.create(TableName.Members, {
+                    pid: session.userId,
+                    platform: session.platform,
+                    guildId: session.guildId,
+                    name: session.author.nick || session.author.name,
+                    roles: session.author.roles,
+                    avatar: session.author.avatar,
+                    lastActive: new Date(),
+                });
             }
-
-            return true;
+        } catch (e) {
+            this._logger.error(`更新成员信息时发生错误: ${e.message}`);
         }
-        return false;
     }
 
     /**
@@ -781,28 +854,35 @@ export class WorldStateService extends Service<HistoryConfig> {
         const pendingInChannel = this.pendingCommands.get(session.channelId);
         if (!pendingInChannel || pendingInChannel.length === 0) return;
 
-        const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope && p.invokerId === session.userId);
+        const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope);
 
         if (pendingIndex !== -1) {
             const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
-            this._logger.debug(`✅ 匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
+            // this._logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
 
-            const existingEvent = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
+            const existingEvent = await this.ctx.database.get(TableName.SystemEvents, {
+                id: pendingCmd.commandEventId,
+            });
             if (existingEvent.length > 0) {
                 const updatedPayload: CommandInvocationPayload = {
                     ...existingEvent[0].payload,
                     result: session.content,
                 } as CommandInvocationPayload;
-                await this.ctx.database.set(TableName.SystemEvents, { id: pendingCmd.commandEventId }, { payload: updatedPayload });
+                await this.ctx.database.set(
+                    TableName.SystemEvents,
+                    { id: pendingCmd.commandEventId },
+                    { payload: updatedPayload }
+                );
             }
         }
     }
 
     /**
-     * [重构] 此方法现在仅负责记录用户消息，不再处理事件触发逻辑。
+     * 此方法现在仅负责记录用户消息，不再处理事件触发逻辑。
      * @param session 消息会话。
      */
     private async _recordUserMessage(session: Session): Promise<void> {
+        /* prettier-ignore */
         this._logger.info(`捕获到用户消息 | 用户: ${session.author.name} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
         const segmentRecord = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
@@ -867,15 +947,19 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param onetimeCode 一次性代码。
      * @returns 一个私聊频道的 `Channel` 对象。
      */
-    private async _buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor, onetimeCode: string): Promise<Channel> {
+    private async _buildPrivateChannelContext(
+        bot: Bot,
+        channel: ChannelDescriptor,
+        onetimeCode: string
+    ): Promise<Channel> {
         const { platform, id } = channel;
         const userId = id.substring("private:".length);
 
         // 并行获取对方用户信息和会话历史
         const [user, history] = await Promise.all([
             bot.getUser(userId).catch((e) => {
-                this._logger.error(`Failed to get user info for ${platform}:${userId}`, e);
-                return null; // 容错处理
+                this._logger.error(`获取用户信息失败，将返回一个基础对象 | 用户: ${platform}:${userId}`);
+                return null;
             }),
             this._fetchAndBuildHistory(channel, onetimeCode),
         ]);
@@ -916,7 +1000,11 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param onetimeCode 一次性代码。
      * @returns 一个公会频道的 `Channel` 对象。
      */
-    private async _buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor, onetimeCode: string): Promise<Channel> {
+    private async _buildGuildChannelContext(
+        bot: Bot,
+        channel: ChannelDescriptor,
+        onetimeCode: string
+    ): Promise<Channel> {
         const { platform, id } = channel;
 
         // 并行获取频道信息和会话历史
@@ -993,20 +1081,55 @@ export class WorldStateService extends Service<HistoryConfig> {
             .where({ status: "summarized" })
             .orderBy("timestamp", "desc")
             .limit(
-                this.config.advanced.maxHistoryItemsPerChannel - this.config.fullContextSegmentCount - this.config.summarizationTriggerCount
+                this.config.advanced.maxHistoryItemsPerChannel -
+                    this.config.fullContextSegmentCount -
+                    this.config.summarizationTriggerCount
             )
             .execute()
             .then((res) => res.reverse());
 
         const pending = await this.buildDialogueSegment(pendingSegment, onetimeCode);
-        const closed = await Promise.all(closedSegments.map((record) => this.buildDialogueSegment(record, onetimeCode)));
-        const folded = foldedSegments.length > 0 ? await this.buildFoldedDialogueSegment(foldedSegments, onetimeCode) : undefined;
-        const summarized = await Promise.all(summarizedSegments.map((record) => this.buildSummarizedDialogueSegment(record, onetimeCode)));
+        const closed = await Promise.all(closedSegments.map((record) => this.buildClosedSegment(record, onetimeCode)));
+        const folded =
+            foldedSegments.length > 0 ? await this.buildFoldedDialogueSegment(foldedSegments, onetimeCode) : undefined;
+        const summarized = await Promise.all(
+            summarizedSegments.map((record) => this.buildSummarizedDialogueSegment(record, onetimeCode))
+        );
 
         return { pending, closed, folded, summarized };
     }
 
-    private async buildSummarizedDialogueSegment(record: DialogueSegmentData, onetimeCode: string): Promise<SummarizedDialogueSegment> {
+    private async buildClosedSegment(record: DialogueSegmentData, onetimeCode: string): Promise<ClosedDialogueSegment> {
+        const dialogueSegment: ClosedDialogueSegment = {
+            type: "dialogue-segment",
+            id: record.id,
+            platform: record.platform,
+            channelId: record.channelId,
+            guildId: record.guildId,
+            status: "closed",
+            summary: record.summary,
+            timestamp: record.timestamp,
+            agentTurn: record.agentTurn,
+            dialogue: [],
+        };
+
+        // 核心性能优化：根据片段状态决定是否查询详细内容。
+        if (record.status === "summarized") {
+            dialogueSegment.agentTurn = null; // 总结片段不应有关联的 Agent 回合
+            return dialogueSegment;
+        }
+
+        const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: record.id });
+
+        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords, onetimeCode);
+
+        return dialogueSegment;
+    }
+
+    private async buildSummarizedDialogueSegment(
+        record: DialogueSegmentData,
+        onetimeCode: string
+    ): Promise<SummarizedDialogueSegment> {
         return {
             type: "dialogue-segment",
             id: record.id,
@@ -1029,7 +1152,10 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param foldedSegments
      * @param onetimeCode
      */
-    async buildFoldedDialogueSegment(foldedSegments: DialogueSegmentData[], onetimeCode: string): Promise<FoldedDialogueSegment> {
+    async buildFoldedDialogueSegment(
+        foldedSegments: DialogueSegmentData[],
+        onetimeCode: string
+    ): Promise<FoldedDialogueSegment> {
         // 收集所有消息
         const allMessages = await this.ctx.database
             .select(TableName.Messages)
@@ -1076,7 +1202,12 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param guildId 公会ID。
      * @returns 成员列表。
      */
-    private async _getMembersFromHistory(bot: Bot, history: History, platform: string, guildId: string): Promise<GuildMember[]> {
+    private async _getMembersFromHistory(
+        bot: Bot,
+        history: History,
+        platform: string,
+        guildId: string
+    ): Promise<GuildMember[]> {
         const memberIds = new Set<string>();
 
         // history.pending.forEach((segment) => {
@@ -1152,7 +1283,10 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param existingHistory 可选，如果已获取，直接传入以避免重复查询。
      * @returns 一个完整的、可供 Agent 使用的 `DialogueSegment` 对象。
      */
-    public async buildDialogueSegment(segmentRecord: DialogueSegmentData, onetimeCode: string): Promise<DialogueSegment> {
+    public async buildDialogueSegment(
+        segmentRecord: DialogueSegmentData,
+        onetimeCode: string
+    ): Promise<DialogueSegment> {
         const dialogueSegment: DialogueSegment = {
             type: "dialogue-segment",
             id: segmentRecord.id,
@@ -1213,7 +1347,11 @@ export class WorldStateService extends Service<HistoryConfig> {
 
             const idsToFold = segmentsToFold.map((s) => s.id);
             if (idsToFold.length > 0) {
-                await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: idsToFold } }, { status: SegmentStatus.Folded });
+                await this.ctx.database.set(
+                    TableName.DialogueSegments,
+                    { id: { $in: idsToFold } },
+                    { status: SegmentStatus.Folded }
+                );
                 this._logger.debug(`折叠了 ${idsToFold.length} 个旧片段 | 频道: ${platform}:${channelId}`);
             }
         }
@@ -1229,12 +1367,12 @@ export class WorldStateService extends Service<HistoryConfig> {
      * 运行周期性维护任务。
      */
     private runMaintenanceTasks(): void {
-        this._logger.debug("开始执行后台维护任务...");
+        // this._logger.debug("开始执行后台维护任务...");
         this._cleanupPendingCommands();
 
         if (this.config.enableSummarization && this.chatModel) {
             this.triggerSummarizationForEligibleChannels().catch((error) => {
-                this._logger.error(error, "❌ 自动总结任务执行失败");
+                // this._logger.error(error, "❌ 自动总结任务执行失败");
             });
         }
     }
@@ -1337,7 +1475,11 @@ export class WorldStateService extends Service<HistoryConfig> {
         if (!summaryText) {
             this._logger.warn(`模型未返回有效的总结内容，将直接归档片段 | 频道: ${channelId}`);
             // 即使总结失败，也标记为已归档，避免阻塞流程
-            await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: groupIds } }, { status: SegmentStatus.Archived });
+            await this.ctx.database.set(
+                TableName.DialogueSegments,
+                { id: { $in: groupIds } },
+                { status: SegmentStatus.Archived }
+            );
             return;
         }
 
@@ -1437,20 +1579,18 @@ export function pruneHistoryByMessages(worldState: WorldState, maxMessages: numb
 
     // 处理边缘情况：如果允许的最大消息数为0或更少，直接清空所有历史记录。
     if (maxMessages <= 0) {
-        newWorldState.activeChannels.forEach((channel) => {
-            channel.history.pending = undefined;
-            channel.history.closed = [];
-            channel.history.folded = undefined;
-        });
+        newWorldState.channel.history.pending = undefined;
+        newWorldState.channel.history.closed = [];
+        newWorldState.channel.history.folded = undefined;
         return newWorldState;
     }
 
     // 2. 收集新 worldState 中所有可操作的对话片段的引用
-    const allSegments: (DialogueSegment | FoldedDialogueSegment)[] = newWorldState.activeChannels.flatMap((channel) =>
-        [channel.history.pending, ...channel.history.closed, channel.history.folded].filter(
-            (segment): segment is DialogueSegment | FoldedDialogueSegment => !!segment
-        )
-    );
+    const allSegments: (DialogueSegment | FoldedDialogueSegment)[] = [
+        newWorldState.channel.history.pending,
+        ...(newWorldState.channel.history.closed || []),
+        newWorldState.channel.history.folded,
+    ].filter(Boolean);
 
     // 3. 计算当前总消息数
     let totalMessages = 0;
@@ -1488,15 +1628,16 @@ export function pruneHistoryByMessages(worldState: WorldState, maxMessages: numb
     }
 
     // 7. 最后，清理那些因消息被删除而变为空的片段
-    newWorldState.activeChannels.forEach((channel) => {
-        // 过滤 closed 列表，只保留那些仍然包含消息的片段
-        channel.history.closed = channel.history.closed.filter((segment) => segment.dialogue.length > 0);
 
-        // 检查 folded 片段，如果它变空了，就将其移除（设置为 undefined）
-        if (channel.history.folded && channel.history.folded.dialogue.length === 0) {
-            channel.history.folded = undefined;
-        }
-    });
+    // 过滤 closed 列表，只保留那些仍然包含消息的片段
+    newWorldState.channel.history.closed = newWorldState.channel.history.closed.filter(
+        (segment) => segment.dialogue.length > 0
+    );
+
+    // 检查 folded 片段，如果它变空了，就将其移除（设置为 undefined）
+    if (newWorldState.channel.history.folded && newWorldState.channel.history.folded.dialogue.length === 0) {
+        newWorldState.channel.history.folded = undefined;
+    }
 
     // 8. 返回修改后的新 worldState
     return newWorldState;
