@@ -188,8 +188,5 @@ export interface SummarizedDialogueSegment extends DialogueSegment {
 export interface WorldState {
     /** 快照生成的时间戳。 */
     timestamp: string;
-    /** Agent 判断为需要关注的活跃频道列表。 */
-    activeChannels: Channel[];
-    /** Agent 判断为暂时无需关注的非活跃频道列表。 */
-    inactiveChannels: Channel[];
+    channel: Channel;
 }
