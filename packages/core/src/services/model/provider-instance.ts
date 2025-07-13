@@ -62,7 +62,7 @@ export class ProviderInstance {
     }
 
     public getChatModel(modelId: string): IChatModel | null {
-        return this._getModel(modelId, ModelAbility.Chat, ChatModel, this.client.chat, "聊天");
+        return this._getModel(modelId, ModelAbility.Chat, ChatModel, this.client.chat, "对话");
     }
 
     public getEmbedModel(modelId: string): IEmbedModel | null {

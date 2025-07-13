@@ -7,12 +7,12 @@ import { SystemConfig } from "../../config";
 
 /** 定义模型支持的能力 */
 export enum ModelAbility {
-    Vision = "视觉能力",
-    WebSearch = "网络搜索能力",
-    Reasoning = "推理能力",
-    FunctionCalling = "函数调用能力",
-    Embedding = "嵌入能力",
-    Chat = "聊天能力",
+    Vision = "视觉",
+    WebSearch = "网络搜索",
+    Reasoning = "推理",
+    FunctionCalling = "函数调用",
+    Embedding = "嵌入",
+    Chat = "对话",
 }
 
 /**
