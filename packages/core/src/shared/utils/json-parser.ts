@@ -42,29 +42,19 @@ export class JsonParser<T> {
 
         let processedString = rawOutput.trim();
 
-        // 通过比较 '```' 和 '{' 或 '[' 的首次出现位置，来智能判断是否要提取 Markdown 代码块。
-        // 这可以正确处理带有前言的输出，同时避免错误提取 JSON 字符串值中的代码块。
+        // 优先检测并提取 Markdown 代码块。
+        // 如果存在代码块，我们假定这才是我们真正需要解析的内容。
         const codeBlockStartIndex = processedString.indexOf("```");
-        const firstBraceIndex = processedString.indexOf("{");
-        const firstBracketIndex = processedString.indexOf("[");
+        const trimmedStringStartsWithJson = processedString.startsWith("{") || processedString.startsWith("[");
 
-        // 查找第一个 JSON 符号的位置（'{' 或 '['）
-        let firstJsonCharIndex = -1;
-        if (firstBraceIndex !== -1 && firstBracketIndex !== -1) {
-            firstJsonCharIndex = Math.min(firstBraceIndex, firstBracketIndex);
-        } else if (firstBraceIndex !== -1) {
-            firstJsonCharIndex = firstBraceIndex;
-        } else {
-            firstJsonCharIndex = firstBracketIndex;
-        }
-
-        // 如果找到了代码块，并且它出现在第一个JSON符号之前（或者根本没有JSON符号）
-        // 那么我们就提取代码块中的内容。
-        if (codeBlockStartIndex !== -1 && (firstJsonCharIndex === -1 || codeBlockStartIndex < firstJsonCharIndex)) {
-            // 使用 indexOf 和 lastIndexOf 来避免非贪婪匹配问题，正确处理嵌套代码块。
+        // 新的、更智能的代码块提取逻辑：
+        // 仅当检测到代码块，并且整个字符串的开头不是有效的JSON字符时，
+        // 才认为代码块是需要提取的主体。
+        if (codeBlockStartIndex !== -1 && !trimmedStringStartsWithJson) {
             const lastCodeBlockIndex = processedString.lastIndexOf("```");
+            // 确保我们找到了一个开始和一个结束标记
             if (lastCodeBlockIndex > codeBlockStartIndex) {
-                this.log("从 Markdown 代码块中提取了内容 (使用首尾匹配策略)。");
+                this.log("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。");
 
                 // 提取两个 ``` 之间的内容
                 let content = processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex);
@@ -72,17 +62,23 @@ export class JsonParser<T> {
                 // 移除可能的语言标识符，如 'json'
                 const firstNewlineIndex = content.indexOf("\n");
                 if (firstNewlineIndex !== -1) {
-                    // 如果第一行只包含语言标识符和空格，则移除它
                     const firstLine = content.substring(0, firstNewlineIndex).trim();
-                    // 简单的检查，避免误删JSON内容
-                    if (firstLine.indexOf("{") === -1 && firstLine.indexOf("[") === -1) {
+                    // 简单的检查，避免误删JSON内容。如果第一行不像JSON的开始，就移除它。
+                    if (!firstLine.startsWith("{") && !firstLine.startsWith("[")) {
+                        this.log(`移除了可能的语言标识符或前导文本: "${firstLine}"`);
                         content = content.substring(firstNewlineIndex + 1);
                     }
                 }
 
                 processedString = content.trim();
+                this.log(`从代码块提取并修整后，待处理字符串长度: ${processedString.length}`);
             }
+        } else if (codeBlockStartIndex !== -1) {
+            this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取。");
         }
+
+        // 现在，无论 `processedString` 是来自代码块还是原始输入，
+        // 我们都应用相同的后续清理逻辑。
 
         const firstBrace = processedString.indexOf("{");
         const firstBracket = processedString.indexOf("[");
@@ -100,7 +96,7 @@ export class JsonParser<T> {
             this.log("未找到 JSON 起始符号，将尝试直接修复整个字符串。");
         } else {
             if (startIndex > 0) {
-                this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的文本。`);
+                this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的 ${startIndex} 个字符。`);
                 processedString = processedString.substring(startIndex);
             }
         }
@@ -122,7 +118,12 @@ export class JsonParser<T> {
                 processedString = processedString.substring(0, endIndex + 1);
             }
         } else {
-            this.log(`JSON 结构不平衡，跳过后缀裁剪以保留可能被截断的数据。`);
+            /* prettier-ignore */
+            this.log(`JSON 结构不平衡 (括号: ${openBrackets}/${closeBrackets}, 大括号: ${openBraces}/${closeBraces})，跳过后缀裁剪以保留可能被截断的数据。`);
+        }
+
+        if (processedString.length === 0) {
+            return { data: null, error: "无法找到有效的 JSON 内容。", logs: this.logs };
         }
 
         try {
@@ -133,7 +134,7 @@ export class JsonParser<T> {
             // 这是一个启发式规则，用于避免将"some text { ... }"中的"some text"误解析为成功。
             // `startIndex === -1` 表示我们没有找到明确的 `{` 或 `[`，整个字符串都被拿来解析。
             if (typeof data !== "object" && startIndex === -1) {
-                this.log(`解析结果为非对象类型，但原始输入不像JSON，判定为解析失败。`);
+                this.log(`解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败。`);
                 return { data: null, error: "无法解析为有效的 JSON 对象或数组。", logs: this.logs };
             }
 
