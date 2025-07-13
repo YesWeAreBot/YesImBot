@@ -85,60 +85,98 @@ export class MemoryService extends Service {
     }
 
     protected async start() {
-        this._logger.info("服务启动中...");
         await this.discoverAndLoadCoreMemoryBlocks();
+        try {
+            this.registerCommands();
+        } catch (error) {
+            this._logger.error(`注册命令失败: ${error.message}`);
+        }
         this._logger.info(`服务已启动，加载了 ${this.coreMemoryBlocks.size} 个核心记忆块。`);
+    }
 
-        this.ctx.command("memory.list", "列出所有核心记忆块").action(async ({ session }) => {
+    protected async stop() {
+        for (const block of this.coreMemoryBlocks.values()) {
+            await block
+                .disposeFileWatcher()
+                .catch((e) => this._logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
+        }
+        this.coreMemoryBlocks.clear();
+        this._logger.info("服务已停止");
+    }
+
+    private registerCommands() {
+        this.ctx.command("memory", "记忆管理指令集", { authority: 3 });
+
+        this.ctx.command("memory.core", "管理核心记忆", { authority: 3 });
+
+        this.ctx.command("memory.archival", "管理归档记忆", { authority: 3 });
+
+        this.ctx.command("memory.core.list", "列出所有核心记忆块", { authority: 3 }).action(async ({ session }) => {
             const result = this.listCoreMemoryBlocks();
             if (!result.success) {
                 return `❌ ${result.message}`;
             }
-            return `找到 ${result.data.length} 个核心记忆块：\n${result.data.map((b) => `- ${b.label}: ${b.title}`).join("\n")}`;
+            return `找到 ${result.data.length} 个核心记忆块：\n${result.data
+                .map((b) => `- ${b.label}: ${b.title}`)
+                .join("\n")}`;
         });
 
         this.ctx
-            .command("memory.append <label:string> <content:text>", "向核心记忆块追加内容")
+            .command("memory.core.append <label:string> <content:text>", "向核心记忆块追加内容", { authority: 3 })
             .action(async ({ session }, label, content) => {
                 const result = await this.appendToCoreMemory(label, content);
                 return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
             });
 
         this.ctx
-            .command("memory.overwrite <label:string> <content:string>", "覆盖核心记忆块的内容")
+            .command("memory.core.overwrite <label:string> <content:string>", "覆盖核心记忆块的内容", { authority: 3 })
+            .option("label", "-l <label:string> 记忆块的标签")
+            .option("content", "-c <content:string> 要覆盖的内容")
             .action(async ({ session }, label, content) => {
                 const result = await this.overwriteCoreMemory(label, content);
                 return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
             });
 
         this.ctx
-            .command("memory.replace <label:string> <oldContent:string> [newContent:string]", "替换核心记忆块中的特定内容")
+            .command("memory.core.replace <label:string>", "替换核心记忆块中的特定内容", { authority: 3 })
+            .option("oldContent", "-o <oldContent:string> 旧内容")
+            .option("newContent", "-n <newContent:string> 新内容")
             .action(async ({ session }, label, oldContent, newContent) => {
                 const result = await this.replaceInCoreMemory(label, oldContent, newContent);
                 return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
             });
 
         this.ctx
-            .command("memory.store <content:string> [metadata:string]", "将内容存储到归档记忆中")
+            .command("memory.archival.store <content:string>", "将内容存储到归档记忆中", { authority: 3 })
+            .option("metadata", "-m <metadata:string> 要存储的元数据")
             .action(async ({ session }, content, metadata) => {
                 const result = await this.storeInArchivalMemory(content, metadata ? JSON.parse(metadata) : undefined);
                 return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
             });
 
         this.ctx
-            .command("memory.update <id:string> <content:string> [metadata:string]", "更新归档记忆中的内容")
+            .command("memory.archival.update <id:string>", "更新归档记忆中的内容", { authority: 3 })
+            .option("content", "-c <content:string> 要更新的内容")
+            .option("metadata", "-m <metadata:string> 要更新的元数据")
             .action(async ({ session }, id, content, metadata) => {
-                const result = await this.updateInArchivalMemory(id, { content, metadata: metadata ? JSON.parse(metadata) : undefined });
+                const result = await this.updateInArchivalMemory(id, {
+                    content,
+                    metadata: metadata ? JSON.parse(metadata) : undefined,
+                });
                 return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
             });
 
-        this.ctx.command("memory.remove <id:string>", "从归档记忆中删除内容").action(async ({ session }, id) => {
-            const result = await this.removeFromArchivalMemory(id);
-            return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-        });
+        this.ctx
+            .command("memory.archival.remove <id:string>", "从归档记忆中删除内容", { authority: 3 })
+            .action(async ({ session }, id) => {
+                const result = await this.removeFromArchivalMemory(id);
+                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
+            });
 
         this.ctx
-            .command("memory.search <query:string> [topK:number] [filterMetadata:string]", "在归档记忆中进行语义搜索")
+            .command("memory.archival.search <query:string>", "在归档记忆中进行语义搜索", { authority: 3 })
+            .option("topK", "-k <topK:number> 返回结果的数量")
+            .option("filterMetadata", "-f <filterMetadata:string> 过滤元数据")
             .action(async ({ session }, query, topK, filterMetadata) => {
                 const result = await this.searchArchivalMemory(query, {
                     topK: topK ? Number(topK) : undefined,
@@ -147,33 +185,33 @@ export class MemoryService extends Service {
                 return `Found ${result.results.length} relevant memories (out of ${result.total} total).`;
             });
 
-        this.ctx.command("memory.count", "统计归档记忆中的记忆数量").action(async ({ session }) => {
-            const count = await this.archivalStore.count();
-            return `Found ${count} memories in archival memory.`;
-        });
+        this.ctx
+            .command("memory.archival.count", "统计归档记忆中的记忆数量", { authority: 3 })
+            .action(async ({ session }) => {
+                const count = await this.archivalStore.count();
+                return `Found ${count} memories in archival memory.`;
+            });
 
-        this.ctx.command("memory.clear", "清空归档记忆").action(async ({ session }) => {
+        this.ctx.command("memory.archival.clear", "清空归档记忆", { authority: 3 }).action(async ({ session }) => {
             await this.archivalStore.clearAll();
             return `Archival memory cleared.`;
         });
 
-        this.ctx.command("memory.archival.rebuild", "为所有归档记忆重新生成 embedding").action(async ({ session }) => {
-            const result = await this.archivalStore.rebuildEmbeddings();
+        this.ctx
+            .command("memory.archival.rebuild", "为所有归档记忆重新生成 embedding", { authority: 3 })
+            .action(async ({ session }) => {
+                const result = await this.archivalStore.rebuildEmbeddings();
 
-            return `记忆重建完成
+                return `记忆重建完成
 成功: ${result.successCount}
 失败: ${result.failCount}`;
-        });
+            });
     }
 
-    protected async stop() {
-        for (const block of this.coreMemoryBlocks.values()) {
-            await block.disposeFileWatcher().catch((e) => this._logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
-        }
-        this.coreMemoryBlocks.clear();
-        this._logger.info("服务已停止");
-    }
-
+    /**
+     * 扫描核心记忆目录，加载所有可用的记忆块。
+     * @returns
+     */
     private async discoverAndLoadCoreMemoryBlocks() {
         const memoryPath = this.config.coreMemoryPath;
         try {
@@ -292,7 +330,11 @@ export class MemoryService extends Service {
      * @param newContent 用来替换的新文本行。
      * @returns 操作结果对象。
      */
-    public async replaceInCoreMemory(label: string, oldContent: string, newContent: string): Promise<MemoryOperationResult<ArchivalEntry>> {
+    public async replaceInCoreMemory(
+        label: string,
+        oldContent: string,
+        newContent: string
+    ): Promise<MemoryOperationResult<ArchivalEntry>> {
         try {
             const block = this.getCoreMemoryBlockOrThrow(label);
             if (this.config.backup?.enabled) {
@@ -314,7 +356,10 @@ export class MemoryService extends Service {
      * @param metadata (可选) 一个用于过滤的 JSON 对象，例如 `{ "source": "conversation_id_123" }`。
      * @returns 操作结果对象，其中 data 包含新创建的记忆 ID。
      */
-    public async storeInArchivalMemory(content: string, metadata?: Record<string, any>): Promise<MemoryOperationResult<ArchivalEntry>> {
+    public async storeInArchivalMemory(
+        content: string,
+        metadata?: Record<string, any>
+    ): Promise<MemoryOperationResult<ArchivalEntry>> {
         if (!this.archivalStore) {
             return { success: false, message: "Archival memory service is not available." };
         }
@@ -381,7 +426,6 @@ export class MemoryService extends Service {
         query: string,
         options?: { topK?: number; filterMetadata?: Record<string, any>; similarityThreshold?: number }
     ): Promise<ArchivalSearchResult> {
-
         try {
             return await this.archivalStore.search(query, options);
         } catch (error) {

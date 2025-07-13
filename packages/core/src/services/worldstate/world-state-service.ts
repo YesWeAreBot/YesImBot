@@ -1485,7 +1485,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 创建新的总结片段
         const summarySegment: DialogueSegmentData = {
-            id: `sum_${Date.now()}_${Random.id(8)}`,
+            id: randomUUID(),
             platform: platform,
             channelId: channelId,
             guildId: foldedSegments[0].guildId,

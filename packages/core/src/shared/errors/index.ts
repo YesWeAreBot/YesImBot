@@ -50,7 +50,7 @@ export const ErrorCodes = {
         OUTPUT_PARSING_FAILED: "LLM.OUTPUT_PARSING_FAILED",
         MODEL_NOT_FOUND: "LLM.MODEL_NOT_FOUND",
     },
-    NETWORK:{
+    NETWORK: {
         DOWNLOAD_FAILED: "NETWORK.DOWNLOAD_FAILED",
     },
     // 记忆相关错误
@@ -119,10 +119,7 @@ export function assert(
  * @param value - 要检查的值。
  * @param name - 值的名称，用于生成错误消息。
  */
-export function assertNotNull<T>(
-    value: T | null | undefined,
-    name: string
-): asserts value is T {
+export function assertNotNull<T>(value: T | null | undefined, name: string): asserts value is T {
     if (value === null || value === undefined) {
         throw new AppError(`${name} 不能为空`, {
             code: ErrorCodes.VALIDATION.IS_NULL_OR_UNDEFINED,
