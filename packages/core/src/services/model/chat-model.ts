@@ -105,9 +105,9 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         if (result.toolCalls && result.toolCalls.length > 0) {
             const toolNames = result.toolCalls.map((tc: CompletionToolCall) => tc.toolName).join(", ");
-            this.logger.success(`✔ 工具调用 ← 名称: ${toolNames}`);
+            // this.logger.success(`✔ 工具调用 ← 名称: ${toolNames}`);
         } else {
-            this.logger.success(`✔ 文本响应 ← 内容: "${truncate(result.text, 80)}"`);
+            // this.logger.success(`✔ 文本响应 ← 内容: "${truncate(result.text, 80)}"`);
         }
         return result;
     }
@@ -222,9 +222,9 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 记录总结性日志
         if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
             const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
-            this.logger.success(`✔ 工具调用 (流) ← 名称: ${toolNames}`);
+            // this.logger.success(`✔ 工具调用 (流) ← 名称: ${toolNames}`);
         } else {
-            this.logger.success(`✔ 文本响应 (流) ← 总长度: ${finalResult.text.length}, 停止原因: ${finalResult.finishReason}`);
+            // this.logger.success(`✔ 文本响应 (流) ← 总长度: ${finalResult.text.length}, 停止原因: ${finalResult.finishReason}`);
         }
 
         return finalResult;
