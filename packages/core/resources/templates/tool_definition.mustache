@@ -10,14 +10,14 @@
 
 ## 参数
 {{#parameters}}
-  - `{{key}}` ({{type}}){{#required}} **(必需)**{{/required}}
+  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
     - 描述: {{description}}
 {{#default}}
-    - 默认值: `{{.}}`
+    - 默认值: {{.}}
 {{/default}}
-{{#enum}}
-    - 可选值: [{{#.}}`"{{.}}"`{{^last}}, {{/last}}{{/.}}]
-{{/enum}}
+{{#enum.length}}
+    - 可选值: {{#enum}}"{{.}}" {{/enum}}
+{{/enum.length}}
 {{#properties}}
     - 对象属性:
 {{#.}}

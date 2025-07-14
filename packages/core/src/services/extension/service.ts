@@ -10,7 +10,8 @@ import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { ToolServiceConfig } from "./config";
 import { extractMetaFromSchema, Failed } from "./helpers";
-import { IExtension, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+import Mustache from "mustache";
 
 declare module "koishi" {
     interface Context {
@@ -67,7 +68,7 @@ export class ToolService extends Service<ToolServiceConfig> {
             .command("tool.list", "列出所有可用工具", { authority: 3 })
             .option("filter", "-f <keyword:string> 按名称或描述过滤工具")
             .option("page", "--page <page:natural> 指定显示的页码 (默认为 1)", { fallback: 1 })
-            .option("size", "--size <size:natural> 指定每页显示的数量 (默认为 10)", { fallback: 10 })
+            .option("size", "--size <size:natural> 指定每页显示的数量 (默认为 10)", { fallback: 5 })
             .usage(`查询并展示当前所有已加载且可用的工具。\n支持通过关键词过滤和分页显示，方便在工具数量多时进行查找。`)
             .example(
                 [
@@ -85,7 +86,9 @@ export class ToolService extends Service<ToolServiceConfig> {
                 const filterKeyword = options.filter?.toLowerCase();
                 if (filterKeyword) {
                     allTools = allTools.filter(
-                        (t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword)
+                        (t) =>
+                            t.name.toLowerCase().includes(filterKeyword) ||
+                            t.description.toLowerCase().includes(filterKeyword)
                     );
                 }
 
@@ -111,9 +114,94 @@ export class ToolService extends Service<ToolServiceConfig> {
                 // 6. 格式化输出
                 const toolList = pagedTools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
 
+                /* prettier-ignore */
                 const header = `发现 ${totalCount} 个${options.filter ? "匹配的" : ""}工具。正在显示第 ${page}/${totalPages} 页：\n`;
 
                 return header + toolList;
+            });
+
+        this.ctx
+            .command("tool.info", "显示工具的详细信息", { authority: 3 })
+            .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等。")
+            .example("tool.info search_web")
+            .action(async ({ session }, name) => {
+                function prepareDataForTemplate(tool: ToolSchema) {
+                    // 递归函数，处理参数并添加缩进
+                    const processParams = (params: Properties, indent = ""): any[] => {
+                        return Object.entries(params).map(([key, param]) => {
+                            const processedParam: any = {
+                                ...param,
+                                key: key,
+                                indent: indent,
+                            };
+
+                            // 如果是对象，递归处理其属性
+                            if (param.properties) {
+                                processedParam.properties = processParams(param.properties, indent + "    ");
+                            }
+
+                            // 如果是数组且数组成员是复杂对象，递归处理
+                            if (param.items) {
+                                // 将单个 item 包装成数组，以便局部模板可以统一处理
+                                processedParam.items = [
+                                    {
+                                        ...param.items,
+                                        key: "item", // 为数组项提供一个通用名称
+                                        indent: indent + "    ",
+                                        // 递归处理数组项的属性（如果它是一个对象）
+                                        ...(param.items.properties && {
+                                            properties: processParams(param.items.properties, indent + "        "),
+                                        }),
+                                    },
+                                ];
+                            }
+                            return processedParam;
+                        });
+                    };
+
+                    // 转换每个工具的参数
+                    return {
+                        ...tool,
+                        parameters: tool.parameters ? processParams(tool.parameters) : [],
+                    };
+                }
+
+                const tool = this.getSchema(name);
+                if (!tool) {
+                    return `未找到名为 "${name}" 的工具。`;
+                }
+                const template = `# 工具名称: {{name}}
+## 描述
+{{description}}
+
+## 参数
+{{#parameters}}
+  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
+    - 描述: {{description}}
+{{#default}}
+    - 默认值: {{.}}
+{{/default}}
+{{#enum.length}}
+    - 可选值: {{#enum}}"{{.}}" {{/enum}}
+{{/enum.length}}
+{{#properties}}
+    - 对象属性:
+{{#.}}
+{{> paramDetail}}
+{{/.}}
+{{/properties}}
+{{#items}}
+    - 数组项 (每个项都是一个 '{{type}}'):
+{{> paramDetail}}
+{{/items}}
+{{/parameters}}
+{{^parameters}}
+此工具无需任何参数。
+{{/parameters}}`;
+
+                const rendered = Mustache.render(template, prepareDataForTemplate(tool));
+
+                return rendered;
             });
 
         this.ctx
@@ -251,7 +339,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                     Schema.object({
                         enabled: Schema.boolean().default(true).description("是否启用此扩展"),
                         //config: validate && enabled ? validate.default(validatedConfig) : Schema.object({}),
-                        ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict
+                        ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
                     }).description(`${metadata.display || metadata.name} - ${metadata.description}`)
                 )
             );
@@ -300,7 +388,11 @@ export class ToolService extends Service<ToolServiceConfig> {
         return this.tools.delete(name);
     }
 
-    public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
+    public async invoke(
+        functionName: string,
+        params: Record<string, unknown>,
+        session?: Session
+    ): Promise<ToolCallResult> {
         const tool = this.getTool(functionName);
         if (!tool) {
             this._logger.warn(`[执行] 工具未找到 | 名称: ${functionName}`);
@@ -369,7 +461,7 @@ export class ToolService extends Service<ToolServiceConfig> {
         };
     }
 
-    getToolSchemas(): ToolSchema[] {
+    public getToolSchemas(): ToolSchema[] {
         return Array.from(this.tools.values()).map((tool) => this.getSchema(tool.name));
     }
 }
