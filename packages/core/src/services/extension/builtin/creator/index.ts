@@ -1,10 +1,11 @@
 import { Context, Schema } from "koishi";
-import { Extension, Tool, withInnerThoughts } from "../../decorators";
-import { Failed, Success } from "../../helpers";
-import { Services } from "@/services/types";
+
+import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Failed, Success } from "@/services/extension/helpers";
 import { TaskType } from "@/services/model";
-import { TOOL_CREATOR_SYSTEM_PROMPT } from "./prompt";
+import { Services } from "@/services/types";
 import { JsonParser } from "@/shared";
+import { TOOL_CREATOR_SYSTEM_PROMPT } from "./prompt";
 
 interface ToolCreatorConfig {
     maxRetries: number;

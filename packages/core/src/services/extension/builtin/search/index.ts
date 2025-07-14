@@ -1,8 +1,9 @@
-import { isEmpty } from "@/shared";
 import { Context, Schema } from "koishi";
-import { Extension, Tool, withInnerThoughts } from "../../decorators";
-import { Failed, Success } from "../../helpers";
-import { Infer } from "../../types";
+
+import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Failed, Success } from "@/services/extension/helpers";
+import { Infer } from "@/services/extension/types";
+import { isEmpty } from "@/shared";
 
 interface SearchConfig {
     endpoint: string;

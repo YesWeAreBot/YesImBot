@@ -1,12 +1,12 @@
 import { Context, Query, Schema } from "koishi";
 
+import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Failed, Success } from "@/services/extension/helpers";
+import { Infer } from "@/services/extension/types";
 import { MemoryService } from "@/services/memory";
 import { Services, TableName } from "@/services/types";
 import { MessageData } from "@/services/worldstate";
 import { formatDate, isEmpty, truncate } from "@/shared";
-import { Extension, Tool, withInnerThoughts } from "../decorators";
-import { Failed, Success } from "../helpers";
-import { Infer } from "../types";
 
 const MemoryTopics = Schema.union([
     "personal_profile", // 个人信息
