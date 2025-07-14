@@ -2,23 +2,32 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Schema } from "koishi";
-import type { Infer, ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
+import { Context, Schema } from "koishi";
+import type { ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
 
 // MCP 连接管理器
 export class MCPManager {
+    private ctx: Context;
     private logger: Logger;
     private commandResolver: CommandResolver;
     private toolService: ToolService;
     private config: Config;
     private clients: Client[] = [];
     private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
-    private registeredTools: string[] = [];
+    private registeredTools: string[] = []; // 已注册工具
+    private availableTools: string[] = []; // 所有可用工具
 
-    constructor(logger: Logger, commandResolver: CommandResolver, toolService: ToolService, config: Config) {
+    constructor(
+        ctx: Context,
+        logger: Logger,
+        commandResolver: CommandResolver,
+        toolService: ToolService,
+        config: Config
+    ) {
+        this.ctx = ctx;
         this.logger = logger;
         this.commandResolver = commandResolver;
         this.toolService = toolService;
@@ -32,13 +41,24 @@ export class MCPManager {
         const serverNames = Object.keys(this.config.mcpServers);
         this.logger.info(`准备连接 ${serverNames.length} 个 MCP 服务器`);
 
-        for (const serverName of serverNames) {
+        for await (const serverName of serverNames) {
             await this.connectServer(serverName);
         }
 
         if (this.clients.length === 0) {
             this.logger.error("未能成功连接任何 MCP 服务器");
         } else {
+            this.registeredTools = Array.from(new Set(this.registeredTools));
+            this.availableTools = Array.from(new Set(this.availableTools));
+
+            this.ctx.schema.set(
+                "extension.mcp.availableTools",
+                Schema.array(Schema.union(this.availableTools.map((tool) => Schema.const(tool).description(tool))))
+                    .role("checkbox")
+                    .collapse()
+                    .default(this.availableTools)
+            );
+
             this.logger.success(`成功连接 ${this.clients.length} 个服务器，注册 ${this.registeredTools.length} 个工具`);
         }
     }
@@ -65,7 +85,8 @@ export class MCPManager {
                 this.logger.info(`连接 URL 服务器: ${serverName}`);
             } else if (server.command) {
                 this.logger.info(`启动命令服务器: ${serverName}`);
-                const enableTransform = server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
+                const enableTransform =
+                    server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
 
                 const [command, args, env] = await this.commandResolver.resolveCommand(
                     server.command,
@@ -116,6 +137,13 @@ export class MCPManager {
             }
 
             for (const tool of tools) {
+                this.availableTools.push(tool.name);
+
+                if (Object.hasOwn(this.config, "activeTools") && !this.config.activeTools.includes(tool.name)) {
+                    this.logger.info(`跳过注册工具: ${tool.name} (来自 ${serverName})`);
+                    continue;
+                }
+
                 this.toolService.registerTool({
                     name: tool.name,
                     description: tool.description,
@@ -226,7 +254,7 @@ export class MCPManager {
  * @param {object} jsonSchema 要转换的 JSON Schema。
  * @returns {Schema} 对应的 Schemastery 模式实例。
  */
-function convertJsonSchemaToSchemastery(jsonSchema) {
+function convertJsonSchemaToSchemastery(jsonSchema: any): Schema<any> {
     let schema: Schema<any>;
 
     // 1. 处理 `enum` - 它的优先级最高，直接转换为 union 类型

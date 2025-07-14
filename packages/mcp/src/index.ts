@@ -36,8 +36,8 @@ export async function apply(ctx: Context, config: Config) {
 
     const commandResolver = new CommandResolver(logger, systemUtils, config, installedUVPath, installedBunPath);
 
-    const toolManager = ctx["yesimbot.tool"];
-    const mcpManager = new MCPManager(logger, commandResolver, toolManager, config);
+    const toolService = ctx["yesimbot.tool"];
+    const mcpManager = new MCPManager(ctx, logger, commandResolver, toolService, config);
 
     // 启动时初始化
     ctx.on("ready", async () => {
@@ -54,12 +54,18 @@ export async function apply(ctx: Context, config: Config) {
         // 安装二进制文件
         if (config.uvSettings?.autoDownload) {
             logger.info("开始安装 UV...");
-            installedUVPath = await binaryInstaller.installUV(config.uvSettings.uvVersion || "latest", config.uvSettings.githubMirror);
+            installedUVPath = await binaryInstaller.installUV(
+                config.uvSettings.uvVersion || "latest",
+                config.globalSettings?.githubMirror
+            );
         }
 
         if (config.bunSettings?.autoDownload) {
             logger.info("开始安装 Bun...");
-            installedBunPath = await binaryInstaller.installBun(config.bunSettings.bunVersion || "latest", config.bunSettings.githubMirror);
+            installedBunPath = await binaryInstaller.installBun(
+                config.bunSettings.bunVersion || "latest",
+                config.globalSettings?.githubMirror
+            );
         }
 
         // 更新命令解析器的二进制路径
