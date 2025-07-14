@@ -1,5 +1,11 @@
+import { readFileSync } from "fs";
 import { Schema } from "koishi";
-import { SystemConfig } from "../../config";
+import path from "path";
+
+import { SystemConfig } from "@/config";
+import { PROMPTS_DIR } from "@/shared/constants";
+
+export const DEFAULT_SUMMARY_PROMPT = readFileSync(path.resolve(PROMPTS_DIR, "summary_system.txt"), "utf-8");
 
 /**
  * 对话历史管理配置 (原 WorldState)
@@ -32,11 +38,9 @@ export interface HistoryConfig {
 export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
     enableSummarization: Schema.boolean().default(true).description("启用对话历史总结功能"),
     summarizationPrompt: Schema.string()
-        .default(
-            `你是一个对话总结助手。请根据以下多段对话记录，用一段话凝练地总结对话的核心内容、关键信息或主要问题。忽略闲聊，聚焦于事实、决策和未解决的问题。\n\n对话记录：\n{dialogueText}`
-        )
+        .default(DEFAULT_SUMMARY_PROMPT)
         .role("textarea", { rows: [2, 4] })
-        .description("用于生成对话摘要的提示词模板。必须包含 `{dialogueText}`。"),
+        .description("用于生成对话摘要的提示词。"),
     fullContextSegmentCount: Schema.number().default(2).description("在上下文中保留的最新“完整”对话片段数量"),
     summarizationTriggerCount: Schema.number().default(6).description("当待总结的片段达到此数量时，触发总结任务"),
     advanced: Schema.object({
