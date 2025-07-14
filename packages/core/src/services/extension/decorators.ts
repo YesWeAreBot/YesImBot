@@ -17,7 +17,6 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
         // 定义一个继承自目标类的新类
         class WrappedExtension extends TargetClass {
             constructor(...args: any[]) {
-                super(...args);
                 const ctx: Context = args[0];
                 const config: any = args[1];
 
@@ -25,6 +24,8 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
 
                 // 默认启用，因此配置中明确禁用才跳过加载
                 const enabled = !Object.hasOwn(config, "enabled") || config.enabled;
+
+                super(ctx, config);
 
                 // 在原始构造函数执行完毕后，执行自动注册逻辑。
                 // 'this' 在这里是完全初始化好的、用户类的实例。
@@ -46,13 +47,10 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                         this.tools = tools;
                     }
 
-                    //@ts-ignore
-                    this.config = merge(this.config, config.config || {});
-
                     ctx.on("ready", () => {
                         const toolService = ctx[Services.Tool];
                         //@ts-ignore
-                        toolService.register(this, enabled, config.config);
+                        toolService.register(this, enabled, config);
                     });
 
                     ctx.on("dispose", () => {
@@ -106,7 +104,11 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
  * @param metadata 工具的元数据
  */
 export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
-    return function (target: any, propertyKey: string, descriptor: TypedPropertyDescriptor<(args: Infer<TParams>) => Promise<any>>) {
+    return function (
+        target: any,
+        propertyKey: string,
+        descriptor: TypedPropertyDescriptor<(args: Infer<TParams>) => Promise<any>>
+    ) {
         if (!descriptor.value) {
             return;
         }
@@ -130,7 +132,11 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
  * @returns
  */
 export function Support(predicate: (session: Session) => boolean) {
-    return function (target: any, propertyKey: string, descriptor: TypedPropertyDescriptor<(args: any) => Promise<any>>) {
+    return function (
+        target: any,
+        propertyKey: string,
+        descriptor: TypedPropertyDescriptor<(args: any) => Promise<any>>
+    ) {
         if (!descriptor.value) {
             return;
         }
