@@ -80,7 +80,7 @@ export interface History {
     pending: DialogueSegment;
     closed?: DialogueSegment[];
     folded?: FoldedDialogueSegment;
-    summarized?: SummarizedDialogueSegment[];
+    summarized?: SummarizedDialogueSegment;
 }
 
 /**
