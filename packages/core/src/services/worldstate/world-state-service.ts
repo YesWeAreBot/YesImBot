@@ -821,7 +821,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
 
         if (!bot) {
-            this._logger.warn(`Could not find an online bot for platform "${platform}" to build channel context.`);
+            this._logger.warn(`找不到 ${platform} 平台的在线机器人实例，无法构建频道上下文。`);
             // 在没有可用 bot 的情况下，返回一个最基础的表示
             return {
                 id,

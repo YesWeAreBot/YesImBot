@@ -211,7 +211,7 @@ export class MemoryBlock {
             const fileStats = await stat(filePath);
             const { data, content } = await this.loadDataFromFile(filePath);
 
-            logger.debug(`加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
+            // logger.debug(`加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
             const block = new MemoryBlock(ctx, filePath, { ...data, content }, fileStats.mtimeMs);
 
             await block.startWatching();
