@@ -1,5 +1,5 @@
 import { Context, Schema } from "koishi";
-import { Extension, Tool } from "../../decorators";
+import { Extension, Tool, withInnerThoughts } from "../../decorators";
 import { Failed, Success } from "../../helpers";
 import { Services } from "@/services/types";
 import { TaskType } from "@/services/model";
@@ -36,8 +36,10 @@ export default class CreatorExtension {
     @Tool({
         name: "tool_creator",
         description: "根据用户需求，调用高级编码LLM来动态创建、验证并注册一个新工具。",
-        parameters: Schema.object({
-            name: Schema.string().description("要创建的工具的名称，应为唯一的、符合变量命名规范的字符串（例如 'weather_checker'）。"),
+        parameters: withInnerThoughts({
+            name: Schema.string()
+                .required()
+                .description("要创建的工具的名称，应为唯一的、符合变量命名规范的字符串（例如 'weather_checker'）。"),
             description: Schema.string().description("对新工具功能的详细描述，说明它的作用。"),
             parametersDescription: Schema.string().description(
                 "用自然语言描述新工具需要的参数。例如：'需要一个名为city的字符串参数表示城市，和一个可选的名为days的数字参数表示预测天数，默认为3'。"
@@ -46,7 +48,9 @@ export default class CreatorExtension {
                 "用自然语言描述工具的核心执行逻辑。例如：'调用天气API获取指定城市和天数的天气预报，并以友好格式返回结果'。"
             ),
             lifecycle: Schema.union(["session", "permanent"])
-                .description("工具的生命周期。'session'表示工具仅在当前会话有效，'permanent'表示工具将被保存到本地，并在下次启动时加载。")
+                .description(
+                    "工具的生命周期。'session'表示工具仅在当前会话有效，'permanent'表示工具将被保存到本地，并在下次启动时加载。"
+                )
                 .default("session"),
         }),
     })
@@ -92,7 +96,9 @@ Generate the complete JSON object now.
                     { role: "user", content: userPrompt },
                 ]);
 
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("LLM call timed out")), timeout));
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("LLM call timed out")), timeout)
+                );
 
                 const result: any = await Promise.race([llmPromise, timeoutPromise]);
                 const rawContent = result.text.trim();
@@ -103,11 +109,18 @@ Generate the complete JSON object now.
                 try {
                     parsedContent = new JsonParser<any>().parse(rawContent).data || {};
                 } catch (error) {
-                    throw new Error(`Generated content is not valid JSON. Error: ${error.message}. Raw Content: "${rawContent}"`);
+                    throw new Error(
+                        `Generated content is not valid JSON. Error: ${error.message}. Raw Content: "${rawContent}"`
+                    );
                 }
 
                 // 5.2. 结构验证
-                if (!parsedContent.name || !parsedContent.description || !parsedContent.parameters || !parsedContent.execute) {
+                if (
+                    !parsedContent.name ||
+                    !parsedContent.description ||
+                    !parsedContent.parameters ||
+                    !parsedContent.execute
+                ) {
                     throw new Error(
                         `Generated JSON is missing required keys. Required: name, description, parameters, execute. Found: ${Object.keys(
                             parsedContent
@@ -139,9 +152,13 @@ Generate the complete JSON object now.
 
         try {
             // 6. 工具实例化与注册
-            const { parameters: execParams, execute: rawExecFunc } = compileToolCode(toolDefinition.parameters, toolDefinition.execute, {
-                Schema: Schema,
-            });
+            const { parameters: execParams, execute: rawExecFunc } = compileToolCode(
+                toolDefinition.parameters,
+                toolDefinition.execute,
+                {
+                    Schema: Schema,
+                }
+            );
 
             // 2. 创建包含依赖注入逻辑的最终执行函数]
             const finalExecute = async (args: any) => {
@@ -153,7 +170,10 @@ Generate the complete JSON object now.
 
                     return await rawExecFunc.call(this, augmentedCtx);
                 } catch (error) {
-                    this.ctx.logger.error(`[Tool:${toolDefinition.name}] Failed during dependency loading or execution:`, error);
+                    this.ctx.logger.error(
+                        `[Tool:${toolDefinition.name}] Failed during dependency loading or execution:`,
+                        error
+                    );
                     return Failed(`Tool execution failed: ${error.message}`);
                 }
             };
@@ -206,7 +226,9 @@ async function loadDependencies(packageNames: string[]): Promise<{ [key: string]
             dependencies[name] = await import(name);
         } catch (error) {
             console.error(`[ToolCreator] Critical error: Failed to load dependency '${name}'. Is it installed?`);
-            throw new Error(`Dependency '${name}' could not be loaded. Please ensure it is installed in the agent's environment.`);
+            throw new Error(
+                `Dependency '${name}' could not be loaded. Please ensure it is installed in the agent's environment.`
+            );
         }
     }
     return dependencies;

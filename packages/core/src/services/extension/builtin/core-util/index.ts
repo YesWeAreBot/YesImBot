@@ -1,6 +1,6 @@
 import { Services } from "@/services/types";
 import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
-import { Extension, Tool } from "../../decorators";
+import { Extension, Tool, withInnerThoughts } from "../../decorators";
 import { Failed, Success } from "../../helpers";
 import { Infer } from "../../types";
 
@@ -40,8 +40,7 @@ export default class CoreUtilExtension {
     @Tool({
         name: "send_message",
         description: "发送消息",
-        parameters: Schema.object({
-            inner_thoughts: Schema.string().description("Your internal monologue for self-reflection. This content will not be sent."),
+        parameters: withInnerThoughts({
             message: Schema.string().description(
                 "The message content to send. Use `<sep/>` to split a long response into multiple, shorter messages, which will be sent with natural delays. E.g., 'Hello there<sep/>How are you?'"
             ),
@@ -50,8 +49,8 @@ export default class CoreUtilExtension {
             ),
         }),
     })
-    async sendMessage(args: Infer<{ inner_thoughts: string; message: string; target?: string }>) {
-        const { session, inner_thoughts, message, target } = args;
+    async sendMessage(args: Infer<{ message: string; target?: string }>) {
+        const { session, message, target } = args;
 
         if (!session) {
             this.logger.warn("✖ 缺少有效会话，无法发送消息。");
@@ -119,7 +118,8 @@ export default class CoreUtilExtension {
 
         // 3. 计算总延迟并加入随机性
         // 随机性的大小也与中英文字符数量有关，让节奏更真实
-        const totalRandomness = (chineseCharCount * CHINESE_RANDOM_FACTOR + englishCharCount * ENGLISH_RANDOM_FACTOR) / text.length;
+        const totalRandomness =
+            (chineseCharCount * CHINESE_RANDOM_FACTOR + englishCharCount * ENGLISH_RANDOM_FACTOR) / text.length;
         const randomFactor = 1 + (Math.random() - 0.5) * 2 * totalRandomness; // 在 (1-totalRandomness) 到 (1+totalRandomness) 之间
 
         const calculatedDelay = BASE_DELAY + (chineseDelay + englishDelay) * randomFactor;
@@ -131,7 +131,10 @@ export default class CoreUtilExtension {
     /**
      * 决定消息的最终目标和使用的机器人实例
      */
-    private determineTarget(koishiSession: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
+    private determineTarget(
+        koishiSession: Session,
+        target?: string
+    ): { bot: Bot | undefined; channelId: string; finalTarget: string } {
         if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
             // 发送至当前会话
             return {
@@ -156,7 +159,12 @@ export default class CoreUtilExtension {
      * @param channelId 目标频道ID
      * @param originalSession 原始会话，用于创建after-send事件
      */
-    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
+    private async sendMessagesWithHumanLikeDelay(
+        messages: string[],
+        bot: Bot,
+        channelId: string,
+        originalSession: Session
+    ): Promise<void> {
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
             if (!msg) continue;
@@ -187,7 +195,13 @@ export default class CoreUtilExtension {
     /**
      * 封装 after-send 事件的发射逻辑
      */
-    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): void {
+    private emitAfterSendEvent(
+        bot: Bot,
+        channelId: string,
+        content: string,
+        messageId: string,
+        originalSession: Session
+    ): void {
         const session = bot.session({
             ...originalSession.event,
             type: "after-send",
