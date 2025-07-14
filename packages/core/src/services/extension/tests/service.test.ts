@@ -1,7 +1,7 @@
 // --- 运行与测试 ---
 
 import { Context, Schema } from "koishi";
-import { Extension, Support, Tool } from "../decorators";
+import { Extension, Tool } from "../decorators";
 import { ToolService } from "../service";
 import { type Infer } from "../types";
 
@@ -35,8 +35,8 @@ class WeatherExtension {
         parameters: Schema.object({
             city: Schema.string().description("城市名称"),
         }),
+        isSupported: (session) => session.platform === "qq",
     })
-    @Support((session) => session.platform === "qq")
     protected async getWeather(args: Infer<{ city: string }>) {
         const apiKey = this.config.apiKey;
         console.log(`[getWeather] 正在使用 API Key "${apiKey}" 查询 "${args.city}" 的天气...`);

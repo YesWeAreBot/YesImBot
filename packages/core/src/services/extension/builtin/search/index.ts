@@ -1,6 +1,6 @@
 import { isEmpty } from "@/shared";
 import { Context, Schema } from "koishi";
-import { Extension, Tool } from "../../decorators";
+import { Extension, Tool, withInnerThoughts } from "../../decorators";
 import { Failed, Success } from "../../helpers";
 import { Infer } from "../../types";
 
@@ -12,9 +12,15 @@ interface SearchConfig {
 }
 
 const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
-    endpoint: Schema.string().default("https://search.yesimbot.chat/search").role("link").description("搜索服务的 API Endpoint"),
+    endpoint: Schema.string()
+        .default("https://search.yesimbot.chat/search")
+        .role("link")
+        .description("搜索服务的 API Endpoint"),
     limit: Schema.number().default(5).description("默认搜索结果数量"),
-    sources: Schema.array(Schema.string()).default(["baidu", "github", "bing", "presearch"]).role("table").description("默认搜索源"),
+    sources: Schema.array(Schema.string())
+        .default(["baidu", "github", "bing", "presearch"])
+        .role("table")
+        .description("默认搜索源"),
     format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
 });
 
@@ -39,10 +45,11 @@ export default class SearchExtension {
   - 自动提取网页中的其他链接
   Example:
     fetch_webpage("https://example.com", "text")`,
-        parameters: Schema.object({
-            inner_thoughts: Schema.string().description("执行此操作前的内心思考过程，用于自我反思和记录。"),
+        parameters: withInnerThoughts({
             url: Schema.string().required().description("要获取的网页URL"),
-            format: Schema.union(["html", "text"]).default("text").description("返回格式：html(原始HTML) 或 text(纯文本)"),
+            format: Schema.union(["html", "text"])
+                .default("text")
+                .description("返回格式：html(原始HTML) 或 text(纯文本)"),
             max_length: Schema.number().default(5000).description("返回内容的最大长度，默认5000字符"),
             include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),
             max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
@@ -147,8 +154,7 @@ export default class SearchExtension {
     @Tool({
         name: "web_search",
         description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",
-        parameters: Schema.object({
-            inner_thoughts: Schema.string().description("执行此操作前的内心思考过程，用于自我反思和记录。"),
+        parameters: withInnerThoughts({
             query: Schema.string().required().description("搜索关键词或查询内容。"),
         }),
     })
@@ -162,6 +168,7 @@ export default class SearchExtension {
             const engines = this.config.sources;
             const format = this.config.format;
             const limit = this.config.limit;
+            /* prettier-ignore */
             const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines.join(",")}&format=${format}`;
 
             const response = await fetch(searchUrl);
