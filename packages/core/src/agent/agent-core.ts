@@ -210,7 +210,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
                 // 寻找当前模型组中支持多模态的模型，如果找不到则渲染纯文本提示词
 
-                let chatModel: IChatModel = this.modelSwitcher.current;
+                let chatModel: IChatModel = this.modelSwitcher.next();
 
                 if (multimodal) {
                     for (let i = 0; i < this.modelSwitcher.length; i++) {
