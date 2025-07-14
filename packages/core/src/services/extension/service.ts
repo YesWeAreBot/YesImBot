@@ -1,5 +1,6 @@
 import { stringify, truncate } from "@/shared/utils";
-import { Context, ForkScope, Logger, Schema, Service, Session } from "koishi";
+import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
+import Mustache from "mustache";
 import { Services } from "../types";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
@@ -11,7 +12,6 @@ import SearchExtension from "./builtin/search";
 import { ToolServiceConfig } from "./config";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
-import Mustache from "mustache";
 
 declare module "koishi" {
     interface Context {
@@ -59,8 +59,11 @@ export class ToolService extends Service<ToolServiceConfig> {
             // }
             loadedExtensions.set(name, this.ctx.plugin(Ext, config));
         }
+        this.registerCommands();
         this._logger.info("服务已启动");
+    }
 
+    private registerCommands() {
         this.ctx.command("tool", "工具管理指令集");
         this.ctx.command("extension", "扩展管理指令集");
 
@@ -121,10 +124,12 @@ export class ToolService extends Service<ToolServiceConfig> {
             });
 
         this.ctx
-            .command("tool.info", "显示工具的详细信息", { authority: 3 })
+            .command("tool.info <name:string>", "显示工具的详细信息", { authority: 3 })
             .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等。")
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
+                if (!name) return "未指定要查询的工具名称。";
+
                 function prepareDataForTemplate(tool: ToolSchema) {
                     // 递归函数，处理参数并添加缩进
                     const processParams = (params: Properties, indent = ""): any[] => {
@@ -166,7 +171,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                     };
                 }
 
-                const tool = this.getSchema(name);
+                const tool = this.getSchema(name, session);
                 if (!tool) {
                     return `未找到名为 "${name}" 的工具。`;
                 }
@@ -207,7 +212,11 @@ export class ToolService extends Service<ToolServiceConfig> {
         this.ctx
             .command("tool.invoke <name:string> [...params:string]", "调用工具", { authority: 3 })
             .usage(
-                `调用指定的工具并传递参数。\n参数格式为 "key=value"，多个参数用空格分隔。\n如果 value 包含空格，请使用引号将其包裹，例如：key="some value"`
+                [
+                    "调用指定的工具并传递参数。",
+                    '参数格式为 "key=value"，多个参数用空格分隔。',
+                    '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
+                ].join("\n")
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
             .action(async ({ session }, name, ...params) => {
@@ -240,25 +249,9 @@ export class ToolService extends Service<ToolServiceConfig> {
 
                 const result = await this.invoke(name, parsedParams, session);
 
-                // 使用消息元素美化输出
-                // if (result.status === "success") {
-                //     const output = stringify(result.result, 2);
-                //     return `<fragment>
-                //             <p>✅ 工具 {name} 调用成功！</p>
-                //             <p>执行结果：</p>
-                //             <quote>{truncate(output, 1000)}</quote>
-                //         </fragment>`;
-                // } else {
-                //     return `<fragment>
-                //             <p>❌ 工具 {name} 调用失败。</p>
-                //             <p>原因：{result.error}</p>
-                //         </fragment>`;
-                // }
-
                 if (result.status === "success") {
-                    return `✅ 工具 ${name} 调用成功！\n执行结果：${
-                        typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2)
-                    }`;
+                    /* prettier-ignore */
+                    return `✅ 工具 ${name} 调用成功！\n执行结果：${typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2)}`;
                 } else {
                     return `❌ 工具 ${name} 调用失败。\n原因：${result.error}`;
                 }
@@ -267,9 +260,9 @@ export class ToolService extends Service<ToolServiceConfig> {
         this.ctx
             .command("tool.delete <name:string>", "删除一个已注册的工具", { authority: 3 })
             .usage("根据工具名称，从工具服务中卸载一个工具。此操作是临时的，服务重启后可能会被重新加载。")
-            .example("tool.delete search.web")
+            .example("tool.delete web_search")
             .action(async ({ session }, name) => {
-                if (!name) return "错误：未指定要删除的工具名称。";
+                if (!name) return "未指定要删除的工具名称。";
                 const result = this.unregisterTool(name);
                 return result ? `工具 "${name}" 已成功删除。` : `删除失败：未找到名为 "${name}" 的工具。`;
             });
@@ -289,23 +282,51 @@ export class ToolService extends Service<ToolServiceConfig> {
                 return `发现 ${extensions.size} 个已加载的扩展：\n${extList}`;
             });
 
-        this.ctx.command("extension.enable <name:string>", "启用扩展").action(async ({ session }, name) => {
-            try {
-                const ext = (await import(name)) as IExtension;
-                if (!ext) {
-                    return `扩展未找到`;
+        this.ctx
+            .command("extension.enable <name:string>", "启用扩展", { authority: 3 })
+            .action(async ({ session }, name) => {
+                try {
+                    const ext = (await import(name)) as IExtension;
+                    if (!ext) {
+                        return `扩展未找到`;
+                    }
+                    if (this.extensions.has(name)) {
+                        return `扩展已启用`;
+                    }
+                    if (!ext.metadata) {
+                        return `扩展元数据未定义`;
+                    }
+                    if (!ext.metadata.name) {
+                        return `扩展元数据中缺少名称`;
+                    }
+                    if (!ext.metadata.description) {
+                        return `扩展元数据中缺少描述`;
+                    }
+                    if (!ext.metadata.version) {
+                        return `扩展元数据中缺少版本`;
+                    }
+                    if (!ext.metadata.author) {
+                        return `扩展元数据中缺少作者`;
+                    }
+                    if (!ext.metadata.display) {
+                        return `扩展元数据中缺少显示名称`;
+                    }
+                    const config = resolveConfig(ext, this.config.extra[name] || {});
+                    this.register(ext, true, config);
+                    this.ctx.scope.update({ [name]: { enabled: true } }, false);
+                    return `启用成功`;
+                } catch (error) {
+                    return `启用失败: ${error.message}`;
                 }
-                this.register(ext, true, {});
-                return `启用成功`;
-            } catch (error) {
-                return `启用失败: ${error.message}`;
-            }
-        });
+            });
 
-        this.ctx.command("extension.disable <name:string>", "禁用扩展").action(async ({ session }, name) => {
-            const result = this.unregister(name);
-            return result ? `禁用成功` : `禁用失败`;
-        });
+        this.ctx
+            .command("extension.disable <name:string>", "禁用扩展", { authority: 3 })
+            .action(async ({ session }, name) => {
+                const result = this.unregister(name);
+                this.ctx.scope.update({ [name]: { enabled: false } }, false);
+                return result ? `禁用成功` : `禁用失败`;
+            });
     }
 
     /**
@@ -393,10 +414,24 @@ export class ToolService extends Service<ToolServiceConfig> {
         params: Record<string, unknown>,
         session?: Session
     ): Promise<ToolCallResult> {
-        const tool = this.getTool(functionName);
+        // 1. 获取工具，这里已经包含了 isSupported 的检查
+        const tool = this.getTool(functionName, session);
         if (!tool) {
-            this._logger.warn(`[执行] 工具未找到 | 名称: ${functionName}`);
-            return Failed(`Tool ${functionName} not found`);
+            this._logger.warn(`[执行] 工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
+            return Failed(`Tool ${functionName} not found or not supported in this context.`);
+        }
+
+        // 2. 参数验证 (新加的优雅方案)
+        let validatedParams = params;
+        if (tool.parameters) {
+            try {
+                // Schema 对象本身就是验证函数
+                validatedParams = tool.parameters(params);
+            } catch (error) {
+                this._logger.warn(`[执行] ✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
+                // 将详细的验证错误返回给 AI
+                return Failed(`Parameter validation failed: ${error.message}`); // 参数错误不可重试
+            }
         }
 
         const stringifyParams = truncate(stringify(params), 100);
@@ -410,7 +445,9 @@ export class ToolService extends Service<ToolServiceConfig> {
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelayMs));
                 }
 
-                lastResult = (await tool.execute({ session, ...params })) || Failed("Tool call did not execute.");
+                // 3. 使用验证和处理过后的参数执行工具
+                /* prettier-ignore */
+                lastResult = (await tool.execute({ session, ...validatedParams })) || Failed("Tool call did not execute.");
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
@@ -435,13 +472,20 @@ export class ToolService extends Service<ToolServiceConfig> {
 
     public getTool(name: string, session?: Session): ToolDefinition | undefined {
         const tool = this.tools.get(name);
-        if (!tool || (tool.isSupported && !tool.isSupported(session))) {
+        // 如果没有 session，默认工具可用
+        // 如果有 session，则必须通过 isSupported 的检查
+        if (!tool || (session && tool.isSupported && !tool.isSupported(session))) {
             return undefined;
         }
         return tool;
     }
 
-    public getAvailableTools(session: Session) {
+    public getAvailableTools(session?: Session): ToolDefinition[] {
+        // 如果没有 session，无法进行过滤，返回所有工具
+        if (!session) {
+            return Array.from(this.tools.values());
+        }
+        // 如果有 session，则过滤出支持的工具
         return Array.from(this.tools.values()).filter((tool) => !tool.isSupported || tool.isSupported(session));
     }
 
@@ -449,19 +493,37 @@ export class ToolService extends Service<ToolServiceConfig> {
         return this.extensions.get(name);
     }
 
-    public getSchema(name: string): ToolSchema {
-        const tool = this.tools.get(name);
-        if (!tool) {
-            return undefined;
-        }
+    /**
+     * 根据工具名称获取其 schema。
+     * 如果工具在当前会话中不可用，则返回 undefined。
+     * @param name 工具名称
+     * @param session 可选的会话对象
+     * @returns 工具的 Schema 或 undefined
+     */
+    public getSchema(name: string, session?: Session): ToolSchema | undefined {
+        const tool = this.getTool(name, session);
+        return tool ? this._toolDefinitionToSchema(tool) : undefined;
+    }
+
+    /**
+     * 获取在当前会话中所有可用工具的 Schema 列表。
+     * @param session 可选的会话对象
+     * @returns 可用工具的 Schema 数组
+     */
+    public getToolSchemas(session?: Session): ToolSchema[] {
+        return this.getAvailableTools(session).map(this._toolDefinitionToSchema);
+    }
+
+    /**
+     * 将 ToolDefinition 转换为 ToolSchema。
+     * @param tool 工具定义对象
+     * @returns 工具的 Schema 对象
+     */
+    private _toolDefinitionToSchema(tool: ToolDefinition): ToolSchema {
         return {
             name: tool.name,
             description: tool.description,
             parameters: extractMetaFromSchema(tool.parameters),
         };
-    }
-
-    public getToolSchemas(): ToolSchema[] {
-        return Array.from(this.tools.values()).map((tool) => this.getSchema(tool.name));
     }
 }

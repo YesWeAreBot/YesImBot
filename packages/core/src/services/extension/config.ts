@@ -2,7 +2,7 @@ import { SystemConfig } from "@/config";
 import { Schema } from "koishi";
 
 export interface ToolServiceConfig {
-    extra?: Record<string, { enabled?: boolean; config?: any }>;
+    extra?: Record<string, { enabled?: boolean; [key: string]: any }>;
     /** 高级选项 */
     advanced: {
         maxRetry?: number;

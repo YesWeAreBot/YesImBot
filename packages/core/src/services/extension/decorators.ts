@@ -1,4 +1,4 @@
-import { Context, merge, Session } from "koishi";
+import { Context, Schema } from "koishi";
 
 import { Services } from "@/services/types";
 import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types";
@@ -120,6 +120,7 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
             description: metadata.description,
             parameters: metadata.parameters,
             execute: descriptor.value,
+            isSupported: metadata.isSupported,
         };
         target.tools.set(toolDefinition.name, toolDefinition);
     };
@@ -131,21 +132,28 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
  * @param predicate
  * @returns
  */
-export function Support(predicate: (session: Session) => boolean) {
-    return function (
-        target: any,
-        propertyKey: string,
-        descriptor: TypedPropertyDescriptor<(args: any) => Promise<any>>
-    ) {
-        if (!descriptor.value) {
-            return;
-        }
+// export function Support(predicate: (session: Session) => boolean) {
+//     return function (
+//         target: any,
+//         propertyKey: string,
+//         descriptor: TypedPropertyDescriptor<(args: any) => Promise<any>>
+//     ) {
+//         if (!descriptor.value) {
+//             return;
+//         }
 
-        target.tools ??= new Map<string, ToolDefinition>();
+//         target.tools ??= new Map<string, ToolDefinition>();
 
-        const toolDefinition = target.tools.get(propertyKey);
-        if (toolDefinition) {
-            toolDefinition.isSupported = predicate;
-        }
-    };
+//         const toolDefinition = target.tools.get(propertyKey);
+//         if (toolDefinition) {
+//             toolDefinition.isSupported = predicate;
+//         }
+//     };
+// }
+
+export function withInnerThoughts(params: { [T: string]: Schema<any> }): Schema<any> {
+    return Schema.object({
+        inner_thoughts: Schema.string().description("Deep inner monologue private to you only."),
+        ...params,
+    });
 }

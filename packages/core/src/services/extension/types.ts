@@ -41,6 +41,7 @@ export interface ToolMetadata<TParams> {
     name?: string; // 工具名称，若不提供，则使用方法名
     description: string; // 工具功能详细描述，这是给 LLM 看的关键信息
     parameters: Schema<TParams>; // 工具的参数定义，使用 Koishi 的 Schema
+    isSupported?: (session: Session) => boolean;
 }
 
 /**
