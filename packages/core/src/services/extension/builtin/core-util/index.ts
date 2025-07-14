@@ -1,8 +1,9 @@
-import { Services } from "@/services/types";
 import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
-import { Extension, Tool, withInnerThoughts } from "../../decorators";
-import { Failed, Success } from "../../helpers";
-import { Infer } from "../../types";
+
+import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Failed, Success } from "@/services/extension/helpers";
+import { Infer } from "@/services/extension/types";
+import { Services } from "@/services/types";
 
 interface CoreUtilConfig {
     typing: {

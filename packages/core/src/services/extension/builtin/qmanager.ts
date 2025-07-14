@@ -1,8 +1,9 @@
-import { isEmpty } from "@/shared";
 import { Context, Schema } from "koishi";
-import { Extension, Tool, withInnerThoughts } from "../decorators";
-import { Failed, Success } from "../helpers";
-import { Infer } from "../types";
+
+import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Failed, Success } from "@/services/extension/helpers";
+import { Infer } from "@/services/extension/types";
+import { isEmpty } from "@/shared/utils";
 
 @Extension({
     name: "qmanager",
@@ -41,7 +42,7 @@ export default class QManagerExtension {
         description: `禁言用户。`,
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要禁言的用户 ID"),
-            duration: Schema.number()
+            duration: Schema.union([String, Number])
                 .required()
                 .description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
@@ -56,7 +57,7 @@ export default class QManagerExtension {
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
-            await session.bot.muteGuildMember(targetChannel, user_id, duration * 60 * 1000);
+            await session.bot.muteGuildMember(targetChannel, user_id, Number(duration) * 60 * 1000);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id}`);
             return Success();
         } catch (e) {
