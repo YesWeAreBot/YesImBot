@@ -29,7 +29,9 @@ export default class CommandExtension {
     })
     async executeKoishiCommand({ session, command }: Infer<{ command: string }>) {
         try {
-            await session.sendQueued(h("execute", {}, command));
+            const result = await session.sendQueued(h("execute", {}, command));
+
+            if (result.length === 0) return Failed("指令执行失败，可能是因为指令不存在或格式错误。");
 
             this.ctx.logger.info(`Bot[${session.selfId}]执行了指令: ${command}`);
             return Success();
