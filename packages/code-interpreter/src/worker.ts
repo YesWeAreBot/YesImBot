@@ -1,55 +1,62 @@
-import path from "path";
-import { NodeVM } from "vm2";
 import { parentPort, workerData } from "worker_threads";
+import { NodeVM } from "vm2";
+import path from "path";
 
 async function executeInSandbox() {
     const { code, config } = workerData;
-
-    const wrappedCode = `(async () => { ${code} })();`;
+    const { allowedBuiltins, allowedModules, dependenciesPath, timeout } = config;
 
     const capturedLogs = [];
-    const nodeVM = new NodeVM({
-        timeout: config.timeout,
+
+    const vm = new NodeVM({
+        timeout: timeout,
         console: "redirect",
         sandbox: {},
         require: {
+            // external.resolve 用于解析允许的外部模块
             external: {
-                modules: config.allowedModules,
-                resolve: (moduleName) => path.join(config.dependenciesPath, "node_modules", moduleName),
+                modules: allowedModules,
+                resolve: (moduleName) => path.join(dependenciesPath, "node_modules", moduleName),
             },
-            builtin: config.allowedBuiltins,
-            root: "./",
+            builtin: allowedBuiltins,
             mock: {
                 fs: {},
                 child_process: {},
             },
         },
-        wrapper: "none",
+        // 包装代码以支持顶层 await
+        wrapper: "commonjs",
+        sourceExtensions: ["js"],
     });
 
-    nodeVM.on("console.log", (...args) => capturedLogs.push({ level: "log", message: args.join(" ") }));
-    nodeVM.on("console.error", (...args) => capturedLogs.push({ level: "error", message: args.join(" ") }));
-    nodeVM.on("console.warn", (...args) => capturedLogs.push({ level: "warn", message: args.join(" ") }));
+    // 重定向所有 console 输出
+    vm.on("console.log", (...args) => capturedLogs.push({ level: "log", message: args.join(" ") }));
+    vm.on("console.error", (...args) => capturedLogs.push({ level: "error", message: args.join(" ") }));
+    vm.on("console.warn", (...args) => capturedLogs.push({ level: "warn", message: args.join(" ") }));
 
     try {
-        const executionResult = await nodeVM.run(wrappedCode, "vm.js");
-        const finalResult = {
+        // 使用 module.exports 来获取返回值，以防代码中显式 `return`
+        const resultInVm = vm.run(
+            `module.exports = (async () => {
+                ${code}
+            })();`,
+            path.join(dependenciesPath, "sandbox.js")
+        );
+
+        // 等待异步代码执行完成
+        await resultInVm;
+
+        parentPort.postMessage({
             status: "success",
-            data: {
-                result: executionResult,
-                console: capturedLogs,
-            },
-        };
-        parentPort.postMessage(finalResult);
+            // 返回值始终是 console 日志
+            data: { console: capturedLogs },
+        });
     } catch (error) {
-        const finalResult = {
+        // 将错误信息和已捕获的日志一起发送回主线程
+        parentPort.postMessage({
             status: "error",
-            error: {
-                message: error.message,
-                console: capturedLogs,
-            },
-        };
-        parentPort.postMessage(finalResult);
+            error: { message: error.message, console: capturedLogs },
+        });
     }
 }
 
