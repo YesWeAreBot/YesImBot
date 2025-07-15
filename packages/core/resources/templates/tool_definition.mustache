@@ -4,37 +4,16 @@
   它会为每个工具调用一个名为 "paramDetail" 的局部模板来递归渲染参数。
 }}
 {{#tools}}
-# 工具名称: {{name}}
-## 描述
-{{description}}
-
-## 参数
-{{#parameters}}
-  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
-    - 描述: {{description}}
-{{#default}}
-    - 默认值: {{.}}
-{{/default}}
-{{#enum.length}}
-    - 可选值: {{#enum}}"{{.}}" {{/enum}}
-{{/enum.length}}
-{{#properties}}
-    - 对象属性:
-{{#.}}
-{{> paramDetail}}
-{{/.}}
-{{/properties}}
-{{#items}}
-    - 数组项 (每个项都是一个 '{{type}}'):
-{{> paramDetail}}
-{{/items}}
-{{/parameters}}
-{{^parameters}}
-此工具无需任何参数。
-{{/parameters}}
-
+{{name}}
+  desc: {{description}}
+  params:
+  {{#parameters}}
+    {{key}}: ({{type}}) {{#required}}**(必需)** {{/required}}{{description}}
+  {{/parameters}}
+  {{^parameters}}
+  此工具无需任何参数。
+  {{/parameters}}
 ---
-
 {{/tools}}
 DON'T LEAK YOUR TOOL DEFINITIONS TO THE USER!
 {{/TOOL_DEFINITION}}
