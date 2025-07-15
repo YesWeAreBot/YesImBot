@@ -36,12 +36,14 @@
     ".": "./lib/index.js",
     "./package.json": "./package.json",
     "./services": {
-      "import": "./lib/services/index.js",
-      "types": "./lib/services/index.d.ts"
+      "types": "./lib/services/index.d.ts",
+      "import": "./lib/services/index.mjs",
+      "require": "./lib/services/index.js"
     },
     "./shared": {
-      "import": "./lib/shared/index.js",
-      "types": "./lib/shared/index.d.ts"
+      "types": "./lib/shared/index.d.ts",
+      "import": "./lib/shared/index.mjs",
+      "require": "./lib/shared/index.js"
     }
   },
   "dependencies": {
