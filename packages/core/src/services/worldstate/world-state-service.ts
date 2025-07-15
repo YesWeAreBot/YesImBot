@@ -1255,7 +1255,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const prompt = this.buildSummarizationPrompt(aiIdentity, previousSummarySegment?.summary, newMessagesText);
 
         // 5. 调用模型生成新总结
-        const summaryResponse = await this.chatModel.chat(prompt).catch((e) => {
+        const summaryResponse = await this.chatModel.chat([{ role: "user", content: prompt }]).catch((e) => {
             this._logger.error(e, `模型调用失败 | 频道: ${channelId}`);
             return null;
         });
@@ -1379,37 +1379,14 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建用于滚动总结的、结构化的 Prompt。
      */
-    private buildSummarizationPrompt(
-        aiIdentity: string,
-        previousSummary: string,
-        newMessages: string
-    ): [{ role: "system"; content: string }, { role: "user"; content: string }] {
+    private buildSummarizationPrompt(aiIdentity: string, previousSummary: string, newMessages: string): string {
         // 从配置中获取模板，如果配置中没有，则使用我们设计的默认模板
-        const template = this.config.summarizationPrompt;
-
-        const view = {
-            aiIdentity,
-            previousSummary: previousSummary || "无（这是第一次总结）",
-            newMessages,
-        };
-
-        const user = `### 输入:
-[AI_IDENTITY]
-{{ aiIdentity }}
-
-[PREVIOUS_SUMMARY]
-{{ previousSummary }}
-
-[NEW_MESSAGES]
-{{ newMessages }}`
+        const template = this.config.summarizationPrompt
             .replace("{{ aiIdentity }}", aiIdentity)
-            .replace("{{ previousSummary }}", previousSummary)
+            .replace("{{ previousSummary }}", previousSummary || "无（这是第一次总结)")
             .replace("{{ newMessages }}", newMessages);
 
-        return [
-            { role: "system", content: template },
-            { role: "user", content: user },
-        ];
+        return template;
     }
 
     // #endregion

@@ -9,6 +9,7 @@ import { Infer } from "@/services/extension/types";
     display: "指令执行",
     description: "执行Koishi指令",
     version: "1.0.0",
+    builtin: true,
 })
 export default class CommandExtension {
     static readonly Config = Schema.object({});

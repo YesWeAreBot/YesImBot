@@ -27,6 +27,7 @@ const ToolCreatorConfigSchema: Schema<ToolCreatorConfig> = Schema.object({
     version: "1.0.0",
     description: "使用LLM动态创建工具",
     author: "MiaowFISH",
+    builtin: true,
 })
 export default class CreatorExtension {
     static readonly inject = [Services.Model];

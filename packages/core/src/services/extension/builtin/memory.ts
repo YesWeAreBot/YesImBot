@@ -24,6 +24,7 @@ const MemoryTopics = Schema.union([
     version: "2.0.0",
     description: "管理智能体的记忆",
     author: "MiaowFISH",
+    builtin: true,
 })
 export default class MemoryExtension {
     static readonly Config = Schema.object({

@@ -11,6 +11,7 @@ import { isEmpty } from "@/shared/utils";
     version: "1.0.0",
     description: "管理频道内用户和消息",
     author: "HydroGest",
+    builtin: true,
 })
 export default class QManagerExtension {
     static readonly Config = Schema.object({});
