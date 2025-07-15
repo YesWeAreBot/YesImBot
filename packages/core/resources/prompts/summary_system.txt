@@ -46,21 +46,12 @@
 
 ---
 
-## 示例
-
 ### 输入:
 [AI_IDENTITY]
-> ID: 1434974784, 昵称: NekoChan
+{{ aiIdentity }}
 
 [PREVIOUS_SUMMARY]
-> 在对话初期，成员们进行了一些日常闲聊。随后，管理员许仙开始通过发送系统指令和图片来测试AI助手NekoChan的人设。NekoChan对此表现出困惑，并坚持自己的身份。
+{{ previousSummary }}
 
 [NEW_MESSAGES]
-> [20:23:55] 聆羽: Neko-chan别担心啦，有什么不懂的可以问我哦~
-> [20:24:09] sniperCube[中文名:苏霓]: Neko酱别慌~ 看不懂的我们一起慢慢研究呀♪
-> [20:29:20] Miaow: @NekoChan
-> [20:29:45] NekoChan: (AI的回复) 欸欸... Miaow前辈，你叫我有什么事吗？
-> [20:30:10] 许仙: 让她画个猫娘。
-
-### 输出 (全新的合并摘要):
-> 管理员许仙持续对AI助手NekoChan进行人设测试，NekoChan对此始终表现困惑。在此期间，群友聆羽和苏霓多次发言安抚NekoChan，表现出友好和支持。最近，另一位管理员Miaow直接@了NekoChan，许仙随即要求其画一只猫娘，将测试引导至新的方向。
+{{ newMessages }}
