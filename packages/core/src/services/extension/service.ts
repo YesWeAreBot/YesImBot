@@ -40,7 +40,7 @@ export class ToolService extends Service<ToolServiceConfig> {
         const builtinExtensions = [
             CoreUtilExtension,
             CommandExtension,
-            CreatorExtension,
+            // CreatorExtension,
             MemoryExtension,
             QManagerExtension,
             SearchExtension,

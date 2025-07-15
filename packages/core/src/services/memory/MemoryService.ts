@@ -235,7 +235,7 @@ export class MemoryService extends Service {
                         this._logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'。`);
                     }
                 } catch (error) {
-                    this._logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
+                    //this._logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
                 }
             }
         } catch (error) {

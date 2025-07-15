@@ -133,6 +133,7 @@ export default class MemoryExtension {
         parameters: withInnerThoughts({
             label: Schema.string().required().description("The label of the core memory block to read from."),
         }),
+        isSupported: (session) => false,
     })
     async coreMemoryGetContent({ session, label }: Infer<{ label: string }>) {
         if (isEmpty(label)) return Failed("Parameter 'label' is required.");
@@ -241,7 +242,7 @@ export default class MemoryExtension {
             filterMetadata?: Record<string, any>;
         }>
     ) {
-        const { session, query, top_k, similarity_threshold, filterMetadata } = args;
+        const { query, top_k, similarity_threshold, filterMetadata } = args;
         try {
             const searchResult = await this.memoryService.searchArchivalMemory(query, {
                 topK: top_k,
