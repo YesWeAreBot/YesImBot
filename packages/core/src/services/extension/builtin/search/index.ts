@@ -31,6 +31,7 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
     version: "1.0.0",
     description: "搜索网络内容",
     author: "HydroGest",
+    builtin: true,
 })
 export default class SearchExtension {
     public static readonly Config = SearchConfigSchema;

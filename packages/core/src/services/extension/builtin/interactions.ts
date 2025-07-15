@@ -17,6 +17,7 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
     version: "1.1.0",
     description: "允许大模型在群内进行交互",
     author: "HydroGest",
+    builtin: true,
 })
 export default class InteractionsExtension {
     static readonly Config = InteractionsConfigSchema;

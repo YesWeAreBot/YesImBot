@@ -353,17 +353,19 @@ export class ToolService extends Service<ToolServiceConfig> {
 
             const metadata = extensionInstance.metadata;
 
-            this.ctx.schema.set(
-                "toolService.availableExtensions",
-                availableExtensions.set(
-                    extensionInstance.metadata.name,
-                    Schema.object({
-                        enabled: Schema.boolean().default(true).description("是否启用此扩展"),
-                        //config: validate && enabled ? validate.default(validatedConfig) : Schema.object({}),
-                        ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
-                    }).description(`${metadata.display || metadata.name} - ${metadata.description}`)
-                )
-            );
+            if (metadata.builtin) {
+                this.ctx.schema.set(
+                    "toolService.availableExtensions",
+                    availableExtensions.set(
+                        extensionInstance.metadata.name,
+                        Schema.object({
+                            enabled: Schema.boolean().default(true).description("是否启用此扩展"),
+                            //config: validate && enabled ? validate.default(validatedConfig) : Schema.object({}),
+                            ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
+                        }).description(`${metadata.display || metadata.name} - ${metadata.description}`)
+                    )
+                );
+            }
 
             if (!enabled) {
                 this._logger.info(`扩展 "${metadata.name}" 已禁用。`);

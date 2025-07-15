@@ -32,6 +32,7 @@ export interface ExtensionMetadata {
     description: string; // 扩展包功能描述
     author?: string; // 作者
     version: string; // 版本号
+    builtin?: boolean; // 是否为内置扩展
 }
 
 /**

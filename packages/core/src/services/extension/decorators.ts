@@ -90,7 +90,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
         const originalInjects = TargetAsAny.inject || [];
 
         Object.defineProperty(WrappedAsAny, "inject", {
-            value: [...new Set([Services.Tool, ...originalInjects])],
+            value: [...new Set([Services.Tool, Services.Logger, ...originalInjects])],
             writable: false,
         });
 

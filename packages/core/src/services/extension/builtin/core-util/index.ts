@@ -28,6 +28,7 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
     display: "核心工具集",
     description: "必要工具",
     version: "1.0.0",
+    builtin: true,
 })
 export default class CoreUtilExtension {
     static readonly Config = CoreUtilConfigSchema;
