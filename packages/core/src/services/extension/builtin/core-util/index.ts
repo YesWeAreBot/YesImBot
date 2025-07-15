@@ -78,7 +78,7 @@ export default class CoreUtilExtension {
 
             await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
 
-            return Success(`✅ 消息已成功发送至 ${finalTarget}`);
+            return Success();
         } catch (error) {
             return Failed(`发送消息失败: ${error.message}`);
         }
