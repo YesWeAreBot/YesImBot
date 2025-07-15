@@ -1,0 +1,57 @@
+{
+  "name": "koishi-plugin-yesimbot-extension-code-interpreter",
+  "description": "Yes! I'm Bot! 代码执行器扩展插件",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "homepage": "https://github.com/HydroGest/YesImBot",
+  "files": [
+    "lib",
+    "dist",
+    "resources"
+  ],
+  "scripts": {
+    "build": "tsc && node esbuild.config.mjs",
+    "dev": "tsc -w --preserveWatchOutput",
+    "lint": "eslint . --ext .ts",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"
+  },
+  "license": "MIT",
+  "contributors": [
+    "MiaowFISH <miaow233@qq.com>"
+  ],
+  "keywords": [
+    "koishi",
+    "plugin",
+    "code",
+    "interpreter",
+    "yesimbot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "directory": "packages/code-interpreter"
+  },
+  "dependencies": {
+    "vm2": "^3.9.17"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.0-beta.3"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.0-beta.3"
+  },
+  "koishi": {
+    "description": {
+      "zh": "Yes! I'm Bot! 代码执行器扩展插件",
+      "en": "Yes! I'm Bot! Code Interpreter extension plugin"
+    },
+    "service": {
+      "required": [
+        "yesimbot"
+      ]
+    }
+  }
+}
