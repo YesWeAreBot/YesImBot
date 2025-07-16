@@ -19,4 +19,5 @@ export enum Services {
     Tool = "yesimbot.tool",
     Image = "yesimbot.image",
     Logger = "yesimbot.logger",
+    Prompt = "yesimbot.prompt",
 }

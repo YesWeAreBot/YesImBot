@@ -34,11 +34,14 @@ export class ModelService extends Service<ModelServiceConfig> {
     }
 
     protected start(): Awaitable<void> {
-        const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
+        const models = this.config.providers
+            .map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId })))
+            .flat();
 
         const selectableModels = models
             .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
             .map((m) => {
+                /* prettier-ignore */
                 return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
             });
         this.ctx.schema.set(
@@ -191,26 +194,30 @@ export class ModelService extends Service<ModelServiceConfig> {
  * 支持代理任何继承自 BaseModel 的模型类型，并在初始化时验证其能力。
  */
 export class ModelSwitcher<T extends BaseModel> {
-    private readonly models: T[];
+    private readonly _models: T[];
     private currentIndex = 0;
     private readonly _logger: Logger;
 
+    get models(): T[] {
+        return this._models;
+    }
+
     get current(): T {
-        return this.models[this.currentIndex];
+        return this._models[this.currentIndex];
     }
 
     public next(): T {
-        if (this.models.length <= 1) return this.current; // 如果只有一个模型，不切换
+        if (this._models.length <= 1) return this.current; // 如果只有一个模型，不切换
         const oldIndex = this.currentIndex;
-        this.currentIndex = (this.currentIndex + 1) % this.models.length;
-        const oldModel = this.models[oldIndex].id;
+        this.currentIndex = (this.currentIndex + 1) % this._models.length;
+        const oldModel = this._models[oldIndex].id;
         const newModel = this.current.id;
         this._logger.info(`模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
         return this.current;
     }
 
     get length(): number {
-        return this.models.length;
+        return this._models.length;
     }
 
     constructor(
@@ -222,7 +229,7 @@ export class ModelSwitcher<T extends BaseModel> {
         this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupName}]`);
         this._logger.debug(`开始加载模型组...`);
 
-        this.models = modelDescriptors
+        this._models = modelDescriptors
             .map((descriptor) => {
                 const model = modelGetter(descriptor.providerName, descriptor.modelId);
                 if (!model) {
@@ -234,13 +241,13 @@ export class ModelSwitcher<T extends BaseModel> {
             })
             .filter((model): model is T => model !== null);
 
-        if (this.models.length === 0) {
+        if (this._models.length === 0) {
             this._logger.error("✖ 致命错误 | 模型组中无任何可用的模型 (请检查模型配置和能力声明)");
             throw new AppError("模型组中未找到任何可用的模型", {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
                 context: { resourceType: "Model", resourceId: `group:${groupName}` },
             });
         }
-        this._logger.debug(`✔ 加载成功 | 可用模型数: ${this.models.length}`);
+        this._logger.debug(`✔ 加载成功 | 可用模型数: ${this._models.length}`);
     }
 }

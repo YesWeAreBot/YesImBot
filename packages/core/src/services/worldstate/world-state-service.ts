@@ -3,6 +3,7 @@ import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session
 import { randomUUID } from "node:crypto";
 import { ChannelDescriptor } from "../../agent";
 import { IChatModel, TaskType } from "../model";
+import { PromptService } from "../prompt";
 import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
@@ -78,7 +79,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     // #region 静态属性与依赖注入
     // =================================================================================
 
-    static readonly inject = [Services.Model, Services.Image, Services.Logger];
+    static readonly inject = [Services.Model, Services.Image, Services.Logger, Services.Prompt];
 
     // #endregion
 
@@ -98,6 +99,8 @@ export class WorldStateService extends Service<HistoryConfig> {
     /** 后台维护任务定时器 */
     private maintenanceTimer: NodeJS.Timeout;
 
+    private readonly promptService: PromptService;
+
     /**
      * 待处理指令的内存状态机
      * Key: 频道ID (session.channelId)
@@ -116,6 +119,28 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.ctx = ctx;
         this.config = config;
         this._logger = ctx[Services.Logger].getLogger("[世界状态]");
+
+        this.promptService = this.ctx[Services.Prompt];
+
+        // 注册总结模板
+        this.registerSummarizationTemplate();
+    }
+
+    /**
+     * 注册总结相关的模板
+     */
+    private registerSummarizationTemplate(): void {
+        this.promptService.registerTemplate("worldstate.summarization", this.config.summarizationPrompt);
+
+        // 注册总结相关的片段
+        this.promptService.registerSnippet("aiIdentity", (context) => context.aiIdentity);
+
+        this.promptService.registerSnippet(
+            "previousSummary",
+            (context) => context.previousSummary || "无（这是第一次总结)"
+        );
+
+        this.promptService.registerSnippet("newMessages", (context) => context.newMessages);
     }
 
     /**
@@ -1252,7 +1277,11 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 4. 构建模型所需的 Prompt
         const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
-        const prompt = this.buildSummarizationPrompt(aiIdentity, previousSummarySegment?.summary, newMessagesText);
+        const prompt = await this.buildSummarizationPrompt(
+            aiIdentity,
+            previousSummarySegment?.summary,
+            newMessagesText
+        );
 
         // 5. 调用模型生成新总结
         const summaryResponse = await this.chatModel.chat([{ role: "user", content: prompt }]).catch((e) => {
@@ -1379,14 +1408,20 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建用于滚动总结的、结构化的 Prompt。
      */
-    private buildSummarizationPrompt(aiIdentity: string, previousSummary: string, newMessages: string): string {
-        // 从配置中获取模板，如果配置中没有，则使用我们设计的默认模板
-        const template = this.config.summarizationPrompt
-            .replace("{{ aiIdentity }}", aiIdentity)
-            .replace("{{ previousSummary }}", previousSummary || "无（这是第一次总结)")
-            .replace("{{ newMessages }}", newMessages);
+    private async buildSummarizationPrompt(
+        aiIdentity: string,
+        previousSummary: string,
+        newMessages: string
+    ): Promise<string> {
+        // 构建渲染上下文
+        const renderContext = {
+            aiIdentity,
+            previousSummary,
+            newMessages,
+        };
 
-        return template;
+        const result = await this.promptService.render("worldstate.summarization", renderContext);
+        return result;
     }
 
     // #endregion

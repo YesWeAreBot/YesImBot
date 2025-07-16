@@ -2,7 +2,15 @@ import { Context, ForkScope, Service, sleep } from "koishi";
 import { AgentCore } from "./agent";
 import { ConfiguratorService } from "./commands/configurator";
 import { Config } from "./config";
-import { ImageService, LoggerService, MemoryService, ModelService, ToolService, WorldStateService } from "./services";
+import {
+    ImageService,
+    LoggerService,
+    MemoryService,
+    ModelService,
+    PromptService,
+    ToolService,
+    WorldStateService,
+} from "./services";
 
 declare module "koishi" {
     interface Context {
@@ -28,6 +36,9 @@ export default class YesImBot extends Service<Config> {
 
             // 注册图片服务
             const imageService = ctx.plugin(ImageService, config.imageService);
+
+            // 注册提示词管理器
+            const promptService = ctx.plugin(PromptService, {});
 
             // 注册工具管理器
             const toolService = ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });
@@ -56,7 +67,16 @@ export default class YesImBot extends Service<Config> {
 
             const agentCore = ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
 
-            const services = [loggerService, imageService, toolService, modelService, memoryService, worldStateService, agentCore];
+            const services = [
+                loggerService,
+                imageService,
+                promptService,
+                toolService,
+                modelService,
+                memoryService,
+                worldStateService,
+                agentCore,
+            ];
 
             waitForServices(services).then(() => {
                 this.ctx.logger.info("所有服务已就绪");
