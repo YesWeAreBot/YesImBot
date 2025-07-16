@@ -1,7 +1,6 @@
-{{#CURRENT_CONVERSATION.history.length}}
 <current_turn_history>
   <memo>This is the history of thoughts, actions, and observations within the CURRENT thinking cycle. Use this immediate feedback to plan your next step.</memo>
-  {{#CURRENT_CONVERSATION.history}}
+  {{#history}}
   <response>
     <thoughts>
       <observe>{{thoughts.observe}}</observe>
@@ -31,6 +30,5 @@
       {{/observations}}
     </observations>
   </response>
-  {{/CURRENT_CONVERSATION.history}}
+  {{/history}}
 </current_turn_history>
-{{/CURRENT_CONVERSATION.history.length}}
