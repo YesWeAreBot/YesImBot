@@ -24,7 +24,7 @@ type WithDispose<T> = T & { dispose: () => void };
 
 // 定义 PromptBuilder 需要的完整上下文
 export interface PromptContext {
-    toolSchemas: any;
+    toolSchemas: ToolSchema[];
     memory: {
         lastModified: string;
         archivalCount: number;
@@ -42,11 +42,10 @@ export interface PromptContext {
 interface ImageCandidate {
     id: string;
     timestamp: number;
-    priority: number; // 0: regular, 1: quoted
+    priority: number;
 }
 
 export class AgentCore extends Service<AgentBehaviorConfig> {
-    // ... (其他属性和构造函数保持不变)
     static readonly inject = [
         Services.WorldState,
         Services.Model,
@@ -295,6 +294,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         // 2. 准备模板渲染所需的数据视图 (View)
         const view = {
+            session,
             TOOL_DEFINITION: { tools: prepareDataForTemplate(promptContext.toolSchemas) },
             CORE_MEMORY: promptContext.memory,
             WORLD_STATE: promptContext.worldState,

@@ -18,7 +18,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
         class WrappedExtension extends TargetClass {
             constructor(...args: any[]) {
                 const ctx: Context = args[0];
-                const config: any = args[1];
+                const config: any = args[1] || {};
 
                 const logger = ctx[Services.Logger].getLogger(`[工具管理器]`);
 
