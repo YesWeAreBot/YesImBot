@@ -1,19 +1,17 @@
+import { readFileSync } from "fs";
 import { Context, h, Logger, Random, Service, Session } from "koishi";
+import path from "path";
 import type { ImagePart, Message, TextPart } from "xsai";
-import {
-    AgentResponse,
-    IChatModel,
-    ModelService,
-    ModelSwitcher,
-    Services,
-    TaskType,
-    ToolService,
-    WorldState,
-    WorldStateService,
-} from "../services";
-import { JsonParser, truncate } from "../shared";
-import { AgentBehaviorConfig, ChannelDescriptor } from "./config";
-import { PromptBuilder, PromptContext } from "./prompt-builder";
+
+import { Properties, ToolSchema, ToolService } from "@/services/extension";
+import { MemoryBlockData } from "@/services/memory";
+import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/model";
+import { PromptService } from "@/services/prompt";
+import { Services } from "@/services/types";
+import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
+import { TEMPLATES_DIR } from "@/shared/constants";
+import { JsonParser, truncate } from "@/shared/utils";
+import { AgentBehaviorConfig, MultiModalSystemBaseTemplate } from "./config";
 import { WillingnessManager } from "./willing";
 
 declare module "koishi" {
@@ -24,7 +22,31 @@ declare module "koishi" {
 
 type WithDispose<T> = T & { dispose: () => void };
 
+// 定义 PromptBuilder 需要的完整上下文
+export interface PromptContext {
+    toolSchemas: any;
+    memory: {
+        lastModified: string;
+        archivalCount: number;
+        memoryBlocks: MemoryBlockData[];
+    };
+    worldState: WorldState; // 世界状态快照
+    previousResponses: AgentResponse[]; // Agent 最近的回合历史
+    multiModalData: {
+        images: (ImagePart | TextPart)[];
+    };
+    onetimeCode: string;
+}
+
+// 用于多模态上下文筛选的内部类型
+interface ImageCandidate {
+    id: string;
+    timestamp: number;
+    priority: number; // 0: regular, 1: quoted
+}
+
 export class AgentCore extends Service<AgentBehaviorConfig> {
+    // ... (其他属性和构造函数保持不变)
     static readonly inject = [
         Services.WorldState,
         Services.Model,
@@ -32,30 +54,30 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         Services.Memory,
         Services.Image,
         Services.Logger,
+        Services.Prompt,
     ];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;
     private readonly modelService: ModelService;
     private readonly toolService: ToolService;
+    private readonly promptService: PromptService;
 
     // 内部组件
     private readonly _logger: Logger;
 
-    private readonly promptBuilder: PromptBuilder;
     private readonly parser: JsonParser<AgentResponse>;
     private readonly modelSwitcher: ModelSwitcher<IChatModel>;
+    private readonly willing: WillingnessManager;
 
     // 内部状态
     private readonly allowedChannels = new Set<string>();
-    private readonly channelGroupMap = new Map<string, ChannelDescriptor[]>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debouncedReplyTasks: Map<string, WithDispose<(sid: string) => void>> = new Map();
 
     private runningTasks: Set<string> = new Set();
 
     private imageLifecycleTracker = new Map<string, number>();
-    private willing: WillingnessManager;
 
     constructor(ctx: Context, config: AgentBehaviorConfig) {
         super(ctx, "agent", true);
@@ -66,15 +88,17 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.worldState = this.ctx[Services.WorldState];
         this.modelService = this.ctx[Services.Model];
         this.toolService = this.ctx[Services.Tool];
+        this.promptService = this.ctx[Services.Prompt];
 
         // 实例化内部组件
-        this.promptBuilder = new PromptBuilder(this.ctx, this.config.prompt);
+
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
         this.willing = new WillingnessManager(this.ctx, this.config.willingness);
     }
 
     protected async start(): Promise<void> {
+        this._registerPromptTemplates();
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
@@ -186,139 +210,197 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this._logger.debug(`⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
+    private _registerPromptTemplates(): void {
+        this._logger.info("⚙️ 正在注册提示词模板...");
+
+        const loadTemplate = (name: string, ext: string = "mustache") => {
+            try {
+                const fullPath = path.resolve(TEMPLATES_DIR, `${name}.${ext}`);
+                return readFileSync(fullPath, "utf-8");
+            } catch (error) {
+                this._logger.error(`加载模板失败 "${name}.${ext}": ${error.message}`);
+                // 返回一个包含错误信息的模板，便于调试
+                return `{{! Error loading template: ${name} }}`;
+            }
+        };
+
+        // 注册所有可重用的局部模板 (Partials)
+        // 使用 Mustache 的 {{> partialName }} 语法来引用它们
+        this.promptService.registerTemplate("agent.partial.core_memory", loadTemplate("core_memory"));
+        this.promptService.registerTemplate("agent.partial.tool_definition", loadTemplate("tool_definition"));
+        this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
+        this.promptService.registerTemplate("agent.partial.current_turn_history", loadTemplate("current_turn_history"));
+
+        // 注册主模板
+        // 注意：现在模板文件本身需要包含对 partials 的引用
+        this.promptService.registerTemplate("agent.system", this.config.prompt.systemTemplate);
+        this.promptService.registerTemplate("agent.user", this.config.prompt.userTemplate);
+
+        // 注册动态片段 (Snippets) - 如果有的话
+        // 示例：注册一个提供当前时间的片段
+        this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
+
+        // 注意：像 toolSchemas, memory, worldState 这些数据，因为每次调用都会重新生成，
+        // 所以更适合作为 render 方法的 initialScope 传入，而不是注册为全局 Snippet。
+        // 这使得每次渲染的上下文都是隔离和最新的。
+
+        this._logger.info("✅ 提示词模板注册完成。");
+    }
+
+    /**
+     * Agent 的核心心跳循环。现在只负责控制循环流程。
+     */
     private async runAgentCycle(session: Session, sid: string): Promise<boolean> {
-        // this._logger.debug(`🌀 → 开始 | 段落ID: ${segment.id}`);
         const collectedResponses: AgentResponse[] = [];
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
-
         let success = false;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
-            // this._logger.debug(`❤️ #${heartbeatCount} | 段落ID: ${segment.id}`);
-
             try {
-                const promptContext = await this.buildPromptContext(session, sid, collectedResponses);
-
-                let multimodal = false;
-
-                if (promptContext.multiModalData?.images && promptContext.multiModalData.images.length > 0) {
-                    // this._logger.debug(`[${segment.id}] 多模态场景检测到 ${promptContext.multiModalData.images.length} 张图片。`);
-                    multimodal = true;
-                }
-
-                // 寻找当前模型组中支持多模态的模型，如果找不到则渲染纯文本提示词
-
-                let chatModel: IChatModel = this.modelSwitcher.next();
-
-                if (multimodal) {
-                    for (let i = 0; i < this.modelSwitcher.length; i++) {
-                        if (chatModel.isVisionModel()) {
-                            break;
-                        }
-                        this._logger.debug(`当前模型 ${chatModel.id} 不支持多模态，切换到下一个`);
-                        chatModel = this.modelSwitcher.next();
-                    }
-                    if (!chatModel.isVisionModel()) {
-                        this._logger.debug(`当前模型组中没有支持多模态的模型，跳过多模态处理`);
-                        multimodal = false;
-                        promptContext.multiModalData = { images: [] };
-                    }
-                }
-
-                const { messages } = await this.promptBuilder.build(promptContext);
-
-                if (!chatModel) {
-                    this._logger.error(`✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
+                const result = await this._performSingleHeartbeat(session, sid, collectedResponses);
+                if (result) {
+                    collectedResponses.push(result.response);
+                    shouldContinueHeartbeat = result.continue;
+                    success = true; // 至少成功一次心跳
+                } else {
                     shouldContinueHeartbeat = false;
-                    continue;
                 }
-
-                const stime = Date.now();
-
-                // 创建一个 AbortController 用于取消请求
-                const abortController = new AbortController();
-
-                const timeout = setTimeout(() => {
-                    abortController.abort();
-                }, this.config.timeout * 1000);
-
-                const onStreamStart = () => {
-                    clearTimeout(timeout);
-                    // this._logger.debug(`🌊 流式传输已开始 | 频道 - ${session.cid}`);
-                };
-
-                const llmRawResponse = await chatModel.chat(messages, {
-                    abortSignal: abortController.signal,
-                    onStreamStart,
-                });
-
-                this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
-
-                const { text, usage } = llmRawResponse;
-
-                const getContentLength = (messages: Message[]): number => {
-                    const parts = messages.flatMap((msg) => {
-                        if (typeof msg.content === "string") {
-                            return msg.content;
-                        } else {
-                            return msg.content.map((part) => part.text);
-                        }
-                    });
-
-                    return parts.join("").length;
-                };
-
-                /* prettier-ignore */
-                this._logger.info(`💰 Token 消耗 | 输入: ${usage?.prompt_tokens || `${getContentLength(messages)}字符`} | 输出: ${usage?.completion_tokens || `${text.length}字符`}`);
-
-                const llmParsedResponse = this.parser.parse(text);
-
-                if (llmParsedResponse.error || !llmParsedResponse.data) {
-                    /* prettier-ignore */
-                    this._logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
-                    shouldContinueHeartbeat = false;
-                    success = false;
-                    continue;
-                }
-
-                const agentResponseData = llmParsedResponse.data;
-
-                // 验证响应格式
-                if (!Array.isArray(agentResponseData.actions)) {
-                    this._logger.warn(`✖ 格式无效 | actions应为数组，实际为 ${typeof agentResponseData.actions}`);
-                    shouldContinueHeartbeat = false;
-                    continue;
-                }
-
-                const thoughts: AgentResponse["thoughts"] = agentResponseData.thoughts;
-
-                if (thoughts) {
-                    this.displayThoughts(thoughts);
-                }
-
-                const observations = await this.executeActions(session, agentResponseData.actions);
-
-                const fullResponse: AgentResponse = { ...agentResponseData, observations };
-                collectedResponses.push(fullResponse);
-
-                shouldContinueHeartbeat = agentResponseData.request_heartbeat;
             } catch (error) {
                 this.handleError(error, `心跳 #${heartbeatCount} 期间 (段落ID: ${sid})`);
                 shouldContinueHeartbeat = false;
-                success = false;
+                success = false; // 出错则认为本次循环失败
             }
         }
 
         if (collectedResponses.length > 0) {
-            // this._logger.debug(`💾 正在保存 ${collectedResponses.length} 个响应 | 段落ID: ${segment.id}`);
             await this.worldState.recordAgentTurn(sid, collectedResponses);
-            // this._logger.debug(`✅ 完成 | 段落ID: ${segment.id}`);
-            success = true;
         }
 
         return success;
+    }
+
+    /**
+     * 执行单次心跳的完整逻辑。
+     * @returns 返回包含响应和是否继续的标志，或在失败时返回 null。
+     */
+    private async _performSingleHeartbeat(
+        session: Session,
+        sid: string,
+        previousResponses: AgentResponse[]
+    ): Promise<{ response: AgentResponse; continue: boolean } | null> {
+        // 1. 构建提示词所需的所有上下文信息
+        const promptContext = await this.buildPromptContext(session, sid, previousResponses);
+
+        // 2. 准备模板渲染所需的数据视图 (View)
+        const view = {
+            TOOL_DEFINITION: { tools: prepareDataForTemplate(promptContext.toolSchemas) },
+            CORE_MEMORY: promptContext.memory,
+            WORLD_STATE: promptContext.worldState,
+            CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
+            ONETIME_CODE: promptContext.onetimeCode,
+            // 模板辅助函数
+            _toString: function () {
+                return _toString(this);
+            },
+            _renderParams: function () {
+                const content = [];
+                for (let param of Object.keys(this.params)) {
+                    content.push(`<${param}>${_toString(this.params[param])}</${param}>`);
+                }
+                return content.join("");
+            },
+            _truncate: function () {
+                const length = 100; // TODO: 从配置读取
+                const text = h
+                    .parse(this)
+                    .filter((e) => e.type === "text")
+                    .join("");
+                if (text.length > length) {
+                    return `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`;
+                }
+                return this;
+            },
+        };
+
+        // 3. 渲染提示词并选择模型
+        const systemPrompt = await this.promptService.render("agent.system", view);
+        const userPromptText = await this.promptService.render("agent.user", view);
+
+        let chatModel: IChatModel;
+        let userMessageContent: string | (ImagePart | TextPart)[];
+
+        const hasImages = promptContext.multiModalData.images.length > 0;
+        if (hasImages) {
+            // 寻找支持多模态的模型，如果找不到则降级
+            const visionModel = this.modelSwitcher.models.find((m) => m.isVisionModel());
+            if (visionModel) {
+                chatModel = visionModel;
+                const multiModalPreamble = MultiModalSystemBaseTemplate.replace(
+                    "{{ ONETIME_CODE }}",
+                    promptContext.onetimeCode
+                );
+                userMessageContent = [
+                    { type: "text", text: multiModalPreamble },
+                    ...promptContext.multiModalData.images,
+                    { type: "text", text: userPromptText },
+                ];
+            } else {
+                this._logger.warn(`上下文包含图片，但当前模型组中没有支持多模态的模型。将忽略图片。`);
+                chatModel = this.modelSwitcher.next(); // 使用默认轮询模型
+                userMessageContent = userPromptText;
+            }
+        } else {
+            chatModel = this.modelSwitcher.next();
+            userMessageContent = userPromptText;
+        }
+
+        if (!chatModel) {
+            this._logger.error(`✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
+            return null;
+        }
+
+        const messages: Message[] = [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessageContent },
+        ];
+
+        // 4. 调用 LLM
+        const stime = Date.now();
+        const abortController = new AbortController();
+        const timeout = setTimeout(() => abortController.abort(), this.config.timeout * 1000);
+
+        const llmRawResponse = await chatModel.chat(messages, {
+            abortSignal: abortController.signal,
+            onStreamStart: () => clearTimeout(timeout),
+        });
+        this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
+        /* prettier-ignore */
+        this._logger.info(`💰 Token 消耗 | 输入: ${llmRawResponse.usage?.prompt_tokens ?? 'N/A'} | 输出: ${llmRawResponse.usage?.completion_tokens ?? 'N/A'}`);
+
+        // 5. 解析和处理响应
+        const llmParsedResponse = this.parser.parse(llmRawResponse.text);
+        if (llmParsedResponse.error || !llmParsedResponse.data) {
+            /* prettier-ignore */
+            this._logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            return null;
+        }
+
+        const agentResponseData = llmParsedResponse.data;
+        if (!Array.isArray(agentResponseData.actions)) {
+            this._logger.warn(`✖ 格式无效 | actions应为数组，实际为 ${typeof agentResponseData.actions}`);
+            return null;
+        }
+
+        if (agentResponseData.thoughts) {
+            this.displayThoughts(agentResponseData.thoughts);
+        }
+
+        const observations = await this.executeActions(session, agentResponseData.actions);
+        const fullResponse: AgentResponse = { ...agentResponseData, observations };
+
+        return { response: fullResponse, continue: agentResponseData.request_heartbeat };
     }
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
@@ -333,7 +415,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         session: Session,
         actions: AgentResponse["actions"]
     ): Promise<AgentResponse["observations"]> {
-        let observations: AgentResponse["observations"] = [];
+        const observations: AgentResponse["observations"] = [];
         for await (const action of actions) {
             const result = await this.toolService.invoke(action.function, action.params, session);
             observations.push({
@@ -346,6 +428,14 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         return observations;
     }
 
+    /**
+     * 构建用于生成提示词的完整上下文。
+     * 此函数现在是一个纯数据聚合器，不产生副作用。
+     * @param session 当前会话
+     * @param sid 当前处理的段落ID
+     * @param previousResponses 在当前agent回合中，之前心跳的响应
+     * @returns {Promise<PromptContext>} 完整的提示词上下文对象
+     */
     private async buildPromptContext(
         session: Session,
         sid: string,
@@ -353,97 +443,111 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     ): Promise<PromptContext> {
         const onetimeCode = Random.id(8);
 
+        // 1. 获取世界状态快照
         const worldState = await this.worldState.getWorldState(session, onetimeCode);
+        // 注意：之前在这里添加的 `is_current` 标记已被移除。
+        // 这种展示逻辑应由模板本身处理，例如通过比较 message.id 和 worldState.channel.history.pending.id。
+        // 这使得此函数更加纯粹，只负责数据聚合。
 
-        // 图片智能筛选与上下文构建
-        const { images: multiModalContent } = this.config.vision.enabled
-            ? await this.buildMultimodalContext(structuredClone(worldState))
+        // 2. 获取多模态上下文（如果启用）
+        const multiModalContent = this.config.vision.enabled
+            ? await this.buildMultimodalContext(worldState)
             : { images: [] };
 
-        // 在 worldState 中查找并标记当前 segment
-
-        if (worldState.channel.history.pending && worldState.channel.history.pending.id === sid) {
-            (worldState.channel.history.pending as any).is_current = true;
-        }
-
+        // 3. 聚合所有数据
         return {
             toolSchemas: this.toolService.getToolSchemas(),
             memory: await this.ctx[Services.Memory].getMemoryDataForRendering(),
             worldState: worldState,
             previousResponses: previousResponses,
             multiModalData: {
-                images: multiModalContent,
-                // 传递处理后的纯文本历史
-                // textualHistory: textualHistory,
+                images: multiModalContent.images,
             },
             onetimeCode,
         };
     }
 
     /**
-     * 构建多模态上下文的核心方法
+     * @description 构建多模态上下文。
+     * 采用更声明式的方法来智能筛选图片，提高可读性和可维护性。
      * @param worldState 当前的世界状态
-     * @returns 包含筛选后的图片内容和处理后的文本历史的对象
+     * @returns 包含筛选后的图片内容的对象
      */
     private async buildMultimodalContext(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
-        // 1. 扁平化所有消息，并建立索引
-        const allMessages = [worldState.channel.history.pending]
-            .concat(worldState.channel.history.closed || [])
-            .concat(worldState.channel.history.folded ? [worldState.channel.history.folded] : [])
-            .flatMap((s) => s.dialogue)
-            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        // 1. 将所有消息扁平化并建立索引
+        const allSegments = [
+            worldState.channel.history.pending,
+            ...(worldState.channel.history.closed || []),
+            ...(worldState.channel.history.folded ? [worldState.channel.history.folded] : []),
+        ].filter(Boolean); // 过滤掉可能为null的项
 
+        const allMessages = allSegments.flatMap((s) => s.dialogue);
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
-        // 3. 智能筛选图片ID
-        const finalImageIds = new Set<string>();
-
-        // 遍历所有消息，优先添加被引用的图片
-        for (const msg of allMessages) {
-            if (msg.quoteId && messageMap.has(msg.quoteId)) {
-                const quotedMsg = messageMap.get(msg.quoteId);
-                const elements = h.parse(quotedMsg.content);
-                const imageIds = elements
-                    .filter((e) => e.type === "image" && e.attrs.id)
-                    .map((e) => e.attrs.id as string);
-                for (const id of imageIds) {
-                    if (finalImageIds.size < this.config.vision.maxImagesInContext) {
-                        finalImageIds.add(id);
-                        this.imageLifecycleTracker.set(id, (this.imageLifecycleTracker.get(id) || 0) + 1);
-                    }
-                }
-            }
-        }
-
-        // 从最新消息开始向后遍历，添加常规图片，直到上限
-        for (let i = allMessages.length - 1; i >= 0; i--) {
-            if (finalImageIds.size >= this.config.vision.maxImagesInContext) break;
-            const msg = allMessages[i];
+        // 2. 收集所有潜在的图片候选者，并赋予优先级
+        const imageCandidates = allMessages.flatMap((msg) => {
             const elements = h.parse(msg.content);
             const imageIds = elements.filter((e) => e.type === "image" && e.attrs.id).map((e) => e.attrs.id as string);
-            for (const id of imageIds) {
-                // 检查生命周期和上限
-                if ((this.imageLifecycleTracker.get(id) || 0) < this.config.vision.imageLifecycleCount) {
-                    if (finalImageIds.size < this.config.vision.maxImagesInContext) {
-                        finalImageIds.add(id);
-                        this.imageLifecycleTracker.set(id, (this.imageLifecycleTracker.get(id) || 0) + 1);
-                    }
+
+            // 检查引用，为被引用的图片赋予更高优先级
+            let isQuotedImage = false;
+            if (msg.quoteId && messageMap.has(msg.quoteId)) {
+                const quotedElements = h.parse(messageMap.get(msg.quoteId).content);
+                if (quotedElements.some((e) => e.type === "image")) {
+                    isQuotedImage = true;
                 }
+            }
+
+            return imageIds.map((id) => ({
+                id,
+                timestamp: msg.timestamp.getTime(),
+                priority: isQuotedImage ? 1 : 0, // 1 for quoted, 0 for regular
+            }));
+        });
+
+        // 3. 对候选图片进行排序：优先级更高 -> 时间戳更新 -> 去重和筛选
+        const sortedUniqueCandidates = Array.from(
+            imageCandidates
+                .sort((a, b) => b.priority - a.priority || b.timestamp - a.timestamp)
+                .reduce((map, candidate) => {
+                    // 保留每个ID最高优先级的候选项
+                    if (!map.has(candidate.id)) {
+                        map.set(candidate.id, candidate);
+                    }
+                    return map;
+                }, new Map<string, ImageCandidate>())
+                .values()
+        );
+
+        // 4. 根据生命周期和数量上限选择最终图片
+        const finalImageIds = new Set<string>();
+        for (const candidate of sortedUniqueCandidates) {
+            if (finalImageIds.size >= this.config.vision.maxImagesInContext) break;
+
+            const usageCount = this.imageLifecycleTracker.get(candidate.id) || 0;
+            if (usageCount < this.config.vision.imageLifecycleCount) {
+                finalImageIds.add(candidate.id);
+                this.imageLifecycleTracker.set(candidate.id, usageCount + 1);
             }
         }
 
-        // 4. 获取图片数据并生成带引用的文本历史
+        // 5. 获取图片数据并格式化输出
+        if (finalImageIds.size === 0) {
+            return { images: [] };
+        }
+
         const imageService = this.ctx[Services.Image];
-        const imageFetchPromises = Array.from(finalImageIds).map((id) => imageService.getImageDataWithContent(id));
-        const imageDataResults = await Promise.all(imageFetchPromises);
+        const imageDataResults = await Promise.all(
+            Array.from(finalImageIds).map((id) => imageService.getImageDataWithContent(id))
+        );
 
         const finalImages: (ImagePart | TextPart)[] = [];
-
-        const allowedImageTypes = this.config.vision.allowedImageTypes;
+        const allowedImageTypes = new Set(this.config.vision.allowedImageTypes);
 
         for (const result of imageDataResults) {
-            if (result && allowedImageTypes.includes(result.data?.mimeType)) {
-                finalImages.push({ type: "text", text: `Image #${result.data.id}:` });
+            if (result && result.data && allowedImageTypes.has(result.data.mimeType)) {
+                // 为LLM提供更明确的图片标识
+                finalImages.push({ type: "text", text: `The following is an image with ID #${result.data.id}:` });
                 finalImages.push({
                     type: "image_url",
                     image_url: { url: result.content, detail: this.config.vision.detail },
@@ -454,13 +558,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         return { images: finalImages };
     }
 
-    /**
-     * 改进的错误处理器
-     * @param error 捕获到的错误对象
-     * @param contextDescription 发生错误的上下文描述
-     */
     private handleError(error: any, contextDescription: string): void {
-        // 检查 error 是否是 Error 实例，以便能访问堆栈
         if (error instanceof Error) {
             /* prettier-ignore */
             this._logger.error(`[错误] ${contextDescription}\n` + `错误信息: ${error.message}\n` + `堆栈追踪:\n${error.stack}`);
@@ -469,4 +567,55 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this._logger.error(`[错误] ${contextDescription}\n` + `捕获到非标准错误: ${JSON.stringify(error)}`);
         }
     }
+}
+
+function _toString(obj) {
+    if (typeof obj === "string") return obj;
+    return JSON.stringify(obj);
+}
+
+/**
+ * @description 为 Mustache 模板准备工具数据。
+ * 这个函数将扁平的工具定义转换为模板引擎易于遍历的嵌套结构。
+ * 它通过递归为参数添加缩进，并处理嵌套对象和数组。
+ */
+function prepareDataForTemplate(tools: ToolSchema[]) {
+    // 递归函数，处理参数并添加缩进
+    const processParams = (params: Properties, indent = ""): any[] => {
+        return Object.entries(params).map(([key, param]) => {
+            const processedParam: any = {
+                ...param,
+                key: key,
+                indent: indent,
+            };
+
+            // 如果是对象，递归处理其属性
+            if (param.properties) {
+                processedParam.properties = processParams(param.properties, indent + "    ");
+            }
+
+            // 如果是数组且数组成员是复杂对象，递归处理
+            if (param.items) {
+                // 将单个 item 包装成数组，以便局部模板可以统一处理
+                processedParam.items = [
+                    {
+                        ...param.items,
+                        key: "item", // 为数组项提供一个通用名称
+                        indent: indent + "    ",
+                        // 递归处理数组项的属性（如果它是一个对象）
+                        ...(param.items.properties && {
+                            properties: processParams(param.items.properties, indent + "        "),
+                        }),
+                    },
+                ];
+            }
+            return processedParam;
+        });
+    };
+
+    // 转换每个工具的参数
+    return tools.map((tool) => ({
+        ...tool,
+        parameters: tool.parameters ? processParams(tool.parameters) : [],
+    }));
 }
