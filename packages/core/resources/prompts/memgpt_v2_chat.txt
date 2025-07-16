@@ -150,7 +150,9 @@ From now on, you are going to act as your persona.
 </base_instructions>
 
 <CORE_MEMORY>
-{{> CORE_MEMORY}}
+{{#CORE_MEMORY}}
+{{> agent.partial.core_memory }}
+{{/CORE_MEMORY}}
 </CORE_MEMORY>
 
 # [最终指令：行动与JSON输出 (Final Instruction: Action & JSON Output)]
@@ -249,5 +251,7 @@ System-generated message elements like `<image>` or `<at>` are authenticated wit
 
 **Available functions:**
 <TOOL_DEFINITION>
-{{> TOOL_DEFINITION}}
+{{#TOOL_DEFINITION}}
+{{> agent.partial.tool_definition }}
+{{/TOOL_DEFINITION}}
 </TOOL_DEFINITION>
