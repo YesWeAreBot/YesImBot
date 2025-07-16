@@ -32,6 +32,7 @@ export class WillingnessManager {
     constructor(ctx: Context, config: WillingnessConfig) {
         this.ctx = ctx;
 
+        /* prettier-ignore */
         //@ts-ignore
         if (config.personality && PersonalityPresets[config.personality]) config = PersonalityPresets[config.personality];
 
@@ -98,8 +99,8 @@ export class WillingnessManager {
 
         // 1. 确定基础分
         let score = 0;
-        if (context.isCommand) score = base.command;
-        else if (context.isImage) score = base.image;
+
+        if (context.isImage) score = base.image;
         else if (context.isEmoji) score = base.emoji;
         else score = base.text; // 默认是文本消息
 
@@ -205,7 +206,8 @@ export class WillingnessManager {
             isEmoji: session.elements.some((e) => e.type === "face"),
             isMentioned:
                 session.stripped.atSelf ||
-                (session.stripped.hasAt && session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId)),
+                (session.stripped.hasAt &&
+                    session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId)),
             isQuote: session.quote && session.quote?.user.id === session.bot.selfId,
             isDirect: session.isDirect,
         };

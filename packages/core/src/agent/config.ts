@@ -1,6 +1,18 @@
 import { Schema } from "koishi";
 import { SystemConfig } from "../config";
-import { MultiModalSystemBaseTemplate, SystemBaseTemplate, UserBaseTemplate } from "./prompt-builder";
+import { readFileSync } from "fs";
+import path from "path";
+import { PROMPTS_DIR } from "@/shared/constants";
+
+// 默认的系统和用户模板文件路径
+// TODO: 确保这些文件路径是正确的，并且模板内容已包含对 new WorldState 结构的支持
+export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
+export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
+export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'.
+In the subsequent conversation text, placeholders in the format <image id="[ID]" onetime-code="{{ ONETIME_CODE }}"/> will be used to refer to these images.
+Please participate in the conversation considering the full context of both images and text.`;
+
+
 
 // ------------------- 模块二: 智能体行为 (Agent Behavior) -------------------
 
@@ -46,8 +58,6 @@ export interface WillingnessConfig {
         image: number;
         /** 收到表情/贴纸的基础分。通常较低。 */
         emoji: number;
-        /** 被指令直接调用时的基础分。应该设得很高以确保响应。 */
-        command: number;
     };
 
     // --- B. 属性加成 (Attribute Bonuses) ---
@@ -93,7 +103,7 @@ export interface WillingnessConfig {
 export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { name: string }>> = {
     default: {
         name: "默认",
-        base: { text: 10, image: 2, emoji: 1, command: 100 },
+        base: { text: 10, image: 2, emoji: 1 },
         attribute: { atMention: 100, isQuote: 15, isDirectMessage: 40 },
         interest: { keywords: [], keywordMultiplier: 1.2, defaultMultiplier: 1.0 },
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 90, probabilityThreshold: 60, probabilityAmplifier: 0.05, replyCost: 30 },
@@ -106,7 +116,7 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
      */
     outgoing: {
         name: "开朗活泼",
-        base: { text: 15, image: 10, emoji: 5, command: 100 },
+        base: { text: 15, image: 10, emoji: 5 },
         attribute: { atMention: 100, isQuote: 15, isDirectMessage: 25 },
         interest: { keywords: ["哈哈", "好玩", "推荐", "电影", "游戏"], keywordMultiplier: 1.5, defaultMultiplier: 1.0 },
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 180, probabilityThreshold: 35, probabilityAmplifier: 0.08, replyCost: 20 },
@@ -114,12 +124,13 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
     /**
      * 高冷严谨的“领域专家” (Cold & Professional)
      *   性格特点: 平时不说话，惜字如金。只对自己专业领域（关键词）或被直接提问时才回应，且回应精准、深入。对闲聊和表情包感到厌烦。
-     *   设计思路: 高回复门槛，高发言成本。对无关信息（文本、图片、表情）设置低分甚至负分。关键词乘数和@加成极高，是其主要激活方式。衰减快，不相干的话题很快就从它“脑中”消失。
+     *   设计思路: 高回复门槛，高发言成本。对无关信息（文本、图片、表情）设置低分甚至负分。
+     *           关键词乘数和@加成极高，是其主要激活方式。衰减快，不相干的话题很快就从它“脑中”消失。
      *   适用场景: 技术问答群、学习小组、工作对接群。
      */
     professional: {
         name: "高冷严谨",
-        base: { text: 2, image: -10, emoji: -5, command: 100 },
+        base: { text: 2, image: -10, emoji: -5 },
         attribute: { atMention: 100, isQuote: 20, isDirectMessage: 60 },
         interest: { keywords: ["API", "BUG", "部署", "算法", "模型"], keywordMultiplier: 5.0, defaultMultiplier: 1.0 },
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 45, probabilityThreshold: 75, probabilityAmplifier: 0.1, replyCost: 60 },
@@ -127,12 +138,13 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
     /**
      * 温柔体贴的“知心姐姐” (Gentle & Caring)
      *   性格特点: 不会主动挑起话题，但当群里有人表达情绪（尤其是负面情绪）或需要帮助时，会第一时间出现。发言温柔，喜欢用表情符号。
-     *   设计思路: 基础分不高，但对特定“情绪”关键词（如“难过”、“怎么办”）有极高乘数。回复门槛适中，但发言成本低，可以进行多轮安慰。私聊加成高，鼓励用户向其倾诉。
+     *   设计思路: 基础分不高，但对特定“情绪”关键词（如“难过”、“怎么办”）有极高乘数。
+     *           回复门槛适中，但发言成本低，可以进行多轮安慰。私聊加成高，鼓励用户向其倾诉。
      *   适用场景: 情感支持、心理咨询（辅助）、用户关怀社群。
      */
     caring: {
         name: "温柔体贴",
-        base: { text: 8, image: 3, emoji: 4, command: 100 },
+        base: { text: 8, image: 3, emoji: 4 },
         attribute: { atMention: 100, isQuote: 10, isDirectMessage: 50 },
         interest: { keywords: ["难过", "伤心", "怎么办", "求助", "谢谢你", "太好了"], keywordMultiplier: 4.0, defaultMultiplier: 1.0 },
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 120, probabilityThreshold: 45, probabilityAmplifier: 0.07, replyCost: 15 },
