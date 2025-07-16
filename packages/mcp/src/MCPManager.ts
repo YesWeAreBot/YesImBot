@@ -39,6 +39,12 @@ export class MCPManager {
      */
     async connectServers(): Promise<void> {
         const serverNames = Object.keys(this.config.mcpServers);
+
+        if (serverNames.length === 0) {
+            this.logger.info("未配置 MCP 服务器，跳过连接");
+            return;
+        }
+
         this.logger.info(`准备连接 ${serverNames.length} 个 MCP 服务器`);
 
         for await (const serverName of serverNames) {
