@@ -1,6 +1,6 @@
 import { stringify, truncate } from "@/shared/utils";
 import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
-import Mustache from "mustache";
+import { PromptService } from "../prompt";
 import { Services } from "../types";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
@@ -24,16 +24,18 @@ declare module "koishi" {
  * 负责注册、管理和提供所有扩展和工具。
  */
 export class ToolService extends Service<ToolServiceConfig> {
-    static readonly inject = [Services.Logger];
+    static readonly inject = [Services.Logger, Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
 
     private _logger: Logger;
+    private promptService: PromptService;
 
     constructor(ctx: Context, config: ToolServiceConfig) {
         super(ctx, Services.Tool, true);
         this.config = config;
         this._logger = ctx[Services.Logger].getLogger("[工具管理器]");
+        this.promptService = ctx[Services.Prompt];
     }
 
     protected async start() {
@@ -59,6 +61,7 @@ export class ToolService extends Service<ToolServiceConfig> {
             // }
             loadedExtensions.set(name, this.ctx.plugin(Ext, config));
         }
+        this._registerPromptTemplates();
         this.registerCommands();
         this._logger.info("服务已启动");
     }
@@ -130,83 +133,13 @@ export class ToolService extends Service<ToolServiceConfig> {
             .action(async ({ session }, name) => {
                 if (!name) return "未指定要查询的工具名称。";
 
-                function prepareDataForTemplate(tool: ToolSchema) {
-                    // 递归函数，处理参数并添加缩进
-                    const processParams = (params: Properties, indent = ""): any[] => {
-                        return Object.entries(params).map(([key, param]) => {
-                            const processedParam: any = {
-                                ...param,
-                                key: key,
-                                indent: indent,
-                            };
+                const renderResult = await this.promptService.render("tool.info", { toolName: name, session: session });
 
-                            // 如果是对象，递归处理其属性
-                            if (param.properties) {
-                                processedParam.properties = processParams(param.properties, indent + "    ");
-                            }
-
-                            // 如果是数组且数组成员是复杂对象，递归处理
-                            if (param.items) {
-                                // 将单个 item 包装成数组，以便局部模板可以统一处理
-                                processedParam.items = [
-                                    {
-                                        ...param.items,
-                                        key: "item", // 为数组项提供一个通用名称
-                                        indent: indent + "    ",
-                                        // 递归处理数组项的属性（如果它是一个对象）
-                                        ...(param.items.properties && {
-                                            properties: processParams(param.items.properties, indent + "        "),
-                                        }),
-                                    },
-                                ];
-                            }
-                            return processedParam;
-                        });
-                    };
-
-                    // 转换每个工具的参数
-                    return {
-                        ...tool,
-                        parameters: tool.parameters ? processParams(tool.parameters) : [],
-                    };
+                if (!renderResult) {
+                    return `未找到名为 "${name}" 的工具或渲染失败。`;
                 }
 
-                const tool = this.getSchema(name, session);
-                if (!tool) {
-                    return `未找到名为 "${name}" 的工具。`;
-                }
-                const template = `# 工具名称: {{name}}
-## 描述
-{{description}}
-
-## 参数
-{{#parameters}}
-  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
-    - 描述: {{description}}
-{{#default}}
-    - 默认值: {{.}}
-{{/default}}
-{{#enum.length}}
-    - 可选值: {{#enum}}"{{.}}" {{/enum}}
-{{/enum.length}}
-{{#properties}}
-    - 对象属性:
-{{#.}}
-{{> paramDetail}}
-{{/.}}
-{{/properties}}
-{{#items}}
-    - 数组项 (每个项都是一个 '{{type}}'):
-{{> paramDetail}}
-{{/items}}
-{{/parameters}}
-{{^parameters}}
-此工具无需任何参数。
-{{/parameters}}`;
-
-                const rendered = Mustache.render(template, prepareDataForTemplate(tool));
-
-                return rendered;
+                return renderResult;
             });
 
         this.ctx
@@ -329,6 +262,91 @@ export class ToolService extends Service<ToolServiceConfig> {
             });
     }
 
+    private _registerPromptTemplates() {
+        const toolInfoTemplate = `# 工具名称: {{tool.name}}
+## 描述
+{{tool.description}}
+
+## 参数
+{{#tool.parameters}}
+  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
+    - 描述: {{description}}
+{{#default}}
+    - 默认值: {{.}}
+{{/default}}
+{{#enum.length}}
+    - 可选值: {{#enum}}"{{.}}" {{/enum}}
+{{/enum.length}}
+{{#properties}}
+    - 对象属性:
+{{#.}}
+{{> tool.paramDetail}}
+{{/.}}
+{{/properties}}
+{{#items}}
+    - 数组项 (每个项都是一个 '{{type}}'):
+{{> tool.paramDetail}}
+{{/items}}
+{{/tool.parameters}}
+{{^tool.parameters}}
+此工具无需任何参数。
+{{/tool.parameters}}`;
+
+        const paramDetailPartial = `{{indent}}  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
+{{indent}}    - 描述: {{description}}
+{{#default}}
+{{indent}}    - 默认值: {{.}}
+{{/default}}
+{{#enum.length}}
+{{indent}}    - 可选值: {{#enum}}"{{.}}" {{/enum}}
+{{/enum.length}}
+{{#properties}}
+{{indent}}    - 对象属性:
+{{#.}}
+{{> tool.paramDetail}}
+{{/.}}
+{{/properties}}
+{{#items}}
+{{indent}}    - 数组项 (每个项都是一个 '{{type}}'):
+{{> tool.paramDetail}}
+{{/items}}`;
+
+        this.promptService.registerTemplate("tool.info", toolInfoTemplate);
+        this.promptService.registerTemplate("tool.paramDetail", paramDetailPartial);
+
+        this.promptService.registerSnippet("tool", (context) => {
+            const { toolName, session } = context;
+            const tool = this.getSchema(toolName, session);
+            if (!tool) return null;
+
+            const processParams = (params: Properties, indent = ""): any[] => {
+                return Object.entries(params).map(([key, param]) => {
+                    const processedParam: any = { ...param, key, indent };
+                    if (param.properties) {
+                        processedParam.properties = processParams(param.properties, indent + "    ");
+                    }
+                    if (param.items) {
+                        processedParam.items = [
+                            {
+                                ...param.items,
+                                key: "item",
+                                indent: indent + "    ",
+                                ...(param.items.properties && {
+                                    properties: processParams(param.items.properties, indent + "        "),
+                                }),
+                            },
+                        ];
+                    }
+                    return processedParam;
+                });
+            };
+
+            return {
+                ...tool,
+                parameters: tool.parameters ? processParams(tool.parameters) : [],
+            };
+        });
+    }
     /**
      * 注册一个新的扩展。
      * @param ExtConstructor 扩展的构造函数
