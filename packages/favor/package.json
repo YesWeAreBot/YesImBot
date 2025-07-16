@@ -1,0 +1,54 @@
+{
+  "name": "koishi-plugin-yesimbot-extension-favor",
+  "description": "Yes! I'm Bot! 好感度插件",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "homepage": "https://github.com/HydroGest/YesImBot",
+  "files": [
+    "lib",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && node esbuild.config.mjs",
+    "dev": "tsc -w --preserveWatchOutput",
+    "lint": "eslint . --ext .ts",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"
+  },
+  "license": "MIT",
+  "contributors": [
+    "MiaowFISH <miaow233@qq.com>"
+  ],
+  "keywords": [
+    "koishi",
+    "plugin",
+    "yesimbot",
+    "extension"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "directory": "packages/favor"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.0-beta.4"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "^3.0.0-beta.4"
+  },
+  "koishi": {
+    "description": {
+      "zh": "为 YesImBot 提供好感度管理功能",
+      "en": "Provides favor system for YesImBot"
+    },
+    "service": {
+      "required": [
+        "yesimbot"
+      ]
+    }
+  }
+}
