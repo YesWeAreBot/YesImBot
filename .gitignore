@@ -10,7 +10,7 @@ tsconfig.tsbuildinfo
 tsconfig.temp.json
 package-lock.json
 yarn.lock
-package.tgz
+*.tgz
 
 .turbo
 .eslintcache

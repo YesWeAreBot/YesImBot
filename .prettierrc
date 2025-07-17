@@ -8,6 +8,6 @@
     "arrowParens": "always",
     "bracketSpacing": true,
     "bracketSameLine": false,
-    "printWidth": 140,
+    "printWidth": 120,
     "trailingComma": "es5"
 }
