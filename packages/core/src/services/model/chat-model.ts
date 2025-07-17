@@ -1,10 +1,17 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
 import { Context } from "koishi";
+import type {
+    ChatOptions,
+    CompletionStep,
+    CompletionToolCall,
+    CompletionToolResult,
+    GenerateTextResult,
+    Message
+} from "xsai";
 
 import { generateText, streamText } from "@/dependencies/xsai";
-import { toBoolean, truncate } from "@/shared";
-import type { ChatOptions, CompletionToolCall, CompletionToolResult, GenerateTextResult, Message, StreamTextStep, Usage } from "xsai";
-import { ToolDefinition } from "../extension";
+import { ToolDefinition } from "@/services/extension";
+import { toBoolean } from "@/shared";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 
@@ -81,7 +88,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                 return await this._executeNonStream(chatOptions);
             }
         } catch (error) {
-            this.logger.error(`💥 致命异常 | 错误: ${error.message}`, error);
+            // this.logger.error(`💥 致命异常 | 错误: ${error.message}`, error);
             throw error;
         }
     }
@@ -126,13 +133,19 @@ export class ChatModel extends BaseModel implements IChatModel {
             streamOptions: {
                 includeUsage: true,
             },
-            onChunk: (chunk) => {
-                if (!streamStarted) {
-                    onStreamStart?.();
-                    streamStarted = true;
-                    this.logger.debug(`🌊 流式传输已开始 | 首字延迟: ${Date.now() - stime}ms`);
-                    // 打印一个换行符，为打字机效果准备一个干净的起始行
-                    process.stdout.write("\n");
+            onEvent: (event) => {
+                if (event.type === "text-delta") {
+                    if (!streamStarted) {
+                        if (onStreamStart) {
+                            onStreamStart?.();
+                        }
+                        streamStarted = true;
+                        this.logger.debug(`🌊 流式传输已开始 | 首字延迟: ${Date.now() - stime}ms`);
+                        // 打印一个换行符，为打字机效果准备一个干净的起始行
+                        process.stdout.write("\n");
+                    }
+                    // 实时打字效果
+                    process.stdout.write(event.text);
                 }
             },
         });
@@ -141,7 +154,7 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         // 1. 定义用于聚合最终结果的变量
         const finalContentParts: string[] = [];
-        let finalSteps: GenerateTextResult["steps"] = [];
+        let finalSteps: CompletionStep[] = [];
         let finalMessages: Message[] = [];
         let finalToolCalls: CompletionToolCall[] = [];
         let finalToolResults: CompletionToolResult[] = [];
@@ -151,16 +164,15 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 2. 创建一个 async 函数来处理文本流 (打字机效果)
         const textProcessor = async () => {
             for await (const textPart of stream.textStream) {
-                process.stdout.write(textPart); // 实时打字效果
                 finalContentParts.push(textPart); // 收集文本块
             }
         };
 
         // 3. 创建另一个 async 函数来处理步骤流 (元数据和工具调用)
         const stepProcessor = async () => {
-            for await (const step of stream.stepStream) {
+            for await (const step of await stream.steps) {
                 // 聚合步骤
-                finalSteps.push(step as StreamTextStep & { usage: Usage });
+                finalSteps.push(step);
                 // 聚合工具调用
                 if (step.toolCalls && step.toolCalls.length > 0) {
                     finalToolCalls.push(...step.toolCalls);
@@ -170,37 +182,25 @@ export class ChatModel extends BaseModel implements IChatModel {
                     finalToolResults.push(...step.toolResults);
                 }
                 // 持续更新使用量，最后一次的为最终值
-                // if (step.usage) {
-                //     finalUsage = step.usage;
-                // }
-                // 从 choice 中获取最终的停止原因
-                if (step.choices && step.choices.length > 0) {
-                    // 通常最后一个 choice 包含最终的停止原因
-                    const lastChoice = step.choices[step.choices.length - 1];
-                    if (lastChoice.finishReason) {
-                        finalFinishReason = lastChoice.finishReason;
-                    }
+                if (step.usage) {
+                    finalUsage = step.usage;
+                }
+
+                if (step.finishReason) {
+                    finalFinishReason = step.finishReason;
                 }
 
                 // 聚合消息
-                if (step.messages && step.messages.length > 0) {
-                    // 通常最后一个 messages 包含最终消息列表
-                    finalMessages = step.messages;
-                }
-            }
-        };
-
-        const chunkProcessor = async () => {
-            for await (const chunk of stream.chunkStream) {
-                if (chunk.usage) {
-                    finalUsage = chunk.usage;
-                }
+                // if (step.messages && step.messages.length > 0) {
+                //     // 通常最后一个 messages 包含最终消息列表
+                //     finalMessages = step.messages;
+                // }
             }
         };
 
         // 4. 使用 Promise.all 来并发执行这两个处理器
         // 这将确保我们同时监听文本和步骤，直到两个流都结束
-        await Promise.all([textProcessor(), stepProcessor(), chunkProcessor()]);
+        await Promise.all([textProcessor(), stepProcessor()]);
 
         // --- 流处理结束，组装并返回结果 ---
 
@@ -210,7 +210,7 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         // 5. 组装成一个完整的 GenerateTextResult 对象
         const finalResult: GenerateTextResult = {
-            steps: finalSteps,
+            steps: finalSteps as CompletionStep<true>[],
             messages: finalMessages,
             text: finalContentParts.join(""),
             toolCalls: finalToolCalls,
