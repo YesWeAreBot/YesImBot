@@ -191,7 +191,6 @@ export class WorldStateService extends Service<HistoryConfig> {
      */
     public async getWorldState(session: Session, onetimeCode: string): Promise<WorldState> {
         const worldState: WorldState = {
-            timestamp: new Date().toISOString(),
             channel: await this.buildFullContextForChannel(
                 { platform: session.platform, id: session.channelId },
                 onetimeCode
