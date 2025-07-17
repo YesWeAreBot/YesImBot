@@ -1,4 +1,4 @@
-import { Context, Service } from "koishi";
+import { Context, Logger, Service } from "koishi";
 import { IRenderer, MustacheRenderer } from "./renderer";
 import { Services } from "../types";
 
@@ -23,12 +23,14 @@ export class PromptService extends Service<PromptServiceConfig> {
     private readonly renderer: IRenderer;
     private readonly templates: Map<string, string> = new Map();
     private readonly snippets: Map<string, Snippet> = new Map();
+    private _logger: Logger;
 
     constructor(ctx: Context, config: PromptServiceConfig) {
         super(ctx, Services.Prompt, true);
         this.ctx = ctx;
         this.config = config;
         this.renderer = config.renderer || new MustacheRenderer();
+        this._logger = ctx[Services.Logger].getLogger("[提示词]");
     }
 
     /**
@@ -38,7 +40,7 @@ export class PromptService extends Service<PromptServiceConfig> {
      */
     public registerTemplate(name: string, content: string): void {
         if (this.templates.has(name)) {
-            console.warn(`[PromptService] Template "${name}" is being overwritten.`);
+            this._logger.warn(`覆盖已存在的模板 "${name}"`);
         }
         this.templates.set(name, content);
     }
@@ -50,7 +52,7 @@ export class PromptService extends Service<PromptServiceConfig> {
      */
     public registerSnippet(key: string, snippetFn: Snippet): void {
         if (this.snippets.has(key)) {
-            console.warn(`[PromptService] Snippet "${key}" is being overwritten.`);
+            this._logger.warn(`覆盖已存在的片段 "${key}"`);
         }
         this.snippets.set(key, snippetFn);
     }
@@ -64,7 +66,7 @@ export class PromptService extends Service<PromptServiceConfig> {
     public async render(templateName: string, initialScope: Record<string, any> = {}): Promise<string> {
         const templateContent = this.templates.get(templateName);
         if (!templateContent) {
-            throw new Error(`[PromptService] Template "${templateName}" not found.`);
+            throw new Error(`未找到模板 "${templateName}"`);
         }
 
         // 1. 构建作用域 (Scope)
@@ -91,7 +93,7 @@ export class PromptService extends Service<PromptServiceConfig> {
                 const value = await snippetFn(scope);
                 this.setNestedProperty(scope, key, value);
             } catch (error) {
-                //console.error(`[PromptService] Error executing snippet "${key}":`, error);
+                this._logger.error(`执行片段 "${key}" 时出错:`, error);
                 // 根据策略，可以选择注入 null 或抛出异常
                 this.setNestedProperty(scope, key, null);
             }

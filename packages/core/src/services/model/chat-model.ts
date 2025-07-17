@@ -117,7 +117,7 @@ export class ChatModel extends BaseModel implements IChatModel {
      * 这种实现方式可以并发处理多个流（文本、步骤），并在所有流结束后组装完整结果。
      */
     private async _executeStream(chatOptions: ChatOptions, onStreamStart?: () => void): Promise<GenerateTextResult> {
-        this.logger.debug("→ 流式请求 (并发处理)");
+        // this.logger.debug("→ 流式请求 (并发处理)");
         let streamStarted = false;
 
         const stime = Date.now();

@@ -72,8 +72,6 @@ export class MemoryService extends Service {
         );
 
         this.archivalStore = new BasicArchivalStore(ctx);
-
-        this._logger.info("服务已初始化");
     }
 
     get blocks(): Map<string, MemoryBlock> {
