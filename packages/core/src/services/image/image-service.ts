@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import { Context, Element, h, Logger, Service, Session } from "koishi";
 import path from "path";
 import { fetch } from "undici";
@@ -38,12 +38,54 @@ export class ImageService extends Service<ImageServiceConfig> {
                 originalUrl: "string(1023)",
                 size: "unsigned",
                 createdAt: "timestamp",
+                lastUsedAt: "timestamp",
                 description: "text",
                 source: "json",
             },
             { primary: "id" }
         );
         this._logger.info("服务已启动");
+
+        this.ctx
+            .command("image.clear", "清空图片缓存", { authority: 3 })
+            .option("range", "-r <range:string> 指定清理范围 (all, unused, expired)", { fallback: "unused" })
+            .option("age", "-a <age:number> 指定过期天数 (默认为30天)", { fallback: 30 })
+            .action(async ({ options }) => {
+                const { range, age } = options;
+                const cutoff = new Date(Date.now() - age * 24 * 60 * 60 * 1000);
+                let imagesToDelete: ImageData[] = [];
+                let message: string;
+
+                switch (range) {
+                    case "all":
+                        imagesToDelete = await this.ctx.database.get(TableName.Images, {});
+                        message = "所有图片缓存";
+                        break;
+                    case "unused":
+                        // 查找在指定天数内未被使用的图片
+                        imagesToDelete = await this.ctx.database.get(TableName.Images, {
+                            lastUsedAt: { $lt: cutoff },
+                        });
+                        message = `超过 ${age} 天未使用的图片`;
+                        break;
+                    case "expired":
+                        // 查找在指定天数前创建的图片
+                        imagesToDelete = await this.ctx.database.get(TableName.Images, {
+                            createdAt: { $lt: cutoff },
+                        });
+                        message = `超过 ${age} 天前创建的图片`;
+                        break;
+                    default:
+                        return `不支持的清理范围 "${range}"。可用范围: all, unused, expired。`;
+                }
+
+                if (imagesToDelete.length === 0) {
+                    return `没有找到符合条件的图片可供清理。`;
+                }
+
+                const count = await this._deleteImages(imagesToDelete);
+                return `清理完成！共删除了 ${count} 张${message}。`;
+            });
     }
 
     /**
@@ -67,8 +109,8 @@ export class ImageService extends Service<ImageServiceConfig> {
             const extension = this._getExtensionFromMimeType(mimeType);
             const localPath = path.join(this.config.storagePath, `${md5}.${extension}`);
 
-            const existing = await this.ctx.database.get(TableName.Images, { id: md5 });
-            if (existing.length === 0) {
+            const [existing] = await this.ctx.database.get(TableName.Images, { id: md5 });
+            if (!existing) {
                 this._logger.debug(`❌ 缓存未命中 | ID: ${md5}`);
                 await writeFile(localPath, buffer);
 
@@ -79,6 +121,7 @@ export class ImageService extends Service<ImageServiceConfig> {
                     originalUrl: url,
                     size: buffer.length,
                     createdAt: new Date(),
+                    lastUsedAt: new Date(),
                     source: {
                         platform: session.platform,
                         guildId: session.guildId,
@@ -91,9 +134,11 @@ export class ImageService extends Service<ImageServiceConfig> {
                 this._logger.info(`✔ 新图片已保存 | ID: ${md5}`);
             } else {
                 this._logger.debug(`✔ 缓存命中 | ID: ${md5}`);
+                // 缓存命中时，更新其最后使用时间
+                await this.ctx.database.set(TableName.Images, { id: md5 }, { lastUsedAt: new Date() });
             }
 
-            return h("image", { id: md5 });
+            return h("image", { id: md5, summary: element.attrs.summary });
         } catch (error) {
             this._logger.error(`💥 处理失败 | URL: ${url} | 错误: ${error.message}`, error);
             return h.text(`[图片加载失败: ${url}]`);
@@ -115,12 +160,50 @@ export class ImageService extends Service<ImageServiceConfig> {
         try {
             const buffer = await readFile(imageData.localPath);
             const base64Content = `data:${imageData.mimeType};base64,${buffer.toString("base64")}`;
-            this._logger.debug(`✔ 成功获取图片内容 | ID: ${id}`);
+
+            // 获取图片内容意味着图片被使用了，更新 lastUsedAt
+            await this.ctx.database.set(TableName.Images, { id }, { lastUsedAt: new Date() });
+            this._logger.debug(`✔ 成功获取图片内容并更新使用时间 | ID: ${id}`);
+
             return { data: imageData, content: base64Content };
         } catch (error) {
             this._logger.error(`💥 文件读取失败 | ID: ${id} | 路径: ${imageData.localPath}`, error);
+            // 如果文件不存在，也应该考虑从数据库中移除这条脏数据
+            if (error.code === "ENOENT") {
+                await this.ctx.database.remove(TableName.Images, { id });
+                this._logger.warn(`🧹 移除了数据库中引用已丢失文件的记录 | ID: ${id}`);
+            }
             return null;
         }
+    }
+
+    /**
+     * 删除指定的图片记录及其对应的本地文件。
+     * @param images 要删除的图片数据数组
+     * @returns 成功删除的图片数量
+     */
+    private async _deleteImages(images: ImageData[]): Promise<number> {
+        if (!images || images.length === 0) return 0;
+
+        const idsToDelete = images.map((img) => img.id);
+        this._logger.info(`准备清理 ${images.length} 张图片...`);
+
+        // 并行删除本地文件
+        const deletePromises = images.map((img) =>
+            unlink(img.localPath).catch((err) => {
+                // 如果文件已不存在，则忽略错误，否则记录错误
+                if (err.code !== "ENOENT") {
+                    this._logger.warn(`删除文件失败: ${img.localPath} | 错误: ${err.message}`);
+                }
+            })
+        );
+        await Promise.all(deletePromises);
+
+        // 从数据库中批量删除记录
+        const { matched } = await this.ctx.database.remove(TableName.Images, { id: { $in: idsToDelete } });
+
+        this._logger.info(`清理完成。${matched} 条记录已从数据库中移除。`);
+        return matched;
     }
 
     private async _downloadImage(url: string): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -140,8 +223,8 @@ export class ImageService extends Service<ImageServiceConfig> {
     }
 
     private _getExtensionFromMimeType(mimeType: string): string {
-        // 简单的从 'image/jpeg' 中提取 'jpeg'
         const parts = mimeType.split("/");
-        return parts[1] || "bin";
+        // 简单处理，可以考虑使用 mime-types 等库进行更精确的映射
+        return parts[1] ? parts[1].split("+")[0] : "bin"; // 'image/svg+xml' -> 'svg'
     }
 }
