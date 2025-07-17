@@ -49,6 +49,8 @@ export const ArousalConfigSchema = Schema.object({
 
 /** Agent 的响应意愿配置 (决定是否响应) */
 export interface WillingnessConfig {
+    /** 人格预设名称 */
+    personality?: string;
     // --- A. 基础分数 (Base Scores) ---
     // 定义不同消息类型的“基础反应分”。它们通常是互斥的。
     base: {
