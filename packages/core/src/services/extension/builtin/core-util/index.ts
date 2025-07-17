@@ -1,4 +1,4 @@
-import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
+import { Bot, Context, h, Logger, Schema, Session, sleep, Element } from "koishi";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
@@ -31,6 +31,7 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
     builtin: true,
 })
 export default class CoreUtilExtension {
+    static readonly inject = [Services.Logger, Services.Image];
     static readonly Config = CoreUtilConfigSchema;
 
     private readonly logger: Logger;
@@ -106,6 +107,12 @@ export default class CoreUtilExtension {
         let chineseCharCount = 0;
         let englishCharCount = 0;
 
+        // 只统计纯文本
+        text = h
+            .parse(text)
+            .filter((e) => e.type === "text")
+            .join("");
+
         // 使用正则表达式匹配中文字符 (Unicode范围)
         const chineseRegex = /[\u4e00-\u9fa5]/g;
         const chineseMatches = text.match(chineseRegex);
@@ -174,10 +181,22 @@ export default class CoreUtilExtension {
             // --- 人性化延迟的核心部分 ---
             const delay = this.getTypingDelay(msg);
 
+            // --- 处理图片元素 ---
+            const elements = await h.transformAsync(msg, async (element) => {
+                if (element.type === "image") {
+                    if (!element.attrs.id) return null;
+                    const imageData = await this.ctx[Services.Image].getImageDataWithContent(element.attrs.id);
+                    if (!imageData) return null;
+
+                    return h.image(imageData.content);
+                }
+                return element;
+            });
+
             await sleep(delay);
 
             // --- 发送消息 ---
-            const messageIds = await bot.sendMessage(channelId, msg);
+            const messageIds = await bot.sendMessage(channelId, elements);
 
             // --- 发送后处理（例如发射事件）---
             // 使用 then 回调不是最佳实践，async/await 更清晰
