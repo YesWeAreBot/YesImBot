@@ -1,5 +1,5 @@
 import { formatDate, truncate } from "@/shared/utils";
-import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
+import { Argv, Bot, Context, Driver, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 import { randomUUID } from "node:crypto";
 import { ChannelDescriptor } from "../../agent";
 import { IChatModel, TaskType } from "../model";
@@ -271,7 +271,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             timestamp: new Date(),
         };
         await this.ctx.database.create(TableName.DialogueSegments, newSegment);
-        this._logger.debug(`创建新对话片段 | ID: ${newSegment.id} | 频道: ${platform}:${channelId}`);
+        //this._logger.debug(`创建新对话片段 | ID: ${newSegment.id} | 频道: ${platform}:${channelId}`);
         return newSegment;
     }
 
@@ -557,14 +557,16 @@ export class WorldStateService extends Service<HistoryConfig> {
                                 await db.remove(TableName.Messages, { sid: { $in: segmentIds } });
                                 await db.remove(TableName.SystemEvents, { sid: { $in: segmentIds } });
                                 await db.remove(TableName.DialogueSegments, { id: { $in: segmentIds } });
+                                const recordCount = segmentsToClear.length;
+                                results.push(`✅ ${description} - ${recordCount} 条对话片段已${actionPastTense}。`);
                             } else {
                                 // 归档模式：只更新对话片段的状态
-                                await db.set(TableName.DialogueSegments, query, { status: SegmentStatus.Archived });
+                                /* prettier-ignore */
+                                const writeResult = await db.set(TableName.DialogueSegments, { ...query as any, status: { $ne: SegmentStatus.Archived } }, { status: SegmentStatus.Archived });
+                                /* prettier-ignore */
+                                results.push(`✅ ${description} - ${writeResult.modified || writeResult.matched || 0} 条对话片段已${actionPastTense}。`);
                             }
                         });
-
-                        const recordCount = segmentsToClear.length;
-                        results.push(`✅ ${description} - ${recordCount} 条对话片段已${actionPastTense}。`);
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
                         results.push(`❌ ${description} - 操作失败，数据库更改已回滚。`);
