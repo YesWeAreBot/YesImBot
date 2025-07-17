@@ -1164,10 +1164,34 @@ export class WorldStateService extends Service<HistoryConfig> {
     private runMaintenanceTasks(): void {
         this._cleanupPendingCommands();
 
+        this._cleanupExpiredRecords().catch((error) => {
+            this._logger.error("清理过期记录任务执行失败", error);
+        });
+
         if (this.config.enableSummarization && this.chatModel) {
             this.triggerSummarizationForEligibleChannels().catch((error) => {
                 this._logger.error("自动总结任务执行失败", error);
             });
+        }
+    }
+
+    /**
+     * 清理过期的对话片段及消息记录
+     */
+    private async _cleanupExpiredRecords(): Promise<void> {
+        const expirationTime = this.config.advanced.dataRetentionDays * 24 * 60 * 60 * 1000;
+        const expirationCutoff = new Date(Date.now() - expirationTime);
+
+        const expiredSegments = await this.ctx.database.get(TableName.DialogueSegments, { timestamp: { $lt: expirationCutoff } });
+
+        if (expiredSegments.length > 0) {
+            const segmentIds = expiredSegments.map((s) => s.id);
+            await this.ctx.database.withTransaction(async (db) => {
+                await db.remove(TableName.Messages, { sid: { $in: segmentIds } });
+                await db.remove(TableName.SystemEvents, { sid: { $in: segmentIds } });
+                await db.remove(TableName.DialogueSegments, { id: { $in: segmentIds } });
+            });
+            this._logger.info(`清理了 ${expiredSegments.length} 个过期的对话片段及其相关记录。`);
         }
     }
 
