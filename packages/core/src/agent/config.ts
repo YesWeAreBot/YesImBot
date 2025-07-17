@@ -157,25 +157,24 @@ const EditableWillingnessSchema = Schema.object({
         text: Schema.number().default(10).description("收到普通文本消息的基础分"),
         image: Schema.number().default(2).description("收到图片消息的基础分"),
         emoji: Schema.number().default(1).description("收到表情的基础分"),
-        command: Schema.number().default(100).description("被指令直接调用时的基础分"),
-    }).description("基础分数"),
+    }),
     attribute: Schema.object({
         atMention: Schema.number().default(100).description("被@时的额外加成"),
         isQuote: Schema.number().default(15).description("作为回复/引用时的额外加成"),
         isDirectMessage: Schema.number().default(40).description("在私聊场景下的额外加成"),
-    }).description("属性加成"),
+    }),
     interest: Schema.object({
         keywords: Schema.array(Schema.string()).role("table").description("触发高兴趣的关键词"),
         keywordMultiplier: Schema.number().default(1.2).description("包含关键词时的乘数"),
         defaultMultiplier: Schema.number().default(1).description("默认乘数"),
-    }).description("兴趣度模型"),
+    }),
     lifecycle: Schema.object({
         maxWillingness: Schema.number().default(100).min(10).description("意愿值的最大上限"),
         decayHalfLifeSeconds: Schema.number().default(90).min(5).description("意愿值衰减到一半所需的时间（秒）"),
         probabilityThreshold: Schema.number().min(0).default(60).description("将意愿值转换为回复概率的激活门槛"),
         probabilityAmplifier: Schema.number().default(0.05).min(0.01).max(1).description("概率放大系数"),
         replyCost: Schema.number().min(0).default(30).description("决定回复后，扣除的“发言精力惩罚”"),
-    }).description("意愿转换与生命周期"),
+    }),
 });
 
 // 将预设和“自定义”选项整合起来
@@ -205,7 +204,7 @@ const WillingnessForm: Schema<WillingnessConfig> = Schema.intersect([
         Schema.object({
             personality: Schema.const(customOption).required().description("自定义"),
             ...EditableWillingnessSchema.dict,
-        }),
+        }).description("响应意愿"),
         Schema.object({}),
     ]),
 ]) as unknown as Schema<WillingnessConfig>;

@@ -10,7 +10,7 @@ import { PromptService } from "@/services/prompt";
 import { Services } from "@/services/types";
 import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
 import { TEMPLATES_DIR } from "@/shared/constants";
-import { JsonParser, truncate } from "@/shared/utils";
+import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
 import { AgentBehaviorConfig, MultiModalSystemBaseTemplate } from "./config";
 import { WillingnessManager } from "./willing";
 
@@ -206,7 +206,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 this.allowedChannels.add(`${platform}:${id}`);
             });
         });
-        this._logger.debug(`⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
+        // this._logger.debug(`⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
     private _registerPromptTemplates(): void {
@@ -376,8 +376,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             onStreamStart: () => clearTimeout(timeout),
         });
         this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
+        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
+        const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
         /* prettier-ignore */
-        this._logger.info(`💰 Token 消耗 | 输入: ${llmRawResponse.usage?.prompt_tokens ?? 'N/A'} | 输出: ${llmRawResponse.usage?.completion_tokens ?? 'N/A'}`);
+        this._logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
 
         // 5. 解析和处理响应
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
