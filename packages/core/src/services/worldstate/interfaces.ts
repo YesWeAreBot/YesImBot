@@ -186,7 +186,7 @@ export interface SummarizedDialogueSegment extends DialogueSegment {
  * 这是 Agent 进行决策时最重要的输入信息。
  */
 export interface WorldState {
-    /** 快照生成的时间戳。 */
-    timestamp: string;
+    // 用于存储将来的用户画像
+    users?: any
     channel: Channel;
 }

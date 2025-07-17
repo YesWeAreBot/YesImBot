@@ -1,4 +1,5 @@
-<world_state timestamp="{{timestamp}}">
+{{#date.now}}Current Date: {{.}}{{/date.now}}
+<world_state>
   {{#channel}}
   <channel id="{{id}}" type="{{type}}" platform="{{platform}}">
     <name>{{name}}</name>
