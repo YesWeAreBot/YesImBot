@@ -54,12 +54,12 @@
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@xsai-ext/providers-cloud": "^0.3.0-beta.8",
-    "@xsai-ext/providers-local": "^0.3.0-beta.8",
-    "@xsai-ext/shared-providers": "^0.3.0-beta.8",
+    "@xsai-ext/providers-cloud": "^0.3.1",
+    "@xsai-ext/providers-local": "^0.3.1",
+    "@xsai-ext/shared-providers": "^0.3.1",
     "koishi": "^4.18.7",
     "koishi-plugin-adapter-onebot": "^6.8.0",
-    "xsai": "^0.3.0-beta.8"
+    "xsai": "^0.3.1"
   },
   "peerDependencies": {
     "koishi": "^4.18.7"
