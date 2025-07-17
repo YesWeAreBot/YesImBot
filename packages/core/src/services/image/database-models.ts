@@ -16,6 +16,8 @@ export interface ImageData {
     size: number;
     /** 图像首次被记录的时间 */
     createdAt: Date;
+    /** 图像最后被使用的时间 */
+    lastUsedAt?: Date;
     /** 图像的文本描述 (为第三阶段预留) */
     description?: string;
     /** 图像来源信息 */
