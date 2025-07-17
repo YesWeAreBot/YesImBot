@@ -95,3 +95,25 @@ export function toBoolean(value: any): boolean {
     // 对于其他情况，使用 JavaScript 的隐式转换规则
     return Boolean(value);
 }
+
+/**
+ * 使用正则表达式估算文本的token数量（不依赖第三方库的最佳实践）
+ * @param {string} text - 需要估算的文本
+ * @returns {number} 估算的token数量
+ */
+export function estimateTokensByRegex(text: string): number {
+    if (!text) {
+        return 0;
+    }
+
+    // 正则表达式解释:
+    // [\u4e00-\u9fa5]      - 匹配单个中文字符
+    // | [a-zA-Z]+          - 匹配一个或多个连续的英文字母（一个单词）
+    // | \d+                - 匹配一个或多个连续的数字
+    // | [^\s\da-zA-Z\u4e00-\u9fa5] - 匹配任何非空白、非数字、非英文、非中文的单个字符（主要是标点符号）
+    const regex = /[\u4e00-\u9fa5]|[a-zA-Z]+|\d+|[^\s\da-zA-Z\u4e00-\u9fa5]/g;
+
+    const matches = text.match(regex);
+
+    return matches ? matches.length : 0;
+}
