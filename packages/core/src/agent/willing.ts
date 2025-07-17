@@ -151,10 +151,10 @@ export class WillingnessManager {
      * @param chatId 聊天ID
      */
     public handlePreReply(chatId: string): void {
-        const { lifecycle } = this.config;
-        const currentWillingness = this.willingnessScores.get(chatId) || 0;
-        const newWillingness = Math.max(0, currentWillingness - lifecycle.replyCost);
-        this.willingnessScores.set(chatId, newWillingness);
+        // const { lifecycle } = this.config;
+        // const currentWillingness = this.willingnessScores.get(chatId) || 0;
+        // const newWillingness = Math.max(0, currentWillingness - lifecycle.replyCost);
+        // this.willingnessScores.set(chatId, newWillingness);
     }
 
     /**
