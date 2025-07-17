@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-yesimbot-extension-code-interpreter",
   "description": "Yes! I'm Bot! 代码执行器扩展插件",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/HydroGest/YesImBot",
@@ -38,11 +38,11 @@
   },
   "devDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0-beta.3"
+    "koishi-plugin-yesimbot": "^3.0.0-beta.4"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0-beta.3"
+    "koishi-plugin-yesimbot": "^3.0.0-beta.4"
   },
   "koishi": {
     "description": {
