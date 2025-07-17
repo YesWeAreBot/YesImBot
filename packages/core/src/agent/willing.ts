@@ -7,7 +7,6 @@ export interface MessageContext {
     content: string; // 消息的纯文本内容
 
     // 基础类型 (通常互斥)
-    isCommand: boolean;
     isImage: boolean;
     isEmoji: boolean;
 
@@ -201,13 +200,11 @@ export class WillingnessManager {
         const context: MessageContext = {
             chatId: session.cid,
             content: session.content,
-            isCommand: false,
             isImage: session.elements.some((e) => e.type === "image"),
             isEmoji: session.elements.some((e) => e.type === "face"),
             isMentioned:
                 session.stripped.atSelf ||
-                (session.stripped.hasAt &&
-                    session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId)),
+                session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
             isQuote: session.quote && session.quote?.user.id === session.bot.selfId,
             isDirect: session.isDirect,
         };
