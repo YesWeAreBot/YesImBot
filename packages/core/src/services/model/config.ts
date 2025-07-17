@@ -64,8 +64,8 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         .description("模型支持的能力"),
 
     parameters: Schema.object({
-        temperature: Schema.number().default(1.36),
-        topP: Schema.number().default(0.8),
+        temperature: Schema.number().default(0.85),
+        topP: Schema.number().default(0.95),
         stream: Schema.boolean().default(true).description("流式传输"),
         custom: Schema.dict(
             Schema.object({
