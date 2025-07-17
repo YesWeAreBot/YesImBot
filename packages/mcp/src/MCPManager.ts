@@ -37,7 +37,7 @@ export class MCPManager {
     /**
      * 连接所有 MCP 服务器
      */
-    async connectServers(): Promise<void> {
+    public async connectServers(): Promise<void> {
         const serverNames = Object.keys(this.config.mcpServers);
 
         if (serverNames.length === 0) {
@@ -47,9 +47,7 @@ export class MCPManager {
 
         this.logger.info(`准备连接 ${serverNames.length} 个 MCP 服务器`);
 
-        for await (const serverName of serverNames) {
-            await this.connectServer(serverName);
-        }
+        await Promise.all(serverNames.map((serverName) => this.connectServer(serverName)));
 
         if (this.clients.length === 0) {
             this.logger.error("未能成功连接任何 MCP 服务器");
@@ -88,9 +86,9 @@ export class MCPManager {
                     return;
                 }
 
-                this.logger.info(`连接 URL 服务器: ${serverName}`);
+                this.logger.debug(`连接 URL 服务器: ${serverName}`);
             } else if (server.command) {
-                this.logger.info(`启动命令服务器: ${serverName}`);
+                this.logger.debug(`启动命令服务器: ${serverName}`);
                 const enableTransform =
                     server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
 
@@ -233,7 +231,7 @@ export class MCPManager {
         }
 
         // 关闭客户端
-        for (const client of this.clients) {
+        for await (const client of this.clients) {
             try {
                 await client.close();
             } catch (error) {
@@ -242,7 +240,7 @@ export class MCPManager {
         }
 
         // 关闭传输连接
-        for (const transport of this.transports) {
+        for await (const transport of this.transports) {
             try {
                 await transport.close();
             } catch (error) {
