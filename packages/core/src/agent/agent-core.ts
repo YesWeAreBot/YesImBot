@@ -35,7 +35,6 @@ export interface PromptContext {
     multiModalData: {
         images: (ImagePart | TextPart)[];
     };
-    onetimeCode: string;
 }
 
 // 用于多模态上下文筛选的内部类型
@@ -299,7 +298,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             CORE_MEMORY: promptContext.memory,
             WORLD_STATE: promptContext.worldState,
             CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
-            ONETIME_CODE: promptContext.onetimeCode,
+
             // 模板辅助函数
             _toString: function () {
                 return _toString(this);
@@ -337,12 +336,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             const visionModel = this.modelSwitcher.models.find((m) => m.isVisionModel());
             if (visionModel) {
                 chatModel = visionModel;
-                const multiModalPreamble = MultiModalSystemBaseTemplate.replace(
-                    "{{ ONETIME_CODE }}",
-                    promptContext.onetimeCode
-                );
+
                 userMessageContent = [
-                    { type: "text", text: multiModalPreamble },
+                    { type: "text", text: this.config.prompt.multiModalSystemTemplate },
                     ...promptContext.multiModalData.images,
                     { type: "text", text: userPromptText },
                 ];
@@ -376,7 +372,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             onStreamStart: () => clearTimeout(timeout),
         });
         this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
-        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
+        const prompt_tokens =
+            llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
         /* prettier-ignore */
         this._logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
@@ -443,10 +440,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         sid: string,
         previousResponses: AgentResponse[]
     ): Promise<PromptContext> {
-        const onetimeCode = Random.id(8);
-
         // 1. 获取世界状态快照
-        const worldState = await this.worldState.getWorldState(session, onetimeCode);
+        const worldState = await this.worldState.getWorldState(session);
         // 注意：之前在这里添加的 `is_current` 标记已被移除。
         // 这种展示逻辑应由模板本身处理，例如通过比较 message.id 和 worldState.channel.history.pending.id。
         // 这使得此函数更加纯粹，只负责数据聚合。
@@ -465,7 +460,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             multiModalData: {
                 images: multiModalContent.images,
             },
-            onetimeCode,
         };
     }
 

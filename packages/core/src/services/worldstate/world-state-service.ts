@@ -189,12 +189,9 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param onetimeCode 一个一次性代码，用于在 `h.transform` 中进行特定处理，以确保资源安全。
      * @returns 一个包含目标频道完整上下文的 `WorldState` 对象。
      */
-    public async getWorldState(session: Session, onetimeCode: string): Promise<WorldState> {
+    public async getWorldState(session: Session): Promise<WorldState> {
         const worldState: WorldState = {
-            channel: await this.buildFullContextForChannel(
-                { platform: session.platform, id: session.channelId },
-                onetimeCode
-            ),
+            channel: await this.buildFullContextForChannel({ platform: session.platform, id: session.channelId }),
         };
 
         return pruneHistoryByMessages(worldState, this.config.advanced.maxMessages);
@@ -690,10 +687,9 @@ export class WorldStateService extends Service<HistoryConfig> {
      * 为单个频道构建完整的上下文信息。
      * 这是一个分发器，根据频道ID的格式决定是构建公会频道还是私聊频道的上下文。
      * @param channel 频道描述符，包含平台和频道ID。
-     * @param onetimeCode 一次性代码，用于资源转换。
      * @returns 一个完整的 `Channel` 对象。
      */
-    private async buildFullContextForChannel(channel: ChannelDescriptor, onetimeCode: string): Promise<Channel> {
+    private async buildFullContextForChannel(channel: ChannelDescriptor): Promise<Channel> {
         const { platform, id } = channel;
         const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
 
@@ -711,18 +707,14 @@ export class WorldStateService extends Service<HistoryConfig> {
         }
 
         return id.startsWith("private:")
-            ? this._buildPrivateChannelContext(bot, channel, onetimeCode)
-            : this._buildGuildChannelContext(bot, channel, onetimeCode);
+            ? this._buildPrivateChannelContext(bot, channel)
+            : this._buildGuildChannelContext(bot, channel);
     }
 
     /**
      * 构建私聊频道的上下文。
      */
-    private async _buildPrivateChannelContext(
-        bot: Bot,
-        channel: ChannelDescriptor,
-        onetimeCode: string
-    ): Promise<Channel> {
+    private async _buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<Channel> {
         const { platform, id } = channel;
         const userId = id.substring("private:".length);
 
@@ -731,7 +723,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 this._logger.warn(`[核心] 获取用户信息失败，将使用基础信息 | 用户: ${platform}:${userId}`);
                 return null;
             }),
-            this._fetchAndBuildHistory(channel, onetimeCode),
+            this._fetchAndBuildHistory(channel),
         ]);
 
         const userName = user?.name || user?.nick || userId;
@@ -752,11 +744,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建公会频道的上下文。
      */
-    private async _buildGuildChannelContext(
-        bot: Bot,
-        channel: ChannelDescriptor,
-        onetimeCode: string
-    ): Promise<Channel> {
+    private async _buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<Channel> {
         const { platform, id } = channel;
 
         const [channelInfo, history] = await Promise.all([
@@ -764,7 +752,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 this._logger.warn(`[核心] 获取频道信息失败，将使用基础信息 | 频道: ${platform}:${id}`);
                 return null;
             }),
-            this._fetchAndBuildHistory(channel, onetimeCode),
+            this._fetchAndBuildHistory(channel),
         ]);
 
         if (!channelInfo) {
@@ -779,7 +767,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 从数据库获取并构建完整的对话历史记录。
      */
-    private async _fetchAndBuildHistory(channel: ChannelDescriptor, onetimeCode: string): Promise<History> {
+    private async _fetchAndBuildHistory(channel: ChannelDescriptor): Promise<History> {
         const { platform, id: channelId } = channel;
 
         const [pendingSegment, closedSegments, foldedSegments, summarizedSegment] = await Promise.all([
@@ -810,14 +798,10 @@ export class WorldStateService extends Service<HistoryConfig> {
         ]);
 
         const [pending, closed, folded, summarized] = await Promise.all([
-            pendingSegment ? this.buildDialogueSegment(pendingSegment, onetimeCode) : Promise.resolve(undefined),
-            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r, onetimeCode))),
-            foldedSegments.length > 0
-                ? this.buildFoldedDialogueSegment(foldedSegments, onetimeCode)
-                : Promise.resolve(undefined),
-            summarizedSegment
-                ? this.buildSummarizedDialogueSegment(summarizedSegment, onetimeCode)
-                : Promise.resolve(undefined),
+            pendingSegment ? this.buildDialogueSegment(pendingSegment) : Promise.resolve(undefined),
+            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r))),
+            foldedSegments.length > 0 ? this.buildFoldedDialogueSegment(foldedSegments) : Promise.resolve(undefined),
+            summarizedSegment ? this.buildSummarizedDialogueSegment(summarizedSegment) : Promise.resolve(undefined),
         ]);
 
         return { pending, closed, folded, summarized };
@@ -826,10 +810,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 根据数据库记录高效地构建完整的 `DialogueSegment` 对象。
      */
-    public async buildDialogueSegment(
-        segmentRecord: DialogueSegmentData,
-        onetimeCode: string
-    ): Promise<DialogueSegment> {
+    public async buildDialogueSegment(segmentRecord: DialogueSegmentData): Promise<DialogueSegment> {
         const dialogueSegment: DialogueSegment = {
             type: "dialogue-segment",
             id: segmentRecord.id,
@@ -855,7 +836,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id }),
         ]);
 
-        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords, onetimeCode);
+        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords);
 
         dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
             id: record.id,
@@ -876,7 +857,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建一个已关闭的对话片段对象。
      */
-    private async buildClosedSegment(record: DialogueSegmentData, onetimeCode: string): Promise<ClosedDialogueSegment> {
+    private async buildClosedSegment(record: DialogueSegmentData): Promise<ClosedDialogueSegment> {
         const dialogueSegment: ClosedDialogueSegment = {
             type: "dialogue-segment",
             id: record.id,
@@ -898,7 +879,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: record.id });
 
-        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords, onetimeCode);
+        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords);
 
         return dialogueSegment;
     }
@@ -906,10 +887,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建一个被折叠的对话片段集合对象。
      */
-    async buildFoldedDialogueSegment(
-        foldedSegments: DialogueSegmentData[],
-        onetimeCode: string
-    ): Promise<FoldedDialogueSegment> {
+    async buildFoldedDialogueSegment(foldedSegments: DialogueSegmentData[]): Promise<FoldedDialogueSegment> {
         // 收集所有消息
         const allMessages = await this.ctx.database
             .select(TableName.Messages)
@@ -935,7 +913,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             channelId: foldedSegments[0].channelId,
             guildId: foldedSegments[0].guildId,
             status: "folded",
-            dialogue: this.buildDialogueMessages(allMessages, onetimeCode),
+            dialogue: this.buildDialogueMessages(allMessages),
             systemEvents: allSystemEvents.map((record) => ({
                 id: record.id,
                 type: record.type,
@@ -951,10 +929,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建一个已总结的对话片段对象。
      */
-    private async buildSummarizedDialogueSegment(
-        record: DialogueSegmentData,
-        onetimeCode: string
-    ): Promise<SummarizedDialogueSegment> {
+    private async buildSummarizedDialogueSegment(record: DialogueSegmentData): Promise<SummarizedDialogueSegment> {
         return {
             type: "dialogue-segment",
             id: record.id,
@@ -1182,6 +1157,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const expirationTime = this.config.advanced.dataRetentionDays * 24 * 60 * 60 * 1000;
         const expirationCutoff = new Date(Date.now() - expirationTime);
 
+        /* prettier-ignore */
         const expiredSegments = await this.ctx.database.get(TableName.DialogueSegments, { timestamp: { $lt: expirationCutoff } });
 
         if (expiredSegments.length > 0) {
@@ -1553,27 +1529,12 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 构建可供前端渲染的对话消息数组。
      */
-    private buildDialogueMessages(messageRecords: MessageData[], onetimeCode: string): ContextualMessage[] {
+    private buildDialogueMessages(messageRecords: MessageData[]): ContextualMessage[] {
         const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
-
-        function transform(source: string) {
-            const warp = (element: Element, onecode: string) => {
-                element.attrs.onetime_code = onecode;
-                return element;
-            };
-            return h.transform(source, (element) => {
-                switch (element.type) {
-                    case "text":
-                        return h.text(element.attrs.content);
-                    default:
-                        return warp(element, onetimeCode);
-                }
-            });
-        }
 
         return messageRecords.map((record) => ({
             id: record.id,
-            content: transform(record.content),
+            content: record.content,
             timestamp: record.timestamp,
             date: formatDate(record.timestamp, "YYYY-MM-DD"),
             time: formatDate(record.timestamp, "HH:mm:ss"),
