@@ -3,7 +3,8 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { Context, Element, h, Logger, Service, Session } from "koishi";
 import path from "path";
 import { fetch } from "undici";
-import { truncate } from "../../shared";
+
+import { truncate } from "@/shared";
 import { Services, TableName } from "../types";
 import { ImageServiceConfig } from "./config";
 import { ImageData } from "./database-models";
@@ -26,7 +27,7 @@ export class ImageService extends Service<ImageServiceConfig> {
 
     protected async start() {
         await mkdir(this.config.storagePath, { recursive: true });
-        this._logger.debug(`[核心] 存储目录已确认: ${this.config.storagePath}`);
+        this._logger.debug(`存储目录已确认: ${this.config.storagePath}`);
 
         this.ctx.model.extend(
             TableName.Images,
@@ -54,11 +55,11 @@ export class ImageService extends Service<ImageServiceConfig> {
     public async processImageElement(element: Element, session: Session): Promise<Element | null> {
         const url = element.attrs.src;
         if (!url) {
-            this._logger.warn("[处理] ⚠ 跳过 | 图片元素缺少 'src' 属性");
+            this._logger.warn("⚠ 跳过 | 图片元素缺少 'src' 属性");
             return null;
         }
 
-        this._logger.info(`[处理] 🖼️ 开始处理新图片 | URL: ${truncate(url)}`);
+        this._logger.info(`🖼️ 开始处理新图片 | URL: ${truncate(url)}`);
 
         try {
             const { buffer, mimeType } = await this._downloadImage(url);
@@ -68,7 +69,7 @@ export class ImageService extends Service<ImageServiceConfig> {
 
             const existing = await this.ctx.database.get(TableName.Images, { id: md5 });
             if (existing.length === 0) {
-                this._logger.debug(`[缓存] ❌ 未命中 | ID: ${md5}`);
+                this._logger.debug(`❌ 缓存未命中 | ID: ${md5}`);
                 await writeFile(localPath, buffer);
 
                 const imageData: ImageData = {
@@ -87,14 +88,14 @@ export class ImageService extends Service<ImageServiceConfig> {
                     },
                 };
                 await this.ctx.database.create(TableName.Images, imageData);
-                this._logger.info(`[存储] ✔ 新图片已保存 | ID: ${md5}`);
+                this._logger.info(`✔ 新图片已保存 | ID: ${md5}`);
             } else {
-                this._logger.debug(`[缓存] ✔ 命中 | ID: ${md5}`);
+                this._logger.debug(`✔ 缓存命中 | ID: ${md5}`);
             }
 
             return h("image", { id: md5 });
         } catch (error) {
-            this._logger.error(`[处理] 💥 处理失败 | URL: ${url} | 错误: ${error.message}`, error);
+            this._logger.error(`💥 处理失败 | URL: ${url} | 错误: ${error.message}`, error);
             return h.text(`[图片加载失败: ${url}]`);
         }
     }
@@ -107,30 +108,30 @@ export class ImageService extends Service<ImageServiceConfig> {
     public async getImageDataWithContent(id: string): Promise<{ data: ImageData; content: string } | null> {
         const [imageData] = await this.ctx.database.get(TableName.Images, { id });
         if (!imageData) {
-            this._logger.warn(`[读取] ⚠ 元数据未找到 | ID: ${id}`);
+            this._logger.warn(`⚠ 元数据未找到 | ID: ${id}`);
             return null;
         }
 
         try {
             const buffer = await readFile(imageData.localPath);
             const base64Content = `data:${imageData.mimeType};base64,${buffer.toString("base64")}`;
-            this._logger.debug(`[读取] ✔ 成功获取图片内容 | ID: ${id}`);
+            this._logger.debug(`✔ 成功获取图片内容 | ID: ${id}`);
             return { data: imageData, content: base64Content };
         } catch (error) {
-            this._logger.error(`[读取] 💥 文件读取失败 | ID: ${id} | 路径: ${imageData.localPath}`, error);
+            this._logger.error(`💥 文件读取失败 | ID: ${id} | 路径: ${imageData.localPath}`, error);
             return null;
         }
     }
 
     private async _downloadImage(url: string): Promise<{ buffer: Buffer; mimeType: string }> {
-        this._logger.debug(`[网络] 📥 正在下载图片 | URL: ${url}`);
+        this._logger.debug(`📥 正在下载图片 | URL: ${url}`);
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`HTTP 错误! 状态: ${response.status}`);
         }
         const buffer = Buffer.from(await response.arrayBuffer());
         const mimeType = response.headers.get("content-type") || "application/octet-stream";
-        this._logger.debug(`[网络] ✔ 下载完成 | 大小: ${(buffer.length / 1024).toFixed(2)} KB, 类型: ${mimeType}`);
+        this._logger.debug(`✔ 下载完成 | 大小: ${(buffer.length / 1024).toFixed(2)} KB, 类型: ${mimeType}`);
         return { buffer, mimeType };
     }
 
