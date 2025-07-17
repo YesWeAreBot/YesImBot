@@ -1,24 +1,52 @@
 ### 1.1 核心概念
 
-*   **工具服务 (ToolService)**：这是整个系统的核心，它是一个Koishi的`Service`，负责管理所有工具和扩展的生命周期。`ToolService`处理工具的注册、卸载、查找和调用。它维护着一个全局的工具池，并根据会话上下文（`Session`）动态地提供可用的工具列表。此外，`ToolService`还提供了命令行接口，方便管理员进行调试和管理。
+*   **工具服务 (ToolService)**: 这是整个系统的中枢。作为一个 Koishi `Service`，它负责：
+    *   **生命周期管理**: 统一处理所有扩展和工具的注册、卸载。
+    *   **调用与执行**: 提供 `invoke` 方法，作为 AI 调用工具的唯一入口。它负责参数验证、执行、重试和结果格式化。
+    *   **动态可用性**: 根据当前的会话（`Session`）上下文，动态地提供可用的工具列表。
+    *   **命令行接口**: 提供 `tool.*` 和 `extension.*` 指令集，方便管理员进行调试和管理。
 
-*   **扩展 (Extension)**：扩展是工具的组织单元，它通常表现为一个实现了`IExtension`接口的TypeScript类。一个扩展可以包含一个或多个相关的工具。扩展本身是一个Koishi插件，可以拥有自己的配置（`Config`）和生命周期方法。通过`@Extension`装饰器，一个普通的类可以被“增强”为一个功能完备的扩展，并自动注册到`ToolService`中。
+*   **扩展 (Extension)**: 工具的组织和管理单元。
+    *   在代码中，它是一个被 `@Extension` 装饰器标记的 TypeScript 类。
+    *   一个扩展可以包含多个相关的工具，并可以拥有自己的配置（通过静态 `Config` 属性定义）。
+    *   它本质上是一个 Koishi 插件，拥有完整的生命周期，可以依赖注入其他服务。
 
-*   **工具 (Tool)**：工具是AI智能体（特别是LLM）可以直接调用的具体功能。在代码中，一个工具通常是扩展类中的一个方法，通过`@Tool`装饰器进行标记。该装饰器会收集工具的元数据（如名称、描述、参数等），并将其转换为一个`ToolDefinition`对象，存储在扩展的原型链上。当扩展实例化时，这些工具定义会被自动注册到`ToolService`中。
+*   **工具 (Tool)**: AI 可以直接调用的具体功能。
+    *   在代码中，它是一个在扩展类中被 `@Tool` 装饰器标记的方法。
+    *   装饰器会收集工具的元数据（名称、描述、参数 Schema），并将其注册到 `ToolService`。
 
-*   **元数据 (Metadata)**：元数据是描述扩展和工具的关键信息。`ExtensionMetadata`描述了扩展的名称、版本、作者等信息，而`ToolMetadata`则定义了工具的名称、功能描述以及最重要的——参数模式（`parameters`）。这些元数据对于LLM理解和正确调用工具至关重要。
+*   **装饰器 (@Extension & @Tool)**: 这是连接开发者代码与 `ToolService` 的桥梁，实现了“约定优于配置”。
+    *   `@Extension`: 将一个普通类“增强”为功能完备的扩展。它自动处理依赖注入、`this` 绑定、向 `ToolService` 的注册和卸载逻辑。
+    *   `@Tool`: 将一个类方法声明为一个工具，收集其元数据并附加到类的原型上，以便 `@Extension` 装饰器后续处理。
 
 ### 1.2 工作流程
 
-1.  **启动与加载**：当Koishi启动时，`ToolService`作为核心服务被初始化。它会加载所有内置的扩展（如`command`、`search`等）。
-2.  **扩展注册**：每个扩展类都被`@Extension`装饰器包装。当Koishi加载一个扩展插件时（通过`ctx.plugin(MyExtension)`），`@Extension`装饰器的逻辑会被触发。它会：
-    *   将`ToolService`注入到扩展的依赖中。
-    *   在扩展实例化后，自动调用`ToolService.register()`方法，将扩展自身及其包含的所有工具注册到`ToolService`中。
-3.  **工具调用**：当AI智能体需要调用一个工具时，它会向`ToolService`发起请求。`ToolService.invoke(functionName, params, session)`方法会：
-    *   根据`functionName`和`session`查找可用的工具定义。
-    *   使用工具定义中的`parameters`（一个`Schema`对象）来验证和转换传入的`params`。
-    *   如果验证通过，则执行工具的`execute`方法（即被`@Tool`装饰的那个类方法），并传入验证后的参数。
-    *   处理执行结果，包括成功、失败、重试逻辑，并返回一个`ToolCallResult`对象。
+#### 1. 启动与注册流程
+
+当一个包含扩展的 Koishi 插件被加载时，系统会执行以下自动化流程：
+
+1.  **插件加载**: Koishi 通过 `ctx.plugin(MyExtension)` 加载扩展插件。
+2.  **装饰器执行**: `@Extension` 装饰器逻辑被触发，它创建了一个继承自 `MyExtension` 的新包装类。
+3.  **实例化**: Koishi 实例化这个包装类，并将 `ctx` 和 `config` 传入构造函数。
+4.  **依赖注入与绑定**: 包装类的构造函数自动注入 `ToolService`，并遍历所有被 `@Tool` 标记的方法，将其 `execute` 函数的 `this` 上下文永久绑定到当前实例上。
+5.  **延迟注册**: 在 `ctx.on('ready')` 事件触发后，实例会调用 `toolService.register(this, ...)` 将自身及其所有工具注册到 `ToolService` 中。
+6.  **配置生成**: 在注册过程中，`ToolService` 会读取扩展的静态 `Config`（一个 `Schema` 对象），并动态地将其添加到 Koishi 的主配置结构中。这使得扩展的配置项能够自动出现在 Koishi 控制台的插件配置界面。
+7.  **生命周期绑定**: `@Extension` 装饰器同时监听 `ctx.on('dispose')` 事件，以在插件停用时自动从 `ToolService` 中卸载该扩展及其所有工具。
+
+#### 2. 工具调用流程
+
+当 AI 决定调用一个工具时，流程如下：
+
+1.  **发起调用**: 代理（Agent）或其他服务调用 `toolService.invoke(functionName, params, session)`。
+2.  **工具查找与鉴权**: `ToolService` 根据 `functionName` 在其注册表中查找工具。同时，如果工具定义了 `isSupported` 函数，会使用当前的 `session` 对象执行该函数，若返回 `false`，则视作工具不可用。
+3.  **参数验证**: 这是至关重要的一步。`ToolService` 使用工具定义中的 `parameters` (`Schema` 对象) 对传入的 `params`进行严格的验证和类型转换。如果验证失败，将直接返回一个包含详细错误信息的 `Failed` 结果，防止无效调用进入业务逻辑。
+4.  **执行**: 参数验证通过后，`ToolService` 调用工具的 `execute` 方法，传入一个包含 `session` 和所有经过验证的参数的对象。
+5.  **结果处理与重试**:
+    *   `execute` 方法必须返回一个 `ToolCallResult` 对象（通过 `Success()` 或 `Failed()` 辅助函数创建）。
+    *   如果执行成功，`ToolService` 记录日志并返回成功结果。
+    *   如果执行失败 (`status: 'failed'`) 并且结果标记为 `retryable: true`，`ToolService` 会根据全局配置（`maxRetry`, `retryDelayMs`）自动进行重试。
+    *   如果发生未捕获的异常，`ToolService` 会捕获它，并将其包装成一个失败结果返回，确保系统的健壮性。
+6.  **返回结果**: 最终的 `ToolCallResult` 对象被返回给调用方。
 
 这种基于装饰器和服务的架构设计，实现了业务逻辑（工具实现）与系统逻辑（工具管理）的解耦，使得开发者可以更加专注于功能的实现。
 
