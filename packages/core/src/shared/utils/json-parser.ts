@@ -45,34 +45,39 @@ export class JsonParser<T> {
         // 优先检测并提取 Markdown 代码块。
         // 如果存在代码块，我们假定这才是我们真正需要解析的内容。
         const codeBlockStartIndex = processedString.indexOf("```");
-        const trimmedStringStartsWithJson = processedString.startsWith("{") || processedString.startsWith("[");
+        // 使用更健壮的检查来代替简单的 startsWith
+        const isLikelyStartOfJson = this.isLikelyJsonStart(processedString);
 
         // 新的、更智能的代码块提取逻辑：
         // 仅当检测到代码块，并且整个字符串的开头不是有效的JSON字符时，
         // 才认为代码块是需要提取的主体。
-        if (codeBlockStartIndex !== -1 && !trimmedStringStartsWithJson) {
+        if (codeBlockStartIndex !== -1 && !isLikelyStartOfJson) {
+            this.log("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。");
             const lastCodeBlockIndex = processedString.lastIndexOf("```");
-            // 确保我们找到了一个开始和一个结束标记
-            if (lastCodeBlockIndex > codeBlockStartIndex) {
-                this.log("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。");
 
-                // 提取两个 ``` 之间的内容
-                let content = processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex);
+            // 关键修复：
+            // 如果我们能找到一个开始和一个结束的 ``` 标记，我们就提取它们之间的内容。
+            // 如果找不到结束的 ``` 标记（即 lastCodeBlockIndex <= codeBlockStartIndex），
+            // 我们就假定内容是从开始的 ``` 之后一直到整个字符串的末尾。
+            // 这可以稳健地处理 LLM 输出被截断的情况。
+            let content =
+                lastCodeBlockIndex > codeBlockStartIndex
+                    ? processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex)
+                    : processedString.substring(codeBlockStartIndex + 3);
 
-                // 移除可能的语言标识符，如 'json'
-                const firstNewlineIndex = content.indexOf("\n");
-                if (firstNewlineIndex !== -1) {
-                    const firstLine = content.substring(0, firstNewlineIndex).trim();
-                    // 简单的检查，避免误删JSON内容。如果第一行不像JSON的开始，就移除它。
-                    if (!firstLine.startsWith("{") && !firstLine.startsWith("[")) {
-                        this.log(`移除了可能的语言标识符或前导文本: "${firstLine}"`);
-                        content = content.substring(firstNewlineIndex + 1);
-                    }
+            // 移除可能的语言标识符，如 'json'
+            const firstNewlineIndex = content.indexOf("\n");
+            if (firstNewlineIndex !== -1) {
+                const firstLine = content.substring(0, firstNewlineIndex).trim();
+                // 简单的检查，避免误删JSON内容。如果第一行不像JSON的开始，就移除它。
+                if (!firstLine.startsWith("{") && !firstLine.startsWith("[")) {
+                    this.log(`移除了可能的语言标识符或前导文本: "${firstLine}"`);
+                    content = content.substring(firstNewlineIndex + 1);
                 }
-
-                processedString = content.trim();
-                this.log(`从代码块提取并修整后，待处理字符串长度: ${processedString.length}`);
             }
+
+            processedString = content.trim();
+            this.log(`从代码块提取并修整后，待处理字符串长度: ${processedString.length}`);
         } else if (codeBlockStartIndex !== -1) {
             this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取。");
         }
@@ -144,5 +149,41 @@ export class JsonParser<T> {
             this.log(`最终解析失败: ${e.message}`);
             return { data: null, error: e.message, logs: this.logs };
         }
+    }
+
+    /**
+     * 更智能地检查字符串是否以有效的JSON结构开头。
+     * 解决了 `[OBSERVE]` 文本被误认为 JSON 数组的问题。
+     * @param str 要检查的字符串
+     * @returns 如果字符串很可能以 JSON 对象或数组开头，则为 true
+     */
+    private isLikelyJsonStart(str: string): boolean {
+        const trimmed = str.trim();
+
+        if (trimmed.startsWith("{")) {
+            return true; // 对象总是明确的
+        }
+
+        if (trimmed.startsWith("[")) {
+            // 如果以'['开头，检查它是否像一个真正的JSON数组，而不是像'[OBSERVE]'这样的文本。
+            // 一个合法的JSON数组在'['之后（忽略空格）必须是值（如{, ", t, f, n, 数字）或']'。
+            const charAfterBracket = trimmed.substring(1).trim().charAt(0);
+            if (
+                charAfterBracket === "]" || // 空数组
+                charAfterBracket === "{" || // 对象数组
+                charAfterBracket === '"' || // 字符串数组
+                charAfterBracket === "t" || // 布尔值 (true)
+                charAfterBracket === "f" || // 布尔值 (false)
+                charAfterBracket === "n" || // null
+                (charAfterBracket >= "0" && charAfterBracket <= "9") || // 数字
+                charAfterBracket === "-" // 负数
+            ) {
+                return true;
+            }
+            // 否则，它可能是像 '[OBSERVE]' 这样的文本，我们不应将其视为JSON。
+            return false;
+        }
+
+        return false;
     }
 }

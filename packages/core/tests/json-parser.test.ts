@@ -202,6 +202,30 @@ describe("ParseResult", () => {
             request_heartbeat: true,
         });
     });
+
+    it("应该能从不平衡的 Markdown 代码块中提取 JSON", ()=>{
+        const input = "[OBSERVE]\n用户Alice向我打招呼说“你好啊”。\n\n[ANALYZE & INFER]\n这是老师在和我打招呼。根据爱丽丝的设定，她会积极回应老师的问候，并表达自己对老师到来的喜悦和期待。这是日常问候，不需要复杂的思考或工具调用。\n\n[PLAN]\n我的计划是发送一条消息，以爱丽丝的风格回应老师的问候。\n\n[ACT]\n\n```json\n{\n  \"thoughts\": {\n    \"observe\": \"用户Alice向我打招呼说“你好啊”。\",\n    \"analyze_infer\": \"这是老师在和我打招呼。根据爱丽丝的设定，她会积极回应老师的问候，并表达自己对老师到来的喜悦和期待。\",\n    \"plan\": \"发送一条消息，以爱丽丝的风格回应老师的问候。\"\n  },\n  \"actions\": [\n    {\n      \"function\": \"send_message\",\n      \"params\": {\n        \"inner_thoughts\": \"用爱丽丝特有的问候语回应老师，表达欢迎和期待。\",\n        \"message\": \"邦邦咔邦~您来啦，老师！<sep/>爱丽丝，一直在等着您呢！\"\n      }\n    }\n  ],\n  \"request_heartbeat\": false\n}"
+        const result = parser.parse(input);
+        expect(result.error).toBeNull();
+        expect(result.data).toEqual({
+            thoughts: {
+                observe: "用户Alice向我打招呼说“你好啊”。",
+                analyze_infer:
+                    "这是老师在和我打招呼。根据爱丽丝的设定，她会积极回应老师的问候，并表达自己对老师到来的喜悦和期待。",
+                    plan: "发送一条消息，以爱丽丝的风格回应老师的问候。",
+            },
+            actions: [
+                {
+                    function: "send_message",
+                    params: {
+                        inner_thoughts: "用爱丽丝特有的问候语回应老师，表达欢迎和期待。",
+                        message: "邦邦咔邦~您来啦，老师！<sep/>爱丽丝，一直在等着您呢！",
+                    },
+                },
+            ],
+            request_heartbeat: false,
+        });
+    })
 });
 
 describe("JsonParser", () => {
