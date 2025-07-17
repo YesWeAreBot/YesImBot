@@ -1,6 +1,8 @@
-import { Context, Logger, Service } from "koishi";
+import { Context, Logger, Service, Session } from "koishi";
+
+import { Services } from "@/services/types";
+import { formatDate } from "@/shared";
 import { IRenderer, MustacheRenderer } from "./renderer";
-import { Services } from "../types";
 
 /**
  * 片段 (Snippet) 是一个函数，用于在运行时动态生成内容。
@@ -20,6 +22,7 @@ export interface PromptServiceConfig {
  * 通用提示词构建服务
  */
 export class PromptService extends Service<PromptServiceConfig> {
+    static readonly inject = [Services.Logger];
     private readonly renderer: IRenderer;
     private readonly templates: Map<string, string> = new Map();
     private readonly snippets: Map<string, Snippet> = new Map();
@@ -31,6 +34,53 @@ export class PromptService extends Service<PromptServiceConfig> {
         this.config = config;
         this.renderer = config.renderer || new MustacheRenderer();
         this._logger = ctx[Services.Logger].getLogger("[提示词]");
+    }
+
+    protected async start() {
+        // 注册默认片段
+        this.registerSnippet("time.now", () => {
+            return formatDate(new Date(), "HH:mm:ss");
+        });
+
+        this.registerSnippet("time.unix", () => {
+            return Math.floor(Date.now() / 1000);
+        });
+
+        this.registerSnippet("date.today", () => {
+            return formatDate(new Date(), "YYYY-MM-DD");
+        });
+
+        this.registerSnippet("date.now", () => {
+            return formatDate(new Date(), "YYYY-MM-DD HH:mm:ss");
+        });
+
+        this.registerSnippet("bot", async (scope) => {
+            const { session } = scope as { session?: Session };
+            if (!session) return {};
+            return {
+                id: session.bot.selfId,
+                name: session.bot.user.name,
+                nick: session.bot.user.nick || session.bot.user.name,
+                platform: session.platform,
+            };
+        });
+
+        this.registerSnippet("user", async (scope) => {
+            const { session } = scope as { session?: Session };
+            if (!session) return {};
+            return {
+                id: session.author.id,
+                name: session.author.name,
+                nick: session.author.nick || session.author.name,
+                platform: session.platform,
+            };
+        });
+
+        this._logger.info("服务已启动");
+    }
+
+    protected async stop() {
+        this._logger.info("服务已停止");
     }
 
     /**
