@@ -267,7 +267,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             timestamp: new Date(),
         };
         await this.ctx.database.create(TableName.DialogueSegments, newSegment);
-        //this._logger.debug(`创建新对话片段 | ID: ${newSegment.id} | 频道: ${platform}:${channelId}`);
         return newSegment;
     }
 
@@ -281,7 +280,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         try {
             await this.ctx.database.create(TableName.Messages, { ...message, sid: segmentId });
         } catch (error) {
-            this._logger.error(error, `记录消息失败 | 片段ID: ${segmentId} | 消息ID: ${message.id}`);
+            this._logger.error(`记录消息失败 | 片段ID: ${segmentId} | 消息ID: ${message.id}`);
         }
     }
 
