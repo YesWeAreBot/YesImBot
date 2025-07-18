@@ -85,4 +85,5 @@ export interface UserMessageBatch {
     userName: string;
     messages: { id: string; text: string; timestamp: number }[];
     lastMessageTimestamp: number;
+    processingTimer: NodeJS.Timeout | null;
 }

@@ -40,14 +40,12 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
 
-    // private readonly logger: Logger;
     private readonly promptService: PromptService;
     private readonly chatModel: IChatModel;
     private readonly embeddingModel: IEmbedModel;
     private readonly jsonParser = new JsonParser<{ facts: ExtractedFact[] }>();
 
     private userMessageBatches: Map<string, UserMessageBatch> = new Map();
-    private batchProcessingTimer: NodeJS.Timeout | null = null;
 
     constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, Services.Memory, true);
@@ -84,10 +82,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     }
 
     protected async stop(): Promise<void> {
-        if (this.batchProcessingTimer) {
-            clearTimeout(this.batchProcessingTimer);
-        }
-        await this.processAllBatches(); // 停止服务前处理所有待处理的消息
+        await this.processAllBatches(true);
         this.logger.info("服务已停止。");
     }
 
@@ -227,6 +222,10 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         return block;
     }
 
+    /**
+     * 将消息添加到用户的批处理队列中，并为该用户管理一个独立的批处理定时器。
+     * @param session Koishi 的会话对象
+     */
     public addMessageToBatch(session: Session): void {
         const allowedTypes = ["text", "at"];
         const text = h
@@ -237,44 +236,66 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         if (isEmpty(text)) return;
 
         const uid = session.uid;
-        if (!this.userMessageBatches.has(uid)) {
-            this.userMessageBatches.set(uid, {
+        let userBatch = this.userMessageBatches.get(uid);
+
+        // 如果是该用户的第一条消息（在当前批处理周期内），则创建新的批次对象
+        if (!userBatch) {
+            userBatch = {
                 userId: session.author.id,
                 userName: session.author.name,
                 messages: [],
                 lastMessageTimestamp: 0,
-            });
+                processingTimer: null, // 初始化定时器为 null
+            };
+            this.userMessageBatches.set(uid, userBatch);
         }
 
-        const currentBatch = this.userMessageBatches.get(uid)!;
-        currentBatch.messages.push({ id: session.messageId, text, timestamp: session.timestamp });
-        currentBatch.lastMessageTimestamp = Date.now();
+        // 关键：如果该用户已有一个等待中的定时器，先清除它。
+        // 因为新消息的到来意味着用户仍在活跃，需要重置等待时间。
+        if (userBatch.processingTimer) {
+            clearTimeout(userBatch.processingTimer);
+        }
 
-        // 如果消息数量达到上限，立即处理该用户的批次
-        if (currentBatch.messages.length >= this.config.batching.maxSize) {
+        // 添加新消息并更新时间戳
+        userBatch.messages.push({ id: session.messageId, text, timestamp: session.timestamp });
+        userBatch.lastMessageTimestamp = Date.now();
+
+        // 检查是否达到批处理大小上限，如果达到则立即处理
+        if (userBatch.messages.length >= this.config.batching.maxSize) {
             /* prettier-ignore */
-            this.logger.info(`用户 ${currentBatch.userName} 的消息达到批处理上限 (${this.config.batching.maxSize})，立即处理...`);
+            this.logger.info(`用户 ${userBatch.userName} 的消息达到批处理上限 (${this.config.batching.maxSize})，立即处理...`);
 
-            // 关键步骤：在处理前，将该用户的批次从主映射中移除！
+            // 从 Map 中移除，防止重复处理
             this.userMessageBatches.delete(uid);
-
-            // 将刚刚移除的批次对象传递给处理函数
-            // 我们不在此处 await，让它在后台异步执行，不阻塞当前消息流
-            this.processBatchForUser(currentBatch);
+            // 异步处理，不阻塞当前流程
+            this.processBatchForUser(userBatch);
         } else {
-            // 只有未达到上限时，才需要重置（或启动）定时器来处理未来的批次
-            this.resetBatchProcessingTimer();
+            // 如果未达到上限，则为该用户设置一个新的定时器
+            userBatch.processingTimer = setTimeout(() => {
+                // 定时器触发时，再次从 Map 中获取最新的 batch 数据，以防万一
+                const batchToProcess = this.userMessageBatches.get(uid);
+                if (batchToProcess) {
+                    this.logger.info(`用户 ${batchToProcess.userName} 的消息等待超时，开始处理批次...`);
+                    // 从 Map 中移除，准备处理
+                    this.userMessageBatches.delete(uid);
+                    // 执行处理
+                    this.processBatchForUser(batchToProcess);
+                }
+            }, this.config.batching.maxWaitTime * 1000);
         }
     }
 
-    private resetBatchProcessingTimer(): void {
-        if (this.batchProcessingTimer) {
-            clearTimeout(this.batchProcessingTimer);
-        }
-        this.batchProcessingTimer = setTimeout(() => this.processAllBatches(), this.config.batching.maxWaitTime * 1000);
-    }
-
+    /**
+     * 处理单个用户的消息批次。
+     * @param userBatch 要处理的用户消息批次对象
+     */
     private async processBatchForUser(userBatch: UserMessageBatch): Promise<void> {
+        // 确保传入的批次对象和其定时器（如果有）都被清理
+        if (userBatch.processingTimer) {
+            clearTimeout(userBatch.processingTimer);
+            userBatch.processingTimer = null; // 清理引用
+        }
+
         if (!userBatch || userBatch.messages.length === 0) {
             return;
         }
@@ -286,16 +307,14 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             this.logger.info(`从 ${userBatch.userName} 的消息中提取到 ${extractedFacts.length} 条事实。`);
 
             if (!extractedFacts || extractedFacts.length === 0) {
-                return; // 没有提取到事实，直接返回
+                return;
             }
 
             // 1. 将消息发送者本人首先处理为一个实体，这是所有事实都必然关联的实体。
             //    这是一个优化，避免在循环中重复获取作者实体。
-            const authorEntity = await this.addOrGetEntity(
-                userBatch.userName,
-                EntityType.Person,
-                { imUserId: userBatch.userId } // 将平台用户ID存入元数据
-            );
+            const authorEntity = await this.addOrGetEntity(userBatch.userName, EntityType.Person, {
+                imUserId: userBatch.userId,
+            });
 
             // 2. 遍历所有提取出的事实，并逐一存入数据库
             for (const extractedFact of extractedFacts) {
@@ -336,16 +355,31 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    public async processAllBatches(): Promise<void> {
+    /**
+     * 处理所有当前待处理的消息批次。通常在服务停止时调用。
+     * @param isShutdown - 标记是否为服务关闭前的强制执行
+     */
+    public async processAllBatches(isShutdown: boolean = false): Promise<void> {
         if (this.userMessageBatches.size === 0) return;
 
-        this.logger.info(`定时器触发，开始处理 ${this.userMessageBatches.size} 个用户的消息批次...`);
+        if (isShutdown) {
+            this.logger.info(`服务正在停止，强制处理所有 ${this.userMessageBatches.size} 个待处理的消息批次...`);
+        } else {
+            this.logger.warn(`processAllBatches 被调用（非关闭情况），处理 ${this.userMessageBatches.size} 个批次...`);
+        }
 
         const batchSnapshot = new Map(this.userMessageBatches);
-        this.userMessageBatches.clear(); // 在这里清空是安全的，因为快照已经包含了所有数据
+        this.userMessageBatches.clear(); // 清空主 Map，防止新消息干扰
 
-        // 遍历快照的 VALUES (UserMessageBatch 对象)，而不是 KEYS
-        const processingTasks = Array.from(batchSnapshot.values()).map((batch) => this.processBatchForUser(batch));
+        const processingTasks: Promise<void>[] = [];
+        for (const batch of batchSnapshot.values()) {
+            // 清除所有定时器，因为我们要立即处理它们
+            if (batch.processingTimer) {
+                clearTimeout(batch.processingTimer);
+            }
+            processingTasks.push(this.processBatchForUser(batch));
+        }
+
         await Promise.all(processingTasks);
         this.logger.info("所有批处理任务已完成。");
     }
