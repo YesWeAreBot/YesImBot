@@ -387,8 +387,16 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
 
         const agentResponseData = llmParsedResponse.data;
+
+        if (!agentResponseData.thoughts) {
+            /* prettier-ignore */
+            this._logger.warn(`✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            return null;
+        }
+
         if (!Array.isArray(agentResponseData.actions)) {
-            this._logger.warn(`✖ 格式无效 | actions应为数组，实际为 ${typeof agentResponseData.actions}`);
+            /* prettier-ignore */
+            this._logger.warn(`✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
@@ -403,6 +411,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
+        if (!thoughts) return;
         const { observe, analyze_infer, plan } = thoughts;
         this._logger.info(`
 [观察] ${observe}
