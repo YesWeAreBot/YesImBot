@@ -4,7 +4,6 @@ import { PromptService } from "../prompt";
 import { Services } from "../types";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
-import CreatorExtension from "./builtin/creator";
 import InteractionsExtension from "./builtin/interactions";
 import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
