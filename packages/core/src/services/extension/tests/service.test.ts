@@ -79,7 +79,7 @@ class TestExtension {
 
 async function main() {
     console.log("--- 系统初始化 ---");
-    const toolManager = new ToolService(new Context(), { advanced: { validateTypes: false } });
+    const toolManager = new ToolService(new Context(), { });
     // toolManager.register(WeatherExtension, { apiKey: "your-secret-api-key", defaultCity: "北京" });
     // toolManager.register(TestExtension, {});
 

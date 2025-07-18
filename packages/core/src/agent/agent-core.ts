@@ -6,7 +6,7 @@ import type { ImagePart, Message, TextPart } from "xsai";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
 import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/model";
-import { PromptService } from "@/services/prompt";
+import { loadTemplate, PromptService } from "@/services/prompt";
 import { Services } from "@/services/types";
 import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
 import { TEMPLATES_DIR } from "@/shared/constants";
@@ -210,17 +210,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
     private _registerPromptTemplates(): void {
         this._logger.info("⚙️ 正在注册提示词模板...");
-
-        const loadTemplate = (name: string, ext: string = "mustache") => {
-            try {
-                const fullPath = path.resolve(TEMPLATES_DIR, `${name}.${ext}`);
-                return readFileSync(fullPath, "utf-8");
-            } catch (error) {
-                this._logger.error(`加载模板失败 "${name}.${ext}": ${error.message}`);
-                // 返回一个包含错误信息的模板，便于调试
-                return `{{! Error loading template: ${name} }}`;
-            }
-        };
 
         // 注册所有可重用的局部模板 (Partials)
         // 使用 Mustache 的 {{> partialName }} 语法来引用它们

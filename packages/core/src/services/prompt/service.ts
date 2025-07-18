@@ -130,6 +130,17 @@ export class PromptService extends Service<PromptServiceConfig> {
     }
 
     /**
+     * 渲染一个原始的模板字符串，不经过注册
+     * @param templateContent
+     * @param initialScope
+     * @returns
+     */
+    public async renderRaw(templateContent: string, initialScope: Record<string, any> = {}): Promise<string> {
+        const scope = await this.buildScope(initialScope);
+        return this.renderer.render(templateContent, scope);
+    }
+
+    /**
      * 构建完整的作用域，合并用户输入和动态片段的执行结果
      * @param initialScope - 用户传入的初始作用域
      * @returns 完整的、可供模板使用的数据作用域

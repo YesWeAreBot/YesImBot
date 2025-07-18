@@ -17,8 +17,11 @@ export function containsFilter(content: string, FilterList: string[]): boolean {
     return false;
 }
 
-export function formatDate(date: Date, format: string = "YYYY-MM-DD HH:mm:ss") {
+export function formatDate(date: Date | number, format: string = "YYYY-MM-DD HH:mm:ss") {
     const pad = (num) => String(num).padStart(2, "0");
+    if (typeof date === "number") {
+        date = new Date(date);
+    }
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const day = date.getDate();
