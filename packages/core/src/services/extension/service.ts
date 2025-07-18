@@ -462,7 +462,7 @@ export class ToolService extends Service<ToolServiceConfig> {
             try {
                 if (attempt > 1) {
                     this._logger.info(`  - [执行] 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
-                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelayMs));
+                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
                 // 3. 使用验证和处理过后的参数执行工具

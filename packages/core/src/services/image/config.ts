@@ -10,5 +10,7 @@ export interface ImageServiceConfig {
 }
 
 export const ImageServiceConfigSchema: Schema<ImageServiceConfig> = Schema.object({
-    storagePath: Schema.string().default("data/yesimbot/images").description("图片本地存储路径。"),
+    storagePath: Schema.path({ allowCreate: true, filters: ["directory"] })
+        .default("data/yesimbot/images")
+        .description("图片本地存储路径。"),
 });
