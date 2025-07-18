@@ -6,6 +6,8 @@ export interface MemoryConfig {
     coreMemoryPath: string;
     /** 批处理设置 */
     batching: {
+        /** 只有大于这个数值才进行处理，避免上下文不够 */
+        minSize: number;
         /** 单个用户积累多少条消息后立即处理 */
         maxSize: number;
         /** 用户最后一条消息发送后，等待多少秒进行处理 */
@@ -29,8 +31,9 @@ export const MemoryConfig: Schema<MemoryConfig> = Schema.object({
         .default("data/yesimbot/memory/core")
         .description("核心记忆文件的存放路径。"),
     batching: Schema.object({
-        maxSize: Schema.number().default(5).min(1).description("单个用户积累多少条消息后立即处理，以应对短时大量消息。"),
-        maxWaitTime: Schema.number().default(30).min(5).description("用户最后一条消息发送后，等待多少秒进行处理。"),
+        minSize: Schema.number().default(5).min(1).description("只有大于这个数值才进行处理，避免上下文缺失"),
+        maxSize: Schema.number().default(10).min(1).description("单个用户积累多少条消息后立即处理，以应对短时大量消息"),
+        maxWaitTime: Schema.number().default(60).min(5).description("用户最后一条消息发送后，等待多少秒进行处理"),
     }).description("消息批处理设置"),
 
     forgetting: Schema.object({

@@ -1,4 +1,4 @@
-import { Context, Service, Session, Time } from "koishi";
+import { Context, h, Service, Session, Time } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import fs from "fs/promises";
@@ -6,7 +6,7 @@ import fs from "fs/promises";
 import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, loadTemplate, PromptService } from "@/services/prompt";
 import { Services, TableName } from "@/services/types";
-import { cosineSimilarity, formatDate, JsonParser } from "@/shared/utils";
+import { cosineSimilarity, formatDate, isEmpty, JsonParser } from "@/shared/utils";
 import { MemoryConfig } from "./config";
 import { Entity, EntityType, ExtractedFact, Fact, MemoryBlockData, UserMessageBatch, UserProfile } from "./types";
 import { MemoryBlock } from "./MemoryBlock";
@@ -228,6 +228,14 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     }
 
     public addMessageToBatch(session: Session): void {
+        const allowedTypes = ["text", "at"];
+        const text = h
+            .parse(session.content)
+            .filter((e) => allowedTypes.includes(e.type))
+            .join("")
+            .trim();
+        if (isEmpty(text)) return;
+
         const uid = session.uid;
         if (!this.userMessageBatches.has(uid)) {
             this.userMessageBatches.set(uid, {
@@ -239,7 +247,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
 
         const currentBatch = this.userMessageBatches.get(uid)!;
-        currentBatch.messages.push({ id: session.messageId, text: session.content, timestamp: session.timestamp });
+        currentBatch.messages.push({ id: session.messageId, text, timestamp: session.timestamp });
         currentBatch.lastMessageTimestamp = Date.now();
 
         // 如果消息数量达到上限，立即处理该用户的批次
@@ -347,7 +355,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             return [];
         }
 
-        const conversation = batch.messages.map((m) => `[${m.id}|${formatDate(m.timestamp, "HH:mm:ss")}|${batch.userName}(${batch.userId})] ${m.text}`).join("\n");
+        const conversation = batch.messages
+            .map((m) => `[${m.id}|${formatDate(m.timestamp, "HH:mm:ss")}|${batch.userName}(${batch.userId})] ${m.text}`)
+            .join("\n");
 
         const systemPrompt = await this.promptService.render("memory.fact_extraction", { userName: batch.userName });
 
