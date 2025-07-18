@@ -1,209 +1,179 @@
-import { promises as fs } from "fs";
-import { Context, Logger, Service } from "koishi";
+import { Context, Service, Session, Time } from "koishi";
+import { v4 as uuidv4 } from "uuid";
 import path from "path";
+import fs from "fs/promises";
 
-import { Services } from "@/services/types";
-import { AppError, ErrorCodes } from "@/shared/errors";
-import { BasicArchivalStore, IArchivalMemoryStore } from "./BasicArchivalStore";
-import { ARCHIVAL_MEMORY_TABLE, MemoryConfig } from "./config";
+import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
+import { loadPrompt, loadTemplate, PromptService } from "@/services/prompt";
+import { Services, TableName } from "@/services/types";
+import { cosineSimilarity, formatDate, JsonParser } from "@/shared/utils";
+import { MemoryConfig } from "./config";
+import { Entity, EntityType, ExtractedFact, Fact, MemoryBlockData, UserMessageBatch, UserProfile } from "./types";
 import { MemoryBlock } from "./MemoryBlock";
-import { ArchivalEntry, ArchivalMemoryData, ArchivalSearchResult } from "./types";
+import { AppError, ErrorCodes } from "@/shared/errors";
 
 declare module "koishi" {
     interface Context {
         [Services.Memory]: MemoryService;
     }
     interface Tables {
-        [ARCHIVAL_MEMORY_TABLE]: ArchivalMemoryData;
+        [TableName.Entities]: Entity;
+        [TableName.Facts]: Fact;
+        [TableName.UserProfiles]: UserProfile;
     }
 }
 
-/**
- * @description LLM 操作记忆后返回的结构化结果
- */
-export type MemoryOperationResult<T = any> = {
-    success: boolean;
-    message: string;
-    data?: T;
-};
-
-interface MemoryData {
-    lastModified: string;
-    memoryBlocks: {
-        title: string;
-        label: string;
-        limit: number;
-        description: string;
-        content: string[];
-    }[];
-    archivalCount: number;
+export interface IMemoryService {
+    addOrGetEntity(name: string, type: EntityType, metadata?: Record<string, any>): Promise<Entity>;
+    addFact(factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<Fact>;
+    searchFacts(
+        query: string,
+        options?: { entityIds?: string[]; limit?: number; minSalience?: number }
+    ): Promise<Fact[]>;
+    getUserProfile(entityId: string): Promise<UserProfile | null>;
+    consolidateProfile(entityId: string): Promise<UserProfile | null>;
+    decayAndForget(): Promise<void>;
 }
 
-/**
- * MemoryService 负责管理机器人的核心记忆和归档记忆，
- * 并向大模型暴露一组定义良好的工具接口，用于查询和修改记忆。
- */
-export class MemoryService extends Service {
-    // 2. 注入依赖，包括我们优化后的 archivalMemory 服务
-    static readonly inject = [Services.Model, Services.Logger];
+export class MemoryService extends Service<MemoryConfig> implements IMemoryService {
+    static readonly inject = [Services.Logger, Services.Prompt, Services.Model, "database"];
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
-    private lastModified: Date = new Date();
-    public readonly archivalStore: IArchivalMemoryStore;
 
-    private _logger: Logger;
+    // private readonly logger: Logger;
+    private readonly promptService: PromptService;
+    private readonly chatModel: IChatModel;
+    private readonly embeddingModel: IEmbedModel;
+    private readonly jsonParser = new JsonParser<{ facts: ExtractedFact[] }>();
 
-    constructor(ctx: Context, public readonly config: MemoryConfig) {
+    private userMessageBatches: Map<string, UserMessageBatch> = new Map();
+    private batchProcessingTimer: NodeJS.Timeout | null = null;
+
+    constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, Services.Memory, true);
-        this._logger = ctx[Services.Logger].getLogger("[记忆服务]");
+        this.config = config;
+        this.logger = ctx[Services.Logger].getLogger("[MemoryService]");
+        this.promptService = ctx[Services.Prompt];
 
-        ctx.model.extend(
-            ARCHIVAL_MEMORY_TABLE,
-            {
-                id: "string",
-                content: "text",
-                timestamp: "timestamp",
-                metadata: "json",
-                embedding: "array",
-            },
-            {
-                primary: "id",
+        // 从模型服务获取所需的模型实例
+        this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Memory)?.current;
+        this.embeddingModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding)?.current;
+
+        if (!this.chatModel || !this.embeddingModel) {
+            this.logger.warn("聊天模型或嵌入模型不可用，记忆服务功能将受限。");
+        }
+    }
+
+    protected async start(): Promise<void> {
+        this.registerDatabaseModels();
+        this.registerPromptTemplates();
+        await this.discoverAndLoadCoreMemoryBlocks();
+
+        // 监听消息事件以收集记忆素材
+        this.ctx.on("worldstate:segment-updated", (session) => {
+            if (session.author && !session.author.isBot) {
+                this.addMessageToBatch(session);
             }
+        });
+
+        // 设置定时遗忘任务
+        const forgetInterval = this.config.forgetting.checkIntervalHours * Time.hour;
+        this.ctx.setInterval(() => this.decayAndForget(), forgetInterval);
+
+        this.logger.info("服务已启动，开始监听消息。");
+    }
+
+    protected async stop(): Promise<void> {
+        if (this.batchProcessingTimer) {
+            clearTimeout(this.batchProcessingTimer);
+        }
+        await this.processAllBatches(); // 停止服务前处理所有待处理的消息
+        this.logger.info("服务已停止。");
+    }
+
+    /**
+     * 注册所有数据库模型
+     */
+    private registerDatabaseModels() {
+        this.ctx.model.extend(
+            TableName.Entities,
+            {
+                id: "string(64)",
+                type: "string(32)",
+                name: "string(255)",
+                metadata: "object",
+                createdAt: "timestamp",
+            },
+            { primary: "id" }
         );
 
-        this.archivalStore = new BasicArchivalStore(ctx);
+        this.ctx.model.extend(
+            TableName.Facts,
+            {
+                id: "string(64)",
+                content: "text",
+                embedding: "array",
+                relatedEntityIds: "array",
+                type: "string(32)",
+                sourceMessageId: "string(64)",
+                salience: "float",
+                createdAt: "timestamp",
+                lastAccessedAt: "timestamp",
+                accessCount: "integer",
+            },
+            { primary: "id" }
+        );
+
+        this.ctx.model.extend(
+            TableName.UserProfiles,
+            {
+                id: "string(64)",
+                entityId: "string(64)",
+                content: "text",
+                embedding: "array",
+                confidence: "float",
+                supportingFactIds: "array",
+                updatedAt: "timestamp",
+            },
+            { primary: "id", unique: [["entityId"]] }
+        );
     }
+
+    private registerPromptTemplates() {
+        this.promptService.registerTemplate("memory.fact_extraction", loadPrompt("fact_retrieval"));
+        this.promptService.registerTemplate("memory.profile_consolidation", loadTemplate("profile_consolidation"));
+    }
+
+    // public async getMemoryDataForRendering(): Promise<MemoryData> {
+    //     return {
+    //         lastModified: this.lastModified.toISOString(),
+    //         memoryBlocks: Array.from(this.coreMemoryBlocks.values()).map((block) => ({
+    //             title: block.title,
+    //             label: block.label,
+    //             limit: block.limit,
+    //             description: block.description,
+    //             content: block.content as string[],
+    //         })),
+    //         archivalCount: await this.archivalStore.count(),
+    //     };
+    // }
 
     get blocks(): Map<string, MemoryBlock> {
         return this.coreMemoryBlocks;
     }
 
+    public async getMemoryBlocksForRendering(): Promise<MemoryBlockData[]> {
+        return Array.from(this.coreMemoryBlocks.values()).map((block) => ({
+            title: block.title,
+            label: block.label,
+            limit: block.limit,
+            description: block.description,
+            content: block.content as string[],
+        }));
+    }
+
     public getCoreMemoryBlock(label: string): MemoryBlock | undefined {
         return this.coreMemoryBlocks.get(label);
-    }
-
-    protected async start() {
-        await this.discoverAndLoadCoreMemoryBlocks();
-        try {
-            this.registerCommands();
-        } catch (error) {
-            this._logger.error(`注册命令失败: ${error.message}`);
-        }
-        this._logger.info(`服务已启动，加载了 ${this.coreMemoryBlocks.size} 个核心记忆块。`);
-    }
-
-    protected async stop() {
-        for (const block of this.coreMemoryBlocks.values()) {
-            await block
-                .disposeFileWatcher()
-                .catch((e) => this._logger.warn(`Error disposing watcher for ${block.label}: ${e.message}`));
-        }
-        this.coreMemoryBlocks.clear();
-        this._logger.info("服务已停止");
-    }
-
-    private registerCommands() {
-        this.ctx.command("memory", "记忆管理指令集", { authority: 3 });
-
-        this.ctx.command("memory.core", "管理核心记忆", { authority: 3 });
-
-        this.ctx.command("memory.archival", "管理归档记忆", { authority: 3 });
-
-        this.ctx.command("memory.core.list", "列出所有核心记忆块", { authority: 3 }).action(async ({ session }) => {
-            const result = this.listCoreMemoryBlocks();
-            if (!result.success) {
-                return `❌ ${result.message}`;
-            }
-            return `找到 ${result.data.length} 个核心记忆块：\n${result.data
-                .map((b) => `- ${b.label}: ${b.title}`)
-                .join("\n")}`;
-        });
-
-        this.ctx
-            .command("memory.core.append <label:string> <content:text>", "向核心记忆块追加内容", { authority: 3 })
-            .action(async ({ session }, label, content) => {
-                const result = await this.appendToCoreMemory(label, content);
-                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-            });
-
-        this.ctx
-            .command("memory.core.overwrite <label:string> <content:string>", "覆盖核心记忆块的内容", { authority: 3 })
-            .option("label", "-l <label:string> 记忆块的标签")
-            .option("content", "-c <content:string> 要覆盖的内容")
-            .action(async ({ session }, label, content) => {
-                const result = await this.overwriteCoreMemory(label, content);
-                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-            });
-
-        this.ctx
-            .command("memory.core.replace <label:string>", "替换核心记忆块中的特定内容", { authority: 3 })
-            .option("oldContent", "-o <oldContent:string> 旧内容")
-            .option("newContent", "-n <newContent:string> 新内容")
-            .action(async ({ session }, label, oldContent, newContent) => {
-                const result = await this.replaceInCoreMemory(label, oldContent, newContent);
-                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-            });
-
-        this.ctx
-            .command("memory.archival.store <content:string>", "将内容存储到归档记忆中", { authority: 3 })
-            .option("metadata", "-m <metadata:string> 要存储的元数据")
-            .action(async ({ session }, content, metadata) => {
-                const result = await this.storeInArchivalMemory(content, metadata ? JSON.parse(metadata) : undefined);
-                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-            });
-
-        this.ctx
-            .command("memory.archival.update <id:string>", "更新归档记忆中的内容", { authority: 3 })
-            .option("content", "-c <content:string> 要更新的内容")
-            .option("metadata", "-m <metadata:string> 要更新的元数据")
-            .action(async ({ session }, id, content, metadata) => {
-                const result = await this.updateInArchivalMemory(id, {
-                    content,
-                    metadata: metadata ? JSON.parse(metadata) : undefined,
-                });
-                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-            });
-
-        this.ctx
-            .command("memory.archival.remove <id:string>", "从归档记忆中删除内容", { authority: 3 })
-            .action(async ({ session }, id) => {
-                const result = await this.removeFromArchivalMemory(id);
-                return result.success ? `✅ ${result.message}` : `❌ ${result.message}`;
-            });
-
-        this.ctx
-            .command("memory.archival.search <query:string>", "在归档记忆中进行语义搜索", { authority: 3 })
-            .option("topK", "-k <topK:number> 返回结果的数量")
-            .option("filterMetadata", "-f <filterMetadata:string> 过滤元数据")
-            .action(async ({ session }, query, topK, filterMetadata) => {
-                const result = await this.searchArchivalMemory(query, {
-                    topK: topK ? Number(topK) : undefined,
-                    filterMetadata: filterMetadata ? JSON.parse(filterMetadata) : undefined,
-                });
-                return `Found ${result.results.length} relevant memories (out of ${result.total} total).`;
-            });
-
-        this.ctx
-            .command("memory.archival.count", "统计归档记忆中的记忆数量", { authority: 3 })
-            .action(async ({ session }) => {
-                const count = await this.archivalStore.count();
-                return `Found ${count} memories in archival memory.`;
-            });
-
-        this.ctx.command("memory.archival.clear", "清空归档记忆", { authority: 3 }).action(async ({ session }) => {
-            await this.archivalStore.clearAll();
-            return `Archival memory cleared.`;
-        });
-
-        this.ctx
-            .command("memory.archival.rebuild", "为所有归档记忆重新生成 embedding", { authority: 3 })
-            .action(async ({ session }) => {
-                const result = await this.archivalStore.rebuildEmbeddings();
-
-                return `记忆重建完成
-成功: ${result.successCount}
-失败: ${result.failCount}`;
-            });
     }
 
     /**
@@ -218,7 +188,7 @@ export class MemoryService extends Service {
             const memoryFiles = files.filter((file) => file.endsWith(".md") || file.endsWith(".txt"));
 
             if (memoryFiles.length === 0) {
-                this._logger.warn(`核心记忆目录 '${memoryPath}' 为空，未加载任何记忆块。`);
+                this.logger.warn(`核心记忆目录 '${memoryPath}' 为空，未加载任何记忆块。`);
                 return;
             }
 
@@ -227,17 +197,17 @@ export class MemoryService extends Service {
                 try {
                     const block = await MemoryBlock.createFromFile(this.ctx, filePath);
                     if (this.coreMemoryBlocks.has(block.label)) {
-                        this._logger.warn(`发现重复的记忆块标签 '${block.label}'，来自文件 '${filePath}'。已忽略。`);
+                        this.logger.warn(`发现重复的记忆块标签 '${block.label}'，来自文件 '${filePath}'。已忽略。`);
                     } else {
                         this.coreMemoryBlocks.set(block.label, block);
-                        this._logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'。`);
+                        this.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'。`);
                     }
                 } catch (error) {
-                    //this._logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
+                    //this.logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
                 }
             }
         } catch (error) {
-            this._logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
+            this.logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
             throw new AppError("Failed to discover core memory blocks", {
                 code: ErrorCodes.SERVICE.INITIALIZATION_FAILURE,
                 cause: error,
@@ -248,7 +218,7 @@ export class MemoryService extends Service {
         const block = this.coreMemoryBlocks.get(label);
         if (!block) {
             const available = Array.from(this.coreMemoryBlocks.keys()).join(", ") || "None";
-            this._logger.error(`核心记忆块 "${label}" 不存在。可用的有: [${available}]`);
+            this.logger.error(`核心记忆块 "${label}" 不存在。可用的有: [${available}]`);
             throw new AppError(`核心记忆块 "${label}" 不存在`, {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
                 context: { resourceType: "MemoryBlock", resourceId: label, available },
@@ -257,193 +227,328 @@ export class MemoryService extends Service {
         return block;
     }
 
-    /**
-     * 列出所有可用的核心记忆块及其描述。
-     * LLM 应首先使用此工具来了解可以操作哪些记忆块。
-     * @returns 一个包含所有核心记忆块信息的对象数组。
-     */
-    public listCoreMemoryBlocks(): MemoryOperationResult {
-        const blocks = Array.from(this.coreMemoryBlocks.values()).map((block) => ({
-            label: block.label,
-            title: block.title,
-            description: block.description,
-        }));
+    public addMessageToBatch(session: Session): void {
+        const uid = session.uid;
+        if (!this.userMessageBatches.has(uid)) {
+            this.userMessageBatches.set(uid, {
+                userId: session.author.id,
+                userName: session.author.name,
+                messages: [],
+                lastMessageTimestamp: 0,
+            });
+        }
 
-        return {
-            success: true,
-            message: `Found ${blocks.length} core memory blocks.`,
-            data: blocks,
+        const currentBatch = this.userMessageBatches.get(uid)!;
+        currentBatch.messages.push({ id: session.messageId, text: session.content, timestamp: session.timestamp });
+        currentBatch.lastMessageTimestamp = Date.now();
+
+        // 如果消息数量达到上限，立即处理该用户的批次
+        if (currentBatch.messages.length >= this.config.batching.maxSize) {
+            /* prettier-ignore */
+            this.logger.info(`用户 ${currentBatch.userName} 的消息达到批处理上限 (${this.config.batching.maxSize})，立即处理...`);
+
+            // 关键步骤：在处理前，将该用户的批次从主映射中移除！
+            this.userMessageBatches.delete(uid);
+
+            // 将刚刚移除的批次对象传递给处理函数
+            // 我们不在此处 await，让它在后台异步执行，不阻塞当前消息流
+            this.processBatchForUser(currentBatch);
+        } else {
+            // 只有未达到上限时，才需要重置（或启动）定时器来处理未来的批次
+            this.resetBatchProcessingTimer();
+        }
+    }
+
+    private resetBatchProcessingTimer(): void {
+        if (this.batchProcessingTimer) {
+            clearTimeout(this.batchProcessingTimer);
+        }
+        this.batchProcessingTimer = setTimeout(() => this.processAllBatches(), this.config.batching.maxWaitTime * 1000);
+    }
+
+    private async processBatchForUser(userBatch: UserMessageBatch): Promise<void> {
+        if (!userBatch || userBatch.messages.length === 0) {
+            return;
+        }
+
+        this.logger.info(`正在为用户 ${userBatch.userName} 处理 ${userBatch.messages.length} 条消息...`);
+
+        try {
+            const extractedFacts = await this.extractFactsFromBatch(userBatch);
+            this.logger.info(`从 ${userBatch.userName} 的消息中提取到 ${extractedFacts.length} 条事实。`);
+
+            if (!extractedFacts || extractedFacts.length === 0) {
+                return; // 没有提取到事实，直接返回
+            }
+
+            // 1. 将消息发送者本人首先处理为一个实体，这是所有事实都必然关联的实体。
+            //    这是一个优化，避免在循环中重复获取作者实体。
+            const authorEntity = await this.addOrGetEntity(
+                userBatch.userName,
+                EntityType.Person,
+                { imUserId: userBatch.userId } // 将平台用户ID存入元数据
+            );
+
+            // 2. 遍历所有提取出的事实，并逐一存入数据库
+            for (const extractedFact of extractedFacts) {
+                try {
+                    // 使用 Set 来确保每个实体ID只被记录一次
+                    const entityIdSet = new Set<string>();
+                    entityIdSet.add(authorEntity.id);
+
+                    // 3. 并行处理事实中提到的所有相关实体
+                    if (extractedFact.relatedEntities && extractedFact.relatedEntities.length > 0) {
+                        const relatedEntityPromises = extractedFact.relatedEntities.map((e) =>
+                            this.addOrGetEntity(e.name, e.type || EntityType.Unknown)
+                        );
+                        const relatedEntities = await Promise.all(relatedEntityPromises);
+                        relatedEntities.forEach((entity) => entityIdSet.add(entity.id));
+                    }
+
+                    // 4. 组装最终要存入数据库的事实数据
+                    const factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount"> = {
+                        content: extractedFact.content,
+                        relatedEntityIds: Array.from(entityIdSet), // 从 Set 转换为数组
+                        type: extractedFact.type,
+                        salience: extractedFact.salience,
+                        // 将事实与批次中的最后一条消息关联，便于追溯
+                        sourceMessageId: userBatch.messages[userBatch.messages.length - 1]?.id,
+                    };
+
+                    // 5. 调用服务自身的方法来添加事实，该方法会处理向量化和数据库写入
+                    await this.addFact(factData);
+                    this.logger.debug(`成功存储事实: "${factData.content}"`);
+                } catch (factError) {
+                    this.logger.error(`存储单条事实时出错: "${extractedFact.content}"`, factError);
+                    // 继续处理下一条事实，不中断整个批次
+                }
+            }
+        } catch (batchError) {
+            this.logger.error(`处理用户 ${userBatch.userName} 的消息批次时出错:`, batchError);
+        }
+    }
+
+    public async processAllBatches(): Promise<void> {
+        if (this.userMessageBatches.size === 0) return;
+
+        this.logger.info(`定时器触发，开始处理 ${this.userMessageBatches.size} 个用户的消息批次...`);
+
+        const batchSnapshot = new Map(this.userMessageBatches);
+        this.userMessageBatches.clear(); // 在这里清空是安全的，因为快照已经包含了所有数据
+
+        // 遍历快照的 VALUES (UserMessageBatch 对象)，而不是 KEYS
+        const processingTasks = Array.from(batchSnapshot.values()).map((batch) => this.processBatchForUser(batch));
+        await Promise.all(processingTasks);
+        this.logger.info("所有批处理任务已完成。");
+    }
+
+    private async extractFactsFromBatch(batch: UserMessageBatch): Promise<ExtractedFact[]> {
+        if (batch.messages.length === 0) {
+            return [];
+        }
+
+        const conversation = batch.messages.map((m) => `[${m.id}|${formatDate(m.timestamp, "HH:mm:ss")}|${batch.userName}(${batch.userId})] ${m.text}`).join("\n");
+
+        const systemPrompt = await this.promptService.render("memory.fact_extraction", { userName: batch.userName });
+
+        const userPrompt = await this.promptService.renderRaw(`Input:\n{{conversation}}`, { conversation });
+
+        try {
+            const response = await this.chatModel.chat([
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+            ]);
+
+            const parsedResponse = this.jsonParser.parse(response.text);
+
+            if (parsedResponse.error) {
+                console.warn("Error parsing LLM response:", parsedResponse.error);
+                return [];
+            }
+
+            console.log("LLM response:", parsedResponse.data);
+
+            if (parsedResponse && Array.isArray(parsedResponse.data.facts)) {
+                return parsedResponse.data.facts as ExtractedFact[];
+            }
+            console.warn('LLM did not return a valid "facts" array:', parsedResponse);
+            return [];
+        } catch (error) {
+            console.error("Error during fact extraction from LLM:", error);
+            return [];
+        }
+    }
+
+    // --- IMemoryService 接口实现 ---
+
+    async addOrGetEntity(name: string, type: EntityType, metadata: Record<string, any> = {}): Promise<Entity> {
+        const [existingEntity] = await this.ctx.database.get(TableName.Entities, { name, type });
+        if (existingEntity) {
+            return existingEntity;
+        }
+
+        const newEntity: Entity = {
+            id: `ent_${uuidv4()}`,
+            name,
+            type,
+            metadata,
+            createdAt: new Date(),
         };
+
+        return this.ctx.database.create(TableName.Entities, newEntity);
     }
 
-    /**
-     * 向指定的核心记忆块末尾追加新内容。
-     * @param label 记忆块的唯一标签 (例如: "persona", "user_profile")。
-     * @param content 要追加的单行或多行文本内容。
-     * @returns 操作结果对象。
-     */
-    public async appendToCoreMemory(label: string, content: string): Promise<MemoryOperationResult> {
-        try {
-            const block = this.getCoreMemoryBlockOrThrow(label);
-            if (this.config.backup?.enabled) {
-                await block.backup(this.config.backup.backupPath);
-            }
-            await block.append(content);
-            this.lastModified = new Date();
-            return { success: true, message: `Successfully appended to core memory block <${label}>.` };
-        } catch (error) {
-            this._logger.error(`Failed to append to core memory <${label}>: ${error.message}`);
-            return { success: false, message: error.message };
-        }
+    /* prettier-ignore */
+    async addFact(factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<Fact> {
+        if (!this.embeddingModel) throw new Error("嵌入模型不可用，无法创建事实。");
+
+        const embedding = await this.embeddingModel.embed(factData.content).then((res) => res.embedding);
+
+        const newFact: Fact = {
+            ...factData,
+            id: `fact_${uuidv4()}`,
+            embedding,
+            createdAt: new Date(),
+            lastAccessedAt: new Date(),
+            accessCount: 0,
+        };
+
+        return this.ctx.database.create(TableName.Facts, newFact);
     }
 
-    /**
-     * 完全覆盖指定核心记忆块的所有内容。
-     * @param label 记忆块的唯一标签。
-     * @param newContent 将要写入的全新内容，多行文本请使用 \n 分隔。
-     * @returns 操作结果对象。
-     */
-    public async overwriteCoreMemory(label: string, newContent: string): Promise<MemoryOperationResult> {
-        try {
-            const block = this.getCoreMemoryBlockOrThrow(label);
-            const newContentLines = newContent.split(/\r?\n/);
-            if (this.config.backup?.enabled) {
-                await block.backup(this.config.backup.backupPath);
-            }
-            await block.overwrite(newContentLines);
-            this.lastModified = new Date();
-            return { success: true, message: `Successfully overwrote core memory block <${label}>.` };
-        } catch (error) {
-            this._logger.error(`Failed to overwrite core memory <${label}>: ${error.message}`);
-            return { success: false, message: error.message };
-        }
-    }
-
-    /**
-     * 替换核心记忆块中的特定内容。
-     * @warning 此函数会替换找到的第一个完全匹配的 `oldContent`。如果内容有多处重复或只是部分匹配，可能会导致意外结果。
-     * 对于更可靠的更新，建议读取整个块，在本地修改后，使用 `overwriteCoreMemory` 进行覆盖。
-     * @param label 记忆块的唯一标签。
-     * @param oldContent 要被替换的旧的、完整的文本行。
-     * @param newContent 用来替换的新文本行。
-     * @returns 操作结果对象。
-     */
-    public async replaceInCoreMemory(
-        label: string,
-        oldContent: string,
-        newContent: string
-    ): Promise<MemoryOperationResult<ArchivalEntry>> {
-        try {
-            const block = this.getCoreMemoryBlockOrThrow(label);
-            if (this.config.backup?.enabled) {
-                await block.backup(this.config.backup.backupPath);
-            }
-            await block.replace(oldContent, newContent);
-            this.lastModified = new Date();
-            return { success: true, message: `Successfully replaced content in core memory block <${label}>.` };
-        } catch (error) {
-            this._logger.error(`Failed to replace in core memory <${label}>: ${error.message}`);
-            return { success: false, message: error.message };
-        }
-    }
-
-    /**
-     * 将一段信息存储到归档记忆中，使其可以通过语义搜索被检索。
-     * 归档记忆用于长期存储事实、事件和对话片段。
-     * @param content 要存储的文本内容。
-     * @param metadata (可选) 一个用于过滤的 JSON 对象，例如 `{ "source": "conversation_id_123" }`。
-     * @returns 操作结果对象，其中 data 包含新创建的记忆 ID。
-     */
-    public async storeInArchivalMemory(
-        content: string,
-        metadata?: Record<string, any>
-    ): Promise<MemoryOperationResult<ArchivalEntry>> {
-        if (!this.archivalStore) {
-            return { success: false, message: "Archival memory service is not available." };
-        }
-        try {
-            const entry = await this.archivalStore.store(content, metadata);
-            this.lastModified = new Date();
-            return {
-                success: true,
-                message: `Successfully stored content in archival memory with ID ${entry.id}.`,
-                data: entry,
-            };
-        } catch (error) {
-            this._logger.error(`Failed to store in archival memory: ${error.message}`);
-            return { success: false, message: error.message };
-        }
-    }
-
-    public async updateInArchivalMemory(
-        id: string,
-        data: { content?: string; metadata?: Record<string, any> }
-    ): Promise<MemoryOperationResult> {
-        try {
-            const updatedEntry = await this.archivalStore.update(id, data);
-            if (!updatedEntry) {
-                return { success: false, message: `Archival memory with ID '${id}' not found.` };
-            }
-            this.lastModified = new Date();
-            return {
-                success: true,
-                message: `Successfully updated archival memory with ID ${updatedEntry.id}.`,
-                data: updatedEntry,
-            };
-        } catch (error) {
-            this._logger.error(`Failed to update archival memory ${id}: ${error.message}`);
-            return { success: false, message: error.message };
-        }
-    }
-
-    public async removeFromArchivalMemory(id: string): Promise<MemoryOperationResult> {
-        try {
-            const success = await this.archivalStore.remove(id);
-            if (!success) {
-                return { success: false, message: `Archival memory with ID '${id}' not found.` };
-            }
-            this.lastModified = new Date();
-            return {
-                success: true,
-                message: `Successfully removed archival memory with ID ${id}.`,
-            };
-        } catch (error) {
-            this._logger.error(`Failed to remove archival memory ${id}: ${error.message}`);
-            return { success: false, message: error.message };
-        }
-    }
-
-    /**
-     * 在归档记忆中进行语义搜索。
-     * 用于根据意义和上下文查找相关的历史信息，而不仅仅是关键词匹配。
-     * @param query 描述你想要寻找什么信息的自然语言查询。
-     * @param options (可选) 包含 `topK` (返回数量) 和 `filterMetadata` (元数据过滤器) 的对象。
-     * @returns 一个格式化好的字符串，总结了最相关的搜索结果，可以直接在后续思考中使用。如果找不到则返回空。
-     */
-    public async searchArchivalMemory(
+    async searchFacts(
         query: string,
-        options?: { topK?: number; filterMetadata?: Record<string, any>; similarityThreshold?: number }
-    ): Promise<ArchivalSearchResult> {
-        try {
-            return await this.archivalStore.search(query, options);
-        } catch (error) {
-            this._logger.error(`Failed to search archival memory: ${error.message}`);
-            // * 向上抛出异常，让调用者 (MemoryExtension) 处理
-            throw error;
+        options: { entityIds?: string[]; limit?: number; minSalience?: number } = {}
+    ): Promise<Fact[]> {
+        const { entityIds = [], limit = 10, minSalience = 0 } = options;
+        if (!this.embeddingModel) {
+            this.logger.warn("嵌入模型不可用，无法执行语义搜索。");
+            return [];
         }
+
+        const queryEmbedding = await this.embeddingModel.embed(query).then((res) => res.embedding);
+
+        // 数据库查询条件
+        const dbQuery: any = { salience: { $gte: minSalience } };
+        if (entityIds.length > 0) {
+            dbQuery.relatedEntityIds = { $some: entityIds };
+        }
+
+        // **注意：这是一个模拟向量搜索的实现！**
+        // 在生产环境中，当事实数量巨大时，此方法效率低下。
+        // 强烈建议使用支持原生向量搜索的数据库 (e.g., PostgreSQL + pgvector, Qdrant, Milvus)。
+        this.logger.info("正在执行模拟向量搜索。对于大数据集，这可能很慢。");
+
+        const allFacts = await this.ctx.database.get(TableName.Facts, dbQuery);
+
+        if (allFacts.length === 0) return [];
+
+        // 在内存中计算相似度
+        /* prettier-ignore */
+        const factsWithSimilarity = allFacts.map((fact) => ({ ...fact, similarity: cosineSimilarity(queryEmbedding, fact.embedding) }));
+
+        // 按相似度降序排序
+        factsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
+
+        // 返回前 N 个结果
+        return factsWithSimilarity.slice(0, limit);
     }
 
-    public async getMemoryDataForRendering(): Promise<MemoryData> {
-        return {
-            lastModified: this.lastModified.toISOString(),
-            memoryBlocks: Array.from(this.coreMemoryBlocks.values()).map((block) => ({
-                title: block.title,
-                label: block.label,
-                limit: block.limit,
-                description: block.description,
-                content: block.content as string[],
-            })),
-            archivalCount: await this.archivalStore.count(),
+    async getUserProfile(entityId: string): Promise<UserProfile | null> {
+        const [profile] = await this.ctx.database.get(TableName.UserProfiles, { entityId });
+        return profile || null;
+    }
+
+    async consolidateProfile(entityId: string): Promise<UserProfile | null> {
+        if (!this.chatModel || !this.embeddingModel) {
+            this.logger.warn("模型不可用，无法进行画像提炼。");
+            return null;
+        }
+
+        const existingProfile = await this.getUserProfile(entityId);
+
+        // 查找尚未被用于生成当前画像的、与该实体相关的新事实
+        const newFactsQuery: any = { relatedEntityIds: { $contains: entityId } };
+        if (existingProfile) {
+            newFactsQuery.id = { $nin: existingProfile.supportingFactIds };
+        }
+        const newFacts = await this.ctx.database.get(TableName.Facts, newFactsQuery, {
+            limit: 20,
+            sort: { createdAt: "desc" },
+        });
+
+        if (newFacts.length === 0) {
+            this.logger.info(`实体 ${entityId} 没有新的事实来更新画像。`);
+            return existingProfile;
+        }
+
+        const consolidationPrompt = await this.promptService.render("memory.profile_consolidation", {
+            existingProfile: existingProfile ? JSON.stringify(existingProfile, null, 2) : "无 (这是一个新的人物画像)",
+            newFacts: newFacts.map((f) => `- ${f.content} (重要性: ${f.salience.toFixed(2)})`).join("\n"),
+        });
+
+        // LLM调用
+        const response = await this.chatModel.chat([{ role: "user", content: consolidationPrompt }]);
+
+        // 解析LLM响应
+        const parser = new JsonParser<{ summary: string; confidence: number; supportingFactIds: string[] }>();
+        const parsed = parser.parse(response.text);
+
+        if (parsed.error || !parsed.data) {
+            this.logger.error("解析画像提炼模型的响应失败:", parsed.error);
+            return existingProfile;
+        }
+
+        const { summary, confidence, supportingFactIds } = parsed.data;
+        const newEmbedding = await this.embeddingModel.embed(summary);
+
+        const allSupportingFactIds = Array.from(
+            new Set([...(existingProfile?.supportingFactIds || []), ...supportingFactIds])
+        );
+
+        const profileData: UserProfile = {
+            // ... id, entityId, content, embedding, etc.
+            id: existingProfile?.id || `prof_${uuidv4()}`,
+            entityId,
+            content: summary,
+            embedding: newEmbedding.embedding,
+            confidence,
+            supportingFactIds: allSupportingFactIds,
+            updatedAt: new Date(),
         };
+
+        // 1. 再次检查 existingProfile 是否存在
+        if (existingProfile) {
+            await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, profileData);
+            this.logger.info(`已成功为实体 ${entityId} 更新了人物画像。`);
+        } else {
+            // 如果不存在，执行 create
+            await this.ctx.database.create(TableName.UserProfiles, profileData);
+            this.logger.info(`已成功为实体 ${entityId} 创建了新的人物画像。`);
+        }
+
+        return profileData;
+    }
+
+    async decayAndForget(): Promise<void> {
+        this.logger.info("开始执行记忆衰减与遗忘任务...");
+        const { stalenessDays, salienceThreshold, accessCountThreshold } = this.config.forgetting;
+
+        const stalenessDate = new Date();
+        stalenessDate.setDate(stalenessDate.getDate() - stalenessDays);
+
+        const forgettableFacts = await this.ctx.database.get(TableName.Facts, {
+            lastAccessedAt: { $lt: stalenessDate },
+            salience: { $lt: salienceThreshold },
+            accessCount: { $lt: accessCountThreshold },
+        });
+
+        if (forgettableFacts.length > 0) {
+            const idsToRemove = forgettableFacts.map((fact) => fact.id);
+            await this.ctx.database.remove(TableName.Facts, { id: { $in: idsToRemove } });
+            this.logger.info(`已遗忘 ${idsToRemove.length} 条陈旧且不重要的事实。`);
+        } else {
+            this.logger.info("没有需要遗忘的事实。");
+        }
     }
 }

@@ -3,7 +3,7 @@ import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
 import { LoggingConfig, LoggingConfigSchema } from "./services";
 import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extension";
 import { ImageServiceConfig, ImageServiceConfigSchema } from "./services/image";
-import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
+import { MemoryConfig } from "./services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
 import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
 
@@ -67,7 +67,7 @@ export const Config: Schema<Config> = Schema.object({
     modelService: ModelServiceConfigSchema.description("AI 模型、API密钥和模型组配置"),
     agentBehavior: AgentBehaviorConfigSchema,
     capabilities: Schema.object({
-        memory: MemoryConfigSchema.description("记忆能力配置"),
+        memory: MemoryConfig.description("记忆能力配置"),
         tools: ToolServiceConfigSchema.description("工具能力配置"),
         history: HistoryConfigSchema.description("对话历史记录的管理方式"),
     }),

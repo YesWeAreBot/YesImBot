@@ -23,7 +23,7 @@ export enum TaskType {
     Chat = "chat",
     Embedding = "embed",
     Summarization = "summarize",
-    CodeGeneration = "code",
+    Memory = "memory",
 }
 
 /** 描述一个模型在特定提供商中的位置 */
@@ -148,5 +148,6 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型组"),
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型组"),
         [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型组"),
+        [TaskType.Memory]: Schema.dynamic("modelService.availableGroups").description("记忆管理时使用的模型组"),
     }).description("为不同核心任务分配一个模型组"),
 });

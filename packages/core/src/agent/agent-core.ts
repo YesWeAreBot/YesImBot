@@ -1,6 +1,4 @@
-import { readFileSync } from "fs";
-import { Context, h, Logger, Random, Service, Session } from "koishi";
-import path from "path";
+import { Context, h, Logger, Service, Session } from "koishi";
 import type { ImagePart, Message, TextPart } from "xsai";
 
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
@@ -9,9 +7,8 @@ import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/mo
 import { loadTemplate, PromptService } from "@/services/prompt";
 import { Services } from "@/services/types";
 import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
-import { TEMPLATES_DIR } from "@/shared/constants";
 import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
-import { AgentBehaviorConfig, MultiModalSystemBaseTemplate } from "./config";
+import { AgentBehaviorConfig } from "./config";
 import { WillingnessManager } from "./willing";
 
 declare module "koishi" {
@@ -25,11 +22,7 @@ type WithDispose<T> = T & { dispose: () => void };
 // 定义 PromptBuilder 需要的完整上下文
 export interface PromptContext {
     toolSchemas: ToolSchema[];
-    memory: {
-        lastModified: string;
-        archivalCount: number;
-        memoryBlocks: MemoryBlockData[];
-    };
+    memoryBlocks: MemoryBlockData[];
     worldState: WorldState; // 世界状态快照
     previousResponses: AgentResponse[]; // Agent 最近的回合历史
     multiModalData: {
@@ -284,7 +277,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const view = {
             session,
             TOOL_DEFINITION: { tools: prepareDataForTemplate(promptContext.toolSchemas) },
-            CORE_MEMORY: promptContext.memory,
+            // CORE_MEMORY: promptContext.memory,
+            MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
             CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
 
@@ -452,7 +446,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 3. 聚合所有数据
         return {
             toolSchemas: this.toolService.getToolSchemas(),
-            memory: await this.ctx[Services.Memory].getMemoryDataForRendering(),
+            memoryBlocks: await this.ctx[Services.Memory].getMemoryBlocksForRendering(),
             worldState: worldState,
             previousResponses: previousResponses,
             multiModalData: {

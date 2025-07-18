@@ -1,7 +1,9 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import { Context } from "koishi";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "xsai";
-import { embed, embedMany } from "../../dependencies/xsai";
+
+import { embed, embedMany } from "@/dependencies/xsai";
+import { truncate } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 
@@ -21,7 +23,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
     }
 
     public async embed(text: string): Promise<EmbedResult> {
-        this.logger.debug(`Embedding single text: "${text.substring(0, 50)}..."`);
+        this.logger.debug(`正在为文本生成嵌入向量："${truncate(text, 50)}"`);
         const embedOptions: EmbedOptions = {
             ...this.embedProvider(this.config.modelId),
             fetch: this.fetch,

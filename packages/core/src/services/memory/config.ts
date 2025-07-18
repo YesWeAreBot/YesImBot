@@ -1,30 +1,42 @@
-import { Schema } from "koishi";
-
-/**
- * 归档记忆的数据库表名
- */
-export const ARCHIVAL_MEMORY_TABLE = "yesimbot.archival_memory";
+// src/services/memory/config.ts
+import { Schema } from 'koishi';
 
 /** 记忆服务配置 */
 export interface MemoryConfig {
-    /** 核心记忆块文件的存放目录 */
     coreMemoryPath: string;
-
-    /** 归档记忆备份配置 (可选) */
-    backup?: {
-        enabled: boolean;
-        backupPath: string;
+    /** 批处理设置 */
+    batching: {
+        /** 单个用户积累多少条消息后立即处理 */
+        maxSize: number;
+        /** 用户最后一条消息发送后，等待多少秒进行处理 */
+        maxWaitTime: number;
+    };
+    /** 记忆衰减设置 */
+    forgetting: {
+        /** 触发遗忘检查的周期（小时） */
+        checkIntervalHours: number;
+        /** 遗忘阈值：多久未访问的事实可被视为陈旧（天） */
+        stalenessDays: number;
+        /** 遗忘阈值：低于此显著性的事实才可能被遗忘 */
+        salienceThreshold: number;
+        /** 遗忘阈值：低于此访问次数的事实才可能被遗忘 */
+        accessCountThreshold: number;
     };
 }
 
-export const MemoryConfigSchema: Schema<MemoryConfig> = Schema.object({
-    coreMemoryPath: Schema.path({ filters: ["directory"], allowCreate: true })
+export const MemoryConfig: Schema<MemoryConfig> = Schema.object({
+    coreMemoryPath: Schema.path({ allowCreate: true, filters: ["directory"] })
         .default("data/yesimbot/memory/core")
-        .description("核心记忆块文件的存放目录，服务启动时会自动扫描此目录下的 .md 文件。"),
-    backup: Schema.object({
-        enabled: Schema.boolean().default(false).description("是否启用备份"),
-        backupPath: Schema.path({ filters: ["directory"], allowCreate: true })
-            .default("data/yesimbot/memory/backup")
-            .description("备份路径"),
-    }),
+        .description("核心记忆文件的存放路径。"),
+    batching: Schema.object({
+        maxSize: Schema.number().default(5).min(1).description("单个用户积累多少条消息后立即处理，以应对短时大量消息。"),
+        maxWaitTime: Schema.number().default(30).min(5).description("用户最后一条消息发送后，等待多少秒进行处理。"),
+    }).description("消息批处理设置"),
+
+    forgetting: Schema.object({
+        checkIntervalHours: Schema.number().default(24).description("触发遗忘检查的周期（小时）。"),
+        stalenessDays: Schema.number().default(90).description("多久未访问的事实可被视为陈旧（天）。"),
+        salienceThreshold: Schema.number().default(0.3).max(1).min(0).description("低于此显著性的事实才可能被遗忘。"),
+        accessCountThreshold: Schema.number().default(2).description("低于此访问次数的事实才可能被遗忘。"),
+    }).description("记忆衰减与遗忘设置"),
 });

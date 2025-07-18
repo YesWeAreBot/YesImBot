@@ -4,13 +4,13 @@ import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 import path from "path";
 
+import { Services } from "@/services/types";
 import { AppError, ErrorCodes } from "@/shared/errors";
 import { formatDate, isEmpty, truncate } from "@/shared/utils";
-import { Services } from "../types";
-import { MemoryBlockData, MemoryBlockMetadata } from "./types";
+import { MemoryBlockData } from "./types";
 
 export class MemoryBlock {
-    private _metadata: MemoryBlockMetadata;
+    private _metadata: Omit<MemoryBlockData, "content">;
     private _content: string[];
     private lastModifiedInMemory: Date = new Date();
     private _filePath: string;
@@ -152,9 +152,14 @@ export class MemoryBlock {
     private async reloadFromFile(): Promise<void> {
         this.logger.debug(`开始同步 | 文件 -> 内存`);
         try {
-            const { data, content } = await MemoryBlock.loadDataFromFile(this._filePath);
-            this._metadata = data;
-            this._content = content;
+            const block = await MemoryBlock.loadDataFromFile(this._filePath);
+            this._metadata = {
+                title: block.title,
+                label: block.label,
+                description: block.description,
+                limit: block.limit,
+            };
+            this._content = block.content;
             this.lastModifiedInMemory = new Date();
             this.logger.debug(`同步成功`);
         } catch (error) {
@@ -209,10 +214,10 @@ export class MemoryBlock {
         const logger = ctx[Services.Logger].getLogger("[记忆块]");
         try {
             const fileStats = await stat(filePath);
-            const { data, content } = await this.loadDataFromFile(filePath);
+            const blockData = await this.loadDataFromFile(filePath);
 
             // logger.debug(`加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
-            const block = new MemoryBlock(ctx, filePath, { ...data, content }, fileStats.mtimeMs);
+            const block = new MemoryBlock(ctx, filePath, blockData, fileStats.mtimeMs);
 
             await block.startWatching();
             ctx.on("dispose", () => block.disposeFileWatcher());
@@ -228,7 +233,7 @@ export class MemoryBlock {
         }
     }
 
-    private static async loadDataFromFile(filePath: string): Promise<{ data: MemoryBlockMetadata; content: string[] }> {
+    private static async loadDataFromFile(filePath: string): Promise<MemoryBlockData> {
         const rawContent = await readFile(filePath, "utf-8");
         const { data, content } = matter(rawContent);
 
@@ -238,12 +243,10 @@ export class MemoryBlock {
         }
 
         return {
-            data: {
-                title: data.title,
-                label: data.label,
-                description: data.description || "",
-                limit: Number(data.limit),
-            },
+            title: data.title,
+            label: data.label,
+            description: data.description || "",
+            limit: Number(data.limit),
             content: content.trim() ? content.trim().split(/\r?\n/) : [],
         };
     }

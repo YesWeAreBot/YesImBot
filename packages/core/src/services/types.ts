@@ -1,5 +1,5 @@
 /**
- * 集中管理所有数据库表的名称，防止拼写错误并方便重构。
+ * 所有数据库表的名称
  */
 export enum TableName {
     Members = "worldstate.members",
@@ -7,10 +7,13 @@ export enum TableName {
     Messages = "worldstate.messages",
     SystemEvents = "worldstate.system_events",
     Images = "yesimbot.images",
+    Entities = "yesimbot.entities",
+    Facts = "yesimbot.facts",
+    UserProfiles = "yesimbot.user_profiles",
 }
 
 /**
- * 提供的服务。
+ * 提供的服务
  */
 export enum Services {
     Model = "yesimbot.model",

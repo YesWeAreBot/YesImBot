@@ -148,9 +148,9 @@ From now on, you are going to act as your persona.
 </base_instructions>
 
 <CORE_MEMORY>
-{{#CORE_MEMORY}}
-{{> agent.partial.core_memory }}
-{{/CORE_MEMORY}}
+{{#MEMORY_BLOCKS}}
+{{> agent.partial.memory_block }}
+{{/MEMORY_BLOCKS}}
 </CORE_MEMORY>
 
 <TOOL_DEFINITION>
