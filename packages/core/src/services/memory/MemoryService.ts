@@ -7,7 +7,7 @@ import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, loadTemplate, PromptService } from "@/services/prompt";
 import { Services, TableName } from "@/services/types";
 import { AppError, ErrorCodes } from "@/shared/errors";
-import { cosineSimilarity, JsonParser } from "@/shared/utils";
+import { cosineSimilarity, hashString, JsonParser } from "@/shared/utils";
 import { MemoryConfig } from "./config";
 import { MemoryBlock } from "./MemoryBlock";
 import {
@@ -425,7 +425,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      */
     private async handleSummaryChunk(chunk: string): Promise<void> {
         // 使用锁防止并发处理相同的chunk
-        const chunkHash = this.hashString(chunk);
+        const chunkHash = hashString(chunk);
         const lockKey = `chunk_${chunkHash}`;
 
         try {
@@ -453,21 +453,6 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         } catch (error) {
             this.logger.error("处理 summary chunk 时出错:", error);
         }
-    }
-
-    /**
-     * 生成字符串的简单哈希值
-     * @param str 输入字符串
-     * @returns 哈希值
-     */
-    private hashString(str: string): string {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // 转换为32位整数
-        }
-        return Math.abs(hash).toString(36);
     }
 
     /**
