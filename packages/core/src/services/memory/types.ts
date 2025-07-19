@@ -137,6 +137,10 @@ export interface UserProfile {
     isDeleted?: boolean;
     /** 画像标签，用于分类 */
     tags?: string[];
+    /** 关键事实用于下次增量更新 */
+    keyFactsForUpdate?: string[];
+    /** 显著性评分，用于搜索排序 */
+    salience?: number;
 }
 
 /** LLM提炼后输出的结构化事实 */

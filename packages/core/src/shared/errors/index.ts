@@ -63,6 +63,13 @@ export const ErrorCodes = {
         EXECUTION_ERROR: "TOOL.EXECUTION_ERROR",
         TIMEOUT: "TOOL.TIMEOUT",
     },
+    // 操作相关错误
+    OPERATION: {
+        LOCK_TIMEOUT: "OPERATION.LOCK_TIMEOUT",
+        CIRCUIT_BREAKER_OPEN: "OPERATION.CIRCUIT_BREAKER_OPEN",
+        SERVICE_SHUTTING_DOWN: "OPERATION.SERVICE_SHUTTING_DOWN",
+        RETRY_EXHAUSTED: "OPERATION.RETRY_EXHAUSTED",
+    },
 } as const;
 
 // 从 ErrorCodes 对象中提取所有可能的值作为类型

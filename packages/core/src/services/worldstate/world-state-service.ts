@@ -2,7 +2,7 @@ import { formatDate, truncate } from "@/shared/utils";
 import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 import { randomUUID } from "node:crypto";
 import { ChannelDescriptor } from "../../agent";
-import { Entity, MemoryService, UserProfile } from "../memory";
+import { Entity, EntityType, MemoryService, UserProfile } from "../memory";
 import { IChatModel, IEmbedModel, TaskType } from "../model";
 import { PromptService } from "../prompt";
 import { Services, TableName } from "../types";
@@ -116,6 +116,10 @@ export class WorldStateService extends Service<HistoryConfig> {
     private readonly promptService: PromptService;
 
     private readonly memoryService: MemoryService;
+
+    // 缓存机制
+    private readonly userEntityCache = new Map<string, { entity: Entity; timestamp: number }>();
+    private readonly cacheExpirationMs = 5 * 60 * 1000; // 5分钟缓存
 
     /**
      * 待处理指令的内存状态机
@@ -1617,32 +1621,209 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     async recallForContext(messages: ContextualMessage[]): Promise<string[]> {
-        const recalledEntityIds = new Set<string>();
-
-        // 第一层：即时参与者 (快速、必须)
-        messages.forEach((m) => recalledEntityIds.add(m.sender.id));
-
-        // 第二层 & 第三层合并：语义关联 (核心、强大)
-        const batchText = messages.map((m) => `${m.sender.name}: ${m.content}`).join("\n");
-
-        const [factResults, profileResults] = await Promise.all([
-            this.memoryService.searchFacts(batchText, { limit: 10 }),
-            this.memoryService.searchUserProfiles(batchText, { limit: 5 }),
-        ]);
-
-        if (factResults.success && factResults.data) {
-            factResults.data.forEach((fact) => {
-                fact.relatedEntityIds.forEach((id) => recalledEntityIds.add(id));
-            });
+        if (!messages || messages.length === 0) {
+            return [];
         }
 
-        if (profileResults.success && profileResults.data) {
-            profileResults.data.forEach((profile) => {
-                recalledEntityIds.add(profile.entityId);
-            });
+        // 智能用户筛选配置
+        const maxRelevantUsers = 8; // 最多返回的相关用户数
+        const minRelevanceScore = 0.3; // 最小相关性阈值
+
+        // 第一层：直接参与者（必须包含）
+        const directParticipants = new Set<string>();
+        const mentionedUsers = new Set<string>();
+        const quotedUsers = new Set<string>();
+
+        messages.forEach((m) => {
+            directParticipants.add(m.sender.id);
+
+            // 提取@提及的用户
+            const mentions = this.extractMentionedUsers(m.content);
+            mentions.forEach(userId => mentionedUsers.add(userId));
+
+            // 提取被引用的用户
+            if (m.quoteId) {
+                const quotedMessage = messages.find(msg => msg.id === m.quoteId);
+                if (quotedMessage) {
+                    quotedUsers.add(quotedMessage.sender.id);
+                }
+            }
+        });
+
+        // 第二层：语义相关用户（智能筛选）
+        const semanticUsers = await this.findSemanticRelevantUsers(messages, maxRelevantUsers);
+
+        // 第三层：基于用户名提及的用户
+        const namedUsers = await this.findNamedUsers(messages);
+
+        // 合并并评分
+        const userRelevanceMap = new Map<string, number>();
+
+        // 直接参与者 - 最高优先级
+        directParticipants.forEach(userId => {
+            userRelevanceMap.set(userId, 1.0);
+        });
+
+        // @提及的用户 - 高优先级
+        mentionedUsers.forEach(userId => {
+            userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, 0.9));
+        });
+
+        // 被引用的用户 - 高优先级
+        quotedUsers.forEach(userId => {
+            userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, 0.8));
+        });
+
+        // 语义相关用户 - 中等优先级
+        semanticUsers.forEach(({ userId, score }) => {
+            if (score >= minRelevanceScore) {
+                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, score * 0.7));
+            }
+        });
+
+        // 基于姓名提及的用户 - 较低优先级
+        namedUsers.forEach(({ userId, score }) => {
+            if (score >= minRelevanceScore) {
+                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, score * 0.5));
+            }
+        });
+
+        // 按相关性排序并限制数量
+        const sortedUsers = Array.from(userRelevanceMap.entries())
+            .filter(([_, score]) => score >= minRelevanceScore)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, maxRelevantUsers)
+            .map(([userId]) => userId);
+
+        this._logger.debug(`智能筛选用户: 直接参与者 ${directParticipants.size} 个，最终选择 ${sortedUsers.length} 个相关用户`);
+
+        return sortedUsers;
+    }
+
+    /**
+     * 提取消息中@提及的用户ID
+     */
+    private extractMentionedUsers(content: string): string[] {
+        const mentionRegex = /@(\w+)/g;
+        const mentions: string[] = [];
+        let match;
+
+        while ((match = mentionRegex.exec(content)) !== null) {
+            mentions.push(match[1]);
         }
 
-        return Array.from(recalledEntityIds);
+        return mentions;
+    }
+
+    /**
+     * 基于语义相似度查找相关用户
+     */
+    private async findSemanticRelevantUsers(
+        messages: ContextualMessage[],
+        maxUsers: number
+    ): Promise<Array<{ userId: string; score: number }>> {
+        try {
+            const batchText = messages.map((m) => `${m.sender.name}: ${m.content}`).join("\n");
+
+            const [factResults, profileResults] = await Promise.all([
+                this.memoryService.searchFacts(batchText, { limit: 15 }),
+                this.memoryService.searchUserProfiles(batchText, { limit: 10 }),
+            ]);
+
+            const userScores = new Map<string, number>();
+
+            // 从事实中提取相关用户
+            if (factResults.success && factResults.data) {
+                factResults.data.forEach((fact: any) => {
+                    const factScore = fact.similarity || 0.5; // 使用相似度作为评分
+                    fact.relatedEntityIds.forEach((entityId: string) => {
+                        const currentScore = userScores.get(entityId) || 0;
+                        userScores.set(entityId, Math.max(currentScore, factScore * 0.8));
+                    });
+                });
+            }
+
+            // 从用户画像中提取相关用户
+            if (profileResults.success && profileResults.data) {
+                profileResults.data.forEach((profile: any) => {
+                    const profileScore = profile.similarity || 0.5;
+                    const currentScore = userScores.get(profile.entityId) || 0;
+                    userScores.set(profile.entityId, Math.max(currentScore, profileScore));
+                });
+            }
+
+            return Array.from(userScores.entries())
+                .map(([userId, score]) => ({ userId, score }))
+                .sort((a, b) => b.score - a.score)
+                .slice(0, maxUsers);
+        } catch (error) {
+            this._logger.warn(`语义用户查找失败: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * 基于用户名提及查找用户
+     */
+    private async findNamedUsers(messages: ContextualMessage[]): Promise<Array<{ userId: string; score: number }>> {
+        try {
+            const messageText = messages.map(m => m.content).join(" ");
+
+            // 获取所有已知用户实体
+            const entities = await this.ctx.database.get(TableName.Entities, {
+                type: EntityType.Person,
+                isDeleted: false,
+            });
+
+            const namedUsers: Array<{ userId: string; score: number }> = [];
+
+            entities.forEach(entity => {
+                const userName = entity.name;
+                if (userName && userName.length > 1) {
+                    // 检查用户名是否在消息中被提及
+                    const nameRegex = new RegExp(`\\b${userName}\\b`, 'gi');
+                    const matches = messageText.match(nameRegex);
+
+                    if (matches && matches.length > 0) {
+                        // 基于提及次数计算评分
+                        const score = Math.min(matches.length * 0.2 + 0.3, 0.8);
+                        namedUsers.push({ userId: entity.id, score });
+                    }
+                }
+            });
+
+            return namedUsers.sort((a, b) => b.score - a.score);
+        } catch (error) {
+            this._logger.warn(`基于姓名的用户查找失败: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * 缓存辅助方法
+     */
+    private getCachedUserEntity(userId: string): Entity | null {
+        const cached = this.userEntityCache.get(userId);
+        if (cached && Date.now() - cached.timestamp < this.cacheExpirationMs) {
+            return cached.entity;
+        }
+        return null;
+    }
+
+    private setCachedUserEntity(userId: string, entity: Entity): void {
+        this.userEntityCache.set(userId, {
+            entity,
+            timestamp: Date.now()
+        });
+    }
+
+    private clearExpiredCache(): void {
+        const now = Date.now();
+        for (const [userId, cached] of this.userEntityCache.entries()) {
+            if (now - cached.timestamp >= this.cacheExpirationMs) {
+                this.userEntityCache.delete(userId);
+            }
+        }
     }
 
     /**

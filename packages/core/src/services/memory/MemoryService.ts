@@ -175,8 +175,11 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     private readonly embeddingModel: IEmbedModel;
     private readonly jsonParser = new JsonParser<{ facts: ExtractedFact[]; insights: ExtractedInsight[] }>();
 
-    // 用于防止竞态条件的锁机制
+    // 增强的任务管理和错误处理系统
     private readonly operationLocks = new Map<string, Promise<any>>();
+    private readonly lockTimeouts = new Map<string, NodeJS.Timeout>();
+    private readonly retryCounters = new Map<string, number>();
+    private readonly circuitBreakers = new Map<string, { failures: number; lastFailure: Date; isOpen: boolean }>();
 
     // 定时器引用，用于清理
     private maintenanceTimer?: NodeJS.Timeout;
@@ -184,6 +187,135 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     // 处理中的操作计数，用于优雅关闭
     private activeOperations = 0;
     private isShuttingDown = false;
+
+    // 错误处理配置（从配置文件获取）
+    private get errorHandlingConfig() {
+        return this.config.errorHandling;
+    }
+
+    // 用户画像生成配置（从配置文件获取）
+    private get profileGenerationConfig() {
+        return this.config.profileGeneration;
+    }
+
+    // 性能监控
+    private readonly performanceMetrics = {
+        operationCounts: new Map<string, number>(),
+        operationTimes: new Map<string, number[]>(),
+        errorCounts: new Map<string, number>(),
+    };
+
+    /**
+     * 记录操作性能指标
+     */
+    private recordPerformanceMetric(operation: string, duration: number, success: boolean): void {
+        // 记录操作次数
+        const currentCount = this.performanceMetrics.operationCounts.get(operation) || 0;
+        this.performanceMetrics.operationCounts.set(operation, currentCount + 1);
+
+        // 记录操作时间
+        const times = this.performanceMetrics.operationTimes.get(operation) || [];
+        times.push(duration);
+        if (times.length > 100) times.shift(); // 保持最近100次记录
+        this.performanceMetrics.operationTimes.set(operation, times);
+
+        // 记录错误次数
+        if (!success) {
+            const errorCount = this.performanceMetrics.errorCounts.get(operation) || 0;
+            this.performanceMetrics.errorCounts.set(operation, errorCount + 1);
+        }
+
+        // 性能警告
+        if (duration > 5000) {
+            // 超过5秒
+            this.logger.warn(`操作 ${operation} 执行时间过长: ${duration}ms`);
+        }
+    }
+
+    /**
+     * 性能监控装饰器
+     */
+    private async withPerformanceMonitoring<T>(operationName: string, operation: () => Promise<T>): Promise<T> {
+        const startTime = Date.now();
+        let success = false;
+
+        try {
+            const result = await operation();
+            success = true;
+            return result;
+        } catch (error) {
+            success = false;
+            throw error;
+        } finally {
+            const duration = Date.now() - startTime;
+            this.recordPerformanceMetric(operationName, duration, success);
+        }
+    }
+
+    /**
+     * 获取性能统计信息
+     */
+    public getPerformanceStats(): Record<string, any> {
+        const stats: Record<string, any> = {};
+
+        for (const [operation, times] of this.performanceMetrics.operationTimes.entries()) {
+            if (times.length > 0) {
+                const avg = times.reduce((a, b) => a + b, 0) / times.length;
+                const max = Math.max(...times);
+                const min = Math.min(...times);
+                const count = this.performanceMetrics.operationCounts.get(operation) || 0;
+                const errors = this.performanceMetrics.errorCounts.get(operation) || 0;
+
+                stats[operation] = {
+                    count,
+                    errors,
+                    errorRate: count > 0 ? ((errors / count) * 100).toFixed(2) + "%" : "0%",
+                    avgTime: Math.round(avg),
+                    maxTime: max,
+                    minTime: min,
+                };
+            }
+        }
+
+        return stats;
+    }
+
+    /**
+     * 输入验证辅助方法
+     */
+    private validateEntityId(entityId: string): void {
+        if (!entityId || typeof entityId !== "string" || entityId.trim().length === 0) {
+            throw new AppError("实体ID不能为空", {
+                code: ErrorCodes.VALIDATION.INVALID_INPUT,
+                context: { entityId },
+            });
+        }
+    }
+
+    private validateFactContent(content: string): void {
+        if (!content || typeof content !== "string" || content.trim().length === 0) {
+            throw new AppError("事实内容不能为空", {
+                code: ErrorCodes.VALIDATION.INVALID_INPUT,
+                context: { content },
+            });
+        }
+
+        if (content.length > 2000) {
+            throw new AppError("事实内容过长，最大长度为2000字符", {
+                code: ErrorCodes.VALIDATION.INVALID_INPUT,
+                context: { contentLength: content.length },
+            });
+        }
+    }
+
+    private validateSearchQuery(query: string): void {
+        if (!query || typeof query !== "string" || query.trim().length === 0) {
+            throw new AppError("搜索查询不能为空", {
+                code: ErrorCodes.VALIDATION.INVALID_INPUT,
+                context: { query },
+            });
+        }
+    }
 
     constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, Services.Memory, true);
@@ -237,8 +369,12 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             this.logger.warn(`服务停止时仍有 ${this.activeOperations} 个操作未完成`);
         }
 
-        // 清理操作锁
+        // 清理所有资源
         this.operationLocks.clear();
+        this.lockTimeouts.forEach((timeout) => clearTimeout(timeout));
+        this.lockTimeouts.clear();
+        this.retryCounters.clear();
+        this.circuitBreakers.clear();
 
         this.logger.info("服务已停止。");
     }
@@ -395,24 +531,138 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     }
 
     /**
-     * 获取操作锁，防止竞态条件
+     * 增强的操作锁，支持超时控制、重试机制和熔断器
      * @param lockKey 锁的键
      * @param operation 要执行的操作
+     * @param options 执行选项
      * @returns 操作结果
      */
-    private async withLock<T>(lockKey: string, operation: () => Promise<T>): Promise<T> {
-        // 如果已有相同的操作在进行，等待其完成
-        if (this.operationLocks.has(lockKey)) {
-            await this.operationLocks.get(lockKey);
+    private async withLock<T>(
+        lockKey: string,
+        operation: () => Promise<T>,
+        options: {
+            maxRetries?: number;
+            retryDelayMs?: number;
+            timeoutMs?: number;
+            enableCircuitBreaker?: boolean;
+        } = {}
+    ): Promise<T> {
+        const {
+            maxRetries = this.errorHandlingConfig.maxRetries,
+            retryDelayMs = this.errorHandlingConfig.retryDelayMs,
+            timeoutMs = this.errorHandlingConfig.lockTimeoutMs,
+            enableCircuitBreaker = true,
+        } = options;
+
+        // 检查熔断器状态
+        if (enableCircuitBreaker && this.isCircuitBreakerOpen(lockKey)) {
+            throw new AppError(`操作 ${lockKey} 的熔断器已打开，暂时不可用`, {
+                code: ErrorCodes.OPERATION.CIRCUIT_BREAKER_OPEN,
+                context: { lockKey },
+            });
         }
 
-        // 创建新的操作Promise
-        const operationPromise = this.executeWithTracking(operation);
+        // 等待现有锁释放（带超时）
+        if (this.operationLocks.has(lockKey)) {
+            try {
+                await this.waitForLockWithTimeout(lockKey, timeoutMs);
+            } catch (error) {
+                throw new AppError(`等待锁 ${lockKey} 超时`, {
+                    code: ErrorCodes.OPERATION.LOCK_TIMEOUT,
+                    context: { lockKey, timeoutMs },
+                    cause: error,
+                });
+            }
+        }
+
+        // 执行操作（带重试）
+        return this.executeWithRetry(lockKey, operation, maxRetries, retryDelayMs, enableCircuitBreaker);
+    }
+
+    /**
+     * 等待锁释放（带超时）
+     */
+    private async waitForLockWithTimeout(lockKey: string, timeoutMs: number): Promise<void> {
+        const existingLock = this.operationLocks.get(lockKey);
+        if (!existingLock) return;
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`Lock timeout for ${lockKey}`));
+            }, timeoutMs);
+            this.lockTimeouts.set(lockKey, timeout);
+        });
+
+        try {
+            await Promise.race([existingLock, timeoutPromise]);
+        } finally {
+            const timeout = this.lockTimeouts.get(lockKey);
+            if (timeout) {
+                clearTimeout(timeout);
+                this.lockTimeouts.delete(lockKey);
+            }
+        }
+    }
+
+    /**
+     * 带重试机制的操作执行
+     */
+    private async executeWithRetry<T>(
+        lockKey: string,
+        operation: () => Promise<T>,
+        maxRetries: number,
+        retryDelayMs: number,
+        enableCircuitBreaker: boolean
+    ): Promise<T> {
+        const operationPromise = this.executeWithTracking(async () => {
+            let lastError: Error | undefined;
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const result = await operation();
+
+                    // 成功时重置重试计数器和熔断器
+                    this.retryCounters.delete(lockKey);
+                    if (enableCircuitBreaker) {
+                        this.resetCircuitBreaker(lockKey);
+                    }
+
+                    return result;
+                } catch (error) {
+                    lastError = error instanceof Error ? error : new Error(String(error));
+
+                    // 记录重试次数
+                    const currentRetries = this.retryCounters.get(lockKey) || 0;
+                    this.retryCounters.set(lockKey, currentRetries + 1);
+
+                    // 更新熔断器状态
+                    if (enableCircuitBreaker) {
+                        this.recordCircuitBreakerFailure(lockKey);
+                    }
+
+                    // 如果还有重试机会且不是最后一次尝试，等待后重试
+                    if (attempt < maxRetries && !this.isShuttingDown) {
+                        this.logger.warn(
+                            `操作 ${lockKey} 失败，${retryDelayMs}ms 后重试 (${attempt + 1}/${maxRetries}): ${lastError.message
+                            }`
+                        );
+                        await this.delay(retryDelayMs * Math.pow(2, attempt)); // 指数退避
+                        continue;
+                    }
+
+                    // 所有重试都失败了
+                    this.logger.error(`操作 ${lockKey} 在 ${maxRetries} 次重试后仍然失败: ${lastError.message}`);
+                    break;
+                }
+            }
+
+            throw lastError || new Error(`操作 ${lockKey} 失败`);
+        });
+
         this.operationLocks.set(lockKey, operationPromise);
 
         try {
-            const result = await operationPromise;
-            return result;
+            return await operationPromise;
         } finally {
             this.operationLocks.delete(lockKey);
         }
@@ -420,12 +670,12 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
     /**
      * 执行操作并跟踪活跃操作数量
-     * @param operation 要执行的操作
-     * @returns 操作结果
      */
     private async executeWithTracking<T>(operation: () => Promise<T>): Promise<T> {
         if (this.isShuttingDown) {
-            throw new Error("服务正在关闭，无法执行新操作");
+            throw new AppError("服务正在关闭，无法执行新操作", {
+                code: ErrorCodes.OPERATION.SERVICE_SHUTTING_DOWN,
+            });
         }
 
         this.activeOperations++;
@@ -434,6 +684,183 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         } finally {
             this.activeOperations--;
         }
+    }
+
+    /**
+     * 检查熔断器是否打开
+     */
+    private isCircuitBreakerOpen(lockKey: string): boolean {
+        const breaker = this.circuitBreakers.get(lockKey);
+        if (!breaker) return false;
+
+        // 如果熔断器打开且超过重置时间，则重置熔断器
+        if (
+            breaker.isOpen &&
+            Date.now() - breaker.lastFailure.getTime() > this.errorHandlingConfig.circuitBreakerResetMs
+        ) {
+            this.resetCircuitBreaker(lockKey);
+            return false;
+        }
+
+        return breaker.isOpen;
+    }
+
+    /**
+     * 记录熔断器失败
+     */
+    private recordCircuitBreakerFailure(lockKey: string): void {
+        const breaker = this.circuitBreakers.get(lockKey) || { failures: 0, lastFailure: new Date(), isOpen: false };
+        breaker.failures++;
+        breaker.lastFailure = new Date();
+
+        // 如果失败次数超过阈值，打开熔断器
+        if (breaker.failures >= this.errorHandlingConfig.circuitBreakerThreshold) {
+            breaker.isOpen = true;
+            this.logger.warn(`熔断器 ${lockKey} 已打开，失败次数: ${breaker.failures}`);
+        }
+
+        this.circuitBreakers.set(lockKey, breaker);
+    }
+
+    /**
+     * 重置熔断器
+     */
+    private resetCircuitBreaker(lockKey: string): void {
+        const breaker = this.circuitBreakers.get(lockKey);
+        if (breaker) {
+            breaker.failures = 0;
+            breaker.isOpen = false;
+            this.logger.info(`熔断器 ${lockKey} 已重置`);
+        }
+    }
+
+    /**
+     * 延迟工具方法
+     */
+    private delay(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * 智能获取用户画像相关的事实
+     * 支持增量更新和全量更新
+     */
+    private async getRelevantFactsForProfile(
+        entityId: string,
+        existingProfile: UserProfile | null,
+        forceReconsolidate: boolean
+    ): Promise<{ relevantFacts: Fact[]; newFactsOnly: boolean }> {
+        const config = this.profileGenerationConfig;
+
+        // 获取所有相关事实
+        const allFacts = await this.ctx.database.get(TableName.Facts, {
+            relatedEntityIds: { $some: [entityId] },
+            isDeleted: false,
+            salience: { $gte: config.factRelevanceThreshold },
+        });
+
+        if (!existingProfile || forceReconsolidate || !config.enableIncrementalUpdate) {
+            // 全量更新：返回所有相关事实
+            return { relevantFacts: allFacts, newFactsOnly: false };
+        }
+
+        // 增量更新：只返回新的事实
+        const existingSupportingFactIds = new Set(existingProfile.supportingFactIds || []);
+        const newFacts = allFacts.filter((fact) => !existingSupportingFactIds.has(fact.id));
+
+        // 如果新事实太少，考虑包含一些高权重的旧事实来保持上下文
+        if (newFacts.length < config.minFactsForUpdate && allFacts.length > 0) {
+            // 选择一些高显著性的旧事实作为上下文
+            const contextFacts = allFacts
+                .filter((fact) => existingSupportingFactIds.has(fact.id))
+                .sort((a, b) => b.salience - a.salience)
+                .slice(0, Math.max(2, Math.floor(config.minFactsForUpdate / 2)));
+
+            return {
+                relevantFacts: [...newFacts, ...contextFacts],
+                newFactsOnly: false,
+            };
+        }
+
+        return { relevantFacts: newFacts, newFactsOnly: true };
+    }
+
+    /**
+     * 计算事实在画像生成中的权重
+     */
+    private calculateFactWeight(fact: Fact, existingProfile: UserProfile | null): number {
+        let weight = 1.0;
+
+        // 基于显著性的权重
+        weight *= 1 + fact.salience;
+
+        // 基于访问次数的权重
+        weight *= Math.min(1 + fact.accessCount * 0.1, 2.0);
+
+        // 如果是关键事实类型，应用配置的权重倍数
+        const keyFactTypes = ["preference", "behavioral_pattern", "core_trait"];
+        if (keyFactTypes.includes(fact.type)) {
+            weight *= this.profileGenerationConfig.keyFactWeight;
+        }
+
+        // 新事实获得额外权重
+        if (existingProfile && !existingProfile.supportingFactIds?.includes(fact.id)) {
+            weight *= 1.2;
+        }
+
+        return weight;
+    }
+
+    /**
+     * 智能更新支持事实ID列表
+     * 避免重复处理已参与总结的事实，正确处理增量更新
+     */
+    private updateSupportingFactIds(
+        existingSupportingFactIds: string[],
+        relevantFacts: Fact[],
+        keyFactsForUpdate: string[] | undefined,
+        isIncrementalUpdate: boolean
+    ): string[] {
+        const existingIds = new Set(existingSupportingFactIds);
+        const relevantFactIds = relevantFacts.map((f) => f.id);
+
+        if (!isIncrementalUpdate) {
+            // 全量更新：使用所有相关事实
+            return relevantFactIds;
+        }
+
+        // 增量更新：合并现有事实和新事实
+        const newFactIds = relevantFactIds.filter((id) => !existingIds.has(id));
+
+        // 如果LLM指定了关键事实，确保它们被包含
+        const keyFactIds = keyFactsForUpdate || [];
+        const allImportantIds = new Set([...existingSupportingFactIds, ...newFactIds, ...keyFactIds]);
+
+        // 限制总数以避免过度膨胀
+        const maxSupportingFacts = 50; // 可配置
+        if (allImportantIds.size > maxSupportingFacts) {
+            // 保留最重要的事实
+            const factsWithPriority = relevantFacts
+                .filter((f) => allImportantIds.has(f.id))
+                .sort((a, b) => {
+                    // 优先级：关键事实 > 新事实 > 高显著性事实
+                    const aIsKey = keyFactIds.includes(a.id) ? 2 : 0;
+                    const aIsNew = !existingIds.has(a.id) ? 1 : 0;
+                    const bIsKey = keyFactIds.includes(b.id) ? 2 : 0;
+                    const bIsNew = !existingIds.has(b.id) ? 1 : 0;
+
+                    const aPriority = aIsKey + aIsNew + a.salience;
+                    const bPriority = bIsKey + bIsNew + b.salience;
+
+                    return bPriority - aPriority;
+                })
+                .slice(0, maxSupportingFacts)
+                .map((f) => f.id);
+
+            return factsWithPriority;
+        }
+
+        return Array.from(allImportantIds);
     }
 
     private async renderSegmentsToText(segments: DialogueSegmentData[]): Promise<string> {
@@ -489,7 +916,10 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * 事件处理主入口：处理从 worldstate 发来的待归档对话片段。
      * @param chunk 包含多用户消息的对话片段
      */
-    private async handleSummaryChunk(aiIdentity: { id: string; name: string }, foldedSegments: DialogueSegmentData[]): Promise<void> {
+    private async handleSummaryChunk(
+        aiIdentity: { id: string; name: string },
+        foldedSegments: DialogueSegmentData[]
+    ): Promise<void> {
         const chunk = await this.renderSegmentsToText(foldedSegments);
 
         if (!chunk) {
@@ -1093,56 +1523,81 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
     /* prettier-ignore */
     public async consolidateProfile(entityId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
+        // 输入验证
+        this.validateEntityId(entityId);
+
         const lockKey = `profile_consolidation_${entityId}`;
 
         return this.withLock(lockKey, async () => {
-            try {
-                const { forceReconsolidate = false, minFactsThreshold = 1, confidenceThreshold = 0.5 } = options;
+            return this.withPerformanceMonitoring('consolidateProfile', async () => {
+                try {
+                    // 使用配置中的默认值
+                    const {
+                        forceReconsolidate = false,
+                        minFactsThreshold = this.profileGenerationConfig.minFactsForUpdate,
+                        confidenceThreshold = this.profileGenerationConfig.confidenceThreshold,
+                    } = options;
 
-                // 1. 获取实体信息
-                const entity = await this.ctx.database
-                    .get(TableName.Entities, {
-                        id: entityId,
-                        isDeleted: false,
-                    })
-                    .then((res) => res[0]);
+                    // 1. 获取实体信息
+                    const entity = await this.ctx.database
+                        .get(TableName.Entities, {
+                            id: entityId,
+                            isDeleted: false,
+                        })
+                        .then((res) => res[0]);
 
-                if (!entity || entity.type !== EntityType.Person) {
-                    return { success: false, error: "实体不存在或不是人员类型" };
-                }
+                    if (!entity || entity.type !== EntityType.Person) {
+                        return { success: false, error: "实体不存在或不是人员类型" };
+                    }
 
-                // 2. 获取现有的 Profile
-                const existingProfile = await this.ctx.database
-                    .get(TableName.UserProfiles, { entityId })
-                    .then((res) => res[0]);
+                    // 2. 获取现有的 Profile
+                    const existingProfile = await this.ctx.database
+                        .get(TableName.UserProfiles, { entityId })
+                        .then((res) => res[0]);
 
-                // 3. 获取自上次更新以来，所有新的、未被整合的 Facts
-                const newFacts = await this.ctx.database.get(TableName.Facts, {
-                    relatedEntityIds: { $some: [entityId] },
-                    isDeleted: false,
-                });
+                    // 3. 检查更新频率限制
+                    if (existingProfile && !forceReconsolidate) {
+                        const hoursSinceLastUpdate = (Date.now() - existingProfile.updatedAt.getTime()) / (1000 * 60 * 60);
+                        if (hoursSinceLastUpdate < this.profileGenerationConfig.updateIntervalHours) {
+                            const userId = entity.metadata?.userId || entity.name;
+                            this.logger.info(`用户 ${userId} 的画像更新过于频繁，跳过。距离上次更新仅 ${hoursSinceLastUpdate.toFixed(1)} 小时`);
+                            return { success: true, data: existingProfile };
+                        }
+                    }
 
-                if (newFacts.length < minFactsThreshold && !forceReconsolidate) {
+                    // 4. 智能获取相关事实（增量更新或全量更新）
+                    const { relevantFacts, newFactsOnly } = await this.getRelevantFactsForProfile(entityId, existingProfile, forceReconsolidate);
+
+                    if (relevantFacts.length < minFactsThreshold && !forceReconsolidate) {
+                        const userId = entity.metadata?.userId || entity.name;
+                        this.logger.info(`用户 ${userId} 没有足够的相关事实需要整合，跳过。当前事实数: ${relevantFacts.length}`);
+                        return { success: true, data: existingProfile };
+                    }
+
+                    // 5. 构建 Prompt 输入，使用用户ID而不是用户名
                     const userId = entity.metadata?.userId || entity.name;
-                    this.logger.info(`用户 ${userId} 没有足够的新事实需要整合，跳过。`);
-                    return { success: true, data: existingProfile };
-                }
+                    const userName = entity.name || `User_${userId}`;
 
-                // 4. 构建 Prompt 输入，使用用户ID而不是用户名
-                const userId = entity.metadata?.userId || entity.name;
-                const userName = entity.name || `User_${userId}`;
+                    // 根据事实权重调整输入
+                    const weightedFacts = relevantFacts.map(fact => {
+                        const weight = this.calculateFactWeight(fact, existingProfile);
+                        const prefix = weight > 1 ? `[重要] ` : '';
+                        return `${prefix}[${fact.type}] ${fact.content}`;
+                    });
 
-                const inputForLLM = {
-                    userId: userId,
-                    userName: userName,
-                    existingProfile: existingProfile?.content || "This is a new profile for this user.",
-                    newFactsAndInsights: newFacts.map((f) => `[${f.type}] ${f.content}`),
-                };
+                    const inputForLLM = {
+                        userId: userId,
+                        userName: userName,
+                        existingProfile: existingProfile?.content || "This is a new profile for this user.",
+                        isIncrementalUpdate: newFactsOnly,
+                        factCount: relevantFacts.length,
+                        newFactsAndInsights: weightedFacts,
+                    };
 
-                // 将 inputForLLM 格式化并填入 PROFILE_CONSOLIDATION_PROMPT 模板
-                const systemPrompt = await this.promptService.render("memory.profile_consolidation");
+                    // 将 inputForLLM 格式化并填入 PROFILE_CONSOLIDATION_PROMPT 模板
+                    const systemPrompt = await this.promptService.render("memory.profile_consolidation");
 
-                const userPrompt = await this.promptService.renderRaw(`Input:
+                    const userPrompt = await this.promptService.renderRaw(`Input:
 Current Date: {{date.now}}
 User ID: "{{userId}}"
 User Name: "{{userName}}"
@@ -1152,58 +1607,68 @@ New Facts & Insights:
   {{.}}
 {{/newFactsAndInsights}}`, inputForLLM);
 
-                // 5. 调用 LLM
-                const response = await this.chatModel.chat({
-                    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-                    temperature: 0.2,
-                });
-
-                const parser = new JsonParser<any>();
-                const result = parser.parse(response.text);
-
-                if (result.error) {
-                    this.logger.error(`整合用户画像时出错: ${result.error}`);
-                    return { success: false, error: `LLM解析失败: ${result.error}` };
-                }
-
-                const { profile_content, confidence_score, key_facts_for_update } = result.data;
-
-                // 检查置信度阈值
-                if (confidence_score < confidenceThreshold) {
-                    this.logger.warn(`用户 ${userId} 的画像置信度过低 (${confidence_score})，跳过更新。`);
-                    return { success: true, data: existingProfile };
-                }
-
-                // 6. 更新数据库
-                const updatedProfileData = {
-                    entityId: entityId,
-                    content: profile_content,
-                    embedding: await this.embeddingModel.embed(profile_content).then((res) => res.embedding),
-                    confidence: confidence_score,
-                    supportingFactIds: [...(existingProfile?.supportingFactIds || []), ...newFacts.map((f) => f.id)],
-                    updatedAt: new Date(),
-                    version: (existingProfile?.version || 0) + 1,
-                };
-
-                // 使用 upsert 逻辑：如果profile存在则更新，不存在则创建
-                let updatedProfile: UserProfile;
-                if (existingProfile) {
-                    await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, updatedProfileData);
-                    updatedProfile = { ...existingProfile, ...updatedProfileData };
-                } else {
-                    updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
-                        id: uuidv4(),
-                        ...updatedProfileData,
-                        createdAt: new Date(),
+                    // 5. 调用 LLM
+                    const response = await this.chatModel.chat({
+                        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+                        temperature: 0.2,
                     });
-                }
 
-                this.logger.info(`成功为用户 ${userId} 整合并更新了人物画像。`);
-                return { success: true, data: updatedProfile };
-            } catch (error) {
-                this.logger.error(`整合用户画像失败: ${error.message}`, error);
-                return { success: false, error: error.message };
-            }
+                    const parser = new JsonParser<any>();
+                    const result = parser.parse(response.text);
+
+                    if (result.error) {
+                        this.logger.error(`整合用户画像时出错: ${result.error}`);
+                        return { success: false, error: `LLM解析失败: ${result.error}` };
+                    }
+
+                    const { profile_content, confidence_score, key_facts_for_update } = result.data;
+
+                    // 检查置信度阈值
+                    if (confidence_score < confidenceThreshold) {
+                        this.logger.warn(`用户 ${userId} 的画像置信度过低 (${confidence_score})，跳过更新。`);
+                        return { success: true, data: existingProfile };
+                    }
+
+                    // 6. 智能更新支持事实列表
+                    const updatedSupportingFactIds = this.updateSupportingFactIds(
+                        existingProfile?.supportingFactIds || [],
+                        relevantFacts,
+                        key_facts_for_update,
+                        newFactsOnly
+                    );
+
+                    // 7. 更新数据库
+                    const updatedProfileData = {
+                        entityId: entityId,
+                        content: profile_content,
+                        embedding: await this.embeddingModel.embed(profile_content).then((res) => res.embedding),
+                        confidence: confidence_score,
+                        supportingFactIds: updatedSupportingFactIds,
+                        updatedAt: new Date(),
+                        version: (existingProfile?.version || 0) + 1,
+                        keyFactsForUpdate: key_facts_for_update || [], // 保存关键事实用于下次增量更新
+                    };
+
+                    // 使用 upsert 逻辑：如果profile存在则更新，不存在则创建
+                    let updatedProfile: UserProfile;
+                    if (existingProfile) {
+                        await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, updatedProfileData);
+                        updatedProfile = { ...existingProfile, ...updatedProfileData };
+                    } else {
+                        updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
+                            id: uuidv4(),
+                            ...updatedProfileData,
+                            createdAt: new Date(),
+                        });
+                    }
+
+                    this.logger.info(`成功为用户 ${userId} 整合并更新了人物画像。`);
+                    return { success: true, data: updatedProfile };
+                } catch (error) {
+                    this.logger.error(`整合用户画像失败: ${error.message}`, error);
+                    return { success: false, error: error.message };
+                }
+            });
         });
     }
 
