@@ -1,6 +1,5 @@
 import { test, expect, describe, beforeEach, mock } from "bun:test";
-import { IRenderer } from "../renderer";
-import { PromptService } from "../service";
+import { IRenderer, PromptService } from "../src/services/prompt";
 import { Context } from "koishi";
 
 // Mock一个自定义渲染器，用于测试renderer的可替换性
