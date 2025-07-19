@@ -1,7 +1,7 @@
 ///<reference types="bun-types" />
 
 import { describe, expect, it } from "bun:test";
-import { embed } from "xsai";
+import { embed } from "@xsai/embed";
 
 (async () => {
     console.log(process.env.API_KEY_SILICON);

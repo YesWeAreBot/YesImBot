@@ -1,6 +1,6 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
+import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
 import { Context } from "koishi";
-import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "xsai";
 
 import { embed, embedMany } from "@/dependencies/xsai";
 import { truncate } from "@/shared/utils";

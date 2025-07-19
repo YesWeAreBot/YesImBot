@@ -1,5 +1,5 @@
+import type { ImagePart, Message, TextPart } from "@xsai/shared-chat";
 import { Context, h, Logger, Service, Session } from "koishi";
-import type { ImagePart, Message, TextPart } from "xsai";
 
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
