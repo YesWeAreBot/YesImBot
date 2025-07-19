@@ -77,13 +77,22 @@ export interface ExtractedFact {
     }[];
     type: FactType;
     salience: number; // 0-1
+    sourceMessageId: string;
 }
 
-/** 用户消息批处理单元 */
-export interface UserMessageBatch {
-    userId: string;
-    userName: string;
-    messages: { id: string; text: string; timestamp: number }[];
-    lastMessageTimestamp: number;
-    processingTimer: NodeJS.Timeout | null;
+export interface ExtractedInsight {
+    content: string;
+    relatedEntities: { name: string; type: string; metadata?: any }[];
+    type: "behavioral_pattern";
+    salience: number;
+    sourceMessageId: string;
+}
+
+export interface ConversationChunk {
+    messages: {
+        id: string;
+        author: { id: string; name: string };
+        text: string;
+        timestamp: Date;
+    }[];
 }

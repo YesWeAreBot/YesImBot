@@ -1,16 +1,25 @@
-import { Context, h, Service, Session, Time } from "koishi";
-import { v4 as uuidv4 } from "uuid";
-import path from "path";
 import fs from "fs/promises";
+import { Context, Service } from "koishi";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
 
 import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, loadTemplate, PromptService } from "@/services/prompt";
 import { Services, TableName } from "@/services/types";
-import { cosineSimilarity, formatDate, isEmpty, JsonParser } from "@/shared/utils";
-import { MemoryConfig } from "./config";
-import { Entity, EntityType, ExtractedFact, Fact, MemoryBlockData, UserMessageBatch, UserProfile } from "./types";
-import { MemoryBlock } from "./MemoryBlock";
 import { AppError, ErrorCodes } from "@/shared/errors";
+import { cosineSimilarity, JsonParser } from "@/shared/utils";
+import { MemoryConfig } from "./config";
+import { MemoryBlock } from "./MemoryBlock";
+import {
+    ConversationChunk,
+    Entity,
+    EntityType,
+    ExtractedFact,
+    ExtractedInsight,
+    Fact,
+    MemoryBlockData,
+    UserProfile,
+} from "./types";
 
 declare module "koishi" {
     interface Context {
@@ -43,9 +52,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     private readonly promptService: PromptService;
     private readonly chatModel: IChatModel;
     private readonly embeddingModel: IEmbedModel;
-    private readonly jsonParser = new JsonParser<{ facts: ExtractedFact[] }>();
-
-    private userMessageBatches: Map<string, UserMessageBatch> = new Map();
+    private readonly jsonParser = new JsonParser<{ facts: ExtractedFact[]; insights: ExtractedInsight[] }>();
 
     constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, Services.Memory, true);
@@ -68,21 +75,12 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         await this.discoverAndLoadCoreMemoryBlocks();
 
         // 监听消息事件以收集记忆素材
-        this.ctx.on("worldstate:segment-updated", (session) => {
-            if (session.author && !session.author.isBot) {
-                this.addMessageToBatch(session);
-            }
-        });
-
-        // 设置定时遗忘任务
-        const forgetInterval = this.config.forgetting.checkIntervalHours * Time.hour;
-        this.ctx.setInterval(() => this.decayAndForget(), forgetInterval);
+        this.ctx.on("worldstate:summary", (chunkForSummary) => this.handleSummaryChunk(chunkForSummary));
 
         this.logger.info("服务已启动，开始监听消息。");
     }
 
     protected async stop(): Promise<void> {
-        await this.processAllBatches(true);
         this.logger.info("服务已停止。");
     }
 
@@ -209,217 +207,115 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             });
         }
     }
-    private getCoreMemoryBlockOrThrow(label: string): MemoryBlock {
-        const block = this.coreMemoryBlocks.get(label);
-        if (!block) {
-            const available = Array.from(this.coreMemoryBlocks.keys()).join(", ") || "None";
-            this.logger.error(`核心记忆块 "${label}" 不存在。可用的有: [${available}]`);
-            throw new AppError(`核心记忆块 "${label}" 不存在`, {
-                code: ErrorCodes.RESOURCE.NOT_FOUND,
-                context: { resourceType: "MemoryBlock", resourceId: label, available },
-            });
-        }
-        return block;
-    }
 
     /**
-     * 将消息添加到用户的批处理队列中，并为该用户管理一个独立的批处理定时器。
-     * @param session Koishi 的会话对象
+     * 事件处理主入口：处理从 worldstate 发来的待归档对话片段。
+     * @param chunk 包含多用户消息的对话片段
      */
-    public addMessageToBatch(session: Session): void {
-        const allowedTypes = ["text", "at"];
-        const text = h
-            .parse(session.content)
-            .filter((e) => allowedTypes.includes(e.type))
-            .join("")
-            .trim();
-        if (isEmpty(text)) return;
-
-        const uid = session.uid;
-        let userBatch = this.userMessageBatches.get(uid);
-
-        // 如果是该用户的第一条消息（在当前批处理周期内），则创建新的批次对象
-        if (!userBatch) {
-            userBatch = {
-                userId: session.author.id,
-                userName: session.author.name,
-                messages: [],
-                lastMessageTimestamp: 0,
-                processingTimer: null, // 初始化定时器为 null
-            };
-            this.userMessageBatches.set(uid, userBatch);
-        }
-
-        // 关键：如果该用户已有一个等待中的定时器，先清除它。
-        // 因为新消息的到来意味着用户仍在活跃，需要重置等待时间。
-        if (userBatch.processingTimer) {
-            clearTimeout(userBatch.processingTimer);
-        }
-
-        // 添加新消息并更新时间戳
-        userBatch.messages.push({ id: session.messageId, text, timestamp: session.timestamp });
-        userBatch.lastMessageTimestamp = Date.now();
-
-        // 检查是否达到批处理大小上限，如果达到则立即处理
-        if (userBatch.messages.length >= this.config.batching.maxSize) {
-            /* prettier-ignore */
-            this.logger.info(`用户 ${userBatch.userName} 的消息达到批处理上限 (${this.config.batching.maxSize})，立即处理...`);
-
-            // 从 Map 中移除，防止重复处理
-            this.userMessageBatches.delete(uid);
-            // 异步处理，不阻塞当前流程
-            this.processBatchForUser(userBatch);
-        } else {
-            // 如果未达到上限，则为该用户设置一个新的定时器
-            userBatch.processingTimer = setTimeout(() => {
-                // 定时器触发时，再次从 Map 中获取最新的 batch 数据，以防万一
-                const batchToProcess = this.userMessageBatches.get(uid);
-                if (batchToProcess) {
-                    this.logger.info(`用户 ${batchToProcess.userName} 的消息等待超时，开始处理批次...`);
-                    // 从 Map 中移除，准备处理
-                    this.userMessageBatches.delete(uid);
-                    // 执行处理
-                    this.processBatchForUser(batchToProcess);
-                }
-            }, this.config.batching.maxWaitTime * 1000);
-        }
-    }
-
-    /**
-     * 处理单个用户的消息批次。
-     * @param userBatch 要处理的用户消息批次对象
-     */
-    private async processBatchForUser(userBatch: UserMessageBatch): Promise<void> {
-        // 确保传入的批次对象和其定时器（如果有）都被清理
-        if (userBatch.processingTimer) {
-            clearTimeout(userBatch.processingTimer);
-            userBatch.processingTimer = null; // 清理引用
-        }
-
-        if (!userBatch || userBatch.messages.length === 0) {
-            return;
-        }
-
-        this.logger.info(`正在为用户 ${userBatch.userName} 处理 ${userBatch.messages.length} 条消息...`);
-
+    private async handleSummaryChunk(chunk: string): Promise<void> {
         try {
-            const extractedFacts = await this.extractFactsFromBatch(userBatch);
-            this.logger.info(`从 ${userBatch.userName} 的消息中提取到 ${extractedFacts.length} 条事实。`);
+            // 1. 调用LLM，一次性提取出所有事实和洞察
+            const { facts, insights } = await this.extractFromChunk(chunk);
+            this.logger.info(`从 chunk 中提取到 ${facts.length} 条事实和 ${insights.length} 条洞察。`);
 
-            if (!extractedFacts || extractedFacts.length === 0) {
+            if (facts.length === 0 && insights.length === 0) {
                 return;
             }
 
-            // 1. 将消息发送者本人首先处理为一个实体，这是所有事实都必然关联的实体。
-            //    这是一个优化，避免在循环中重复获取作者实体。
-            const authorEntity = await this.addOrGetEntity(userBatch.userName, EntityType.Person, {
-                imUserId: userBatch.userId,
-            });
+            // 2. 将事实和洞察合并，并统一处理
+            const allMemories = [
+                ...facts.map((f) => ({ ...f, memoryType: "fact" })),
+                ...insights.map((i) => ({ ...i, memoryType: "insight" })),
+            ];
 
-            // 2. 遍历所有提取出的事实，并逐一存入数据库
-            for (const extractedFact of extractedFacts) {
-                try {
-                    // 使用 Set 来确保每个实体ID只被记录一次
-                    const entityIdSet = new Set<string>();
-                    entityIdSet.add(authorEntity.id);
-
-                    // 3. 并行处理事实中提到的所有相关实体
-                    if (extractedFact.relatedEntities && extractedFact.relatedEntities.length > 0) {
-                        const relatedEntityPromises = extractedFact.relatedEntities.map((e) =>
-                            this.addOrGetEntity(e.name, e.type || EntityType.Unknown)
-                        );
-                        const relatedEntities = await Promise.all(relatedEntityPromises);
-                        relatedEntities.forEach((entity) => entityIdSet.add(entity.id));
-                    }
-
-                    // 4. 组装最终要存入数据库的事实数据
-                    const factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount"> = {
-                        content: extractedFact.content,
-                        relatedEntityIds: Array.from(entityIdSet), // 从 Set 转换为数组
-                        type: extractedFact.type,
-                        salience: extractedFact.salience,
-                        // 将事实与批次中的最后一条消息关联，便于追溯
-                        sourceMessageId: userBatch.messages[userBatch.messages.length - 1]?.id,
-                    };
-
-                    // 5. 调用服务自身的方法来添加事实，该方法会处理向量化和数据库写入
-                    await this.addFact(factData);
-                    this.logger.debug(`成功存储事实: "${factData.content}"`);
-                } catch (factError) {
-                    this.logger.error(`存储单条事实时出错: "${extractedFact.content}"`, factError);
-                    // 继续处理下一条事实，不中断整个批次
-                }
+            // 3. 遍历并存储每一条记忆（无论是事实还是洞察）
+            for (const memory of allMemories) {
+                await this.storeMemory(memory);
             }
-        } catch (batchError) {
-            this.logger.error(`处理用户 ${userBatch.userName} 的消息批次时出错:`, batchError);
+
+            this.logger.info(`成功处理并存储了 ${allMemories.length} 条新记忆。`);
+        } catch (error) {
+            this.logger.error("处理 summary chunk 时出错:", error);
         }
     }
 
     /**
-     * 处理所有当前待处理的消息批次。通常在服务停止时调用。
-     * @param isShutdown - 标记是否为服务关闭前的强制执行
+     * 调用LLM从对话片段中提取事实和洞察。
+     * @param chunk 对话片段
+     * @returns 提取出的事实和洞察对象
      */
-    public async processAllBatches(isShutdown: boolean = false): Promise<void> {
-        if (this.userMessageBatches.size === 0) return;
+    private async extractFromChunk(chunk: string): Promise<{ facts: ExtractedFact[]; insights: ExtractedInsight[] }> {
+        const systemPrompt = await this.promptService.render("memory.fact_extraction");
 
-        if (isShutdown) {
-            this.logger.info(`服务正在停止，强制处理所有 ${this.userMessageBatches.size} 个待处理的消息批次...`);
-        } else {
-            this.logger.warn(`processAllBatches 被调用（非关闭情况），处理 ${this.userMessageBatches.size} 个批次...`);
+        const userPrompt = await this.promptService.renderRaw(`Input:\n{{conversationText}}`, {
+            conversationText: chunk,
+        });
+
+        const { text } = await this.chatModel.chat([
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+        ]);
+
+        const parsedResponse = this.jsonParser.parse(text);
+        if (parsedResponse.error || !parsedResponse.data) {
+            this.logger.error("解析LLM响应失败:", parsedResponse.error);
+            return { facts: [], insights: [] };
         }
 
-        const batchSnapshot = new Map(this.userMessageBatches);
-        this.userMessageBatches.clear(); // 清空主 Map，防止新消息干扰
+        let { facts, insights } = parsedResponse.data;
 
-        const processingTasks: Promise<void>[] = [];
-        for (const batch of batchSnapshot.values()) {
-            // 清除所有定时器，因为我们要立即处理它们
-            if (batch.processingTimer) {
-                clearTimeout(batch.processingTimer);
-            }
-            processingTasks.push(this.processBatchForUser(batch));
+        if (!Array.isArray(facts)) {
+            facts = [];
+        }
+        if (!Array.isArray(insights)) {
+            insights = [];
         }
 
-        await Promise.all(processingTasks);
-        this.logger.info("所有批处理任务已完成。");
+        // 严谨的返回结构校验
+        // const facts = parsedResponse?.facts && Array.isArray(parsedResponse.facts) ? parsedResponse.facts : [];
+        // const insights =
+        //     parsedResponse?.insights && Array.isArray(parsedResponse.insights) ? parsedResponse.insights : [];
+
+        return { facts, insights };
     }
 
-    private async extractFactsFromBatch(batch: UserMessageBatch): Promise<ExtractedFact[]> {
-        if (batch.messages.length === 0) {
-            return [];
-        }
-
-        const conversation = batch.messages
-            .map((m) => `[${m.id}|${formatDate(m.timestamp, "HH:mm:ss")}|${batch.userName}(${batch.userId})] ${m.text}`)
-            .join("\n");
-
-        const systemPrompt = await this.promptService.render("memory.fact_extraction", { userName: batch.userName });
-
-        const userPrompt = await this.promptService.renderRaw(`Input:\n{{conversation}}`, { conversation });
-
+    /**
+     * 存储单条记忆（事实或洞察）到数据库。
+     * @param memoryData 从LLM提取并带有元数据的一条记忆
+     */
+    private async storeMemory(memoryData: ExtractedFact | ExtractedInsight): Promise<void> {
         try {
-            const response = await this.chatModel.chat([
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userPrompt },
-            ]);
-
-            const parsedResponse = this.jsonParser.parse(response.text);
-
-            if (parsedResponse.error) {
-                console.warn("Error parsing LLM response:", parsedResponse.error);
-                return [];
+            // 1. 确保所有相关的实体都已存在于数据库中
+            const entityIdSet = new Set<string>();
+            if (memoryData.relatedEntities && memoryData.relatedEntities.length > 0) {
+                const entityPromises = memoryData.relatedEntities.map((e) =>
+                    this.addOrGetEntity(e.name, e.type || EntityType.Unknown, e.metadata)
+                );
+                const entities = await Promise.all(entityPromises);
+                entities.forEach((entity) => entityIdSet.add(entity.id));
             }
 
-            console.log("LLM response:", parsedResponse.data);
-
-            if (parsedResponse && Array.isArray(parsedResponse.data.facts)) {
-                return parsedResponse.data.facts as ExtractedFact[];
+            // 如果没有任何关联实体，这条记忆是无用的，可以跳过
+            if (entityIdSet.size === 0) {
+                this.logger.warn(`跳过一条没有关联任何实体的记忆: "${memoryData.content}"`);
+                return;
             }
-            console.warn('LLM did not return a valid "facts" array:', parsedResponse);
-            return [];
+
+            // 2. 组装最终要存入数据库的事实数据
+            const factToStore: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount"> = {
+                content: memoryData.content,
+                relatedEntityIds: Array.from(entityIdSet),
+                //@ts-ignore
+                type: memoryData.type === "insight" ? "behavioral_pattern" : memoryData.type || "statement",
+                salience: memoryData.salience || 0.5,
+                sourceMessageId: memoryData.sourceMessageId,
+            };
+
+            // 3. 调用服务添加事实，这会处理向量化和数据库写入
+            await this.addFact(factToStore);
+            this.logger.debug(`成功存储记忆: "${factToStore.content}"`);
         } catch (error) {
-            console.error("Error during fact extraction from LLM:", error);
-            return [];
+            this.logger.error(`存储单条记忆时出错: "${memoryData.content}"`, error);
         }
     }
 

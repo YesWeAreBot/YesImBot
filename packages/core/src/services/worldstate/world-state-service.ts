@@ -35,6 +35,12 @@ declare module "koishi" {
          * @param sid 更新后的对话片段的ID
          */
         "worldstate:segment-updated"(session: Session, sid: string): void;
+
+        /**
+         * 当需要进行对话总结时触发
+         * @param chunk_for_summary 待总结的对话内容
+         */
+        "worldstate:summary"(chunk_for_summary: string);
     }
 }
 
@@ -1269,6 +1275,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             return;
         }
 
+        this.ctx.emit("worldstate:summary", newMessagesText);
+
         const bot = this.ctx.bots.find((b) => b.platform === platform);
         if (!bot) {
             this._logger.error(`未找到 ${platform} 平台的机器人实例，无法进行总结 | 频道: ${channelId}`);
@@ -1277,11 +1285,14 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 4. 构建模型所需的 Prompt
         const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
-        const prompt = await this.buildSummarizationPrompt(
+
+        const renderContext = {
             aiIdentity,
-            previousSummarySegment?.summary,
-            newMessagesText
-        );
+            previousSummary: previousSummarySegment?.summary,
+            newMessages: newMessagesText,
+        };
+
+        const prompt = await this.promptService.render("worldstate.summarization", renderContext);
 
         // 5. 调用模型生成新总结
         const summaryResponse = await this.chatModel.chat([{ role: "user", content: prompt }]).catch((e) => {
@@ -1336,9 +1347,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             }
         });
 
-        this._logger.info(
-            `[滚动总结] 成功 | 频道: ${channelId} | 新总结ID: ${newSummarySegment.id} | 归档了 ${idsToArchive.length} 个旧片段。`
-        );
+        /* prettier-ignore */
+        this._logger.info(`[滚动总结] 成功 | 频道: ${channelId} | 新总结ID: ${newSummarySegment.id} | 归档了 ${idsToArchive.length} 个旧片段。`);
     }
 
     /**
