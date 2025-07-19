@@ -200,7 +200,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         await this.discoverAndLoadCoreMemoryBlocks();
 
         // 监听消息事件以收集记忆素材
-        this.ctx.on("worldstate:summary", (foldedSegments) => this.handleSummaryChunk(foldedSegments));
+        this.ctx.on("worldstate:summary", (aiIdentity, foldedSegments) =>
+            this.handleSummaryChunk(aiIdentity, foldedSegments)
+        );
 
         // 启动定期维护任务
         this.startMaintenanceTasks();
@@ -288,7 +290,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 embedding: "array",
                 createdAt: "timestamp",
                 updatedAt: "timestamp",
-                isDeleted: "boolean",
+                isDeleted: { type: "boolean", initial: false },
             },
             { primary: "id" }
         );
@@ -307,7 +309,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 lastAccessedAt: "timestamp",
                 accessCount: "integer",
                 confidence: "float",
-                isDeleted: "boolean",
+                isDeleted: { type: "boolean", initial: false },
                 updatedAt: "timestamp",
             },
             { primary: "id" }
@@ -325,7 +327,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 updatedAt: "timestamp",
                 createdAt: "timestamp",
                 version: "integer",
-                isDeleted: "boolean",
+                isDeleted: { type: "boolean", initial: false },
                 tags: "array",
             },
             { primary: "id", unique: [["entityId"]] }
@@ -480,7 +482,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * 事件处理主入口：处理从 worldstate 发来的待归档对话片段。
      * @param chunk 包含多用户消息的对话片段
      */
-    private async handleSummaryChunk(foldedSegments: DialogueSegmentData[]): Promise<void> {
+    private async handleSummaryChunk(aiIdentity: string, foldedSegments: DialogueSegmentData[]): Promise<void> {
         const chunk = await this.renderSegmentsToText(foldedSegments);
 
         if (!chunk) {
@@ -495,7 +497,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         try {
             await this.withLock(lockKey, async () => {
                 // 1. 调用LLM，一次性提取出所有事实和洞察
-                const { facts, insights } = await this.extractFromChunk(chunk);
+                const { facts, insights } = await this.extractFromChunk(aiIdentity, chunk);
                 this.logger.info(`从 chunk 中提取到 ${facts.length} 条事实和 ${insights.length} 条洞察。`);
 
                 if (facts.length === 0 && insights.length === 0) {
@@ -509,8 +511,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 ];
 
                 // 3. 遍历并存储每一条记忆（无论是事实还是洞察）
-                const storePromises = allMemories.map((memory) => this.storeMemory(memory));
-                await Promise.allSettled(storePromises);
+                for (const memory of allMemories) {
+                    await this.storeMemory(memory);
+                }
 
                 this.logger.info(`成功处理并存储了 ${allMemories.length} 条新记忆。`);
             });
@@ -524,12 +527,19 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * @param chunk 对话片段
      * @returns 提取出的事实和洞察对象
      */
-    private async extractFromChunk(chunk: string): Promise<{ facts: ExtractedFact[]; insights: ExtractedInsight[] }> {
+    private async extractFromChunk(
+        aiIdentity: string,
+        chunk: string
+    ): Promise<{ facts: ExtractedFact[]; insights: ExtractedInsight[] }> {
         const systemPrompt = await this.promptService.render("memory.fact_extraction");
 
-        const userPrompt = await this.promptService.renderRaw(`Input:\n{{conversationText}}`, {
-            conversationText: chunk,
-        });
+        const userPrompt = await this.promptService.renderRaw(
+            "[AI_IDENTITY]\n{{ aiIdentity }}\n\nInput:\n{{ conversationText }}",
+            {
+                aiIdentity,
+                conversationText: chunk,
+            }
+        );
 
         const { text } = await this.chatModel.chat({
             messages: [
@@ -566,15 +576,15 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             // 1. 确保所有相关的实体都已存在于数据库中
             const entityIdSet = new Set<string>();
             if (memoryData.relatedEntities && memoryData.relatedEntities.length > 0) {
-                const entityPromises = memoryData.relatedEntities.map((entity) =>
-                    this.addOrGetEntity(entity.name, entity.type || EntityType.Unknown, entity.metadata)
-                );
-                const entityResults = await Promise.all(entityPromises);
-                entityResults.forEach((result) => {
+                // 顺序执行，避免并发问题
+                for (const entity of memoryData.relatedEntities) {
+                    /* prettier-ignore */
+                    //@ts-ignore
+                    const result = await this.addOrGetEntity(entity.name, entity.type || EntityType.Unknown, entity.metadata);
                     if (result.success && result.data) {
                         entityIdSet.add(result.data.id);
                     }
-                });
+                }
             }
 
             // 如果没有任何关联实体，这条记忆是无用的，可以跳过
@@ -665,7 +675,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 // 首先尝试通过 metadata.userId 查找现有实体
                 const existingEntities = await this.ctx.database.get(TableName.Entities, {
                     type: EntityType.Person,
-                    isDeleted: { $ne: true },
+                    isDeleted: false,
                 });
 
                 const existingEntity = existingEntities.find((entity) => entity.metadata?.userId === userId);

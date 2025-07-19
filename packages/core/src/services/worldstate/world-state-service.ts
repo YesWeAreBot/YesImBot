@@ -39,7 +39,7 @@ declare module "koishi" {
         /**
          * 当需要进行对话总结时触发
          */
-        "worldstate:summary"(foldedSegments: DialogueSegmentData[]): void;
+        "worldstate:summary"(aiIdentity: string, foldedSegments: DialogueSegmentData[]): void;
     }
 }
 
@@ -1255,6 +1255,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             return;
         }
 
+        this.summarizingChannels.add(`${platform}:${channelId}`);
+
         this._logger.info(`开始处理滚动总结 | 频道: ${platform}:${channelId}`);
 
         // 步骤 1: 获取所有待总结的 'folded' 片段
@@ -1265,6 +1267,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         if (foldedSegments.length < this.config.summarizationTriggerCount) {
             /* prettier-ignore */
             this._logger.debug(`片段数量 (${foldedSegments.length}) 未达阈值 (${this.config.summarizationTriggerCount})，跳过 | 频道: ${channelId}`);
+
+            this.summarizingChannels.delete(`${platform}:${channelId}`);
             return;
         }
 
@@ -1282,19 +1286,21 @@ export class WorldStateService extends Service<HistoryConfig> {
                 { id: { $in: foldedSegments.map((s) => s.id) } },
                 { status: SegmentStatus.Archived }
             );
+            this.summarizingChannels.delete(`${platform}:${channelId}`);
             return;
         }
-
-        this.ctx.emit("worldstate:summary", foldedSegments);
 
         const bot = this.ctx.bots.find((b) => b.platform === platform);
         if (!bot) {
             this._logger.error(`未找到 ${platform} 平台的机器人实例，无法进行总结 | 频道: ${channelId}`);
+            this.summarizingChannels.delete(`${platform}:${channelId}`);
             return;
         }
 
         // 4. 构建模型所需的 Prompt
         const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
+
+        this.ctx.emit("worldstate:summary", aiIdentity, foldedSegments);
 
         const renderContext = {
             aiIdentity,
@@ -1329,6 +1335,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 { id: { $in: idsToArchive } },
                 { status: SegmentStatus.Archived }
             );
+            this.summarizingChannels.delete(`${platform}:${channelId}`);
             return;
         }
 
@@ -1361,6 +1368,8 @@ export class WorldStateService extends Service<HistoryConfig> {
                 );
             }
         });
+
+        this.summarizingChannels.delete(`${platform}:${channelId}`);
 
         /* prettier-ignore */
         this._logger.info(`[滚动总结] 成功 | 频道: ${channelId} | 新总结ID: ${newSummarySegment.id} | 归档了 ${idsToArchive.length} 个旧片段。`);
