@@ -350,7 +350,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const abortController = new AbortController();
         const timeout = setTimeout(() => abortController.abort(), this.config.timeout * 1000);
 
-        const llmRawResponse = await chatModel.chat(messages, {
+        const llmRawResponse = await chatModel.chat({
+            messages,
             abortSignal: abortController.signal,
             onStreamStart: () => clearTimeout(timeout),
         });

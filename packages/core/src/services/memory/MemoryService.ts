@@ -1,13 +1,14 @@
 import fs from "fs/promises";
-import { Context, Service } from "koishi";
+import { Context, h, Service } from "koishi";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, loadTemplate, PromptService } from "@/services/prompt";
 import { Services, TableName } from "@/services/types";
+import { DialogueSegmentData, MemberData, MessageData } from "@/services/worldstate";
 import { AppError, ErrorCodes } from "@/shared/errors";
-import { cosineSimilarity, hashString, JsonParser } from "@/shared/utils";
+import { cosineSimilarity, formatDate, hashString, JsonParser } from "@/shared/utils";
 import { MemoryConfig } from "./config";
 import { MemoryBlock } from "./MemoryBlock";
 import {
@@ -21,7 +22,7 @@ import {
     MemoryOperationResult,
     ProfileConsolidationOptions,
     SearchOptions,
-    UserProfile
+    UserProfile,
 } from "./types";
 
 declare module "koishi" {
@@ -69,7 +70,11 @@ export interface IMemoryService {
      * @param metadata 实体元数据
      * @returns 实体对象
      */
-    addOrGetEntity(name: string, type: EntityType, metadata?: Record<string, any>): Promise<MemoryOperationResult<Entity>>;
+    addOrGetEntity(
+        name: string,
+        type: EntityType,
+        metadata?: Record<string, any>
+    ): Promise<MemoryOperationResult<Entity>>;
 
     /**
      * 根据用户ID获取或创建用户实体
@@ -101,7 +106,9 @@ export interface IMemoryService {
      * @param factData 事实数据
      * @returns 创建的事实
      */
-    addFact(factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<MemoryOperationResult<Fact>>;
+    addFact(
+        factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">
+    ): Promise<MemoryOperationResult<Fact>>;
 
     /**
      * 搜索事实
@@ -132,7 +139,10 @@ export interface IMemoryService {
      * @param options 整合选项
      * @returns 更新后的用户画像
      */
-    consolidateProfile(entityId: string, options?: ProfileConsolidationOptions): Promise<MemoryOperationResult<UserProfile | null>>;
+    consolidateProfile(
+        entityId: string,
+        options?: ProfileConsolidationOptions
+    ): Promise<MemoryOperationResult<UserProfile | null>>;
 
     // === 维护操作 ===
     /**
@@ -190,7 +200,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         await this.discoverAndLoadCoreMemoryBlocks();
 
         // 监听消息事件以收集记忆素材
-        this.ctx.on("worldstate:summary", (chunkForSummary) => this.handleSummaryChunk(chunkForSummary));
+        this.ctx.on("worldstate:summary", (foldedSegments) => this.handleSummaryChunk(foldedSegments));
 
         // 启动定期维护任务
         this.startMaintenanceTasks();
@@ -211,8 +221,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         const maxWaitTime = 30000; // 30秒
         const startTime = Date.now();
 
-        while (this.activeOperations > 0 && (Date.now() - startTime) < maxWaitTime) {
-            await new Promise(resolve => setTimeout(resolve, 100));
+        while (this.activeOperations > 0 && Date.now() - startTime < maxWaitTime) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
         if (this.activeOperations > 0) {
@@ -259,7 +269,6 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             if (dedupeResult.success) {
                 this.logger.info("维护任务：实体去重检查完成");
             }
-
         } catch (error) {
             this.logger.error("维护任务执行失败:", error);
         }
@@ -418,11 +427,67 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
+    private async renderSegmentsToText(segments: DialogueSegmentData[]): Promise<string> {
+        if (!segments || segments.length === 0) return "";
+
+        const segmentIds = segments.map((segment) => segment.id);
+
+        // 1. 一次性获取所有相关消息和系统事件，并按时间排序
+        const allMessages = await this.ctx.database
+            .select(TableName.Messages)
+            .where({ sid: { $in: segmentIds } })
+            .orderBy("timestamp", "asc")
+            .execute();
+
+        if (allMessages.length === 0) return "";
+
+        // 2. 收集所有唯一的发送者ID，仅从消息中收集
+        const senderIds = [...new Set(allMessages.map((msg) => msg.sender.id))];
+        const membersMap = new Map<string, MemberData>();
+        if (senderIds.length > 0) {
+            const membersData = await this.ctx.database.get(TableName.Members, {
+                platform: segments[0].platform,
+                pid: { $in: senderIds },
+            });
+            membersData.forEach((member) => membersMap.set(member.pid, member));
+        }
+
+        // 3. 格式化为文本
+        const dialogueLines = allMessages
+            .map((item) => {
+                const timestampStr = formatDate(item.timestamp, "HH:mm:ss");
+
+                const allowedTypes = ["text", "at"];
+
+                const msg = item as MessageData;
+                const member = membersMap.get(msg.sender.id);
+                const senderName = member?.name || msg.sender.name || msg.sender.id;
+                const contentText = h
+                    .parse(msg.content)
+                    .filter((el) => allowedTypes.includes(el.type))
+                    .map((el) => el.toString())
+                    .join("")
+                    .trim();
+                if (!contentText) return null;
+                return `[${msg.id}|${timestampStr}|${senderName}(${msg.sender.id})] ${contentText.replace(/\n/g, " ")}`;
+            })
+            .filter(Boolean);
+
+        return dialogueLines.join("\n");
+    }
+
     /**
      * 事件处理主入口：处理从 worldstate 发来的待归档对话片段。
      * @param chunk 包含多用户消息的对话片段
      */
-    private async handleSummaryChunk(chunk: string): Promise<void> {
+    private async handleSummaryChunk(foldedSegments: DialogueSegmentData[]): Promise<void> {
+        const chunk = await this.renderSegmentsToText(foldedSegments);
+
+        if (!chunk) {
+            this.logger.warn("无法为 folded segments 渲染文本，跳过处理。");
+            return;
+        }
+
         // 使用锁防止并发处理相同的chunk
         const chunkHash = hashString(chunk);
         const lockKey = `chunk_${chunkHash}`;
@@ -444,7 +509,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 ];
 
                 // 3. 遍历并存储每一条记忆（无论是事实还是洞察）
-                const storePromises = allMemories.map(memory => this.storeMemory(memory));
+                const storePromises = allMemories.map((memory) => this.storeMemory(memory));
                 await Promise.allSettled(storePromises);
 
                 this.logger.info(`成功处理并存储了 ${allMemories.length} 条新记忆。`);
@@ -466,10 +531,13 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             conversationText: chunk,
         });
 
-        const { text } = await this.chatModel.chat([
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-        ]);
+        const { text } = await this.chatModel.chat({
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+            ],
+            temperature: 0.2,
+        });
 
         const parsedResponse = this.jsonParser.parse(text);
         if (parsedResponse.error || !parsedResponse.data) {
@@ -539,7 +607,11 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     // #region IMemoryService 接口实现
     // =================================================================================
 
-    async addOrGetEntity(name: string, type: EntityType, metadata: Record<string, any> = {}): Promise<MemoryOperationResult<Entity>> {
+    async addOrGetEntity(
+        name: string,
+        type: EntityType,
+        metadata: Record<string, any> = {}
+    ): Promise<MemoryOperationResult<Entity>> {
         try {
             // 对于人员类型的实体，如果提供了 userId，优先通过 userId 查找
             if (type === EntityType.Person && metadata.userId) {
@@ -553,10 +625,14 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 // 如果找到现有实体，更新其元数据（合并新的元数据）
                 if (Object.keys(metadata).length > 0) {
                     const updatedMetadata = { ...existingEntity.metadata, ...metadata };
-                    await this.ctx.database.set(TableName.Entities, { id: existingEntity.id }, {
-                        metadata: updatedMetadata,
-                        updatedAt: new Date()
-                    });
+                    await this.ctx.database.set(
+                        TableName.Entities,
+                        { id: existingEntity.id },
+                        {
+                            metadata: updatedMetadata,
+                            updatedAt: new Date(),
+                        }
+                    );
                     return { success: true, data: { ...existingEntity, metadata: updatedMetadata } };
                 }
                 return { success: true, data: existingEntity };
@@ -578,7 +654,10 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    async getOrCreateUserEntity(userId: string, metadata: Record<string, any> = {}): Promise<MemoryOperationResult<Entity>> {
+    async getOrCreateUserEntity(
+        userId: string,
+        metadata: Record<string, any> = {}
+    ): Promise<MemoryOperationResult<Entity>> {
         const lockKey = `user_entity_${userId}`;
 
         return this.withLock(lockKey, async () => {
@@ -586,21 +665,23 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 // 首先尝试通过 metadata.userId 查找现有实体
                 const existingEntities = await this.ctx.database.get(TableName.Entities, {
                     type: EntityType.Person,
-                    isDeleted: { $ne: true }
+                    isDeleted: { $ne: true },
                 });
 
-                const existingEntity = existingEntities.find(entity =>
-                    entity.metadata?.userId === userId
-                );
+                const existingEntity = existingEntities.find((entity) => entity.metadata?.userId === userId);
 
                 if (existingEntity) {
                     // 如果找到现有实体，更新其元数据（如果有新信息）
                     if (Object.keys(metadata).length > 0) {
                         const updatedMetadata = { ...existingEntity.metadata, ...metadata };
-                        await this.ctx.database.set(TableName.Entities, { id: existingEntity.id }, {
-                            metadata: updatedMetadata,
-                            updatedAt: new Date()
-                        });
+                        await this.ctx.database.set(
+                            TableName.Entities,
+                            { id: existingEntity.id },
+                            {
+                                metadata: updatedMetadata,
+                                updatedAt: new Date(),
+                            }
+                        );
                         return { success: true, data: { ...existingEntity, metadata: updatedMetadata } };
                     }
                     return { success: true, data: existingEntity };
@@ -646,16 +727,20 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 if (entity.metadata.nick && entity.metadata.nick !== entity.name) {
                     contextParts.push(`昵称: ${entity.metadata.nick}`);
                 }
-                embeddingText = contextParts.join(' ');
+                embeddingText = contextParts.join(" ");
             }
 
-            const embedding = await this.embeddingModel.embed(embeddingText).then(res => res.embedding);
+            const embedding = await this.embeddingModel.embed(embeddingText).then((res) => res.embedding);
 
             // 更新数据库中的实体
-            await this.ctx.database.set(TableName.Entities, { id: entity.id }, {
-                embedding,
-                updatedAt: new Date()
-            });
+            await this.ctx.database.set(
+                TableName.Entities,
+                { id: entity.id },
+                {
+                    embedding,
+                    updatedAt: new Date(),
+                }
+            );
 
             const updatedEntity = { ...entity, embedding, updatedAt: new Date() };
             return { success: true, data: updatedEntity };
@@ -665,7 +750,10 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    async findSimilarEntities(entity: Entity, options: EntityMergeOptions = {}): Promise<MemoryOperationResult<Entity[]>> {
+    async findSimilarEntities(
+        entity: Entity,
+        options: EntityMergeOptions = {}
+    ): Promise<MemoryOperationResult<Entity[]>> {
         try {
             const { similarityThreshold = 0.8 } = options;
 
@@ -687,7 +775,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             const sameTypeEntities = await this.ctx.database.get(TableName.Entities, {
                 type: entity.type,
                 id: { $ne: entity.id }, // 排除自己
-                isDeleted: { $ne: true }
+                isDeleted: { $ne: true },
             });
 
             const similarEntities: Entity[] = [];
@@ -706,7 +794,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
                 const similarity = cosineSimilarity(targetEntity.embedding!, otherEntityWithEmbedding.embedding!);
                 if (similarity >= similarityThreshold) {
-                    similarEntities.push({ ...otherEntityWithEmbedding, similarity } as Entity & { similarity: number });
+                    similarEntities.push({ ...otherEntityWithEmbedding, similarity } as Entity & {
+                        similarity: number;
+                    });
                 }
             }
 
@@ -732,30 +822,42 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
             // 更新所有引用源实体的事实
             const factsToUpdate = await this.ctx.database.get(TableName.Facts, {
-                relatedEntityIds: { $some: [sourceEntityId] }
+                relatedEntityIds: { $some: [sourceEntityId] },
             });
 
             for (const fact of factsToUpdate) {
-                const updatedEntityIds = fact.relatedEntityIds.map(id =>
+                const updatedEntityIds = fact.relatedEntityIds.map((id) =>
                     id === sourceEntityId ? targetEntityId : id
                 );
-                await this.ctx.database.set(TableName.Facts, { id: fact.id }, {
-                    relatedEntityIds: updatedEntityIds
-                });
+                await this.ctx.database.set(
+                    TableName.Facts,
+                    { id: fact.id },
+                    {
+                        relatedEntityIds: updatedEntityIds,
+                    }
+                );
             }
 
             // 合并元数据
             const mergedMetadata = { ...sourceEntity.metadata, ...targetEntity.metadata };
-            await this.ctx.database.set(TableName.Entities, { id: targetEntityId }, {
-                metadata: mergedMetadata,
-                updatedAt: new Date()
-            });
+            await this.ctx.database.set(
+                TableName.Entities,
+                { id: targetEntityId },
+                {
+                    metadata: mergedMetadata,
+                    updatedAt: new Date(),
+                }
+            );
 
             // 软删除源实体
-            await this.ctx.database.set(TableName.Entities, { id: sourceEntityId }, {
-                isDeleted: true,
-                updatedAt: new Date()
-            });
+            await this.ctx.database.set(
+                TableName.Entities,
+                { id: sourceEntityId },
+                {
+                    isDeleted: true,
+                    updatedAt: new Date(),
+                }
+            );
 
             const [updatedEntity] = await this.ctx.database.get(TableName.Entities, { id: targetEntityId });
             return { success: true, data: updatedEntity };
@@ -765,7 +867,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    async addFact(factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<MemoryOperationResult<Fact>> {
+    async addFact(
+        factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">
+    ): Promise<MemoryOperationResult<Fact>> {
         try {
             if (!this.embeddingModel) {
                 return { success: false, error: "嵌入模型不可用，无法创建事实。" };
@@ -797,10 +901,14 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 return { success: false, error: "事实不存在" };
             }
 
-            await this.ctx.database.set(TableName.Facts, { id: factId }, {
-                lastAccessedAt: new Date(),
-                accessCount: fact.accessCount + 1
-            });
+            await this.ctx.database.set(
+                TableName.Facts,
+                { id: factId },
+                {
+                    lastAccessedAt: new Date(),
+                    accessCount: fact.accessCount + 1,
+                }
+            );
             return { success: true };
         } catch (error) {
             this.logger.error(`更新事实访问信息失败: ${error.message}`, error);
@@ -815,7 +923,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 limit = 10,
                 minSalience = 0,
                 minSimilarity = 0.3,
-                includeDeleted = false
+                includeDeleted = false,
             } = options;
 
             if (!this.embeddingModel) {
@@ -827,7 +935,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             // 数据库查询条件
             const dbQuery: any = {
                 salience: { $gte: minSalience },
-                ...(includeDeleted ? {} : { isDeleted: { $ne: true } })
+                ...(includeDeleted ? {} : { isDeleted: { $ne: true } }),
             };
 
             if (entityIds.length > 0) {
@@ -849,19 +957,17 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             const factsWithSimilarity = allFacts
                 .map((fact) => ({
                     ...fact,
-                    similarity: cosineSimilarity(queryEmbedding, fact.embedding)
+                    similarity: cosineSimilarity(queryEmbedding, fact.embedding),
                 }))
-                .filter(fact => fact.similarity >= minSimilarity);
+                .filter((fact) => fact.similarity >= minSimilarity);
 
             // 按相似度降序排序
             factsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
 
             // 更新访问信息（异步，不等待结果）
             const topFacts = factsWithSimilarity.slice(0, limit);
-            topFacts.forEach(fact => {
-                this.updateFactAccess(fact.id).catch(error =>
-                    this.logger.warn(`更新事实访问信息失败: ${error}`)
-                );
+            topFacts.forEach((fact) => {
+                this.updateFactAccess(fact.id).catch((error) => this.logger.warn(`更新事实访问信息失败: ${error}`));
             });
 
             return { success: true, data: topFacts };
@@ -875,7 +981,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         try {
             const [profile] = await this.ctx.database.get(TableName.UserProfiles, {
                 entityId,
-                isDeleted: { $ne: true }
+                isDeleted: { $ne: true },
             });
             return { success: true, data: profile || null };
         } catch (error) {
@@ -884,97 +990,103 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    public async consolidateProfile(entityId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
+    public async consolidateProfile(
+        entityId: string,
+        options: ProfileConsolidationOptions = {}
+    ): Promise<MemoryOperationResult<UserProfile | null>> {
         const lockKey = `profile_consolidation_${entityId}`;
 
         return this.withLock(lockKey, async () => {
             try {
-                const {
-                    forceReconsolidate = false,
-                    minFactsThreshold = 1,
-                    confidenceThreshold = 0.5
-                } = options;
+                const { forceReconsolidate = false, minFactsThreshold = 1, confidenceThreshold = 0.5 } = options;
 
                 // 1. 获取实体信息
-                const entity = await this.ctx.database.get(TableName.Entities, {
-                    id: entityId,
-                    isDeleted: { $ne: true }
-                }).then((res) => res[0]);
+                const entity = await this.ctx.database
+                    .get(TableName.Entities, {
+                        id: entityId,
+                        isDeleted: { $ne: true },
+                    })
+                    .then((res) => res[0]);
 
                 if (!entity || entity.type !== EntityType.Person) {
                     return { success: false, error: "实体不存在或不是人员类型" };
                 }
 
-            // 2. 获取现有的 Profile
-            const existingProfile = await this.ctx.database.get(TableName.UserProfiles, { entityId }).then((res) => res[0]);
+                // 2. 获取现有的 Profile
+                const existingProfile = await this.ctx.database
+                    .get(TableName.UserProfiles, { entityId })
+                    .then((res) => res[0]);
 
-            // 3. 获取自上次更新以来，所有新的、未被整合的 Facts
-            const newFacts = await this.ctx.database.get(TableName.Facts, {
-                relatedEntityIds: { $some: [entityId] },
-                isDeleted: { $ne: true }
-            });
-
-            if (newFacts.length < minFactsThreshold && !forceReconsolidate) {
-                const userId = entity.metadata?.userId || entity.name;
-                this.logger.info(`用户 ${userId} 没有足够的新事实需要整合，跳过。`);
-                return { success: true, data: existingProfile };
-            }
-
-            // 4. 构建 Prompt 输入，使用用户ID而不是用户名
-            const userId = entity.metadata?.userId || entity.name;
-            const userName = entity.name || `User_${userId}`;
-
-            const inputForLLM = {
-                userId: userId,
-                userName: userName,
-                existingProfile: existingProfile?.content || "This is a new profile for this user.",
-                newFactsAndInsights: newFacts.map((f) => `[${f.type}] ${f.content}`),
-            };
-
-            // 将 inputForLLM 格式化并填入 PROFILE_CONSOLIDATION_PROMPT 模板
-            const prompt = await this.promptService.render("memory.profile_consolidation", inputForLLM);
-
-            // 5. 调用 LLM
-            const response = await this.chatModel.chat([{ role: "user", content: prompt }]);
-
-            const parser = new JsonParser<any>();
-            const result = parser.parse(response.text);
-
-            if (result.error) {
-                this.logger.error(`整合用户画像时出错: ${result.error}`);
-                return { success: false, error: `LLM解析失败: ${result.error}` };
-            }
-
-            const { profile_content, confidence_score, key_facts_for_update } = result.data;
-
-            // 检查置信度阈值
-            if (confidence_score < confidenceThreshold) {
-                this.logger.warn(`用户 ${userId} 的画像置信度过低 (${confidence_score})，跳过更新。`);
-                return { success: true, data: existingProfile };
-            }
-
-            // 6. 更新数据库
-            const updatedProfileData = {
-                entityId: entityId,
-                content: profile_content,
-                confidence: confidence_score,
-                supportingFactIds: [...(existingProfile?.supportingFactIds || []), ...newFacts.map((f) => f.id)],
-                updatedAt: new Date(),
-                version: (existingProfile?.version || 0) + 1,
-            };
-
-            // 使用 upsert 逻辑：如果profile存在则更新，不存在则创建
-            let updatedProfile: UserProfile;
-            if (existingProfile) {
-                await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, updatedProfileData);
-                updatedProfile = { ...existingProfile, ...updatedProfileData };
-            } else {
-                updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
-                    id: `profile_${uuidv4()}`,
-                    ...updatedProfileData,
-                    createdAt: new Date(),
+                // 3. 获取自上次更新以来，所有新的、未被整合的 Facts
+                const newFacts = await this.ctx.database.get(TableName.Facts, {
+                    relatedEntityIds: { $some: [entityId] },
+                    isDeleted: { $ne: true },
                 });
-            }
+
+                if (newFacts.length < minFactsThreshold && !forceReconsolidate) {
+                    const userId = entity.metadata?.userId || entity.name;
+                    this.logger.info(`用户 ${userId} 没有足够的新事实需要整合，跳过。`);
+                    return { success: true, data: existingProfile };
+                }
+
+                // 4. 构建 Prompt 输入，使用用户ID而不是用户名
+                const userId = entity.metadata?.userId || entity.name;
+                const userName = entity.name || `User_${userId}`;
+
+                const inputForLLM = {
+                    userId: userId,
+                    userName: userName,
+                    existingProfile: existingProfile?.content || "This is a new profile for this user.",
+                    newFactsAndInsights: newFacts.map((f) => `[${f.type}] ${f.content}`),
+                };
+
+                // 将 inputForLLM 格式化并填入 PROFILE_CONSOLIDATION_PROMPT 模板
+                const prompt = await this.promptService.render("memory.profile_consolidation", inputForLLM);
+
+                // 5. 调用 LLM
+                const response = await this.chatModel.chat({
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.2,
+                });
+
+                const parser = new JsonParser<any>();
+                const result = parser.parse(response.text);
+
+                if (result.error) {
+                    this.logger.error(`整合用户画像时出错: ${result.error}`);
+                    return { success: false, error: `LLM解析失败: ${result.error}` };
+                }
+
+                const { profile_content, confidence_score, key_facts_for_update } = result.data;
+
+                // 检查置信度阈值
+                if (confidence_score < confidenceThreshold) {
+                    this.logger.warn(`用户 ${userId} 的画像置信度过低 (${confidence_score})，跳过更新。`);
+                    return { success: true, data: existingProfile };
+                }
+
+                // 6. 更新数据库
+                const updatedProfileData = {
+                    entityId: entityId,
+                    content: profile_content,
+                    confidence: confidence_score,
+                    supportingFactIds: [...(existingProfile?.supportingFactIds || []), ...newFacts.map((f) => f.id)],
+                    updatedAt: new Date(),
+                    version: (existingProfile?.version || 0) + 1,
+                };
+
+                // 使用 upsert 逻辑：如果profile存在则更新，不存在则创建
+                let updatedProfile: UserProfile;
+                if (existingProfile) {
+                    await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, updatedProfileData);
+                    updatedProfile = { ...existingProfile, ...updatedProfileData };
+                } else {
+                    updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
+                        id: `profile_${uuidv4()}`,
+                        ...updatedProfileData,
+                        createdAt: new Date(),
+                    });
+                }
 
                 this.logger.info(`成功为用户 ${userId} 整合并更新了人物画像。`);
                 return { success: true, data: updatedProfile };
@@ -1000,7 +1112,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                     lastAccessedAt: { $lt: stalenessDate },
                     salience: { $lt: salienceThreshold },
                     accessCount: { $lt: accessCountThreshold },
-                    isDeleted: { $ne: true }
+                    isDeleted: { $ne: true },
                 });
 
                 if (forgettableFacts.length > 0) {
@@ -1013,7 +1125,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                         const idsToRemove = batch.map((fact) => fact.id);
 
                         try {
-                            await this.ctx.database.set(TableName.Facts,
+                            await this.ctx.database.set(
+                                TableName.Facts,
                                 { id: { $in: idsToRemove } },
                                 { isDeleted: true, updatedAt: new Date() }
                             );
@@ -1041,11 +1154,13 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * 数据一致性检查和修复
      * @returns 检查结果
      */
-    async performDataConsistencyCheck(): Promise<MemoryOperationResult<{
-        orphanedFacts: number;
-        missingEmbeddings: number;
-        fixedIssues: number;
-    }>> {
+    async performDataConsistencyCheck(): Promise<
+        MemoryOperationResult<{
+            orphanedFacts: number;
+            missingEmbeddings: number;
+            fixedIssues: number;
+        }>
+    > {
         try {
             this.logger.info("开始执行数据一致性检查...");
 
@@ -1056,19 +1171,22 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             // 1. 检查孤立的事实（引用不存在的实体）
             const allFacts = await this.ctx.database.get(TableName.Facts, { isDeleted: { $ne: true } });
             const allEntityIds = new Set(
-                (await this.ctx.database.get(TableName.Entities, { isDeleted: { $ne: true } }))
-                    .map(e => e.id)
+                (await this.ctx.database.get(TableName.Entities, { isDeleted: { $ne: true } })).map((e) => e.id)
             );
 
             for (const fact of allFacts) {
-                const hasValidEntities = fact.relatedEntityIds.some(entityId => allEntityIds.has(entityId));
+                const hasValidEntities = fact.relatedEntityIds.some((entityId) => allEntityIds.has(entityId));
                 if (!hasValidEntities) {
                     orphanedFacts++;
                     // 软删除孤立的事实
-                    await this.ctx.database.set(TableName.Facts, { id: fact.id }, {
-                        isDeleted: true,
-                        updatedAt: new Date()
-                    });
+                    await this.ctx.database.set(
+                        TableName.Facts,
+                        { id: fact.id },
+                        {
+                            isDeleted: true,
+                            updatedAt: new Date(),
+                        }
+                    );
                     fixedIssues++;
                 }
             }
@@ -1076,7 +1194,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             // 2. 检查缺失嵌入向量的实体
             const entitiesWithoutEmbedding = await this.ctx.database.get(TableName.Entities, {
                 embedding: null,
-                isDeleted: { $ne: true }
+                isDeleted: { $ne: true },
             });
 
             missingEmbeddings = entitiesWithoutEmbedding.length;
@@ -1089,11 +1207,13 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 }
             }
 
-            this.logger.info(`数据一致性检查完成: 孤立事实 ${orphanedFacts}, 缺失嵌入 ${missingEmbeddings}, 已修复 ${fixedIssues}`);
+            this.logger.info(
+                `数据一致性检查完成: 孤立事实 ${orphanedFacts}, 缺失嵌入 ${missingEmbeddings}, 已修复 ${fixedIssues}`
+            );
 
             return {
                 success: true,
-                data: { orphanedFacts, missingEmbeddings, fixedIssues }
+                data: { orphanedFacts, missingEmbeddings, fixedIssues },
             };
         } catch (error) {
             this.logger.error(`数据一致性检查失败: ${error.message}`, error);
@@ -1106,7 +1226,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * @param entities 实体列表
      * @returns 处理结果
      */
-    async batchGenerateEntityEmbeddings(entities: Entity[]): Promise<MemoryOperationResult<{ processedCount: number }>> {
+    async batchGenerateEntityEmbeddings(
+        entities: Entity[]
+    ): Promise<MemoryOperationResult<{ processedCount: number }>> {
         try {
             if (!this.embeddingModel) {
                 return { success: false, error: "嵌入模型不可用" };
@@ -1118,15 +1240,15 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             for (let i = 0; i < entities.length; i += batchSize) {
                 const batch = entities.slice(i, i + batchSize);
                 const promises = batch
-                    .filter(entity => !entity.embedding) // 只处理没有嵌入向量的实体
-                    .map(entity => this.generateEntityEmbedding(entity));
+                    .filter((entity) => !entity.embedding) // 只处理没有嵌入向量的实体
+                    .map((entity) => this.generateEntityEmbedding(entity));
 
                 const results = await Promise.all(promises);
-                processedCount += results.filter(result => result.success).length;
+                processedCount += results.filter((result) => result.success).length;
 
                 // 添加小延迟以避免API限制
                 if (i + batchSize < entities.length) {
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise((resolve) => setTimeout(resolve, 100));
                 }
             }
 
@@ -1137,20 +1259,18 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    async deduplicateEntities(options: EntityMergeOptions = {}): Promise<MemoryOperationResult<{ mergedCount: number }>> {
+    async deduplicateEntities(
+        options: EntityMergeOptions = {}
+    ): Promise<MemoryOperationResult<{ mergedCount: number }>> {
         try {
-            const {
-                similarityThreshold = 0.9,
-                autoMerge = false,
-                mergeStrategy = 'keep_oldest'
-            } = options;
+            const { similarityThreshold = 0.9, autoMerge = false, mergeStrategy = "keep_oldest" } = options;
             let mergedCount = 0;
 
             this.logger.info("开始实体去重处理...");
 
             // 获取所有实体
             const allEntities = await this.ctx.database.get(TableName.Entities, {
-                isDeleted: { $ne: true }
+                isDeleted: { $ne: true },
             });
 
             this.logger.info(`找到 ${allEntities.length} 个实体需要处理`);
@@ -1187,8 +1307,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                     }
 
                     // 找到相似实体
-                    const similarEntities = similarResult.data.filter(e =>
-                        !e.isDeleted && !processedEntityIds.has(e.id)
+                    const similarEntities = similarResult.data.filter(
+                        (e) => !e.isDeleted && !processedEntityIds.has(e.id)
                     );
 
                     if (similarEntities.length === 0) continue;
@@ -1199,7 +1319,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                     if (autoMerge) {
                         // 根据合并策略选择目标实体
                         let targetEntity = entity;
-                        if (mergeStrategy === 'keep_oldest') {
+                        if (mergeStrategy === "keep_oldest") {
                             const allCandidates = [entity, ...similarEntities];
                             targetEntity = allCandidates.reduce((oldest, current) =>
                                 current.createdAt < oldest.createdAt ? current : oldest
@@ -1207,7 +1327,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                         }
 
                         // 合并所有相似实体到目标实体
-                        const entitiesToMerge = [entity, ...similarEntities].filter(e => e.id !== targetEntity.id);
+                        const entitiesToMerge = [entity, ...similarEntities].filter((e) => e.id !== targetEntity.id);
 
                         for (const entityToMerge of entitiesToMerge) {
                             const mergeResult = await this.mergeEntities(entityToMerge.id, targetEntity.id);
@@ -1221,7 +1341,11 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                         processedEntityIds.add(targetEntity.id);
                     } else {
                         // 如果不自动合并，只记录发现的重复实体
-                        this.logger.info(`发现重复实体但未自动合并: ${entity.name} 与 ${similarEntities.map(e => e.name).join(', ')}`);
+                        this.logger.info(
+                            `发现重复实体但未自动合并: ${entity.name} 与 ${similarEntities
+                                .map((e) => e.name)
+                                .join(", ")}`
+                        );
                     }
                 }
             }

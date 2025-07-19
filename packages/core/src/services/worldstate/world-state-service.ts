@@ -38,9 +38,8 @@ declare module "koishi" {
 
         /**
          * 当需要进行对话总结时触发
-         * @param chunk_for_summary 待总结的对话内容
          */
-        "worldstate:summary"(chunk_for_summary: string);
+        "worldstate:summary"(foldedSegments: DialogueSegmentData[]): void
     }
 }
 
@@ -1275,7 +1274,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             return;
         }
 
-        this.ctx.emit("worldstate:summary", newMessagesText);
+        this.ctx.emit("worldstate:summary", foldedSegments);
 
         const bot = this.ctx.bots.find((b) => b.platform === platform);
         if (!bot) {
@@ -1295,7 +1294,10 @@ export class WorldStateService extends Service<HistoryConfig> {
         const prompt = await this.promptService.render("worldstate.summarization", renderContext);
 
         // 5. 调用模型生成新总结
-        const summaryResponse = await this.chatModel.chat([{ role: "user", content: prompt }]).catch((e) => {
+        const summaryResponse = await this.chatModel.chat({
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.2,
+        }).catch((e) => {
             this._logger.error(e, `模型调用失败 | 频道: ${channelId}`);
             return null;
         });

@@ -1,23 +1,45 @@
 import { ChatProvider } from "@xsai-ext/shared-providers";
 import { Context } from "koishi";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
-import type { GenerateTextResult, } from "@xsai/generate-text";
+import type { GenerateTextResult } from "@xsai/generate-text";
 
-
-import { generateText,  streamText } from "@/dependencies/xsai";
+import { generateText, streamText } from "@/dependencies/xsai";
 import { ToolDefinition } from "@/services/extension";
 import { toBoolean } from "@/shared";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 
-export interface RequestOptions {
+/**
+ * Chat 方法的请求选项。
+ * 包含所有必要的聊天信息和可覆盖的运行时参数。
+ */
+export interface ChatRequestOptions {
+    /** 聊天消息列表 */
+    messages: Message[];
+    /** 用于中止请求的 AbortSignal */
     abortSignal?: AbortSignal;
+    /** 流式传输开始时的回调 */
     onStreamStart?: () => void;
-    tools?: ToolDefinition[];
+    /** 可用的工具定义 */
+    // tools?: ToolDefinition[];
+
+    // --- 可覆盖的运行时参数 ---
+    /** 是否使用流式传输。如果未提供，则使用模型配置的默认值。 */
+    stream?: boolean;
+    /** 温度参数 */
+    temperature?: number;
+    /** Top-P 采样参数 */
+    topP?: number;
+    /** 其他任何可以传递给聊天提供程序的参数 */
+    [key: string]: any;
 }
 
 export interface IChatModel extends BaseModel {
-    chat(messages: Message[], options?: RequestOptions): Promise<GenerateTextResult>;
+    /**
+     * 发起聊天请求。
+     * @param options 包含消息和所有运行时参数的对象。
+     */
+    chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
 
     isVisionModel(): boolean;
 }
@@ -71,10 +93,11 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
     }
 
-    public async chat(messages: Message[], options: RequestOptions = {}): Promise<GenerateTextResult> {
-        const useStream = this.config.parameters.stream ?? true;
+    public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
+        // 优先级: 运行时参数 > 模型配置 > 默认值 (true)
+        const useStream = options.stream ?? this.config.parameters.stream ?? true;
         this.logger.info(`💬 开始 | 流式: ${useStream}`);
-        const chatOptions: ChatOptions = this.buildChatOptions(messages, options);
+        const chatOptions = this.buildChatOptions(options);
 
         try {
             if (useStream) {
@@ -88,16 +111,27 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
     }
 
-    private buildChatOptions(messages: Message[], options: RequestOptions): ChatOptions {
+    /**
+     * 构建最终传递给 @xsai/shared-chat 的选项对象。
+     * 该方法实现了参数的优先级合并。
+     */
+    private buildChatOptions(options: ChatRequestOptions): ChatOptions {
+        // 参数合并优先级 (后者覆盖前者):
+        // 1. 模型配置中的基础参数 (temperature, topP)
+        // 2. 模型配置中的自定义参数 (this.customParameters)
+        // 3. 运行时传入的参数 (options)
         return {
             ...this.chatProvider(this.config.modelId),
             fetch: this.fetch,
-            abortSignal: options.abortSignal,
-            messages,
-            // tools: options.tools,
+
+            // 默认参数
             temperature: this.config.parameters.temperature,
             topP: this.config.parameters.topP,
             ...this.customParameters,
+
+            // 运行时参数 (会覆盖上面的默认值)
+            // options 中包含了 messages, abortSignal, tools 以及任何覆盖参数
+            ...options,
         };
     }
 
@@ -114,11 +148,9 @@ export class ChatModel extends BaseModel implements IChatModel {
         return result;
     }
 
-    /**
-     * 处理流式聊天请求，并实现打字机效果。
-     * 这种实现方式可以并发处理多个流（文本、步骤），并在所有流结束后组装完整结果。
-     */
+    // _executeStream 方法保持不变，因为它已经从 chatOptions 中获取所需的一切。
     private async _executeStream(chatOptions: ChatOptions, onStreamStart?: () => void): Promise<GenerateTextResult> {
+        // ... (此处代码无需修改)
         // this.logger.debug("→ 流式请求 (并发处理)");
         let streamStarted = false;
 
@@ -184,22 +216,14 @@ export class ChatModel extends BaseModel implements IChatModel {
                 if (step.finishReason) {
                     finalFinishReason = step.finishReason;
                 }
-
-                // 聚合消息
-                // if (step.messages && step.messages.length > 0) {
-                //     // 通常最后一个 messages 包含最终消息列表
-                //     finalMessages = step.messages;
-                // }
             }
         };
 
         // 4. 使用 Promise.all 来并发执行这两个处理器
-        // 这将确保我们同时监听文本和步骤，直到两个流都结束
         await Promise.all([textProcessor(), stepProcessor()]);
 
         // --- 流处理结束，组装并返回结果 ---
 
-        // 打字机效果结束后，打印一个换行符，将光标移到下一行
         process.stdout.write("\n\n");
         this.logger.debug(`🌊 流式传输完毕 | 总耗时: ${Date.now() - stime}ms`);
 
@@ -214,7 +238,6 @@ export class ChatModel extends BaseModel implements IChatModel {
             finishReason: finalFinishReason,
         };
 
-        // 记录总结性日志
         if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
             const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
             // this.logger.success(`✔ 工具调用 (流) ← 名称: ${toolNames}`);
