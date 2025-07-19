@@ -134,15 +134,21 @@ export interface IMemoryService {
     getUserProfile(entityId: string): Promise<MemoryOperationResult<UserProfile | null>>;
 
     /**
+     * 搜索用户画像
+     * @param query 搜索查询
+     * @param options 搜索选项
+     * @returns 匹配的用户画像列表
+     */
+    searchUserProfiles(query: string, options?: SearchOptions): Promise<MemoryOperationResult<UserProfile[]>>;
+
+    /**
      * 整合用户画像
      * @param entityId 实体ID
      * @param options 整合选项
      * @returns 更新后的用户画像
      */
-    consolidateProfile(
-        entityId: string,
-        options?: ProfileConsolidationOptions
-    ): Promise<MemoryOperationResult<UserProfile | null>>;
+    /* prettier-ignore */
+    consolidateProfile(entityId: string, options?: ProfileConsolidationOptions): Promise<MemoryOperationResult<UserProfile | null>>;
 
     // === 维护操作 ===
     /**
@@ -606,7 +612,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             // 3. 调用服务添加事实，这会处理向量化和数据库写入
             const result = await this.addFact(factToStore);
             if (result.success) {
-                this.logger.debug(`成功存储记忆: "${factToStore.content}"`);
+                const type = memoryData.type === "behavioral_pattern" ? "洞察" : "事实";
+                this.logger.debug(`成功存储记忆: [${type}] "${factToStore.content}"`);
             }
         } catch (error) {
             this.logger.error(`存储单条记忆时出错: "${memoryData.content}"`, error);
@@ -649,7 +656,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             }
 
             const newEntity: Entity = {
-                id: `ent_${uuidv4()}`,
+                id: uuidv4(),
                 name,
                 type,
                 metadata,
@@ -699,8 +706,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
                 // 如果没有找到，创建新的用户实体
                 const newEntity: Entity = {
-                    id: `ent_${uuidv4()}`,
-                    name: metadata.name || metadata.nick || `User_${userId}`,
+                    id: uuidv4(),
+                    name: metadata.name || metadata.nick || `${userId}`,
                     type: EntityType.Person,
                     metadata: { ...metadata, userId },
                     createdAt: new Date(),
@@ -889,7 +896,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
 
             const newFact: Fact = {
                 ...factData,
-                id: `fact_${uuidv4()}`,
+                id: uuidv4(),
                 embedding,
                 createdAt: new Date(),
                 lastAccessedAt: new Date(),
@@ -1000,10 +1007,63 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    public async consolidateProfile(
-        entityId: string,
-        options: ProfileConsolidationOptions = {}
-    ): Promise<MemoryOperationResult<UserProfile | null>> {
+    async searchUserProfiles(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<UserProfile[]>> {
+        try {
+            const {
+                entityIds = [],
+                limit = 10,
+                minSalience = 0,
+                minSimilarity = 0.3,
+                includeDeleted = false,
+            } = options;
+
+            if (!this.embeddingModel) {
+                return { success: false, error: "嵌入模型不可用，无法执行语义搜索。" };
+            }
+
+            const queryEmbedding = await this.embeddingModel.embed(query).then((res) => res.embedding);
+
+            // 数据库查询条件
+            const dbQuery: any = {
+                salience: { $gte: minSalience },
+                ...(includeDeleted ? {} : { isDeleted: { $ne: true } }),
+            };
+
+            if (entityIds.length > 0) {
+                dbQuery.entityId = { $in: entityIds };
+            }
+
+            // **注意：这是一个模拟向量搜索的实现！**
+            // 在生产环境中，当画像数量巨大时，此方法效率低下。
+            // 强烈建议使用支持原生向量搜索的数据库 (e.g., PostgreSQL + pgvector, Qdrant, Milvus)。
+            this.logger.info("正在执行模拟向量搜索。对于大数据集，这可能很慢。");
+
+            const allProfiles = await this.ctx.database.get(TableName.UserProfiles, dbQuery);
+
+            if (allProfiles.length === 0) {
+                return { success: true, data: [] };
+            }
+
+            // 在内存中计算相似度
+            const profilesWithSimilarity = allProfiles
+                .map((profile) => ({
+                    ...profile,
+                    similarity: cosineSimilarity(queryEmbedding, profile.embedding),
+                }))
+                .filter((profile) => profile.similarity >= minSimilarity);
+
+            // 按相似度降序排序
+            profilesWithSimilarity.sort((a, b) => b.similarity - a.similarity);
+
+            return { success: true, data: profilesWithSimilarity.slice(0, limit) };
+        } catch (error) {
+            this.logger.error(`搜索用户画像失败: ${error.message}`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /* prettier-ignore */
+    public async consolidateProfile(entityId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
         const lockKey = `profile_consolidation_${entityId}`;
 
         return this.withLock(lockKey, async () => {
@@ -1014,7 +1074,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 const entity = await this.ctx.database
                     .get(TableName.Entities, {
                         id: entityId,
-                        isDeleted: { $ne: true },
+                        isDeleted: false,
                     })
                     .then((res) => res[0]);
 
@@ -1030,7 +1090,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 // 3. 获取自上次更新以来，所有新的、未被整合的 Facts
                 const newFacts = await this.ctx.database.get(TableName.Facts, {
                     relatedEntityIds: { $some: [entityId] },
-                    isDeleted: { $ne: true },
+                    isDeleted: false,
                 });
 
                 if (newFacts.length < minFactsThreshold && !forceReconsolidate) {
@@ -1051,7 +1111,17 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 };
 
                 // 将 inputForLLM 格式化并填入 PROFILE_CONSOLIDATION_PROMPT 模板
-                const prompt = await this.promptService.render("memory.profile_consolidation", inputForLLM);
+                const prompt = await this.promptService.render("memory.profile_consolidation");
+
+                await this.promptService.renderRaw(`Input:
+Current Date: {{date.now}}
+User ID: "{{userId}}"
+User Name: "{{userName}}"
+Existing Profile: "{{existingProfile}}"
+New Facts & Insights:
+{{#newFactsAndInsights}}
+  {{.}}
+{{/newFactsAndInsights}}`, inputForLLM);
 
                 // 5. 调用 LLM
                 const response = await this.chatModel.chat({
@@ -1092,7 +1162,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                     updatedProfile = { ...existingProfile, ...updatedProfileData };
                 } else {
                     updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
-                        id: `profile_${uuidv4()}`,
+                        id: uuidv4(),
                         ...updatedProfileData,
                         createdAt: new Date(),
                     });
@@ -1164,13 +1234,12 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * 数据一致性检查和修复
      * @returns 检查结果
      */
-    async performDataConsistencyCheck(): Promise<
-        MemoryOperationResult<{
-            orphanedFacts: number;
-            missingEmbeddings: number;
-            fixedIssues: number;
-        }>
-    > {
+    /* prettier-ignore */
+    async performDataConsistencyCheck(): Promise<MemoryOperationResult<{
+        orphanedFacts: number;
+        missingEmbeddings: number;
+        fixedIssues: number;
+    }>> {
         try {
             this.logger.info("开始执行数据一致性检查...");
 
@@ -1236,9 +1305,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * @param entities 实体列表
      * @returns 处理结果
      */
-    async batchGenerateEntityEmbeddings(
-        entities: Entity[]
-    ): Promise<MemoryOperationResult<{ processedCount: number }>> {
+    /* prettier-ignore */
+    async batchGenerateEntityEmbeddings(entities: Entity[]): Promise<MemoryOperationResult<{ processedCount: number }>> {
         try {
             if (!this.embeddingModel) {
                 return { success: false, error: "嵌入模型不可用" };
@@ -1269,9 +1337,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    async deduplicateEntities(
-        options: EntityMergeOptions = {}
-    ): Promise<MemoryOperationResult<{ mergedCount: number }>> {
+    /* prettier-ignore */
+    async deduplicateEntities(options: EntityMergeOptions = {}): Promise<MemoryOperationResult<{ mergedCount: number }>> {
         try {
             const { similarityThreshold = 0.9, autoMerge = false, mergeStrategy = "keep_oldest" } = options;
             let mergedCount = 0;

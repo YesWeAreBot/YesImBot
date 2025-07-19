@@ -78,6 +78,14 @@ export interface Entity {
     isDeleted?: boolean;
 }
 
+export interface PersonEntity extends Entity {
+    type: EntityType.Person;
+    metadata: {
+        userId: string;
+        platform?: string;
+    };
+}
+
 /** 事实类型枚举 */
 export enum FactType {
     Observation = "observation", // 对事件或状态的观察
