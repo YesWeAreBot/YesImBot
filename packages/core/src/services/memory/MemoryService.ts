@@ -1,10 +1,10 @@
 import fs from "fs/promises";
-import { Context, h, Service } from "koishi";
+import { Context, h, Query, Service } from "koishi";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
-import { loadPrompt, loadTemplate, PromptService } from "@/services/prompt";
+import { loadPrompt, PromptService } from "@/services/prompt";
 import { Services, TableName } from "@/services/types";
 import { DialogueSegmentData, MemberData, MessageData } from "@/services/worldstate";
 import { AppError, ErrorCodes } from "@/shared/errors";
@@ -469,6 +469,8 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 updatedAt: "timestamp",
                 createdAt: "timestamp",
                 version: "integer",
+                salience: "float",
+                keyFactsForUpdate: "array",
                 isDeleted: { type: "boolean", initial: false },
                 tags: "array",
             },
@@ -1483,7 +1485,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
             const queryEmbedding = await this.embeddingModel.embed(query).then((res) => res.embedding);
 
             // 数据库查询条件
-            const dbQuery: any = {
+            const dbQuery: Query<UserProfile> = {
                 salience: { $gte: minSalience },
                 ...(includeDeleted ? {} : { isDeleted: { $ne: true } }),
             };
@@ -1665,7 +1667,7 @@ New Facts & Insights:
                     this.logger.info(`成功为用户 ${userId} 整合并更新了人物画像。`);
                     return { success: true, data: updatedProfile };
                 } catch (error) {
-                    this.logger.error(`整合用户画像失败: ${error.message}`, error);
+                    this.logger.error(`整合用户画像失败: ${error.message}`);
                     return { success: false, error: error.message };
                 }
             });

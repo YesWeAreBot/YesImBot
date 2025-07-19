@@ -85,6 +85,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
+
+        if (!this.modelSwitcher) {
+            this._logger.error("❌ 未配置模型组，智能体核心无法启动。");
+            return;
+        }
+
         this.willing = new WillingnessManager(this.ctx, this.config.willingness);
     }
 

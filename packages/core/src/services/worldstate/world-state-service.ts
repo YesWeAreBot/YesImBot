@@ -312,8 +312,6 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     // 缓存机制 - 多层缓存策略
     private readonly cacheManager = new CacheManager();
-    private readonly userEntityCache = new Map<string, { entity: Entity; timestamp: number }>();
-    private readonly cacheExpirationMs = 5 * 60 * 1000; // 5分钟缓存（保留向后兼容）
 
     /**
      * 待处理指令的内存状态机
@@ -933,7 +931,7 @@ export class WorldStateService extends Service<HistoryConfig> {
      */
     private async _buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
         const { platform, id } = channel;
-        const userId = id.substring("private:".length);
+        const userId = id.replace("private:", "");
 
         const [user, history] = await Promise.all([
             this._getCachedUserInfo(bot, userId, platform),
@@ -952,6 +950,19 @@ export class WorldStateService extends Service<HistoryConfig> {
             { pid: userId, name: userName, nick: user?.nick || userName, roles: ["user"], isSelf: false },
         ];
 
+        // 私聊场景的用户画像召回
+        const allMessages = [history.pending, ...history.closed, history.folded]
+            .filter(Boolean)
+            .map((segment) => segment.dialogue)
+            .flat();
+
+        const entityIds = await this.recallForPrivateContext(allMessages, userId);
+
+        // 使用缓存获取用户画像和实体信息
+        const [profiles, entities] = await this._getCachedUserProfilesAndEntities(entityIds);
+
+        const entitiesMap = new Map(entities.map((e) => [e.id, e]));
+
         const fullContext = {
             id,
             platform,
@@ -961,8 +972,13 @@ export class WorldStateService extends Service<HistoryConfig> {
             members,
             history,
         };
+
         return {
-            users: [],
+            users: profiles.map((p) => ({
+                id: entitiesMap.get(p.entityId)?.metadata?.userId,
+                name: entitiesMap.get(p.entityId)?.name,
+                description: p.content,
+            })),
             channel: fullContext,
         };
     }
@@ -1553,7 +1569,6 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 清理过期缓存
         this.cacheManager.cleanupExpired();
-        this.clearExpiredCache(); // 保留向后兼容
 
         this._cleanupExpiredRecords().catch((error) => {
             this._logger.error("清理过期记录任务执行失败", error);
@@ -2109,6 +2124,104 @@ export class WorldStateService extends Service<HistoryConfig> {
         return null;
     }
 
+    /**
+     * 私聊场景的用户画像召回方法
+     * 针对私聊场景的特点进行优化，重点关注与当前用户相关的历史画像
+     */
+    async recallForPrivateContext(messages: ContextualMessage[], currentUserId: string): Promise<string[]> {
+        if (!messages || messages.length === 0) {
+            return [];
+        }
+
+        // 生成缓存键（基于消息内容和用户ID的哈希）
+        const messageHash = this._generateMessageHash(messages) + ':private:' + currentUserId;
+        const cachedResult = this.cacheManager.get<string[]>(CacheKeyPrefix.RECALL_RESULTS, messageHash);
+
+        if (cachedResult) {
+            this._logger.debug(`使用缓存的私聊召回结果，消息数: ${messages.length}, 用户: ${currentUserId}`);
+            return cachedResult;
+        }
+
+        // 私聊场景的召回配置
+        const maxRelevantUsers = this.config.recallUserProfileCount; // 使用配置的数量
+        const minRelevanceScore = 0.15; // 私聊场景进一步降低阈值，更容易召回相关画像
+
+        // 合并并评分（使用实体ID而不是用户ID）
+        const entityRelevanceMap = new Map<string, number>();
+
+        // 第一层：当前用户对应的实体（必须包含，最高优先级）
+        const currentUserEntity = await this._getUserEntityId(currentUserId);
+        if (currentUserEntity) {
+            entityRelevanceMap.set(currentUserEntity, 1.0);
+        }
+
+        // 第二层：直接参与者对应的实体（私聊中的机器人和用户）
+        const directParticipantUserIds = new Set<string>();
+        messages.forEach((m) => {
+            directParticipantUserIds.add(m.sender.id);
+        });
+
+        // 将用户ID转换为实体ID并分配高优先级
+        for (const userId of directParticipantUserIds) {
+            if (userId !== currentUserId) { // 避免重复设置当前用户
+                const entityId = await this._getUserEntityId(userId);
+                if (entityId) {
+                    entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.95));
+                }
+            }
+        }
+
+        // 第三层：语义相关用户（基于对话内容，私聊场景下权重更高）
+        // 注意：findSemanticRelevantUsers 已经返回实体ID
+        const semanticUsers = await this.findSemanticRelevantUsers(messages, maxRelevantUsers * 2);
+        semanticUsers.forEach(({ userId, score }) => {
+            if (score >= minRelevanceScore) {
+                // 私聊场景下语义相关性权重更高
+                const adjustedScore = score * 0.95;
+                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, adjustedScore));
+            }
+        });
+
+        // 第四层：基于用户名提及的用户（私聊中可能提到其他人）
+        // 注意：findNamedUsers 已经返回实体ID
+        const namedUsers = await this.findNamedUsers(messages);
+        namedUsers.forEach(({ userId, score }) => {
+            if (score >= minRelevanceScore) {
+                const adjustedScore = score * 0.8;
+                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, adjustedScore));
+            }
+        });
+
+        // 第五层：提取@提及的用户（私聊中可能@其他人）
+        const mentionedUserIds = new Set<string>();
+        messages.forEach((m) => {
+            const mentions = this.extractMentionedUsers(m.content);
+            mentions.forEach(userId => mentionedUserIds.add(userId));
+        });
+
+        // 将@提及的用户ID转换为实体ID
+        for (const userId of mentionedUserIds) {
+            const entityId = await this._getUserEntityId(userId);
+            if (entityId) {
+                entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.85));
+            }
+        }
+
+        // 按相关性排序并限制数量
+        const sortedEntityIds = Array.from(entityRelevanceMap.entries())
+            .filter(([_, score]) => score >= minRelevanceScore)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, maxRelevantUsers)
+            .map(([entityId]) => entityId);
+
+        this._logger.debug(`私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`);
+
+        // 缓存结果
+        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedEntityIds);
+
+        return sortedEntityIds;
+    }
+
     async recallForContext(messages: ContextualMessage[]): Promise<string[]> {
         if (!messages || messages.length === 0) {
             return [];
@@ -2128,77 +2241,127 @@ export class WorldStateService extends Service<HistoryConfig> {
         const minRelevanceScore = 0.3; // 最小相关性阈值
 
         // 第一层：直接参与者（必须包含）
-        const directParticipants = new Set<string>();
-        const mentionedUsers = new Set<string>();
-        const quotedUsers = new Set<string>();
+        const directParticipantUserIds = new Set<string>();
+        const mentionedUserIds = new Set<string>();
+        const quotedUserIds = new Set<string>();
 
         messages.forEach((m) => {
-            directParticipants.add(m.sender.id);
+            directParticipantUserIds.add(m.sender.id);
 
             // 提取@提及的用户
             const mentions = this.extractMentionedUsers(m.content);
-            mentions.forEach(userId => mentionedUsers.add(userId));
+            mentions.forEach(userId => mentionedUserIds.add(userId));
 
             // 提取被引用的用户
             if (m.quoteId) {
                 const quotedMessage = messages.find(msg => msg.id === m.quoteId);
                 if (quotedMessage) {
-                    quotedUsers.add(quotedMessage.sender.id);
+                    quotedUserIds.add(quotedMessage.sender.id);
                 }
             }
         });
 
         // 第二层：语义相关用户（智能筛选）
+        // 注意：findSemanticRelevantUsers 已经返回实体ID
         const semanticUsers = await this.findSemanticRelevantUsers(messages, maxRelevantUsers);
 
         // 第三层：基于用户名提及的用户
+        // 注意：findNamedUsers 已经返回实体ID
         const namedUsers = await this.findNamedUsers(messages);
 
-        // 合并并评分
-        const userRelevanceMap = new Map<string, number>();
+        // 合并并评分（使用实体ID而不是用户ID）
+        const entityRelevanceMap = new Map<string, number>();
 
-        // 直接参与者 - 最高优先级
-        directParticipants.forEach(userId => {
-            userRelevanceMap.set(userId, 1.0);
-        });
+        // 直接参与者 - 最高优先级（需要转换为实体ID）
+        for (const userId of directParticipantUserIds) {
+            const entityId = await this._getUserEntityId(userId);
+            if (entityId) {
+                entityRelevanceMap.set(entityId, 1.0);
+            }
+        }
 
-        // @提及的用户 - 高优先级
-        mentionedUsers.forEach(userId => {
-            userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, 0.9));
-        });
+        // @提及的用户 - 高优先级（需要转换为实体ID）
+        for (const userId of mentionedUserIds) {
+            const entityId = await this._getUserEntityId(userId);
+            if (entityId) {
+                entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.9));
+            }
+        }
 
-        // 被引用的用户 - 高优先级
-        quotedUsers.forEach(userId => {
-            userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, 0.8));
-        });
+        // 被引用的用户 - 高优先级（需要转换为实体ID）
+        for (const userId of quotedUserIds) {
+            const entityId = await this._getUserEntityId(userId);
+            if (entityId) {
+                entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.8));
+            }
+        }
 
-        // 语义相关用户 - 中等优先级
+        // 语义相关用户 - 中等优先级（已经是实体ID）
         semanticUsers.forEach(({ userId, score }) => {
             if (score >= minRelevanceScore) {
-                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, score * 0.7));
+                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, score * 0.7));
             }
         });
 
-        // 基于姓名提及的用户 - 较低优先级
+        // 基于姓名提及的用户 - 较低优先级（已经是实体ID）
         namedUsers.forEach(({ userId, score }) => {
             if (score >= minRelevanceScore) {
-                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, score * 0.5));
+                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, score * 0.5));
             }
         });
 
         // 按相关性排序并限制数量
-        const sortedUsers = Array.from(userRelevanceMap.entries())
+        const sortedEntityIds = Array.from(entityRelevanceMap.entries())
             .filter(([_, score]) => score >= minRelevanceScore)
             .sort(([, a], [, b]) => b - a)
             .slice(0, maxRelevantUsers)
-            .map(([userId]) => userId);
+            .map(([entityId]) => entityId);
 
-        this._logger.debug(`智能筛选用户: 直接参与者 ${directParticipants.size} 个，最终选择 ${sortedUsers.length} 个相关用户`);
+        this._logger.debug(`智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`);
 
         // 缓存结果
-        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedUsers);
+        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedEntityIds);
 
-        return sortedUsers;
+        return sortedEntityIds;
+    }
+
+    /**
+     * 根据用户ID获取对应的实体ID
+     * @param userId 用户ID
+     * @returns 实体ID，如果未找到则返回null
+     */
+    private async _getUserEntityId(userId: string): Promise<string | null> {
+        try {
+            // 从缓存中查找
+            const cacheKey = `user_entity_${userId}`;
+            const cachedEntityId = this.cacheManager.get<string>(CacheKeyPrefix.ENTITY_INFO, cacheKey);
+            if (cachedEntityId) {
+                return cachedEntityId;
+            }
+
+            // 从数据库查找
+            const entities = await this.ctx.database.get(TableName.Entities, {
+                type: EntityType.Person,
+                isDeleted: false,
+            });
+
+            // 在内存中过滤匹配的实体
+            const matchingEntity = entities.find(entity =>
+                entity.metadata && entity.metadata.userId === userId
+            );
+
+            if (matchingEntity) {
+                const entityId = matchingEntity.id;
+                // 缓存结果
+                this.cacheManager.set(CacheKeyPrefix.ENTITY_INFO, cacheKey, entityId);
+                return entityId;
+            }
+
+            return null;
+        } catch (error) {
+            this._logger.warn(`获取用户 ${userId} 的实体ID失败: ${error.message}`);
+            return null;
+        }
     }
 
     /**
@@ -2229,7 +2392,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     private extractMentionedUsers(content: string): string[] {
         const mentionRegex = /@(\w+)/g;
         const mentions: string[] = [];
-        let match;
+        let match: RegExpExecArray | null;
 
         while ((match = mentionRegex.exec(content)) !== null) {
             mentions.push(match[1]);
@@ -2322,32 +2485,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         }
     }
 
-    /**
-     * 缓存辅助方法
-     */
-    private getCachedUserEntity(userId: string): Entity | null {
-        const cached = this.userEntityCache.get(userId);
-        if (cached && Date.now() - cached.timestamp < this.cacheExpirationMs) {
-            return cached.entity;
-        }
-        return null;
-    }
 
-    private setCachedUserEntity(userId: string, entity: Entity): void {
-        this.userEntityCache.set(userId, {
-            entity,
-            timestamp: Date.now()
-        });
-    }
-
-    private clearExpiredCache(): void {
-        const now = Date.now();
-        for (const [userId, cached] of this.userEntityCache.entries()) {
-            if (now - cached.timestamp >= this.cacheExpirationMs) {
-                this.userEntityCache.delete(userId);
-            }
-        }
-    }
 
     /**
      * 构建可供前端渲染的对话消息数组

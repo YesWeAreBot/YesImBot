@@ -69,7 +69,7 @@ export const Config: Schema<Config> = Schema.object({
     capabilities: Schema.object({
         memory: MemoryConfig.description("记忆能力配置"),
         tools: ToolServiceConfigSchema.description("工具能力配置"),
-        history: HistoryConfigSchema.description("对话历史记录的管理方式"),
+        history: HistoryConfigSchema.description("历史记录管理"),
     }),
     imageService: ImageServiceConfigSchema.description("图片服务配置"),
     system: SystemConfigSchema,
