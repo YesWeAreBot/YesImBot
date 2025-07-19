@@ -41,8 +41,11 @@ Each item within the `facts` and `insights` lists must follow this detailed stru
 
 *   `content`: (string) The extracted fact or observed insight.
 *   `relatedEntities`: (list of objects) The person(s) or entities this information is about. For a group chat, this is crucial for correctly assigning information.
-    *   `name`: (string) The name of the person or entity (e.g., "张三", "Project A").
+    *   `name`: (string) The display name of the person or entity (e.g., "张三", "Project A").
     *   `type`: (string) The type of entity (e.g., "person", "project", "organization").
+    *   `metadata`: (object, optional) Additional metadata about the entity, especially for persons:
+        *   `userId`: (string) The unique user ID when available (e.g., "user123", "zhangsan").
+        *   `platform`: (string) The platform identifier when available (e.g., "discord", "telegram").
 *   `type`: (string) The category of the information.
     *   For **Facts**, use types like `statement`, `opinion`, `preference`, `plan`.
     *   For **Insights**, use `behavioral_pattern`.
@@ -69,7 +72,7 @@ Each item within the `facts` and `insights` lists must follow this detailed stru
     {
       "content": "Is feeling stressed about the upcoming deadline for Project A",
       "relatedEntities": [
-        {"name": "张三", "type": "person"},
+        {"name": "张三", "type": "person", "metadata": {"userId": "zhangsan"}},
         {"name": "项目A", "type": "project"}
       ],
       "type": "statement",
@@ -78,7 +81,7 @@ Each item within the `facts` and `insights` lists must follow this detailed stru
     },
     {
       "content": "Is planning to work all night to meet the deadline",
-      "relatedEntities": [{"name": "张三", "type": "person"}],
+      "relatedEntities": [{"name": "张三", "type": "person", "metadata": {"userId": "zhangsan"}}],
       "type": "plan",
       "salience": 0.7,
       "sourceMessageId": "msg3"
@@ -87,14 +90,14 @@ Each item within the `facts` and `insights` lists must follow this detailed stru
   "insights": [
     {
       "content": "Tends to express stress and frustration openly in the group",
-      "relatedEntities": [{"name": "张三", "type": "person"}],
+      "relatedEntities": [{"name": "张三", "type": "person", "metadata": {"userId": "zhangsan"}}],
       "type": "behavioral_pattern",
       "salience": 0.7,
       "sourceMessageId": "msg3"
     },
     {
       "content": "Has a habit of repeating '哈哈哈哈' multiple times, likely for emphasis or as a form of spamming",
-      "relatedEntities": [{"name": "王五", "type": "person"}],
+      "relatedEntities": [{"name": "王五", "type": "person", "metadata": {"userId": "wangwu"}}],
       "type": "behavioral_pattern",
       "salience": 0.6,
       "sourceMessageId": "msg6"
@@ -108,6 +111,10 @@ Each item within the `facts` and `insights` lists must follow this detailed stru
 ### **4. Important Rules**
 
 *   Today's date is `{datetime.now().strftime("%Y-%m-%d")}`.
+*   **User Identification**: When messages are in the format `[msgId|timestamp|DisplayName(userId)]`, extract both the display name and userId:
+    *   Use the display name for the `name` field
+    *   Include the userId in the `metadata.userId` field
+    *   This ensures proper user identification across different platforms and name changes
 *   Crucially, every fact and insight must be correctly ascribed to the specific person who said or demonstrated it via the `relatedEntities` field.
 *   Detect the language of the user input and record the facts and insights in the same language.
 *   Create facts and insights based on the user and assistant messages only. Do not pick anything from system messages.

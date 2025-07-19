@@ -1,12 +1,10 @@
 import fs from "fs";
-import { readFile, stat, writeFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import matter from "gray-matter";
 import { Context, Logger } from "koishi";
-import path from "path";
 
 import { Services } from "@/services/types";
 import { AppError, ErrorCodes } from "@/shared/errors";
-import { formatDate, isEmpty, truncate } from "@/shared/utils";
 import { MemoryBlockData } from "./types";
 
 export class MemoryBlock {
@@ -28,7 +26,6 @@ export class MemoryBlock {
             title: data.title,
             label: data.label,
             description: data.description,
-            limit: data.limit,
         };
         this._content = data.content;
         this.lastModifiedFileMs = initialFileMtimeMs;
@@ -43,9 +40,6 @@ export class MemoryBlock {
     }
     get description(): string {
         return this._metadata.description;
-    }
-    get limit(): number {
-        return this._metadata.limit;
     }
     get content(): readonly string[] {
         return this._content;
@@ -62,89 +56,8 @@ export class MemoryBlock {
 
     // --- Public Methods ---
 
-    public async append(content: string): Promise<void> {
-        this.checkMemoryLimitOrThrow(content.length);
-        this._content.push(content);
-        this.lastModifiedInMemory = new Date();
-        await this.persistToFile();
-        this.logger.debug(`追加内容 | 内容: "${truncate(content)}"`);
-    }
-
-    public async replace(oldContent: string, newContent: string): Promise<void> {
-        const index = this._content.findIndex((item) => item === oldContent);
-        if (index === -1) {
-            throw new AppError(`Content to replace not found in ${this.label}`, {
-                code: ErrorCodes.RESOURCE.NOT_FOUND,
-                context: { resourceType: "MemoryBlock", resourceId: this.label, content: oldContent },
-            });
-        }
-
-        if (isEmpty(newContent)) {
-            this._content.splice(index, 1);
-            this.logger.debug(`删除内容 | 内容: "${truncate(oldContent)}"`);
-        } else {
-            const sizeDiff = newContent.length - (this._content[index]?.length || 0);
-            if (sizeDiff > 0) this.checkMemoryLimitOrThrow(sizeDiff);
-            this._content[index] = newContent;
-            this.logger.debug(`替换内容 | 旧: "${truncate(oldContent)}" -> 新: "${truncate(newContent)}"`);
-        }
-        this.lastModifiedInMemory = new Date();
-        await this.persistToFile();
-    }
-
-    public async overwrite(newContentLines: string[]): Promise<void> {
-        const newTotalSize = newContentLines.reduce((sum, item) => sum + item.length, 0);
-        if (newTotalSize > this.limit) {
-            const errorMsg = `Overwrite failed: new content size (${newTotalSize}) exceeds limit (${this.limit})`;
-            this.logger.warn(errorMsg);
-            throw new AppError(errorMsg, {
-                code: ErrorCodes.RESOURCE.LIMIT_EXCEEDED,
-                context: { newSize: newTotalSize, limit: this.limit, label: this.label },
-            });
-        }
-
-        this._content = newContentLines;
-        this.lastModifiedInMemory = new Date();
-        await this.persistToFile();
-        this.logger.debug(`记忆块内容已被完全覆盖`);
-    }
-
-    public async backup(backupPath: string): Promise<void> {
-        return writeFile(
-            path.resolve(backupPath, `${this.label}-${formatDate(new Date(), "YYYY-MM-DD HH-mm-ss")}.md`),
-            await readFile(this._filePath)
-        );
-    }
-
-    public async clear(): Promise<void> {
-        this._content = [];
-        this.lastModifiedInMemory = new Date();
-        await this.persistToFile();
-        this.logger.debug(`记忆块已清空`);
-    }
-
-    public async disposeFileWatcher(): Promise<void> {
-        this.logger.debug(`正在释放资源`);
-        await this.stopWatching();
-    }
-
-    // --- Persistence ---
-
-    private async persistToFile(): Promise<void> {
-        try {
-            const fileContent = matter.stringify(this._content.join("\n"), this._metadata);
-            await writeFile(this._filePath, fileContent, "utf-8");
-            const fstat = await stat(this._filePath);
-            this.lastModifiedFileMs = fstat.mtimeMs;
-            this.logger.debug(`持久化 | 已保存至文件: ${this.filePath}`);
-        } catch (error) {
-            this.logger.error(`持久化 | 保存失败: ${error.message}`);
-            throw new AppError(`Persistence failed for ${this.label}`, {
-                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
-                context: { label: this.label, filePath: this._filePath },
-                cause: error,
-            });
-        }
+    public dispose(): void {
+        this.stopWatching();
     }
 
     // --- File Watching and Sync ---
@@ -157,7 +70,6 @@ export class MemoryBlock {
                 title: block.title,
                 label: block.label,
                 description: block.description,
-                limit: block.limit,
             };
             this._content = block.content;
             this.lastModifiedInMemory = new Date();
@@ -220,11 +132,11 @@ export class MemoryBlock {
             const block = new MemoryBlock(ctx, filePath, blockData, fileStats.mtimeMs);
 
             await block.startWatching();
-            ctx.on("dispose", () => block.disposeFileWatcher());
+            ctx.on("dispose", () => block.dispose());
 
             return block;
         } catch (error) {
-            logger.error(`操作失败 | 路径: "${filePath}" | 错误: ${error.message}`);
+            logger.error(`操作失败 | 路径: "${filePath}"\n错误: ${error.message}`);
             throw new AppError(`Failed to create MemoryBlock from file: ${filePath}`, {
                 code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
                 context: { filePath },
@@ -238,32 +150,15 @@ export class MemoryBlock {
         const { data, content } = matter(rawContent);
 
         // Validate metadata
-        if (!data.label || !data.limit) {
-            throw new Error(`文件 ${filePath} 的 YAML Front Matter 缺少必要的元数据字段 (label, limit)`);
+        if (!data.label) {
+            throw new Error(`缺少必要的元数据字段 (label)`);
         }
 
         return {
             title: data.title,
             label: data.label,
             description: data.description || "",
-            limit: Number(data.limit),
             content: content.trim() ? content.trim().split(/\r?\n/) : [],
         };
-    }
-
-    private checkMemoryLimitOrThrow(additionalContentLength: number): void {
-        if (this.currentSize + additionalContentLength > this.limit) {
-            const errorMsg = `超出容量限制 | 当前: ${this.currentSize}, 新增: ${additionalContentLength}, 限制: ${this.limit}`;
-            this.logger.warn(errorMsg);
-            throw new AppError(errorMsg, {
-                code: ErrorCodes.RESOURCE.LIMIT_EXCEEDED,
-                context: {
-                    currentSize: this.currentSize,
-                    contentLength: additionalContentLength,
-                    limit: this.limit,
-                    label: this.label,
-                },
-            });
-        }
     }
 }
