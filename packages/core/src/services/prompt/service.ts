@@ -154,7 +154,7 @@ export class PromptService extends Service<PromptServiceConfig> {
                 const value = await snippetFn(scope);
                 this.setNestedProperty(scope, key, value);
             } catch (error) {
-                this._logger.error(`执行片段 "${key}" 时出错:`, error);
+                // this._logger.debug(`执行片段 "${key}" 时出错:`);
                 // 根据策略，可以选择注入 null 或抛出异常
                 this.setNestedProperty(scope, key, null);
             }
