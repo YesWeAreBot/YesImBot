@@ -298,7 +298,6 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 lastAccessedAt: "timestamp",
                 accessCount: "integer",
                 confidence: "float",
-                isVerified: "boolean",
                 isDeleted: "boolean",
                 updatedAt: "timestamp",
             },

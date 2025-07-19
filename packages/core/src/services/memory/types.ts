@@ -103,8 +103,6 @@ export interface Fact {
     accessCount: number;
     /** 事实的置信度 (0-1) */
     confidence?: number;
-    /** 是否已验证 */
-    isVerified?: boolean;
     /** 是否已删除（软删除） */
     isDeleted?: boolean;
     /** 最后更新时间 */
