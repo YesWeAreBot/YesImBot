@@ -236,7 +236,7 @@ Output:
 
 ### **4. Important Rules**
 
-*   Today's date is `{datetime.now().strftime("%Y-%m-%d")}`.
+*   Today's date is `{{date.now}}`.
 *   **User Identification**: When messages are in the format `[msgId|timestamp|DisplayName(userId)]`, extract both the display name and userId:
     *   Use the display name for the `name` field
     *   Include the userId in the `metadata.userId` field
