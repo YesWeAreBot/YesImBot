@@ -39,7 +39,7 @@ declare module "koishi" {
         /**
          * 当需要进行对话总结时触发
          */
-        "worldstate:summary"(foldedSegments: DialogueSegmentData[]): void
+        "worldstate:summary"(foldedSegments: DialogueSegmentData[]): void;
     }
 }
 
@@ -112,6 +112,11 @@ export class WorldStateService extends Service<HistoryConfig> {
      * Value: 该频道内所有待处理指令的数组
      */
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
+
+    /**
+     * 正在处理总结的频道集合
+     */
+    private summarizingChannels: Set<string> = new Set();
 
     // #endregion
 
@@ -1244,6 +1249,12 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @param channelId 频道 ID。
      */
     private async summarizeAndArchive(platform: string, channelId: string): Promise<void> {
+        // 检查是否正在处理中
+        if (this.summarizingChannels.has(`${platform}:${channelId}`)) {
+            this._logger.debug(`频道 ${platform}:${channelId} 正在处理中，跳过`);
+            return;
+        }
+
         this._logger.info(`开始处理滚动总结 | 频道: ${platform}:${channelId}`);
 
         // 步骤 1: 获取所有待总结的 'folded' 片段
@@ -1294,13 +1305,15 @@ export class WorldStateService extends Service<HistoryConfig> {
         const prompt = await this.promptService.render("worldstate.summarization", renderContext);
 
         // 5. 调用模型生成新总结
-        const summaryResponse = await this.chatModel.chat({
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.2,
-        }).catch((e) => {
-            this._logger.error(e, `模型调用失败 | 频道: ${channelId}`);
-            return null;
-        });
+        const summaryResponse = await this.chatModel
+            .chat({
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.2,
+            })
+            .catch((e) => {
+                this._logger.error(e, `模型调用失败 | 频道: ${channelId}`);
+                return null;
+            });
         const newSummaryText = summaryResponse?.text;
 
         if (!newSummaryText) {
