@@ -189,6 +189,10 @@ export interface SummarizedDialogueSegment extends DialogueSegment {
  */
 export interface WorldState {
     // 用于存储将来的用户画像
-    users?: UserProfile[]
+    users?: {
+        id: string;
+        name: string;
+        description: string;
+    }[];
     channel: Channel;
 }

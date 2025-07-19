@@ -489,7 +489,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * 事件处理主入口：处理从 worldstate 发来的待归档对话片段。
      * @param chunk 包含多用户消息的对话片段
      */
-    private async handleSummaryChunk(aiIdentity: string, foldedSegments: DialogueSegmentData[]): Promise<void> {
+    private async handleSummaryChunk(aiIdentity: { id: string; name: string }, foldedSegments: DialogueSegmentData[]): Promise<void> {
         const chunk = await this.renderSegmentsToText(foldedSegments);
 
         if (!chunk) {
@@ -532,8 +532,13 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                         for (const entity of memory.relatedEntities) {
                             if (entity.type === EntityType.Person) {
                                 const person = await this.getOrCreateUserEntity((entity as any)?.metadata?.userId);
+
                                 if (!person.success) {
                                     // this.logger.error(`为用户 ${entity.name} 创建画像时出错: ${person.error}`);
+                                    continue;
+                                }
+                                // 忽略助手自身
+                                if (person.data.metadata?.userId === aiIdentity.id) {
                                     continue;
                                 }
                                 relatedPersons.add(person.data.id);
@@ -555,13 +560,13 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
      * @returns 提取出的事实和洞察对象
      */
     private async extractFromChunk(
-        aiIdentity: string,
+        aiIdentity: { id: string; name: string },
         chunk: string
     ): Promise<{ facts: ExtractedFact[]; insights: ExtractedInsight[] }> {
         const systemPrompt = await this.promptService.render("memory.fact_extraction");
 
         const userPrompt = await this.promptService.renderRaw(
-            "[AI_IDENTITY]\n{{ aiIdentity }}\n\nInput:\n{{ conversationText }}",
+            "[AI_IDENTITY]\nID: {{aiIdentity.id}} | 昵称: {{aiIdentity.name}}\n\nInput:\n{{ conversationText }}",
             {
                 aiIdentity,
                 conversationText: chunk,

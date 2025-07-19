@@ -1,7 +1,8 @@
 import { formatDate, truncate } from "@/shared/utils";
-import { Argv, Bot, Context, Driver, Element, h, Logger, Query, Random, Service, Session } from "koishi";
+import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 import { randomUUID } from "node:crypto";
 import { ChannelDescriptor } from "../../agent";
+import { Entity, MemoryService, UserProfile } from "../memory";
 import { IChatModel, IEmbedModel, TaskType } from "../model";
 import { PromptService } from "../prompt";
 import { Services, TableName } from "../types";
@@ -11,7 +12,6 @@ import { DialogueSegmentData, MemberData, MessageData, SystemEventData } from ".
 import { CommandInvocationPayload } from "./event-types";
 import {
     AgentTurn,
-    Channel,
     ClosedDialogueSegment,
     ContextualMessage,
     DialogueSegment,
@@ -19,9 +19,8 @@ import {
     GuildMember,
     History,
     SummarizedDialogueSegment,
-    WorldState,
+    WorldState
 } from "./interfaces";
-import { Entity, EntityType, MemoryService, PersonEntity, UserProfile } from "../memory";
 
 // 扩展 Koishi 的 Context 和 Events 接口
 declare module "koishi" {
@@ -40,7 +39,7 @@ declare module "koishi" {
         /**
          * 当需要进行对话总结时触发
          */
-        "worldstate:summary"(aiIdentity: string, foldedSegments: DialogueSegmentData[]): void;
+        "worldstate:summary"(aiIdentity: { id: string; name: string }, foldedSegments: DialogueSegmentData[]): void;
     }
 }
 
@@ -832,7 +831,11 @@ export class WorldStateService extends Service<HistoryConfig> {
         };
 
         return {
-            users: profiles,
+            users: profiles.map((p) => ({
+                id: entitiesMap.get(p.entityId)?.metadata?.userId,
+                name: entitiesMap.get(p.entityId)?.name,
+                description: p.content,
+            })),
             channel: fullContext,
         };
     }
@@ -1364,7 +1367,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 4. 构建模型所需的 Prompt
         const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
 
-        this.ctx.emit("worldstate:summary", aiIdentity, foldedSegments);
+        this.ctx.emit("worldstate:summary", { id: bot.selfId, name: bot.user.name || "AI Assistant" }, foldedSegments);
 
         const renderContext = {
             aiIdentity,
