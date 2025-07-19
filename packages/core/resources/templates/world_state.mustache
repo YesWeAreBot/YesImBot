@@ -1,5 +1,13 @@
 {{#date.now}}Current Date: {{.}}{{/date.now}}
 <world_state>
+  # 我所知道的群成员信息
+  {{#users}}
+  ## 关于 {{id}}({{name}})
+  - 核心印象: {{description}}
+  {{/users}}
+  {{^users.length}}
+  ## 我还没有记住任何群成员的信息
+  {{/users.length}}
   {{#channel}}
   <channel id="{{id}}" type="{{type}}" platform="{{platform}}">
     <name>{{name}}</name>
