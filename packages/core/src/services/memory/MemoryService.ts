@@ -11,14 +11,13 @@ import { cosineSimilarity, JsonParser } from "@/shared/utils";
 import { MemoryConfig } from "./config";
 import { MemoryBlock } from "./MemoryBlock";
 import {
-    ConversationChunk,
     Entity,
     EntityType,
     ExtractedFact,
     ExtractedInsight,
     Fact,
     MemoryBlockData,
-    UserProfile,
+    UserProfile
 } from "./types";
 
 declare module "koishi" {
