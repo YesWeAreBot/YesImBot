@@ -2,7 +2,7 @@ import { formatDate, truncate } from "@/shared/utils";
 import { Argv, Bot, Context, Driver, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 import { randomUUID } from "node:crypto";
 import { ChannelDescriptor } from "../../agent";
-import { IChatModel, TaskType } from "../model";
+import { IChatModel, IEmbedModel, TaskType } from "../model";
 import { PromptService } from "../prompt";
 import { Services, TableName } from "../types";
 import { AgentResponse } from "./agent-response-types";
@@ -21,6 +21,7 @@ import {
     SummarizedDialogueSegment,
     WorldState,
 } from "./interfaces";
+import { Entity, EntityType, MemoryService, PersonEntity, UserProfile } from "../memory";
 
 // 扩展 Koishi 的 Context 和 Events 接口
 declare module "koishi" {
@@ -84,7 +85,14 @@ export class WorldStateService extends Service<HistoryConfig> {
     // #region 静态属性与依赖注入
     // =================================================================================
 
-    static readonly inject = [Services.Model, Services.Image, Services.Logger, Services.Prompt];
+    static readonly inject = [
+        Services.Model,
+        Services.Image,
+        Services.Logger,
+        Services.Prompt,
+        Services.Memory,
+        "database",
+    ];
 
     // #endregion
 
@@ -97,6 +105,8 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     /** 用于生成对话总结的聊天模型 */
     private chatModel: IChatModel;
+    /** 用于生成嵌入向量的嵌入模型 */
+    private embedModel: IEmbedModel;
 
     /** 事件监听器清理函数集合 */
     private readonly disposers: (() => boolean)[] = [];
@@ -105,6 +115,8 @@ export class WorldStateService extends Service<HistoryConfig> {
     private maintenanceTimer: NodeJS.Timeout;
 
     private readonly promptService: PromptService;
+
+    private readonly memoryService: MemoryService;
 
     /**
      * 待处理指令的内存状态机
@@ -131,6 +143,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         this._logger = ctx[Services.Logger].getLogger("[世界状态]");
 
         this.promptService = this.ctx[Services.Prompt];
+        this.memoryService = this.ctx[Services.Memory];
 
         // 注册总结模板
         this.registerSummarizationTemplate();
@@ -159,7 +172,12 @@ export class WorldStateService extends Service<HistoryConfig> {
     protected start(): void {
         this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Summarization)?.current;
         if (!this.chatModel) {
-            this._logger.warn("未找到任何可用的总结模型，自动总结功能将不可用。");
+            this._logger.warn("未找到任何可用的总结模型，自动总结功能将不可用");
+        }
+
+        this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding)?.current;
+        if (!this.embedModel) {
+            this._logger.warn("未找到任何可用的嵌入模型");
         }
 
         this.registerDatabaseModels();
@@ -200,9 +218,30 @@ export class WorldStateService extends Service<HistoryConfig> {
      * @returns 一个包含目标频道完整上下文的 `WorldState` 对象。
      */
     public async getWorldState(session: Session): Promise<WorldState> {
-        const worldState: WorldState = {
-            channel: await this.buildFullContextForChannel({ platform: session.platform, id: session.channelId }),
-        };
+        const { platform, channelId } = session;
+        const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
+
+        if (!bot) {
+            this._logger.warn(`找不到平台 ${platform} 的在线机器人，无法构建完整频道上下文 | 频道: ${channelId}`);
+            const channel = {
+                id: channelId,
+                platform,
+                name: `Offline Channel ${channelId}`,
+                type: "unknown",
+                meta: {},
+                members: [],
+                history: { pending: undefined },
+            };
+
+            return {
+                users: [],
+                channel,
+            };
+        }
+
+        const worldState = session.isDirect
+            ? await this._buildPrivateChannelContext(bot, { platform, id: channelId })
+            : await this._buildGuildChannelContext(bot, { platform, id: channelId });
 
         return pruneHistoryByMessages(worldState, this.config.advanced.maxMessages);
     }
@@ -693,37 +732,9 @@ export class WorldStateService extends Service<HistoryConfig> {
     // =================================================================================
 
     /**
-     * 为单个频道构建完整的上下文信息。
-     * 这是一个分发器，根据频道ID的格式决定是构建公会频道还是私聊频道的上下文。
-     * @param channel 频道描述符，包含平台和频道ID。
-     * @returns 一个完整的 `Channel` 对象。
-     */
-    private async buildFullContextForChannel(channel: ChannelDescriptor): Promise<Channel> {
-        const { platform, id } = channel;
-        const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
-
-        if (!bot) {
-            this._logger.warn(`找不到平台 ${platform} 的在线机器人，无法构建完整频道上下文 | 频道: ${id}`);
-            return {
-                id,
-                platform,
-                name: `Offline Channel ${id}`,
-                type: "unknown",
-                meta: {},
-                members: [],
-                history: { pending: undefined },
-            };
-        }
-
-        return id.startsWith("private:")
-            ? this._buildPrivateChannelContext(bot, channel)
-            : this._buildGuildChannelContext(bot, channel);
-    }
-
-    /**
      * 构建私聊频道的上下文。
      */
-    private async _buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<Channel> {
+    private async _buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
         const { platform, id } = channel;
         const userId = id.substring("private:".length);
 
@@ -747,13 +758,25 @@ export class WorldStateService extends Service<HistoryConfig> {
             { pid: userId, name: userName, nick: user?.nick || userName, roles: ["user"], isSelf: false },
         ];
 
-        return { id, platform, name: `与 ${userName} 的私聊`, type: "private", meta: {}, members, history };
+        const fullContext = {
+            id,
+            platform,
+            name: `与 ${userName} 的私聊`,
+            type: "private",
+            meta: {},
+            members,
+            history,
+        };
+        return {
+            users: [],
+            channel: fullContext,
+        };
     }
 
     /**
-     * 构建公会频道的上下文。
+     * 构建群聊频道的上下文。
      */
-    private async _buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<Channel> {
+    private async _buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
         const { platform, id } = channel;
 
         const [channelInfo, history] = await Promise.all([
@@ -765,12 +788,53 @@ export class WorldStateService extends Service<HistoryConfig> {
         ]);
 
         if (!channelInfo) {
-            return { id, platform, name: `Channel ${id}`, type: "guild", meta: {}, members: [], history };
+            const fullContext = { id, platform, name: `Channel ${id}`, type: "guild", meta: {}, members: [], history };
+            return {
+                users: [],
+                channel: fullContext,
+            };
         }
+
+        const allMessages = [history.pending, ...history.closed, history.folded]
+            .filter(Boolean)
+            .map((segment) => segment.dialogue)
+            .flat();
+        const entityIds = await this.recallForContext(allMessages);
+
+        const [profiles, entities] = (await Promise.all(
+            entityIds.length > 0
+                ? [
+                      this.ctx.database.get(TableName.UserProfiles, {
+                          entityId: { $in: entityIds },
+                          isDeleted: false,
+                      }),
+                      this.ctx.database.get(TableName.Entities, {
+                          id: { $in: entityIds },
+                          isDeleted: false,
+                      }),
+                  ]
+                : [Promise.resolve([]), Promise.resolve([])]
+        )) as [UserProfile[], Entity[]];
+
+        const profilesMap = new Map(profiles.map((p) => [p.entityId, p]));
+        const entitiesMap = new Map(entities.map((e) => [e.id, e]));
 
         const members = await this._getMembersFromHistory(bot, history, platform, channelInfo.guildId || id);
 
-        return { id, platform, name: channelInfo.name, type: "guild", meta: { ...channelInfo }, members, history };
+        const fullContext = {
+            id,
+            platform,
+            name: channelInfo.name,
+            type: "guild",
+            meta: { ...channelInfo },
+            members,
+            history,
+        };
+
+        return {
+            users: profiles,
+            channel: fullContext,
+        };
     }
 
     /**
@@ -1505,10 +1569,6 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     /**
      * 根据历史记录获取相关成员列表，并注入机器人自身。
-     */
-
-    /**
-     * 根据历史记录获取相关成员列表，并注入机器人自身。
      * @param bot 机器人实例。
      * @param history 对话历史。
      * @param platform 平台。
@@ -1522,12 +1582,6 @@ export class WorldStateService extends Service<HistoryConfig> {
         guildId: string
     ): Promise<GuildMember[]> {
         const memberIds = new Set<string>();
-
-        // history.pending.forEach((segment) => {
-        //     segment.dialogue.forEach((message) => {
-        //         memberIds.add(message.sender.id);
-        //     });
-        // });
 
         const allMessages = [history.pending, ...history.closed, history.folded]
             .filter(Boolean)
@@ -1557,6 +1611,35 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 使用 unshift 将机器人放在列表开头，并返回新数组
         return [botAsMember, ...humanMembers];
+    }
+
+    async recallForContext(messages: ContextualMessage[]): Promise<string[]> {
+        const recalledEntityIds = new Set<string>();
+
+        // 第一层：即时参与者 (快速、必须)
+        messages.forEach((m) => recalledEntityIds.add(m.sender.id));
+
+        // 第二层 & 第三层合并：语义关联 (核心、强大)
+        const batchText = messages.map((m) => `${m.sender.name}: ${m.content}`).join("\n");
+
+        const [factResults, profileResults] = await Promise.all([
+            this.memoryService.searchFacts(batchText, { limit: 10 }),
+            this.memoryService.searchUserProfiles(batchText, { limit: 5 }),
+        ]);
+
+        if (factResults.success && factResults.data) {
+            factResults.data.forEach((fact) => {
+                fact.relatedEntityIds.forEach((id) => recalledEntityIds.add(id));
+            });
+        }
+
+        if (profileResults.success && profileResults.data) {
+            profileResults.data.forEach((profile) => {
+                recalledEntityIds.add(profile.entityId);
+            });
+        }
+
+        return Array.from(recalledEntityIds);
     }
 
     /**

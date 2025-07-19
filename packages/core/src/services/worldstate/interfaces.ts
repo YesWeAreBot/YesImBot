@@ -1,5 +1,5 @@
 /**
- * @file domain-types.ts
+ * @file interfaces.ts
  * @description 定义插件的核心领域对象 (Domain Objects)。
  *
  * 与 `database-models.ts` 中的数据传输对象 (DTOs) 不同，本文件中的接口代表了业务逻辑操作的核心。
@@ -8,6 +8,8 @@
  */
 
 import { Element } from "koishi";
+
+import { UserProfile } from "@/services/memory";
 import { AgentResponse } from "./agent-response-types";
 import { SystemEvent } from "./event-types";
 
@@ -187,6 +189,6 @@ export interface SummarizedDialogueSegment extends DialogueSegment {
  */
 export interface WorldState {
     // 用于存储将来的用户画像
-    users?: any
+    users?: UserProfile[]
     channel: Channel;
 }

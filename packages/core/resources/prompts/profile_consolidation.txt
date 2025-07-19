@@ -30,8 +30,8 @@ You must return a single JSON object with the following keys:
 **Input Data:**
 
 *   **User ID**: "user123"
-*   **User Name**: "张三"
-*   **Existing Profile**: "张三 is a software engineer who seems to enjoy sci-fi movies."
+*   **User Name**: "Alice"
+*   **Existing Profile**: "Alice is a software engineer who seems to enjoy sci-fi movies."
 *   **New Facts & Insights**:
     *   Fact: "Expressed stress about Project Athena's deadline."
     *   Fact: "Mentioned he is learning Rust programming in his spare time."
@@ -43,7 +43,7 @@ You must return a single JSON object with the following keys:
 **Your Output (JSON):**
 
 {
-  "profile_content": "张三 is a dedicated software engineer, currently feeling the pressure of Project Athena's deadline. He's passionate about his craft, not only working hard (often late into the night) but also proactively learning new technologies like Rust in his personal time. His interest in tech extends to his tools, as he's looking for a good mechanical keyboard. Beyond his professional life, 张三 is a helpful and supportive member of the community, frequently assisting others with their coding problems. He's also a cat owner, with a beloved pet named 'Mochi'. His earlier interest in sci-fi movies remains a consistent part of his profile.",
+  "profile_content": "Alice is a dedicated software engineer, currently feeling the pressure of Project Athena's deadline. He's passionate about his craft, not only working hard (often late into the night) but also proactively learning new technologies like Rust in his personal time. His interest in tech extends to his tools, as he's looking for a good mechanical keyboard. Beyond his professional life, 张三 is a helpful and supportive member of the community, frequently assisting others with their coding problems. He's also a cat owner, with a beloved pet named 'Mochi'. His earlier interest in sci-fi movies remains a consistent part of his profile.",
   "key_facts_for_update": [
     "Is currently stressed about Project Athena's deadline.",
     "Is learning Rust.",
