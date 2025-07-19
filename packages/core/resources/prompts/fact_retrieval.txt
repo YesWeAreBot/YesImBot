@@ -52,59 +52,185 @@ Each item within the `facts` and `insights` lists must follow this detailed stru
 *   `salience`: (float, 0.0 to 1.0) An estimate of how important or significant this piece of information is for understanding the person.
 *   `sourceMessageId`: (string) The unique ID of the message from which the information was extracted. For an insight derived from multiple messages, use the ID of the most representative or most recent message that confirms the pattern.
 
-**Example:**
+Here are some few shot examples:
 
-**Input Conversation Chunk:**
-```
-[msg1|20:10:05|张三(zhangsan)] 项目A的deadline要到了，压力好大。
-[msg2|20:10:15|李四(lisi)] 加油！
-[msg3|20:11:30|张三(zhangsan)] 烦死了，今晚又要通宵。
-[msg4|20:12:01|王五(wangwu)] 哈哈哈哈
-[msg5|20:12:02|王五(wangwu)] 哈哈哈哈
-[msg6|20:12:03|王五(wangwu)] 哈哈哈哈
-[msg7|20:12:45|张三(zhangsan)] 我真的会谢。
-```
+Input:
+[msg1|20:10:05|Alice(alice)] Hi.
+Output:
+{ "facts": [], "insights": [] }
 
-**Output:**
-```json
+Input:
+[msg1|20:10:05|Alice(alice)] There are branches in trees.
+Output:
+{ "facts": [], "insights": [] }
+
+Input:
+[msg1|20:10:05|Alice(alice)] Hi, I am looking for a restaurant in San Francisco.
+Output:
 {
   "facts": [
     {
-      "content": "Is feeling stressed about the upcoming deadline for Project A",
+      "content": "Looking for a restaurant in San Francisco",
       "relatedEntities": [
-        {"name": "张三", "type": "person", "metadata": {"userId": "zhangsan"}},
-        {"name": "项目A", "type": "project"}
+        {"name": "Alice", "type": "person", "metadata": {"userId": "alice"}},
+        {"name": "restaurant in San Francisco", "type": "project"}
+      ],
+      "type": "statement",
+      "salience": 0.87,
+      "sourceMessageId": "msg1"
+    }
+  ],
+  "insights": []
+}
+
+Input:
+[msg1|20:10:05|Alice(alice)] Yesterday, I had a meeting with John at 3pm. We discussed the new project.
+Output:
+{
+  "facts": [
+    {
+      "content": "Had a meeting with John at 3pm",
+      "relatedEntities": [
+        {"name": "Alice", "type": "person", "metadata": {"userId": "alice"}},
+        {"name": "John", "type": "person"}
+      ],
+      "type": "statement",
+      "salience": 0.77,
+      "sourceMessageId": "msg1"
+    },
+    {
+      "content": "Discussed the new project",
+      "relatedEntities": [
+        {"name": "Alice", "type": "person", "metadata": {"userId": "alice"}},
+        {"name": "John", "type": "person"},
+        {"name": "new project", "type": "project"}
+      ],
+      "type": "statement",
+      "salience": 0.68,
+      "sourceMessageId": "msg1"
+    }
+  ],
+  "insights": []
+}
+
+Input:
+[msg1|20:10:05|John(john)] Hi, my name is John. I am a software engineer.
+Output:
+{
+  "facts": [
+    {
+      "content": "Name is John",
+      "relatedEntities": [
+        {"name": "John", "type": "person", "metadata": {"userId": "john"}}
+      ],
+      "type": "statement",
+      "salience": 0.82,
+      "sourceMessageId": "msg1"
+    },
+    {
+      "content": "Is a software engineer",
+      "relatedEntities": [
+        {"name": "John", "type": "person", "metadata": {"userId": "john"}}
+      ],
+      "type": "statement",
+      "salience": 0.75,
+      "sourceMessageId": "msg1"
+    }
+  ],
+  "insights": []
+}
+
+Input:
+[msg2|20:10:15|Bob(bob)] Me favourite movies are Inception and Interstellar.
+Output:
+{
+  "facts": [
+    {
+      "content": "Favourite movies are Inception and Interstellar",
+      "relatedEntities": [
+        {"name": "Bob", "type": "person", "metadata": {"userId": "bob"}},
+        {"name": "Inception", "type": "movie"},
+        {"name": "Interstellar", "type": "movie"}
+      ],
+      "type": "preference",
+      "salience": 0.7,
+      "sourceMessageId": "msg2"
+    }
+  ],
+  "insights": []
+}
+
+Input Conversation Chunk:
+[msg1|20:10:05|Alice(alice)] 我们服务器里 Slimefun 插件修的怎么样了?
+[msg2|20:10:15|HydroGest(hydrogest)] 你先别急
+[msg3|20:11:30|HydroGest(hydrogest)] 我很快就好
+[msg4|20:12:01|Alice(alice)] 速速, 我还等着呢
+[msg5|20:12:02|Alice(alice)] 现在具体是什么问题?
+Output:
+{
+  "facts": [
+    {
+      "content": "群里的Slimefun插件需要修复",
+      "relatedEntities": [
+        {"name": "Slimefun", "type": "project", "metadata": {"game": "Minecraft", "plugin": "Slimefun"}}
       ],
       "type": "statement",
       "salience": 0.8,
       "sourceMessageId": "msg1"
     },
     {
-      "content": "Is planning to work all night to meet the deadline",
-      "relatedEntities": [{"name": "张三", "type": "person", "metadata": {"userId": "zhangsan"}}],
-      "type": "plan",
+      "content": "Alice对Slimefun修复进度很关心",
+      "relatedEntities": [
+        {"name": "Alice", "type": "person", "metadata": {"userId": "alice"}},
+        {"name": "Slimefun", "type": "project", "metadata": {"game": "Minecraft", "plugin": "Slimefun"}}
+      ],
+      "type": "statement",
       "salience": 0.7,
-      "sourceMessageId": "msg3"
+      "sourceMessageId": "msg5"
+    },
+    {
+      "content": "HydroGest负责修复Slimefun插件",
+      "relatedEntities": [
+        {"name": "HydroGest", "type": "person", "metadata": {"userId": "hydrogest"}},
+        {"name": "Slimefun", "type": "project", "metadata": {"game": "Minecraft", "plugin": "Slimefun"}}
+      ],
+      "type": "statement",
+      "salience": 0.6,
+      "sourceMessageId": "msg2"
     }
   ],
   "insights": [
     {
-      "content": "Tends to express stress and frustration openly in the group",
-      "relatedEntities": [{"name": "张三", "type": "person", "metadata": {"userId": "zhangsan"}}],
+      "content": "Alice经常催促HydroGest关于Slimefun插件的修复进度",
+      "relatedEntities": [
+        {"name": "Alice", "type": "person", "metadata": {"userId": "alice"}},
+        {"name": "Slimefun", "type": "project", "metadata": {"game": "Minecraft", "plugin": "Slimefun"}},
+        {"name": "HydroGest", "type": "person", "metadata": {"userId": "hydrogest"}}
+      ],
       "type": "behavioral_pattern",
-      "salience": 0.7,
-      "sourceMessageId": "msg3"
     },
     {
-      "content": "Has a habit of repeating '哈哈哈哈' multiple times, likely for emphasis or as a form of spamming",
-      "relatedEntities": [{"name": "王五", "type": "person", "metadata": {"userId": "wangwu"}}],
+      "content": "HydroGest对Alice的催促感到烦躁",
+      "relatedEntities": [
+        {"name": "HydroGest", "type": "person", "metadata": {"userId": "hydrogest"}},
+        {"name": "Alice", "type": "person", "metadata": {"userId": "alice"}}
+      ],
       "type": "behavioral_pattern",
-      "salience": 0.6,
-      "sourceMessageId": "msg6"
+      "salience": 0.5,
+      "sourceMessageId": "msg2"
+    },
+    {
+      "content": "HydroGest在修复Slimefun插件时遇到了困难",
+      "relatedEntities": [
+        {"name": "HydroGest", "type": "person", "metadata": {"userId": "hydrogest"}},
+        {"name": "Slimefun", "type": "project", "metadata": {"game": "Minecraft", "plugin": "Slimefun"}},
+      ],
+      "type": "behavioral_pattern",
+      "salience": 0.5,
+      "sourceMessageId": "msg2"
     }
   ]
 }
-```
 
 ---
 
