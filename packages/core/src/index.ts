@@ -95,7 +95,7 @@ async function waitForServices(services: ForkScope[]) {
     await sleep(1000);
     return new Promise<void>((resolve) => {
         const check = () => {
-            if (services.every((service) => service.isActive)) {
+            if (services.every((service) => service.ready)) {
                 resolve();
             } else {
                 setTimeout(check, 100);
