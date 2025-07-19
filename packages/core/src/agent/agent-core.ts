@@ -206,7 +206,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         // 注册所有可重用的局部模板 (Partials)
         // 使用 Mustache 的 {{> partialName }} 语法来引用它们
-        this.promptService.registerTemplate("agent.partial.memory_block", loadTemplate("memory_block"));
+        this.promptService.registerTemplate("agent.partial.memory_block", loadTemplate("memory/block"));
         this.promptService.registerTemplate("agent.partial.tool_definition", loadTemplate("tool_definition"));
         this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
         this.promptService.registerTemplate("agent.partial.current_turn_history", loadTemplate("current_turn_history"));

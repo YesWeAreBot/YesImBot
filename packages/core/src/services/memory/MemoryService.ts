@@ -341,8 +341,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
     }
 
     private registerPromptTemplates() {
-        this.promptService.registerTemplate("memory.fact_extraction", loadPrompt("fact_retrieval"));
-        this.promptService.registerTemplate("memory.profile_consolidation", loadTemplate("profile_consolidation"));
+        this.promptService.registerTemplate("memory.fact_extraction", loadPrompt("memory/fact_retrieval"));
+        /* prettier-ignore */
+        this.promptService.registerTemplate("memory.profile_consolidation", loadPrompt("memory/profile_consolidation"));
     }
 
     public async getMemoryBlocksForRendering(): Promise<MemoryBlockData[]> {
@@ -522,6 +523,26 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 }
 
                 this.logger.info(`成功处理并存储了 ${allMemories.length} 条新记忆。`);
+
+                const relatedPersons = new Set<string>();
+
+                // 4. 更新用户画像
+                for (const memory of allMemories) {
+                    if (memory.relatedEntities && memory.relatedEntities.length > 0) {
+                        for (const entity of memory.relatedEntities) {
+                            if (entity.type === EntityType.Person) {
+                                const person = await this.getOrCreateUserEntity((entity as any)?.metadata?.userId);
+                                if (!person.success) {
+                                    // this.logger.error(`为用户 ${entity.name} 创建画像时出错: ${person.error}`);
+                                    continue;
+                                }
+                                relatedPersons.add(person.data.id);
+                            }
+                        }
+                    }
+                }
+
+                await Promise.all([...relatedPersons].map((personId) => this.consolidateProfile(personId)));
             });
         } catch (error) {
             this.logger.error("处理 summary chunk 时出错:", error);
@@ -1007,7 +1028,10 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
         }
     }
 
-    async searchUserProfiles(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<UserProfile[]>> {
+    async searchUserProfiles(
+        query: string,
+        options: SearchOptions = {}
+    ): Promise<MemoryOperationResult<UserProfile[]>> {
         try {
             const {
                 entityIds = [],
@@ -1111,9 +1135,9 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                 };
 
                 // 将 inputForLLM 格式化并填入 PROFILE_CONSOLIDATION_PROMPT 模板
-                const prompt = await this.promptService.render("memory.profile_consolidation");
+                const systemPrompt = await this.promptService.render("memory.profile_consolidation");
 
-                await this.promptService.renderRaw(`Input:
+                const userPrompt = await this.promptService.renderRaw(`Input:
 Current Date: {{date.now}}
 User ID: "{{userId}}"
 User Name: "{{userName}}"
@@ -1125,7 +1149,7 @@ New Facts & Insights:
 
                 // 5. 调用 LLM
                 const response = await this.chatModel.chat({
-                    messages: [{ role: "user", content: prompt }],
+                    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
                     temperature: 0.2,
                 });
 
@@ -1149,6 +1173,7 @@ New Facts & Insights:
                 const updatedProfileData = {
                     entityId: entityId,
                     content: profile_content,
+                    embedding: await this.embeddingModel.embed(profile_content).then((res) => res.embedding),
                     confidence: confidence_score,
                     supportingFactIds: [...(existingProfile?.supportingFactIds || []), ...newFacts.map((f) => f.id)],
                     updatedAt: new Date(),

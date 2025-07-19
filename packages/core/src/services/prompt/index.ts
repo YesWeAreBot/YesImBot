@@ -10,7 +10,8 @@ export function loadPrompt(name: string, ext: string = "txt") {
     } catch (error) {
         //this._logger.error(`加载提示词失败 "${name}.${ext}": ${error.message}`);
         // 返回一个包含错误信息的模板，便于调试
-        return `<!-- Error loading prompt: ${name} -->`;
+        // return `<!-- Error loading prompt: ${name} -->`;
+        throw new Error(`Failed to load prompt: ${name}.${ext}`);
     }
 }
 
@@ -21,7 +22,8 @@ export function loadTemplate(name: string, ext: string = "mustache") {
     } catch (error) {
         //this._logger.error(`加载模板失败 "${name}.${ext}": ${error.message}`);
         // 返回一个包含错误信息的模板，便于调试
-        return `{{! Error loading template: ${name} }}`;
+        // return `{{! Error loading template: ${name} }}`;
+        throw new Error(`Failed to load template: ${name}.${ext}`);
     }
 }
 
