@@ -6,11 +6,11 @@ import { Entity, EntityType, MemoryService, UserProfile } from "../memory";
 import { IChatModel, IEmbedModel, TaskType } from "../model";
 import { PromptService } from "../prompt";
 import { Services, TableName } from "../types";
-import { AgentResponse } from "./agent-response-types";
 import { HistoryConfig } from "./config";
 import { DialogueSegmentData, MemberData, MessageData, SystemEventData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
 import {
+    AgentResponse,
     AgentTurn,
     ClosedDialogueSegment,
     ContextualMessage,
@@ -18,8 +18,9 @@ import {
     FoldedDialogueSegment,
     GuildMember,
     History,
+    PendingDialogueSegment,
     SummarizedDialogueSegment,
-    WorldState
+    WorldState,
 } from "./interfaces";
 
 // =================================================================================
@@ -48,12 +49,12 @@ interface CacheConfig {
  * 缓存键前缀枚举
  */
 enum CacheKeyPrefix {
-    USER_INFO = 'user_info',
-    CHANNEL_INFO = 'channel_info',
-    MEMBER_LIST = 'member_list',
-    ENTITY_INFO = 'entity_info',
-    USER_PROFILES = 'user_profiles',
-    RECALL_RESULTS = 'recall_results'
+    USER_INFO = "user_info",
+    CHANNEL_INFO = "channel_info",
+    MEMBER_LIST = "member_list",
+    ENTITY_INFO = "entity_info",
+    USER_PROFILES = "user_profiles",
+    RECALL_RESULTS = "recall_results",
 }
 
 /**
@@ -68,12 +69,12 @@ class CacheManager {
         [CacheKeyPrefix.MEMBER_LIST]: { ttl: 5 * 60 * 1000, maxSize: 200 },
         [CacheKeyPrefix.ENTITY_INFO]: { ttl: 60 * 60 * 1000, maxSize: 2000 },
         [CacheKeyPrefix.USER_PROFILES]: { ttl: 45 * 60 * 1000, maxSize: 1000 },
-        [CacheKeyPrefix.RECALL_RESULTS]: { ttl: 2 * 60 * 1000, maxSize: 100 }
+        [CacheKeyPrefix.RECALL_RESULTS]: { ttl: 2 * 60 * 1000, maxSize: 100 },
     };
 
     constructor() {
         // 初始化所有缓存
-        Object.values(CacheKeyPrefix).forEach(prefix => {
+        Object.values(CacheKeyPrefix).forEach((prefix) => {
             this.caches.set(prefix, new Map());
         });
     }
@@ -82,7 +83,7 @@ class CacheManager {
      * 生成缓存键
      */
     private generateKey(prefix: CacheKeyPrefix, ...parts: string[]): string {
-        return `${prefix}:${parts.join(':')}`;
+        return `${prefix}:${parts.join(":")}`;
     }
 
     /**
@@ -133,7 +134,7 @@ class CacheManager {
             value,
             timestamp: now,
             accessCount: 1,
-            lastAccessed: now
+            lastAccessed: now,
         });
     }
 
@@ -141,7 +142,7 @@ class CacheManager {
      * LRU 淘汰策略
      */
     private evictLRU(cache: Map<string, CacheItem<any>>): void {
-        let oldestKey = '';
+        let oldestKey = "";
         let oldestTime = Date.now();
 
         for (const [key, item] of cache.entries()) {
@@ -193,7 +194,7 @@ class CacheManager {
                 }
             }
 
-            keysToDelete.forEach(key => cache.delete(key));
+            keysToDelete.forEach((key) => cache.delete(key));
         }
     }
 
@@ -205,7 +206,7 @@ class CacheManager {
 
         for (const [prefix, cache] of this.caches.entries()) {
             stats[prefix] = {
-                size: cache.size
+                size: cache.size,
             };
         }
 
@@ -481,7 +482,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const openSegments = await this.ctx.database
             .select(TableName.DialogueSegments)
             .where({ platform, channelId, status: SegmentStatus.Open })
-            .orderBy("timestamp", "desc")
+            .orderBy("startTimestamp", "desc")
             .execute();
 
         if (openSegments.length > 0) {
@@ -507,8 +508,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             channelId,
             guildId,
             status: SegmentStatus.Open,
-            agentTurn: null,
-            timestamp: new Date(),
+            startTimestamp: new Date(),
         };
         await this.ctx.database.create(TableName.DialogueSegments, newSegment);
         return newSegment;
@@ -619,9 +619,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         const eventPayload: CommandInvocationPayload = {
             name: command.name,
-            args,
-            options,
-            raw: source,
+            source,
             invoker: { pid: session.userId, name: session.author.nick || session.author.name },
         };
 
@@ -1047,49 +1045,53 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "open" }),
             this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "closed" }),
             this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "folded" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "summarized" })
+            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "summarized" }),
         ]);
 
         // 按状态分类和排序片段
         const pendingSegment = openSegments[0];
         const closedSegments = rawClosedSegments
-            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
             .slice(0, this.config.fullContextSegmentCount)
             .reverse();
         const foldedSegments = rawFoldedSegments
-            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
             .slice(0, this.config.summarizationTriggerCount)
             .reverse();
-        const summarizedSegment = summarizedSegments
-            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+        const summarizedSegment = summarizedSegments.sort(
+            (a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime()
+        )[0];
 
         // 第二步：批量获取所有需要详细内容的片段的消息和事件
         const segmentsNeedingContent = [
             ...(pendingSegment ? [pendingSegment] : []),
             ...closedSegments,
-            ...foldedSegments
+            ...foldedSegments,
         ];
 
-        const segmentIds = segmentsNeedingContent.map(s => s.id);
+        const segmentIds = segmentsNeedingContent.map((s) => s.id);
 
         // 批量查询所有消息和系统事件
-        const [allMessages, allSystemEvents] = segmentIds.length > 0 ? await Promise.all([
-            this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
-            this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } })
-        ]) : [[], []];
+        const [allMessages, allSystemEvents] =
+            segmentIds.length > 0
+                ? await Promise.all([
+                      this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
+                      this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } }),
+                  ])
+                : [[], []];
 
         // 按片段ID分组消息和事件
         const messagesBySegment = new Map<string, MessageData[]>();
         const eventsBySegment = new Map<string, SystemEventData[]>();
 
-        allMessages.forEach(msg => {
+        allMessages.forEach((msg) => {
             if (!messagesBySegment.has(msg.sid)) {
                 messagesBySegment.set(msg.sid, []);
             }
             messagesBySegment.get(msg.sid)!.push(msg);
         });
 
-        allSystemEvents.forEach(event => {
+        allSystemEvents.forEach((event) => {
             if (!eventsBySegment.has(event.sid)) {
                 eventsBySegment.set(event.sid, []);
             }
@@ -1098,9 +1100,13 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 第三步：构建对话片段对象
         const [pending, closed, folded, summarized] = await Promise.all([
-            pendingSegment ? this._buildDialogueSegmentWithData(pendingSegment, messagesBySegment, eventsBySegment) : Promise.resolve(undefined),
-            Promise.all(closedSegments.map(r => this._buildClosedSegmentWithData(r, messagesBySegment))),
-            foldedSegments.length > 0 ? this._buildFoldedDialogueSegmentWithData(foldedSegments, messagesBySegment, eventsBySegment) : Promise.resolve(undefined),
+            pendingSegment
+                ? this._buildPendingDialogueSegmentWithData(pendingSegment, messagesBySegment, eventsBySegment)
+                : Promise.resolve(undefined),
+            Promise.all(closedSegments.map((r) => this._buildClosedSegmentWithData(r, messagesBySegment))),
+            foldedSegments.length > 0
+                ? this._buildFoldedDialogueSegmentWithData(foldedSegments, messagesBySegment, eventsBySegment)
+                : Promise.resolve(undefined),
             summarizedSegment ? this.buildSummarizedDialogueSegment(summarizedSegment) : Promise.resolve(undefined),
         ]);
 
@@ -1108,97 +1114,33 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     /**
-     * 根据数据库记录高效地构建完整的 `DialogueSegment` 对象
-     */
-    public async buildDialogueSegment(segmentRecord: DialogueSegmentData): Promise<DialogueSegment> {
-        const dialogueSegment: DialogueSegment = {
-            type: "dialogue-segment",
-            id: segmentRecord.id,
-            platform: segmentRecord.platform,
-            channelId: segmentRecord.channelId,
-            guildId: segmentRecord.guildId,
-            status: segmentRecord.status,
-            summary: segmentRecord.summary,
-            timestamp: segmentRecord.timestamp,
-            agentTurn: segmentRecord.agentTurn,
-            dialogue: [],
-            systemEvents: [],
-        };
-
-        // 核心性能优化：根据片段状态决定是否查询详细内容
-        if (segmentRecord.status === "summarized") {
-            dialogueSegment.agentTurn = null; // 总结片段不应有关联的 Agent 回合
-            return dialogueSegment;
-        }
-
-        const [messageRecords, systemEventRecords] = await Promise.all([
-            this.ctx.database.get(TableName.Messages, { sid: segmentRecord.id }),
-            this.ctx.database.get(TableName.SystemEvents, { sid: segmentRecord.id }),
-        ]);
-
-        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords);
-
-        dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
-            id: record.id,
-            type: record.type,
-            timestamp: record.timestamp,
-            date: formatDate(record.timestamp),
-            payload: record.payload,
-        }));
-
-        // 对于 folded 状态，隐藏 agentTurn 的细节
-        if (dialogueSegment.status === "folded" && dialogueSegment.agentTurn) {
-            dialogueSegment.agentTurn.responses = [];
-        }
-
-        return dialogueSegment;
-    }
-
-    /**
      * 使用预获取的数据构建对话片段（优化版本）
      */
-    private _buildDialogueSegmentWithData(
+    private _buildPendingDialogueSegmentWithData(
         segmentRecord: DialogueSegmentData,
         messagesBySegment: Map<string, MessageData[]>,
         eventsBySegment: Map<string, SystemEventData[]>
-    ): DialogueSegment {
-        const dialogueSegment: DialogueSegment = {
+    ): PendingDialogueSegment {
+        const messageRecords = messagesBySegment.get(segmentRecord.id) || [];
+        const systemEventRecords = eventsBySegment.get(segmentRecord.id) || [];
+
+        const dialogueSegment: PendingDialogueSegment = {
             type: "dialogue-segment",
             id: segmentRecord.id,
             platform: segmentRecord.platform,
             channelId: segmentRecord.channelId,
             guildId: segmentRecord.guildId,
-            status: segmentRecord.status,
-            summary: segmentRecord.summary,
-            timestamp: segmentRecord.timestamp,
-            agentTurn: segmentRecord.agentTurn,
-            dialogue: [],
-            systemEvents: [],
+            status: "open",
+            startTimestamp: segmentRecord.startTimestamp,
+            dialogue: this.buildDialogueMessages(messageRecords),
+            systemEvents: systemEventRecords.map((record) => ({
+                id: record.id,
+                type: record.type,
+                timestamp: record.timestamp,
+                date: formatDate(record.timestamp, "YYYY-MM-DD"),
+                payload: record.payload,
+            })),
         };
-
-        // 核心性能优化：根据片段状态决定是否查询详细内容
-        if (segmentRecord.status === "summarized") {
-            dialogueSegment.agentTurn = null; // 总结片段不应有关联的 Agent 回合
-            return dialogueSegment;
-        }
-
-        const messageRecords = messagesBySegment.get(segmentRecord.id) || [];
-        const systemEventRecords = eventsBySegment.get(segmentRecord.id) || [];
-
-        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords);
-
-        dialogueSegment.systemEvents = systemEventRecords.map((record) => ({
-            id: record.id,
-            type: record.type,
-            timestamp: record.timestamp,
-            date: formatDate(record.timestamp, "YYYY-MM-DD"),
-            payload: record.payload,
-        }));
-
-        // 对于 folded 状态，隐藏 agentTurn 的细节
-        if (dialogueSegment.status === "folded" && dialogueSegment.agentTurn) {
-            dialogueSegment.agentTurn.responses = [];
-        }
 
         return dialogueSegment;
     }
@@ -1210,6 +1152,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         record: DialogueSegmentData,
         messagesBySegment: Map<string, MessageData[]>
     ): ClosedDialogueSegment {
+        const messageRecords = messagesBySegment.get(record.id) || [];
+
         const dialogueSegment: ClosedDialogueSegment = {
             type: "dialogue-segment",
             id: record.id,
@@ -1217,20 +1161,12 @@ export class WorldStateService extends Service<HistoryConfig> {
             channelId: record.channelId,
             guildId: record.guildId,
             status: "closed",
-            summary: record.summary,
-            timestamp: record.timestamp,
+            startTimestamp: record.startTimestamp,
+            endTimestamp: record.endTimestamp,
             agentTurn: record.agentTurn,
-            dialogue: [],
+            dialogue: this.buildDialogueMessages(messageRecords),
+            systemEvents: [],
         };
-
-        // 核心性能优化：根据片段状态决定是否查询详细内容
-        if (record.status === "summarized") {
-            dialogueSegment.agentTurn = null; // 总结片段不应有关联的 Agent 回合
-            return dialogueSegment;
-        }
-
-        const messageRecords = messagesBySegment.get(record.id) || [];
-        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords);
 
         return dialogueSegment;
     }
@@ -1259,8 +1195,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         allSystemEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
         // 时间窗口
-        const startTimestamp = foldedSegments[0].timestamp;
-        const endTimestamp = foldedSegments[foldedSegments.length - 1].timestamp;
+        const startTimestamp = foldedSegments[0].startTimestamp;
+        const endTimestamp = foldedSegments[foldedSegments.length - 1].endTimestamp;
 
         return {
             type: "dialogue-segment",
@@ -1277,79 +1213,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 date: formatDate(record.timestamp, "YYYY-MM-DD"),
                 payload: record.payload,
             })),
-            timestamp: startTimestamp,
-            endTimestamp,
-        };
-    }
-
-    /**
-     * 构建一个已关闭的对话片段对象
-     */
-    private async buildClosedSegment(record: DialogueSegmentData): Promise<ClosedDialogueSegment> {
-        const dialogueSegment: ClosedDialogueSegment = {
-            type: "dialogue-segment",
-            id: record.id,
-            platform: record.platform,
-            channelId: record.channelId,
-            guildId: record.guildId,
-            status: "closed",
-            summary: record.summary,
-            timestamp: record.timestamp,
-            agentTurn: record.agentTurn,
-            dialogue: [],
-        };
-
-        // 核心性能优化：根据片段状态决定是否查询详细内容
-        if (record.status === "summarized") {
-            dialogueSegment.agentTurn = null; // 总结片段不应有关联的 Agent 回合
-            return dialogueSegment;
-        }
-
-        const messageRecords = await this.ctx.database.get(TableName.Messages, { sid: record.id });
-
-        dialogueSegment.dialogue = this.buildDialogueMessages(messageRecords);
-
-        return dialogueSegment;
-    }
-
-    /**
-     * 构建一个被折叠的对话片段集合对象
-     */
-    async buildFoldedDialogueSegment(foldedSegments: DialogueSegmentData[]): Promise<FoldedDialogueSegment> {
-        // 收集所有消息
-        const allMessages = await this.ctx.database
-            .select(TableName.Messages)
-            .where({ sid: { $in: foldedSegments.map((s) => s.id) } })
-            .orderBy("timestamp", "asc")
-            .execute();
-
-        // 收集所有系统事件
-        const allSystemEvents = await this.ctx.database
-            .select(TableName.SystemEvents)
-            .where({ sid: { $in: foldedSegments.map((s) => s.id) } })
-            .orderBy("timestamp", "asc")
-            .execute();
-
-        // 时间窗口
-        const startTimestamp = foldedSegments[0].timestamp;
-        const endTimestamp = foldedSegments[foldedSegments.length - 1].timestamp;
-
-        return {
-            type: "dialogue-segment",
-            id: foldedSegments[0].id,
-            platform: foldedSegments[0].platform,
-            channelId: foldedSegments[0].channelId,
-            guildId: foldedSegments[0].guildId,
-            status: "folded",
-            dialogue: this.buildDialogueMessages(allMessages),
-            systemEvents: allSystemEvents.map((record) => ({
-                id: record.id,
-                type: record.type,
-                timestamp: record.timestamp,
-                date: formatDate(record.timestamp),
-                payload: record.payload,
-            })),
-            timestamp: startTimestamp,
+            startTimestamp,
             endTimestamp,
         };
     }
@@ -1366,11 +1230,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             guildId: record.guildId,
             status: "summarized",
             summary: record.summary,
-            timestamp: record.timestamp,
-            dialogue: [],
-            systemEvents: [],
-            agentTurn: undefined,
-            endTimestamp: record.timestamp,
+            startTimestamp: record.startTimestamp,
+            endTimestamp: record.endTimestamp,
         };
     }
 
@@ -1409,7 +1270,8 @@ export class WorldStateService extends Service<HistoryConfig> {
                 status: "string(32)",
                 summary: "text",
                 agentTurn: "json",
-                timestamp: "timestamp",
+                startTimestamp: "timestamp",
+                endTimestamp: "timestamp",
             },
             { primary: "id" }
         );
@@ -1540,7 +1402,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         if (closedSegments.length > this.config.fullContextSegmentCount) {
             const segmentsToFold = closedSegments
-                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+                .sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime())
                 .slice(0, closedSegments.length - this.config.fullContextSegmentCount);
 
             const idsToFold = segmentsToFold.map((s) => s.id);
@@ -1589,7 +1451,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const expirationCutoff = new Date(Date.now() - expirationTime);
 
         /* prettier-ignore */
-        const expiredSegments = await this.ctx.database.get(TableName.DialogueSegments, { timestamp: { $lt: expirationCutoff } });
+        const expiredSegments = await this.ctx.database.get(TableName.DialogueSegments, { startTimestamp: { $lt: expirationCutoff } });
 
         if (expiredSegments.length > 0) {
             const segmentIds = expiredSegments.map((s) => s.id);
@@ -1684,7 +1546,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 步骤 1: 获取所有待总结的 'folded' 片段
         const foldedSegments = await this.ctx.database
             .get(TableName.DialogueSegments, { platform, channelId, status: SegmentStatus.Folded })
-            .then((res) => res.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()));
+            .then((res) => res.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime()));
 
         if (foldedSegments.length < this.config.summarizationTriggerCount) {
             /* prettier-ignore */
@@ -1697,7 +1559,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 步骤 2: 获取上一次的总结
         const previousSummarySegment = await this.ctx.database
             .get(TableName.DialogueSegments, { platform, channelId, status: SegmentStatus.Summarized })
-            .then((res) => res.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0]);
+            .then((res) => res.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0]);
 
         // 步骤 3: 渲染新的对话内容为文本
         const newMessagesText = await this.renderSegmentsToTextForSummary(foldedSegments);
@@ -1762,7 +1624,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         }
 
         // 6. 创建新的总结片段
-        const latestTimestamp = foldedSegments[foldedSegments.length - 1].timestamp;
+        const latestTimestamp = foldedSegments[foldedSegments.length - 1].startTimestamp;
         const newSummarySegment: DialogueSegmentData = {
             id: randomUUID(),
             platform: platform,
@@ -1770,7 +1632,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             guildId: foldedSegments[0].guildId,
             status: SegmentStatus.Summarized,
             summary: newSummaryText,
-            timestamp: latestTimestamp, // 时间戳更新为最新内容的结束时间
+            startTimestamp: previousSummarySegment ? previousSummarySegment.endTimestamp : latestTimestamp,
+            endTimestamp: latestTimestamp,
             agentTurn: null,
         };
 
@@ -1966,7 +1829,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 guildId: guildId,
             });
 
-            cachedMembers = new Map(allMembers.map(member => [member.pid, member as GuildMember]));
+            cachedMembers = new Map(allMembers.map((member) => [member.pid, member as GuildMember]));
             this.cacheManager.set(CacheKeyPrefix.MEMBER_LIST, cacheKey, cachedMembers);
         }
 
@@ -2049,7 +1912,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                       id: { $in: missingEntityIds },
                       isDeleted: false,
                   })
-                : Promise.resolve([])
+                : Promise.resolve([]),
         ]);
 
         // 缓存新查询的数据
@@ -2134,7 +1997,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         }
 
         // 生成缓存键（基于消息内容和用户ID的哈希）
-        const messageHash = this._generateMessageHash(messages) + ':private:' + currentUserId;
+        const messageHash = this._generateMessageHash(messages) + ":private:" + currentUserId;
         const cachedResult = this.cacheManager.get<string[]>(CacheKeyPrefix.RECALL_RESULTS, messageHash);
 
         if (cachedResult) {
@@ -2163,7 +2026,8 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         // 将用户ID转换为实体ID并分配高优先级
         for (const userId of directParticipantUserIds) {
-            if (userId !== currentUserId) { // 避免重复设置当前用户
+            if (userId !== currentUserId) {
+                // 避免重复设置当前用户
                 const entityId = await this._getUserEntityId(userId);
                 if (entityId) {
                     entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.95));
@@ -2196,7 +2060,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         const mentionedUserIds = new Set<string>();
         messages.forEach((m) => {
             const mentions = this.extractMentionedUsers(m.content);
-            mentions.forEach(userId => mentionedUserIds.add(userId));
+            mentions.forEach((userId) => mentionedUserIds.add(userId));
         });
 
         // 将@提及的用户ID转换为实体ID
@@ -2214,7 +2078,9 @@ export class WorldStateService extends Service<HistoryConfig> {
             .slice(0, maxRelevantUsers)
             .map(([entityId]) => entityId);
 
-        this._logger.debug(`私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`);
+        this._logger.debug(
+            `私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`
+        );
 
         // 缓存结果
         this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedEntityIds);
@@ -2250,11 +2116,11 @@ export class WorldStateService extends Service<HistoryConfig> {
 
             // 提取@提及的用户
             const mentions = this.extractMentionedUsers(m.content);
-            mentions.forEach(userId => mentionedUserIds.add(userId));
+            mentions.forEach((userId) => mentionedUserIds.add(userId));
 
             // 提取被引用的用户
             if (m.quoteId) {
-                const quotedMessage = messages.find(msg => msg.id === m.quoteId);
+                const quotedMessage = messages.find((msg) => msg.id === m.quoteId);
                 if (quotedMessage) {
                     quotedUserIds.add(quotedMessage.sender.id);
                 }
@@ -2317,7 +2183,9 @@ export class WorldStateService extends Service<HistoryConfig> {
             .slice(0, maxRelevantUsers)
             .map(([entityId]) => entityId);
 
-        this._logger.debug(`智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`);
+        this._logger.debug(
+            `智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`
+        );
 
         // 缓存结果
         this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedEntityIds);
@@ -2346,9 +2214,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             });
 
             // 在内存中过滤匹配的实体
-            const matchingEntity = entities.find(entity =>
-                entity.metadata && entity.metadata.userId === userId
-            );
+            const matchingEntity = entities.find((entity) => entity.metadata && entity.metadata.userId === userId);
 
             if (matchingEntity) {
                 const entityId = matchingEntity.id;
@@ -2371,15 +2237,13 @@ export class WorldStateService extends Service<HistoryConfig> {
      */
     private _generateMessageHash(messages: ContextualMessage[]): string {
         // 简单的哈希生成策略：基于消息ID和时间戳
-        const hashInput = messages
-            .map(m => `${m.id}:${m.timestamp.getTime()}:${m.sender.id}`)
-            .join('|');
+        const hashInput = messages.map((m) => `${m.id}:${m.timestamp.getTime()}:${m.sender.id}`).join("|");
 
         // 使用简单的字符串哈希算法
         let hash = 0;
         for (let i = 0; i < hashInput.length; i++) {
             const char = hashInput.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
+            hash = (hash << 5) - hash + char;
             hash = hash & hash; // 转换为32位整数
         }
 
@@ -2453,7 +2317,7 @@ export class WorldStateService extends Service<HistoryConfig> {
      */
     private async findNamedUsers(messages: ContextualMessage[]): Promise<Array<{ userId: string; score: number }>> {
         try {
-            const messageText = messages.map(m => m.content).join(" ");
+            const messageText = messages.map((m) => m.content).join(" ");
 
             // 获取所有已知用户实体
             const entities = await this.ctx.database.get(TableName.Entities, {
@@ -2463,11 +2327,11 @@ export class WorldStateService extends Service<HistoryConfig> {
 
             const namedUsers: Array<{ userId: string; score: number }> = [];
 
-            entities.forEach(entity => {
+            entities.forEach((entity) => {
                 const userName = entity.name;
                 if (userName && userName.length > 1) {
                     // 检查用户名是否在消息中被提及
-                    const nameRegex = new RegExp(`\\b${userName}\\b`, 'gi');
+                    const nameRegex = new RegExp(`\\b${userName}\\b`, "gi");
                     const matches = messageText.match(nameRegex);
 
                     if (matches && matches.length > 0) {
@@ -2484,8 +2348,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             return [];
         }
     }
-
-
 
     /**
      * 构建可供前端渲染的对话消息数组
@@ -2533,7 +2395,7 @@ export function pruneHistoryByMessages(worldState: WorldState, maxMessages: numb
     }
 
     // 3. 收集新 worldState 中所有可操作的对话片段的引用
-    const allSegments: (DialogueSegment | FoldedDialogueSegment)[] = [
+    const allSegments: (PendingDialogueSegment | ClosedDialogueSegment | FoldedDialogueSegment)[] = [
         newWorldState.channel.history.pending,
         ...(newWorldState.channel.history.closed || []),
         newWorldState.channel.history.folded,
@@ -2548,7 +2410,7 @@ export function pruneHistoryByMessages(worldState: WorldState, maxMessages: numb
     }
 
     // 5. 按时间戳升序排序片段（从最旧到最新），以便从最旧的开始删除
-    allSegments.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    allSegments.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime());
 
     // 6. 遍历排序后的片段，从最旧的片段中的最旧消息开始移除
     for (const segment of allSegments) {

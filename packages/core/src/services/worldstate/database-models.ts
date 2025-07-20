@@ -1,17 +1,16 @@
 /**
  * @file database-models.ts
- * @description 定义插件的数据库模型 (DTOs) 和表结构。
+ * @description 定义插件的数据库模型 (DTOs) 和表结构
  */
 import { TableName } from "../types";
-import { Action, ActionResult, AgentResponse } from "./agent-response-types";
 import { EventName } from "./event-types";
-import { DialogueSegmentStatus, Sender, AgentTurn } from "./interfaces";
+import { DialogueSegmentStatus, Sender, AgentTurn, AgentResponse, Action, ActionResult } from "./interfaces";
 
 // --- 数据库表的数据传输对象 (DTOs) ---
 
 /**
- * `worldstate.members` 表的数据结构。
- * 存储用户在一个特定服务器 (Guild) 内的身份信息。
+ * `worldstate.members` 表的数据结构
+ * 存储用户在一个特定服务器 (Guild) 内的身份信息
  */
 export interface MemberData {
     pid: string;
@@ -26,7 +25,7 @@ export interface MemberData {
 }
 
 /**
- * `worldstate.dialogue_segments` 表的数据结构。
+ * `worldstate.dialogue_segments` 表的数据结构
  */
 export interface DialogueSegmentData {
     id: string;
@@ -35,12 +34,13 @@ export interface DialogueSegmentData {
     guildId?: string;
     status: DialogueSegmentStatus;
     summary?: string;
-    timestamp: Date;
+    startTimestamp: Date;
+    endTimestamp?: Date;
     agentTurn?: AgentTurn;
 }
 
 /**
- * `worldstate.messages` 表的数据结构。
+ * `worldstate.messages` 表的数据结构
  */
 export interface MessageData {
     id: string;
@@ -58,7 +58,7 @@ export interface MessageData {
 }
 
 /**
- * `worldstate.system_events` 表的数据结构。
+ * `worldstate.system_events` 表的数据结构
  */
 export interface SystemEventData {
     id: string;
@@ -69,7 +69,7 @@ export interface SystemEventData {
 }
 
 /**
- * `worldstate.agent_responses` 表的数据结构。
+ * `worldstate.agent_responses` 表的数据结构
  */
 export interface AgentResponseData {
     id: number;

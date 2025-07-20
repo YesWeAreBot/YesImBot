@@ -1,93 +1,92 @@
 /**
  * @file interfaces.ts
- * @description 定义插件的核心领域对象 (Domain Objects)。
+ * @description 定义插件的核心领域对象 (Domain Objects)
  *
- * 与 `database-models.ts` 中的数据传输对象 (DTOs) 不同，本文件中的接口代表了业务逻辑操作的核心。
- * 它们通常由仓储层 (Repository) 负责从数据库的 DTOs 构建，并可能包含业务方法或更丰富的结构。
- * 这些对象是 Agent 感知世界和进行决策的基础。
+ * 与 `database-models.ts` 中的数据传输对象 (DTOs) 不同，本文件中的接口代表了业务逻辑操作的核心
+ * 它们通常由仓储层 (Repository) 负责从数据库的 DTOs 构建，并可能包含业务方法或更丰富的结构
+ * 这些对象是 Agent 感知世界和进行决策的基础
  */
 
 import { Element } from "koishi";
 
 import { UserProfile } from "@/services/memory";
-import { AgentResponse } from "./agent-response-types";
 import { SystemEvent } from "./event-types";
 
 // --- 基础实体 (Entities) ---
 
 /**
- * 代表一个群组或服务器中的成员，是用户在特定群组上下文中的表现。
+ * 代表一个群组或服务器中的成员，是用户在特定群组上下文中的表现
  */
 export interface GuildMember {
     /** 关联的用户平台 ID (pid) */
     pid: string;
-    /** 成员在群内的显示名称 (通常是昵称)。 */
+    /** 成员在群内的显示名称 (通常是昵称) */
     nick?: string;
-    /** 成员的全局用户名。 */
+    /** 成员的全局用户名 */
     name?: string;
-    /** 成员拥有的角色列表。 */
+    /** 成员拥有的角色列表 */
     roles?: string[];
-    /** 加入群组的时间戳。 */
+    /** 加入群组的时间戳 */
     joinedAt?: Date;
     /** [NEW] 一个布尔值，用于明确标记此成员是否为机器人自身 */
     isSelf?: boolean;
 }
 
 /**
- * 代表一个群组。
+ * 代表一个群组
  */
 export interface Guild {
-    /** 平台提供的唯一群组ID。 */
+    /** 平台提供的唯一群组ID */
     id: string;
-    /** 群组名称。 */
+    /** 群组名称 */
     name?: string;
-    /** 群组头像URL。 */
+    /** 群组头像URL */
     avatar?: string;
 }
 
 /**
- * 代表一个通信频道，可以是群组中的一个子频道，也可以是私聊。
+ * 代表一个通信频道，可以是群组中的一个子频道，也可以是私聊
  */
 export interface Channel {
-    /** 频道ID。在私聊中，这通常是与对方用户的ID关联的标识。 */
+    /** 频道ID在私聊中，这通常是与对方用户的ID关联的标识 */
     id: string;
-    /** 频道名称。群聊时为群名，私聊时可格式化为 "与 <用户名> 的私聊"。 */
+    /** 频道名称群聊时为群名，私聊时可格式化为 "与 <用户名> 的私聊" */
     name: string;
-    /** 频道类型：'guild' (群组频道) 或 'private' (私聊)。 */
+    /** 频道类型：'guild' (群组频道) 或 'private' (私聊) */
     type: "guild" | "private" | string;
-    /** 所属平台名称 (如 'onebot', 'discord')。 */
+    /** 所属平台名称 (如 'onebot', 'discord') */
     platform: string;
-    /** 扩展元信息。 */
+    /** 扩展元信息 */
     meta: {
         description?: string;
     };
-    /** 最近活跃的成员列表。 */
+    /** 最近活跃的成员列表 */
     members?: GuildMember[];
     /**
-     * 频道的历史记录流。
+     * 频道的历史记录流
      * 这是一个包含对话片段 (DialogueSegment) 的有序数组，
-     * 共同构成了 Agent 感知到的频道交互全貌。
+     * 共同构成了 Agent 感知到的频道交互全貌
      */
     history: History;
 }
 
 /**
- * 频道的历史记录流。
+ * 频道的历史记录流
  * pending: 包含新的、未处理的消息
  * closed: 包含已处理的消息，但未被折叠
  * folded: 包含已折叠的消息
  * summarized: 包含已总结的消息
  */
 export interface History {
-    pending: DialogueSegment;
-    closed?: DialogueSegment[];
+    pending: PendingDialogueSegment;
+    closed?: ClosedDialogueSegment[];
     folded?: FoldedDialogueSegment;
     summarized?: SummarizedDialogueSegment;
 }
 
 /**
- * 发送者信息快照。
- * 记录了消息发送时刻用户的关键信息。
+ * 发送者信息快照
+ * 记录了消息发送时刻用户的关键信息
  */
 export interface Sender {
     /** 用户的平台唯一ID (pid) */
@@ -99,7 +98,7 @@ export interface Sender {
 }
 
 /**
- * 代表在特定上下文中（如一个DialogueSegment里）的一条消息。
+ * 代表在特定上下文中（如一个DialogueSegment里）的一条消息
  */
 export interface ContextualMessage {
     id: string;
@@ -118,16 +117,16 @@ export interface ContextualMessage {
 export type DialogueSegmentStatus = "open" | "closed" | "folded" | "summarized" | "archived";
 
 /**
- * Agent 的一个完整处理回合，通常对应一次或多次 ReAct 循环。
+ * Agent 的一个完整处理回合，通常对应一次或多次 ReAct 循环
  */
 export interface AgentTurn {
-    /** 此回合中发生的所有响应步骤（思考->行动->观察）。 */
+    /** 此回合中发生的所有响应步骤（思考->行动->观察） */
     responses: AgentResponse[];
-    /** Agent 回合完成的时间戳。 */
+    /** Agent 回合完成的时间戳 */
     timestamp: Date;
 }
 /**
- * 用户对话片段，聚合了一段时间内的相关消息和系统事件。
+ * 用户对话片段，聚合了一段时间内的相关消息和系统事件
  */
 export interface DialogueSegment {
     type: "dialogue-segment"; // 类型守卫字段
@@ -136,56 +135,54 @@ export interface DialogueSegment {
     channelId: string;
     guildId?: string;
     /**
-     * 片段的生命周期状态。
-     * - `open`: 开放中，正在接收新事件。
-     * - `closed`: 已关闭，通常在 Agent 介入时发生，等待系统进一步处理。
-     * - `folded`: 已折叠，其关联的 AgentTurn 因历史过长被从上下文中移除。
-     * - `summarized`: 已总结，原始内容已被LLM压缩成摘要。
-     * - `archived`: 已归档，记录在被物理删除前的最终状态，不参与上下文构建。
+     * 片段的生命周期状态
+     * - `open`: 开放中，正在接收新事件
+     * - `closed`: 已关闭，通常在 Agent 介入时发生，等待系统进一步处理
+     * - `folded`: 已折叠，其关联的 AgentTurn 因历史过长被从上下文中移除
+     * - `summarized`: 已总结，原始内容已被LLM压缩成摘要
+     * - `archived`: 已归档，记录在被物理删除前的最终状态，不参与上下文构建
      */
     status: DialogueSegmentStatus;
-    dialogue?: ContextualMessage[];
-    systemEvents?: SystemEvent[];
-    summary?: string;
-    timestamp: Date; // 片段的创建/开启时间
-    agentTurn?: AgentTurn; // 由此片段触发的 Agent 回合，是可选的
+    startTimestamp: Date; // 片段的创建/开启时间
 }
 
 export interface PendingDialogueSegment extends DialogueSegment {
     status: "open";
-    agentTurn?: undefined;
+    dialogue: ContextualMessage[];
+    systemEvents: SystemEvent[];
 }
 
 export interface ClosedDialogueSegment extends DialogueSegment {
     status: "closed";
+    dialogue: ContextualMessage[];
+    systemEvents: SystemEvent[];
     agentTurn: AgentTurn;
-}
-
-/**
- * 状态为 `folded` 的对话片段集合，将所有折叠片段整合为一个。
- */
-export interface FoldedDialogueSegment extends DialogueSegment {
-    status: "folded";
-    agentTurn?: undefined;
     endTimestamp: Date;
 }
 
 /**
- * 状态为 `summarized` 的对话片段，包含一个总结文本，不包含详细对话内容。
- * 通常是一个 `folded` 片段总结而来。
+ * 状态为 `folded` 的对话片段集合，将所有折叠片段整合为一个
+ */
+export interface FoldedDialogueSegment extends DialogueSegment {
+    status: "folded";
+    dialogue: ContextualMessage[];
+    systemEvents: SystemEvent[];
+    endTimestamp: Date;
+}
+
+/**
+ * 状态为 `summarized` 的对话片段，包含一个总结文本，不包含详细对话内容
+ * 通常是一个 `folded` 片段总结而来
  */
 export interface SummarizedDialogueSegment extends DialogueSegment {
     status: "summarized";
     summary: string;
-    dialogue: [];
-    systemEvents: [];
-    agentTurn: undefined;
     endTimestamp: Date;
 }
 
 /**
- * 代表 Agent 感知到的整个世界状态的快照。
- * 这是 Agent 进行决策时最重要的输入信息。
+ * 代表 Agent 感知到的整个世界状态的快照
+ * 这是 Agent 进行决策时最重要的输入信息
  */
 export interface WorldState {
     // 用于存储将来的用户画像
@@ -195,4 +192,56 @@ export interface WorldState {
         description: string;
     }[];
     channel: Channel;
+}
+
+// --- Agent 响应结构 (ReAct Pattern) ---
+
+/**
+ * 代表 Agent 在 ReAct 循环中的一个完整步骤 (Thought -> Action -> Observation)
+ */
+export interface AgentResponse {
+    /**
+     * 思考过程 (Thought): Agent 的内心独白
+     * - `observe`: 对当前情景的观察和总结
+     * - `analyze_infer`: 分析观察结果，进行推理
+     * - `plan`: 基于分析和推理，制定下一步行动计划
+     */
+    thoughts: { observe: string; analyze_infer: string; plan: string };
+    /**
+     * 行动 (Action): Agent 决定执行的一个或多个具体动作
+     */
+    actions: Action[];
+    /**
+     * 观察 (Observation): 执行动作后从环境中获得的结果
+     * 这个结果将成为下一个 `AgentResponse` 中 `thoughts.observe` 的输入
+     */
+    observations: ActionResult[];
+    /**
+     * 是否请求心跳
+     * 若为 true，表示 Agent 希望立即进入下一个处理循环，即使没有新的外部事件
+     * 用于需要连续执行多步操作的场景
+     */
+    request_heartbeat: boolean;
+}
+
+/**
+ * 定义了一个 Agent 可以执行的动作
+ */
+export interface Action {
+    /** 要调用的函数或工具的名称 */
+    function: string;
+    /** 调用函数时传入的参数 */
+    params: Record<string, unknown>;
+}
+
+/**
+ * 定义了一个动作执行后的结果
+ */
+export interface ActionResult {
+    /** 执行的函数名称，与 `Action.function` 对应 */
+    function: string;
+    /** 函数执行的返回结果 */
+    status: "success" | "failed" | string;
+    result?: any;
+    error?: any;
 }
