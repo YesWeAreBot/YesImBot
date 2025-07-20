@@ -9,6 +9,7 @@ export enum TableName {
     Images = "yesimbot.images",
     Entities = "yesimbot.entities",
     Facts = "yesimbot.facts",
+    Insights = "yesimbot.insights",
     UserProfiles = "yesimbot.user_profiles",
 }
 

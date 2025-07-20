@@ -41,6 +41,19 @@ export interface MemoryConfig {
         /** 关键事实权重：标记为关键的事实在画像生成中的权重倍数 */
         keyFactWeight: number;
     };
+    /** 缓存策略设置 */
+    caching: {
+        /** 是否启用缓存 */
+        enabled: boolean;
+        /** 用户画像缓存时间（分钟） */
+        profileCacheTtlMinutes: number;
+        /** 用户事实缓存时间（分钟） */
+        factsCacheTtlMinutes: number;
+        /** 最大缓存条目数 */
+        maxCacheEntries: number;
+        /** 缓存清理间隔（分钟） */
+        cleanupIntervalMinutes: number;
+    };
     /** 错误处理和重试设置 */
     errorHandling: {
         /** 最大重试次数 */
@@ -82,6 +95,14 @@ export const MemoryConfigSchema: Schema<MemoryConfig> = Schema.object({
         enableIncrementalUpdate: Schema.boolean().default(true).description("是否启用增量更新：只处理新增的事实而不是全部重新生成"),
         keyFactWeight: Schema.number().default(1.5).min(1).max(3).description("关键事实权重：标记为关键的事实在画像生成中的权重倍数"),
     }).description("用户画像生成设置"),
+
+    caching: Schema.object({
+        enabled: Schema.boolean().default(true).description("是否启用缓存"),
+        profileCacheTtlMinutes: Schema.number().default(30).min(5).max(1440).description("用户画像缓存时间（分钟）"),
+        factsCacheTtlMinutes: Schema.number().default(15).min(1).max(720).description("用户事实缓存时间（分钟）"),
+        maxCacheEntries: Schema.number().default(1000).min(100).max(10000).description("最大缓存条目数"),
+        cleanupIntervalMinutes: Schema.number().default(10).min(1).max(60).description("缓存清理间隔（分钟）"),
+    }).description("缓存策略设置"),
 
     errorHandling: Schema.object({
         maxRetries: Schema.number().default(3).min(0).max(10).description("最大重试次数"),

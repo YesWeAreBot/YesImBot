@@ -37,7 +37,9 @@ export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
     logging: LoggingConfigSchema.description("日志配置"),
     debug: Schema.object({
         enable: Schema.boolean().default(false).description("启用全局调试模式"),
-        uploadDump: Schema.boolean().default(false).description("应用出错时自动上报详细日志给开发者（包含聊天内容和 LLM 输出）"),
+        uploadDump: Schema.boolean()
+            .default(false)
+            .description("应用出错时自动上报详细日志给开发者（包含聊天内容和 LLM 输出）"),
     }).description("调试与诊断"),
 });
 
