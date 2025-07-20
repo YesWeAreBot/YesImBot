@@ -23,12 +23,12 @@
     {{/members.length}}
     <history>
       {{#history.summarized}}
-      <segment status="summarized" timestamp="{{timestamp}}">
+      <segment status="summarized" start="{{startTimestamp}}" end="{{endTimestamp}}">
         <summary>{{summary}}</summary>
       </segment>
       {{/history.summarized}}
       {{#history.folded}}
-      <segment status="folded" timestamp="{{timestamp}}" end_timestamp="{{endTimestamp}}">
+      <segment status="folded" start="{{startTimestamp}}" end="{{endTimestamp}}">
         {{#dialogue.length}}
         <dialogue>
         {{#dialogue}}
@@ -39,7 +39,7 @@
       </segment>
       {{/history.folded}}
       {{#history.closed}}
-      <segment status="closed" timestamp="{{timestamp}}">
+      <segment status="closed" start="{{startTimestamp}}">
         {{#dialogue.length}}
         <dialogue>
         {{#dialogue}}
@@ -87,7 +87,7 @@
       </segment>
       {{/history.closed}}
       {{#history.pending}}
-      <segment status="open" timestamp="{{timestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
+      <segment status="open" start="{{startTimestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
         {{#systemEvents.length}}
         <system_events>
         {{#systemEvents}}

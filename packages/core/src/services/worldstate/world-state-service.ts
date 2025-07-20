@@ -1,11 +1,12 @@
-import { formatDate, truncate } from "@/shared/utils";
+import { randomUUID } from "crypto";
 import { Argv, Bot, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
-import { randomUUID } from "node:crypto";
-import { ChannelDescriptor } from "../../agent";
-import { Entity, EntityType, MemoryService, UserProfile } from "../memory";
-import { IChatModel, IEmbedModel, TaskType } from "../model";
-import { PromptService } from "../prompt";
-import { Services, TableName } from "../types";
+
+import { ChannelDescriptor } from "@/agent";
+import { MemoryService, UserProfile } from "@/services/memory";
+import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
+import { PromptService } from "@/services/prompt";
+import { Services, TableName } from "@/services/types";
+import { formatDate, truncate } from "@/shared/utils";
 import { HistoryConfig } from "./config";
 import { DialogueSegmentData, MemberData, MessageData, SystemEventData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
@@ -14,7 +15,6 @@ import {
     AgentTurn,
     ClosedDialogueSegment,
     ContextualMessage,
-    DialogueSegment,
     FoldedDialogueSegment,
     GuildMember,
     History,
@@ -954,12 +954,10 @@ export class WorldStateService extends Service<HistoryConfig> {
             .map((segment) => segment.dialogue)
             .flat();
 
-        const entityIds = await this.recallForPrivateContext(allMessages, userId);
+        const userIds = await this.recallForPrivateContext(allMessages, userId);
 
-        // 使用缓存获取用户画像和实体信息
-        const [profiles, entities] = await this._getCachedUserProfilesAndEntities(entityIds);
-
-        const entitiesMap = new Map(entities.map((e) => [e.id, e]));
+        // 使用缓存获取用户画像信息
+        const profiles = await this._getCachedUserProfiles(userIds);
 
         const fullContext = {
             id,
@@ -973,8 +971,8 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         return {
             users: profiles.map((p) => ({
-                id: entitiesMap.get(p.entityId)?.metadata?.userId,
-                name: entitiesMap.get(p.entityId)?.name,
+                id: p.userId,
+                name: p.userName,
                 description: p.content,
             })),
             channel: fullContext,
@@ -1004,12 +1002,10 @@ export class WorldStateService extends Service<HistoryConfig> {
             .filter(Boolean)
             .map((segment) => segment.dialogue)
             .flat();
-        const entityIds = await this.recallForContext(allMessages);
+        const userIds = await this.recallForContext(allMessages);
 
-        // 使用缓存获取用户画像和实体信息
-        const [profiles, entities] = await this._getCachedUserProfilesAndEntities(entityIds);
-
-        const entitiesMap = new Map(entities.map((e) => [e.id, e]));
+        // 使用缓存获取用户画像信息
+        const profiles = await this._getCachedUserProfiles(userIds);
 
         const members = await this._getMembersFromHistory(bot, history, platform, channelInfo.guildId || id);
 
@@ -1025,8 +1021,8 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         return {
             users: profiles.map((p) => ({
-                id: entitiesMap.get(p.entityId)?.metadata?.userId,
-                name: entitiesMap.get(p.entityId)?.name,
+                id: p.userId,
+                name: p.userName,
                 description: p.content,
             })),
             channel: fullContext,
@@ -1137,7 +1133,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 id: record.id,
                 type: record.type,
                 timestamp: record.timestamp,
-                date: formatDate(record.timestamp, "YYYY-MM-DD"),
+                date: formatDate(record.timestamp, "MM-DD"),
                 payload: record.payload,
             })),
         };
@@ -1210,7 +1206,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 id: record.id,
                 type: record.type,
                 timestamp: record.timestamp,
-                date: formatDate(record.timestamp, "YYYY-MM-DD"),
+                date: formatDate(record.timestamp, "MM-DD"),
                 payload: record.payload,
             })),
             startTimestamp,
@@ -1543,121 +1539,130 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         this._logger.info(`开始处理滚动总结 | 频道: ${platform}:${channelId}`);
 
-        // 步骤 1: 获取所有待总结的 'folded' 片段
-        const foldedSegments = await this.ctx.database
-            .get(TableName.DialogueSegments, { platform, channelId, status: SegmentStatus.Folded })
-            .then((res) => res.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime()));
+        try {
+            // 步骤 1: 获取所有待总结的 'folded' 片段
+            const foldedSegments = await this.ctx.database
+                .get(TableName.DialogueSegments, { platform, channelId, status: SegmentStatus.Folded })
+                .then((res) => res.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime()));
 
-        if (foldedSegments.length < this.config.summarizationTriggerCount) {
-            /* prettier-ignore */
-            this._logger.debug(`片段数量 (${foldedSegments.length}) 未达阈值 (${this.config.summarizationTriggerCount})，跳过 | 频道: ${channelId}`);
+            if (foldedSegments.length < this.config.summarizationTriggerCount) {
+                /* prettier-ignore */
+                this._logger.debug(`片段数量 (${foldedSegments.length}) 未达阈值 (${this.config.summarizationTriggerCount})，跳过 | 频道: ${channelId}`);
 
-            this.summarizingChannels.delete(`${platform}:${channelId}`);
-            return;
-        }
-
-        // 步骤 2: 获取上一次的总结
-        const previousSummarySegment = await this.ctx.database
-            .get(TableName.DialogueSegments, { platform, channelId, status: SegmentStatus.Summarized })
-            .then((res) => res.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0]);
-
-        // 步骤 3: 渲染新的对话内容为文本
-        const newMessagesText = await this.renderSegmentsToTextForSummary(foldedSegments);
-        if (!newMessagesText) {
-            this._logger.warn(`无法为频道 ${channelId} 的新消息生成对话文本，将直接归档，避免阻塞`);
-            await this.ctx.database.set(
-                TableName.DialogueSegments,
-                { id: { $in: foldedSegments.map((s) => s.id) } },
-                { status: SegmentStatus.Archived }
-            );
-            this.summarizingChannels.delete(`${platform}:${channelId}`);
-            return;
-        }
-
-        const bot = this.ctx.bots.find((b) => b.platform === platform);
-        if (!bot) {
-            this._logger.error(`未找到 ${platform} 平台的机器人实例，无法进行总结 | 频道: ${channelId}`);
-            this.summarizingChannels.delete(`${platform}:${channelId}`);
-            return;
-        }
-
-        // 4. 构建模型所需的 Prompt
-        const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
-
-        this.ctx.emit("worldstate:summary", { id: bot.selfId, name: bot.user.name || "AI Assistant" }, foldedSegments);
-
-        const renderContext = {
-            aiIdentity,
-            previousSummary: previousSummarySegment?.summary,
-            newMessages: newMessagesText,
-        };
-
-        const prompt = await this.promptService.render("worldstate.summarization", renderContext);
-
-        // 5. 调用模型生成新总结
-        const summaryResponse = await this.chatModel
-            .chat({
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.2,
-            })
-            .catch((e) => {
-                this._logger.error(e, `模型调用失败 | 频道: ${channelId}`);
-                return null;
-            });
-        const newSummaryText = summaryResponse?.text;
-
-        if (!newSummaryText) {
-            /* prettier-ignore */
-            this._logger.warn(`模型未返回有效的总结内容，将直接归档所有 folded 和旧 summarized 片段 | 频道: ${channelId}`);
-            // 即使总结失败，也要清理，避免无限重试
-            const idsToArchive = foldedSegments.map((s) => s.id);
-            if (previousSummarySegment) {
-                idsToArchive.push(previousSummarySegment.id);
+                this.summarizingChannels.delete(`${platform}:${channelId}`);
+                return;
             }
-            await this.ctx.database.set(
-                TableName.DialogueSegments,
-                { id: { $in: idsToArchive } },
-                { status: SegmentStatus.Archived }
+
+            // 步骤 2: 获取上一次的总结
+            const previousSummarySegment = await this.ctx.database
+                .get(TableName.DialogueSegments, { platform, channelId, status: SegmentStatus.Summarized })
+                .then((res) => res.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0]);
+
+            // 步骤 3: 渲染新的对话内容为文本
+            const newMessagesText = await this.renderSegmentsToTextForSummary(foldedSegments);
+            if (!newMessagesText) {
+                this._logger.warn(`无法为频道 ${channelId} 的新消息生成对话文本，将直接归档，避免阻塞`);
+                await this.ctx.database.set(
+                    TableName.DialogueSegments,
+                    { id: { $in: foldedSegments.map((s) => s.id) } },
+                    { status: SegmentStatus.Archived }
+                );
+                this.summarizingChannels.delete(`${platform}:${channelId}`);
+                return;
+            }
+
+            const bot = this.ctx.bots.find((b) => b.platform === platform);
+            if (!bot) {
+                this._logger.error(`未找到 ${platform} 平台的机器人实例，无法进行总结 | 频道: ${channelId}`);
+                this.summarizingChannels.delete(`${platform}:${channelId}`);
+                return;
+            }
+
+            // 4. 构建模型所需的 Prompt
+            const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
+
+            this.ctx.emit(
+                "worldstate:summary",
+                { id: bot.selfId, name: bot.user.name || "AI Assistant" },
+                foldedSegments
             );
-            this.summarizingChannels.delete(`${platform}:${channelId}`);
-            return;
-        }
 
-        // 6. 创建新的总结片段
-        const latestTimestamp = foldedSegments[foldedSegments.length - 1].startTimestamp;
-        const newSummarySegment: DialogueSegmentData = {
-            id: randomUUID(),
-            platform: platform,
-            channelId: channelId,
-            guildId: foldedSegments[0].guildId,
-            status: SegmentStatus.Summarized,
-            summary: newSummaryText,
-            startTimestamp: previousSummarySegment ? previousSummarySegment.endTimestamp : latestTimestamp,
-            endTimestamp: latestTimestamp,
-            agentTurn: null,
-        };
+            const renderContext = {
+                aiIdentity,
+                previousSummary: previousSummarySegment?.summary,
+                newMessages: newMessagesText,
+            };
 
-        // 7. 在一个事务中完成所有数据库操作
-        const idsToArchive = foldedSegments.map((s) => s.id);
-        if (previousSummarySegment) {
-            idsToArchive.push(previousSummarySegment.id);
-        }
+            const prompt = await this.promptService.render("worldstate.summarization", renderContext);
 
-        await this.ctx.database.withTransaction(async (db) => {
-            await db.create(TableName.DialogueSegments, newSummarySegment);
-            if (idsToArchive.length > 0) {
-                await db.set(
+            // 5. 调用模型生成新总结
+            const summaryResponse = await this.chatModel
+                .chat({
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.2,
+                })
+                .catch((e) => {
+                    this._logger.error(e, `模型调用失败 | 频道: ${channelId}`);
+                    return null;
+                });
+            const newSummaryText = summaryResponse?.text;
+
+            if (!newSummaryText) {
+                /* prettier-ignore */
+                this._logger.warn(`模型未返回有效的总结内容，将直接归档所有 folded 和旧 summarized 片段 | 频道: ${channelId}`);
+                // 即使总结失败，也要清理，避免无限重试
+                const idsToArchive = foldedSegments.map((s) => s.id);
+                if (previousSummarySegment) {
+                    idsToArchive.push(previousSummarySegment.id);
+                }
+                await this.ctx.database.set(
                     TableName.DialogueSegments,
                     { id: { $in: idsToArchive } },
                     { status: SegmentStatus.Archived }
                 );
+                this.summarizingChannels.delete(`${platform}:${channelId}`);
+                return;
             }
-        });
 
-        this.summarizingChannels.delete(`${platform}:${channelId}`);
+            // 6. 创建新的总结片段
+            const latestTimestamp = foldedSegments[foldedSegments.length - 1].startTimestamp;
+            const newSummarySegment: DialogueSegmentData = {
+                id: randomUUID(),
+                platform: platform,
+                channelId: channelId,
+                guildId: foldedSegments[0].guildId,
+                status: SegmentStatus.Summarized,
+                summary: newSummaryText,
+                startTimestamp: previousSummarySegment ? previousSummarySegment.endTimestamp : latestTimestamp,
+                endTimestamp: latestTimestamp,
+                agentTurn: null,
+            };
 
-        /* prettier-ignore */
-        this._logger.info(`[滚动总结] 成功 | 频道: ${channelId} | 新总结ID: ${newSummarySegment.id} | 归档了 ${idsToArchive.length} 个旧片段`);
+            // 7. 在一个事务中完成所有数据库操作
+            const idsToArchive = foldedSegments.map((s) => s.id);
+            if (previousSummarySegment) {
+                idsToArchive.push(previousSummarySegment.id);
+            }
+
+            await this.ctx.database.withTransaction(async (db) => {
+                await db.create(TableName.DialogueSegments, newSummarySegment);
+                if (idsToArchive.length > 0) {
+                    await db.set(
+                        TableName.DialogueSegments,
+                        { id: { $in: idsToArchive } },
+                        { status: SegmentStatus.Archived }
+                    );
+                }
+            });
+
+            this.summarizingChannels.delete(`${platform}:${channelId}`);
+
+            /* prettier-ignore */
+            this._logger.info(`[滚动总结] 成功 | 频道: ${channelId} | 新总结ID: ${newSummarySegment.id} | 归档了 ${idsToArchive.length} 个旧片段`);
+        } catch (error) {
+            this._logger.error(error, `滚动总结失败 | 频道: ${channelId}`);
+            this.summarizingChannels.delete(`${platform}:${channelId}`);
+        }
     }
 
     /**
@@ -1696,7 +1701,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 3. 格式化为文本
         const dialogueLines = allItems
             .map((item) => {
-                const timestampStr = formatDate(item.timestamp, "HH:mm:ss");
+                const timestampStr = formatDate(item.timestamp, "HH:mm");
 
                 if (item.itemType === "message") {
                     const msg = item as MessageData;
@@ -1868,65 +1873,43 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     /**
-     * 获取缓存的用户画像和实体信息
-     * @param entityIds 实体ID列表
-     * @returns 用户画像和实体信息的元组
+     * 获取缓存的用户画像信息
+     * @param userIds 用户ID列表
+     * @returns 用户画像列表
      */
-    private async _getCachedUserProfilesAndEntities(entityIds: string[]): Promise<[UserProfile[], Entity[]]> {
-        if (entityIds.length === 0) {
-            return [[], []];
+    private async _getCachedUserProfiles(userIds: string[]): Promise<UserProfile[]> {
+        if (userIds.length === 0) {
+            return [];
         }
 
         const profiles: UserProfile[] = [];
-        const entities: Entity[] = [];
-        const missingProfileIds: string[] = [];
-        const missingEntityIds: string[] = [];
+        const missingUserIds: string[] = [];
 
         // 尝试从缓存获取用户画像
-        for (const entityId of entityIds) {
-            const cachedProfile = this.cacheManager.get<UserProfile>(CacheKeyPrefix.USER_PROFILES, entityId);
+        for (const userId of userIds) {
+            const cachedProfile = this.cacheManager.get<UserProfile>(CacheKeyPrefix.USER_PROFILES, userId);
             if (cachedProfile) {
                 profiles.push(cachedProfile);
             } else {
-                missingProfileIds.push(entityId);
-            }
-
-            const cachedEntity = this.cacheManager.get<Entity>(CacheKeyPrefix.ENTITY_INFO, entityId);
-            if (cachedEntity) {
-                entities.push(cachedEntity);
-            } else {
-                missingEntityIds.push(entityId);
+                missingUserIds.push(userId);
             }
         }
 
-        // 批量查询缺失的数据
-        const [missingProfiles, missingEntities] = await Promise.all([
-            missingProfileIds.length > 0
-                ? this.ctx.database.get(TableName.UserProfiles, {
-                      entityId: { $in: missingProfileIds },
-                      isDeleted: false,
-                  })
-                : Promise.resolve([]),
-            missingEntityIds.length > 0
-                ? this.ctx.database.get(TableName.Entities, {
-                      id: { $in: missingEntityIds },
-                      isDeleted: false,
-                  })
-                : Promise.resolve([]),
-        ]);
+        // 批量查询缺失的用户画像
+        if (missingUserIds.length > 0) {
+            const missingProfiles = await this.ctx.database.get(TableName.UserProfiles, {
+                userId: { $in: missingUserIds },
+                isDeleted: false,
+            });
 
-        // 缓存新查询的数据
-        for (const profile of missingProfiles) {
-            this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, profile.entityId, profile);
-            profiles.push(profile);
+            // 缓存新查询的数据
+            for (const profile of missingProfiles) {
+                this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, profile.userId, profile);
+                profiles.push(profile);
+            }
         }
 
-        for (const entity of missingEntities) {
-            this.cacheManager.set(CacheKeyPrefix.ENTITY_INFO, entity.id, entity);
-            entities.push(entity);
-        }
-
-        return [profiles, entities];
+        return profiles;
     }
 
     /**
@@ -2009,50 +1992,42 @@ export class WorldStateService extends Service<HistoryConfig> {
         const maxRelevantUsers = this.config.recallUserProfileCount; // 使用配置的数量
         const minRelevanceScore = 0.15; // 私聊场景进一步降低阈值，更容易召回相关画像
 
-        // 合并并评分（使用实体ID而不是用户ID）
-        const entityRelevanceMap = new Map<string, number>();
+        // 合并并评分（直接使用用户ID）
+        const userRelevanceMap = new Map<string, number>();
 
-        // 第一层：当前用户对应的实体（必须包含，最高优先级）
-        const currentUserEntity = await this._getUserEntityId(currentUserId);
-        if (currentUserEntity) {
-            entityRelevanceMap.set(currentUserEntity, 1.0);
-        }
+        // 第一层：当前用户（必须包含，最高优先级）
+        userRelevanceMap.set(currentUserId, 1.0);
 
-        // 第二层：直接参与者对应的实体（私聊中的机器人和用户）
+        // 第二层：直接参与者（私聊中的机器人和用户）
         const directParticipantUserIds = new Set<string>();
         messages.forEach((m) => {
             directParticipantUserIds.add(m.sender.id);
         });
 
-        // 将用户ID转换为实体ID并分配高优先级
+        // 分配高优先级给直接参与者
         for (const userId of directParticipantUserIds) {
             if (userId !== currentUserId) {
                 // 避免重复设置当前用户
-                const entityId = await this._getUserEntityId(userId);
-                if (entityId) {
-                    entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.95));
-                }
+                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, 0.95));
             }
         }
 
         // 第三层：语义相关用户（基于对话内容，私聊场景下权重更高）
-        // 注意：findSemanticRelevantUsers 已经返回实体ID
         const semanticUsers = await this.findSemanticRelevantUsers(messages, maxRelevantUsers * 2);
         semanticUsers.forEach(({ userId, score }) => {
             if (score >= minRelevanceScore) {
                 // 私聊场景下语义相关性权重更高
                 const adjustedScore = score * 0.95;
-                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, adjustedScore));
+                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, adjustedScore));
             }
         });
 
         // 第四层：基于用户名提及的用户（私聊中可能提到其他人）
-        // 注意：findNamedUsers 已经返回实体ID
         const namedUsers = await this.findNamedUsers(messages);
         namedUsers.forEach(({ userId, score }) => {
             if (score >= minRelevanceScore) {
                 const adjustedScore = score * 0.8;
-                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, adjustedScore));
+                userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, adjustedScore));
             }
         });
 
@@ -2063,31 +2038,33 @@ export class WorldStateService extends Service<HistoryConfig> {
             mentions.forEach((userId) => mentionedUserIds.add(userId));
         });
 
-        // 将@提及的用户ID转换为实体ID
+        // 分配高优先级给@提及的用户
         for (const userId of mentionedUserIds) {
-            const entityId = await this._getUserEntityId(userId);
-            if (entityId) {
-                entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.85));
-            }
+            userRelevanceMap.set(userId, Math.max(userRelevanceMap.get(userId) || 0, 0.85));
         }
 
         // 按相关性排序并限制数量
-        const sortedEntityIds = Array.from(entityRelevanceMap.entries())
+        const sortedUserIds = Array.from(userRelevanceMap.entries())
             .filter(([_, score]) => score >= minRelevanceScore)
             .sort(([, a], [, b]) => b - a)
             .slice(0, maxRelevantUsers)
-            .map(([entityId]) => entityId);
+            .map(([userId]) => userId);
 
         this._logger.debug(
-            `私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`
+            `私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`
         );
 
         // 缓存结果
-        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedEntityIds);
+        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedUserIds);
 
-        return sortedEntityIds;
+        return sortedUserIds;
     }
 
+    /**
+     * 根据上下文召回关联用户
+     * @param messages
+     * @returns 用户ID列表
+     */
     async recallForContext(messages: ContextualMessage[]): Promise<string[]> {
         if (!messages || messages.length === 0) {
             return [];
@@ -2128,106 +2105,58 @@ export class WorldStateService extends Service<HistoryConfig> {
         });
 
         // 第二层：语义相关用户（智能筛选）
-        // 注意：findSemanticRelevantUsers 已经返回实体ID
         const semanticUsers = await this.findSemanticRelevantUsers(messages, maxRelevantUsers);
 
         // 第三层：基于用户名提及的用户
-        // 注意：findNamedUsers 已经返回实体ID
         const namedUsers = await this.findNamedUsers(messages);
 
-        // 合并并评分（使用实体ID而不是用户ID）
-        const entityRelevanceMap = new Map<string, number>();
+        // 合并并评分
+        const relevanceMap = new Map<string, number>();
 
-        // 直接参与者 - 最高优先级（需要转换为实体ID）
+        // 直接参与者 - 最高优先级
         for (const userId of directParticipantUserIds) {
-            const entityId = await this._getUserEntityId(userId);
-            if (entityId) {
-                entityRelevanceMap.set(entityId, 1.0);
-            }
+            relevanceMap.set(userId, 1.0);
         }
 
-        // @提及的用户 - 高优先级（需要转换为实体ID）
+        // @提及的用户 - 高优先级
         for (const userId of mentionedUserIds) {
-            const entityId = await this._getUserEntityId(userId);
-            if (entityId) {
-                entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.9));
-            }
+            relevanceMap.set(userId, Math.max(relevanceMap.get(userId) || 0, 0.9));
         }
 
-        // 被引用的用户 - 高优先级（需要转换为实体ID）
+        // 被引用的用户 - 高优先级
         for (const userId of quotedUserIds) {
-            const entityId = await this._getUserEntityId(userId);
-            if (entityId) {
-                entityRelevanceMap.set(entityId, Math.max(entityRelevanceMap.get(entityId) || 0, 0.8));
-            }
+            relevanceMap.set(userId, Math.max(relevanceMap.get(userId) || 0, 0.8));
         }
 
-        // 语义相关用户 - 中等优先级（已经是实体ID）
+        // 语义相关用户 - 中等优先级
         semanticUsers.forEach(({ userId, score }) => {
             if (score >= minRelevanceScore) {
-                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, score * 0.7));
+                relevanceMap.set(userId, Math.max(relevanceMap.get(userId) || 0, score * 0.7));
             }
         });
 
-        // 基于姓名提及的用户 - 较低优先级（已经是实体ID）
+        // 基于姓名提及的用户 - 较低优先级
         namedUsers.forEach(({ userId, score }) => {
             if (score >= minRelevanceScore) {
-                entityRelevanceMap.set(userId, Math.max(entityRelevanceMap.get(userId) || 0, score * 0.5));
+                relevanceMap.set(userId, Math.max(relevanceMap.get(userId) || 0, score * 0.5));
             }
         });
 
         // 按相关性排序并限制数量
-        const sortedEntityIds = Array.from(entityRelevanceMap.entries())
+        const sortedUserIds = Array.from(relevanceMap.entries())
             .filter(([_, score]) => score >= minRelevanceScore)
             .sort(([, a], [, b]) => b - a)
             .slice(0, maxRelevantUsers)
-            .map(([entityId]) => entityId);
+            .map(([userId]) => userId);
 
         this._logger.debug(
-            `智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedEntityIds.length} 个相关实体`
+            `智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`
         );
 
         // 缓存结果
-        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedEntityIds);
+        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedUserIds);
 
-        return sortedEntityIds;
-    }
-
-    /**
-     * 根据用户ID获取对应的实体ID
-     * @param userId 用户ID
-     * @returns 实体ID，如果未找到则返回null
-     */
-    private async _getUserEntityId(userId: string): Promise<string | null> {
-        try {
-            // 从缓存中查找
-            const cacheKey = `user_entity_${userId}`;
-            const cachedEntityId = this.cacheManager.get<string>(CacheKeyPrefix.ENTITY_INFO, cacheKey);
-            if (cachedEntityId) {
-                return cachedEntityId;
-            }
-
-            // 从数据库查找
-            const entities = await this.ctx.database.get(TableName.Entities, {
-                type: EntityType.Person,
-                isDeleted: false,
-            });
-
-            // 在内存中过滤匹配的实体
-            const matchingEntity = entities.find((entity) => entity.metadata && entity.metadata.userId === userId);
-
-            if (matchingEntity) {
-                const entityId = matchingEntity.id;
-                // 缓存结果
-                this.cacheManager.set(CacheKeyPrefix.ENTITY_INFO, cacheKey, entityId);
-                return entityId;
-            }
-
-            return null;
-        } catch (error) {
-            this._logger.warn(`获取用户 ${userId} 的实体ID失败: ${error.message}`);
-            return null;
-        }
+        return sortedUserIds;
     }
 
     /**
@@ -2268,15 +2197,13 @@ export class WorldStateService extends Service<HistoryConfig> {
     /**
      * 基于语义相似度查找相关用户
      */
-    private async findSemanticRelevantUsers(
-        messages: ContextualMessage[],
-        maxUsers: number
-    ): Promise<Array<{ userId: string; score: number }>> {
+    /* prettier-ignore */
+    private async findSemanticRelevantUsers(messages: ContextualMessage[], maxUsers: number): Promise<Array<{ userId: string; score: number }>> {
         try {
             const batchText = messages.map((m) => `${m.sender.name}: ${m.content}`).join("\n");
 
             const [factResults, profileResults] = await Promise.all([
-                this.memoryService.searchFacts(batchText, { limit: 15 }),
+                this.memoryService.searchUserFacts(batchText, { limit: 15 }),
                 this.memoryService.searchUserProfiles(batchText, { limit: 10 }),
             ]);
 
@@ -2285,20 +2212,20 @@ export class WorldStateService extends Service<HistoryConfig> {
             // 从事实中提取相关用户
             if (factResults.success && factResults.data) {
                 factResults.data.forEach((fact: any) => {
-                    const factScore = fact.similarity || 0.5; // 使用相似度作为评分
-                    fact.relatedEntityIds.forEach((entityId: string) => {
-                        const currentScore = userScores.get(entityId) || 0;
-                        userScores.set(entityId, Math.max(currentScore, factScore * 0.8));
-                    });
+                    // 使用事实的显著性作为评分，如果没有则使用默认值
+                    const factScore = fact.salience || 0.5;
+                    const currentScore = userScores.get(fact.userId) || 0;
+                    userScores.set(fact.userId, Math.max(currentScore, factScore * 0.8));
                 });
             }
 
             // 从用户画像中提取相关用户
             if (profileResults.success && profileResults.data) {
                 profileResults.data.forEach((profile: any) => {
-                    const profileScore = profile.similarity || 0.5;
-                    const currentScore = userScores.get(profile.entityId) || 0;
-                    userScores.set(profile.entityId, Math.max(currentScore, profileScore));
+                    // 使用画像的显著性作为评分，如果没有则使用默认值
+                    const profileScore = profile.salience || 0.5;
+                    const currentScore = userScores.get(profile.userId) || 0;
+                    userScores.set(profile.userId, Math.max(currentScore, profileScore));
                 });
             }
 
@@ -2319,16 +2246,15 @@ export class WorldStateService extends Service<HistoryConfig> {
         try {
             const messageText = messages.map((m) => m.content).join(" ");
 
-            // 获取所有已知用户实体
-            const entities = await this.ctx.database.get(TableName.Entities, {
-                type: EntityType.Person,
+            // 获取所有已知用户画像
+            const users = await this.ctx.database.get(TableName.UserProfiles, {
                 isDeleted: false,
             });
 
             const namedUsers: Array<{ userId: string; score: number }> = [];
 
-            entities.forEach((entity) => {
-                const userName = entity.name;
+            users.forEach((profile) => {
+                const userName = profile.userName;
                 if (userName && userName.length > 1) {
                     // 检查用户名是否在消息中被提及
                     const nameRegex = new RegExp(`\\b${userName}\\b`, "gi");
@@ -2337,7 +2263,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                     if (matches && matches.length > 0) {
                         // 基于提及次数计算评分
                         const score = Math.min(matches.length * 0.2 + 0.3, 0.8);
-                        namedUsers.push({ userId: entity.id, score });
+                        namedUsers.push({ userId: profile.userId, score });
                     }
                 }
             });
@@ -2359,8 +2285,8 @@ export class WorldStateService extends Service<HistoryConfig> {
             id: record.id,
             content: record.content,
             timestamp: record.timestamp,
-            date: formatDate(record.timestamp, "YYYY-MM-DD"),
-            time: formatDate(record.timestamp, "HH:mm:ss"),
+            date: formatDate(record.timestamp, "MM-DD"),
+            time: formatDate(record.timestamp, "HH:mm"),
             quoted: quotedMsgIds.has(record.id),
             quoteId: record.quoteId,
             sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
