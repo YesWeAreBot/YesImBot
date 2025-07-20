@@ -1429,12 +1429,12 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.cacheManager.cleanupExpired();
 
         this._cleanupExpiredRecords().catch((error) => {
-            this._logger.error("清理过期记录任务执行失败", error);
+            this._logger.error("清理过期记录任务执行失败", error.message);
         });
 
         if (this.config.enableSummarization && this.chatModel) {
             this.triggerSummarizationForEligibleChannels().catch((error) => {
-                this._logger.error("自动总结任务执行失败", error);
+                this._logger.error("自动总结任务执行失败", error.message);
             });
         }
     }

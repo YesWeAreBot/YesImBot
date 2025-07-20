@@ -1228,7 +1228,7 @@ export class MemoryService extends Service<MemoryConfig> implements IMemoryServi
                     return { success: true, data: updatedProfile };
 
                 } catch (error: any) {
-                    this.logger.error(`整合用户 ${userId} 画像时发生意外错误: ${error.message}`, { stack: error.stack });
+                    this.logger.error(`整合用户 ${userId} 画像时发生意外错误: ${error.message}`);
                     return { success: false, error: error.message };
                 }
             });
