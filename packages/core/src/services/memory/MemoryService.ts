@@ -468,83 +468,83 @@ export class MemoryService extends Service<MemoryConfig> {
     }
 
     /**
- * 使用单个查询嵌入，同时在用户事实（Facts）和洞察（Insights）中进行语义搜索
- * 返回一个按相似度统一排序的混合结果列表
- *
- * @param query 搜索查询字符串
- * @param options 搜索选项，如 limit, minSimilarity 等
- * @returns 一个包含事实和洞察的、按相似度排序的列表
- */
-async searchMemories(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<MemorySearchResult[]>> {
-    const {
-        userIds = [],
-        limit = 10,
-        minSalience = 0,
-        minSimilarity = 0.3,
-        includeDeleted = false
-    } = options;
+     * 使用单个查询嵌入，同时在用户事实（Facts）和洞察（Insights）中进行语义搜索
+     * 返回一个按相似度统一排序的混合结果列表
+     *
+     * @param query 搜索查询字符串
+     * @param options 搜索选项，如 limit, minSimilarity 等
+     * @returns 一个包含事实和洞察的、按相似度排序的列表
+     */
+    /* prettier-ignore */
+    async searchMemories(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<MemorySearchResult[]>> {
+        const { userIds = [], limit = 10, minSalience = 0, minSimilarity = 0.3, includeDeleted = false } = options;
 
-    if (!this.embeddingModel) {
-        return { success: false, error: "嵌入模型不可用，无法执行语义搜索" };
-    }
-
-    try {
-        // --- 1. 生成一次嵌入 ---
-        // this.logger.info(`正在为查询生成嵌入: "${query}"`);
-        const queryEmbedding = await this.embeddingModel.embed(query).then((res) => res.embedding);
-
-        // --- 2. 并行获取数据 ---
-        // 为 'Facts', 'Insights' 和 'UserProfiles'  分别构建数据库查询
-        const factDbQuery = this._buildDbQuery<Fact>(options, (ids) => ({ userId: { $in: ids } }));
-        const insightDbQuery = this._buildDbQuery<Insight>(options, (ids) => ({ relatedUserIds: { $some: ids } }));
-        const profileDbQuery = this._buildDbQuery<UserProfile>(options, (ids) => ({ userId: { $in: ids } }));
-
-        this.logger.info("正在并行从数据库获取事实和洞察...");
-        const [allFacts, allInsights, allProfiles] = await Promise.all([
-            this.ctx.database.get(TableName.Facts, factDbQuery),
-            this.ctx.database.get(TableName.Insights, insightDbQuery),
-            this.ctx.database.get(TableName.UserProfiles, profileDbQuery),
-        ]);
-
-        const totalItems = allFacts.length + allInsights.length + allProfiles.length;
-        this.logger.info(`已获取 ${allFacts.length} 条事实, ${allInsights.length} 条洞察和 ${allProfiles.length} 个用户画像，共 ${totalItems} 条记录待处理`);
-
-        if (totalItems === 0) {
-            return { success: true, data: [] };
+        if (!this.embeddingModel) {
+            return { success: false, error: "嵌入模型不可用，无法执行语义搜索" };
         }
 
-        if (totalItems > 1000) {
-            this.logger.warn(`正在对 ${totalItems} 条记录进行内存向量搜索，这可能非常缓慢并消耗大量内存`);
+        try {
+            // --- 1. 生成一次嵌入 ---
+            // this.logger.info(`正在为查询生成嵌入: "${query}"`);
+            const queryEmbedding = await this.embeddingModel.embed(query).then((res) => res.embedding);
+
+            // --- 2. 并行获取数据 ---
+            // 为 'Facts', 'Insights' 和 'UserProfiles'  分别构建数据库查询
+            const factDbQuery = this._buildDbQuery<Fact>(options, (ids) => ({ userId: { $in: ids } }));
+            const insightDbQuery = this._buildDbQuery<Insight>(options, (ids) => ({ relatedUserIds: { $some: ids } }));
+            const profileDbQuery = this._buildDbQuery<UserProfile>(options, (ids) => ({ userId: { $in: ids } }));
+
+            this.logger.info("正在并行从数据库获取事实和洞察...");
+            const [allFacts, allInsights, allProfiles] = await Promise.all([
+                this.ctx.database.get(TableName.Facts, factDbQuery),
+                this.ctx.database.get(TableName.Insights, insightDbQuery),
+                this.ctx.database.get(TableName.UserProfiles, profileDbQuery),
+            ]);
+
+            const totalItems = allFacts.length + allInsights.length + allProfiles.length;
+            this.logger.info(
+                `已获取 ${allFacts.length} 条事实, ${allInsights.length} 条洞察和 ${allProfiles.length} 个用户画像，共 ${totalItems} 条记录待处理`
+            );
+
+            if (totalItems === 0) {
+                return { success: true, data: [] };
+            }
+
+            if (totalItems > 1000) {
+                this.logger.warn(`正在对 ${totalItems} 条记录进行内存向量搜索，这可能非常缓慢并消耗大量内存`);
+            }
+
+            // --- 3. 合并数据 ---
+            // 为了区分来源，我们给每个对象添加一个 'source' 字段
+            const combinedItems: (
+                | (Fact & { source: "fact" })
+                | (Insight & { source: "insight" })
+                | (UserProfile & { source: "profile" })
+            )[] = [
+                ...allFacts.map((fact) => ({ ...fact, source: "fact" as const })),
+                ...allInsights.map((insight) => ({ ...insight, source: "insight" as const })),
+                ...allProfiles.map((profile) => ({ ...profile, source: "profile" as const })),
+            ];
+
+            // --- 4. 统一处理 ---
+            // 在合并后的列表上进行相似度计算、过滤、排序和裁剪
+            const resultsWithSimilarity = combinedItems
+                .map((item) => ({
+                    ...item,
+                    similarity: cosineSimilarity(queryEmbedding, item.embedding),
+                }))
+                .filter((item) => item.similarity >= minSimilarity);
+
+            resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
+
+            const finalResults = resultsWithSimilarity.slice(0, limit);
+
+            return { success: true, data: finalResults };
+        } catch (error) {
+            this.logger.error(`搜索记忆失败: ${error.message}`, error);
+            return { success: false, error: error.message };
         }
-
-        // --- 3. 合并数据 ---
-        // 为了区分来源，我们给每个对象添加一个 'source' 字段
-        const combinedItems: ((Fact & { source: 'fact' }) | (Insight & { source: 'insight' }) | (UserProfile & { source: 'profile' }))[] = [
-            ...allFacts.map(fact => ({ ...fact, source: 'fact' as const })),
-            ...allInsights.map(insight => ({ ...insight, source: 'insight' as const })),
-            ...allProfiles.map(profile => ({ ...profile, source: 'profile' as const })),
-        ];
-
-        // --- 4. 统一处理 ---
-        // 在合并后的列表上进行相似度计算、过滤、排序和裁剪
-        const resultsWithSimilarity = combinedItems
-            .map((item) => ({
-                ...item,
-                similarity: cosineSimilarity(queryEmbedding, item.embedding),
-            }))
-            .filter((item) => item.similarity >= minSimilarity);
-
-        resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
-
-        const finalResults = resultsWithSimilarity.slice(0, limit);
-
-        return { success: true, data: finalResults };
-
-    } catch (error) {
-        this.logger.error(`搜索记忆失败: ${error.message}`, error);
-        return { success: false, error: error.message };
     }
-}
 
     async addUserFact(
         factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">
@@ -1024,14 +1024,169 @@ class ProfileConsolidator {
         userId: string,
         options: ProfileConsolidationOptions = {}
     ): Promise<MemoryOperationResult<UserProfile | null>> {
-        // 此方法包含 consolidateProfile 的完整核心逻辑
-        // ... 从原 consolidateProfile 方法复制并粘贴其 try-catch 块内的所有代码 ...
-        // 注意：删除外层的 withLock 和 withPerformanceMonitoring 调用
         try {
-            const { forceReconsolidate = false /* ... */ } = options;
-            const [existingProfile] = await this.ctx.database.get(TableName.UserProfiles, { userId, isDeleted: false });
-            // ... 后续所有逻辑与原 consolidateProfile 方法完全相同
-            return { success: true, data: {} as any }; // 示例返回
+            // --- 3. 初始化与配置加载 ---
+            // 从 options 和全局配置中解构出本次操作所需的参数。
+            const {
+                forceReconsolidate = false, // 是否强制重新整合，忽略频率限制
+                minFactsThreshold = this.config.profileGeneration.minFactsForUpdate, // 触发更新所需的最少事实数量
+                confidenceThreshold = this.config.profileGeneration.confidenceThreshold, // LLM 生成内容需达到的最低置信度
+            } = options;
+
+            // --- 4. 获取现有数据与前置检查 ---
+            // 从数据库中获取该用户已存在的画像。`res[0]`直接获取查询结果的第一个元素。
+            const [existingProfile] = await this.ctx.database.get(TableName.UserProfiles, {
+                userId,
+                isDeleted: false,
+            });
+
+            // 检查更新频率，避免在短时间内对同一用户进行不必要的重复整合。
+            if (existingProfile && !forceReconsolidate) {
+                const hoursSinceLastUpdate = (Date.now() - existingProfile.updatedAt.getTime()) / (1000 * 60 * 60);
+                if (hoursSinceLastUpdate < this.config.profileGeneration.updateIntervalHours) {
+                    this.logger.info(
+                        `用户 ${userId} 的画像更新过于频繁，跳过。距离上次更新仅 ${hoursSinceLastUpdate.toFixed(
+                            1
+                        )} 小时`
+                    );
+                    return { success: true, data: existingProfile }; // 返回现有画像，操作成功。
+                }
+            }
+
+            // 智能获取需要处理的事实和洞察（可能是增量或全量）。
+            const { relevantFacts, insights, newFactsOnly } = await this.getRelevantFactsForProfile(
+                userId,
+                existingProfile,
+                forceReconsolidate
+            );
+
+            // 如果新的事实和洞察数量未达到阈值，则不执行更新，以节省计算资源。
+            if (relevantFacts.length + insights.length < minFactsThreshold && !forceReconsolidate) {
+                this.logger.info(
+                    `用户 ${userId} 没有足够的新事实进行整合，跳过。当前新信息数: ${
+                        relevantFacts.length + insights.length
+                    }`
+                );
+                return { success: true, data: existingProfile };
+            }
+
+            // --- 5. 准备LLM输入数据 ---
+            // 确定用户名，优先从事实中获取，否则使用 userId 作为备用。
+            const userName = relevantFacts.length > 0 ? relevantFacts[0].userName : userId;
+
+            // 创建一个临时ID到真实ID的映射。LLM处理简单的数字ID（如1,2,3）比处理UUID更高效可靠。
+            const tempIdToRealIdMap = new Map<number, string>();
+
+            // 将所有事实（facts）和洞察（insights）合并到一个列表中，并进行统一处理。
+            const allSources = [...relevantFacts, ...insights];
+            const newFactsAndInsightsForLLM = allSources.map((source, index) => {
+                const tempId = index + 1; // 生成简单的数字ID，从1开始
+                tempIdToRealIdMap.set(tempId, source.id); // 记录临时ID到真实ID的映射关系
+
+                let content = source.content;
+                // 检查当前项是否为“事实”（通过检查它是否存在于 `relevantFacts` 数组中），以便应用权重。
+                // 这里假设 insight 对象结构与 fact 不同，或可以用其他方式区分。
+                if (relevantFacts.includes(source as any)) {
+                    // 'as any' 用于类型兼容，假设结构相似
+                    const weight = this.calculateFactWeight(source, existingProfile);
+                    if (weight > 1) {
+                        content = `[重要] ${content}`; // 为高权重事实添加前缀，引导LLM关注
+                    }
+                }
+
+                return {
+                    id: String(tempId), // LLM 输入的ID为字符串形式的数字
+                    type: source.type,
+                    content: content,
+                };
+            });
+
+            // 构建发送给LLM的完整输入对象。
+            const inputForLLM = {
+                userId,
+                userName,
+                existingProfile: existingProfile?.content || "这是一个关于该用户的新画像。",
+                isIncrementalUpdate: newFactsOnly, // 告知LLM是增量更新还是全量更新
+                factCount: allSources.length,
+                newFactsAndInsights: newFactsAndInsightsForLLM,
+            };
+
+            // 使用模板引擎生成最终的Prompt。
+            const prompt = await this.promptService.render("memory.profile_consolidation", inputForLLM);
+
+            // --- 6. 调用LLM并解析结果 ---
+            const response = await this.chatModel.chat({
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.2, //较低的温度使输出更具确定性和事实性
+            });
+
+            // 解析LLM返回的JSON字符串。
+            const parser = new JsonParser<any>();
+            const result = parser.parse(response.text);
+
+            if (result.error) {
+                this.logger.error(`整合用户 ${userId} 画像时LLM响应解析失败: ${result.error}`, {
+                    responseText: response.text,
+                });
+                return { success: false, error: `LLM响应解析失败: ${result.error}` };
+            }
+
+            const { profile_content, confidence_score, key_source_ids } = result.data;
+
+            // 如果LLM对自己生成内容的置信度低于阈值，则放弃本次更新。
+            if (confidence_score < confidenceThreshold) {
+                this.logger.warn(`用户 ${userId} 的画像生成置信度过低 (${confidence_score})，跳过更新。`);
+                return { success: true, data: existingProfile };
+            }
+
+            // --- 7. 数据持久化 ---
+            // 将LLM返回的临时数字ID转换回真实的数据库ID。
+            const realKeySourceIds = key_source_ids
+                .map((id: string) => tempIdToRealIdMap.get(Number(id))!)
+                .filter(Boolean);
+
+            // 智能地更新支持该画像的事实ID列表。
+            const updatedSupportingFactIds = this.updateSupportingFactIds(
+                existingProfile?.supportingFactIds || [],
+                relevantFacts,
+                realKeySourceIds,
+                newFactsOnly
+            );
+
+            // 为新的画像内容生成向量嵌入，用于后续的相似度检索。
+            const { embedding } = await this.embeddingModel.embed(profile_content);
+
+            // 准备要写入数据库的最终数据。
+            const updatedProfileData: Omit<UserProfile, "id" | "createdAt"> = {
+                userId,
+                userName,
+                content: profile_content,
+                embedding,
+                confidence: confidence_score,
+                salience: 1.0,
+                supportingFactIds: updatedSupportingFactIds,
+                updatedAt: new Date(),
+                version: (existingProfile?.version || 0) + 1,
+                keyFactsForUpdate: realKeySourceIds, // 保存本次更新所依赖的关键事实ID，供下次增量更新使用
+            };
+
+            // 执行数据库的“更新或插入”（Upsert）操作。
+            let updatedProfile: UserProfile;
+            if (existingProfile) {
+                // 如果画像已存在，则更新。
+                await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, updatedProfileData);
+                updatedProfile = { ...existingProfile, ...updatedProfileData }; // 合并旧数据和新数据以获得完整对象
+            } else {
+                // 如果画像不存在，则创建新记录。
+                updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
+                    id: uuidv4(), // 生成新的主键
+                    ...updatedProfileData,
+                    createdAt: new Date(), // 设置创建时间
+                });
+            }
+
+            this.logger.info(`成功为用户 ${userId} 整合并更新了人物画像。版本: ${updatedProfile.version}`);
+            return { success: true, data: updatedProfile };
         } catch (error: any) {
             this.logger.error(`整合用户 ${userId} 画像时发生意外错误: ${error.message}`);
             return { success: false, error: error.message };
