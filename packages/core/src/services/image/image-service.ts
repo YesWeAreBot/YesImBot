@@ -101,7 +101,7 @@ export class ImageService extends Service<ImageServiceConfig> {
             return null;
         }
 
-        this._logger.info(`🖼️ 开始处理新图片 | URL: ${truncate(url)}`);
+        this._logger.debug(`🖼️ 开始处理新图片 | URL: ${truncate(url)}`);
 
         try {
             const { buffer, mimeType } = await this._downloadImage(url);
@@ -131,7 +131,7 @@ export class ImageService extends Service<ImageServiceConfig> {
                     },
                 };
                 await this.ctx.database.create(TableName.Images, imageData);
-                this._logger.info(`✔ 新图片已保存 | ID: ${md5}`);
+                this._logger.debug(`✔ 新图片已保存 | ID: ${md5}`);
             } else {
                 this._logger.debug(`✔ 缓存命中 | ID: ${md5}`);
                 // 缓存命中时，更新其最后使用时间
