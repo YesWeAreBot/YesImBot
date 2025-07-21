@@ -4,8 +4,7 @@
 
 import { formatDate } from "@/shared";
 import { randomUUID } from "crypto";
-import { Logger, h } from "koishi";
-import { Context } from "vm";
+import { Logger, h, Context } from "koishi";
 import { IChatModel, TaskType } from "../model";
 import { PromptService } from "../prompt";
 import { Services, TableName } from "../types";
@@ -37,7 +36,7 @@ export class SummarizationManager {
      * 注册总结相关的模板
      */
     private registerTemplates(): void {
-        this.promptService.registerTemplate("worldstate.summarization", this.config.summarizationPrompt);
+        this.promptService.registerTemplate("worldstate.summarization", this.config.summarization.prompt);
 
         // 注册总结相关的片段
         this.promptService.registerSnippet("aiIdentity", (context) => context.aiIdentity);
@@ -80,9 +79,9 @@ export class SummarizationManager {
 
         const channelsToProcess: { platform: string; channelId: string }[] = [];
         for (const [key, count] of channelCounts.entries()) {
-            if (count >= this.config.summarizationTriggerCount) {
+            if (count >= this.config.summarization.triggerCount ) {
                 /* prettier-ignore */
-                this.logger.debug(`频道 ${key} 有 ${count} 个 folded 片段，达到总结阈值 ${this.config.summarizationTriggerCount}`);
+                this.logger.debug(`频道 ${key} 有 ${count} 个 folded 片段，达到总结阈值 ${this.config.summarization.triggerCount}`);
                 channelsToProcess.push(channelMetas.get(key)!);
             }
         }
@@ -116,9 +115,9 @@ export class SummarizationManager {
                 .get(TableName.DialogueSegments, { platform, channelId, status: "folded" })
                 .then((res) => res.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime()));
 
-            if (foldedSegments.length < this.config.summarizationTriggerCount) {
+            if (foldedSegments.length < this.config.summarization.triggerCount) {
                 /* prettier-ignore */
-                this.logger.debug(`片段数量 (${foldedSegments.length}) 未达阈值 (${this.config.summarizationTriggerCount})，跳过 | 频道: ${channelId}`);
+                this.logger.debug(`片段数量 (${foldedSegments.length}) 未达阈值 (${this.config.summarization.triggerCount})，跳过 | 频道: ${channelId}`);
 
                 this.summarizingChannels.delete(`${platform}:${channelId}`);
                 return;
@@ -130,7 +129,81 @@ export class SummarizationManager {
                 .then((res) => res.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0]);
 
             // 步骤 3: 渲染新的对话内容为文本
-            const newMessagesText = await this.renderSegmentsToTextForSummary(foldedSegments);
+
+            /** 将一组对话片段渲染为纯文本，专用于总结任务 */
+
+            const segmentIds = foldedSegments.map((segment) => segment.id);
+
+            // 1. 一次性获取所有相关消息和系统事件，并按时间排序
+            const [allMessages, allSystemEvents] = await Promise.all([
+                this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
+                this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } }),
+            ]);
+
+            // 将消息和事件合并到一个数组中进行统一排序
+            const allItems = [
+                ...allMessages.map((item) => ({ ...item, itemType: "message" })),
+                ...allSystemEvents.map((item) => ({ ...item, itemType: "event" })),
+            ].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+            if (allItems.length < this.config.summarization.minTriggerMessages) {
+                /* prettier-ignore */
+                this.logger.debug(`消息数量 (${allItems.length}) 未达阈值 (${this.config.summarization.minTriggerMessages})，跳过 | 频道: ${channelId}`);
+                this.summarizingChannels.delete(`${platform}:${channelId}`);
+                return;
+            }
+
+            if (allItems.length === 0) {
+                this.logger.warn(`无法为频道 ${channelId} 的新消息生成对话文本，将直接归档，避免阻塞`);
+                await this.ctx.database.set(
+                    TableName.DialogueSegments,
+                    { id: { $in: foldedSegments.map((s) => s.id) } },
+                    { status: "archived" }
+                );
+                this.summarizingChannels.delete(`${platform}:${channelId}`);
+                return;
+            }
+
+            // 2. 收集所有唯一的发送者ID，仅从消息中收集
+            const senderIds = [...new Set(allMessages.map((msg) => msg.sender.id))];
+            const membersMap = new Map<string, MemberData>();
+            if (senderIds.length > 0) {
+                const membersData = await this.ctx.database.get(TableName.Members, {
+                    platform,
+                    pid: { $in: senderIds },
+                });
+                membersData.forEach((member) => membersMap.set(member.pid, member));
+            }
+
+            // 3. 格式化为文本
+            const dialogueLines = allItems
+                .map((item) => {
+                    const timestampStr = formatDate(item.timestamp, "HH:mm");
+
+                    if (item.itemType === "message") {
+                        const msg = item as MessageData;
+                        const member = membersMap.get(msg.sender.id);
+                        const senderName = member?.name || msg.sender.name || msg.sender.id;
+                        const contentText = h
+                            .parse(msg.content)
+                            .map((el) => el.toString())
+                            .join("")
+                            .trim();
+                        if (!contentText) return null;
+                        return `[${timestampStr}] ${senderName}: ${contentText.replace(/\n/g, " ")}`;
+                    }
+
+                    if (item.itemType === "event" && (item as SystemEventData).type === "command-invoked") {
+                        const event = item as SystemEventData;
+                        const payload = event.payload as CommandInvocationPayload;
+                        return `[${timestampStr}] [系统事件] 用户 ${payload.invoker.name} 调用了指令: ${payload.name}`;
+                    }
+
+                    return null; // 忽略其他类型的系统事件
+                })
+                .filter(Boolean);
+
+            const newMessagesText = dialogueLines.join("\n");
             if (!newMessagesText) {
                 this.logger.warn(`无法为频道 ${channelId} 的新消息生成对话文本，将直接归档，避免阻塞`);
                 await this.ctx.database.set(
@@ -152,11 +225,22 @@ export class SummarizationManager {
             // 4. 构建模型所需的 Prompt
             const aiIdentity = `ID: ${bot.selfId}, 昵称: ${bot.user.name || "AI Assistant"}`;
 
-            this.ctx.emit(
-                "worldstate:summary",
-                { id: bot.selfId, name: bot.user.name || "AI Assistant" },
-                foldedSegments
-            );
+            let context = {
+                self: {
+                    id: bot.selfId,
+                    name: bot.user.name || "AI Assistant",
+                },
+                platform: platform,
+                contextId: channelId,
+                dialogue: allMessages.map((item) => ({
+                    id: item.id,
+                    content: item.content,
+                    timestamp: item.timestamp,
+                    sender: { id: item.sender.id, name: item.sender.name, roles: item.sender.roles },
+                })),
+            };
+
+            this.ctx.emit("worldstate:summary", context);
 
             const renderContext = {
                 aiIdentity,
@@ -173,7 +257,7 @@ export class SummarizationManager {
                     temperature: 0.2,
                 })
                 .catch((e) => {
-                    this.logger.error(e, `模型调用失败 | 频道: ${channelId}`);
+                    this.logger.error(`模型调用失败 | 频道: ${channelId}`);
                     return null;
                 });
             const newSummaryText = summaryResponse?.text;
@@ -230,69 +314,5 @@ export class SummarizationManager {
             this.logger.error(error, `滚动总结失败 | 频道: ${channelId}`);
             this.summarizingChannels.delete(`${platform}:${channelId}`);
         }
-    }
-
-    /**
-     * 将一组对话片段渲染为纯文本，专用于总结任务
-     */
-    private async renderSegmentsToTextForSummary(segments: DialogueSegmentData[]): Promise<string> {
-        if (!segments || segments.length === 0) return "";
-
-        const segmentIds = segments.map((segment) => segment.id);
-
-        // 1. 一次性获取所有相关消息和系统事件，并按时间排序
-        const [allMessages, allSystemEvents] = await Promise.all([
-            this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
-            this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } }),
-        ]);
-
-        // 将消息和事件合并到一个数组中进行统一排序
-        const allItems = [
-            ...allMessages.map((item) => ({ ...item, itemType: "message" })),
-            ...allSystemEvents.map((item) => ({ ...item, itemType: "event" })),
-        ].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-        if (allItems.length === 0) return "";
-
-        // 2. 收集所有唯一的发送者ID，仅从消息中收集
-        const senderIds = [...new Set(allMessages.map((msg) => msg.sender.id))];
-        const membersMap = new Map<string, MemberData>();
-        if (senderIds.length > 0) {
-            const membersData = await this.ctx.database.get(TableName.Members, {
-                platform: segments[0].platform,
-                pid: { $in: senderIds },
-            });
-            membersData.forEach((member) => membersMap.set(member.pid, member));
-        }
-
-        // 3. 格式化为文本
-        const dialogueLines = allItems
-            .map((item) => {
-                const timestampStr = formatDate(item.timestamp, "HH:mm");
-
-                if (item.itemType === "message") {
-                    const msg = item as MessageData;
-                    const member = membersMap.get(msg.sender.id);
-                    const senderName = member?.name || msg.sender.name || msg.sender.id;
-                    const contentText = h
-                        .parse(msg.content)
-                        .map((el) => el.toString())
-                        .join("")
-                        .trim();
-                    if (!contentText) return null;
-                    return `[${timestampStr}] ${senderName}: ${contentText.replace(/\n/g, " ")}`;
-                }
-
-                if (item.itemType === "event" && (item as SystemEventData).type === "command-invoked") {
-                    const event = item as SystemEventData;
-                    const payload = event.payload as CommandInvocationPayload;
-                    return `[${timestampStr}] [系统事件] 用户 ${payload.invoker.name} 调用了指令: ${payload.name}`;
-                }
-
-                return null; // 忽略其他类型的系统事件
-            })
-            .filter(Boolean);
-
-        return dialogueLines.join("\n");
     }
 }

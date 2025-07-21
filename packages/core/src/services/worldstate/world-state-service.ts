@@ -8,9 +8,10 @@ import { HistoryConfig } from "./config";
 import { ContextBuilder } from "./context-builder";
 import { DialogueSegmentData, MessageData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
-import { AgentResponse, AgentTurn, WorldState } from "./interfaces";
+import { AgentResponse, AgentTurn, ContextualMessage, WorldState } from "./interfaces";
 import { SummarizationManager } from "./summarize";
 import { pruneHistoryByMessages } from "./utils";
+import { DialogueSegmentManager } from "./segment-manager";
 
 // 扩展 Koishi 的 Context 和 Events 接口
 declare module "koishi" {
@@ -19,7 +20,12 @@ declare module "koishi" {
     }
     interface Events {
         "worldstate:segment-updated"(session: Session, sid: string): void;
-        "worldstate:summary"(aiIdentity: { id: string; name: string }, foldedSegments: DialogueSegmentData[]): void;
+        "worldstate:summary"(summaryChunk: {
+            self: { id: string; name: string };
+            platform: string;
+            contextId: string;
+            dialogue: ContextualMessage[];
+        }): void;
     }
 }
 
@@ -39,7 +45,7 @@ class EventListenerManager {
     private _logger: Logger;
 
     constructor(private ctx: Context, private service: WorldStateService, private config: HistoryConfig) {
-        this._logger = ctx[Services.Logger].getLogger("[世界状态.事件]");
+        this._logger = ctx[Services.Logger].getLogger("[世界状态]");
     }
 
     public start(): void {
@@ -178,7 +184,7 @@ class EventListenerManager {
 
     private async recordUserMessage(session: Session): Promise<void> {
         /* prettier-ignore */
-        this._logger.info( `捕获用户消息 | 用户: ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
+        this._logger.info( `用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
         const segment = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
         if (session.guildId) {
@@ -471,6 +477,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     public summarizationManager: SummarizationManager;
     public contextBuilder: ContextBuilder;
+    public segmentManager: DialogueSegmentManager;
 
     private _logger: Logger;
     private embedModel: IEmbedModel;
@@ -482,6 +489,9 @@ export class WorldStateService extends Service<HistoryConfig> {
         super(ctx, Services.WorldState, true);
         this.ctx = ctx;
         this.config = config;
+
+        // 初始化所有管理器
+        this.segmentManager = new DialogueSegmentManager(ctx, config);
         this.summarizationManager = new SummarizationManager(ctx, config);
         this.contextBuilder = new ContextBuilder(ctx, config);
         this.eventListenerManager = new EventListenerManager(ctx, this, config);
@@ -491,16 +501,16 @@ export class WorldStateService extends Service<HistoryConfig> {
     protected start(): void {
         this._logger = this.ctx[Services.Logger].getLogger("[世界状态]");
         this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding)?.current;
-
         if (!this.embedModel) this._logger.warn("未找到任何可用的嵌入模型");
 
         this.registerModels();
         this.eventListenerManager.start();
         this.commandManager.register();
 
+        // 维护任务现在更清晰
         this.maintenanceTimer = setInterval(() => {
             this.runMaintenanceTasks();
-        }, this.config.advanced.cleanupIntervalMs);
+        }, this.config.cleanupIntervalSec * 1000);
 
         this._logger.info("服务已启动");
     }
@@ -539,18 +549,12 @@ export class WorldStateService extends Service<HistoryConfig> {
             ? await this.contextBuilder.buildPrivateChannelContext(bot, { platform, id: channelId })
             : await this.contextBuilder.buildGuildChannelContext(bot, { platform, id: channelId });
 
-        return pruneHistoryByMessages(worldState, this.config.advanced.maxMessages);
+        return pruneHistoryByMessages(worldState, this.config.maxMessages);
     }
 
     public async recordAgentTurn(sid: string, responses: AgentResponse[]): Promise<void> {
-        const agentTurn: AgentTurn = { responses, timestamp: new Date() };
-
-        await this.ctx.database.set(
-            TableName.DialogueSegments,
-            { id: sid },
-            { status: "closed", agentTurn, endTimestamp: new Date() }
-        );
-        this._logger.debug(`片段已关闭 | ID: ${sid} | 响应数: ${responses.length}`);
+        // 委托给 segmentManager
+        await this.segmentManager.closeSegmentByAgent(sid, responses);
 
         const segmentRecord = await this.ctx.database
             .get(TableName.DialogueSegments, { id: sid })
@@ -561,46 +565,27 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     public async getOpenSegment(platform: string, channelId: string, guildId?: string): Promise<DialogueSegmentData> {
-        const openSegments = await this.ctx.database.get(
-            TableName.DialogueSegments,
-            { platform, channelId, status: "open" },
-            { limit: 10, offset: 0, sort: { startTimestamp: "desc" } }
-        );
-
-        if (openSegments.length > 0) {
-            const currentSegment = openSegments.shift();
-            if (openSegments.length > 0) {
-                const oldSegmentIds = openSegments.map((s) => s.id);
-                await this.ctx.database.set(
-                    TableName.DialogueSegments,
-                    { id: { $in: oldSegmentIds } },
-                    { status: "closed" }
-                );
-                this._logger.warn(
-                    `发现并关闭了 ${openSegments.length} 个冗余的开放片段 | 频道: ${platform}:${channelId}`
-                );
+        // 委托给 segmentManager
+        const segment = await this.segmentManager.getOrCreateOpenSegment(platform, channelId, guildId);
+        // 如果在 getOrCreateOpenSegment 中关闭了冗余片段，也应触发折叠策略
+        // 为确保一致性，可以在这里检查并触发
+        if (segment.status === "open") {
+            // 确保是新创建或已存在的开放片段
+            const closedCount = await this.ctx.database.get(
+                TableName.DialogueSegments,
+                { platform, channelId, status: "closed" },
+                { fields: ["id"] }
+            );
+            if (closedCount.length > this.config.fullContextSegmentCount) {
+                await this.applyFoldingPolicy(platform, channelId);
             }
-            return currentSegment;
         }
-
-        const newSegment: DialogueSegmentData = {
-            id: randomUUID(),
-            platform,
-            channelId,
-            guildId,
-            status: "open",
-            startTimestamp: new Date(),
-        };
-        await this.ctx.database.create(TableName.DialogueSegments, newSegment);
-        return newSegment;
+        return segment;
     }
 
     public async recordMessage(segmentId: string, message: Omit<MessageData, "sid">): Promise<void> {
-        try {
-            await this.ctx.database.create(TableName.Messages, { ...message, sid: segmentId });
-        } catch (error) {
-            this._logger.error(`记录消息失败 | 片段ID: ${segmentId} | 消息ID: ${message.id}`);
-        }
+        // 委托给 segmentManager
+        await this.segmentManager.recordMessage(segmentId, message);
     }
 
     // #endregion
@@ -717,8 +702,19 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     private runMaintenanceTasks(): void {
         this.eventListenerManager.cleanupPendingCommands();
+
+        // **核心优化：执行片段状态检查**
+        this.segmentManager
+            .checkAndCloseOpenSegments()
+            .then(() => {
+                // 检查关闭后，可能需要对涉及的频道应用折叠策略
+                // (为简化，此步可省略，或在 checkAndCloseOpenSegments 内部实现更复杂的逻辑)
+            })
+            .catch((error) => this._logger.error("对话片段状态检查任务执行失败", error.message));
+
         this._cleanupExpiredRecords().catch((error) => this._logger.error("清理过期记录任务执行失败", error.message));
-        if (this.config.enableSummarization) {
+
+        if (this.config.summarization.enabled) {
             this.summarizationManager
                 .targetSummarizationTasks()
                 .catch((error) => this._logger.error("自动总结任务执行失败", error.message));
@@ -726,7 +722,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     private async _cleanupExpiredRecords(): Promise<void> {
-        const expirationTime = this.config.advanced.dataRetentionDays * 24 * 60 * 60 * 1000;
+        const expirationTime = this.config.dataRetentionDays * 24 * 60 * 60 * 1000;
         const expirationCutoff = new Date(Date.now() - expirationTime);
 
         const expiredSegments = await this.ctx.database.get(TableName.DialogueSegments, {

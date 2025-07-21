@@ -41,7 +41,7 @@ export class HistoryBuilder {
             .reverse();
         const foldedSegments = rawFoldedSegments
             .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
-            .slice(0, this.config.summarizationTriggerCount)
+            .slice(0, this.config.summarization.triggerCount)
             .reverse();
         const summarizedSegment = summarizedSegments.sort(
             (a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime()

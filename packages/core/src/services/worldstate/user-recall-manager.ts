@@ -32,7 +32,7 @@ export class UserRecallManager {
             return cachedResult;
         }
 
-        const maxRelevantUsers = this.config.recallUserProfileCount;
+        const maxRelevantUsers = this.config.recall.private;
         const minRelevanceScore = 0.15;
         const userRelevanceMap = new Map<string, number>();
 
@@ -70,9 +70,8 @@ export class UserRecallManager {
             .slice(0, maxRelevantUsers)
             .map(([userId]) => userId);
 
-        this.logger.debug(
-            `私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`
-        );
+        /* prettier-ignore */
+        this.logger.debug(`私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`);
         this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedUserIds);
         return sortedUserIds;
     }
@@ -87,7 +86,7 @@ export class UserRecallManager {
             return cachedResult;
         }
 
-        const maxRelevantUsers = 8;
+        const maxRelevantUsers = this.config.recall.guild;
         const minRelevanceScore = 0.3;
         const relevanceMap = new Map<string, number>();
 
@@ -154,17 +153,29 @@ export class UserRecallManager {
     ): Promise<Array<{ userId: string; score: number }>> {
         try {
             const batchText = messages.map((m) => `${m.sender.name}: ${m.content}`).join("\n");
-            const [factResults, profileResults] = await Promise.all([
-                this.memoryService.searchUserFacts(batchText, { limit: 15 }),
-                this.memoryService.searchUserProfiles(batchText, { limit: 10 }),
-            ]);
+
+            const searchResults = await this.memoryService.searchMemories(batchText, { limit: 30 });
+
+            if (!searchResults.success) {
+                this.logger.warn(`语义用户查找失败: ${searchResults.error}`);
+                return [];
+            }
+
+            const factResults = searchResults.data.filter((item) => item.source === "fact");
+            const insightResults = searchResults.data.filter((item) => item.source === "insight");
+            const profileResults = searchResults.data.filter((item) => item.source === "profile");
 
             const userScores = new Map<string, number>();
-            factResults.data?.forEach((fact: any) => {
+
+            factResults.forEach((fact: any) => {
                 const score = (fact.salience || 0.5) * 0.8;
                 userScores.set(fact.userId, Math.max(userScores.get(fact.userId) || 0, score));
             });
-            profileResults.data?.forEach((profile: any) => {
+            insightResults.forEach((profile: any) => {
+                const score = profile.salience || 0.5;
+                userScores.set(profile.userId, Math.max(userScores.get(profile.userId) || 0, score));
+            });
+            profileResults.forEach((profile: any) => {
                 const score = profile.salience || 0.5;
                 userScores.set(profile.userId, Math.max(userScores.get(profile.userId) || 0, score));
             });
