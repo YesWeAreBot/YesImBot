@@ -5,6 +5,12 @@ export interface MemoryBlockData {
     content: string[];
 }
 
+export type MemorySearchResult = (
+    | (Fact & { source: 'fact' })
+    | (Insight & { source: 'insight' })
+    | (UserProfile & { source: 'profile' })
+) & { similarity: number };
+
 /** 记忆服务操作结果 */
 export interface MemoryOperationResult<T = any> {
     success: boolean;
@@ -56,11 +62,17 @@ export enum LifespanType {
     Permanent = "permanent", // 永久性：几乎不会改变的核心事实，如职业、家乡、不可改变的经历等
 }
 
+export interface Searchable {
+    embedding: number[];
+    salience: number;
+    isDeleted?: boolean;
+}
+
 /**
  * 记忆事实 (Fact)
  * 记录与特定用户相关的客观事实或陈述
  */
-export interface Fact {
+export interface Fact extends Searchable {
     id: string; // 唯一ID (e.g., CUID)
     userId: string; // 直接关联用户ID，移除实体抽象层
     userName: string; // 用户名称，便于查看和调试
@@ -69,7 +81,9 @@ export interface Fact {
     type: FactType; // 事实类型，严格按照枚举
     lifespan: LifespanType; // 生命周期
     sourceMessageIds: string[]; // 来源消息ID数组，支持多条消息构成一个事实
-    salience?: number; // 显著性评分 (0-1)，代表此洞察的重要性
+    salience: number; // 显著性评分 (0-1)，代表此洞察的重要性
+
+    contextId: string; // 区分对话上下文
 
     createdAt: Date;
     lastAccessedAt: Date;
@@ -85,7 +99,7 @@ export interface Fact {
  * 记忆洞察 (Insight)
  * 记录从对话中提炼出的、关于群体动态或个人深层模式的更高层次判断
  */
-export interface Insight {
+export interface Insight extends Searchable {
     id: string; // 唯一ID (e.g., CUID)
 
     // 核心内容
@@ -97,13 +111,15 @@ export interface Insight {
     relatedUserIds: string[]; // 该洞察所涉及的所有用户ID列表
     sourceMessageIds: string[]; // 支撑该洞察的关键来源消息ID数组
 
+    contextId: string; // 区分对话上下文
+
     // 元数据与生命周期管理
     lifespan: LifespanType; // 洞察通常是长期的
     createdAt: Date;
     updatedAt?: Date;
     lastAccessedAt: Date;
     accessCount: number;
-    salience?: number; // 显著性评分 (0-1)，代表此洞察的重要性
+    salience: number; // 显著性评分 (0-1)，代表此洞察的重要性
 
     /** 是否已删除（软删除） */
     isDeleted?: boolean;
@@ -113,7 +129,7 @@ export interface Insight {
  * 用户画像 (UserProfile)
  * 对特定用户的深度、动态总结
  */
-export interface UserProfile {
+export interface UserProfile extends Searchable {
     id: string; // 唯一ID (e.g., CUID)
     userId: string; // 直接关联用户ID
     userName: string; // 用户名称，便于查看和调试
@@ -132,7 +148,7 @@ export interface UserProfile {
     /** 关键事实用于下次增量更新 */
     keyFactsForUpdate?: string[];
     /** 显著性评分，用于搜索排序 */
-    salience?: number;
+    salience: number;
     /** 画像置信度评分，用于判断画像的准确性和完整性 */
     confidence?: number;
 }

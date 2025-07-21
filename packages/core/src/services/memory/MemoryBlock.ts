@@ -20,7 +20,7 @@ export class MemoryBlock {
     private readonly logger: Logger;
 
     private constructor(ctx: Context, filePath: string, data: MemoryBlockData, initialFileMtimeMs: number) {
-        this.logger = ctx[Services.Logger].getLogger(`[记忆块] [${data.label}]`);
+        this.logger = ctx[Services.Logger].getLogger(`[核心记忆] [${data.label}]`);
         this._filePath = filePath;
         this._metadata = {
             title: data.title,
@@ -58,6 +58,15 @@ export class MemoryBlock {
 
     public dispose(): void {
         this.stopWatching();
+    }
+
+    public toData(): MemoryBlockData {
+        return {
+            title: this.title,
+            label: this.label,
+            description: this.description,
+            content: [...this.content],
+        };
     }
 
     // --- File Watching and Sync ---
@@ -123,7 +132,7 @@ export class MemoryBlock {
     // --- Static Factory ---
 
     public static async createFromFile(ctx: Context, filePath: string): Promise<MemoryBlock> {
-        const logger = ctx[Services.Logger].getLogger("[记忆块]");
+        const logger = ctx[Services.Logger].getLogger("[核心记忆]");
         try {
             const fileStats = await stat(filePath);
             const blockData = await this.loadDataFromFile(filePath);
@@ -136,7 +145,7 @@ export class MemoryBlock {
 
             return block;
         } catch (error) {
-            logger.error(`操作失败 | 路径: "${filePath}"\n错误: ${error.message}`);
+            logger.error(`加载失败 | 路径: "${filePath}" | 错误: ${error.message}`);
             throw new AppError(`Failed to create MemoryBlock from file: ${filePath}`, {
                 code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
                 context: { filePath },
