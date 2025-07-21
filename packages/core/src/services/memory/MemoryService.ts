@@ -23,6 +23,7 @@ import {
     ProfileConsolidationOptions,
     Searchable,
     SearchOptions,
+    UserDossier,
     UserProfile,
 } from "./types";
 import { CircuitBreaker } from "./utils/CircuitBreaker";
@@ -111,7 +112,7 @@ export class MemoryService extends Service<MemoryConfig> {
             this.embeddingModel,
             this.ctx[Services.Prompt],
             // 传入一个回调来触发画像整合，避免循环依赖
-            (userId: string) => this.consolidateProfile(userId),
+            (userId: string, contextId: string) => this.consolidateProfile(userId, contextId),
             (userId: string) => this.cache.clearUserCache(userId)
         );
     }
@@ -236,10 +237,12 @@ export class MemoryService extends Service<MemoryConfig> {
         memoryCmd
             .subcommand(".update", "手动触发用户画像更新")
             .option("user", "-u <user:string> 指定用户ID")
+            .option("context", "-c <context:string> 指定上下文ID")
             .action(async ({ session, options }) => {
                 const userId = options.user || session.userId;
+                const contextId = options.context || "global";
                 try {
-                    const result = await this.consolidateProfile(userId, { forceReconsolidate: true });
+                    const result = await this.consolidateProfile(userId, contextId, { forceReconsolidate: true });
                     if (result.success) {
                         return "用户画像更新成功";
                     } else {
@@ -823,14 +826,14 @@ export class MemoryService extends Service<MemoryConfig> {
     }
 
     /* prettier-ignore */
-    public async consolidateProfile(userId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
+    public async consolidateProfile(userId: string, contextId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
         if (!userId) {
             throw new AppError("用户ID不能为空", { code: ErrorCodes.VALIDATION.INVALID_INPUT });
         }
 
         const lockKey = `profile_consolidation_${userId}`;
         return this.withLock(lockKey, async () => {
-            const result = await this.consolidator.consolidate(userId, options);
+            const result = await this.consolidator.consolidate(userId, contextId, options);
             // 成功后更新缓存
             if (result.success && result.data) {
                 this.cache.setCachedProfile(userId, result.data);
@@ -860,7 +863,7 @@ class MemoryIngestor {
         private chatModel: IChatModel,
         private embeddingModel: IEmbedModel,
         private promptService: PromptService,
-        private triggerProfileConsolidation: (userId: string) => Promise<any>,
+        private triggerProfileConsolidation: (userId: string, contextId: string) => Promise<any>,
         private clearUserCache: (userId: string) => void
     ) {}
 
@@ -890,7 +893,11 @@ class MemoryIngestor {
             relatedPersons.delete(summaryChunk.self.id);
 
             this.logger.info(`正在更新 ${relatedPersons.size} 个相关用户的画像`);
-            await Promise.all(Array.from(relatedPersons).map((userId) => this.triggerProfileConsolidation(userId)));
+            await Promise.all(
+                Array.from(relatedPersons).map((userId) =>
+                    this.triggerProfileConsolidation(userId, summaryChunk.contextId)
+                )
+            );
         } catch (error) {
             this.logger.error("处理 summary chunk 时出错:", error);
         }
@@ -1020,23 +1027,27 @@ class ProfileConsolidator {
         private promptService: PromptService
     ) {}
 
-    public async consolidate(
-        userId: string,
-        options: ProfileConsolidationOptions = {}
-    ): Promise<MemoryOperationResult<UserProfile | null>> {
+    /**
+     * 整合并生成一个用户在特定上下文中的画像。
+     * @param userId 目标用户ID
+     * @param contextId 目标上下文ID ('global' 或 群聊/私聊ID)
+     * @param options 整合选项
+     */
+    /* prettier-ignore */
+    public async consolidate(userId: string, contextId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
         try {
             // --- 3. 初始化与配置加载 ---
-            // 从 options 和全局配置中解构出本次操作所需的参数。
             const {
-                forceReconsolidate = false, // 是否强制重新整合，忽略频率限制
-                minFactsThreshold = this.config.profileGeneration.minFactsForUpdate, // 触发更新所需的最少事实数量
-                confidenceThreshold = this.config.profileGeneration.confidenceThreshold, // LLM 生成内容需达到的最低置信度
+                forceReconsolidate = false,
+                minFactsThreshold = this.config.profileGeneration.minFactsForUpdate,
+                confidenceThreshold = this.config.profileGeneration.confidenceThreshold,
             } = options;
 
             // --- 4. 获取现有数据与前置检查 ---
-            // 从数据库中获取该用户已存在的画像。`res[0]`直接获取查询结果的第一个元素。
+            /** 查询特定上下文的画像 */
             const [existingProfile] = await this.ctx.database.get(TableName.UserProfiles, {
                 userId,
+                contextId,
                 isDeleted: false,
             });
 
@@ -1053,14 +1064,15 @@ class ProfileConsolidator {
                 }
             }
 
-            // 智能获取需要处理的事实和洞察（可能是增量或全量）。
+            /** 获取特定上下文的事实和洞察 */
             const { relevantFacts, insights, newFactsOnly } = await this.getRelevantFactsForProfile(
                 userId,
+                contextId,
                 existingProfile,
                 forceReconsolidate
             );
 
-            // 如果新的事实和洞察数量未达到阈值，则不执行更新，以节省计算资源。
+            // 未达到阈值则跳过的逻辑保持不变
             if (relevantFacts.length + insights.length < minFactsThreshold && !forceReconsolidate) {
                 this.logger.info(
                     `用户 ${userId} 没有足够的新事实进行整合，跳过。当前新信息数: ${
@@ -1071,13 +1083,10 @@ class ProfileConsolidator {
             }
 
             // --- 5. 准备LLM输入数据 ---
-            // 确定用户名，优先从事实中获取，否则使用 userId 作为备用。
             const userName = relevantFacts.length > 0 ? relevantFacts[0].userName : userId;
 
-            // 创建一个临时ID到真实ID的映射。LLM处理简单的数字ID（如1,2,3）比处理UUID更高效可靠。
+            // 创建临时ID映射的逻辑保持不变
             const tempIdToRealIdMap = new Map<number, string>();
-
-            // 将所有事实（facts）和洞察（insights）合并到一个列表中，并进行统一处理。
             const allSources = [...relevantFacts, ...insights];
             const newFactsAndInsightsForLLM = allSources.map((source, index) => {
                 const tempId = index + 1; // 生成简单的数字ID，从1开始
@@ -1101,12 +1110,14 @@ class ProfileConsolidator {
                 };
             });
 
-            // 构建发送给LLM的完整输入对象。
+            // LLM输入对象中可以增加 contextId，让LLM了解当前是在为哪个场景生成画像
             const inputForLLM = {
                 userId,
                 userName,
-                existingProfile: existingProfile?.content || "这是一个关于该用户的新画像。",
-                isIncrementalUpdate: newFactsOnly, // 告知LLM是增量更新还是全量更新
+                contextId, // <--- [新增] 告知LLM当前的上下文
+                contextType: contextId === "global" ? "全局" : "特定社群", // <--- [新增] 更人性化的上下文类型
+                existingProfile: existingProfile?.content || `这是一个关于该用户在[${contextId}]上下文下的新画像。`,
+                isIncrementalUpdate: newFactsOnly,
                 factCount: allSources.length,
                 newFactsAndInsights: newFactsAndInsightsForLLM,
             };
@@ -1160,6 +1171,7 @@ class ProfileConsolidator {
             const updatedProfileData: Omit<UserProfile, "id" | "createdAt"> = {
                 userId,
                 userName,
+                contextId,
                 content: profile_content,
                 embedding,
                 confidence: confidence_score,
@@ -1167,30 +1179,60 @@ class ProfileConsolidator {
                 supportingFactIds: updatedSupportingFactIds,
                 updatedAt: new Date(),
                 version: (existingProfile?.version || 0) + 1,
-                keyFactsForUpdate: realKeySourceIds, // 保存本次更新所依赖的关键事实ID，供下次增量更新使用
+                keyFactsForUpdate: realKeySourceIds,
             };
 
-            // 执行数据库的“更新或插入”（Upsert）操作。
             let updatedProfile: UserProfile;
             if (existingProfile) {
-                // 如果画像已存在，则更新。
                 await this.ctx.database.set(TableName.UserProfiles, { id: existingProfile.id }, updatedProfileData);
-                updatedProfile = { ...existingProfile, ...updatedProfileData }; // 合并旧数据和新数据以获得完整对象
+                updatedProfile = { ...existingProfile, ...updatedProfileData };
             } else {
-                // 如果画像不存在，则创建新记录。
                 updatedProfile = await this.ctx.database.create(TableName.UserProfiles, {
-                    id: uuidv4(), // 生成新的主键
+                    id: uuidv4(),
                     ...updatedProfileData,
-                    createdAt: new Date(), // 设置创建时间
+                    createdAt: new Date(),
                 });
             }
 
-            this.logger.info(`成功为用户 ${userId} 整合并更新了人物画像。版本: ${updatedProfile.version}`);
+            /* prettier-ignore */
+            this.logger.info(`成功为用户 ${userId} 在上下文 [${contextId}] 中整合并更新了人物画像。版本: ${updatedProfile.version}`);
             return { success: true, data: updatedProfile };
         } catch (error: any) {
-            this.logger.error(`整合用户 ${userId} 画像时发生意外错误: ${error.message}`);
+            this.logger.error(`在上下文[${contextId}]中整合用户 ${userId} 画像时发生意外错误: ${error.message}`);
             return { success: false, error: error.message };
         }
+    }
+
+    public async getUserDossier(userId: string): Promise<UserDossier | null> {
+        // 1. 从数据库中一次性获取该用户的所有画像记录
+        const allProfiles = await this.ctx.database.get(TableName.UserProfiles, {
+            userId,
+            isDeleted: false,
+        });
+
+        if (allProfiles.length === 0) {
+            return null;
+        }
+
+        // 2. 初始化Dossier
+        const dossier: UserDossier = {
+            id: userId,
+            userId,
+            userName: allProfiles[0].userName,
+            globalProfileId: null,
+            contextualProfileIds: new Map<string, string>(),
+        };
+
+        // 3. 遍历所有画像，填充Dossier
+        for (const profile of allProfiles) {
+            if (profile.contextId === "global") {
+                dossier.globalProfileId = profile.id;
+            } else {
+                dossier.contextualProfileIds.set(profile.contextId, profile.id);
+            }
+        }
+
+        return dossier;
     }
 
     /**
@@ -1198,16 +1240,18 @@ class ProfileConsolidator {
      * 支持增量更新和全量更新
      */
     /* prettier-ignore */
-    private async getRelevantFactsForProfile(userId: string, existingProfile: UserProfile | null, forceReconsolidate: boolean): Promise<{ relevantFacts: Fact[]; insights: Insight[]; newFactsOnly: boolean, }> {
+    private async getRelevantFactsForProfile(userId: string, contextId: string, existingProfile: UserProfile | null, forceReconsolidate: boolean): Promise<{ relevantFacts: Fact[]; insights: Insight[]; newFactsOnly: boolean, }> {
         const config = this.config.profileGeneration;
 
         // 获取所有相关事实
         const allFacts = await this.ctx.database.get(TableName.Facts, {
             userId: userId,
+            contextId: contextId,
             isDeleted: false,
         });
 
         const insights = await this.ctx.database.get(TableName.Insights, {
+            contextId: contextId,
             relatedUserIds: { $some: [userId] },
             isDeleted: false,
         });

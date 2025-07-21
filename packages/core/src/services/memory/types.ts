@@ -6,9 +6,9 @@ export interface MemoryBlockData {
 }
 
 export type MemorySearchResult = (
-    | (Fact & { source: 'fact' })
-    | (Insight & { source: 'insight' })
-    | (UserProfile & { source: 'profile' })
+    | (Fact & { source: "fact" })
+    | (Insight & { source: "insight" })
+    | (UserProfile & { source: "profile" })
 ) & { similarity: number };
 
 /** 记忆服务操作结果 */
@@ -127,15 +127,25 @@ export interface Insight extends Searchable {
 
 /**
  * 用户画像 (UserProfile)
- * 对特定用户的深度、动态总结
+ * 对特定用户在特定上下文中的深度、动态总结
+ * 每个UserProfile都与一个用户和一个上下文绑定
  */
 export interface UserProfile extends Searchable {
-    id: string; // 唯一ID (e.g., CUID)
-    userId: string; // 直接关联用户ID
-    userName: string; // 用户名称，便于查看和调试
-    content: string; // AI生成的关于此人的高阶摘要
+    id: string; // 唯一ID
+    userId: string; // 关联的用户ID
+    userName: string; // 用户名
+
+    /**
+     * 画像的上下文ID
+     * 'global' 代表这是一个全局画像
+     * 其他字符串代表特定的群聊或私聊ID
+     */
+    contextId: string;
+
+    content: string; // 第三方称客观摘要
     embedding: number[];
-    supportingFactIds: string[]; // 支撑这条画像的核心事实ID列表
+    supportingFactIds: string[]; // 支撑此画像的核心事实ID列表
+
     updatedAt: Date;
     /** 创建时间 */
     createdAt?: Date;
@@ -151,6 +161,29 @@ export interface UserProfile extends Searchable {
     salience: number;
     /** 画像置信度评分，用于判断画像的准确性和完整性 */
     confidence?: number;
+}
+
+/**
+ * 用户档案 (User Dossier)
+ * 这是一个在代码中动态构建的、用户的完整多面化档案索引
+ * 它本身不直接存储在数据库，而是引用存储在数据库中的UserProfile记录
+ */
+export interface UserDossier {
+    id: string; // platform + userId
+    userId: string;
+    userName: string;
+
+    /**
+     * 全局画像的ID
+     * 引用存储在UserProfile表中的、contextId为'global'的记录
+     */
+    globalProfileId: string | null;
+
+    /**
+     * 情境化画像ID的映射
+     * Key是 contextId (如群聊ID), Value是对应的 UserProfile ID
+     */
+    contextualProfileIds: Map<string, string>;
 }
 
 /** LLM提炼后输出的结构化事实 */
