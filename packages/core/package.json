@@ -51,9 +51,9 @@
     "jsonrepair": "^3.12.0",
     "lru-cache": "^11.1.0",
     "mustache": "^4.2.0",
-    "uuid": "^11.1.0",
     "reflect-metadata": "^0.2.2",
-    "sharp": "^0.34.3"
+    "sharp": "^0.34.3",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/sharp": "^0.32.0",
@@ -62,9 +62,9 @@
     "@xsai-ext/shared-providers": "^0.3.2",
     "@xsai/embed": "^0.3.2",
     "@xsai/generate-text": "^0.3.2",
+    "@xsai/shared-chat": "^0.3.2",
     "@xsai/stream-text": "^0.3.2",
     "@xsai/utils-chat": "^0.3.2",
-    "@xsai/shared-chat": "^0.3.2",
     "koishi": "^4.18.7",
     "koishi-plugin-adapter-onebot": "^6.8.0"
   },

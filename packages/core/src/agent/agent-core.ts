@@ -400,6 +400,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this.displayThoughts(agentResponseData.thoughts);
         }
 
+        this._logger.debug("心跳：" + agentResponseData.request_heartbeat);
         const observations = await this.executeActions(session, agentResponseData.actions);
         const fullResponse: AgentResponse = { ...agentResponseData, observations };
 

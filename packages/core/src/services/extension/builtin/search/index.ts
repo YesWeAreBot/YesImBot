@@ -10,8 +10,7 @@ interface SearchConfig {
     limit: number;
     sources: string[];
     format: "json" | "html";
-    proxyUrl: string; // 新增代理配置
-    customUA: string; // 新增用户代理配置
+    customUA: string;
 }
 
 const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
@@ -25,11 +24,6 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
         .role("table")
         .description("默认搜索源"),
     format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
-    // 新增代理配置
-    proxyUrl: Schema.string()
-        .default("")
-        .description("HTTP代理服务器URL（格式：http://[user:password@]host:port），留空不使用代理"),
-    // 新增用户代理配置
     customUA: Schema.string()
         .default("YesImBot/1.0.0 (Web Fetcher Tool)")
         .description("自定义User-Agent字符串，用于网页请求")
@@ -88,65 +82,32 @@ export default class SearchExtension {
 
             this.ctx.logger.info(`Bot正在获取网页: ${url}`);
 
-            // 配置请求选项
-            const fetchOptions: RequestInit = {
+            // 使用Koishi HTTP服务发送请求
+            const response = await this.ctx.http.get(url, {
                 headers: {
-                    "User-Agent": this.config.customUA, // 使用配置的自定义UA
+                    "User-Agent": this.config.customUA,
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 },
-                signal: AbortSignal.timeout(10000),
-            };
+                timeout: 10000,
+            });
 
-            // 应用代理配置（如果存在）
-            if (this.config.proxyUrl) {
-                try {
-                    // 在Node环境下通过代理连接
-                    if (typeof globalThis !== "undefined" && typeof require !== "undefined") {
-                        const { Agent } = require("undici");
-                        const proxy = new URL(this.config.proxyUrl);
-                        
-                        // 创建代理agent
-                        const agent = new Agent({
-                            connect: {
-                                host: proxy.hostname,
-                                port: proxy.port || (proxy.protocol === "https:" ? 443 : 80),
-                                protocol: proxy.protocol,
-                                // 处理代理认证（如果存在）
-                                ...(proxy.username && proxy.password ? {
-                                    proxyAuthorization: `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}`
-                                } : {})
-                            }
-                        });
-                        
-                        // 应用代理设置
-                        (fetchOptions as any).dispatcher = agent;
-                        this.ctx.logger.debug(`使用代理服务器: ${this.config.proxyUrl}`);
-                    } else {
-                        this.ctx.logger.warn("代理配置只能在Node.js环境中使用");
-                    }
-                } catch (error) {
-                    this.ctx.logger.warn(`设置代理失败: ${error.message}`);
-                }
+            // 获取响应内容作为文本
+            const rawContent = typeof response === 'string' 
+                ? response 
+                : response.data?.toString() || '';
+            
+            // 尝试获取内容类型
+            let contentType = '';
+            if (typeof response !== 'string') {
+                contentType = response.headers?.['content-type'] || '';
             }
-
-            // 发起请求
-            const response = await fetch(url, fetchOptions);
-
-            if (!response.ok) {
-                return Failed(`HTTP错误: ${response.status} ${response.statusText}`);
-            }
-
-            const contentType = response.headers.get("content-type") || "";
+            
             if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
-                return Failed("不支持的内容类型，仅支持HTML和纯文本");
+                this.ctx.logger.warn(`不支持的内容类型: ${contentType}`);
             }
 
-            // 只读取一次 response body
-            const rawContent = await response.text();
             const title = extractTitle(rawContent);
-
-            // 提取链接
             const links = include_links ? extractLinks(rawContent, url, max_links) : [];
 
             let content = rawContent;
@@ -186,13 +147,15 @@ export default class SearchExtension {
             this.ctx.logger.info(`Bot成功获取网页内容，长度: ${content.length}, 链接数: ${links.length}`);
 
             return Success(result);
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot获取网页失败: ${url} - `, error.message);
 
-            if (error.name === "TimeoutError") {
+            if (error.name === "TimeoutError" || error.message.includes("timeout")) {
                 return Failed("请求超时，网页响应时间过长");
-            } else if (error.name === "TypeError" && error.message.includes("fetch")) {
+            } else if (error.name === "TypeError" && error.message.includes("http")) {
                 return Failed("网络连接失败，请检查URL是否正确");
+            } else if (error.response?.status) {
+                return Failed(`HTTP错误: ${error.response.status} ${error.response.statusText}`);
             } else {
                 return Failed(`获取网页失败: ${error.message}`);
             }
@@ -219,26 +182,24 @@ export default class SearchExtension {
             /* prettier-ignore */
             const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines.join(",")}&format=${format}`;
 
-            const response = await fetch(searchUrl);
-            if (!response.ok) {
-                return Failed(`搜索请求失败: HTTP ${response.status}`);
-            }
-
-            const data = await response.json();
+            // 使用 Koishi 的 HTTP 服务发送请求
+            const data = await this.ctx.http.get(searchUrl, {
+                responseType: 'json'
+            });
 
             // 格式化搜索结果
-            if (data.results.length === 0) {
+            if (!data.results || data.results.length === 0) {
                 return Success(`没有找到关于"${query}"的搜索结果。`);
             }
 
-            let resultText = `找到 ${data.number_of_results} 个关于"${query}"的搜索结果：\n\n`;
+            let resultText = `找到 ${data.number_of_results || data.results.length} 个关于"${query}"的搜索结果：\n\n`;
 
-            // 显示前5个结果
+            // 显示前N个结果
             const topResults = data.results.slice(0, limit);
             topResults.forEach((result, index) => {
-                resultText += `${index + 1}. **${result.title}**\n`;
+                resultText += `${index + 1}. **${result.title || '(无标题)'}**\n`;
                 resultText += `   链接: ${result.url}\n`;
-                resultText += `   摘要: ${result.content.substring(0, 150)}...\n`;
+                resultText += `   摘要: ${(result.content || '').substring(0, 150)}...\n`;
                 if (result.publishedDate) {
                     resultText += `   发布时间: ${result.publishedDate}\n`;
                 }
@@ -246,7 +207,7 @@ export default class SearchExtension {
             });
 
             return Success(resultText);
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error(`网络搜索失败: ${error.message}`);
             return Failed(`搜索过程中发生错误: ${error.message}`);
         }
@@ -265,7 +226,6 @@ function extractTitle(html: string): string {
 // 辅助函数：提取网页中的链接
 function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Array<{ url: string; text: string }> {
     const links: Array<{ url: string; text: string }> = [];
-    // 改进的正则表达式，确保正确获取href和链接文本
     const linkRegex = /<a\s+[^>]*href\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
     const baseUrlObj = new URL(baseUrl);
 
@@ -274,8 +234,8 @@ function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Arr
         try {
             let linkUrl = match[1].trim();
             let linkText = match[2]
-                .replace(/<[^>]+>/g, "") // 移除HTML标签
-                .replace(/\s+/g, " ") // 合并空白字符
+                .replace(/<[^>]+>/g, "")
+                .replace(/\s+/g, " ")
                 .trim();
 
             // 处理相对链接
@@ -284,11 +244,9 @@ function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Arr
             } else if (linkUrl.startsWith("/")) {
                 linkUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${linkUrl}`;
             } else if (!linkUrl.startsWith("http")) {
-                // 跳过非HTTP链接（如 mailto:, javascript: 等）
                 if (linkUrl.includes(":") && !linkUrl.startsWith("http")) {
                     continue;
                 }
-                // 相对路径
                 linkUrl = new URL(linkUrl, baseUrl).href;
             }
 
@@ -306,7 +264,6 @@ function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Arr
                 });
             }
         } catch (error) {
-            // 忽略无效的URL
             continue;
         }
     }
