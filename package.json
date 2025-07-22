@@ -20,11 +20,20 @@
     "clean": "turbo run clean"
   },
   "devDependencies": {
+    "@types/cheerio": "^1.0.0",
+    "@types/jsdom": "^21.1.7",
+    "@types/mozilla-readability": "^0.2.1",
     "@types/node": "^22.16.2",
     "esbuild": "^0.25.6",
     "tsc-alias": "^1.8.16",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3",
     "yml-register": "^1.2.5"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "cheerio": "^1.1.2",
+    "jsdom": "^26.1.0",
+    "undici": "^7.12.0"
   }
 }
