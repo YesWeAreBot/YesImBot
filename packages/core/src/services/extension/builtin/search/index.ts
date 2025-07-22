@@ -7,6 +7,15 @@ import * as cheerio from "cheerio";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 
+// 声明 puppeteer 类型 - 修复为正确的 page() 方法
+declare module "koishi" {
+  interface Context {
+    puppeteer?: {
+      page: () => Promise<any>;
+    };
+  }
+}
+
 interface SearchConfig {
     endpoint: string;
     limit: number;
@@ -50,7 +59,7 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
 @Extension({
     name: "search",
     display: "网络搜索",
-    version: "1.0.0",
+    version: "极速版",
     description: "搜索网络内容",
     author: "HydroGest",
     builtin: true,
@@ -59,7 +68,10 @@ export default class SearchExtension {
     public static readonly Config = SearchConfigSchema;
 
     constructor(public ctx: Context, public config: SearchConfig) {
-        // 移除不存在的错误调用
+        // 检查Puppeteer服务是否可用
+        if (config.usePuppeteer && !ctx.puppeteer) {
+            ctx.logger.warn('配置要求使用Puppeteer，但Puppeteer服务未安装。请安装puppeteer插件。');
+        }
     }
 
     @Tool({
@@ -99,6 +111,7 @@ export default class SearchExtension {
         try {
             // 验证URL格式
             const urlObj = new URL(url);
+            // 修复点1: 添加条件表达式
             if (!["http:", "https:"].includes(urlObj.protocol)) {
                 return Failed("只支持HTTP和HTTPS协议");
             }
@@ -109,21 +122,31 @@ export default class SearchExtension {
             let title: string;
             let links: Array<{ url: string; text: string }> = [];
 
-            // 删除无效的puppeteer检查代码
+            // 决定是否使用无头浏览器
+            const usePuppeteer = (use_dynamic || this.config.usePuppeteer) && this.ctx.puppeteer;
             
-            // 使用HTTP请求获取静态内容
-            rawContent = await this.ctx.http.get(url, {
-                headers: {
-                    "User-Agent": this.config.customUA,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                },
-                timeout: this.config.httpTimeout,
-                responseType: 'text'
-            });
-            title = extractTitle(rawContent);
-            links = include_links ? extractLinks(rawContent, url, max_links) : [];
-            this.ctx.logger.info(`通过HTTP获取网页成功`);
+            if (usePuppeteer) {
+                // 使用无头浏览器获取动态内容
+                const result = await this._fetchWithPuppeteer(url);
+                rawContent = result.content;
+                title = result.title;
+                links = result.links;
+                this.ctx.logger.info(`使用无头浏览器成功获取动态网页内容`);
+            } else {
+                // 使用HTTP请求获取静态内容
+                rawContent = await this.ctx.http.get(url, {
+                    headers: {
+                        "User-Agent": this.config.customUA,
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    },
+                    timeout: this.config.httpTimeout,
+                    responseType: 'text'
+                });
+                title = extractTitle(rawContent);
+                links = include_links ? extractLinks(rawContent, url, max_links) : [];
+                this.ctx.logger.info(`通过HTTP获取网页成功`);
+            }
 
             // 提取主要内容（使用Readability算法）
             const { content, textContent } = this.extractMainContent(rawContent, url);
@@ -161,6 +184,67 @@ export default class SearchExtension {
             } else {
                 return Failed(`获取网页失败: ${error.message}`);
             }
+        }
+    }
+
+    /**
+     * 使用Puppeteer获取动态网页内容 - 修复了API调用方式
+     * @param url 网页URL
+     * @returns 包含内容、标题和链接的对象
+     */
+    private async _fetchWithPuppeteer(url: string): Promise<{
+        content: string;
+        title: string;
+        links: Array<{ url: string; text: string }>
+    }> {
+        if (!this.ctx.puppeteer) {
+            throw new Error("Puppeteer服务不可用");
+        }
+
+        // 使用正确的API获取页面实例
+        const page = await this.ctx.puppeteer.page();
+        
+        try {
+            // 设置浏览器参数
+            await page.setUserAgent(this.config.customUA);
+            await page.setViewport({ width: 1280, height: 800 });
+            
+            // 设置请求超时
+            await page.setDefaultNavigationTimeout(this.config.puppeteerTimeout);
+            
+            // 导航到页面
+            const response = await page.goto(url, { 
+                waitUntil: 'networkidle2',
+                timeout: this.config.puppeteerTimeout
+            });
+            
+            if (!response || !response.ok()) {
+                throw new Error(`页面加载失败: ${response?.status()}`);
+            }
+            
+            // 额外等待时间，确保动态内容加载完成
+            if (this.config.puppeteerWaitTime > 0) {
+                await page.waitForTimeout(this.config.puppeteerWaitTime);
+            }
+            
+            // 获取页面内容
+            const content = await page.content();
+            const title = await page.title();
+            
+            // 提取链接
+            const links = await page.evaluate(() => {
+                const anchors = Array.from(document.querySelectorAll('a'));
+                return anchors.map(a => ({
+                    url: a.href,
+                    text: a.textContent?.trim() || ''
+                }));
+            });
+            
+            return { content, title, links };
+        } finally {
+            // 确保页面被关闭
+            await page.close().catch(e => 
+                this.ctx.logger.warn(`关闭Puppeteer页面失败: ${e.message}`));
         }
     }
 
@@ -230,7 +314,7 @@ export default class SearchExtension {
     /**
      * 将HTML转换为纯文本
      * @param html HTML内容
-     * @returns 纯文本内容
+     * @returns 极速版纯文本内容
      */
     private convertHtmlToText(html: string): string {
         return html
@@ -309,6 +393,11 @@ export default class SearchExtension {
 
             this.ctx.logger.info(`返回搜索结果: ${topResults.length}项`);
 
+            // 如果启用了Puppeteer，添加提示信息
+            if (this.config.usePuppeteer) {
+                resultText += `\n提示：搜索结果中的动态网页可以使用 <fetch_webpage> 工具配合 use_dynamic=true 参数获取完整内容`;
+            }
+
             return Success(resultText);
         } catch (error: any) {
             this.ctx.logger.error(`网络搜索失败: `, error);
@@ -356,7 +445,7 @@ function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Arr
                 linkUrl = new URL(linkUrl, baseUrl).href;
             }
 
-            // 验证是否为有效的HTTP/HTTPS链接
+            // 修复点2: 添加条件表达式
             const urlObj = new URL(linkUrl);
             if (!["http:", "https:"].includes(urlObj.protocol)) {
                 continue;
