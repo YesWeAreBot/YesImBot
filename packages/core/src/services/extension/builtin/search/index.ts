@@ -25,7 +25,7 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
         .description("默认搜索源"),
     format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
     customUA: Schema.string()
-        .default("YesImBot/1.0.0 (Web Fetcher Tool)")
+        .default("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.83")
         .description("自定义User-Agent字符串，用于网页请求")
 });
 
@@ -90,24 +90,16 @@ export default class SearchExtension {
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 },
                 timeout: 10000,
+                responseType: 'text'  // 确保响应是文本格式
             });
 
-            // 获取响应内容作为文本
-            const rawContent = typeof response === 'string' 
-                ? response 
-                : response.data?.toString() || '';
+            // 响应应该是字符串
+            const rawContent = response as string;
             
-            // 尝试获取内容类型
-            let contentType = '';
-            if (typeof response !== 'string') {
-                contentType = response.headers?.['content-type'] || '';
-            }
-            
-            if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
-                this.ctx.logger.warn(`不支持的内容类型: ${contentType}`);
-            }
-
+            // 提取标题
             const title = extractTitle(rawContent);
+
+            // 提取链接
             const links = include_links ? extractLinks(rawContent, url, max_links) : [];
 
             let content = rawContent;
@@ -176,39 +168,56 @@ export default class SearchExtension {
 
         try {
             const endpoint = this.config.endpoint;
-            const engines = this.config.sources;
+            const engines = this.config.sources.join(",");
             const format = this.config.format;
             const limit = this.config.limit;
             /* prettier-ignore */
-            const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines.join(",")}&format=${format}`;
+            const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines}&format=${format}&limit=${limit}`;
+
+            this.ctx.logger.info(`正在搜索: ${query}, 使用URL: ${searchUrl}`);
 
             // 使用 Koishi 的 HTTP 服务发送请求
-            const data = await this.ctx.http.get(searchUrl, {
-                responseType: 'json'
+            const response: any = await this.ctx.http.get(searchUrl, {
+                headers: {
+                    "User-Agent": this.config.customUA,
+                },
+                responseType: 'json'  // 确保响应是JSON格式
             });
+
+            // 如果响应是字符串，尝试解析它
+            const data = typeof response === 'string' 
+                ? JSON.parse(response) 
+                : response;
 
             // 格式化搜索结果
             if (!data.results || data.results.length === 0) {
                 return Success(`没有找到关于"${query}"的搜索结果。`);
             }
 
-            let resultText = `找到 ${data.number_of_results || data.results.length} 个关于"${query}"的搜索结果：\n\n`;
+            const resultCount = data.number_of_results ?? data.results.length;
+            let resultText = `找到 ${resultCount} 个关于"${query}"的搜索结果：\n\n`;
 
             // 显示前N个结果
             const topResults = data.results.slice(0, limit);
-            topResults.forEach((result, index) => {
+            topResults.forEach((result: any, index: number) => {
                 resultText += `${index + 1}. **${result.title || '(无标题)'}**\n`;
                 resultText += `   链接: ${result.url}\n`;
-                resultText += `   摘要: ${(result.content || '').substring(0, 150)}...\n`;
+                if (result.content) {
+                    // 移除摘要中的HTML标签
+                    const cleanContent = result.content.replace(/<\/?[^>]+(>|$)/g, "");
+                    resultText += `   摘要: ${cleanContent.substring(0, 150)}${cleanContent.length > 150 ? "..." : ""}\n`;
+                }
                 if (result.publishedDate) {
                     resultText += `   发布时间: ${result.publishedDate}\n`;
                 }
                 resultText += `\n`;
             });
 
+            this.ctx.logger.info(`返回搜索结果: ${topResults.length}项`);
+
             return Success(resultText);
         } catch (error: any) {
-            this.ctx.logger.error(`网络搜索失败: ${error.message}`);
+            this.ctx.logger.error(`网络搜索失败: `, error);
             return Failed(`搜索过程中发生错误: ${error.message}`);
         }
     }
@@ -218,7 +227,10 @@ export default class SearchExtension {
 function extractTitle(html: string): string {
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     if (titleMatch && titleMatch[1]) {
-        return titleMatch[1].trim().replace(/\s+/g, " ");
+        return titleMatch[1]
+            .replace(/\n/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
     }
     return "未找到标题";
 }
