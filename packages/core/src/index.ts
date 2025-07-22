@@ -23,6 +23,7 @@ export default class YesImBot extends Service<Config> {
     static readonly Config = Config;
     static readonly inject = {
         required: ["console", "database"],
+        optional: ["puppeteer"],
     };
     static readonly name = "yesimbot";
     static readonly usage = `"Yes! I'm Bot!" 是一个能让你的机器人激活灵魂的插件。\n

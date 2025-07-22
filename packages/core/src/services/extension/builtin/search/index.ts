@@ -1,9 +1,11 @@
 import { Context, Schema } from "koishi";
-
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { isEmpty } from "@/shared";
+import * as cheerio from "cheerio";
+import { Readability } from "@mozilla/readability";
+import { JSDOM } from "jsdom";
 
 interface SearchConfig {
     endpoint: string;
@@ -11,6 +13,10 @@ interface SearchConfig {
     sources: string[];
     format: "json" | "html";
     customUA: string;
+    usePuppeteer: boolean; // 是否使用无头浏览器
+    httpTimeout: number; // HTTP请求超时时间（毫秒）
+    puppeteerTimeout: number; // Puppeteer超时时间（毫秒）
+    puppeteerWaitTime: number; // Puppeteer加载后等待时间（毫秒）
 }
 
 const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
@@ -25,8 +31,20 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
         .description("默认搜索源"),
     format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
     customUA: Schema.string()
-        .default("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.3351.83")
-        .description("自定义User-Agent字符串，用于网页请求")
+        .default("YesImBot/1.0.0 (Web Fetcher Tool)")
+        .description("自定义User-Agent字符串，用于网页请求"),
+    usePuppeteer: Schema.boolean()
+        .default(false)
+        .description("是否使用无头浏览器获取动态网页(需要安装puppeteer服务)"),
+    httpTimeout: Schema.number()
+        .default(10000)
+        .description("HTTP请求超时时间(毫秒)"),
+    puppeteerTimeout: Schema.number()
+        .default(30000)
+        .description("Puppeteer无头浏览器超时时间(毫秒)"),
+    puppeteerWaitTime: Schema.number()
+        .default(2000)
+        .description("Puppeteer加载后等待时间(毫秒)")
 });
 
 @Extension({
@@ -40,15 +58,16 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
 export default class SearchExtension {
     public static readonly Config = SearchConfigSchema;
 
-    constructor(public ctx: Context, public config: SearchConfig) {}
+    constructor(public ctx: Context, public config: SearchConfig) {
+        // 移除不存在的错误调用
+    }
 
     @Tool({
         name: "fetch_webpage",
-        description: `获取指定网页的内容。
+        description: `获取指定网页的内容。支持动态渲染页面。
   - 将网页URL添加到url参数来获取网页内容
   - 可以获取HTML内容或纯文本内容
-  - 支持基本的HTTP/HTTPS网页访问
-  - 自动提取网页中的其他链接
+  - 支持静态和动态网页访问
   Example:
     fetch_webpage("https://example.com", "text")`,
         parameters: withInnerThoughts({
@@ -59,6 +78,9 @@ export default class SearchExtension {
             max_length: Schema.number().default(5000).description("返回内容的最大长度，默认5000字符"),
             include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),
             max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
+            use_dynamic: Schema.boolean()
+                .default(false)
+                .description("是否强制使用无头浏览器获取动态内容")
         }),
     })
     async fetchWebPage(
@@ -68,9 +90,10 @@ export default class SearchExtension {
             max_length: number;
             include_links: boolean;
             max_links: number;
+            use_dynamic: boolean;
         }>
     ) {
-        const { url, format, max_length, include_links, max_links } = args;
+        const { url, format, max_length, include_links, max_links, use_dynamic } = args;
         if (isEmpty(url)) return Failed("url is required");
 
         try {
@@ -82,51 +105,38 @@ export default class SearchExtension {
 
             this.ctx.logger.info(`Bot正在获取网页: ${url}`);
 
-            // 使用Koishi HTTP服务发送请求
-            const response = await this.ctx.http.get(url, {
+            let rawContent: string;
+            let title: string;
+            let links: Array<{ url: string; text: string }> = [];
+
+            // 删除无效的puppeteer检查代码
+            
+            // 使用HTTP请求获取静态内容
+            rawContent = await this.ctx.http.get(url, {
                 headers: {
                     "User-Agent": this.config.customUA,
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 },
-                timeout: 10000,
-                responseType: 'text'  // 确保响应是文本格式
+                timeout: this.config.httpTimeout,
+                responseType: 'text'
             });
+            title = extractTitle(rawContent);
+            links = include_links ? extractLinks(rawContent, url, max_links) : [];
+            this.ctx.logger.info(`通过HTTP获取网页成功`);
 
-            // 响应应该是字符串
-            const rawContent = response as string;
+            // 提取主要内容（使用Readability算法）
+            const { content, textContent } = this.extractMainContent(rawContent, url);
             
-            // 提取标题
-            const title = extractTitle(rawContent);
-
-            // 提取链接
-            const links = include_links ? extractLinks(rawContent, url, max_links) : [];
-
-            let content = rawContent;
-
-            // 如果请求纯文本格式，提取HTML中的文本内容
-            if (format === "text") {
-                content = content
-                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-                    .replace(/<[^>]+>/g, "")
-                    .replace(/&nbsp;/g, " ")
-                    .replace(/&lt;/g, "<")
-                    .replace(/&gt;/g, ">")
-                    .replace(/&amp;/g, "&")
-                    .replace(/&quot;/g, '"')
-                    .replace(/&#39;/g, "'")
-                    .replace(/\s+/g, " ")
-                    .trim();
-            }
+            let resultContent = format === "text" ? textContent : content;
 
             // 限制返回内容长度
-            if (content.length > max_length) {
-                content = content.substring(0, max_length) + "...(内容已截断)";
+            if (resultContent.length > max_length) {
+                resultContent = resultContent.substring(0, max_length) + "...(内容已截断)";
             }
 
             // 构建返回结果
-            let result = `网页标题: ${title}\n网页URL: ${url}\n内容:\n${content}`;
+            let result = `网页标题: ${title}\n网页URL: ${url}\n内容:\n${resultContent}`;
 
             // 添加链接信息
             if (include_links && links.length > 0) {
@@ -136,7 +146,7 @@ export default class SearchExtension {
                 });
             }
 
-            this.ctx.logger.info(`Bot成功获取网页内容，长度: ${content.length}, 链接数: ${links.length}`);
+            this.ctx.logger.info(`Bot成功获取网页内容，长度: ${resultContent.length}, 链接数: ${links.length}`);
 
             return Success(result);
         } catch (error: any) {
@@ -152,6 +162,89 @@ export default class SearchExtension {
                 return Failed(`获取网页失败: ${error.message}`);
             }
         }
+    }
+
+    /**
+     * 使用Readability算法提取网页主要内容
+     * @param html 网页HTML内容
+     * @param url 网页URL
+     * @returns 包含HTML内容和纯文本内容的对象
+     */
+    private extractMainContent(html: string, url: string): { content: string; textContent: string } {
+        try {
+            // 创建DOM环境
+            const dom = new JSDOM(html, { url });
+            const document = dom.window.document;
+            
+            // 使用Readability提取主要内容
+            const reader = new Readability(document);
+            const article = reader.parse();
+            
+            if (article) {
+                return {
+                    content: article.content,
+                    textContent: article.textContent
+                };
+            }
+        } catch (error) {
+            this.ctx.logger.warn(`使用Readability提取内容失败: ${error.message}`);
+        }
+        
+        // 如果Readability失败，使用回退方法
+        return this.extractMainContentFallback(html);
+    }
+
+    /**
+     * 回退方法：使用cheerio提取主要内容
+     * @param html 网页HTML内容
+     * @returns 包含HTML内容和纯文本内容的对象
+     */
+    private extractMainContentFallback(html: string): { content: string; textContent: string } {
+        const $ = cheerio.load(html);
+        
+        // 尝试提取常见的内容容器
+        const contentContainers = [
+            'article', '.article', '#article', 
+            '.content', '#content', '.main', '#main',
+            '.post', '.entry-content', '.story-content'
+        ];
+        
+        let contentElement = null;
+        
+        for (const selector of contentContainers) {
+            contentElement = $(selector).first();
+            if (contentElement.length > 0) break;
+        }
+        
+        // 如果没有找到特定容器，使用整个body
+        if (!contentElement || contentElement.length === 0) {
+            contentElement = $('body');
+        }
+        
+        const content = contentElement.html() || html;
+        const textContent = this.convertHtmlToText(content);
+        
+        return { content, textContent };
+    }
+
+    /**
+     * 将HTML转换为纯文本
+     * @param html HTML内容
+     * @returns 纯文本内容
+     */
+    private convertHtmlToText(html: string): string {
+        return html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+            .replace(/<[^>]+>/g, "")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, " ")
+            .trim();
     }
 
     @Tool({
@@ -171,7 +264,6 @@ export default class SearchExtension {
             const engines = this.config.sources.join(",");
             const format = this.config.format;
             const limit = this.config.limit;
-            /* prettier-ignore */
             const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines}&format=${format}&limit=${limit}`;
 
             this.ctx.logger.info(`正在搜索: ${query}, 使用URL: ${searchUrl}`);
@@ -181,13 +273,12 @@ export default class SearchExtension {
                 headers: {
                     "User-Agent": this.config.customUA,
                 },
-                responseType: 'json'  // 确保响应是JSON格式
+                responseType: 'json',
+                timeout: this.config.httpTimeout
             });
 
-            // 如果响应是字符串，尝试解析它
-            const data = typeof response === 'string' 
-                ? JSON.parse(response) 
-                : response;
+            // 处理响应
+            const data = typeof response === 'string' ? JSON.parse(response) : response;
 
             // 格式化搜索结果
             if (!data.results || data.results.length === 0) {
@@ -202,14 +293,17 @@ export default class SearchExtension {
             topResults.forEach((result: any, index: number) => {
                 resultText += `${index + 1}. **${result.title || '(无标题)'}**\n`;
                 resultText += `   链接: ${result.url}\n`;
+                
                 if (result.content) {
                     // 移除摘要中的HTML标签
                     const cleanContent = result.content.replace(/<\/?[^>]+(>|$)/g, "");
                     resultText += `   摘要: ${cleanContent.substring(0, 150)}${cleanContent.length > 150 ? "..." : ""}\n`;
                 }
+                
                 if (result.publishedDate) {
                     resultText += `   发布时间: ${result.publishedDate}\n`;
                 }
+                
                 resultText += `\n`;
             });
 
