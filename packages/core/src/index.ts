@@ -11,6 +11,7 @@ import {
     ToolService,
     WorldStateService,
 } from "./services";
+import { handleError } from "./shared/errors";
 
 declare module "koishi" {
     interface Context {
@@ -84,8 +85,10 @@ export default class YesImBot extends Service<Config> {
                 this.ctx.logger.info(`Version: ${require("../package.json").version}`);
             });
         } catch (error) {
-            this.ctx.logger.error("初始化时发生错误:", error.message);
-            this.ctx.logger.error(error.stack);
+            // this.ctx.logger.error("初始化时发生错误:", error.message);
+            // this.ctx.logger.error(error.stack);
+            handleError(this.ctx.logger("[YesImBot]"), error, "初始化时发生错误");
+            this.ctx.stop();
         }
 
         ctx.plugin(ConfiguratorService, config);

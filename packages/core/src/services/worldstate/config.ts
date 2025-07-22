@@ -69,7 +69,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
 
     recall: Schema.object({
         private: Schema.number().default(3).description("私聊场景下召回用户画像的数量"),
-        guild: Schema.number().default(3).description("群组场景下召回用户画像的数量"),
+        guild: Schema.number().default(8).description("群组场景下召回用户画像的数量"),
         minConfidence: Schema.number().default(0.5).description("最低置信度"),
     }).description("用户画像召回设置"),
 

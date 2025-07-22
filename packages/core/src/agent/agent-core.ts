@@ -7,6 +7,7 @@ import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/mo
 import { loadTemplate, PromptService } from "@/services/prompt";
 import { Services } from "@/services/types";
 import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
+import { handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { WillingnessManager } from "./willing";
@@ -65,6 +66,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly allowedChannels = new Set<string>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debouncedReplyTasks: Map<string, WithDispose<(sid: string) => void>> = new Map();
+    private listener: () => boolean;
 
     private runningTasks: Set<string> = new Set();
 
@@ -89,7 +91,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         if (!this.modelSwitcher) {
             this._logger.error("❌ 未配置模型组，智能体核心无法启动。");
-            this.handleError(new Error("未配置模型组"), "智能体核心启动失败");
+            handleError(this._logger, new Error("未配置模型组"), "智能体核心启动失败");
         }
     }
 
@@ -98,7 +100,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
-        this.ctx.on("worldstate:segment-updated", async (session, sid) => {
+        this.listener = this.ctx.on("worldstate:segment-updated", async (session, sid) => {
             const channelKey = session.cid;
 
             // --- 第1步: 意愿计算与决策 (无论如何都执行) ---
@@ -117,7 +119,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 this._logger.debug(`[${channelKey}] 意愿计算: ${currentWillingnessBefore.toFixed(2)} -> ${currentWillingnessAfter.toFixed(2)} | 回复概率: ${(probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
             } catch (error) {
                 // 意愿计算阶段的错误也需要捕获
-                this.handleError(error, `意愿计算失败 (Channel: ${channelKey})`);
+                handleError(this._logger, error, `意愿计算失败 (Channel: ${channelKey})`);
                 return; // 计算失败，直接退出
             }
 
@@ -164,7 +166,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     } catch (error) {
                         // 捕获 runAgentCycle 或钩子函数中的任何错误
                         /* prettier-ignore */
-                        this.handleError(error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${sid})`);
+                        handleError(this._logger, error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${sid})`);
                     } finally {
                         // --- 解锁 ---
                         // 无论成功还是失败，都必须在 finally 块中释放锁
@@ -253,7 +255,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     shouldContinueHeartbeat = false;
                 }
             } catch (error) {
-                this.handleError(error, `心跳 #${heartbeatCount} 期间 (段落ID: ${sid})`);
+                handleError(this._logger, error, `心跳 #${heartbeatCount} 期间 (段落ID: ${sid})`);
                 shouldContinueHeartbeat = false;
                 success = false; // 出错则认为本次循环失败
             }
@@ -275,6 +277,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         sid: string,
         previousResponses: AgentResponse[]
     ): Promise<{ response: AgentResponse; continue: boolean } | null> {
+        if (!this.modelSwitcher) {
+            this._logger.warn("未配置有效的模型组，无法生成回复 | 请检查配置")
+            return null;
+        }
+
         // 1. 构建提示词所需的所有上下文信息
         const promptContext = await this.buildPromptContext(session, sid, previousResponses);
 
@@ -550,16 +557,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
 
         return { images: finalImages };
-    }
-
-    private handleError(error: any, contextDescription: string): void {
-        if (error instanceof Error) {
-            /* prettier-ignore */
-            this._logger.error(`[错误] ${contextDescription}\n` + `错误信息: ${error.message}\n` + `堆栈追踪:\n${error.stack}`);
-        } else {
-            // 如果捕获到的不是标准Error对象（例如字符串或普通对象）
-            this._logger.error(`[错误] ${contextDescription}\n` + `捕获到非标准错误: ${JSON.stringify(error)}`);
-        }
     }
 }
 
