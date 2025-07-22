@@ -10,6 +10,8 @@ interface SearchConfig {
     limit: number;
     sources: string[];
     format: "json" | "html";
+    proxyUrl: string; // 新增代理配置
+    customUA: string; // 新增用户代理配置
 }
 
 const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
@@ -23,6 +25,14 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
         .role("table")
         .description("默认搜索源"),
     format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
+    // 新增代理配置
+    proxyUrl: Schema.string()
+        .default("")
+        .description("HTTP代理服务器URL（格式：http://[user:password@]host:port），留空不使用代理"),
+    // 新增用户代理配置
+    customUA: Schema.string()
+        .default("YesImBot/1.0.0 (Web Fetcher Tool)")
+        .description("自定义User-Agent字符串，用于网页请求")
 });
 
 @Extension({
@@ -78,14 +88,50 @@ export default class SearchExtension {
 
             this.ctx.logger.info(`Bot正在获取网页: ${url}`);
 
-            const response = await fetch(url, {
+            // 配置请求选项
+            const fetchOptions: RequestInit = {
                 headers: {
-                    "User-Agent": "YesImBot/1.0.0 (Web Fetcher Tool)",
-                    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "User-Agent": this.config.customUA, // 使用配置的自定义UA
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 },
                 signal: AbortSignal.timeout(10000),
-            });
+            };
+
+            // 应用代理配置（如果存在）
+            if (this.config.proxyUrl) {
+                try {
+                    // 在Node环境下通过代理连接
+                    if (typeof globalThis !== "undefined" && typeof require !== "undefined") {
+                        const { Agent } = require("undici");
+                        const proxy = new URL(this.config.proxyUrl);
+                        
+                        // 创建代理agent
+                        const agent = new Agent({
+                            connect: {
+                                host: proxy.hostname,
+                                port: proxy.port || (proxy.protocol === "https:" ? 443 : 80),
+                                protocol: proxy.protocol,
+                                // 处理代理认证（如果存在）
+                                ...(proxy.username && proxy.password ? {
+                                    proxyAuthorization: `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}`
+                                } : {})
+                            }
+                        });
+                        
+                        // 应用代理设置
+                        (fetchOptions as any).dispatcher = agent;
+                        this.ctx.logger.debug(`使用代理服务器: ${this.config.proxyUrl}`);
+                    } else {
+                        this.ctx.logger.warn("代理配置只能在Node.js环境中使用");
+                    }
+                } catch (error) {
+                    this.ctx.logger.warn(`设置代理失败: ${error.message}`);
+                }
+            }
+
+            // 发起请求
+            const response = await fetch(url, fetchOptions);
 
             if (!response.ok) {
                 return Failed(`HTTP错误: ${response.status} ${response.statusText}`);
@@ -219,7 +265,8 @@ function extractTitle(html: string): string {
 // 辅助函数：提取网页中的链接
 function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Array<{ url: string; text: string }> {
     const links: Array<{ url: string; text: string }> = [];
-    const linkRegex = /<a[^>]+href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    // 改进的正则表达式，确保正确获取href和链接文本
+    const linkRegex = /<a\s+[^>]*href\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
     const baseUrlObj = new URL(baseUrl);
 
     let match;

@@ -191,6 +191,7 @@ class EventListenerManager {
         }
 
         const content = await this.service.transformMessageContent(session.elements, session);
+        this._logger.debug(`记录转义后的消息：${content}`);
         await this.service.recordMessage(segment.id, {
             id: session.messageId,
             platform: session.platform,
