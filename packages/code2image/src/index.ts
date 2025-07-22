@@ -1,19 +1,10 @@
-import { Context, h, Logger, Schema } from "koishi";
-
-import {} from "koishi-plugin-puppeteer";
-
-import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
-import {
-    bundledLanguages,
-    BundledTheme,
-    bundledThemes,
-    createHighlighter,
-    Highlighter,
-    BuiltinLanguage,
-    BuiltinTheme,
-} from "shiki";
 import { promises as fs } from "fs";
+import { mkdir } from "fs/promises";
+import { base64ToArrayBuffer, Context, h, Logger, Schema } from "koishi";
+import {} from "koishi-plugin-puppeteer";
+import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import * as path from "path";
+import type { BuiltinLanguage, BuiltinTheme, HighlighterCore } from "shiki";
 
 // 使用 Logger 创建一个独立的日志记录器，便于区分插件日志
 const logger = new Logger("code2image");
@@ -46,9 +37,7 @@ export interface CodeToImageConfig {
 export default class CodeToImage {
     // Schema 定义，提供更详细的描述和类型
     static readonly Config: Schema<CodeToImageConfig> = Schema.object({
-        defaultTheme: Schema.union(Object.keys(bundledThemes))
-            .default("github-light")
-            .description("代码高亮的默认主题"),
+        defaultTheme: Schema.string().default("github-light").description("代码高亮的默认主题"),
         fontDirectory: Schema.path({ filters: ["directory"], allowCreate: true })
             .role("path")
             .default("data/code2image/fonts")
@@ -62,7 +51,7 @@ export default class CodeToImage {
 
     static readonly inject = ["puppeteer"];
 
-    private highlighter: Highlighter;
+    private highlighter: HighlighterCore;
     private localFonts: Map<string, string> = new Map();
 
     constructor(public ctx: Context, public config: CodeToImageConfig) {
@@ -82,10 +71,20 @@ export default class CodeToImage {
      * 初始化 Shiki 高亮器和加载本地字体
      */
     private async initialize() {
+        const githubLight = await import("@shikijs/themes/github-light");
+        const materialThemeOcean = await import("@shikijs/themes/material-theme-ocean");
+        const { createHighlighterCore } = await import("shiki/core");
+        const { createOnigurumaEngine } = await import("shiki/engine/oniguruma");
+
         logger.info("正在初始化 Shiki 高亮器...");
-        this.highlighter = await createHighlighter({
-            themes: [this.config.defaultTheme],
-            langs: Object.keys(bundledLanguages),
+        this.highlighter = await createHighlighterCore({
+            themes: [githubLight, materialThemeOcean],
+            langs: [
+                import("@shikijs/langs/typescript"),
+                import("@shikijs/langs/javascript"),
+                import("@shikijs/langs/css"),
+            ],
+            engine: createOnigurumaEngine(import("shiki/wasm")),
         });
         logger.info("Shiki 高亮器初始化完成");
 
@@ -102,6 +101,8 @@ export default class CodeToImage {
             logger.info("未配置字体目录，将跳过加载本地字体");
             return;
         }
+
+        await mkdir(this.config.fontDirectory, { recursive: true });
 
         try {
             const files = await fs.readdir(this.config.fontDirectory);
@@ -137,7 +138,7 @@ export default class CodeToImage {
         // 合并用户输入和默认配置
         const {
             code,
-            lang = "plaintext",
+            lang = "ts",
             theme = this.config.defaultTheme,
             fontFamily = this.config.defaultFontFamily,
             fontSize = this.config.defaultFontSize,
@@ -148,11 +149,11 @@ export default class CodeToImage {
 
         try {
             // 动态加载 Shiki 主题和语言
-            await this.highlighter.loadTheme(theme as BundledTheme);
+            await this.highlighter.loadTheme(import(`@shikijs/themes/${theme}`));
             const loadedLanguages = this.highlighter.getLoadedLanguages();
             if (!loadedLanguages.includes(lang)) {
                 try {
-                    await this.highlighter.loadLanguage(lang);
+                    await this.highlighter.loadLanguage(import(`@shikijs/langs/${lang}`));
                 } catch (e) {
                     logger.warn(`尝试加载语言 "${lang}" 失败: ${e.message}`);
                     return `不支持的语言: ${lang}。请检查语言名称是否正确。`;
@@ -176,14 +177,27 @@ export default class CodeToImage {
             });
 
             // 4. 使用 Puppeteer 渲染
-            const imageBuffer = await this.ctx.puppeteer.render(fullHtml, async (page, next) => {
+            const imageElement = await this.ctx.puppeteer.render(fullHtml, async (page, next) => {
                 const container = await page.$(".container");
                 if (!container) throw new Error("无法在 Puppeteer 页面中找到 .container 元素");
                 return next(container);
             });
 
+            const imageBuffer = h.parse(imageElement).find((el) => el.type === "img")?.attrs.src;
+
+            if (!imageBuffer) {
+                throw new Error("无法从 Puppeteer 获取图片数据");
+            }
+
+            const base64Content = imageBuffer.match(/^data:image\/\w+;base64,(.*)$/);
+            if (!base64Content) {
+                throw new Error("无法从 Puppeteer 获取图片数据");
+            }
+
+            const buffer = base64ToArrayBuffer(base64Content[1]);
+
             logger.info("图片生成成功");
-            return Buffer.from(imageBuffer);
+            return Buffer.from(buffer);
         } catch (error) {
             logger.error("生成图片时发生严重错误：");
             logger.error(error);
@@ -195,7 +209,7 @@ export default class CodeToImage {
         // 用户指令
         this.ctx
             .command("code <code:text>", "将代码块渲染为图片发送")
-            .usage('可以直接跟随代码，或使用 Markdown 语法。例如：\n`code ```ts\nconsole.log("Hello, Koishi!");\n```')
+            .usage('可以直接跟随代码，或使用 Markdown 语法。例如：\ncode ```ts\nconsole.log("Hello, Koishi!");\n```')
             .option("lang", "-l <lang:string> 指定代码语言")
             .option("theme", "-t <theme:string> 指定高亮主题")
             .option("font", "-f <font:string>指定字体 ")
@@ -233,9 +247,7 @@ export default class CodeToImage {
         parameters: withInnerThoughts({
             code: Schema.string().required().description("要转换为图片的代码字符串"),
             lang: Schema.string().default("plaintext").description("代码的语言，例如 `typescript`, `python`, `json`"),
-            theme: Schema.string().description(
-                `代码高亮的主题。默认为插件配置。可用主题: ${randomPick(Object.keys(bundledThemes)).join(", ")}`
-            ),
+            theme: Schema.string().description(`代码高亮的主题。默认为插件配置`),
             fontFamily: Schema.string().description("渲染时使用的字体。默认为插件配置"),
             fontSize: Schema.number().description("字体大小。默认为插件配置"),
             padding: Schema.number().description("图片内边距。默认为插件配置"),
