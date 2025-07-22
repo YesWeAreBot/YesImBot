@@ -52,9 +52,11 @@
     "lru-cache": "^11.1.0",
     "mustache": "^4.2.0",
     "uuid": "^11.1.0",
-    "reflect-metadata": "^0.2.2"
+    "reflect-metadata": "^0.2.2",
+    "sharp": "^0.34.3"
   },
   "devDependencies": {
+    "@types/sharp": "^0.32.0",
     "@xsai-ext/providers-cloud": "^0.3.2",
     "@xsai-ext/providers-local": "^0.3.2",
     "@xsai-ext/shared-providers": "^0.3.2",
