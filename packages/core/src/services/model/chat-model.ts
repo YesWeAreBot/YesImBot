@@ -169,10 +169,10 @@ export class ChatModel extends BaseModel implements IChatModel {
                         streamStarted = true;
                         this.logger.debug(`🌊 流式传输已开始 | 首字延迟: ${Date.now() - stime}ms`);
                         // 打印一个换行符，为打字机效果准备一个干净的起始行
-                        process.stdout.write("\n");
+                        //process.stdout.write("\n");
                     }
                     // 实时打字效果
-                    process.stdout.write(event.text);
+                    //process.stdout.write(event.text);
                 }
             },
         });
@@ -224,7 +224,7 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         // --- 流处理结束，组装并返回结果 ---
 
-        process.stdout.write("\n\n");
+        //process.stdout.write("\n\n");
         this.logger.debug(`🌊 流式传输完毕 | 总耗时: ${Date.now() - stime}ms`);
 
         // 5. 组装成一个完整的 GenerateTextResult 对象
