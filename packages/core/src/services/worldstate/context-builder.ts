@@ -101,7 +101,7 @@ export class ContextBuilder {
         }
 
         // 2. 根据历史记录召回用户、获取成员和用户画像
-        const allMessages = this.getAllMessagesFromHistory(history);
+        const allMessages = this.getAllMessagesFromHistory(history).slice(-this.config.maxMessages);
         const [userIds, members] = await Promise.all([
             this.recallManager.recallForGuildContext(allMessages),
             this.dataProvider.getMembersFromHistory(bot, history, platform, channelInfo.guildId || id),

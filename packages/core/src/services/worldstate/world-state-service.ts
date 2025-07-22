@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 import { Argv, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
 
 import { IEmbedModel, TaskType } from "@/services/model";
@@ -8,10 +7,10 @@ import { HistoryConfig } from "./config";
 import { ContextBuilder } from "./context-builder";
 import { DialogueSegmentData, MessageData } from "./database-models";
 import { CommandInvocationPayload } from "./event-types";
-import { AgentResponse, AgentTurn, ContextualMessage, WorldState } from "./interfaces";
+import { AgentResponse, ContextualMessage, WorldState } from "./interfaces";
+import { DialogueSegmentManager } from "./segment-manager";
 import { SummarizationManager } from "./summarize";
 import { pruneHistoryByMessages } from "./utils";
-import { DialogueSegmentManager } from "./segment-manager";
 
 // 扩展 Koishi 的 Context 和 Events 接口
 declare module "koishi" {
@@ -305,7 +304,8 @@ class HistoryCommandManager {
                     sid: { $in: segments.map((s) => s.id) },
                 });
 
-                return `在 ${platform}:${channelId} 中有 ${allMessages.length} 条激活的消息`;
+                /* prettier-ignore */
+                return `在 ${platform}:${channelId} 中有 ${allMessages.length} 条待处理的消息${allMessages.length > this.config.maxMessages ? `，实际激活 ${this.config.maxMessages} 条` : ""}`;
             });
 
         historyCmd.subcommand(".summarize", "手动触发当前频道的历史记录总结").action(async ({ session }) => {

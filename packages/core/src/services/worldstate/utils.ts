@@ -1,3 +1,4 @@
+import { h } from "koishi";
 import { ClosedDialogueSegment, FoldedDialogueSegment, PendingDialogueSegment, WorldState } from "./interfaces";
 
 /**
@@ -69,13 +70,18 @@ export function pruneHistoryByMessages(worldState: WorldState, maxMessages: numb
  * 提取消息中@提及的用户ID
  */
 export function extractMentionedUsers(content: string): string[] {
-    const mentionRegex = /@(\w+)/g;
-    const mentions: string[] = [];
-    let match: RegExpExecArray | null;
+    // const mentionRegex = /@(\w+)/g;
+    // const mentions: string[] = [];
+    // let match: RegExpExecArray | null;
 
-    while ((match = mentionRegex.exec(content)) !== null) {
-        mentions.push(match[1]);
-    }
+    // while ((match = mentionRegex.exec(content)) !== null) {
+    //     mentions.push(match[1]);
+    // }
+
+    const mentions = h
+        .parse(content)
+        .filter((el) => el.type === "at")
+        .map((el) => el.attrs.id);
 
     return mentions;
 }
