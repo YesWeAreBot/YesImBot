@@ -96,7 +96,7 @@ export class ChatModel extends BaseModel implements IChatModel {
     public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
         // 优先级: 运行时参数 > 模型配置 > 默认值 (true)
         const useStream = options.stream ?? this.config.parameters.stream ?? true;
-        this.logger.info(`💬 开始 | 流式: ${useStream}`);
+        //this.logger.info(`💬 开始 | 流式: ${useStream}`);
         const chatOptions = this.buildChatOptions(options);
 
         try {

@@ -209,7 +209,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
 
     private _registerPromptTemplates(): void {
-        this._logger.info("⚙️ 正在注册提示词模板...");
+        // this._logger.info("正在注册提示词模板");
 
         // 注册所有可重用的局部模板 (Partials)
         // 使用 Mustache 的 {{> partialName }} 语法来引用它们
@@ -231,7 +231,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 所以更适合作为 render 方法的 initialScope 传入，而不是注册为全局 Snippet。
         // 这使得每次渲染的上下文都是隔离和最新的。
 
-        this._logger.info("✅ 提示词模板注册完成。");
+        // this._logger.info("✅ 提示词模板注册完成。");
     }
 
     /**

@@ -498,7 +498,7 @@ export class MemoryService extends Service<MemoryConfig> {
             const insightDbQuery = this._buildDbQuery<Insight>(options, (ids) => ({ relatedUserIds: { $some: ids } }));
             const profileDbQuery = this._buildDbQuery<UserProfile>(options, (ids) => ({ userId: { $in: ids } }));
 
-            this.logger.info("正在并行从数据库获取事实和洞察...");
+            //this.logger.info("正在并行从数据库获取事实和洞察...");
             const [allFacts, allInsights, allProfiles] = await Promise.all([
                 this.ctx.database.get(TableName.Facts, factDbQuery),
                 this.ctx.database.get(TableName.Insights, insightDbQuery),
