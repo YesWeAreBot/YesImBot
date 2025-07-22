@@ -167,7 +167,7 @@ export class ImageService extends Service<ImageServiceConfig> {
 
             return { data: imageData, content: base64Content };
         } catch (error) {
-            this._logger.error(`💥 文件读取失败 | ID: ${id} | 路径: ${imageData.localPath}`, error);
+            this._logger.error(`💥 文件读取失败 | ID: ${id} | 路径: ${imageData.localPath}`);
             // 如果文件不存在，也应该考虑从数据库中移除这条脏数据
             if (error.code === "ENOENT") {
                 await this.ctx.database.remove(TableName.Images, { id });

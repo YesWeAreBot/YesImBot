@@ -3,7 +3,7 @@
 // =================================================================================
 
 import { Context, Logger } from "koishi";
-import { MemoryService } from "../memory";
+import { MemoryService, UserProfile } from "../memory";
 import { Services, TableName } from "../types";
 import { CacheKeyPrefix, CacheManager } from "./cache-manager";
 import { HistoryConfig } from "./config";
@@ -129,28 +129,69 @@ export class UserRecallManager {
             .slice(0, maxRelevantUsers)
             .map(([userId]) => userId);
 
-        this.logger.debug(
-            `智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`
-        );
+        /* prettier-ignore */
+        this.logger.debug(`智能筛选用户: 直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`);
         this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedUserIds);
         return sortedUserIds;
     }
 
-    private _generateMessageHash(messages: ContextualMessage[]): string {
-        const hashInput = messages.map((m) => `${m.id}:${m.timestamp.getTime()}:${m.sender.id}`).join("|");
-        let hash = 0;
-        for (let i = 0; i < hashInput.length; i++) {
-            const char = hashInput.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash = hash & hash;
+    public async getUserProfiles(userIds: string[], contextId: string): Promise<UserProfile[]> {
+        if (userIds.length === 0) return [];
+
+        const profiles: UserProfile[] = [];
+        const missingUserIds = new Set<string>();
+
+        for (const userId of userIds) {
+            const cachedProfile = this.cacheManager.get<UserProfile>(
+                CacheKeyPrefix.USER_PROFILES,
+                `${contextId}:${userId}`
+            );
+            if (cachedProfile) {
+                profiles.push(cachedProfile);
+            } else {
+                missingUserIds.add(userId);
+            }
         }
-        return Math.abs(hash).toString(36);
+
+        if (missingUserIds.size > 0) {
+            const missingProfiles = await this.ctx.database.get(TableName.UserProfiles, {
+                userId: { $in: Array.from(missingUserIds) },
+                contextId,
+                isDeleted: false,
+            });
+            for (const profile of missingProfiles) {
+                this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, `${profile.contextId}:${profile.userId}`, profile);
+                profiles.push(profile);
+                missingUserIds.delete(profile.userId);
+            }
+
+            const globalProfiles = await this.ctx.database.get(TableName.UserProfiles, {
+                userId: { $in: Array.from(missingUserIds) },
+                contextId: "global",
+                isDeleted: false,
+            });
+
+            for (const profile of globalProfiles) {
+                this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, `${profile.contextId}:${profile.userId}`, profile);
+                profiles.push(profile);
+                missingUserIds.delete(profile.userId);
+            }
+
+            if (missingUserIds.size > 0) {
+                this.logger.warn(`无法找到部分用户画像: ${Array.from(missingUserIds).join(", ")}`);
+            }
+        }
+        return profiles;
     }
 
-    private async findSemanticRelevantUsers(
-        messages: ContextualMessage[],
-        maxUsers: number
-    ): Promise<Array<{ userId: string; score: number }>> {
+    /**
+     * 基于语义相似度查找相关用户
+     * @param messages
+     * @param maxUsers
+     * @returns
+     */
+    /* prettier-ignore */
+    private async findSemanticRelevantUsers(messages: ContextualMessage[], maxUsers: number): Promise<Array<{ userId: string; score: number }>> {
         try {
             const batchText = messages.map((m) => `${m.sender.name}: ${m.content}`).join("\n");
 
@@ -190,6 +231,11 @@ export class UserRecallManager {
         }
     }
 
+    /**
+     * 基于姓名提及查找用户
+     * @param messages
+     * @returns
+     */
     private async findNamedUsers(messages: ContextualMessage[]): Promise<Array<{ userId: string; score: number }>> {
         try {
             const messageText = messages.map((m) => m.content).join(" ");
@@ -209,5 +255,16 @@ export class UserRecallManager {
             this.logger.warn(`基于姓名的用户查找失败: ${error.message}`);
             return [];
         }
+    }
+
+    private _generateMessageHash(messages: ContextualMessage[]): string {
+        const hashInput = messages.map((m) => `${m.id}:${m.timestamp.getTime()}:${m.sender.id}`).join("|");
+        let hash = 0;
+        for (let i = 0; i < hashInput.length; i++) {
+            const char = hashInput.charCodeAt(i);
+            hash = (hash << 5) - hash + char;
+            hash = hash & hash;
+        }
+        return Math.abs(hash).toString(36);
     }
 }

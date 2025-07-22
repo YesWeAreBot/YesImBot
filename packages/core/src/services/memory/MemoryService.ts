@@ -171,12 +171,12 @@ export class MemoryService extends Service<MemoryConfig> {
                 id: "string(64)",
                 userId: "string(64)", // 直接关联用户ID
                 userName: "string(255)", // 用户名称
+                contextId: "string(32)",
                 content: "text",
                 embedding: "array",
                 type: "string(32)", // FactType 枚举值
                 lifespan: "string(32)", // LifespanType 枚举值
                 sourceMessageIds: "array", // 支持多条消息ID
-                contextId: "string(32)",
                 salience: "float",
                 createdAt: "timestamp",
                 lastAccessedAt: "timestamp",
@@ -191,6 +191,7 @@ export class MemoryService extends Service<MemoryConfig> {
             TableName.Insights,
             {
                 id: "string(64)",
+                contextId: "string(32)",
                 content: "text",
                 embedding: "array",
                 type: "string(32)", // InsightType 枚举值
@@ -198,7 +199,6 @@ export class MemoryService extends Service<MemoryConfig> {
                 sourceMessageIds: "array", // 关键来源消息ID数组
                 lifespan: "string(32)", // LifespanType 枚举值
                 salience: "float",
-                contextId: "string(32)",
                 createdAt: "timestamp",
                 lastAccessedAt: "timestamp",
                 accessCount: "integer",
@@ -214,6 +214,7 @@ export class MemoryService extends Service<MemoryConfig> {
                 id: "string(64)",
                 userId: "string(64)", // 直接关联用户ID
                 userName: "string(255)", // 用户名称
+                contextId: "string(32)",
                 content: "text",
                 embedding: "array",
                 supportingFactIds: "array",
@@ -465,7 +466,7 @@ export class MemoryService extends Service<MemoryConfig> {
             // 调用通用的搜索执行器
             return this._executeInMemorySearch(queryEmbedding, tableName, dbQuery, options, entityName);
         } catch (error) {
-            this.logger.error(`语义搜索失败: ${error.message}`, error);
+            this.logger.error(`语义搜索失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
@@ -479,7 +480,7 @@ export class MemoryService extends Service<MemoryConfig> {
      * @returns 一个包含事实和洞察的、按相似度排序的列表
      */
     /* prettier-ignore */
-    async searchMemories(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<MemorySearchResult[]>> {
+    public async searchMemories(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<MemorySearchResult[]>> {
         const { userIds = [], limit = 10, minSalience = 0, minSimilarity = 0.3, includeDeleted = false } = options;
 
         if (!this.embeddingModel) {
@@ -505,9 +506,8 @@ export class MemoryService extends Service<MemoryConfig> {
             ]);
 
             const totalItems = allFacts.length + allInsights.length + allProfiles.length;
-            this.logger.info(
-                `已获取 ${allFacts.length} 条事实, ${allInsights.length} 条洞察和 ${allProfiles.length} 个用户画像，共 ${totalItems} 条记录待处理`
-            );
+            /* prettier-ignore */
+            this.logger.info(`已获取 ${allFacts.length} 条事实, ${allInsights.length} 条洞察和 ${allProfiles.length} 个用户画像，共 ${totalItems} 条记录待处理`);
 
             if (totalItems === 0) {
                 return { success: true, data: [] };
@@ -544,14 +544,13 @@ export class MemoryService extends Service<MemoryConfig> {
 
             return { success: true, data: finalResults };
         } catch (error) {
-            this.logger.error(`搜索记忆失败: ${error.message}`, error);
+            this.logger.error(`搜索记忆失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
 
-    async addUserFact(
-        factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">
-    ): Promise<MemoryOperationResult<Fact>> {
+    /* prettier-ignore */
+    public async addUserFact(factData: Omit<Fact, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<MemoryOperationResult<Fact>> {
         try {
             if (!this.embeddingModel) return { success: false, error: "嵌入模型不可用" };
             const embedding = await this.embeddingModel.embed(factData.content).then((res) => res.embedding);
@@ -567,12 +566,13 @@ export class MemoryService extends Service<MemoryConfig> {
             this.cache.clearUserCache(factData.userId);
             return { success: true, data: createdFact };
         } catch (error) {
-            this.logger.error(`添加用户事实失败: ${error.message}`, error);
+            this.logger.error(`添加用户事实失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
 
-    async searchUserFacts(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Fact[]>> {
+    /* prettier-ignore */
+    public async searchUserFacts(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Fact[]>> {
         try {
             const { userIds = [], limit = 10, minSalience = 0, minSimilarity = 0.3, includeDeleted = false } = options;
 
@@ -623,7 +623,7 @@ export class MemoryService extends Service<MemoryConfig> {
         }
     }
 
-    async getUserFacts(userId: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Fact[]>> {
+    public async getUserFacts(userId: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Fact[]>> {
         const cached = this.cache.getCachedFacts(userId);
         if (cached) return { success: true, data: cached };
 
@@ -634,12 +634,12 @@ export class MemoryService extends Service<MemoryConfig> {
             this.cache.setCachedFacts(userId, sortedFacts);
             return { success: true, data: sortedFacts };
         } catch (error) {
-            this.logger.error(`获取用户事实失败: ${error.message}`, error);
+            this.logger.error(`获取用户事实失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
 
-    async updateFactAccess(factId: string): Promise<MemoryOperationResult<void>> {
+    public async updateFactAccess(factId: string): Promise<MemoryOperationResult<void>> {
         try {
             const [fact] = await this.ctx.database.get(TableName.Facts, { id: factId });
             if (!fact) {
@@ -656,13 +656,13 @@ export class MemoryService extends Service<MemoryConfig> {
             );
             return { success: true };
         } catch (error) {
-            this.logger.error(`更新事实访问信息失败: ${error.message}`, error);
+            this.logger.error(`更新事实访问信息失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
 
     /* prettier-ignore */
-    async addUserInsight(insightData: Omit<Insight, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<MemoryOperationResult<Insight>> {
+    public async addUserInsight(insightData: Omit<Insight, "id" | "embedding" | "createdAt" | "lastAccessedAt" | "accessCount">): Promise<MemoryOperationResult<Insight>> {
         try {
             if (!this.embeddingModel) return { success: false, error: "嵌入模型不可用" };
             const embedding = await this.embeddingModel.embed(insightData.content).then((res) => res.embedding);
@@ -677,13 +677,13 @@ export class MemoryService extends Service<MemoryConfig> {
             const createdInsight = await this.ctx.database.create(TableName.Insights, newInsight);
             return { success: true, data: createdInsight };
         } catch (error) {
-            this.logger.error(`添加用户洞察失败: ${error.message}`, error);
+            this.logger.error(`添加用户洞察失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
 
     /* prettier-ignore */
-    async searchUserInsights(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Insight[]>> {
+    public async searchUserInsights(query: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Insight[]>> {
         try {
             const { userIds = [], limit = 10, minSalience = 0, minSimilarity = 0.3, includeDeleted = false } = options;
 
@@ -722,7 +722,7 @@ export class MemoryService extends Service<MemoryConfig> {
 
             return { success: true, data: insightsWithSimilarity.slice(0, limit) };
         } catch (error) {
-            this.logger.error(`搜索用户洞察失败: ${error.message}`, error);
+            this.logger.error(`搜索用户洞察失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
@@ -766,16 +766,16 @@ export class MemoryService extends Service<MemoryConfig> {
         }
     }
 
-    async getUserProfile(userId: string): Promise<MemoryOperationResult<UserProfile | null>> {
-        const cached = this.cache.getCachedProfile(userId);
+    async getUserProfile(userId: string, contextId: string | "global"): Promise<MemoryOperationResult<UserProfile | null>> {
+        const cached = this.cache.getCachedProfile(`${contextId}:${userId}`);
         if (cached) return { success: true, data: cached };
 
         try {
-            const [profile] = await this.ctx.database.get(TableName.UserProfiles, { userId, isDeleted: false });
-            if (profile) this.cache.setCachedProfile(userId, profile);
+            const [profile] = await this.ctx.database.get(TableName.UserProfiles, { userId, contextId, isDeleted: false });
+            if (profile) this.cache.setCachedProfile(`${contextId}:${userId}`, profile);
             return { success: true, data: profile || null };
         } catch (error) {
-            this.logger.error(`获取用户画像失败: ${error.message}`, error);
+            this.logger.error(`获取用户画像失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
@@ -836,13 +836,13 @@ export class MemoryService extends Service<MemoryConfig> {
             const result = await this.consolidator.consolidate(userId, contextId, options);
             // 成功后更新缓存
             if (result.success && result.data) {
-                this.cache.setCachedProfile(userId, result.data);
+                this.cache.setCachedProfile(`${contextId}:${userId}`, result.data);
             }
             return result;
         });
     }
 
-    async decayAndForget(): Promise<MemoryOperationResult<{ removedCount: number }>> {
+    public async decayAndForget(): Promise<MemoryOperationResult<{ removedCount: number }>> {
         return this.maintenance.decayAndForget();
     }
 }
@@ -989,30 +989,60 @@ class MemoryIngestor {
     }
 
     private async storeMemory(contextId: string, memoryData: ExtractedFact | ExtractedInsight): Promise<void> {
-        // 几乎与原代码相同，但增加了调用 clearUserCache
         try {
             if (!this.embeddingModel) {
-                this.logger.error("嵌入模型不可用，无法存储记忆");
+                this.logger.error("嵌入模型不可用，无法存储记忆。");
                 return;
             }
 
             const embedding = await this.embeddingModel.embed(memoryData.content).then((res) => res.embedding);
 
-            if ("userId" in memoryData) {
-                // Fact
-                const factData = memoryData as ExtractedFact;
-                await this.ctx.database.create(TableName.Facts, {
-                    /* ... */
-                });
-                this.clearUserCache(factData.userId);
+            // 检查是否是事实类型
+            if ("type" in memoryData && "userId" in memoryData) {
+                // 这是一个 ExtractedFact
+                const extractedFact = memoryData as ExtractedFact;
+                const newFact: Fact = {
+                    id: uuidv4(),
+                    userId: extractedFact.userId,
+                    userName: extractedFact.userName,
+                    contextId,
+                    content: extractedFact.content,
+                    embedding,
+                    type: extractedFact.type,
+                    lifespan: extractedFact.lifespan,
+                    sourceMessageIds: extractedFact.sourceMessageIds,
+                    salience: extractedFact.salience,
+                    createdAt: new Date(),
+                    lastAccessedAt: new Date(),
+                    accessCount: 0,
+                };
+
+                await this.ctx.database.create(TableName.Facts, newFact);
+
+                // 清除用户相关缓存
+                this.clearUserCache(extractedFact.userId);
             } else {
-                // Insight
-                await this.ctx.database.create(TableName.Insights, {
-                    /* ... */
-                });
+                // 这是一个 ExtractedInsight
+                const extractedInsight = memoryData as ExtractedInsight;
+                const newInsight: Insight = {
+                    id: uuidv4(),
+                    contextId,
+                    content: extractedInsight.content,
+                    embedding,
+                    type: extractedInsight.insightType,
+                    relatedUserIds: extractedInsight.relatedUserIds,
+                    sourceMessageIds: extractedInsight.sourceMessageIds,
+                    lifespan: extractedInsight.lifespan,
+                    salience: extractedInsight.salience,
+                    createdAt: new Date(),
+                    lastAccessedAt: new Date(),
+                    accessCount: 0,
+                };
+
+                await this.ctx.database.create(TableName.Insights, newInsight);
             }
         } catch (error) {
-            this.logger.error(`存储单条记忆时出错: "${memoryData.content}"`, error);
+            this.logger.error(`存储单条记忆时出错: "${memoryData.content}"`);
         }
     }
 }
@@ -1055,11 +1085,8 @@ class ProfileConsolidator {
             if (existingProfile && !forceReconsolidate) {
                 const hoursSinceLastUpdate = (Date.now() - existingProfile.updatedAt.getTime()) / (1000 * 60 * 60);
                 if (hoursSinceLastUpdate < this.config.profileGeneration.updateIntervalHours) {
-                    this.logger.info(
-                        `用户 ${userId} 的画像更新过于频繁，跳过。距离上次更新仅 ${hoursSinceLastUpdate.toFixed(
-                            1
-                        )} 小时`
-                    );
+                    /* prettier-ignore */
+                    this.logger.info(`用户 ${userId} 的画像更新过于频繁，跳过。距离上次更新仅 ${hoursSinceLastUpdate.toFixed(1)} 小时`);
                     return { success: true, data: existingProfile }; // 返回现有画像，操作成功。
                 }
             }
@@ -1074,11 +1101,8 @@ class ProfileConsolidator {
 
             // 未达到阈值则跳过的逻辑保持不变
             if (relevantFacts.length + insights.length < minFactsThreshold && !forceReconsolidate) {
-                this.logger.info(
-                    `用户 ${userId} 没有足够的新事实进行整合，跳过。当前新信息数: ${
-                        relevantFacts.length + insights.length
-                    }`
-                );
+                /* prettier-ignore */
+                this.logger.info(`用户 ${userId} 没有足够的新事实进行整合，跳过。当前新信息数: ${relevantFacts.length + insights.length}`);
                 return { success: true, data: existingProfile };
             }
 
@@ -1114,8 +1138,9 @@ class ProfileConsolidator {
             const inputForLLM = {
                 userId,
                 userName,
-                contextId, // <--- [新增] 告知LLM当前的上下文
-                contextType: contextId === "global" ? "全局" : "特定社群", // <--- [新增] 更人性化的上下文类型
+                contextId,
+                maxSummaryLength: this.config.profileGeneration.maxSummaryLength,
+                contextType: contextId === "global" ? "全局" : "特定社群",
                 existingProfile: existingProfile?.content || `这是一个关于该用户在[${contextId}]上下文下的新画像。`,
                 isIncrementalUpdate: newFactsOnly,
                 factCount: allSources.length,
@@ -1201,38 +1226,6 @@ class ProfileConsolidator {
             this.logger.error(`在上下文[${contextId}]中整合用户 ${userId} 画像时发生意外错误: ${error.message}`);
             return { success: false, error: error.message };
         }
-    }
-
-    public async getUserDossier(userId: string): Promise<UserDossier | null> {
-        // 1. 从数据库中一次性获取该用户的所有画像记录
-        const allProfiles = await this.ctx.database.get(TableName.UserProfiles, {
-            userId,
-            isDeleted: false,
-        });
-
-        if (allProfiles.length === 0) {
-            return null;
-        }
-
-        // 2. 初始化Dossier
-        const dossier: UserDossier = {
-            id: userId,
-            userId,
-            userName: allProfiles[0].userName,
-            globalProfileId: null,
-            contextualProfileIds: new Map<string, string>(),
-        };
-
-        // 3. 遍历所有画像，填充Dossier
-        for (const profile of allProfiles) {
-            if (profile.contextId === "global") {
-                dossier.globalProfileId = profile.id;
-            } else {
-                dossier.contextualProfileIds.set(profile.contextId, profile.id);
-            }
-        }
-
-        return dossier;
     }
 
     /**
@@ -1459,7 +1452,7 @@ class MemoryMaintenance {
             this.logger.info(`记忆衰减完成，共删除了 ${removedCount} 条记录`);
             return { success: true, data: { removedCount } };
         } catch (error) {
-            this.logger.error(`记忆衰减失败: ${error.message}`, error);
+            this.logger.error(`记忆衰减失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
@@ -1469,10 +1462,7 @@ class MemoryMaintenance {
      * @returns 检查结果
      */
     /* prettier-ignore */
-    async performDataConsistencyCheck(): Promise<MemoryOperationResult<{
-        missingEmbeddings: number;
-        fixedIssues: number;
-    }>> {
+    async performDataConsistencyCheck(): Promise<MemoryOperationResult<{ missingEmbeddings: number; fixedIssues: number;}>> {
         try {
             this.logger.info("开始执行数据一致性检查...");
 
@@ -1535,16 +1525,15 @@ class MemoryMaintenance {
                 }
             }
 
-            this.logger.info(
-                `数据一致性检查完成: 事实缺失嵌入 ${missingEmbeddings}, 画像缺失嵌入 ${profileMissingEmbeddings}, 已修复 ${fixedIssues}`
-            );
+            /* prettier-ignore */
+            this.logger.info(`数据一致性检查完成: 事实缺失嵌入 ${missingEmbeddings}, 画像缺失嵌入 ${profileMissingEmbeddings}, 已修复 ${fixedIssues}`);
 
             return {
                 success: true,
                 data: { missingEmbeddings: missingEmbeddings + profileMissingEmbeddings, fixedIssues },
             };
         } catch (error) {
-            this.logger.error(`数据一致性检查失败: ${error.message}`, error);
+            this.logger.error(`数据一致性检查失败: ${error.message}`);
             return { success: false, error: error.message };
         }
     }

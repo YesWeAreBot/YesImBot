@@ -62,7 +62,9 @@ export class ContextBuilder {
         // 2. 根据历史记录召回相关用户画像
         const allMessages = this.getAllMessagesFromHistory(history);
         const userIds = await this.recallManager.recallForPrivateContext(allMessages, userId);
-        const profiles = await this.dataProvider.getUserProfiles(userIds);
+        let uniqueUserIds = new Set(userIds);
+        uniqueUserIds.delete(bot.selfId);
+        const profiles = await this.recallManager.getUserProfiles(Array.from(uniqueUserIds), id);
 
         // 3. 组装最终的世界状态
         return {
@@ -104,7 +106,9 @@ export class ContextBuilder {
             this.recallManager.recallForGuildContext(allMessages),
             this.dataProvider.getMembersFromHistory(bot, history, platform, channelInfo.guildId || id),
         ]);
-        const profiles = await this.dataProvider.getUserProfiles(userIds);
+        let uniqueUserIds = new Set(userIds);
+        uniqueUserIds.delete(bot.selfId);
+        const profiles = await this.recallManager.getUserProfiles(Array.from(uniqueUserIds), id);
 
         // 3. 组装最终的世界状态
         return {
@@ -167,34 +171,6 @@ class ContextDataProvider {
             this.logger.warn(`获取频道信息失败，将使用基础信息 | 频道: ${platform}:${channelId}`);
         }
         return null;
-    }
-
-    public async getUserProfiles(userIds: string[]): Promise<UserProfile[]> {
-        if (userIds.length === 0) return [];
-
-        const profiles: UserProfile[] = [];
-        const missingUserIds: string[] = [];
-
-        for (const userId of userIds) {
-            const cachedProfile = this.cacheManager.get<UserProfile>(CacheKeyPrefix.USER_PROFILES, userId);
-            if (cachedProfile) {
-                profiles.push(cachedProfile);
-            } else {
-                missingUserIds.push(userId);
-            }
-        }
-
-        if (missingUserIds.length > 0) {
-            const missingProfiles = await this.ctx.database.get(TableName.UserProfiles, {
-                userId: { $in: missingUserIds },
-                isDeleted: false,
-            });
-            for (const profile of missingProfiles) {
-                this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, profile.userId, profile);
-                profiles.push(profile);
-            }
-        }
-        return profiles;
     }
 
     public async getMembersFromHistory(

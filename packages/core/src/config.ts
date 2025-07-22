@@ -55,9 +55,9 @@ export interface Config {
     /** 记忆、工具等扩展能力配置 */
     capabilities: {
         memory: MemoryConfig;
-        tools: ToolServiceConfig;
         /** 对话历史记录的管理方式 */
         history: HistoryConfig;
+        tools: ToolServiceConfig;
     };
     /** 图片服务配置 */ // 新增
     imageService: ImageServiceConfig; // 新增
@@ -70,8 +70,8 @@ export const Config: Schema<Config> = Schema.object({
     agentBehavior: AgentBehaviorConfigSchema,
     capabilities: Schema.object({
         memory: MemoryConfigSchema.description("记忆能力配置"),
-        tools: ToolServiceConfigSchema.description("工具能力配置"),
         history: HistoryConfigSchema.description("历史记录管理"),
+        tools: ToolServiceConfigSchema.description("工具能力配置"),
     }),
     imageService: ImageServiceConfigSchema.description("图片服务配置"),
     system: SystemConfigSchema,
