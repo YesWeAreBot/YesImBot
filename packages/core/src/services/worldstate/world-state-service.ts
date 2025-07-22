@@ -275,7 +275,7 @@ class HistoryCommandManager {
                 if (options.target) {
                     const parts = options.target.split(":");
                     if (parts.length < 2) {
-                        return `❌ 格式错误的目标: "${options.target}"，已跳过`;
+                        return `❌❌ 格式错误的目标: "${options.target}"，已跳过`;
                     }
                     platform = parts[0];
                     channelId = parts.slice(1).join(":");
@@ -288,11 +288,11 @@ class HistoryCommandManager {
                         ]);
                         const platforms = [...new Set(dialogues.map((d) => d.platform))];
 
-                        if (platforms.length === 0) return `🟡 频道 "${channelId}" 未找到任何历史记录，已跳过`;
+                        if (platforms.length === 0) return `🟡🟡🟡 频道 "${channelId}" 未找到任何历史记录，已跳过`;
                         if (platforms.length === 1) platform = platforms[0];
                         else
                             /* prettier-ignore */
-                            return `❌ 频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}请使用 -p <platform> 来指定`;
+                            return `❌❌ 频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}请使用 -p <platform> 来指定`;
                     }
                 }
 
@@ -315,7 +315,7 @@ class HistoryCommandManager {
                 return "✅ 手动总结任务已触发并完成";
             } catch (error) {
                 this._logger.error(error, `[指令] 手动总结任务失败 | 频道: ${session.cid}`);
-                return "❌ 总结任务失败，请检查日志";
+                return "❌❌ 总结任务失败，请检查日志";
             }
         });
 
@@ -328,7 +328,7 @@ class HistoryCommandManager {
             .option("delete", "--delete 永久删除记录(包括关联消息)，而非归档", { type: "boolean" })
             .usage(
                 `清除历史记录上下文
-默认操作是将消息标记为“已归档”，数据仍保留在数据库中
+默认操作是将消息标记为"已归档"，数据仍保留在数据库中
 使用 --delete 选项会从数据库中永久移除相关对话、消息和系统事件，此操作不可恢复
 
 当单独使用 -c 指定的频道ID存在于多个平台时，指令会要求您使用 -p 或 -t 来明确指定平台`
@@ -351,7 +351,7 @@ class HistoryCommandManager {
                     try {
                         const segmentsToClear = await this.ctx.database.get(TableName.DialogueSegments, query, ["id"]);
                         if (segmentsToClear.length === 0) {
-                            results.push(`🟡 ${description} - 未找到匹配的历史记录`);
+                            results.push(`🟡🟡🟡 ${description} - 未找到匹配的历史记录`);
                             return;
                         }
                         const segmentIds = segmentsToClear.map((s) => s.id);
@@ -375,12 +375,12 @@ class HistoryCommandManager {
                         });
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
-                        results.push(`❌ ${description} - 操作失败，数据库更改已回滚`);
+                        results.push(`❌❌ ${description} - 操作失败，数据库更改已回滚`);
                     }
                 };
 
                 if (options.all) {
-                    if (!["private", "guild", "all"].includes(options.all))
+                    if (options.all === undefined)
                         return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
                     let query: Query<DialogueSegmentData> = {};
                     let description = "";
@@ -412,7 +412,7 @@ class HistoryCommandManager {
                         .filter(Boolean)) {
                         const parts = target.split(":");
                         if (parts.length < 2) {
-                            results.push(`❌ 格式错误的目标: "${target}"`);
+                            results.push(`❌❌ 格式错误的目标: "${target}"`);
                             continue;
                         }
                         targetsToProcess.push({ platform: parts[0], channelId: parts.slice(1).join(":") });
@@ -431,7 +431,7 @@ class HistoryCommandManager {
                                 "platform",
                             ]);
                             const platforms = [...new Set(dialogues.map((d) => d.platform))];
-                            if (platforms.length === 0) results.push(`🟡 频道 "${channelId}" 未找到`);
+                            if (platforms.length === 0) results.push(`🟡🟡🟡 频道 "${channelId}" 未找到`);
                             else if (platforms.length === 1)
                                 targetsToProcess.push({ platform: platforms[0], channelId });
                             else ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}`);
@@ -587,6 +587,44 @@ export class WorldStateService extends Service<HistoryConfig> {
     public async recordMessage(segmentId: string, message: Omit<MessageData, "sid">): Promise<void> {
         // 委托给 segmentManager
         await this.segmentManager.recordMessage(segmentId, message);
+    }
+    
+    /**
+     * 引导模型关注被跳过的话题
+     * @param channelKey 频道标识符 (platform:channelId)
+     */
+    public async guideToSkippedTopic(channelKey: string): Promise<void> {
+        const [platform, channelId] = channelKey.split(":", 2);
+        if (!platform || !channelId) return;
+		
+		const bot = this.ctx.bots.find(b => b.platform === platform);
+		if (!bot) return;
+		
+		const session = {
+		    platform,
+		    channelId,
+		    isDirect: channelId.startsWith('private:'),
+		    bot,
+		    // 其他必要属性
+		} as any as Session;
+
+        if (!session) return;
+        
+        const worldState = await this.getWorldState(session);
+        
+        // 添加提示引导模型关注被跳过的话题
+        if (worldState.channel.history.pending) {
+            worldState.channel.history.pending.dialogue.push({
+                id: "system-guidance",
+                content: "<系统提示>请注意，之前有未处理完的话题需要关注",
+                timestamp: new Date(),
+                sender: {
+                    id: "system",
+                    name: "系统",
+                    roles: ["system"]
+                }
+            });
+        }
     }
 
     // #endregion

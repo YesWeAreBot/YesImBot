@@ -74,10 +74,10 @@ export class WillingnessManager {
 
             // --- 弹性衰减逻辑 ---
             let effectiveFactor = baseFactor;
-            // 如果意愿值很高（例如超过了回复门槛），说明AI正在“关注”这个对话，衰减应该变慢
+            // 如果意愿值很高（例如超过了回复门槛），说明AI正在"关注"这个对话，衰减应该变慢
             if (currentScore > this.config.lifecycle.probabilityThreshold) {
                 // 让衰减因子更接近1，从而衰减得更慢
-                // (1.0 - baseFactor) 是衰减的“强度”，我们将其减半
+                // (1.0 - baseFactor) 是衰减的"强度"，我们将其减半
                 effectiveFactor = 1.0 - (1.0 - baseFactor) * 0.5;
             }
 
@@ -158,7 +158,7 @@ export class WillingnessManager {
     }
 
     /**
-     * 在成功回复后执行。重置或降低意愿，进入“冷却期”。
+     * 在成功回复后执行。重置或降低意愿，进入"冷却期"。
      * @param chatId 聊天ID
      * @param replyContent 回复内容的长度，可以用来决定惩罚力度
      */
@@ -166,18 +166,18 @@ export class WillingnessManager {
         const { replyCost, maxWillingness } = this.config.lifecycle;
 
         // 策略1：直接大幅降低意愿值
-        // 这种做法模拟了“我说完这个话题了”
+        // 这种做法模拟了"我说完这个话题了"
         let currentWillingness = this.willingnessScores.get(chatId) || 0;
         currentWillingness -= replyCost; // 基础成本
         this.willingnessScores.set(chatId, Math.max(0, currentWillingness));
 
         // 策略2：更狠一点，直接清零或设置为一个很低的基础值
-        // 这种做法可以有效防止AI在一次回复后，因为意愿值依然很高而立即对下一条消息做出反应，从而避免“连麦”
+        // 这种做法可以有效防止AI在一次回复后，因为意愿值依然很高而立即对下一条消息做出反应，从而避免"连麦"
         //this.willingnessScores.set(chatId, 0); // 直接清零，等待新刺激
         //this.logger.debug(`[${chatId}] 回复成功，意愿值已重置。`);
 
         // 策略3：动态成本（高级）
-        // 回复得越长，消耗的“精力”越多
+        // 回复得越长，消耗的"精力"越多
         // const dynamicCost = replyCost + (replyContentLength / 50); // 每50个字额外增加1点成本
         // let currentWillingness = this.willingnessScores.get(chatId) || 0;
         // this.willingnessScores.set(chatId, Math.max(0, currentWillingness - dynamicCost));
@@ -193,7 +193,7 @@ export class WillingnessManager {
 
     /**
      * 核心决策方法：判断是否应该回复。
-     * @param context 消息上下文
+     * @param session 消息上下文
      * @returns 一个包含决策结果和概率的对象
      */
     public shouldReply(session: Session): { decision: boolean; probability: number } {
@@ -214,6 +214,21 @@ export class WillingnessManager {
         const decision = Math.random() < probability;
 
         return { decision, probability };
+    }
+    
+    /**
+     * 引导模型关注被跳过的话题（用于策略3）
+     */
+    public boostSkippedTopic(chatId: string): void {
+        // 提高意愿值，引导模型关注被跳过的话题
+        const current = this.willingnessScores.get(chatId) || 0;
+        const newValue = Math.min(
+            current + this.config.lifecycle.maxWillingness * 0.7, // 提升70%的意愿值
+            this.config.lifecycle.maxWillingness
+        );
+        
+        this.willingnessScores.set(chatId, newValue);
+        this.logger.debug(`[${chatId}] 引导关注被跳过话题，意愿值: ${current.toFixed(2)} -> ${newValue.toFixed(2)}`);
     }
 }
 

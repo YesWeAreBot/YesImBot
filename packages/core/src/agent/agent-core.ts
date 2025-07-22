@@ -71,6 +71,10 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private runningTasks: Set<string> = new Set();
 
     private imageLifecycleTracker = new Map<string, number>();
+    
+    // 新消息处理策略相关状态
+    private skippedSegments = new Map<string, string>();
+    private deferredTimers = new Map<string, NodeJS.Timeout>();
 
     constructor(ctx: Context, config: AgentBehaviorConfig) {
         super(ctx, "agent", true);
@@ -84,13 +88,12 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.promptService = this.ctx[Services.Prompt];
 
         // 实例化内部组件
-
         this.parser = new JsonParser<AgentResponse>();
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
         this.willing = new WillingnessManager(this.ctx, this.config.willingness);
 
         if (!this.modelSwitcher) {
-            this._logger.error("❌ 未配置模型组，智能体核心无法启动。");
+            this._logger.error("❌❌ 未配置模型组，智能体核心无法启动。");
             handleError(this._logger, new Error("未配置模型组"), "智能体核心启动失败");
         }
     }
@@ -131,15 +134,17 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             }
 
             if (this.runningTasks.has(channelKey)) {
-                this._logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行被跳过。`);
+                this._logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行将根据策略处理。`);
+                this.handleBusyChannel(session, sid, channelKey);
                 return;
             }
+            
             // 从 Map 中获取或创建当前频道的防抖函数
             let debouncedTask = this.debouncedReplyTasks.get(channelKey);
 
             if (!debouncedTask) {
                 // 如果该频道还没有对应的防杜函数，则创建一个
-                // ctx.debounce 的回调函数包含了原先需要被保护的“第3步”逻辑
+                // ctx.debounce 的回调函数包含了原先需要被保护的"第3步"逻辑
                 debouncedTask = this.ctx.debounce(async (sid) => {
                     // --- 第3步: 执行回复任务 (加锁 -> 执行 -> 解锁) ---
                     // 防抖成功后，这里的代码才会被执行
@@ -172,6 +177,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                         // 无论成功还是失败，都必须在 finally 块中释放锁
                         this.runningTasks.delete(channelKey);
                         this._logger.debug(`[${channelKey}] 频道锁已释放。`);
+                        
+                        // 策略2：立即处理被跳过的消息（如果有）
+                        this.handleSkippedMessagesAfterReply(channelKey);
                     }
                 }, this.config.arousal.debounceMs); // 使用定义的延迟
 
@@ -195,6 +203,14 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.debouncedReplyTasks.forEach((d) => d.dispose());
         clearInterval(this.willingnessDecayTimer);
         this.willing.stopDecayCycle();
+        
+        // 清理延迟处理定时器
+        this.deferredTimers.forEach(timer => clearTimeout(timer));
+        this.deferredTimers.clear();
+        
+        // 清理跳过消息记录
+        this.skippedSegments.clear();
+        
         this._logger.info("服务已停止");
     }
 
@@ -205,7 +221,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 this.allowedChannels.add(`${platform}:${id}`);
             });
         });
-        // this._logger.debug(`⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
+        // this._logger.debug(`⚙⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
     private _registerPromptTemplates(): void {
@@ -232,6 +248,104 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 这使得每次渲染的上下文都是隔离和最新的。
 
         // this._logger.info("✅ 提示词模板注册完成。");
+    }
+
+    /**
+     * 处理频道正忙时的消息
+     */
+    private handleBusyChannel(session: Session, sid: string, channelKey: string) {
+        const strategy = this.config.newMessageStrategy;
+        this._logger.debug(`[${channelKey}] 频道正忙，采用策略: ${strategy}`);
+
+        switch (strategy) {
+            case "immediate":
+                // 策略2：记录被跳过的消息，待当前任务完成后立即处理
+                this.skippedSegments.set(channelKey, sid);
+                this._logger.debug(`[${channelKey}] 消息已记录，将在当前任务完成后立即处理`);
+                break;
+                
+            case "deferred":
+                // 策略3：记录被跳过的消息，设置延迟处理定时器
+                this.skippedSegments.set(channelKey, sid);
+                this.setupDeferredTimer(channelKey);
+                this._logger.debug(`[${channelKey}] 消息已记录，将在安静期后处理`);
+                break;
+                
+            case "skip":
+            default:
+                // 策略1：直接跳过（默认行为）
+                this._logger.debug(`[${channelKey}] 跳过处理（策略: skip）`);
+                break;
+        }
+    }
+    
+    /**
+     * 设置延迟处理定时器（策略3）
+     */
+    private setupDeferredTimer(channelKey: string) {
+        // 清除现有定时器
+        if (this.deferredTimers.has(channelKey)) {
+            clearTimeout(this.deferredTimers.get(channelKey));
+            this.deferredTimers.delete(channelKey);
+        }
+        
+        // 设置新定时器
+        const timer = setTimeout(() => {
+            this._logger.debug(`[${channelKey}] 延迟处理定时器触发`);
+            if (this.skippedSegments.has(channelKey)) {
+                const sid = this.skippedSegments.get(channelKey);
+                this.skippedSegments.delete(channelKey);
+                
+                // 添加引导提示
+                this.guideToSkippedTopic(channelKey);
+                
+                // 获取防抖任务并执行
+                const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+                if (debouncedTask) {
+                    this._logger.debug(`[${channelKey}] 处理被跳过的段落`);
+                    debouncedTask(sid);
+                }
+            }
+        }, this.config.deferredProcessingTime || 10000);
+        
+        this.deferredTimers.set(channelKey, timer);
+    }
+    
+    /**
+     * 引导模型关注被跳过的话题（策略3）
+     */
+    private async guideToSkippedTopic(channelKey: string): Promise<void> {
+        // 提高意愿值
+        this.willing.boostSkippedTopic(channelKey);
+        
+        // 在世界状态中添加提示
+        await this.worldState.guideToSkippedTopic(channelKey);
+        
+        this._logger.debug(`[${channelKey}] 已添加话题引导提示`);
+    }
+    
+    /**
+     * 当前任务完成后处理被跳过的消息（策略2）
+     */
+    private handleSkippedMessagesAfterReply(channelKey: string) {
+        if (this.config.newMessageStrategy === "immediate" && 
+            this.skippedSegments.has(channelKey)) {
+            
+            const skippedSid = this.skippedSegments.get(channelKey);
+            this.skippedSegments.delete(channelKey);
+            
+            // 清除策略3的定时器（如果有）
+            if (this.deferredTimers.has(channelKey)) {
+                clearTimeout(this.deferredTimers.get(channelKey));
+                this.deferredTimers.delete(channelKey);
+            }
+            
+            this._logger.debug(`[${channelKey}] 立即处理被跳过的段落`);
+            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+            if (debouncedTask) {
+                debouncedTask(skippedSid);
+            }
+        }
     }
 
     /**
@@ -348,7 +462,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
 
         if (!chatModel) {
-            this._logger.error(`✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
+            this._logger.error(`✖✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
             return null;
         }
 
@@ -367,7 +481,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             abortSignal: abortController.signal,
             onStreamStart: () => clearTimeout(timeout),
         });
-        this._logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
+        this._logger.info(`💬💬 响应时间: ${Date.now() - stime}ms`);
         const prompt_tokens =
             llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
@@ -378,7 +492,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
         if (llmParsedResponse.error || !llmParsedResponse.data) {
             /* prettier-ignore */
-            this._logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this._logger.warn(`✖✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
@@ -386,13 +500,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         if (!agentResponseData.thoughts) {
             /* prettier-ignore */
-            this._logger.warn(`✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this._logger.warn(`✖✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
         if (!Array.isArray(agentResponseData.actions)) {
             /* prettier-ignore */
-            this._logger.warn(`✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this._logger.warn(`✖✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 

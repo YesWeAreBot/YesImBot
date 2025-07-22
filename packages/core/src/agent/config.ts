@@ -1,20 +1,16 @@
 import { Schema } from "koishi";
-import { SystemConfig } from "../config";
 import { readFileSync } from "fs";
 import path from "path";
+
+import { SystemConfig } from "../config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
 // 默认的系统和用户模板文件路径
-// TODO: 确保这些文件路径是正确的，并且模板内容已包含对 new WorldState 结构的支持
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
 export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'.
 In the subsequent conversation text, placeholders in the format <image id="[ID]" onetime-code="{{ ONETIME_CODE }}"/> will be used to refer to these images.
 Please participate in the conversation considering the full context of both images and text.`;
-
-
-
-// ------------------- 模块二: 智能体行为 (Agent Behavior) -------------------
 
 export type ChannelDescriptor = {
     platform: string;
@@ -52,7 +48,7 @@ export interface WillingnessConfig {
     /** 人格预设名称 */
     personality?: string;
     // --- A. 基础分数 (Base Scores) ---
-    // 定义不同消息类型的“基础反应分”。它们通常是互斥的。
+    // 定义不同消息类型的"基础反应分"。它们通常是互斥的。
     base: {
         /** 收到普通文本消息的基础分。这是对话的基石。 */
         text: number;
@@ -67,7 +63,7 @@ export interface WillingnessConfig {
     attribute: {
         /** 被 @ 提及时的额外加成。这是最高优先级的信号。 */
         atMention: number;
-        /** 作为“回复/引用”出现时的额外加成。表示对话正在延续。 */
+        /** 作为"回复/引用"出现时的额外加成。表示对话正在延续。 */
         isQuote: number;
         /** 在私聊场景下的额外加成。私聊通常期望更高的响应度。 */
         isDirectMessage: number;
@@ -76,7 +72,7 @@ export interface WillingnessConfig {
     // --- C. 兴趣度模型 (Interest Model) ---
     // 基于内容计算一个乘数，影响最终得分。
     interest: {
-        /** 触发“高兴趣”的关键词列表。 */
+        /** 触发"高兴趣"的关键词列表。 */
         keywords: string[];
         /** 消息包含关键词时，应用此乘数。>1 表示增强，<1 表示削弱。 */
         keywordMultiplier: number;
@@ -91,11 +87,11 @@ export interface WillingnessConfig {
         maxWillingness: number;
         /** 意愿值衰减到一半所需的时间（秒）。 */
         decayHalfLifeSeconds: number;
-        /** 将意愿值转换为回复概率的“激活门槛”。 */
+        /** 将意愿值转换为回复概率的"激活门槛"。 */
         probabilityThreshold: number;
         /** 超过门槛后，转换为概率时的放大系数。 */
         probabilityAmplifier: number;
-        /** 决定回复后，扣除的“发言精力惩罚”。 */
+        /** 决定回复后，扣除的"发言精力惩罚"。 */
         replyCost: number;
     };
     readonly system?: SystemConfig;
@@ -111,7 +107,7 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 90, probabilityThreshold: 60, probabilityAmplifier: 0.05, replyCost: 30 },
     },
     /**
-     * 阳光开朗的“群聊显眼包” (Sunny & Outgoing)
+     * 阳光开朗的"群聊显眼包" (Sunny & Outgoing)
      *   性格特点: 活泼、话多、喜欢参与任何话题、乐于分享、有点傻乐。对表情包和图片有积极反应。
      *   设计思路: 低回复门槛，低发言成本，对所有消息类型都有正面反馈。衰减慢，意味着它对一个话题的兴趣能持续很久。
      *   适用场景: 活跃的日常闲聊群、朋友群。
@@ -124,10 +120,10 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 180, probabilityThreshold: 35, probabilityAmplifier: 0.08, replyCost: 20 },
     },
     /**
-     * 高冷严谨的“领域专家” (Cold & Professional)
+     * 高冷严谨的"领域专家" (Cold & Professional)
      *   性格特点: 平时不说话，惜字如金。只对自己专业领域（关键词）或被直接提问时才回应，且回应精准、深入。对闲聊和表情包感到厌烦。
      *   设计思路: 高回复门槛，高发言成本。对无关信息（文本、图片、表情）设置低分甚至负分。
-     *           关键词乘数和@加成极高，是其主要激活方式。衰减快，不相干的话题很快就从它“脑中”消失。
+     *           关键词乘数和@加成极高，是其主要激活方式。衰减快，不相干的话题很快就从它"脑中"消失。
      *   适用场景: 技术问答群、学习小组、工作对接群。
      */
     professional: {
@@ -138,9 +134,9 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
         lifecycle: { maxWillingness: 100, decayHalfLifeSeconds: 45, probabilityThreshold: 75, probabilityAmplifier: 0.1, replyCost: 60 },
     },
     /**
-     * 温柔体贴的“知心姐姐” (Gentle & Caring)
+     * 温柔体贴的"知心姐姐" (Gentle & Caring)
      *   性格特点: 不会主动挑起话题，但当群里有人表达情绪（尤其是负面情绪）或需要帮助时，会第一时间出现。发言温柔，喜欢用表情符号。
-     *   设计思路: 基础分不高，但对特定“情绪”关键词（如“难过”、“怎么办”）有极高乘数。
+     *   设计思路: 基础分不高，但对特定"情绪"关键词（如"难过"、"怎么办"）有极高乘数。
      *           回复门槛适中，但发言成本低，可以进行多轮安慰。私聊加成高，鼓励用户向其倾诉。
      *   适用场景: 情感支持、心理咨询（辅助）、用户关怀社群。
      */
@@ -153,7 +149,7 @@ export const PersonalityPresets: Record<string, Partial<WillingnessConfig & { na
     },
 };
 
-// 定义一个基础的可编辑的 Schema，用于“自定义”模式
+// 定义一个基础的可编辑的 Schema，用于"自定义"模式
 const EditableWillingnessSchema = Schema.object({
     base: Schema.object({
         text: Schema.number().default(10).description("收到普通文本消息的基础分"),
@@ -175,11 +171,11 @@ const EditableWillingnessSchema = Schema.object({
         decayHalfLifeSeconds: Schema.number().default(90).min(5).description("意愿值衰减到一半所需的时间（秒）"),
         probabilityThreshold: Schema.number().min(0).default(60).description("将意愿值转换为回复概率的激活门槛"),
         probabilityAmplifier: Schema.number().default(0.05).min(0.01).max(1).description("概率放大系数"),
-        replyCost: Schema.number().min(0).default(30).description("决定回复后，扣除的“发言精力惩罚”"),
+        replyCost: Schema.number().min(0).default(30).description("决定回复后，扣除的\"发言精力惩罚\""),
     }),
 });
 
-// 将预设和“自定义”选项整合起来
+// 将预设和"自定义"选项整合起来
 const personalityOptions = Object.keys(PersonalityPresets);
 const customOption = "custom";
 
@@ -193,7 +189,7 @@ const WillingnessForm: Schema<WillingnessConfig> = Schema.intersect([
             Schema.const(customOption).description("自定义"),
         ])
             .default("default")
-            .description("选择发言行为预设。选择“自定义”以手动调整下方所有参数。此参数只影响发言频率。"),
+            .description("选择发言行为预设。选择\"自定义\"以手动调整下方所有参数。此参数只影响发言频率。"),
     }),
     Schema.union([
         ...personalityOptions.map((presetName) => {
@@ -211,8 +207,6 @@ const WillingnessForm: Schema<WillingnessConfig> = Schema.intersect([
     ]),
 ]) as unknown as Schema<WillingnessConfig>;
 
-// ------------------- (修改结束) -------------------
-
 /** 视觉与多模态相关配置 */
 export interface VisionConfig {
     /** 是否启用视觉功能 */
@@ -223,7 +217,7 @@ export interface VisionConfig {
     maxImagesInContext: number;
     /**
      * 图片在上下文中的最大生命周期。
-     * 一张图片在上下文中出现 N 次后将被视为“过期”，除非它被引用。
+     * 一张图片在上下文中出现 N 次后将被视为"过期"，除非它被引用。
      */
     imageLifecycleCount: number;
     detail: "low" | "high" | "auto";
@@ -252,6 +246,20 @@ export interface AgentBehaviorConfig {
     };
     vision: VisionConfig;
     readonly system?: SystemConfig;
+    
+    /**
+     * 当处理消息过程中收到新消息时的处理策略
+     * - skip: 跳过此消息（默认行为）
+     * - immediate: 处理完当前消息后立即处理新消息
+     * - deferred: 等待安静期后处理被跳过的话题
+     */
+    newMessageStrategy: "skip" | "immediate" | "deferred";
+    
+    /**
+     * 延迟处理策略的安静期时间（毫秒）
+     * 当一段时间内没有新消息时才处理被跳过的话题
+     */
+    deferredProcessingTime?: number;
 }
 
 export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.object({
@@ -274,4 +282,14 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
     vision: VisionConfigSchema.description("视觉与多模态配置"),
+    newMessageStrategy: Schema.union([
+        Schema.const("skip").description("跳过新消息（默认）"),
+        Schema.const("immediate").description("立即处理新消息"),
+        Schema.const("deferred").description("延迟处理被跳过话题")
+    ])
+        .default("skip")
+        .description("处理新消息的策略"),
+    deferredProcessingTime: Schema.number()
+        .default(10000) // 默认10秒
+        .description("延迟处理策略的安静期时间（毫秒）"),
 });
