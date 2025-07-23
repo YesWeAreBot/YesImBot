@@ -266,10 +266,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 
             case "deferred":
                 // 策略3：记录被跳过的消息，设置延迟处理定时器
-                this.skippedSegments.set(channelKey, sid);
-                this.setupDeferredTimer(channelKey);
-                this._logger.debug(`[${channelKey}] 消息已记录，将在安静期后处理`);
-                break;
+				this.skippedSegments.set(channelKey, sid);
+	            this._logger.debug(`[${channelKey}] 消息已记录，将在任务完成后开始延迟计时`);
+	            break;
                 
             case "skip":
             default:
@@ -283,33 +282,34 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
      * 设置延迟处理定时器（策略3）
      */
     private setupDeferredTimer(channelKey: string) {
-        // 清除现有定时器
-        if (this.deferredTimers.has(channelKey)) {
-            clearTimeout(this.deferredTimers.get(channelKey));
-            this.deferredTimers.delete(channelKey);
-        }
-        
-        // 设置新定时器
-        const timer = setTimeout(() => {
-            this._logger.debug(`[${channelKey}] 延迟处理定时器触发`);
-            if (this.skippedSegments.has(channelKey)) {
-                const sid = this.skippedSegments.get(channelKey);
-                this.skippedSegments.delete(channelKey);
-                
-                // 添加引导提示
-                this.guideToSkippedTopic(channelKey);
-                
-                // 获取防抖任务并执行
-                const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-                if (debouncedTask) {
-                    this._logger.debug(`[${channelKey}] 处理被跳过的段落`);
-                    debouncedTask(sid);
-                }
-            }
-        }, this.config.deferredProcessingTime || 10000);
-        
-        this.deferredTimers.set(channelKey, timer);
-    }
+    	// 清除现有定时器
+	    if (this.deferredTimers.has(channelKey)) {
+	        clearTimeout(this.deferredTimers.get(channelKey));
+	        this.deferredTimers.delete(channelKey);
+	    }
+	
+	    const timer = setTimeout(() => {
+	        this._logger.debug(`[${channelKey}] 延迟处理定时器触发`);
+	        if (this.skippedSegments.has(channelKey)) {
+	            const sid = this.skippedSegments.get(channelKey);
+	            this.skippedSegments.delete(channelKey);
+	            
+	            // 添加引导提示
+	            this.guideToSkippedTopic(channelKey);
+	            
+	            // 获取防抖任务并执行
+	            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+	            if (debouncedTask) {
+	                this._logger.debug(`[${channelKey}] 处理被跳过的段落`);
+	                debouncedTask(sid);
+	            }
+	        }
+	        this.deferredTimers.delete(channelKey);
+	    }, this.config.deferredProcessingTime || 10000);
+	    
+	    this.deferredTimers.set(channelKey, timer);
+	    this._logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
+	}
     
     /**
      * 引导模型关注被跳过的话题（策略3）
@@ -325,7 +325,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     }
     
     /**
-     * 当前任务完成后处理被跳过的消息（策略2）
+     * 当前任务完成后处理被跳过的消息（策略2 & 3）
      */
     private handleSkippedMessagesAfterReply(channelKey: string) {
         if (this.config.newMessageStrategy === "immediate" && 
@@ -345,7 +345,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             if (debouncedTask) {
                 debouncedTask(skippedSid);
             }
-        }
+        } else if (this.config.newMessageStrategy === "deferred" && 
+             this.skippedSegments.has(channelKey)) {
+	         // 任务完成后才启动定时器
+	         this.setupDeferredTimer(channelKey);
+	    }
     }
 
     /**
