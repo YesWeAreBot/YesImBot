@@ -1,0 +1,30 @@
+{
+  "name": "koishi-plugin-yesimbot-extension-sticker-manager",
+  "description": "YesImBot 表情包管理扩展",
+  "version": "1.0.0",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc && node esbuild.config.mjs",
+    "dev": "tsc -w --preserveWatchOutput"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "workspace:*"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.7",
+    "koishi-plugin-yesimbot": "workspace:*"
+  },
+  "koishi": {
+    "description": {
+      "zh": "表情包偷取和管理功能",
+      "en": "Sticker stealing and management"
+    },
+    "service": {
+      "required": [
+        "yesimbot"
+      ]
+    }
+  }
+}

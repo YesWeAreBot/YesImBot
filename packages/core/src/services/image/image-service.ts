@@ -105,6 +105,12 @@ export class ImageService extends Service<ImageServiceConfig> {
         }
     }
 
+    public async getImageLocalPath(id: string): Promise<string> | null {
+        const [imageData] = await this.ctx.database.get(TableName.Images, { id });
+        if (!imageData) return null;
+        return imageData.localPath;
+    }
+
     /**
      * 处理图片元素：下载、哈希原始图片、为AI优化、存储优化后版本，并返回占位符
      * @param element 图片元素

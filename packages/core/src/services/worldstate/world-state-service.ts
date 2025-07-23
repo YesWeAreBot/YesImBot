@@ -715,6 +715,13 @@ export class WorldStateService extends Service<HistoryConfig> {
             { id: "string(64)", sid: "string(64)", type: "string(64)", timestamp: "timestamp", payload: "json" },
             { primary: "id", foreign: { sid: [TableName.DialogueSegments, "id"] } }
         );
+        /*this.ctx.model.extend(TableName.Stickers, {
+            id: "string(64)",
+            category: "string(255)",
+            filePath: "string(255)",
+            source: "json",
+            createdAt: "timestamp",
+        }, { primary: "id" });*/
     }
 
     private async applyFoldingPolicy(platform: string, channelId: string): Promise<void> {

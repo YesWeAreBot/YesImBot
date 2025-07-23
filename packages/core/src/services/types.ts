@@ -11,6 +11,7 @@ export enum TableName {
     Facts = "yesimbot.facts",
     Insights = "yesimbot.insights",
     UserProfiles = "yesimbot.user_profiles",
+    Stickers = "yesimbot.stickers",
 }
 
 /**
@@ -25,3 +26,4 @@ export enum Services {
     Logger = "yesimbot.logger",
     Prompt = "yesimbot.prompt",
 }
+
