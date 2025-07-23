@@ -6,7 +6,9 @@
   "homepage": "https://github.com/HydroGest/YesImBot",
   "contributors": [
     "HydroGest <2445691453@qq.com>",
-    "Dispure <3116716016@qq.com>"
+    "Dispure <3116716016@qq.com>",
+    "Miaowfish <1293865264@qq.com>",
+    "Touch-Night <1762918301@qq.com>"
   ],
   "license": "MIT",
   "workspaces": [
@@ -29,11 +31,5 @@
     "turbo": "^2.5.4",
     "typescript": "^5.8.3",
     "yml-register": "^1.2.5"
-  },
-  "dependencies": {
-    "@mozilla/readability": "^0.6.0",
-    "cheerio": "^1.1.2",
-    "jsdom": "^26.1.0",
-    "undici": "^7.12.0"
   }
 }
