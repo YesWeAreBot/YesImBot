@@ -6,7 +6,9 @@
   "typings": "lib/index.d.ts",
   "scripts": {
     "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput"
+    "dev": "tsc -w --preserveWatchOutput",
+    "lint": "eslint . --ext .ts",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"
   },
   "devDependencies": {
     "koishi": "^4.18.7",

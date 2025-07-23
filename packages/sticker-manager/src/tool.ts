@@ -7,11 +7,17 @@ import { StickerService } from './service';
     name: 'sticker-manager',
     display: '表情包管理',
     description: '用于偷取和发送表情包',
-    author: 'AI-Powered Design',
+    author: 'HydroGest',
     version: '1.0.0',
 })
 export class StickerTools {
-    constructor(private ctx: Context) {}
+
+    private stickerService: StickerService;
+
+    constructor(private ctx: Context) {
+        // 正确获取 StickerService 实例
+        this.stickerService = ctx.get('sticker-service') as StickerService;
+    }
 
     @Tool({
         name: 'steal_sticker',
@@ -23,12 +29,13 @@ export class StickerTools {
     async stealSticker({ image_id, session }: Infer<{ image_id: string }> & { session: Session }) {
         try {
             const imageService = this.ctx[Services.Image];
-            const stickerService = this.ctx.plugin.get(StickerService);
+
+            //const stickerService = this.ctx.plugin.get(StickerService);
             
             const imageData = await imageService.getImageDataWithContent(image_id);
             if (!imageData) return Failed('图片未找到');
             
-            const record = await stickerService.stealSticker(imageData, session);
+            const record = await this.stickerService.stealSticker(imageData.data, session);
             return Success({
                 id: record.id,
                 category: record.category,
@@ -48,8 +55,8 @@ export class StickerTools {
     })
     async sendRandomSticker({ category }: Infer<{ category: string }>) {
         try {
-            const stickerService = this.ctx.plugin.get(StickerService);
-            const sticker = await stickerService.getRandomSticker(category);
+            //const stickerService = this.ctx.plugin.get(StickerService);
+            const sticker = await this.stickerService.getRandomSticker(category);
             
             if (!sticker) return Failed(`分类 "${category}" 中没有表情包`);
             
