@@ -245,16 +245,3 @@ export interface ActionResult {
     result?: any;
     error?: any;
 }
-
-export interface StickerData {
-    id: string;
-    category: string;
-    filePath: string;
-    source: {
-        platform: string;
-        channelId: string;
-        userId: string;
-        messageId: string;
-    };
-    createdAt: Date;
-}

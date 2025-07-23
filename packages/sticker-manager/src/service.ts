@@ -6,6 +6,12 @@ import { StickerConfig } from './index';
 import { Services, TableName, TaskType } from 'koishi-plugin-yesimbot/services';
 import { ImageData } from 'koishi-plugin-yesimbot/services';
 
+declare module "koishi" {
+    interface Tables {
+		[TableName.Stickers]: StickerRecord;
+    }
+}
+
 interface StickerRecord {
     id: string;
     category: string;

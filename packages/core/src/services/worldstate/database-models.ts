@@ -80,11 +80,28 @@ export interface AgentResponseData {
     request_heartbeat: boolean; // 新增字段
 }
 
+// 添加表情包表结构
+export interface StickerData {
+  id: string;
+  category: string;
+  filePath: string;
+  source: {
+      platform: string;
+      channelId: string;
+      userId: string;
+      messageId: string;
+  };
+  createdAt: Date;
+}
+
+
 declare module "koishi" {
     interface Tables {
         [TableName.Members]: MemberData;
         [TableName.DialogueSegments]: DialogueSegmentData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
+    	[TableName.Stickers]: StickerData;
+    
     }
 }
