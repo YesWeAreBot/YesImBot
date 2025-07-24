@@ -7,6 +7,7 @@ export enum TableName {
     Messages = "worldstate.messages",
     SystemEvents = "worldstate.system_events",
     Images = "yesimbot.images",
+    Assets = "yesimbot.assets",
     Entities = "yesimbot.entities",
     Facts = "yesimbot.facts",
     Insights = "yesimbot.insights",
@@ -23,6 +24,7 @@ export enum Services {
     WorldState = "yesimbot.world-state",
     Tool = "yesimbot.tool",
     Image = "yesimbot.image",
+    Asset = "yesimbot.asset",
     Logger = "yesimbot.logger",
     Prompt = "yesimbot.prompt",
 }

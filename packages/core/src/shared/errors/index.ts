@@ -159,7 +159,7 @@ export function assertExists<T>(
 export function handleError(logger: Logger, error: any, contextDescription: string): void {
     if (error instanceof Error) {
         /* prettier-ignore */
-        logger.error(`[错误] ${contextDescription}\n` + `错误信息: ${error.message}\n` + `堆栈追踪:${error.stack}`);
+        logger.error(`[错误] ${contextDescription}\n` + `错误信息: ${error.message}\n` + `堆栈追踪: ${error.stack}`);
     } else {
         // 如果捕获到的不是标准Error对象（例如字符串或普通对象）
         logger.error(`[错误] ${contextDescription}\n` + `捕获到非标准错误: ${JSON.stringify(error)}`);
