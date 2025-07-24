@@ -1,9 +1,9 @@
 import { Context, h, Logger, Schema, Session } from 'koishi';
-import { createHash } from 'crypto';
+import { createHash, subtle } from 'crypto';
 import { mkdir, readdir, rename, unlink, readFile } from 'fs/promises';
 import { pathToFileURL } from 'url';
 import path from 'path';
-import { StickerConfig } from './tool';
+import { StickerConfig } from './index';
 import { Services, TableName, TaskType } from 'koishi-plugin-yesimbot/services';
 import { ImageData } from 'koishi-plugin-yesimbot/services';
 
@@ -28,15 +28,59 @@ interface StickerRecord {
 
 export class StickerService {
     public logger: Logger;
+    
+    private static tablesRegistered = false;
+    public isReady: boolean = false;
 
     constructor(private ctx: Context, private config: StickerConfig) {
         this.logger = ctx[Services.Logger].getLogger('[表情管理]');
         this.start();
     }
 
-    async start() {
+        private async start() {
+        // 确保初始化只执行一次
+        if (this.isReady) return;
+        
         await this.initStorage();
-        this.registerModels();
+        await this.registerModels();
+        this.registerPromptSnippet();
+        
+        // 标记服务已就绪
+        this.isReady = true;
+        this.logger.debug('表情包服务已就绪');
+    }
+
+    public whenReady() {
+        return new Promise<void>((resolve) => {
+            if (this.isReady) {
+                resolve();
+            } else {
+                const check = () => {
+                    if (this.isReady) {
+                        resolve();
+                    } else {
+                        setTimeout(check, 100);
+                    }
+                };
+                check();
+            }
+        });
+    }
+
+    private registerPromptSnippet() {
+        const promptService = this.ctx[Services.Prompt];
+        if (!promptService) {
+            this.logger.warn('提示词服务未找到，无法注册分类列表');
+            return;
+        }
+        
+        // 注册动态片段
+        promptService.registerSnippet('sticker.categories', async () => {
+            const categories = await this.getCategories();
+            return categories.join(', ');
+        });
+        
+        this.logger.debug('表情包分类列表已注册到提示词系统');
     }
 
     private async initStorage() {
@@ -44,15 +88,26 @@ export class StickerService {
         this.logger.info(`表情存储目录已初始化: ${this.config.storagePath}`);
     }
 
-    private registerModels() {
-        // @ts-ignore
-        this.ctx.model.extend(TableName.Stickers, {
-            id: 'string(64)',
-            category: 'string(255)',
-            filePath: 'string(255)',
-            source: 'json',
-            createdAt: 'timestamp',
-        }, { primary: 'id' });
+    private async registerModels() {
+        // 确保表只注册一次
+        if (StickerService.tablesRegistered) return;
+        StickerService.tablesRegistered = true;
+        
+        try {
+            // 使用 extend 创建表
+            this.ctx.model.extend(TableName.Stickers, {
+                id: 'string(64)',
+                category: 'string(255)',
+                filePath: 'string(255)',
+                source: 'json',
+                createdAt: 'timestamp',
+            }, { primary: 'id' });
+            
+            this.logger.debug('表情包表已创建');
+        } catch (error) {
+            this.logger.error('创建表情包表失败', error);
+            throw error;
+        }
     }
 
     public async stealSticker(imageData: ImageData, session: Session): Promise<StickerRecord> {
@@ -101,9 +156,15 @@ export class StickerService {
         return record;
     }
 
-
     private async classifySticker(filePath: string): Promise<string> {
+        // 动态获取分类列表
         const categories = await this.getCategories();
+        const categoryList = categories.join(', ');
+        
+        // 使用分类列表替换模板中的占位符
+        const prompt = this.config.classificationPrompt
+            .replace('{{categories}}', categoryList);
+        
         const models = this.ctx[Services.Model].useChatGroup(TaskType.Chat);
 
         const model = models.models.find((m) => m.isVisionModel());
@@ -128,7 +189,7 @@ export class StickerService {
                 messages: [{
                     role: 'user',
                     content: [
-                        { type: 'text', text: this.config.classificationPrompt },
+                        { type: 'text', text: prompt }, // 使用动态生成的提示词
                         { 
                             type: 'image_url', 
                             image_url: { 
@@ -165,7 +226,7 @@ export class StickerService {
 
         const fileUrl = pathToFileURL(sticker.filePath).href;
 
-        return h.image(fileUrl);
+        return h.image(fileUrl, { "sub-type": "1" });
     }
 
     async cleanupUnreferenced() {

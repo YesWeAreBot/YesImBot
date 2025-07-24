@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
+  "contributors": [
+    "HydroGest <2445691453@qq.com>"
+  ],
+  "homepage": "https://github.com/HydroGest/YesImBot",
   "scripts": {
     "build": "tsc && node esbuild.config.mjs",
     "dev": "tsc -w --preserveWatchOutput",
@@ -20,16 +24,31 @@
   },
   "koishi": {
     "description": {
-      "zh": "表情包偷取和管理功能",
+      "zh": "Yes! I'm Bot! 表情包偷取和管理功能",
       "en": "Sticker stealing and management"
     },
     "service": {
       "required": [
         "yesimbot"
+      ],
+      "implements": [
+        "yesimbot-extension-sticker-manager"
       ]
     }
   },
   "dependencies": {
     "sharp": "^0.34.3"
+  },
+  "keywords": [
+    "koishi",
+    "plugin",
+    "sticker",
+    "emoji",
+    "yesimbot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "directory": "packages/sticker-manager"
   }
 }
