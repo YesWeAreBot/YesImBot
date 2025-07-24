@@ -38,34 +38,58 @@ jobs:
       - name: Build all packages
         run: bun run build
 
-      - name: Package build artifacts
+      - name: Generate tarballs
         run: |
-          # 创建制品目录
-          mkdir -p build-artifacts
+          mkdir -p tarballs
           
-          # 复制所有包的构建输出
+          # 为每个包创建单独的 tarball
           for dir in packages/*; do
             if [ -d "$dir" ]; then
               pkg=$(basename "$dir")
-              mkdir -p "build-artifacts/$pkg"
-              # 复制除src外的构建输出
-              find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "build-artifacts/$pkg/" \;
-              # 复制package.json
-              cp "$dir/package.json" "build-artifacts/$pkg/"
+              echo "Packaging $pkg..."
+              
+              # 创建临时目录
+              mkdir -p "temp/$pkg"
+              
+              # 复制构建输出
+              find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "temp/$pkg/" \;
+              
+              # 复制 package.json
+              cp "$dir/package.json" "temp/$pkg/"
+              
+              # 创建 tarball
+              tar -czf "tarballs/$pkg.tgz" -C "temp/$pkg" .
+              
+              # 清理临时目录
+              rm -rf "temp/$pkg"
             fi
           done
+          
+          # 创建根配置 tarball
+          cp package.json turbo.json temp/
+          tar -czf tarballs/root-config.tgz -C temp package.json turbo.json
+          rm -rf temp
 
-          # 添加必要的配置文件
-          cp package.json turbo.json build-artifacts/
-
-      - name: Create downloadable archive
-        run: |
-          cd build-artifacts
-          tar -czf ../build-artifacts.tar.gz .
-          cd ..
-
-      - name: Upload artifacts
+      - name: Upload root config
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
-          path: build-artifacts.tar.gz
+          name: root-config
+          path: tarballs/root-config.tgz
+          retention-days: 7
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: tarballs/${{ matrix.package }}.tgz
+          retention-days: 7
+        strategy:
+          matrix:
+            package: [
+              "code-interpreter", 
+              "code2image", 
+              "core", 
+              "favor", 
+              "mcp", 
+              "sticker-manager"
+            ]
