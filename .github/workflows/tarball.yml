@@ -1,4 +1,4 @@
-name: Build and Package
+name: Build, Package, and Upload
 
 on:
   push:
@@ -12,12 +12,13 @@ jobs:
     permissions:
       contents: write
       actions: write
+    outputs:
+      packages: ${{ steps.list-packages.outputs.names }}
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          # fetch-depth: 0 is recommended for Changesets to have full git history
           fetch-depth: 0
 
       - name: Setup Bun
@@ -26,8 +27,6 @@ jobs:
           bun-version: 1.2.0
 
       - name: Configure Git for Changesets
-        # This step is needed if 'changeset version' creates a commit
-        # It configures the user that will be associated with the version bump commit
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
@@ -39,30 +38,16 @@ jobs:
             ~/.bun/install/cache
             .turbo
             node_modules
-          # Use bun.lockb for the key, as it's the source of truth for dependencies
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
       - name: Install dependencies
-        # Use --frozen-lockfile for deterministic installs in CI
         run: bun install --frozen-lockfile
-
-      # ------------------------------------------------------------------
-      # The new, simplified core logic starts here.
-      # This replaces the entire manual `for` loop for packaging.
-      # ------------------------------------------------------------------
 
       - name: Version packages and create tarballs
         id: package
         run: |
-          # This command does two things:
-          # 1. `changeset version`: Bumps versions in package.json, updates changelogs,
-          #    and crucially, replaces 'workspace:~' with actual version numbers.
-          #    We use --snapshot to create a unique version for this CI build
-          #    without consuming the changeset files.
-          # 2. `bun run pack`: Runs `turbo run pack`, which in turn runs `bun pack`
-          #    in each package, creating spec-compliant .tgz files.
           bunx changeset version --snapshot
           bun run pack
 
@@ -76,28 +61,30 @@ jobs:
           path: artifacts/
           retention-days: 7
 
-      - name: Update GitHub CLI to latest version
-        # This step is crucial because the default gh version on runners might be old
-        # and not include the 'gh artifact' command.
-        run: |
-          type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install curl -y)
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-          && sudo apt-get update \
-          && sudo apt-get install gh -y
-
-      # This section replaces the entire `publish-artifacts` job.
-      # It creates individual artifacts for each package directly.
-      - name: Upload individual packages
-        # This step is optional but mirrors the functionality of your old `publish-artifacts` job.
-        # It reads the contents of the artifacts directory and uploads each file individually.
+      - name: List packaged tarballs for matrix
+        id: list-packages
         run: |
           cd artifacts
-          for file in *.tgz; do
-            echo "Uploading $file as an individual artifact..."
-            gh artifact upload "$file" --name "$file" --repo ${{ github.repository }}
-          done
-        env:
-          # The GITHUB_TOKEN is automatically provided by GitHub Actions
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          package_list=$(ls *.tgz | sed 's/\.tgz$//' | jq -R . | jq -s .)
+          echo "names=${package_list}" >> $GITHUB_OUTPUT
+
+  upload-individual-packages:
+    name: Upload Individual Package
+    runs-on: ubuntu-latest
+    needs: build-and-package
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.build-and-package.outputs.packages) }}
+    steps:
+      - name: Download all-packages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-tgz
+          path: artifacts/
+
+      - name: Upload ${{ matrix.package }} as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: artifacts/${{ matrix.package }}.tgz
+          retention-days: 7
