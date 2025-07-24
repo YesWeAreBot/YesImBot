@@ -65,7 +65,8 @@ jobs:
         id: list-packages
         run: |
           cd artifacts
-          package_list=$(ls *.tgz | sed 's/\.tgz$//' | jq -R . | jq -s .)
+          package_list=$(find . -maxdepth 1 -name "*.tgz" | sed 's|^\./||; s|\.tgz$||' | jq -R . | jq -s -c .)
+          echo "Generated package list: ${package_list}"
           echo "names=${package_list}" >> $GITHUB_OUTPUT
 
   upload-individual-packages:
