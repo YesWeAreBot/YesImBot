@@ -46,7 +46,7 @@ jobs:
           tar -czf build-artifacts.tar.gz .
           
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: build-artifacts/build-artifacts.tar.gz
