@@ -1,0 +1,53 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: |
+          yarn install --frozen-lockfile
+          yarn add -D typescript@5.8.3
+
+      - name: Build all packages
+        run: yarn build
+
+      - name: Prepare build artifacts
+        run: |
+          # 复制所有包的非源码文件
+          mkdir -p build-artifacts
+          find packages -mindepth 2 -maxdepth 2 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} build-artifacts \;
+          
+          # 复制根目录配置文件
+          cp package.json turbo.json tsconfig*.json build-artifacts/
+
+          # 为每个包创建package.json链接
+          mkdir -p build-artifacts/package-links
+          find packages -name package.json -not -path "*/src/*" -exec sh -c 'ln -s "$(realpath --relative-to=build-artifacts/package-links $1)" "build-artifacts/package-links/$(basename $(dirname $1))-package.json"' sh {} \;
+
+      - name: Create downloadable archive
+        run: |
+          cd build-artifacts
+          tar -czf build-artifacts.tar.gz .
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: build-artifacts/build-artifacts.tar.gz
+          
