@@ -45,7 +45,7 @@ export class ModelService extends Service<ModelServiceConfig> {
                 return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
             });
         this.ctx.schema.set(
-            "modelService.selectableGroup",
+            "modelService.selectableModels",
             Schema.union([
                 ...selectableModels,
                 Schema.object({
@@ -136,6 +136,12 @@ export class ModelService extends Service<ModelServiceConfig> {
         return instance ? getter(instance, modelId) : null;
     }
 
+    /**
+     * 获取一个聊天模型
+     * @param providerName
+     * @param modelId
+     * @returns
+     */
     public getChatModel(providerName: string, modelId: string): IChatModel | null {
         return this.getModel(providerName, modelId, (instance, id) => instance.getChatModel(id));
     }
@@ -144,10 +150,14 @@ export class ModelService extends Service<ModelServiceConfig> {
         return this.getModel(providerName, modelId, (instance, id) => instance.getEmbedModel(id));
     }
 
-    private _createSwitcher<T extends BaseModel>(
-        groupName: string,
-        modelGetter: (provider: string, modelId: string) => T | null
-    ): ModelSwitcher<T> | undefined {
+    /**
+     * 创建一个模型切换器
+     * @param groupName
+     * @param modelGetter
+     * @returns
+     */
+    /* prettier-ignore */
+    private _createSwitcher<T extends BaseModel>(groupName: string, modelGetter: (provider: string, modelId: string) => T | null): ModelSwitcher<T> | undefined {
         const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
             this._logger.warn(`[切换器] ⚠ 组未找到 | 名称: ${groupName}`);
@@ -163,28 +173,29 @@ export class ModelService extends Service<ModelServiceConfig> {
         }
     }
 
-    public useChatGroup(name: TaskType): ModelSwitcher<IChatModel> | undefined {
+    /**
+     * 通过模型组名称获取一个聊天模型切换器
+     * @param name
+     * @returns
+     */
+    public useChatGroup(name: string): ModelSwitcher<IChatModel> | undefined {
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined;
         return this._createSwitcher(groupName, this.getChatModel.bind(this));
     }
 
-    public useEmbeddingGroup(name: TaskType): ModelSwitcher<IEmbedModel> | undefined {
+    public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined;
         return this._createSwitcher(groupName, this.getEmbedModel.bind(this));
     }
 
-    private resolveGroupName(name: TaskType): string | undefined {
+    private resolveGroupName(name: string): string | undefined {
         if (this.config.task[name]) {
             return this.config.task[name];
         }
 
-        if (this.config.modelGroups[name]) {
-            return name;
-        }
-
-        this._logger.warn(`[切换器] ⚠ 无效的任务符号 | 任务: ${name}`);
+        this._logger.warn(`[切换器] ⚠ 无效的任务名称 | 任务: ${String(name)}`);
         return undefined;
     }
 }

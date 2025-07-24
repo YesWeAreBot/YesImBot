@@ -138,7 +138,7 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
     modelGroups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组名称"),
-            models: Schema.array(Schema.dynamic("modelService.selectableGroup")).required().role("table").description("此模型组包含的模型"),
+            models: Schema.array(Schema.dynamic("modelService.selectableModels")).required().role("table").description("此模型组包含的模型"),
         })
     )
         .role("table")
