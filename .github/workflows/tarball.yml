@@ -6,6 +6,7 @@ on:
 
 jobs:
   build-and-package:
+    name: Build and Package All Plugins
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -13,107 +14,77 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          ref: dev
-          fetch-depth: 2
-
-      - name: Cache turbo build setup
-        uses: actions/cache@v4
-        with:
-          path: |
-            .turbo
-            **/node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
+          # fetch-depth: 0 is recommended for Changesets to have full git history
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.0
 
+      - name: Configure Git for Changesets
+        # This step is needed if 'changeset version' creates a commit
+        # It configures the user that will be associated with the version bump commit
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Cache dependencies and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            .turbo
+            node_modules
+          # Use bun.lockb for the key, as it's the source of truth for dependencies
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install dependencies
-        run: bun install
+        # Use --frozen-lockfile for deterministic installs in CI
+        run: bun install --frozen-lockfile
 
-      - name: Build all packages
-        run: bun run build
+      # ------------------------------------------------------------------
+      # The new, simplified core logic starts here.
+      # This replaces the entire manual `for` loop for packaging.
+      # ------------------------------------------------------------------
 
-      - name: Create correctly structured tarballs
+      - name: Version packages and create tarballs
+        id: package
         run: |
-          mkdir -p tarballs
-          
-          # 为每个包创建正确结构的 tarball
-          for dir in packages/*; do
-            if [ -d "$dir" ]; then
-              pkg=$(basename "$dir")
-              echo "Packaging $pkg..."
-              
-              # 获取包名（从 package.json 中读取）
-              pkg_name=$(jq -r '.name' "$dir/package.json")
-              
-              # 创建临时目录结构（Yarn 要求的格式）
-              mkdir -p "temp/$pkg_name"
-              
-              # 复制构建输出和配置文件
-              find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "temp/$pkg_name/" \;
-              
-              # 复制 package.json
-              cp "$dir/package.json" "temp/$pkg_name/"
-              
-              # 创建 tarball（使用包名而不是目录名）
-              tar -czf "tarballs/$pkg_name.tgz" -C "temp" "$pkg_name"
-              
-              # 清理临时目录
-              rm -rf "temp/$pkg_name"
-            fi
-          done
-          
-          # 验证生成的 tarball 结构
-          echo "Verifying tarball structure:"
-          for tgz in tarballs/*.tgz; do
-            echo "Contents of $(basename $tgz):"
-            tar -tzf "$tgz" | head -5
-            echo ""
-          done
+          # This command does two things:
+          # 1. `changeset version`: Bumps versions in package.json, updates changelogs,
+          #    and crucially, replaces 'workspace:~' with actual version numbers.
+          #    We use --snapshot to create a unique version for this CI build
+          #    without consuming the changeset files.
+          # 2. `bun run pack`: Runs `turbo run pack`, which in turn runs `bun pack`
+          #    in each package, creating spec-compliant .tgz files.
+          bunx changeset version --snapshot
+          bun run pack
 
-      - name: Upload all artifacts
+      - name: Collect all packaged tarballs
+        # This runs our robust, cross-platform JS script to gather all .tgz files
+        run: bun run collect-packages
+
+      - name: Upload all packages as a single artifact
         uses: actions/upload-artifact@v4
         with:
-          name: packages
-          path: tarballs
+          name: packages-tgz
+          path: artifacts/
           retention-days: 7
 
-  publish-artifacts:
-    runs-on: ubuntu-latest
-    needs: build-and-package
-    strategy:
-      matrix:
-        package: [
-          "koishi-plugin-yesimbot", 
-          "koishi-plugin-yesimbot-extension-code-interpreter",
-          "koishi-plugin-yesimbot-extension-code2image",
-          "koishi-plugin-yesimbot-extension-favor",
-          "koishi-plugin-yesimbot-extension-mcp",
-          "koishi-plugin-yesimbot-extension-sticker-manager"
-        ]
-    
-    steps:
-      - name: Download packages artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: packages
-          path: tarballs
-
-      - name: Verify download
+      # This section replaces the entire `publish-artifacts` job.
+      # It creates individual artifacts for each package directly.
+      - name: Upload individual packages
+        # This step is optional but mirrors the functionality of your old `publish-artifacts` job.
+        # It reads the contents of the artifacts directory and uploads each file individually.
         run: |
-          echo "Verifying package ${{ matrix.package }}"
-          if [ ! -f "tarballs/${{ matrix.package }}.tgz" ]; then
-            echo "Error: ${{ matrix.package }}.tgz not found!"
-            exit 1
-          fi
-
-      - name: Upload individual package
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.package }}
-          path: tarballs/${{ matrix.package }}.tgz
-          retention-days: 7
+          cd artifacts
+          for file in *.tgz; do
+            echo "Uploading $file as an individual artifact..."
+            gh artifact upload "$file" --name "$file" --repo ${{ github.repository }}
+          done
+        env:
+          # The GITHUB_TOKEN is automatically provided by GitHub Actions
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
