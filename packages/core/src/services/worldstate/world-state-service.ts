@@ -95,7 +95,7 @@ class EventListenerManager {
                     );
                     this.ctx.emit("worldstate:segment-updated", session, segmentRecord.id);
                 }
-            }, true)
+            })
         );
 
         this.disposers.push(

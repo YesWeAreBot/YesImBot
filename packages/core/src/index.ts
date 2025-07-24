@@ -40,13 +40,6 @@ export default class YesImBot extends Service<Config> {
             // 注册资源中心服务
             const assetService = ctx.plugin(AssetService, config.assetService);
 
-            // 注册资源消息转换器
-            ctx.plugin(function (ctx) {
-                const { MessageTransformer } = require("./services/assets");
-                const transformer = new MessageTransformer(ctx);
-                transformer.register();
-            });
-
             // 注册提示词管理器
             const promptService = ctx.plugin(PromptService, {});
 

@@ -1,7 +1,7 @@
 import { Services, TableName } from "@/services/types";
 import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
-import { Context, Element, Service, Session, h } from "koishi";
+import { Context, Dict, Element, Service, Session, h } from "koishi";
 import sharp from "sharp";
 import { fetch } from "undici";
 import { v4 as uuidv4 } from "uuid";
@@ -56,6 +56,87 @@ export class AssetService extends Service<AssetServiceConfig> {
         if (this.config.endpoint) {
             this.registerHttpEndpoint();
         }
+
+        this.registerMiddleware();
+    }
+
+    /**
+     * 注册中间件，自动将接收到的消息中的资源元素（如图片）持久化。
+     */
+    private registerMiddleware() {
+        // 解码中间件 (Decode): 将平台消息的 `src` 转换为内部 `id`
+        this.ctx.middleware(async (session, next) => {
+            const handle = async (type: AssetType, attrs: Dict, tagName: string) => {
+                if (!attrs.src || attrs.id) return h(tagName, attrs);
+                try {
+                    const id = await this.create(attrs.src, { type, filename: attrs.filename });
+                    const { src, ...rest } = attrs;
+                    return h(tagName, { ...rest, id });
+                } catch (error) {
+                    this.logger.error(`Failed to persist asset from ${attrs.src}: ${error.message}`);
+                    return h.text(`[${type}加载失败]`);
+                }
+            };
+            try {
+                session.elements = await h.transformAsync(session.elements, async (element) => {
+                    switch (element.type) {
+                        case "img":
+                        case "image":
+                            return handle(AssetType.Image, element.attrs, "image");
+                        case "audio":
+                            return handle(AssetType.Audio, element.attrs, "audio");
+                        case "video":
+                            return handle(AssetType.Video, element.attrs, "video");
+                        case "file":
+                            return handle(AssetType.File, element.attrs, "file");
+                        case "mface":
+                            element.attrs.src = element.attrs.url;
+                            return handle(AssetType.Image, element.attrs, "img");
+                        default:
+                            return element;
+                    }
+                });
+            } catch (error) {
+                this.logger.warn(`Failed to transform incoming message: ${error.message}`);
+            }
+            return next();
+        }, true); // `true` 表示前置中间件，高优先级执行
+
+        this.logger.info("Message transformer middleware registered.");
+    }
+
+    /**
+     * 编码消息元素，将带有内部 `id` 的元素转换为平台可发送的 `src` 格式。
+     * @param elements 待编码的消息元素数组
+     * @returns 编码后的消息元素数组
+     */
+    public async encode(elements: h[]): Promise<h[]> {
+        const handle = async (attrs: Dict, tagName: string) => {
+            if (!attrs.id) return h(tagName, attrs);
+            try {
+                const src = await this.getPublicUrl(attrs.id);
+                const { id, ...rest } = attrs;
+                return h(tagName, { ...rest, src });
+            } catch (error) {
+                this.logger.error(`Failed to get public URL for asset ${attrs.id}: ${error.message}`);
+                return h.text(`[资源访问失败]`);
+            }
+        };
+        return h.transformAsync(elements, async (element) => {
+            switch (element.type) {
+                case "img":
+                case "image":
+                    return handle(element.attrs, "img");
+                case "audio":
+                    return handle(element.attrs, "audio");
+                case "video":
+                    return handle(element.attrs, "video");
+                case "file":
+                    return handle(element.attrs, "file");
+                default:
+                    return element;
+            }
+        });
     }
 
     /**
@@ -97,7 +178,9 @@ export class AssetService extends Service<AssetServiceConfig> {
 
         // 验证 MIME 类型是否支持
         if (!this.config.supportedMimeTypes.includes(mime)) {
-            throw new Error(`Unsupported MIME type: ${mime}. Supported types: ${this.config.supportedMimeTypes.join(", ")}`);
+            throw new Error(
+                `Unsupported MIME type: ${mime}. Supported types: ${this.config.supportedMimeTypes.join(", ")}`
+            );
         }
 
         const type = options.type || this.getTypeFromMime(mime);
@@ -129,7 +212,7 @@ export class AssetService extends Service<AssetServiceConfig> {
             size: processedBuffer.length,
             createdAt: new Date(),
             lastUsedAt: new Date(),
-            metadata
+            metadata,
         };
 
         await this.ctx.database.create(TableName.Assets, assetData);
@@ -347,11 +430,11 @@ export class AssetService extends Service<AssetServiceConfig> {
         try {
             const id = await this.create(url, {
                 type: AssetType.Image,
-                filename: element.attrs.filename
+                filename: element.attrs.filename,
             });
             return h("image", {
                 id,
-                summary: element.attrs.summary || element.attrs.alt || "图片"
+                summary: element.attrs.summary || element.attrs.alt || "图片",
             });
         } catch (error) {
             this.logger.error(`Failed to process image element: ${error.message}`);
