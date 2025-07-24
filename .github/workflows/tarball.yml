@@ -6,9 +6,12 @@ on:
 
 jobs:
   build-and-package:
-    name: Build and Package All Plugins
+    name: Build and Pack All Packages
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
 
     steps:
       - name: Check out code
@@ -73,10 +76,16 @@ jobs:
           path: artifacts/
           retention-days: 7
 
-      - name: Install/Update GitHub CLI
-        uses: crazy-max/ghaction-github-cli@v3
-        with:
-          version: latest
+      - name: Update GitHub CLI to latest version
+        # This step is crucial because the default gh version on runners might be old
+        # and not include the 'gh artifact' command.
+        run: |
+          type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt-get update \
+          && sudo apt-get install gh -y
 
       # This section replaces the entire `publish-artifacts` job.
       # It creates individual artifacts for each package directly.
