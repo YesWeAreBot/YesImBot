@@ -64,7 +64,6 @@ jobs:
           bun run pack
 
       - name: Collect all packaged tarballs
-        # This runs our robust, cross-platform JS script to gather all .tgz files
         run: bun run collect-packages
 
       - name: Upload all packages as a single artifact
@@ -73,6 +72,11 @@ jobs:
           name: packages-tgz
           path: artifacts/
           retention-days: 7
+
+      - name: Install/Update GitHub CLI
+        uses: crazy-max/ghaction-github-cli@v3
+        with:
+          version: latest
 
       # This section replaces the entire `publish-artifacts` job.
       # It creates individual artifacts for each package directly.
