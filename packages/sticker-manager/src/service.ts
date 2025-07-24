@@ -377,6 +377,17 @@ export class StickerService {
         return h.image(fileUrl, { "sub-type": "1" });
     }
 
+    async getStickersByCategory(category: string): Promise<StickerRecord[]> {
+
+            const records = await this.ctx.database.select(TableName).where({ category })
+                .execute();
+
+            if (records.length === 0) return [];
+
+            return records;
+        }
+
+
     public async importEmojiHubTxt(filePath: string, category: string, session: Session): Promise<ImportStats> {
         const stats: ImportStats = {
             total: 0,

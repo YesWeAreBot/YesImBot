@@ -127,6 +127,7 @@ export default class StickerTools {
                     return `导入失败: ${error.message}`;
                 }
             });
+            
         ctx.command('sticker.list', '列出表情包分类',  { authority: 3 })
             .alias('表情分类')
             .action(async ({ session }) => {
@@ -218,25 +219,41 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command('sticker.get <stickerId>', '获取指定表情包',  { authority: 3 })
-            .alias('取表情')
-            .action(async ({ session }, stickerId) => {
-                if (!stickerId) return '请提供表情包ID';
+        ctx.command('sticker.get <category> [index]', '获取指定分类的表情包')
+		  .action(async ({ session }, category, index) => {
+		    if (!category) return '请提供分类名称';
+		
+		    // 获取分类下所有表情包
+		    const stickers = await this.stickerService.getStickersByCategory(category);
+		    if (!stickers.length) return `分类 "${category}" 中没有表情包`;
+		
+		    // 处理索引或随机选择
+		    let targetSticker;
+		    if (index) {
+		      targetSticker = stickers[parseInt(index) - 1];
+		      if (!targetSticker) return `无效序号，该分类共有 ${stickers.length} 个表情包`;
+		    } else {
+		      targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
+		    }
+		
+		    // 发送表情包
+		    const fileUrl = pathToFileURL(targetSticker.filePath).href;
+		    await session.sendQueued(h.image(fileUrl));
+		    return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
+		  });
+		
+		ctx.command('sticker.info <category>', '查看分类详情', { authority: 3 })
+		  .action(async ({ session }, category) => {
+		    const stickers = await this.stickerService.getStickersByCategory(category);
+		    if (!stickers.length) return `分类 "${category}" 中没有表情包`;
+		
+		    return `📁 分类: ${category}
+📊 数量: ${stickers.length}
+🕒 最新: ${stickers[0].createdAt.toLocaleDateString()}
+👆 使用: sticker.get ${category} [1-${stickers.length}]`;
+		  });
 
-                try {
-                    const sticker = await this.stickerService.getSticker(stickerId);
-                    if (!sticker) {
-                        return '未找到该表情包';
-                    }
-
-                    const fileUrl = pathToFileURL(sticker.filePath).href;
-                    await session.sendQueued(h.image(fileUrl));
-                    return `🆔 ID: ${sticker.id}\n📁 分类: ${sticker.category}\n📅 创建时间: ${sticker.createdAt.toLocaleDateString()}`;
-                } catch (error) {
-                    return `❌ 获取失败: ${error.message}`;
-                }
-            });
-
+		
         ctx.command('sticker.cleanup', '清理未使用的表情包')
             .alias('清理表情')
             .action(async ({ session }) => {
