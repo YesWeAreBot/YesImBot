@@ -1,8 +1,9 @@
 import { Context, h, Logger, Schema, Session } from 'koishi';
 import { createHash } from 'crypto';
-import { mkdir, readdir, rename, unlink } from 'fs/promises';
+import { mkdir, readdir, rename, unlink, readFile } from 'fs/promises';
+import { pathToFileURL } from 'url';
 import path from 'path';
-import { StickerConfig } from './index';
+import { StickerConfig } from './tool';
 import { Services, TableName, TaskType } from 'koishi-plugin-yesimbot/services';
 import { ImageData } from 'koishi-plugin-yesimbot/services';
 
@@ -26,11 +27,11 @@ interface StickerRecord {
 }
 
 export class StickerService {
-    static readonly inject = ["database", Services.Logger, Services.Model];
-    private logger: Logger;
+    public logger: Logger;
 
     constructor(private ctx: Context, private config: StickerConfig) {
         this.logger = ctx[Services.Logger].getLogger('[表情管理]');
+        this.start();
     }
 
     async start() {
@@ -54,7 +55,7 @@ export class StickerService {
         }, { primary: 'id' });
     }
 
-    async stealSticker(imageData: ImageData, session: Session): Promise<StickerRecord> {
+    public async stealSticker(imageData: ImageData, session: Session): Promise<StickerRecord> {
         const { id, originalUrl, mimeType } = imageData;
 
         // 获取图片的实际文件路径
@@ -72,7 +73,7 @@ export class StickerService {
 
         // 目标文件路径
         const extension = mimeType ? mimeType.split('/')[1] || 'png' : 'png';
-        const destPath = path.join(this.config.storagePath, `${stickerId}.${extension}`);
+        const destPath = path.resolve(this.config.storagePath, `${stickerId}.${extension}`);
 
         // 移动文件到表情目录
         await rename(filePath, destPath);
@@ -101,7 +102,7 @@ export class StickerService {
     }
 
 
-    private async classifySticker(imageBuffer: Buffer): Promise<string> {
+    private async classifySticker(filePath: string): Promise<string> {
         const categories = await this.getCategories();
         const models = this.ctx[Services.Model].useChatGroup(TaskType.Chat);
 
@@ -111,20 +112,38 @@ export class StickerService {
             throw Error();
         }
         
-        const prompt = this.config.classificationPrompt
-            .replace('{{categories}}', categories.join(', '));
-
-        const response = await model.chat({
-            messages: [{
-                role: 'user',
-                content: [
-                    { type: 'text', text: prompt },
-                    { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBuffer.toString('base64')}` } }
-                ]
-            }]
-        });
-
-        return response.text.trim();
+        try {
+            // 读取文件内容并转换为base64
+            const fileBuffer = await readFile(filePath);
+            const base64Image = fileBuffer.toString('base64');
+            
+            // 获取文件扩展名（不带点）
+            const extension = path.extname(filePath).slice(1).toLowerCase();
+            
+            // 处理特殊扩展名
+            let mimeType = `image/${extension}`;
+            if (extension === 'jpg') mimeType = 'image/jpeg';
+            
+            const response = await model.chat({
+                messages: [{
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: this.config.classificationPrompt },
+                        { 
+                            type: 'image_url', 
+                            image_url: { 
+                                url: `data:${mimeType};base64,${base64Image}` 
+                            }
+                        }
+                    ]
+                }]
+            });
+            
+            return response.text.trim();
+        } catch (error) {
+            this.logger.error('表情分类失败', error);
+            return '分类失败';
+        }
     }
 
     async getCategories(): Promise<string[]> {
@@ -144,7 +163,9 @@ export class StickerService {
         const randomIndex = Math.floor(Math.random() * records.length);
         const sticker = records[randomIndex];
 
-        return h.image(`file://${sticker.filePath}`);
+        const fileUrl = pathToFileURL(sticker.filePath).href;
+
+        return h.image(fileUrl);
     }
 
     async cleanupUnreferenced() {
@@ -158,8 +179,4 @@ export class StickerService {
             }
         }
     }
-}
-
-function getFileExtension(mimeType: string): string {
-    return mimeType.split('/')[1] || 'png';
 }

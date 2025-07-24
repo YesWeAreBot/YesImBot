@@ -3,6 +3,11 @@ import { Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/
 import { Services } from 'koishi-plugin-yesimbot/services';
 import { StickerService } from './service';
 
+export interface StickerConfig {
+    storagePath: string;
+    classificationPrompt: string;
+}
+
 @Extension({
     name: 'sticker-manager',
     display: '表情包管理',
@@ -11,10 +16,17 @@ import { StickerService } from './service';
     version: '1.0.0',
 })
 export class StickerTools {
-
+    static readonly Config: Schema<StickerConfig> = Schema.object({
+        storagePath: Schema.path({ allowCreate: true, filters: ['directory'] })
+            .default('./data/yesimbot/sticker')
+            .description('表情包存储路径'),
+        classificationPrompt: Schema.string()
+            .default('请将以下图片分类，已有分类: [{{categories}}]。选择最匹配的分类或创建新分类。只返回分类名称。')
+            .description('多模态分类提示词模板'),
+    });
     private stickerService: StickerService;
 
-    constructor(private ctx: Context) {
+    constructor(public ctx: Context, public config: StickerConfig) {
         // 正确获取 StickerService 实例
         this.stickerService = ctx.get('sticker-service') as StickerService;
     }
