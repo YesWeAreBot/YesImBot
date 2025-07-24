@@ -14,7 +14,7 @@ export class DialogueSegmentManager {
     constructor(ctx: Context, config: HistoryConfig) {
         this.ctx = ctx;
         this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[对话片段管理器]");
+        this.logger = ctx[Services.Logger].getLogger("[对话片段]");
     }
 
     /**
@@ -41,9 +41,8 @@ export class DialogueSegmentManager {
             if (openSegments.length > 0) {
                 const oldSegmentIds = openSegments.map((s) => s.id);
                 await this.closeSegments(oldSegmentIds, "redundant");
-                this.logger.warn(
-                    `发现并关闭了 ${openSegments.length} 个冗余的开放片段 | 频道: ${platform}:${channelId}`
-                );
+                /* prettier-ignore */
+                this.logger.warn(`发现并关闭了 ${openSegments.length} 个冗余的开放片段 | 频道: ${platform}:${channelId}`);
             }
             return currentSegment;
         }
@@ -144,10 +143,8 @@ export class DialogueSegmentManager {
      * @param segmentIds 要关闭的片段ID数组
      * @param reason 关闭原因 (用于日志)
      */
-    private async closeSegments(
-        segmentIds: string[],
-        reason: "redundant" | "max_messages" | "inactivity"
-    ): Promise<void> {
+    /* prettier-ignore */
+    private async closeSegments(segmentIds: string[], reason: "redundant" | "max_messages" | "inactivity"): Promise<void> {
         if (segmentIds.length === 0) return;
         await this.ctx.database.set(
             TableName.DialogueSegments,

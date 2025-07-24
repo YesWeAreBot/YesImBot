@@ -588,7 +588,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 委托给 segmentManager
         await this.segmentManager.recordMessage(segmentId, message);
     }
-    
+
     /**
      * 引导模型关注被跳过的话题
      * @param channelKey 频道标识符 (platform:channelId)
@@ -596,10 +596,10 @@ export class WorldStateService extends Service<HistoryConfig> {
     public async guideToSkippedTopic(channelKey: string): Promise<void> {
         const [platform, channelId] = channelKey.split(":", 2);
         if (!platform || !channelId) return;
-		
+
 		const bot = this.ctx.bots.find(b => b.platform === platform);
 		if (!bot) return;
-		
+
 		const session = {
 		    platform,
 		    channelId,
@@ -609,9 +609,9 @@ export class WorldStateService extends Service<HistoryConfig> {
 		} as any as Session;
 
         if (!session) return;
-        
+
         const worldState = await this.getWorldState(session);
-        
+
         // 添加提示引导模型关注被跳过的话题
         if (worldState.channel.history.pending) {
             worldState.channel.history.pending.dialogue.push({
@@ -715,13 +715,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             { id: "string(64)", sid: "string(64)", type: "string(64)", timestamp: "timestamp", payload: "json" },
             { primary: "id", foreign: { sid: [TableName.DialogueSegments, "id"] } }
         );
-        this.ctx.model.extend(TableName.Stickers, {
-            id: "string(64)",
-            category: "string(255)",
-            filePath: "string(255)",
-            source: "json",
-            createdAt: "timestamp",
-        }, { primary: "id" });
     }
 
     private async applyFoldingPolicy(platform: string, channelId: string): Promise<void> {

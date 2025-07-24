@@ -1,9 +1,10 @@
 import { Context, Schema, Session, h } from 'koishi';
-import { Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/services";
-import { StickerService } from './service';
+import { Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { pathToFileURL } from 'url';
+import { StickerService } from './service';
 export interface StickerConfig {
     storagePath: string;
+    classifiModel: ModelDescriptor;
     classificationPrompt: string;
 }
 
@@ -21,7 +22,10 @@ export default class StickerTools {
         storagePath: Schema.path({ allowCreate: true, filters: ['directory'] })
             .default('data/yesimbot/sticker')
             .description('表情包存储路径'),
+        classifiModel: Schema.dynamic("modelService.selectableModels")
+            .description("用于表情分类的多模态模型"),
         classificationPrompt: Schema.string()
+            .role("textarea", { rows: [2, 4] })
             .default('请将以下图片分类，已有分类: [{{categories}}]。选择最匹配的分类或创建新分类。只返回分类名称。建议按照可能的语境分类')
             .description('多模态分类提示词模板，可使用 {{categories}} 占位符动态插入分类列表'),
     });
