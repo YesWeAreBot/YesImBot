@@ -9,34 +9,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: dev
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Setup Node.js with Corepack
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'yarn'
+          cache: 'bun'  # 指定缓存 Bun
+          corepack: true  # 启用 Corepack
 
-      - name: Install dependencies
+      - name: Set Bun as package manager
         run: |
-          yarn install --frozen-lockfile
-          yarn add -D typescript@5.8.3
+          # 激活 Corepack 并安装 Bun
+          corepack enable
+          corepack prepare bun@1.2.0 --activate
+          
+          # 验证 Bun 版本
+          bun --version
+
+      - name: Install dependencies with Bun
+        run: bun install
 
       - name: Build all packages
-        run: yarn build
+        run: bun run build
 
       - name: Prepare build artifacts
         run: |
-          # 复制所有包的非源码文件
+          # 创建制品目录
           mkdir -p build-artifacts
-          find packages -mindepth 2 -maxdepth 2 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} build-artifacts \;
+          
+          # 复制所有包的非源码文件
+          find packages -mindepth 2 -maxdepth 2 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} build-artifacts/ \;
           
           # 复制根目录配置文件
           cp package.json turbo.json tsconfig*.json build-artifacts/
 
-          # 为每个包创建package.json链接
+          # 为每个包创建 package.json 链接
           mkdir -p build-artifacts/package-links
           find packages -name package.json -not -path "*/src/*" -exec sh -c 'ln -s "$(realpath --relative-to=build-artifacts/package-links $1)" "build-artifacts/package-links/$(basename $(dirname $1))-package.json"' sh {} \;
 
@@ -44,10 +54,9 @@ jobs:
         run: |
           cd build-artifacts
           tar -czf build-artifacts.tar.gz .
-          
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: build-artifacts/build-artifacts.tar.gz
-          
