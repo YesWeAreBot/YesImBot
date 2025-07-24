@@ -143,7 +143,7 @@ export default class SearchExtension {
                     timeout: this.config.httpTimeout,
                     responseType: 'text'
                 });
-                title = extractTitle(rawContent);
+                title = extractTitle(rawContent); 
                 links = include_links ? extractLinks(rawContent, url, max_links) : [];
                 this.ctx.logger.info(`通过HTTP获取网页成功`);
             }

@@ -1,7 +1,10 @@
-import { Context, h, Logger, Schema, Session } from 'koishi';
-import { createHash, subtle } from 'crypto';
-import { mkdir, readdir, rename, unlink, readFile } from 'fs/promises';
+import { Context, h, Logger, Session } from 'koishi';
+import { createHash } from 'crypto';
+import { mkdir, readdir, rename, unlink, readFile, rmdir, writeFile } from 'fs/promises';
+import { createWriteStream } from 'fs';
 import { pathToFileURL } from 'url';
+import { pipeline } from 'stream/promises';
+import { AbortController } from 'abort-controller';
 import path from 'path';
 import { StickerConfig } from './index';
 import { Services, TableName, TaskType } from 'koishi-plugin-yesimbot/services';
@@ -29,6 +32,7 @@ interface StickerRecord {
 export class StickerService {
     public logger: Logger;
     
+
     private static tablesRegistered = false;
     public isReady: boolean = false;
 
@@ -207,6 +211,152 @@ export class StickerService {
         }
     }
 
+    /**
+     * 从外部文件夹导入表情包
+     * @param sourceDir 源文件夹路径
+     * @param session 会话对象（用于日志记录）
+     * @returns 导入结果统计信息
+     */
+    public async importFromDirectory(sourceDir: string, session: Session): Promise<ImportStats> {
+        // 初始化统计数据
+        const stats: ImportStats = {
+            total: 0,
+            success: 0,
+            failed: 0,
+            skipped: 0,
+            failedFiles: []
+        };
+        
+        // 检查源目录是否存在
+        if (!(await this.dirExists(sourceDir))) {
+            throw new Error(`源目录不存在: ${sourceDir}`);
+        }
+        
+        // 创建进度消息
+        const progressMsg = await session.sendQueued('开始导入表情包，正在扫描目录...');
+        
+        try {
+            // 获取所有子目录（每个目录作为一个分类）
+            const subdirs = await this.getValidSubdirectories(sourceDir);
+            
+            for (const [index, subdir] of subdirs.entries()) {
+                // 更新进度
+                
+                const category = path.basename(subdir);
+                const files = await this.getImageFiles(subdir);
+                stats.total += files.length;
+                
+                // 导入当前分类下的所有图片
+                for (const file of files) {
+                    try {
+                        const filePath = path.join(subdir, file);
+                        const result = await this.importSingleSticker(filePath, category);
+                        
+                        if (result === 'success') {
+                            stats.success++;
+                        } else {
+                            stats.skipped++;
+                        }
+                    } catch (error) {
+                        stats.failed++;
+                        stats.failedFiles.push(file);
+                        this.logger.warn(`导入失败: ${file} - ${error.message}`);
+                    }
+                }
+            }
+        } finally {
+            // 移除进度消息
+            
+        }
+        
+        return stats;
+    }
+    
+    /** 获取有效的子目录列表 */
+    private async getValidSubdirectories(dir: string): Promise<string[]> {
+        const items = await readdir(dir, { withFileTypes: true });
+        return items
+            .filter(item => item.isDirectory())
+            .map(item => path.join(dir, item.name));
+    }
+    
+    /** 获取目录下的所有图片文件 */
+    private async getImageFiles(dir: string): Promise<string[]> {
+        const items = await readdir(dir, { withFileTypes: true });
+        return items
+            .filter(item => item.isFile() && this.isValidImageType(item.name))
+            .map(item => item.name);
+    }
+    
+    /** 校验文件类型 */
+    private isValidImageType(fileName: string): boolean {
+        const ext = path.extname(fileName).toLowerCase().slice(1);
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+    }
+    
+    /** 计算文件哈希值 */
+    private async calculateFileHash(filePath: string): Promise<string> {
+        const buffer = await readFile(filePath);
+        const hash = createHash('sha256');
+        hash.update(buffer);
+        return hash.digest('hex');
+    }
+    
+    
+    private async saveImageToLocal(
+        url: string,
+        content: ArrayBuffer,
+        contentType: string
+    ): Promise<{ localPath: string }> {
+        const id = createHash('sha256').update(url).digest('hex');
+        const extension = contentType.split('/')[1] || 'bin';
+        const fileName = `${id}.${extension}`;
+        const filePath = path.join(this.config.storagePath, fileName);
+        
+        await writeFile(filePath, Buffer.from(content));
+        return { localPath: filePath };
+    }
+
+    /**
+     * 规范化 emojihub-bili URL
+     * 处理特定格式的部分 URL
+     */
+    private normalizeEmojiHubUrl(rawUrl: string): string {
+        // 1. 完整的 URL 直接返回
+        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+            return rawUrl;
+        }
+        
+        // 2. 处理特定前缀问题 (如重复的 "https:")
+        if (rawUrl.startsWith('https:https://')) {
+            return rawUrl.replace('https:', '');
+        }
+        
+        // 3. 添加 B 站默认前缀
+        if (rawUrl.startsWith('bfs/') || rawUrl.startsWith('/bfs/')) {
+            return `https://i0.hdslb.com/${rawUrl.replace(/^\//, '')}`;
+        }
+        
+        // 4. 添加 Koishi Meme 默认前缀
+        if (rawUrl.startsWith('meme/') || rawUrl.startsWith('/meme/')) {
+            return `https://memes.none.bot/${rawUrl.replace(/^\//, '')}`;
+        }
+        
+        // 5. 其他情况视为相对路径
+        return `https://i0.hdslb.com/bfs/${rawUrl}`;
+    }
+
+    /** 检查目录是否存在 */
+    private async dirExists(dir: string): Promise<boolean> {
+        try {
+            await readdir(dir);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+    
+
     async getCategories(): Promise<string[]> {
 
         const records = await this.ctx.database.select(TableName.Stickers).execute();
@@ -229,15 +379,350 @@ export class StickerService {
         return h.image(fileUrl, { "sub-type": "1" });
     }
 
-    async cleanupUnreferenced() {
-        const dbFiles = new Set((await this.ctx.database.select(TableName.Stickers).execute()).map(r => path.basename(r.filePath)));
-        const fsFiles = await readdir(this.config.storagePath);
+    public async importEmojiHubTxt(filePath: string, category: string, session: Session): Promise<ImportStats> {
+        const stats: ImportStats = {
+            total: 0,
+            success: 0,
+            failed: 0,
+            skipped: 0,
+            failedUrls: []
+        };
 
-        for (const file of fsFiles) {
-            if (!dbFiles.has(file)) {
-                await unlink(path.join(this.config.storagePath, file));
-                this.logger.debug(`清理未引用表情: ${file}`);
+        // 读取 TXT 文件
+        let urls: string[];
+        try {
+            const content = await readFile(filePath, 'utf-8');
+            urls = content.split('\n')
+                .map(url => url.trim())
+                .filter(url => url.length > 0);
+        } catch (error) {
+            throw new Error(`无法读取文件: ${error.message}`);
+        }
+
+        stats.total = urls.length;
+        if (stats.total === 0) {
+            throw new Error('文件为空或没有有效的 URL');
+        }
+
+        // 创建进度消息
+        const progressMsg = await session.sendQueued(`开始导入表情包，共 ${stats.total} 个 URL...`);
+        
+        try {
+            // 准备临时下载目录
+            const tempDir = path.join(this.config.storagePath, 'temp');
+            await mkdir(tempDir, { recursive: true });
+            this.logger.debug(`创建临时目录: ${tempDir}`);
+
+            // 处理每个 URL
+            for (const [index, rawUrl] of urls.entries()) {
+                // 更新进度消息
+                if (index % 100 === 0 && progressMsg) {
+                    await session.sendQueued(`已处理 ${index}/${urls.length} 个 URL...`);
+                }
+                
+                try {
+                    // 规范化 URL
+                    const url = this.normalizeEmojiHubUrl(rawUrl);
+ 
+                    // 使用 fetch API 下载图片
+                    const response = await this.fetchWithTimeout(url, 15000);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+                    }
+                    
+                    // 获取内容类型
+                    const contentType = response.headers.get('content-type') || 'image/jpeg';
+                    
+                    // 获取文件扩展名
+                    const extension = this.getExtensionFromContentType(contentType) || 'bin';
+                    
+                    // 生成文件名 (使用URL哈希)
+                    const fileHash = createHash('sha256').update(url).digest('hex');
+                    const tempFilePath = path.join(this.config.storagePath, `${fileHash}.${extension}`);
+                    
+                    // 将图片数据写入文件
+                    const buffer = await response.arrayBuffer();
+                    await writeFile(tempFilePath, Buffer.from(buffer));
+                    this.logger.debug(`已下载图片: ${tempFilePath}`);
+                    
+                    // 使用 importSingleSticker 方法导入
+                    const result = await this.importSingleSticker(tempFilePath, category, session);
+                    
+                    if (result === 'success') {
+                        stats.success++;
+                    } else if (result === 'duplicate') {
+                        stats.skipped++;
+                        
+                        // 清理重复文件
+                        try {
+                            await unlink(tempFilePath);
+                        } catch (cleanupError) {
+                            this.logger.warn(`清理临时文件失败: ${tempFilePath}`, cleanupError);
+                        }
+                    }
+                } catch (error) {
+                    stats.failed++;
+                    stats.failedUrls.push({ url: rawUrl, error: error.message });
+                    this.logger.warn(`导入失败: ${rawUrl} - ${error.message}`);
+                }
             }
+        } finally {
+            // 移除进度消息
+            if (progressMsg) {
+                // await session.cancelQueued(progressMsg);
+            }
+            
+            
+            // await this.cleanupTempDir(tempDir);
+        }
+        
+        return stats;
+    }
+
+    /**
+     * 根据Content-Type获取文件扩展名
+     */
+    private getExtensionFromContentType(contentType: string): string | null {
+        const mimeMap: Record<string, string> = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/webp': 'webp',
+            'image/svg+xml': 'svg',
+            'image/bmp': 'bmp'
+        };
+
+        // 移除参数部分（如 charset）
+        const cleanType = contentType.split(';')[0].trim().toLowerCase();
+        return mimeMap[cleanType] || null;
+    }
+
+    /**
+     * 自定义 fetch 方法，带超时控制
+     */
+    private async fetchWithTimeout(url: string, timeout: number): Promise<Response> {
+        return new Promise((resolve, reject) => {
+            // 设置超时定时器
+            const timeoutId = setTimeout(() => {
+                reject(new Error('请求超时'));
+            }, timeout);
+            
+            // 发起 fetch 请求
+            fetch(url)
+                .then(response => {
+                    clearTimeout(timeoutId);
+                    resolve(response);
+                })
+                .catch(error => {
+                    clearTimeout(timeoutId);
+                    reject(error);
+                });
+        });
+    }
+    /**
+     * 清理临时目录
+     */
+    private async cleanupTempDir(tempDir: string) {
+        try {
+            const files = await readdir(tempDir);
+            for (const file of files) {
+                const filePath = path.join(tempDir, file);
+                await unlink(filePath);
+            }
+            await rmdir(tempDir);
+            this.logger.debug(`已清理临时目录: ${tempDir}`);
+        } catch (error) {
+            this.logger.warn(`清理临时目录失败: ${error.message}`);
         }
     }
+
+    /**
+     * 增强版 importSingleSticker 方法
+     */
+    private async importSingleSticker(
+        filePath: string,
+        category: string,
+        session?: Session
+    ): Promise<'success' | 'duplicate'> {
+        // 校验文件类型
+        if (!this.isValidImageFile(filePath)) {
+            throw new Error('不支持的文件类型');
+        }
+        
+        // 检查文件是否已存在
+        const fileHash = await this.calculateFileHash(filePath);
+        const existing = await this.ctx.database.get(TableName.Stickers, { id: fileHash });
+        if (existing.length > 0) {
+            return 'duplicate';
+        }
+        
+        // 获取文件扩展名
+        const extension = path.extname(filePath) || '.png';
+        
+        // 目标文件路径
+        const destPath = path.resolve(this.config.storagePath, `${fileHash}${extension}`);
+        
+        // 移动文件到表情包目录
+        await rename(filePath, destPath);
+        
+        // 创建数据库记录
+        const record: StickerRecord = {
+            id: fileHash,
+            category,
+            filePath: destPath,
+            source: {
+                platform: session?.platform || 'import',
+                channelId: session?.channelId || '',
+                userId: session?.userId || '',
+                messageId: session?.messageId || '',
+            },
+            createdAt: new Date(),
+        };
+        
+        await this.ctx.database.create(TableName.Stickers, record);
+        this.logger.info(`已导入表情: ${category}/${fileHash}${extension}`);
+        
+        return 'success';
+    }
+
+    /**
+     * 增强版文件类型验证
+     */
+    private isValidImageFile(filePath: string): boolean {
+        try {
+            const extension = path.extname(filePath).toLowerCase().slice(1);
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension);
+        } catch {
+            return false;
+        }
+    }
+
+    public async renameCategory(oldName: string, newName: string): Promise<number> {
+        const result = await this.ctx.database.set(
+            TableName.Stickers,
+            { category: oldName },
+            { category: newName }
+        );
+        const modified = result.matched;
+        this.logger.info(`已将分类 "${oldName}" 重命名为 "${newName}"，更新了 ${modified} 个表情包`);
+        return modified;
+    }
+
+    public async deleteCategory(category: string): Promise<number> {
+        // 获取该分类的所有表情包
+        const stickers = await this.ctx.database.get(TableName.Stickers, {
+            category: { $eq: category }
+        });
+        
+        // 删除数据库记录
+        const result = await this.ctx.database.remove(
+            TableName.Stickers,
+            { category }
+        );
+        
+        // 删除文件
+        for (const sticker of stickers) {
+            try {
+                await unlink(sticker.filePath);
+                this.logger.debug(`已删除表情包文件: ${sticker.filePath}`);
+            } catch (error) {
+                this.logger.warn(`删除文件失败: ${sticker.filePath}`, error);
+            }
+        }
+        
+        this.logger.info(`已删除分类 "${category}"，共移除 ${result.removed} 个表情包`);
+        return result.removed;
+    }
+
+    /**
+     * 合并两个分类
+     */
+    public async mergeCategories(sourceCategory: string, targetCategory: string): Promise<number> {
+        const result = await this.ctx.database.set(
+            TableName.Stickers,
+            { category: sourceCategory },
+            { category: targetCategory }
+        );
+        
+        this.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.modified} 个表情包`);
+        return result.modified;
+    }
+
+    /**
+     * 移动表情包到新分类
+     */
+    public async moveSticker(stickerId: string, newCategory: string): Promise<number> {
+        const result = await this.ctx.database.set(
+            TableName.Stickers,
+            { id: stickerId },
+            { category: newCategory }
+        );
+        
+        if (result.modified === 0) {
+            throw new Error('未找到该表情包');
+        }
+        
+        this.logger.info(`已将表情包 ${stickerId} 移动到分类 "${newCategory}"`);
+        return result.modified;
+    }
+
+    /**
+     * 获取分类中的表情包数量
+     */
+    public async getStickerCount(category: string): Promise<number> {
+        const result = await this.ctx.database.get(TableName.Stickers, {
+            category: { $eq: category }
+        });
+        
+        return result.length;
+    }
+
+    /**
+     * 获取指定表情包
+     */
+    public async getSticker(stickerId: string): Promise<StickerRecord | null> {
+        const result = await this.ctx.database.get(TableName.Stickers, { id: stickerId });
+        return result.length > 0 ? result[0] : null;
+    }
+
+    /**
+     * 清理未使用的表情包
+     */
+    public async cleanupUnreferenced(): Promise<number> {
+        const dbFiles = new Set((await this.ctx.database.select(TableName.Stickers).execute()).map(r => path.basename(r.filePath)));
+        const fsFiles = await readdir(this.config.storagePath);
+        
+        let deletedCount = 0;
+        for (const file of fsFiles) {
+            if (!dbFiles.has(file)) {
+                try {
+                    await unlink(path.join(this.config.storagePath, file));
+                    this.logger.debug(`清理未引用表情: ${file}`);
+                    deletedCount++;
+                } catch (error) {
+                    this.logger.warn(`清理失败: ${file}`, error);
+                }
+            }
+        }
+        
+        return deletedCount;
+    }
+
 }
+
+
+
+interface ImportStats {
+    total: number;       // 总尝试导入数
+    success: number;     // 成功导入数
+    failed: number;      // 导入失败数
+    skipped: number;     // 跳过数（重复表情包）
+    failedFiles?: string[]; // 失败的文件名列表
+    failedUrls?: {        // 失败的 URL 列表
+        url: string;
+        error: string;
+    }[];
+}
+

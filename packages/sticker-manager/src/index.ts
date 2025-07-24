@@ -1,7 +1,7 @@
 import { Context, Schema, Session, h } from 'koishi';
 import { Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { StickerService } from './service';
-
+import { pathToFileURL } from 'url';
 export interface StickerConfig {
     storagePath: string;
     classificationPrompt: string;
@@ -15,7 +15,7 @@ export interface StickerConfig {
     version: '1.0.0',
 })
 export default class StickerTools {
-    static readonly inject = ["database", "yesimbot.model", "yesimbot.image", "yesimbot.prompt"];
+    static readonly inject = ["database", "yesimbot.model", "yesimbot.image", "yesimbot.prompt", "http"];
 
     static readonly Config: Schema<StickerConfig> = Schema.object({
         storagePath: Schema.path({ allowCreate: true, filters: ['directory'] })
@@ -29,19 +29,19 @@ export default class StickerTools {
     private stickerService: StickerService;
 
     private static serviceInstance: StickerService | null = null;
-    
+
     constructor(public ctx: Context, public config: StickerConfig) {
         // 确保只创建一个服务实例
         if (!StickerTools.serviceInstance) {
             StickerTools.serviceInstance = new StickerService(ctx, config);
         }
-        
+
         this.stickerService = StickerTools.serviceInstance;
-        
+
         ctx.on("ready", async () => {
             // 等待服务完全启动
             await this.stickerService.whenReady();
-            
+
             try {
                 // 确保只初始化一次
                 if (!this.initialized) {
@@ -54,10 +54,201 @@ export default class StickerTools {
                 this.stickerService.logger.error(error);
             }
         });
+
+        ctx.command('sticker.import.emojihub <category> <filePath>', '导入 emojihub-bili 格式的 TXT 文件',  { authority: 3 })
+            .option('prefix', '-p [prefix:string] 自定义 URL 前缀')
+            .action(async ({ session, options }, category, filePath) => {
+                if (!category) return '请指定分类名称';
+                if (!filePath) return '请指定 TXT 文件路径';
+
+                try {
+                    const stats = await this.stickerService.importEmojiHubTxt(filePath, category, session);
+
+                    // 准备结果消息
+                    let message = `导入完成!\n`;
+                    message += `📁 分类: ${category}\n`;
+                    message += `📝 文件: ${filePath}\n`;
+                    message += `✅ 总数: ${stats.total}\n`;
+                    message += `✅ 成功导入: ${stats.success}\n`;
+                    message += `❌ 失败: ${stats.failed}\n`;
+
+                    // 添加失败 URL 列表
+                    if (stats.failedUrls.length > 0) {
+                        message += `\n失败 URL 列表:\n`;
+                        stats.failedUrls.slice(0, 5).forEach((item, index) => {
+                            message += `${index + 1}. ${item.url} (${item.error})\n`;
+                        });
+                        if (stats.failedUrls.length > 5) {
+                            message += `...等 ${stats.failedUrls.length} 个失败项`;
+                        }
+                    }
+
+                    await session.sendQueued("正在重新注册工具...");
+                    await this.registerToolDescriptions();
+
+                    return message;
+                } catch (error) {
+                    return `导入失败: ${error.message}`;
+                }
+            });
+
+        ctx.command('sticker.import <sourceDir>', '从外部文件夹导入表情包。该文件夹须包含若干子文件夹作为分类，子文件夹下是表情包的图片文件。',  { authority: 3 })
+            .option('force', '-f  强制覆盖已存在的表情包')
+            .action(async ({ session, options }, sourceDir) => {
+                if (!sourceDir) return '请指定源文件夹路径';
+
+                try {
+                    const stats = await this.stickerService.importFromDirectory(sourceDir, session);
+
+                    // 准备结果消息
+                    let message = `导入完成!\n`;
+                    message += `✅ 总数: ${stats.total}\n`;
+                    message += `✅ 成功导入: ${stats.success}\n`;
+                    message += `⚠️ 跳过重复: ${stats.skipped}\n`;
+                    message += `❌ 失败: ${stats.failed}\n`;
+
+                    // 添加失败文件列表
+                    if (stats.failedFiles.length > 0) {
+                        message += `\n失败文件列表:\n${stats.failedFiles.slice(0, 10).join('\n')}`;
+                        if (stats.failedFiles.length > 10) {
+                            message += `\n...等 ${stats.failedFiles.length} 个文件`;
+                        }
+                    }
+
+                    await session.sendQueued("正在重新注册工具...");
+                    await this.registerToolDescriptions();
+
+                    return message;
+                } catch (error) {
+                    return `导入失败: ${error.message}`;
+                }
+            });
+        ctx.command('sticker.list', '列出表情包分类',  { authority: 3 })
+            .alias('表情分类')
+            .action(async ({ session }) => {
+                const categories = await this.stickerService.getCategories();
+                if (categories.length === 0) {
+                    return '暂无表情包分类';
+                }
+
+                return `📁 表情包分类列表:\n${categories.map(c => `- ${c}`).join('\n')}`;
+            });
+
+        ctx.command('sticker.rename <oldName> <newName>', '重命名表情包分类',  { authority: 3 })
+            .alias('表情重命名')
+            .action(async ({ session }, oldName, newName) => {
+                if (!oldName || !newName) return '请提供原分类名和新分类名';
+                if (oldName === newName) return '新分类名不能与原分类名相同';
+
+                try {
+                    const count = await this.stickerService.renameCategory(oldName, newName);
+                    await session.sendQueued("正在重新注册工具...");
+                    await this.registerToolDescriptions();
+                    return `✅ 已将分类 "${oldName}" 重命名为 "${newName}"，共更新 ${count} 个表情包`;
+                } catch (error) {
+                    return `❌ 重命名失败: ${error.message}`;
+                }
+            });
+
+        ctx.command('sticker.delete <category>', '删除表情包分类',  { authority: 3 })
+            .alias('删除分类')
+            .option('force', '-f 强制删除，不确认')
+            .action(async ({ session, options }, category) => {
+                if (!category) return '请提供要删除的分类名';
+
+                // 获取分类中的表情包数量
+                const count = await this.stickerService.getStickerCount(category);
+                if (count === 0) {
+                    return `分类 "${category}" 中没有任何表情包`;
+                }
+
+                // 非强制模式需要确认
+                if (!options.force) {
+                    const messageId = await session.sendQueued(
+                        `⚠️ 确定要删除分类 "${category}" 吗？该分类下有 ${count} 个表情包！\n` +
+                        `回复 "确认删除" 来确认操作，或回复 "取消" 取消操作。`
+                    );
+
+                    const response = await session.prompt(60000); // 60秒等待
+                    if (response !== '确认删除') {
+                        return '操作已取消';
+                    }
+                }
+
+                try {
+                    const deletedCount = await this.stickerService.deleteCategory(category);
+                    await session.sendQueued("正在重新注册工具...");
+                    await this.registerToolDescriptions();
+                    return `✅ 已删除分类 "${category}"，共移除 ${deletedCount} 个表情包`;
+                } catch (error) {
+                    return `❌ 删除失败: ${error.message}`;
+                }
+            });
+
+        ctx.command('sticker.merge <sourceCategory> <targetCategory>', '合并两个表情包分类',  { authority: 3 })
+            .alias('合并分类')
+            .action(async ({ session }, sourceCategory, targetCategory) => {
+                if (!sourceCategory || !targetCategory) return '请提供源分类和目标分类';
+                if (sourceCategory === targetCategory) return '源分类和目标分类不能相同';
+
+                try {
+                    const movedCount = await this.stickerService.mergeCategories(sourceCategory, targetCategory);
+                    await session.sendQueued("正在重新注册工具...");
+                    await this.registerToolDescriptions();
+                    return `✅ 已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，共移动 ${movedCount} 个表情包`;
+                } catch (error) {
+                    return `❌ 合并失败: ${error.message}`;
+                }
+            });
+
+        ctx.command('sticker.move <stickerId> <newCategory>', '移动表情包到新分类', { authority: 3 })
+            .alias('移动表情')
+            .action(async ({ session }, stickerId, newCategory) => {
+                if (!stickerId || !newCategory) return '请提供表情包ID和目标分类';
+
+                try {
+                    await this.stickerService.moveSticker(stickerId, newCategory);
+                    return `✅ 已将表情包 ${stickerId} 移动到分类 "${newCategory}"`;
+                } catch (error) {
+                    return `❌ 移动失败: ${error.message}`;
+                }
+            });
+
+        ctx.command('sticker.get <stickerId>', '获取指定表情包',  { authority: 3 })
+            .alias('取表情')
+            .action(async ({ session }, stickerId) => {
+                if (!stickerId) return '请提供表情包ID';
+
+                try {
+                    const sticker = await this.stickerService.getSticker(stickerId);
+                    if (!sticker) {
+                        return '未找到该表情包';
+                    }
+
+                    const fileUrl = pathToFileURL(sticker.filePath).href;
+                    await session.sendQueued(h.image(fileUrl));
+                    return `🆔 ID: ${sticker.id}\n📁 分类: ${sticker.category}\n📅 创建时间: ${sticker.createdAt.toLocaleDateString()}`;
+                } catch (error) {
+                    return `❌ 获取失败: ${error.message}`;
+                }
+            });
+
+        ctx.command('sticker.cleanup', '清理未使用的表情包')
+            .alias('清理表情')
+            .action(async ({ session }) => {
+                try {
+                    const deletedCount = await this.stickerService.cleanupUnreferenced();
+                    session.sendQueued("正在重新注册工具...");
+                    await this.registerToolDescriptions();
+                    return `✅ 已清理 ${deletedCount} 个未使用的表情包`;
+                } catch (error) {
+                    return `❌ 清理失败: ${error.message}`;
+                }
+            });
     }
-    
+
     private initialized = false;
-    
+
     // 添加服务就绪等待方法
     private async whenReady() {
         return new Promise<void>((resolve) => {
@@ -75,7 +266,7 @@ export default class StickerTools {
     private async registerToolDescriptions() {
         const categories = await this.stickerService.getCategories();
         const categoryList = categories.join(', ');
-        
+
         // 更新发送表情包工具的描述
         this.ctx['yesimbot.tool'].registerTool({
             name: 'send_random_sticker',
@@ -98,11 +289,15 @@ export default class StickerTools {
     async stealSticker({ image_id, session }: Infer<{ image_id: string }> & { session: Session }) {
         try {
             const imageService = this.ctx['yesimbot.image'];
-            
+
             const imageData = await imageService.getImageDataWithContent(image_id);
             if (!imageData) return Failed('图片未找到');
-            
+
             const record = await this.stickerService.stealSticker(imageData.data, session);
+
+            await this.registerToolDescriptions();
+
+
             return Success({
                 id: record.id,
                 category: record.category,
@@ -124,9 +319,9 @@ export default class StickerTools {
     async sendRandomSticker({ session, category }: Infer<{ category: string }>) {
         try {
             const sticker = await this.stickerService.getRandomSticker(category);
-            
+
             if (!sticker) return Failed(`分类 "${category}" 中没有表情包`);
-            
+
             await session.sendQueued(sticker);
 
             return Success({
