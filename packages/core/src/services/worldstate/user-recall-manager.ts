@@ -5,7 +5,6 @@
 import { Context, h, Logger } from "koishi";
 import { Fact, Insight, MemoryService, UserProfile } from "../memory";
 import { Services, TableName } from "../types";
-import { CacheKeyPrefix, CacheManager } from "./cache-manager";
 import { HistoryConfig } from "./config";
 import { ContextualMessage } from "./interfaces";
 import { extractMentionedUsers } from "./utils";
@@ -29,12 +28,7 @@ const RECALL_WEIGHTS = {
 export class UserRecallManager {
     private memoryService: MemoryService;
 
-    constructor(
-        private ctx: Context,
-        private config: HistoryConfig,
-        private logger: Logger,
-        private cacheManager: CacheManager
-    ) {
+    constructor(private ctx: Context, private config: HistoryConfig, private logger: Logger) {
         this.memoryService = ctx[Services.Memory];
     }
 
@@ -42,11 +36,6 @@ export class UserRecallManager {
         if (!messages || messages.length === 0) return [];
 
         const messageHash = this._generateMessageHash(messages) + ":private:" + currentUserId;
-        const cachedResult = this.cacheManager.get<string[]>(CacheKeyPrefix.RECALL_RESULTS, messageHash);
-        if (cachedResult) {
-            this.logger.debug(`使用缓存的私聊召回结果，消息数: ${messages.length}, 用户: ${currentUserId}`);
-            return cachedResult;
-        }
 
         const maxRelevantUsers = this.config.recall.private;
         const minRelevanceScore = 0.15;
@@ -88,7 +77,6 @@ export class UserRecallManager {
 
         /* prettier-ignore */
         this.logger.debug(`私聊智能筛选用户: 当前用户 ${currentUserId}，直接参与者 ${directParticipantUserIds.size} 个，最终选择 ${sortedUserIds.length} 个相关用户`);
-        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, sortedUserIds);
         return sortedUserIds;
     }
 
@@ -96,11 +84,6 @@ export class UserRecallManager {
         if (!messages || messages.length === 0) return [];
 
         const messageHash = this._generateMessageHash(messages);
-        const cachedResult = this.cacheManager.get<string[]>(CacheKeyPrefix.RECALL_RESULTS, messageHash);
-        if (cachedResult) {
-            this.logger.debug(`使用缓存的召回结果，消息数: ${messages.length}`);
-            return cachedResult;
-        }
 
         const maxRelevantUsers = this.config.recall.guild;
         const minRelevanceScore = 0.3;
@@ -184,7 +167,6 @@ export class UserRecallManager {
 
         /* prettier-ignore */
         this.logger.debug(`智能筛选用户: 候选 ${relevanceMap.size} 个，最终选择 ${finalUserIds.length} 个`);
-        this.cacheManager.set(CacheKeyPrefix.RECALL_RESULTS, messageHash, finalUserIds);
         return finalUserIds;
     }
 
@@ -223,15 +205,7 @@ export class UserRecallManager {
         const missingUserIds = new Set<string>();
 
         for (const userId of userIds) {
-            const cachedProfile = this.cacheManager.get<UserProfile>(
-                CacheKeyPrefix.USER_PROFILES,
-                `${contextId}:${userId}`
-            );
-            if (cachedProfile) {
-                profiles.push(cachedProfile);
-            } else {
-                missingUserIds.add(userId);
-            }
+            missingUserIds.add(userId);
         }
 
         if (missingUserIds.size > 0) {
@@ -241,7 +215,6 @@ export class UserRecallManager {
                 isDeleted: false,
             });
             for (const profile of missingProfiles) {
-                this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, `${profile.contextId}:${profile.userId}`, profile);
                 profiles.push(profile);
                 missingUserIds.delete(profile.userId);
             }
@@ -253,7 +226,6 @@ export class UserRecallManager {
             });
 
             for (const profile of globalProfiles) {
-                this.cacheManager.set(CacheKeyPrefix.USER_PROFILES, `${profile.contextId}:${profile.userId}`, profile);
                 profiles.push(profile);
                 missingUserIds.delete(profile.userId);
             }

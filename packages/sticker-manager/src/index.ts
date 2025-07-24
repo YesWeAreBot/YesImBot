@@ -1,5 +1,5 @@
 import { Context, Schema, Session, h } from 'koishi';
-import { Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { AssetService, Extension, Failed, Infer, ModelDescriptor, Services, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { pathToFileURL } from 'url';
 import { StickerService } from './service';
 export interface StickerConfig {
@@ -16,7 +16,7 @@ export interface StickerConfig {
     version: '1.0.0',
 })
 export default class StickerTools {
-    static readonly inject = ["database", "yesimbot.model", "yesimbot.image", "yesimbot.prompt"];
+    static readonly inject = ["database", Services.Asset, Services.Model, Services.Prompt, Services.Tool];
 
     static readonly Config: Schema<StickerConfig> = Schema.object({
         storagePath: Schema.path({ allowCreate: true, filters: ['directory'] })
@@ -30,6 +30,7 @@ export default class StickerTools {
             .description('多模态分类提示词模板，可使用 {{categories}} 占位符动态插入分类列表'),
     });
 
+    private assetService: AssetService;
     private stickerService: StickerService;
 
     private static serviceInstance: StickerService | null = null;
@@ -40,6 +41,7 @@ export default class StickerTools {
             StickerTools.serviceInstance = new StickerService(ctx, config);
         }
 
+        this.assetService = ctx[Services.Asset];
         this.stickerService = StickerTools.serviceInstance;
 
         ctx.on("ready", async () => {
@@ -127,7 +129,7 @@ export default class StickerTools {
                     return `导入失败: ${error.message}`;
                 }
             });
-            
+
         ctx.command('sticker.list', '列出表情包分类',  { authority: 3 })
             .alias('表情分类')
             .action(async ({ session }) => {
@@ -222,11 +224,11 @@ export default class StickerTools {
         ctx.command('sticker.get <category> [index]', '获取指定分类的表情包')
 		  .action(async ({ session }, category, index) => {
 		    if (!category) return '请提供分类名称';
-		
+
 		    // 获取分类下所有表情包
 		    const stickers = await this.stickerService.getStickersByCategory(category);
 		    if (!stickers.length) return `分类 "${category}" 中没有表情包`;
-		
+
 		    // 处理索引或随机选择
 		    let targetSticker;
 		    if (index) {
@@ -235,25 +237,25 @@ export default class StickerTools {
 		    } else {
 		      targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
 		    }
-		
+
 		    // 发送表情包
 		    const fileUrl = pathToFileURL(targetSticker.filePath).href;
 		    await session.sendQueued(h.image(fileUrl));
 		    return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
 		  });
-		
+
 		ctx.command('sticker.info <category>', '查看分类详情', { authority: 3 })
 		  .action(async ({ session }, category) => {
 		    const stickers = await this.stickerService.getStickersByCategory(category);
 		    if (!stickers.length) return `分类 "${category}" 中没有表情包`;
-		
+
 		    return `📁 分类: ${category}
 📊 数量: ${stickers.length}
 🕒 最新: ${stickers[0].createdAt.toLocaleDateString()}
 👆 使用: sticker.get ${category} [1-${stickers.length}]`;
 		  });
 
-		
+
         ctx.command('sticker.cleanup', '清理未使用的表情包')
             .alias('清理表情')
             .action(async ({ session }) => {
@@ -309,9 +311,8 @@ export default class StickerTools {
     })
     async stealSticker({ image_id, session }: Infer<{ image_id: string }> & { session: Session }) {
         try {
-            const imageService = this.ctx['yesimbot.image'];
 
-            const imageData = await imageService.getImageDataWithContent(image_id);
+            const imageData = await this.assetService.getImageDataWithContent(image_id);
             if (!imageData) return Failed('图片未找到');
 
             const record = await this.stickerService.stealSticker(imageData.data, session);

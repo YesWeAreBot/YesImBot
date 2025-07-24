@@ -3,7 +3,7 @@ import { AgentCore } from "./agent";
 import { ConfiguratorService } from "./commands/configurator";
 import { Config } from "./config";
 import {
-    ImageService,
+    AssetService,
     LoggerService,
     MemoryService,
     ModelService,
@@ -37,8 +37,15 @@ export default class YesImBot extends Service<Config> {
             // 注册日志服务
             const loggerService = ctx.plugin(LoggerService, config.system.logging);
 
-            // 注册图片服务
-            const imageService = ctx.plugin(ImageService, config.imageService);
+            // 注册资源中心服务
+            const assetService = ctx.plugin(AssetService, config.assetService);
+
+            // 注册资源消息转换器
+            ctx.plugin(function (ctx) {
+                const { MessageTransformer } = require("./services/assets");
+                const transformer = new MessageTransformer(ctx);
+                transformer.register();
+            });
 
             // 注册提示词管理器
             const promptService = ctx.plugin(PromptService, {});
@@ -72,7 +79,7 @@ export default class YesImBot extends Service<Config> {
 
             const services = [
                 loggerService,
-                imageService,
+                assetService,
                 promptService,
                 toolService,
                 modelService,

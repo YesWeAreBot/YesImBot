@@ -2,15 +2,9 @@ import { ChannelDescriptor } from "@/agent";
 import { Bot, Context, Logger } from "koishi";
 import { UserProfile } from "../memory";
 import { Services, TableName } from "../types";
-import { CacheKeyPrefix, CacheManager } from "./cache-manager";
 import { HistoryConfig } from "./config";
 import { HistoryBuilder } from "./history-builder";
-import {
-    ContextualMessage,
-    GuildMember,
-    History,
-    WorldState
-} from "./interfaces";
+import { ContextualMessage, GuildMember, History, WorldState } from "./interfaces";
 import { UserRecallManager } from "./user-recall-manager";
 
 // =================================================================================
@@ -19,7 +13,6 @@ import { UserRecallManager } from "./user-recall-manager";
 
 export class ContextBuilder {
     private logger: Logger;
-    private cacheManager: CacheManager;
     private historyBuilder: HistoryBuilder;
     private dataProvider: ContextDataProvider;
     private recallManager: UserRecallManager;
@@ -28,10 +21,9 @@ export class ContextBuilder {
         this.logger = ctx[Services.Logger].getLogger("[上下文构建]");
 
         // 初始化辅助工具
-        this.cacheManager = new CacheManager();
         this.historyBuilder = new HistoryBuilder(ctx, config);
-        this.dataProvider = new ContextDataProvider(ctx, this.cacheManager, this.logger);
-        this.recallManager = new UserRecallManager(ctx, config, this.logger, this.cacheManager);
+        this.dataProvider = new ContextDataProvider(ctx, this.logger);
+        this.recallManager = new UserRecallManager(ctx, config, this.logger);
     }
 
     /**
@@ -137,17 +129,12 @@ export class ContextBuilder {
 // =================================================================================
 
 class ContextDataProvider {
-    constructor(private ctx: Context, private cacheManager: CacheManager, private logger: Logger) {}
+    constructor(private ctx: Context, private logger: Logger) {}
 
     public async getUserInfo(bot: Bot, userId: string, platform: string): Promise<any> {
-        const cacheKey = `${platform}:${userId}`;
-        const cachedUser = this.cacheManager.get<any>(CacheKeyPrefix.USER_INFO, cacheKey);
-        if (cachedUser) return cachedUser;
-
         try {
             const user = await bot.getUser(userId);
             if (user) {
-                this.cacheManager.set(CacheKeyPrefix.USER_INFO, cacheKey, user);
                 return user;
             }
         } catch (error) {
@@ -157,14 +144,9 @@ class ContextDataProvider {
     }
 
     public async getChannelInfo(bot: Bot, channelId: string, platform: string): Promise<any> {
-        const cacheKey = `${platform}:${channelId}`;
-        const cachedChannel = this.cacheManager.get<any>(CacheKeyPrefix.CHANNEL_INFO, cacheKey);
-        if (cachedChannel) return cachedChannel;
-
         try {
             const channelInfo = await bot.getChannel(channelId);
             if (channelInfo) {
-                this.cacheManager.set(CacheKeyPrefix.CHANNEL_INFO, cacheKey, channelInfo);
                 return channelInfo;
             }
         } catch (error) {
@@ -201,24 +183,11 @@ class ContextDataProvider {
     private async getMemberList(platform: string, guildId: string, memberIds: string[]): Promise<GuildMember[]> {
         if (memberIds.length === 0) return [];
 
-        const cacheKey = `${platform}:${guildId}`;
-        let cachedMembers = this.cacheManager.get<Map<string, GuildMember>>(CacheKeyPrefix.MEMBER_LIST, cacheKey);
-        if (!cachedMembers) {
-            const allMembers = await this.ctx.database.get(TableName.Members, { platform, guildId });
-            cachedMembers = new Map(allMembers.map((member) => [member.pid, member as GuildMember]));
-            this.cacheManager.set(CacheKeyPrefix.MEMBER_LIST, cacheKey, cachedMembers);
-        }
-
         const result: GuildMember[] = [];
         const missingMemberIds: string[] = [];
 
         for (const memberId of memberIds) {
-            const member = cachedMembers.get(memberId);
-            if (member) {
-                result.push(member);
-            } else {
-                missingMemberIds.push(memberId);
-            }
+            missingMemberIds.push(memberId);
         }
 
         if (missingMemberIds.length > 0) {
@@ -229,10 +198,8 @@ class ContextDataProvider {
             });
             for (const member of missingMembers) {
                 const guildMember = member as GuildMember;
-                cachedMembers.set(member.pid, guildMember);
                 result.push(guildMember);
             }
-            this.cacheManager.set(CacheKeyPrefix.MEMBER_LIST, cacheKey, cachedMembers);
         }
         return result;
     }

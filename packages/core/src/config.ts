@@ -1,8 +1,8 @@
 import { Schema } from "koishi";
 import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
 import { LoggingConfig, LoggingConfigSchema } from "./services";
+import { AssetServiceConfig, AssetServiceConfig as AssetServiceConfigSchema } from "./services/assets";
 import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extension";
-import { ImageServiceConfig, ImageServiceConfigSchema } from "./services/image";
 import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
 import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
@@ -59,8 +59,8 @@ export interface Config {
         history: HistoryConfig;
         tools: ToolServiceConfig;
     };
-    /** 图片服务配置 */ // 新增
-    imageService: ImageServiceConfig; // 新增
+    /** 资源服务配置 */
+    assetService: AssetServiceConfig;
     /** 系统缓存、调试等底层设置 */
     system: SystemConfig;
 }
@@ -73,6 +73,6 @@ export const Config: Schema<Config> = Schema.object({
         history: HistoryConfigSchema.description("历史记录管理"),
         tools: ToolServiceConfigSchema.description("工具能力配置"),
     }),
-    imageService: ImageServiceConfigSchema.description("图片服务配置"),
+    assetService: AssetServiceConfigSchema.description("资源服务配置"),
     system: SystemConfigSchema,
 });

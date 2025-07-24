@@ -31,7 +31,7 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
     builtin: true,
 })
 export default class CoreUtilExtension {
-    static readonly inject = [Services.Logger, Services.Image];
+    static readonly inject = [Services.Logger, Services.Asset];
     static readonly Config = CoreUtilConfigSchema;
 
     private readonly logger: Logger;
@@ -185,7 +185,7 @@ export default class CoreUtilExtension {
             const elements = await h.transformAsync(msg, async (element) => {
                 if (element.type === "image") {
                     if (!element.attrs.id) return null;
-                    const imageData = await this.ctx[Services.Image].getImageDataWithContent(element.attrs.id);
+                    const imageData = await this.ctx[Services.Asset].getImageDataWithContent(element.attrs.id);
                     if (!imageData) return null;
 
                     return h.image(imageData.content);

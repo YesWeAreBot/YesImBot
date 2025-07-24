@@ -27,4 +27,3 @@ export class StorageDriverFactory {
 }
 
 export { LocalStorageDriver };
-export * from '../types';

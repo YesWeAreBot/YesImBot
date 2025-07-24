@@ -11,6 +11,7 @@ import { handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { WillingnessManager } from "./willing";
+import { AssetService } from "@/services/assets";
 
 declare module "koishi" {
     interface Events {
@@ -40,24 +41,22 @@ interface ImageCandidate {
 
 export class AgentCore extends Service<AgentBehaviorConfig> {
     static readonly inject = [
-        Services.WorldState,
-        Services.Model,
-        Services.Tool,
+        Services.Asset,
         Services.Memory,
-        Services.Image,
-        Services.Logger,
+        Services.Model,
         Services.Prompt,
+        Services.Tool,
+        Services.WorldState,
     ];
 
     // 依赖的服务
-    private readonly worldState: WorldStateService;
+    private readonly assetService: AssetService;
     private readonly modelService: ModelService;
-    private readonly toolService: ToolService;
     private readonly promptService: PromptService;
+    private readonly toolService: ToolService;
+    private readonly worldState: WorldStateService;
 
     // 内部组件
-    private readonly _logger: Logger;
-
     private readonly parser: JsonParser<AgentResponse>;
     private readonly modelSwitcher: ModelSwitcher<IChatModel>;
     private readonly willing: WillingnessManager;
@@ -66,12 +65,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly allowedChannels = new Set<string>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debouncedReplyTasks: Map<string, WithDispose<(sid: string) => void>> = new Map();
-    private listener: () => boolean;
 
     private runningTasks: Set<string> = new Set();
 
     private imageLifecycleTracker = new Map<string, number>();
-    
+
     // 新消息处理策略相关状态
     private skippedSegments = new Map<string, string>();
     private deferredTimers = new Map<string, NodeJS.Timeout>();
@@ -80,12 +78,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         super(ctx, "agent", true);
         this.ctx = ctx;
         this.config = config;
-        this._logger = ctx[Services.Logger].getLogger("[智能体核心]");
+        this.logger = ctx.logger("[智能体核心]");
 
-        this.worldState = this.ctx[Services.WorldState];
+        this.assetService = this.ctx[Services.Asset];
         this.modelService = this.ctx[Services.Model];
-        this.toolService = this.ctx[Services.Tool];
         this.promptService = this.ctx[Services.Prompt];
+        this.toolService = this.ctx[Services.Tool];
+        this.worldState = this.ctx[Services.WorldState];
 
         // 实例化内部组件
         this.parser = new JsonParser<AgentResponse>();
@@ -93,8 +92,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.willing = new WillingnessManager(this.ctx, this.config.willingness);
 
         if (!this.modelSwitcher) {
-            this._logger.error("❌❌ 未配置模型组，智能体核心无法启动。");
-            handleError(this._logger, new Error("未配置模型组"), "智能体核心启动失败");
+            this.logger.error("❌❌ 未配置模型组，智能体核心无法启动。");
+            handleError(this.logger, new Error("未配置模型组"), "智能体核心启动失败");
         }
     }
 
@@ -103,7 +102,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.updateAllowedChannels();
         this.ctx.on("config", () => this.updateAllowedChannels());
 
-        this.listener = this.ctx.on("worldstate:segment-updated", async (session, sid) => {
+        this.ctx.on("worldstate:segment-updated", async (session, sid) => {
             const channelKey = session.cid;
 
             // --- 第1步: 意愿计算与决策 (无论如何都执行) ---
@@ -119,26 +118,26 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 const currentWillingnessAfter = this.willing.getCurrentWillingness(channelKey);
 
                 /* prettier-ignore */
-                this._logger.debug(`[${channelKey}] 意愿计算: ${currentWillingnessBefore.toFixed(2)} -> ${currentWillingnessAfter.toFixed(2)} | 回复概率: ${(probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
+                this.logger.debug(`[${channelKey}] 意愿计算: ${currentWillingnessBefore.toFixed(2)} -> ${currentWillingnessAfter.toFixed(2)} | 回复概率: ${(probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
             } catch (error) {
                 // 意愿计算阶段的错误也需要捕获
-                handleError(this._logger, error, `意愿计算失败 (Channel: ${channelKey})`);
+                handleError(this.logger, error, `意愿计算失败 (Channel: ${channelKey})`);
                 return; // 计算失败，直接退出
             }
 
             // --- 第2步: 检查决策并触发防抖任务 ---
             if (!decision) {
                 // 如果决策为不回复，则流程到此结束。
-                //this._logger.debug(`[${channelKey}] 决策为不回复，任务终止。`);
+                //this.logger.debug(`[${channelKey}] 决策为不回复，任务终止。`);
                 return;
             }
 
             if (this.runningTasks.has(channelKey)) {
-                this._logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行将根据策略处理。`);
+                this.logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行将根据策略处理。`);
                 this.handleBusyChannel(session, sid, channelKey);
                 return;
             }
-            
+
             // 从 Map 中获取或创建当前频道的防抖函数
             let debouncedTask = this.debouncedReplyTasks.get(channelKey);
 
@@ -151,7 +150,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     try {
                         // --- 加锁 ---
                         this.runningTasks.add(channelKey);
-                        this._logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务。`);
+                        this.logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务。`);
 
                         // 执行行动前钩子
                         this.willing.handlePreReply(channelKey);
@@ -165,19 +164,19 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                             this.willing.handlePostReply(channelKey);
                             const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
                             /* prettier-ignore */
-                            this._logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+                            this.logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                         }
-                        // this._logger.debug(`[${channelKey}] 回复任务执行完毕。`);
+                        // this.logger.debug(`[${channelKey}] 回复任务执行完毕。`);
                     } catch (error) {
                         // 捕获 runAgentCycle 或钩子函数中的任何错误
                         /* prettier-ignore */
-                        handleError(this._logger, error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${sid})`);
+                        handleError(this.logger, error, `执行回复任务时发生错误 (Channel: ${channelKey}, Segment ID: ${sid})`);
                     } finally {
                         // --- 解锁 ---
                         // 无论成功还是失败，都必须在 finally 块中释放锁
                         this.runningTasks.delete(channelKey);
-                        this._logger.debug(`[${channelKey}] 频道锁已释放。`);
-                        
+                        this.logger.debug(`[${channelKey}] 频道锁已释放。`);
+
                         // 策略2：立即处理被跳过的消息（如果有）
                         this.handleSkippedMessagesAfterReply(channelKey);
                     }
@@ -190,28 +189,28 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             // 触发防抖流程
             // 每次调用都会重置计时器。只有当 DEBOUNCE_DELAY 毫秒内没有新的调用时，上面的回调才会执行。
             /* prettier-ignore */
-            this._logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）。`);
+            this.logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）。`);
             debouncedTask(sid);
         });
 
         this.willing.startDecayCycle();
 
-        this._logger.info("服务已启动");
+        this.logger.info("服务已启动");
     }
 
     protected stop(): void {
         this.debouncedReplyTasks.forEach((d) => d.dispose());
         clearInterval(this.willingnessDecayTimer);
         this.willing.stopDecayCycle();
-        
+
         // 清理延迟处理定时器
-        this.deferredTimers.forEach(timer => clearTimeout(timer));
+        this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.deferredTimers.clear();
-        
+
         // 清理跳过消息记录
         this.skippedSegments.clear();
-        
-        this._logger.info("服务已停止");
+
+        this.logger.info("服务已停止");
     }
 
     private updateAllowedChannels(): void {
@@ -221,11 +220,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 this.allowedChannels.add(`${platform}:${id}`);
             });
         });
-        // this._logger.debug(`⚙⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
+        // this.logger.debug(`⚙⚙️ 监听频道已更新 | 总数: ${this.allowedChannels.size}`);
     }
 
     private _registerPromptTemplates(): void {
-        // this._logger.info("正在注册提示词模板");
+        // this.logger.info("正在注册提示词模板");
 
         // 注册所有可重用的局部模板 (Partials)
         // 使用 Mustache 的 {{> partialName }} 语法来引用它们
@@ -247,7 +246,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 所以更适合作为 render 方法的 initialScope 传入，而不是注册为全局 Snippet。
         // 这使得每次渲染的上下文都是隔离和最新的。
 
-        // this._logger.info("✅ 提示词模板注册完成。");
+        // this.logger.info("✅ 提示词模板注册完成。");
     }
 
     /**
@@ -255,101 +254,98 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
      */
     private handleBusyChannel(session: Session, sid: string, channelKey: string) {
         const strategy = this.config.newMessageStrategy;
-        this._logger.debug(`[${channelKey}] 频道正忙，采用策略: ${strategy}`);
+        this.logger.debug(`[${channelKey}] 频道正忙，采用策略: ${strategy}`);
 
         switch (strategy) {
             case "immediate":
                 // 策略2：记录被跳过的消息，待当前任务完成后立即处理
                 this.skippedSegments.set(channelKey, sid);
-                this._logger.debug(`[${channelKey}] 消息已记录，将在当前任务完成后立即处理`);
+                this.logger.debug(`[${channelKey}] 消息已记录，将在当前任务完成后立即处理`);
                 break;
-                
+
             case "deferred":
                 // 策略3：记录被跳过的消息，设置延迟处理定时器
-				this.skippedSegments.set(channelKey, sid);
-	            this._logger.debug(`[${channelKey}] 消息已记录，将在任务完成后开始延迟计时`);
-	            break;
-                
+                this.skippedSegments.set(channelKey, sid);
+                this.logger.debug(`[${channelKey}] 消息已记录，将在任务完成后开始延迟计时`);
+                break;
+
             case "skip":
             default:
                 // 策略1：直接跳过（默认行为）
-                this._logger.debug(`[${channelKey}] 跳过处理（策略: skip）`);
+                this.logger.debug(`[${channelKey}] 跳过处理（策略: skip）`);
                 break;
         }
     }
-    
+
     /**
      * 设置延迟处理定时器（策略3）
      */
     private setupDeferredTimer(channelKey: string) {
-    	// 清除现有定时器
-	    if (this.deferredTimers.has(channelKey)) {
-	        clearTimeout(this.deferredTimers.get(channelKey));
-	        this.deferredTimers.delete(channelKey);
-	    }
-	
-	    const timer = setTimeout(() => {
-	        this._logger.debug(`[${channelKey}] 延迟处理定时器触发`);
-	        if (this.skippedSegments.has(channelKey)) {
-	            const sid = this.skippedSegments.get(channelKey);
-	            this.skippedSegments.delete(channelKey);
-	            
-	            // 添加引导提示
-	            this.guideToSkippedTopic(channelKey);
-	            
-	            // 获取防抖任务并执行
-	            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-	            if (debouncedTask) {
-	                this._logger.debug(`[${channelKey}] 处理被跳过的段落`);
-	                debouncedTask(sid);
-	            }
-	        }
-	        this.deferredTimers.delete(channelKey);
-	    }, this.config.deferredProcessingTime || 10000);
-	    
-	    this.deferredTimers.set(channelKey, timer);
-	    this._logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
-	}
-    
+        // 清除现有定时器
+        if (this.deferredTimers.has(channelKey)) {
+            clearTimeout(this.deferredTimers.get(channelKey));
+            this.deferredTimers.delete(channelKey);
+        }
+
+        const timer = setTimeout(() => {
+            this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
+            if (this.skippedSegments.has(channelKey)) {
+                const sid = this.skippedSegments.get(channelKey);
+                this.skippedSegments.delete(channelKey);
+
+                // 添加引导提示
+                this.guideToSkippedTopic(channelKey);
+
+                // 获取防抖任务并执行
+                const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+                if (debouncedTask) {
+                    this.logger.debug(`[${channelKey}] 处理被跳过的段落`);
+                    debouncedTask(sid);
+                }
+            }
+            this.deferredTimers.delete(channelKey);
+        }, this.config.deferredProcessingTime || 10000);
+
+        this.deferredTimers.set(channelKey, timer);
+        this.logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
+    }
+
     /**
      * 引导模型关注被跳过的话题（策略3）
      */
     private async guideToSkippedTopic(channelKey: string): Promise<void> {
         // 提高意愿值
         this.willing.boostSkippedTopic(channelKey);
-        
+
         // 在世界状态中添加提示
         await this.worldState.guideToSkippedTopic(channelKey);
-        
-        this._logger.debug(`[${channelKey}] 已添加话题引导提示`);
+
+        this.logger.debug(`[${channelKey}] 已添加话题引导提示`);
     }
-    
+
     /**
      * 当前任务完成后处理被跳过的消息（策略2 & 3）
      */
     private handleSkippedMessagesAfterReply(channelKey: string) {
-        if (this.config.newMessageStrategy === "immediate" && 
-            this.skippedSegments.has(channelKey)) {
-            
+        if (this.config.newMessageStrategy === "immediate" && this.skippedSegments.has(channelKey)) {
             const skippedSid = this.skippedSegments.get(channelKey);
             this.skippedSegments.delete(channelKey);
-            
+
             // 清除策略3的定时器（如果有）
             if (this.deferredTimers.has(channelKey)) {
                 clearTimeout(this.deferredTimers.get(channelKey));
                 this.deferredTimers.delete(channelKey);
             }
-            
-            this._logger.debug(`[${channelKey}] 立即处理被跳过的段落`);
+
+            this.logger.debug(`[${channelKey}] 立即处理被跳过的段落`);
             const debouncedTask = this.debouncedReplyTasks.get(channelKey);
             if (debouncedTask) {
                 debouncedTask(skippedSid);
             }
-        } else if (this.config.newMessageStrategy === "deferred" && 
-             this.skippedSegments.has(channelKey)) {
-	         // 任务完成后才启动定时器
-	         this.setupDeferredTimer(channelKey);
-	    }
+        } else if (this.config.newMessageStrategy === "deferred" && this.skippedSegments.has(channelKey)) {
+            // 任务完成后才启动定时器
+            this.setupDeferredTimer(channelKey);
+        }
     }
 
     /**
@@ -373,7 +369,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     shouldContinueHeartbeat = false;
                 }
             } catch (error) {
-                handleError(this._logger, error, `心跳 #${heartbeatCount} 期间 (段落ID: ${sid})`);
+                handleError(this.logger, error, `心跳 #${heartbeatCount} 期间 (段落ID: ${sid})`);
                 shouldContinueHeartbeat = false;
                 success = false; // 出错则认为本次循环失败
             }
@@ -396,7 +392,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         previousResponses: AgentResponse[]
     ): Promise<{ response: AgentResponse; continue: boolean } | null> {
         if (!this.modelSwitcher) {
-            this._logger.warn("未配置有效的模型组，无法生成回复 | 请检查配置")
+            this.logger.warn("未配置有效的模型组，无法生成回复 | 请检查配置");
             return null;
         }
 
@@ -456,7 +452,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     { type: "text", text: userPromptText },
                 ];
             } else {
-                this._logger.warn(`上下文包含图片，但当前模型组中没有支持多模态的模型。将忽略图片。`);
+                this.logger.warn(`上下文包含图片，但当前模型组中没有支持多模态的模型。将忽略图片。`);
                 chatModel = this.modelSwitcher.next(); // 使用默认轮询模型
                 userMessageContent = userPromptText;
             }
@@ -466,7 +462,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
 
         if (!chatModel) {
-            this._logger.error(`✖✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
+            this.logger.error(`✖✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
             return null;
         }
 
@@ -485,18 +481,18 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             abortSignal: abortController.signal,
             onStreamStart: () => clearTimeout(timeout),
         });
-        this._logger.info(`💬💬 响应时间: ${Date.now() - stime}ms`);
+        this.logger.info(`💬💬 响应时间: ${Date.now() - stime}ms`);
         const prompt_tokens =
             llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
         /* prettier-ignore */
-        this._logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+        this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
 
         // 5. 解析和处理响应
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
         if (llmParsedResponse.error || !llmParsedResponse.data) {
             /* prettier-ignore */
-            this._logger.warn(`✖✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this.logger.warn(`✖✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
@@ -504,13 +500,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         if (!agentResponseData.thoughts) {
             /* prettier-ignore */
-            this._logger.warn(`✖✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this.logger.warn(`✖✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
         if (!Array.isArray(agentResponseData.actions)) {
             /* prettier-ignore */
-            this._logger.warn(`✖✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this.logger.warn(`✖✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
@@ -518,7 +514,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this.displayThoughts(agentResponseData.thoughts);
         }
 
-        this._logger.debug("心跳：" + agentResponseData.request_heartbeat);
+        this.logger.debug("心跳：" + agentResponseData.request_heartbeat);
         const observations = await this.executeActions(session, agentResponseData.actions);
         const fullResponse: AgentResponse = { ...agentResponseData, observations };
 
@@ -528,7 +524,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
         if (!thoughts) return;
         const { observe, analyze_infer, plan } = thoughts;
-        this._logger.info(`
+        this.logger.info(`
 [观察] ${observe}
 [分析] ${analyze_infer}
 [计划] ${plan}`);
@@ -656,16 +652,15 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             return { images: [] };
         }
 
-        const imageService = this.ctx[Services.Image];
         const imageDataResults = await Promise.all(
-            Array.from(finalImageIds).map((id) => imageService.getImageDataWithContent(id))
+            Array.from(finalImageIds).map((id) => this.assetService.getImageDataWithContent(id))
         );
 
         const finalImages: (ImagePart | TextPart)[] = [];
         const allowedImageTypes = new Set(this.config.vision.allowedImageTypes);
 
         for (const result of imageDataResults) {
-            if (result && result.data && allowedImageTypes.has(result.data.mimeType)) {
+            if (result && result.data && allowedImageTypes.has(result.data.mime)) {
                 // 为LLM提供更明确的图片标识
                 finalImages.push({ type: "text", text: `The following is an image with ID #${result.data.id}:` });
                 finalImages.push({

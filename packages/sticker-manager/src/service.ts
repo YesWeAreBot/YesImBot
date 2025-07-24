@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from 'fs/promises';
 import { Context, h, Logger, Session } from 'koishi';
-import { ImageData, Services } from 'koishi-plugin-yesimbot/services';
+import { AssetData, Services } from 'koishi-plugin-yesimbot/services';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { StickerConfig } from './index';
@@ -113,12 +113,12 @@ export class StickerService {
         }
     }
 
-    public async stealSticker(imageData: ImageData, session: Session): Promise<StickerRecord> {
-        const { id, originalUrl, mimeType } = imageData;
+    public async stealSticker(imageData: AssetData, session: Session): Promise<StickerRecord> {
+        const { id, metadata: { src: originalUrl } , mime: mimeType } = imageData;
 
         // 获取图片的实际文件路径
-        const imageService = this.ctx[Services.Image];
-        const filePath = await imageService.getImageLocalPath(id);
+        const assetService = this.ctx[Services.Asset];
+        const filePath = await assetService.getImageLocalPath(id);
 
         if (!filePath) {
             throw new Error('找不到图片本地文件');

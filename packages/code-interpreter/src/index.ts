@@ -1,7 +1,7 @@
 import * as childProcess from "child_process";
 import * as crypto from "crypto";
 import fs from "fs/promises";
-import { Context, Schema } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import path from "path";
 import { promisify } from "util";
 import { Worker } from "worker_threads";
@@ -52,10 +52,12 @@ export default class CodeInterpreterExtension {
     });
 
     private resultCache = new Map<string, { result: any; timestamp: number }>();
+    private readonly logger: Logger;
 
-    constructor(public ctx: Context, public config: CodeInterpreterConfig) {}
+    constructor(public ctx: Context, public config: CodeInterpreterConfig) {
+        this.logger = ctx.logger("[代码解释器]");
+    }
 
-    //@ts-ignore
     @Tool({
         name: "execute_javascript",
         description: `在一个隔离的、安全的Node.js沙箱环境中执行JavaScript代码。
@@ -72,7 +74,6 @@ export default class CodeInterpreterExtension {
         if (this.config.enableCache && this.resultCache.has(cacheKey)) {
             const cached = this.resultCache.get(cacheKey);
             if (Date.now() - cached.timestamp < this.config.cacheTTL) {
-                this.ctx.logger.info("[code-interpreter] Cache hit.");
                 return Success(cached.result, { from_cache: true });
             }
         }
@@ -80,8 +81,7 @@ export default class CodeInterpreterExtension {
         try {
             await this.prepareEnvironment(code);
         } catch (error) {
-            this.ctx.logger.warn(`[code-interpreter] Environment preparation failed: ${error.message}`);
-            // 优化点 2: 为 LLM 提供清晰、可行动的错误反馈
+            this.logger.warn(`Environment preparation failed: ${error.message}`);
             return Failed(error.message);
         }
 
@@ -94,7 +94,7 @@ export default class CodeInterpreterExtension {
             return Success(result);
         } catch (error) {
             // Worker 内部的错误（包括执行失败和超时）会被 catch
-            this.ctx.logger.warn(`[code-interpreter] Execution failed: ${error.message}`);
+            this.logger.warn(`Execution failed: ${error.message}`);
             return Failed(error.message, error.details);
         }
     }
@@ -142,7 +142,7 @@ export default class CodeInterpreterExtension {
 
             worker.on("error", (err) => {
                 clearTimeout(timeoutId);
-                this.ctx.logger.error(`[code-interpreter] Worker thread error: ${err.message}`);
+                this.logger.error(`Worker thread error: ${err.message}`);
                 const errorMessage = `代码解释器工作线程发生严重错误: ${err.message}`;
                 const suggestion =
                     "建议: 这个问题可能源于工具本身或其环境配置。请尝试简化代码，如果问题依旧，这可能是一个需要上报的系统级错误。";
@@ -152,7 +152,7 @@ export default class CodeInterpreterExtension {
             worker.on("exit", (code) => {
                 if (code !== 0) {
                     // 非正常退出通常伴随着 'error' 事件，这里仅作日志记录
-                    this.ctx.logger.warn(`[code-interpreter] Worker stopped with non-zero exit code: ${code}`);
+                    this.logger.warn(`Worker stopped with non-zero exit code: ${code}`);
                 }
             });
         });
@@ -195,7 +195,7 @@ export default class CodeInterpreterExtension {
                 continue; // 模块已安装，跳过
             } catch {
                 // 模块未安装，执行安装
-                this.ctx.logger.info(`[code-interpreter] Installing dependency: ${moduleName}`);
+                this.logger.info(`Installing dependency: ${moduleName}`);
                 await this.installPackage(moduleName);
             }
         }
@@ -218,13 +218,11 @@ export default class CodeInterpreterExtension {
         }
 
         try {
-            this.ctx.logger.info(`[code-interpreter] Executing: ${installCommand} in ${this.config.dependenciesPath}`);
+            this.logger.info(`Executing: ${installCommand} in ${this.config.dependenciesPath}`);
             await exec(installCommand, { cwd: this.config.dependenciesPath });
-            this.ctx.logger.info(`[code-interpreter] Successfully installed ${moduleName}`);
+            this.logger.info(`Successfully installed ${moduleName}`);
         } catch (error) {
-            this.ctx.logger.error(
-                `[code-interpreter] Failed to install ${moduleName}. Error: ${error.stderr || error.message}`
-            );
+            this.logger.error(`Failed to install ${moduleName}. Error: ${error.stderr || error.message}`);
             // 为 LLM 提供清晰的错误
             const suggestion = `建议: 请检查模块名 '${moduleName}' 是否拼写正确，以及它是否存在于 ${this.config.packageManager} 仓库中。`;
             throw new Error(`依赖安装失败: 无法安装模块 '${moduleName}'。\n${suggestion}`);

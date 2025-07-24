@@ -216,7 +216,7 @@ export class ConfiguratorService extends Service {
             addLine(`触发阈值: 每 ${config.capabilities.history.summarization.triggerCount} 段对话`, 2);
         }
         addLine(`核心记忆路径: ${config.capabilities?.memory?.coreMemoryPath || "(未设置)"}`, 1);
-        addLine(`图片存储路径: ${config.imageService?.storagePath || "(未设置)"}`, 1);
+        addLine(`图片存储路径: ${config.assetService?.storagePath || "(未设置)"}`, 1);
 
         // --- Send the final message ---
         // 使用 markdown 代码块来保留格式

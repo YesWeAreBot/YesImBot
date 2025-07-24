@@ -469,7 +469,7 @@ class HistoryCommandManager {
 export class WorldStateService extends Service<HistoryConfig> {
     static readonly inject = [
         Services.Model,
-        Services.Image,
+        Services.Asset,
         Services.Logger,
         Services.Prompt,
         Services.Memory,
@@ -651,9 +651,16 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     public async transformMessageContent(elements: Element[], session: Session): Promise<string> {
+        // 使用 assets 服务的 transformer 处理所有资源元素
+        // 注意：这里不需要手动调用 transformer，因为它已经通过中间件自动处理了
+        // 但为了保持接口兼容性，我们仍然提供这个方法
         const transformedElements = await h.transformAsync(elements, async (element) => {
-            if (element.type === "img" || element.type === "image") {
-                return this.ctx[Services.Image].processImageElement(element, session);
+            // 如果元素已经有 id（被 assets transformer 处理过），则创建占位符
+            if ((element.type === "img" || element.type === "image") && element.attrs.id) {
+                return h("image", {
+                    id: element.attrs.id,
+                    summary: element.attrs.summary || element.attrs.alt || "图片"
+                });
             }
             return element;
         });

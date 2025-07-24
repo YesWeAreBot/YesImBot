@@ -15,7 +15,7 @@ export class LocalStorageDriver implements StorageDriver {
         // 默认存储在 Koishi 数据目录下的 assets 文件夹
         this.baseDir = resolve(ctx.baseDir, config.path || 'data/assets');
         this.logger = ctx[Services.Logger].getLogger('[本地存储驱动]');
-        
+
         // 确保存储目录存在
         this.ensureDirectory();
     }
@@ -30,7 +30,7 @@ export class LocalStorageDriver implements StorageDriver {
         }
     }
 
-    private getPath(id: string): string {
+    public getPath(id: string): string {
         return resolve(this.baseDir, id);
     }
 
