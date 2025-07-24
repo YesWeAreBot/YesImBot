@@ -26,7 +26,7 @@ export default class StickerTools {
             .description("用于表情分类的多模态模型"),
         classificationPrompt: Schema.string()
             .role("textarea", { rows: [2, 4] })
-            .default('请将以下图片分类，已有分类: [{{categories}}]。选择最匹配的分类或创建新分类。只返回分类名称。建议按照可能的语境分类')
+            .default('请对以下表情包进行分类，已有分类：[{{categories}}]。选择最匹配的分类或创建新类别。只返回分类名称。分类应基于可能的使用语境（例如：工作、休闲、节日），避免模糊不清的名称（如“表情包”）。尽可能详细分类（如“庆祝成功”而非“快乐”）。若不确定，请思考此表情包的具体使用场景（例如：我应该在什么时候用它？）来帮助确定。')
             .description('多模态分类提示词模板，可使用 {{categories}} 占位符动态插入分类列表'),
     });
 
@@ -293,7 +293,7 @@ export default class StickerTools {
         // 更新发送表情包工具的描述
         this.ctx['yesimbot.tool'].registerTool({
             name: 'send_random_sticker',
-            description: `发送一个随机表情包。可用分类: ${categoryList}`,
+            description: `发送一个随机表情包。可用分类: ${categoryList ? categoryList : '暂无分类，请先收藏表情包'}`,
             parameters: Schema.object({
                 category: Schema.string().required().description(`表情包分类名称，可用选项: ${categoryList}`),
             }),
@@ -304,7 +304,7 @@ export default class StickerTools {
 
     @Tool({
         name: 'steal_sticker',
-        description: '偷取一个表情包。当用户发送表情包时，调用此工具将表情包保存到本地并分类。',
+        description: '收藏一个表情包。当用户发送表情包时，调用此工具将表情包保存到本地并分类。分类后你也可以使用这些表情包。',
         parameters: Schema.object({
             image_id: Schema.string().required().description('要偷取的表情图片ID'),
         }),
@@ -332,8 +332,8 @@ export default class StickerTools {
 
     // 改回普通方法，使用 bind 确保上下文
     @Tool({
-        name: 'send_random_sticker',
-        description: '发送一个随机表情包。',
+        name: 'send_sticker',
+        description: '发送一个表情包，用于辅助表达情感，结合语境酌情使用。',
         parameters: Schema.object({
             category: Schema.string().required().description('表情包分类名称'),
         }),
