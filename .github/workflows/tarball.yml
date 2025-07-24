@@ -6,9 +6,8 @@ on:
 
 jobs:
   build-and-package:
-    name: Build and Package
-    timeout-minutes: 15
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check out code
@@ -40,56 +39,80 @@ jobs:
 
       - name: Generate tarballs
         run: |
+          # 创建目录结构
           mkdir -p tarballs
           
           # 为每个包创建单独的 tarball
-          for dir in packages/*; do
-            if [ -d "$dir" ]; then
-              pkg=$(basename "$dir")
-              echo "Packaging $pkg..."
-              
-              # 创建临时目录
-              mkdir -p "temp/$pkg"
-              
-              # 复制构建输出
-              find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "temp/$pkg/" \;
-              
-              # 复制 package.json
-              cp "$dir/package.json" "temp/$pkg/"
-              
-              # 创建 tarball
-              tar -czf "tarballs/$pkg.tgz" -C "temp/$pkg" .
-              
-              # 清理临时目录
-              rm -rf "temp/$pkg"
-            fi
+          find packages -mindepth 1 -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' dir; do
+            pkg=$(basename "$dir")
+            echo "Packaging $pkg..."
+            
+            # 为每个包创建独立的临时目录
+            mkdir -p "temp/$pkg"
+            
+            # 复制构建输出和配置文件
+            find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "temp/$pkg/" \;
+            cp "$dir/package.json" "temp/$pkg/"
+            
+            # 创建 tarball
+            tar -czf "tarballs/$pkg.tgz" -C "temp/$pkg" .
+            
+            # 清理临时目录
+            rm -rf "temp/$pkg"
           done
           
           # 创建根配置 tarball
+          mkdir -p temp
           cp package.json turbo.json temp/
-          tar -czf tarballs/root-config.tgz -C temp package.json turbo.json
+          tar -czf tarballs/root-config.tgz -C temp .
           rm -rf temp
+          
+          # 列出所有生成的 tarballs
+          echo "Generated packages:"
+          ls -lh tarballs/*.tgz
 
-      - name: Upload root config
+      - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: root-config
-          path: tarballs/root-config.tgz
+          name: packages
+          path: tarballs
           retention-days: 7
 
-      - name: Upload packages
+  publish-artifacts:
+    runs-on: ubuntu-latest
+    needs: build-and-package
+    strategy:
+      matrix:
+        package: ["core", "code-interpreter", "code2image", "favor", "mcp", "sticker-manager"]
+    
+    steps:
+      - name: Download packages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: tarballs
+
+      - name: Verify download
+        run: |
+          echo "Downloaded artifacts:"
+          ls -lh tarballs
+          echo "Verifying package ${{ matrix.package }}"
+          if [ ! -f "tarballs/${{ matrix.package }}.tgz" ]; then
+            echo "Error: ${{ matrix.package }}.tgz not found!"
+            exit 1
+          fi
+
+      - name: Upload individual package
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}
           path: tarballs/${{ matrix.package }}.tgz
           retention-days: 7
-        strategy:
-          matrix:
-            package: [
-              "code-interpreter", 
-              "code2image", 
-              "core", 
-              "favor", 
-              "mcp", 
-              "sticker-manager"
-            ]
+
+      - name: Upload root config
+        if: matrix.package == 'core'
+        uses: actions/upload-artifact@v4
+        with:
+          name: root-config
+          path: tarballs/root-config.tgz
+          retention-days: 7
