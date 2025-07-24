@@ -16,7 +16,7 @@ export interface StickerConfig {
     version: '1.0.0',
 })
 export default class StickerTools {
-    static readonly inject = ["database", "yesimbot.model", "yesimbot.image", "yesimbot.prompt", "http"];
+    static readonly inject = ["database", "yesimbot.model", "yesimbot.image", "yesimbot.prompt"];
 
     static readonly Config: Schema<StickerConfig> = Schema.object({
         storagePath: Schema.path({ allowCreate: true, filters: ['directory'] })
