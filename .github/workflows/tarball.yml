@@ -5,58 +5,67 @@ on:
     branches: [dev]
 
 jobs:
-  build-packages:
+  build-and-package:
+    name: Build and Package
+    timeout-minutes: 15
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Check out code
         uses: actions/checkout@v4
         with:
           ref: dev
+          fetch-depth: 2
 
-      - name: Setup Node.js with Corepack
-        uses: actions/setup-node@v4
+      - name: Cache turbo build setup
+        uses: actions/cache@v4
         with:
-          node-version: 20
-          cache: 'bun'  # 指定缓存 Bun
-          corepack: true  # 启用 Corepack
+          path: |
+            .turbo
+            **/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
 
-      - name: Set Bun as package manager
-        run: |
-          # 激活 Corepack 并安装 Bun
-          corepack enable
-          corepack prepare bun@1.2.0 --activate
-          
-          # 验证 Bun 版本
-          bun --version
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.0
 
-      - name: Install dependencies with Bun
+      - name: Install dependencies
         run: bun install
 
       - name: Build all packages
         run: bun run build
 
-      - name: Prepare build artifacts
+      - name: Package build artifacts
         run: |
           # 创建制品目录
           mkdir -p build-artifacts
           
-          # 复制所有包的非源码文件
-          find packages -mindepth 2 -maxdepth 2 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} build-artifacts/ \;
-          
-          # 复制根目录配置文件
-          cp package.json turbo.json tsconfig*.json build-artifacts/
+          # 复制所有包的构建输出
+          for dir in packages/*; do
+            if [ -d "$dir" ]; then
+              pkg=$(basename "$dir")
+              mkdir -p "build-artifacts/$pkg"
+              # 复制除src外的构建输出
+              find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "build-artifacts/$pkg/" \;
+              # 复制package.json
+              cp "$dir/package.json" "build-artifacts/$pkg/"
+            fi
+          done
 
-          # 为每个包创建 package.json 链接
-          mkdir -p build-artifacts/package-links
-          find packages -name package.json -not -path "*/src/*" -exec sh -c 'ln -s "$(realpath --relative-to=build-artifacts/package-links $1)" "build-artifacts/package-links/$(basename $(dirname $1))-package.json"' sh {} \;
+          # 添加必要的配置文件
+          cp package.json turbo.json build-artifacts/
 
       - name: Create downloadable archive
         run: |
           cd build-artifacts
-          tar -czf build-artifacts.tar.gz .
+          tar -czf ../build-artifacts.tar.gz .
+          cd ..
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: build-artifacts/build-artifacts.tar.gz
+          path: build-artifacts.tar.gz
