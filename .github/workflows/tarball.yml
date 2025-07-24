@@ -37,39 +37,43 @@ jobs:
       - name: Build all packages
         run: bun run build
 
-      - name: Generate tarballs
+      - name: Create correctly structured tarballs
         run: |
-          # 创建目录结构
           mkdir -p tarballs
           
-          # 为每个包创建单独的 tarball
-          find packages -mindepth 1 -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' dir; do
-            pkg=$(basename "$dir")
-            echo "Packaging $pkg..."
-            
-            # 为每个包创建独立的临时目录
-            mkdir -p "temp/$pkg"
-            
-            # 复制构建输出和配置文件
-            find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "temp/$pkg/" \;
-            cp "$dir/package.json" "temp/$pkg/"
-            
-            # 创建 tarball
-            tar -czf "tarballs/$pkg.tgz" -C "temp/$pkg" .
-            
-            # 清理临时目录
-            rm -rf "temp/$pkg"
+          # 为每个包创建正确结构的 tarball
+          for dir in packages/*; do
+            if [ -d "$dir" ]; then
+              pkg=$(basename "$dir")
+              echo "Packaging $pkg..."
+              
+              # 获取包名（从 package.json 中读取）
+              pkg_name=$(jq -r '.name' "$dir/package.json")
+              
+              # 创建临时目录结构（Yarn 要求的格式）
+              mkdir -p "temp/$pkg_name"
+              
+              # 复制构建输出和配置文件
+              find "$dir" -mindepth 1 -maxdepth 1 -type d \( -name "lib" -o -name "dist" -o -name "resources" \) -exec cp -r {} "temp/$pkg_name/" \;
+              
+              # 复制 package.json
+              cp "$dir/package.json" "temp/$pkg_name/"
+              
+              # 创建 tarball（使用包名而不是目录名）
+              tar -czf "tarballs/$pkg_name.tgz" -C "temp" "$pkg_name"
+              
+              # 清理临时目录
+              rm -rf "temp/$pkg_name"
+            fi
           done
           
-          # 创建根配置 tarball
-          mkdir -p temp
-          cp package.json turbo.json temp/
-          tar -czf tarballs/root-config.tgz -C temp .
-          rm -rf temp
-          
-          # 列出所有生成的 tarballs
-          echo "Generated packages:"
-          ls -lh tarballs/*.tgz
+          # 验证生成的 tarball 结构
+          echo "Verifying tarball structure:"
+          for tgz in tarballs/*.tgz; do
+            echo "Contents of $(basename $tgz):"
+            tar -tzf "$tgz" | head -5
+            echo ""
+          done
 
       - name: Upload all artifacts
         uses: actions/upload-artifact@v4
@@ -83,7 +87,14 @@ jobs:
     needs: build-and-package
     strategy:
       matrix:
-        package: ["core", "code-interpreter", "code2image", "favor", "mcp", "sticker-manager"]
+        package: [
+          "koishi-plugin-yesimbot", 
+          "koishi-plugin-yesimbot-extension-code-interpreter",
+          "koishi-plugin-yesimbot-extension-code2image",
+          "koishi-plugin-yesimbot-extension-favor",
+          "koishi-plugin-yesimbot-extension-mcp",
+          "koishi-plugin-yesimbot-extension-sticker-manager"
+        ]
     
     steps:
       - name: Download packages artifact
@@ -94,8 +105,6 @@ jobs:
 
       - name: Verify download
         run: |
-          echo "Downloaded artifacts:"
-          ls -lh tarballs
           echo "Verifying package ${{ matrix.package }}"
           if [ ! -f "tarballs/${{ matrix.package }}.tgz" ]; then
             echo "Error: ${{ matrix.package }}.tgz not found!"
@@ -107,12 +116,4 @@ jobs:
         with:
           name: ${{ matrix.package }}
           path: tarballs/${{ matrix.package }}.tgz
-          retention-days: 7
-
-      - name: Upload root config
-        if: matrix.package == 'core'
-        uses: actions/upload-artifact@v4
-        with:
-          name: root-config
-          path: tarballs/root-config.tgz
           retention-days: 7
