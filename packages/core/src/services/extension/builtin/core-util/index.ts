@@ -1,5 +1,6 @@
-import { Bot, Context, h, Logger, Schema, Session, sleep, Element } from "koishi";
+import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
 
+import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
@@ -35,9 +36,11 @@ export default class CoreUtilExtension {
     static readonly Config = CoreUtilConfigSchema;
 
     private readonly logger: Logger;
+    private readonly assetService: AssetService;
 
     constructor(public ctx: Context, public config: CoreUtilConfig) {
         this.logger = ctx[Services.Logger].getLogger("[核心工具]");
+        this.assetService = ctx[Services.Asset];
     }
 
     @Tool({
@@ -182,21 +185,12 @@ export default class CoreUtilExtension {
             const delay = this.getTypingDelay(msg);
 
             // --- 处理图片元素 ---
-            const elements = await h.transformAsync(msg, async (element) => {
-                if (element.type === "image") {
-                    if (!element.attrs.id) return null;
-                    const imageData = await this.ctx[Services.Asset].getImageDataWithContent(element.attrs.id);
-                    if (!imageData) return null;
-
-                    return h.image(imageData.content);
-                }
-                return element;
-            });
+            const content = await this.assetService.encode(msg);
 
             await sleep(delay);
 
             // --- 发送消息 ---
-            const messageIds = await bot.sendMessage(channelId, elements);
+            const messageIds = await bot.sendMessage(channelId, content);
 
             // --- 发送后处理（例如发射事件）---
             // 使用 then 回调不是最佳实践，async/await 更清晰

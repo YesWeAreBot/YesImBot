@@ -8,13 +8,6 @@ export interface AssetServiceConfig {
     maxAssetAgeDays: number;
     endpoint?: string;
     maxFileSize: number;
-    supportedMimeTypes: string[];
-    imageProcessing: {
-        enabled: boolean;
-        quality: number;
-        maxLongSide: number;
-        minShortSide: number;
-    };
 }
 
 export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
@@ -38,21 +31,4 @@ export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
         .min(1024)
         .default(100 * 1024 * 1024) // 100MB
         .description("允许存储的单个文件的最大大小（单位：字节）。"),
-
-    supportedMimeTypes: Schema.array(Schema.string())
-        .default([
-            "image/jpeg", "image/png", "image/gif", "image/webp",
-            "audio/mpeg", "audio/wav", "audio/ogg",
-            "video/mp4", "video/mpeg", "video/webm",
-            "application/pdf", "text/plain", "text/markdown",
-            "application/zip", "application/x-zip-compressed"
-        ])
-        .description("支持的 MIME 类型列表。只有这些类型的文件才会被处理。"),
-
-    imageProcessing: Schema.object({
-        enabled: Schema.boolean().default(true).description("是否启用图片处理和优化。"),
-        quality: Schema.number().min(1).max(100).default(85).description("JPEG 压缩质量（1-100）。"),
-        maxLongSide: Schema.number().min(100).default(2048).description("图片长边的最大像素数。"),
-        minShortSide: Schema.number().min(50).default(512).description("图片短边的最小像素数。"),
-    }).description("图片处理配置。"),
 });

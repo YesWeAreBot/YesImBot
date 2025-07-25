@@ -20,15 +20,25 @@ export interface AssetData {
     size: number; // 文件大小（字节）
     createdAt: Date; // 创建时间
     lastUsedAt: Date; // 最后使用时间
-    metadata?: any; // 可选的元数据，如图片宽高、视频时长、原始的外部 URL、原始文件名等
+    metadata?: AssetMetadata; // 可选的元数据，如图片宽高、视频时长、原始的外部 URL、原始文件名等
 }
 
 /**
- * 资源创建选项
+ * 资源元数据
  */
-export interface AssetCreateOptions {
-    type?: AssetType; // 预指定的资源类型
-    filename?: string; // 预指定的文件名
+export interface AssetMetadata {
+    /** 图片属性 */
+    width?: number;
+    height?: number;
+    summary?: string;
+
+    /** 音频属性 */
+
+    /** 文件属性 */
+    filename?: string;
+
+    /** 通用属性 */
+    src?: string; // 原始的外部 URL
 }
 
 /**

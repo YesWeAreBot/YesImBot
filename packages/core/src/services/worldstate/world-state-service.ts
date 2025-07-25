@@ -1,5 +1,6 @@
-import { Argv, Context, Element, h, Logger, Query, Random, Service, Session } from "koishi";
+import { Argv, Context, Logger, Query, Random, Service, Session } from "koishi";
 
+import { AssetService } from "@/services/assets";
 import { IEmbedModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/services/types";
 import { truncate } from "@/shared/utils";
@@ -41,10 +42,12 @@ interface PendingCommand {
 class EventListenerManager {
     private readonly disposers: (() => boolean)[] = [];
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
-    private _logger: Logger;
+    private logger: Logger;
+    private assetService: AssetService;
 
     constructor(private ctx: Context, private service: WorldStateService, private config: HistoryConfig) {
-        this._logger = ctx[Services.Logger].getLogger("[世界状态]");
+        this.logger = ctx[Services.Logger].getLogger("[世界状态]");
+        this.assetService = ctx[Services.Asset];
     }
 
     public start(): void {
@@ -73,7 +76,7 @@ class EventListenerManager {
             }
         }
         if (cleanedCount > 0) {
-            this._logger.debug(`清理了 ${cleanedCount} 个过期待定指令`);
+            this.logger.debug(`清理了 ${cleanedCount} 个过期待定指令`);
         }
     }
 
@@ -120,7 +123,7 @@ class EventListenerManager {
     private async handleOperatorMessage(session: Session): Promise<void> {
         if (!this.service.isChannelAllowed(session)) return;
 
-        this._logger.info(`捕获操作员消息 | 操作员: ${session.author.name} | 频道: ${session.cid}`);
+        this.logger.info(`捕获操作员消息 | 操作员: ${session.author.name} | 频道: ${session.cid}`);
         const segment = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
         await this.recordBotSentMessage(session, segment.id);
     }
@@ -129,7 +132,7 @@ class EventListenerManager {
         const { session, command, source } = argv;
         if (!session) return;
 
-        this._logger.info(`捕获指令调用 | 用户: ${session.author.name} | 指令: ${command.name} | 频道: ${session.cid}`);
+        this.logger.info(`捕获指令调用 | 用户: ${session.author.name} | 指令: ${command.name} | 频道: ${session.cid}`);
 
         const segmentRecord = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
         const commandEventId = `cmd_invoked_${session.messageId || Random.id()}`;
@@ -168,7 +171,7 @@ class EventListenerManager {
         if (pendingIndex === -1) return;
 
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
-        this._logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
+        this.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
         if (existingEvent) {
@@ -183,15 +186,15 @@ class EventListenerManager {
 
     private async recordUserMessage(session: Session): Promise<void> {
         /* prettier-ignore */
-        this._logger.info( `用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
+        this.logger.info( `用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
         const segment = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
         if (session.guildId) {
             await this.updateMemberInfo(session);
         }
 
-        const content = await this.service.transformMessageContent(session.elements, session);
-        this._logger.debug(`记录转义后的消息：${content}`);
+        const content = await this.assetService.transform(session.content);
+        this.logger.debug(`记录转义后的消息：${content}`);
         await this.service.recordMessage(segment.id, {
             id: session.messageId,
             platform: session.platform,
@@ -210,7 +213,7 @@ class EventListenerManager {
     private async recordBotSentMessage(session: Session, segmentId?: string): Promise<void> {
         if (!session.content || !session.messageId) return;
 
-        this._logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
+        this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
         const sid =
             segmentId || (await this.service.getOpenSegment(session.platform, session.channelId, session.guildId)).id;
 
@@ -243,7 +246,7 @@ class EventListenerManager {
                 await this.ctx.database.create(TableName.Members, { ...memberKey, ...memberData });
             }
         } catch (error) {
-            this._logger.error(`更新成员信息失败: ${error.message}`);
+            this.logger.error(`更新成员信息失败: ${error.message}`);
         }
     }
 }
@@ -648,23 +651,6 @@ export class WorldStateService extends Service<HistoryConfig> {
                 c === `${platform}:guild:*` ||
                 c === `${platform}:guild:all`
         );
-    }
-
-    public async transformMessageContent(elements: Element[], session: Session): Promise<string> {
-        // 使用 assets 服务的 transformer 处理所有资源元素
-        // 注意：这里不需要手动调用 transformer，因为它已经通过中间件自动处理了
-        // 但为了保持接口兼容性，我们仍然提供这个方法
-        const transformedElements = await h.transformAsync(elements, async (element) => {
-            // 如果元素已经有 id（被 assets transformer 处理过），则创建占位符
-            if ((element.type === "img" || element.type === "image") && element.attrs.id) {
-                return h("image", {
-                    id: element.attrs.id,
-                    summary: element.attrs.summary || element.attrs.alt || "图片"
-                });
-            }
-            return element;
-        });
-        return transformedElements.join("");
     }
 
     // #endregion

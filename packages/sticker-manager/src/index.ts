@@ -297,7 +297,7 @@ export default class StickerTools {
     async stealSticker({ image_id, session }: Infer<{ image_id: string }> & { session: Session }) {
         try {
 
-            const imageData = await this.assetService.getImageDataWithContent(image_id);
+            const imageData = await this.assetService.getAssetDataWithContent(image_id);
             if (!imageData) return Failed('图片未找到');
 
             const record = await this.stickerService.stealSticker(imageData.data, session);

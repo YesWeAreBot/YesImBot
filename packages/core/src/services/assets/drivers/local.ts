@@ -1,8 +1,7 @@
-import { promises as fs } from 'fs';
-import { resolve } from 'path';
-import { Context, Logger } from 'koishi';
-import { StorageDriver } from '../types';
-import { Services } from '../../types';
+import { promises as fs } from "fs";
+import { Context, Logger } from "koishi";
+import { resolve } from "path";
+import { StorageDriver } from "../types";
 
 /**
  * 本地文件系统存储驱动
@@ -13,8 +12,8 @@ export class LocalStorageDriver implements StorageDriver {
 
     constructor(ctx: Context, config: { path: string }) {
         // 默认存储在 Koishi 数据目录下的 assets 文件夹
-        this.baseDir = resolve(ctx.baseDir, config.path || 'data/assets');
-        this.logger = ctx[Services.Logger].getLogger('[本地存储驱动]');
+        this.baseDir = resolve(ctx.baseDir, config.path || "data/assets");
+        this.logger = ctx.logger("[本地存储驱动]");
 
         // 确保存储目录存在
         this.ensureDirectory();
@@ -52,7 +51,7 @@ export class LocalStorageDriver implements StorageDriver {
             this.logger.debug(`资源已读取: ${id} (${buffer.length} bytes)`);
             return buffer;
         } catch (error) {
-            if (error.code === 'ENOENT') {
+            if (error.code === "ENOENT") {
                 this.logger.warn(`资源文件不存在: ${id}`);
                 throw new Error(`Resource not found: ${id}`);
             }
@@ -67,7 +66,7 @@ export class LocalStorageDriver implements StorageDriver {
             await fs.unlink(filePath);
             this.logger.debug(`资源已删除: ${id}`);
         } catch (error) {
-            if (error.code === 'ENOENT') {
+            if (error.code === "ENOENT") {
                 // 文件不存在，忽略错误
                 this.logger.debug(`尝试删除不存在的资源: ${id}`);
                 return;
@@ -106,7 +105,7 @@ export class LocalStorageDriver implements StorageDriver {
             const stats = await fs.stat(filePath);
             return {
                 size: stats.size,
-                mtime: stats.mtime
+                mtime: stats.mtime,
             };
         } catch (error) {
             this.logger.error(`获取资源统计信息失败: ${id} - ${error.message}`);

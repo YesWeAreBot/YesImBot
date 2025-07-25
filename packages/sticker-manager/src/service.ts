@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from 'fs/promises';
 import { Context, h, Logger, Session } from 'koishi';
-import { AssetData, Services } from 'koishi-plugin-yesimbot/services';
+import { AssetData, PromptService, Services } from 'koishi-plugin-yesimbot/services';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { StickerConfig } from './index';
@@ -71,7 +71,7 @@ export class StickerService {
     }
 
     private registerPromptSnippet() {
-        const promptService = this.ctx[Services.Prompt];
+        const promptService: PromptService = this.ctx[Services.Prompt];
         if (!promptService) {
             this.logger.warn('提示词服务未找到，无法注册分类列表');
             return;
@@ -364,7 +364,9 @@ export class StickerService {
 
     async getRandomSticker(category: string): Promise<h> {
 
-        const records = await this.ctx.database.select(TableName).where({ category })
+        const records = await this.ctx.database
+            .select(TableName)
+            .where({ category })
             .execute();
 
         if (records.length === 0) return null;

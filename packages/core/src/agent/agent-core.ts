@@ -42,6 +42,7 @@ interface ImageCandidate {
 export class AgentCore extends Service<AgentBehaviorConfig> {
     static readonly inject = [
         Services.Asset,
+        Services.Logger,
         Services.Memory,
         Services.Model,
         Services.Prompt,
@@ -653,7 +654,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         }
 
         const imageDataResults = await Promise.all(
-            Array.from(finalImageIds).map((id) => this.assetService.getImageDataWithContent(id))
+            Array.from(finalImageIds).map((id) => this.assetService.getAssetDataWithContent(id))
         );
 
         const finalImages: (ImagePart | TextPart)[] = [];
