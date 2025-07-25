@@ -1,5 +1,6 @@
 import { Context, Schema, Session, h } from 'koishi';
-import { AssetService, Extension, Failed, Infer, ModelDescriptor, Services, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { AssetService, Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { Services } from "koishi-plugin-yesimbot/shared";
 import { pathToFileURL } from 'url';
 import { StickerService } from './service';
 export interface StickerConfig {

@@ -1,11 +1,11 @@
 import { Context, h, Schema, Session } from "koishi";
 import { } from "koishi-plugin-adapter-onebot";
+import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { formatDate, isEmpty } from "@/shared";
-import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
 interface InteractionsConfig {}
 

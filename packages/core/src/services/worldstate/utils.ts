@@ -1,5 +1,5 @@
 import { h } from "koishi";
-import { ClosedDialogueSegment, FoldedDialogueSegment, PendingDialogueSegment, WorldState } from "./interfaces";
+import { ClosedDialogueSegment, FoldedDialogueSegment, PendingDialogueSegment, WorldState } from "./types";
 
 /**
  * 根据最大消息数限制，修剪世界状态中的历史记录

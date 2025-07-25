@@ -1,9 +1,9 @@
-import { Context, Database, Logger, Service } from "koishi";
+import { Services, TableName } from "@/shared/constants";
 import { randomUUID } from "crypto";
-import { Services, TableName } from "../types";
+import { Context, Database, Logger } from "koishi";
 import { HistoryConfig } from "./config";
 import { DialogueSegmentData, MessageData } from "./database-models";
-import { AgentResponse, AgentTurn } from "./interfaces";
+import { AgentResponse, AgentTurn } from "./types";
 
 export class DialogueSegmentManager {
     private ctx: Context;

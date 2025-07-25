@@ -2,11 +2,11 @@
 // #region 辅助类：UserRecallManager (用户画像智能召回)
 // =================================================================================
 
+import { Fact, MemoryService, UserProfile } from "@/services/memory";
+import { Services, TableName } from "@/shared/constants";
 import { Context, h, Logger } from "koishi";
-import { Fact, Insight, MemoryService, UserProfile } from "../memory";
-import { Services, TableName } from "../types";
 import { HistoryConfig } from "./config";
-import { ContextualMessage } from "./interfaces";
+import { ContextualMessage } from "./types";
 import { extractMentionedUsers } from "./utils";
 
 // 定义一个更丰富的用户相关性数据结构

@@ -1,7 +1,7 @@
 import { Context, Logger, Service, Session } from "koishi";
 
-import { Services } from "@/services/types";
-import { formatDate } from "@/shared";
+import { Services } from "@/shared/constants";
+import { formatDate } from "@/shared/utils";
 import { IRenderer, MustacheRenderer } from "./renderer";
 
 /**

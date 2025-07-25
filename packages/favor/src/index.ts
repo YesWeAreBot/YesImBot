@@ -1,5 +1,6 @@
 import { Context, Schema } from "koishi";
-import { Extension, Failed, Infer, Services, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Services } from "koishi-plugin-yesimbot/shared";
 
 // --- 配置项接口定义 ---
 export interface FavorSystemConfig {

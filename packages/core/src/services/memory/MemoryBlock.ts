@@ -3,7 +3,7 @@ import { readFile, stat } from "fs/promises";
 import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 
-import { Services } from "@/services/types";
+import { Services } from "@/shared/constants";
 import { AppError, ErrorCodes } from "@/shared/errors";
 import { MemoryBlockData } from "./types";
 

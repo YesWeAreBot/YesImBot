@@ -2,15 +2,16 @@
 // #region 自动总结管理
 // =================================================================================
 
+import { IChatModel, TaskType } from "@/services/model";
+import { PromptService } from "@/services/prompt";
 import { formatDate } from "@/shared";
+import { Services, TableName } from "@/shared/constants";
 import { randomUUID } from "crypto";
-import { Logger, h, Context } from "koishi";
-import { IChatModel, TaskType } from "../model";
-import { PromptService } from "../prompt";
-import { Services, TableName } from "../types";
+import { Context, Logger, h } from "koishi";
 import { HistoryConfig } from "./config";
 import { DialogueSegmentData, MemberData, MessageData, SystemEventData } from "./database-models";
-import { CommandInvocationPayload } from "./event-types";
+import { CommandInvocationPayload } from "./types";
+
 
 export class SummarizationManager {
     private logger: Logger;

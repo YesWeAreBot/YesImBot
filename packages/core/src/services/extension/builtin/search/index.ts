@@ -1,11 +1,11 @@
-import { Context, Schema } from "koishi";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { isEmpty } from "@/shared";
-import * as cheerio from "cheerio";
 import { Readability } from "@mozilla/readability";
+import * as cheerio from "cheerio";
 import { JSDOM } from "jsdom";
+import { Context, Schema } from "koishi";
 
 // 声明 puppeteer 类型 - 修复为正确的 page() 方法
 declare module "koishi" {
@@ -124,7 +124,7 @@ export default class SearchExtension {
 
             // 决定是否使用无头浏览器
             const usePuppeteer = (use_dynamic || this.config.usePuppeteer) && this.ctx.puppeteer;
-            
+
             if (usePuppeteer) {
                 // 使用无头浏览器获取动态内容
                 const result = await this._fetchWithPuppeteer(url);
@@ -143,14 +143,14 @@ export default class SearchExtension {
                     timeout: this.config.httpTimeout,
                     responseType: 'text'
                 });
-                title = extractTitle(rawContent); 
+                title = extractTitle(rawContent);
                 links = include_links ? extractLinks(rawContent, url, max_links) : [];
                 this.ctx.logger.info(`通过HTTP获取网页成功`);
             }
 
             // 提取主要内容（使用Readability算法）
             const { content, textContent } = this.extractMainContent(rawContent, url);
-            
+
             let resultContent = format === "text" ? textContent : content;
 
             // 限制返回内容长度
@@ -203,34 +203,34 @@ export default class SearchExtension {
 
         // 使用正确的API获取页面实例
         const page = await this.ctx.puppeteer.page();
-        
+
         try {
             // 设置浏览器参数
             await page.setUserAgent(this.config.customUA);
             await page.setViewport({ width: 1280, height: 800 });
-            
+
             // 设置请求超时
             await page.setDefaultNavigationTimeout(this.config.puppeteerTimeout);
-            
+
             // 导航到页面
-            const response = await page.goto(url, { 
+            const response = await page.goto(url, {
                 waitUntil: 'networkidle2',
                 timeout: this.config.puppeteerTimeout
             });
-            
+
             if (!response || !response.ok()) {
                 throw new Error(`页面加载失败: ${response?.status()}`);
             }
-            
+
             // 额外等待时间，确保动态内容加载完成
             if (this.config.puppeteerWaitTime > 0) {
                 await page.waitForTimeout(this.config.puppeteerWaitTime);
             }
-            
+
             // 获取页面内容
             const content = await page.content();
             const title = await page.title();
-            
+
             // 提取链接
             const links = await page.evaluate(() => {
                 const anchors = Array.from(document.querySelectorAll('a'));
@@ -239,11 +239,11 @@ export default class SearchExtension {
                     text: a.textContent?.trim() || ''
                 }));
             });
-            
+
             return { content, title, links };
         } finally {
             // 确保页面被关闭
-            await page.close().catch(e => 
+            await page.close().catch(e =>
                 this.ctx.logger.warn(`关闭Puppeteer页面失败: ${e.message}`));
         }
     }
@@ -259,11 +259,11 @@ export default class SearchExtension {
             // 创建DOM环境
             const dom = new JSDOM(html, { url });
             const document = dom.window.document;
-            
+
             // 使用Readability提取主要内容
             const reader = new Readability(document);
             const article = reader.parse();
-            
+
             if (article) {
                 return {
                     content: article.content,
@@ -273,7 +273,7 @@ export default class SearchExtension {
         } catch (error) {
             this.ctx.logger.warn(`使用Readability提取内容失败: ${error.message}`);
         }
-        
+
         // 如果Readability失败，使用回退方法
         return this.extractMainContentFallback(html);
     }
@@ -285,29 +285,29 @@ export default class SearchExtension {
      */
     private extractMainContentFallback(html: string): { content: string; textContent: string } {
         const $ = cheerio.load(html);
-        
+
         // 尝试提取常见的内容容器
         const contentContainers = [
-            'article', '.article', '#article', 
+            'article', '.article', '#article',
             '.content', '#content', '.main', '#main',
             '.post', '.entry-content', '.story-content'
         ];
-        
+
         let contentElement = null;
-        
+
         for (const selector of contentContainers) {
             contentElement = $(selector).first();
             if (contentElement.length > 0) break;
         }
-        
+
         // 如果没有找到特定容器，使用整个body
         if (!contentElement || contentElement.length === 0) {
             contentElement = $('body');
         }
-        
+
         const content = contentElement.html() || html;
         const textContent = this.convertHtmlToText(content);
-        
+
         return { content, textContent };
     }
 
@@ -377,17 +377,17 @@ export default class SearchExtension {
             topResults.forEach((result: any, index: number) => {
                 resultText += `${index + 1}. **${result.title || '(无标题)'}**\n`;
                 resultText += `   链接: ${result.url}\n`;
-                
+
                 if (result.content) {
                     // 移除摘要中的HTML标签
                     const cleanContent = result.content.replace(/<\/?[^>]+(>|$)/g, "");
                     resultText += `   摘要: ${cleanContent.substring(0, 150)}${cleanContent.length > 150 ? "..." : ""}\n`;
                 }
-                
+
                 if (result.publishedDate) {
                     resultText += `   发布时间: ${result.publishedDate}\n`;
                 }
-                
+
                 resultText += `\n`;
             });
 

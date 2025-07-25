@@ -1,5 +1,5 @@
-import { Service, Logger, Context, Schema } from "koishi";
-import { Services } from "../types";
+import { Services } from "@/shared/constants";
+import { Context, Logger, Schema, Service } from "koishi";
 
 /**
  * 定义日志的详细级别，与 Koishi (reggol) 的模型对齐。

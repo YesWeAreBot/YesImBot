@@ -2,23 +2,24 @@ import type {
     ChatProvider,
     EmbedProvider,
     ImageProvider,
+    ModelProvider,
     SpeechProvider,
     TranscriptionProvider,
-    ModelProvider,
 } from "@xsai-ext/shared-providers";
+
 import {
     createAnthropic,
-    createOllama,
-    createOpenAI,
     createDeepSeek,
     createFireworks,
     createGoogleGenerativeAI,
     createLMStudio,
+    createOllama,
+    createOpenAI,
+    createQwen,
+    createSiliconFlow,
     createWorkersAI,
     createZhipu,
-    createSiliconFlow,
-    createQwen,
-} from "../../dependencies/xsai";
+} from "@/dependencies/xsai";
 import { ProviderConfig, ProviderType } from "./config";
 
 export interface IProviderClient {

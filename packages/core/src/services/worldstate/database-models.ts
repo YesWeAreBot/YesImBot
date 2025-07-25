@@ -2,9 +2,8 @@
  * @file database-models.ts
  * @description 定义插件的数据库模型 (DTOs) 和表结构
  */
-import { TableName } from "../types";
-import { EventName } from "./event-types";
-import { DialogueSegmentStatus, Sender, AgentTurn, AgentResponse, Action, ActionResult } from "./interfaces";
+import { TableName } from "@/shared/constants";
+import { Action, ActionResult, AgentResponse, AgentTurn, DialogueSegmentStatus, EventName } from "./types";
 
 // --- 数据库表的数据传输对象 (DTOs) ---
 

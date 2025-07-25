@@ -1,10 +1,9 @@
 import { ChannelDescriptor } from "@/agent";
+import { Services, TableName } from "@/shared/constants";
 import { Bot, Context, Logger } from "koishi";
-import { UserProfile } from "../memory";
-import { Services, TableName } from "../types";
 import { HistoryConfig } from "./config";
 import { HistoryBuilder } from "./history-builder";
-import { ContextualMessage, GuildMember, History, WorldState } from "./interfaces";
+import { ContextualMessage, GuildMember, History, WorldState } from "./types";
 import { UserRecallManager } from "./user-recall-manager";
 
 // =================================================================================

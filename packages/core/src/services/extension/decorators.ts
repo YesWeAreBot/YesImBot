@@ -1,6 +1,6 @@
 import { Context, Schema } from "koishi";
 
-import { Services } from "@/services/types";
+import { Services } from "@/shared/constants";
 import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types";
 
 // 定义一个更精确的类型，表示任何可以被 new 的类

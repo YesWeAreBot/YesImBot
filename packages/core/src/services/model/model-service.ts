@@ -1,9 +1,10 @@
+import { Services } from "@/shared/constants";
+import { AppError, ErrorCodes } from "@/shared/errors";
+import { isNotEmpty } from "@/shared/utils";
 import { Awaitable, Context, Logger, Schema, Service } from "koishi";
-import { AppError, ErrorCodes, isNotEmpty } from "../../shared";
-import { Services } from "../types";
 import { BaseModel } from "./base-model";
 import { IChatModel } from "./chat-model";
-import { ModelDescriptor, ModelServiceConfig, TaskType } from "./config";
+import { ModelDescriptor, ModelServiceConfig } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";

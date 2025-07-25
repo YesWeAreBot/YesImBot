@@ -4,9 +4,9 @@ import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorat
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { MemoryService } from "@/services/memory";
-import { Services, TableName } from "@/services/types";
 import { MessageData } from "@/services/worldstate";
-import { formatDate, isEmpty, truncate } from "@/shared";
+import { formatDate, truncate } from "@/shared";
+import { Services, TableName } from "@/shared/constants";
 
 @Extension({
     name: "memory",

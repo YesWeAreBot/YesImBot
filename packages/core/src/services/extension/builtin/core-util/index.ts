@@ -4,7 +4,7 @@ import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
-import { Services } from "@/services/types";
+import { Services } from "@/shared/constants";
 
 interface CoreUtilConfig {
     typing: {

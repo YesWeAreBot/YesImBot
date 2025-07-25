@@ -1,15 +1,14 @@
 import fs from "fs/promises";
-import { Context, h, Logger, Service } from "koishi";
+import { Context, h, Logger, Query, Service } from "koishi";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, PromptService } from "@/services/prompt";
-import { Services, TableName } from "@/services/types";
 import { ContextualMessage, MemberData, MessageData } from "@/services/worldstate";
+import { Services, TableName } from "@/shared/constants";
 import { AppError, ErrorCodes } from "@/shared/errors";
 import { cosineSimilarity, formatDate, JsonParser } from "@/shared/utils";
-import { Query } from "koishi";
 import { MemoryConfig } from "./config";
 import { MemoryBlock } from "./MemoryBlock";
 import {
@@ -23,7 +22,6 @@ import {
     ProfileConsolidationOptions,
     Searchable,
     SearchOptions,
-    UserDossier,
     UserProfile,
 } from "./types";
 import { CircuitBreaker } from "./utils/CircuitBreaker";
@@ -766,12 +764,19 @@ export class MemoryService extends Service<MemoryConfig> {
         }
     }
 
-    async getUserProfile(userId: string, contextId: string | "global"): Promise<MemoryOperationResult<UserProfile | null>> {
+    async getUserProfile(
+        userId: string,
+        contextId: string | "global"
+    ): Promise<MemoryOperationResult<UserProfile | null>> {
         const cached = this.cache.getCachedProfile(`${contextId}:${userId}`);
         if (cached) return { success: true, data: cached };
 
         try {
-            const [profile] = await this.ctx.database.get(TableName.UserProfiles, { userId, contextId, isDeleted: false });
+            const [profile] = await this.ctx.database.get(TableName.UserProfiles, {
+                userId,
+                contextId,
+                isDeleted: false,
+            });
             if (profile) this.cache.setCachedProfile(`${contextId}:${userId}`, profile);
             return { success: true, data: profile || null };
         } catch (error) {

@@ -1,4 +1,5 @@
-import { Services, TableName } from "@/services/types";
+
+import { Services, TableName } from "@/shared/constants";
 import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
 import { Context, Dict, Element, Service, h } from "koishi";

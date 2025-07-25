@@ -2,15 +2,14 @@ import { Argv, Context, Logger, Query, Random, Service, Session } from "koishi";
 
 import { AssetService } from "@/services/assets";
 import { IEmbedModel, TaskType } from "@/services/model";
-import { Services, TableName } from "@/services/types";
+import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
 import { HistoryConfig } from "./config";
 import { ContextBuilder } from "./context-builder";
 import { DialogueSegmentData, MessageData } from "./database-models";
-import { CommandInvocationPayload } from "./event-types";
-import { AgentResponse, ContextualMessage, WorldState } from "./interfaces";
 import { DialogueSegmentManager } from "./segment-manager";
 import { SummarizationManager } from "./summarize";
+import { AgentResponse, CommandInvocationPayload, ContextualMessage, WorldState } from "./types";
 import { pruneHistoryByMessages } from "./utils";
 
 // 扩展 Koishi 的 Context 和 Events 接口

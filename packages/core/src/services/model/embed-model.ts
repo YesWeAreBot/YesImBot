@@ -3,7 +3,6 @@ import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } fro
 import { Context } from "koishi";
 
 import { embed, embedMany } from "@/dependencies/xsai";
-import { truncate } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 

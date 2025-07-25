@@ -1,5 +1,5 @@
+import { Services } from "@/shared/constants";
 import { Context, Logger } from "koishi";
-import { Services } from "../types";
 import { ModelConfig } from "./config";
 
 /**

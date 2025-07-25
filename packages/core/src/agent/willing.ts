@@ -1,6 +1,7 @@
 import { Context, Logger, Session } from "koishi";
+
+import { Services } from "@/shared/constants";
 import { PersonalityPresets, WillingnessConfig } from "./config";
-import { Services } from "@/services/types";
 
 export interface MessageContext {
     chatId: string;
@@ -215,7 +216,7 @@ export class WillingnessManager {
 
         return { decision, probability };
     }
-    
+
     /**
      * 引导模型关注被跳过的话题（用于策略3）
      */
@@ -226,7 +227,7 @@ export class WillingnessManager {
             current + this.config.lifecycle.maxWillingness * 0.7, // 提升70%的意愿值
             this.config.lifecycle.maxWillingness
         );
-        
+
         this.willingnessScores.set(chatId, newValue);
         this.logger.debug(`[${chatId}] 引导关注被跳过话题，意愿值: ${current.toFixed(2)} -> ${newValue.toFixed(2)}`);
     }

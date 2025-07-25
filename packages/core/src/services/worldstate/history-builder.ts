@@ -2,10 +2,11 @@
 // #region 辅助类：HistoryBuilder (构建历史记录)
 // =================================================================================
 
-import { ChannelDescriptor } from "@/agent";
-import { formatDate } from "@/shared";
 import { Context } from "koishi";
-import { TableName } from "../types";
+
+import { ChannelDescriptor } from "@/agent";
+import { TableName } from "@/shared/constants";
+import { formatDate } from "@/shared/utils";
 import { HistoryConfig } from "./config";
 import { DialogueSegmentData, MessageData, SystemEventData } from "./database-models";
 import {
@@ -15,7 +16,7 @@ import {
     History,
     PendingDialogueSegment,
     SummarizedDialogueSegment,
-} from "./interfaces";
+} from "./types";
 
 export class HistoryBuilder {
     constructor(private ctx: Context, private config: HistoryConfig) {}

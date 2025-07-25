@@ -1,17 +1,17 @@
 import type { ImagePart, Message, TextPart } from "@xsai/shared-chat";
 import { Context, h, Service, Session } from "koishi";
 
+import { AssetService } from "@/services/assets";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
 import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
-import { Services } from "@/services/types";
 import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
+import { Services } from "@/shared/constants";
 import { handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { WillingnessManager } from "./willing";
-import { AssetService } from "@/services/assets";
 
 declare module "koishi" {
     interface Events {

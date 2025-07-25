@@ -1,8 +1,8 @@
-import { Schema } from "koishi";
 import { readFileSync } from "fs";
+import { Schema } from "koishi";
 import path from "path";
-
-import { SystemConfig } from "../config";
+ 
+import { SystemConfig } from "@/config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
 // 默认的系统和用户模板文件路径
@@ -246,7 +246,7 @@ export interface AgentBehaviorConfig {
     };
     vision: VisionConfig;
     readonly system?: SystemConfig;
-    
+
     /**
      * 当处理消息过程中收到新消息时的处理策略
      * - skip: 跳过此消息（默认行为）
@@ -254,7 +254,7 @@ export interface AgentBehaviorConfig {
      * - deferred: 等待安静期后处理被跳过的话题
      */
     newMessageStrategy: "skip" | "immediate" | "deferred";
-    
+
     /**
      * 延迟处理策略的安静期时间（毫秒）
      * 当一段时间内没有新消息时才处理被跳过的话题

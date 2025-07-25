@@ -1,5 +1,4 @@
 export * from "./config";
 export * from "./database-models";
-export * from "./event-types";
-export * from "./interfaces";
+export * from "./types";
 export * from "./world-state-service";

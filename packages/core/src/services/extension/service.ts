@@ -1,7 +1,7 @@
+import { PromptService } from "@/services/prompt";
+import { Services } from "@/shared/constants";
 import { stringify, truncate } from "@/shared/utils";
 import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
-import { PromptService } from "../prompt";
-import { Services } from "../types";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
