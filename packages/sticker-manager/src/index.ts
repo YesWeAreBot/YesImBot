@@ -272,32 +272,17 @@ export default class StickerTools {
 
     private initialized = false;
 
-    // 添加服务就绪等待方法
-    private async whenReady() {
-        return new Promise<void>((resolve) => {
-            const check = () => {
-                if (this.stickerService.isReady) {
-                    resolve();
-                } else {
-                    setTimeout(check, 100);
-                }
-            };
-            check();
-        });
-    }
-
     private async registerToolDescriptions() {
         const categories = await this.stickerService.getCategories();
         const categoryList = categories.join(', ');
-
+        this.stickerService.logger.debug("工具已重新注册");
         // 更新发送表情包工具的描述
         this.ctx['yesimbot.tool'].registerTool({
-            name: 'send_random_sticker',
+            name: 'send_sticker',
             description: `发送一个随机表情包。可用分类: ${categoryList ? categoryList : '暂无分类，请先收藏表情包'}`,
             parameters: Schema.object({
                 category: Schema.string().required().description(`表情包分类名称，可用选项: ${categoryList}`),
             }),
-            // 使用 bind 方法确保正确的 this 上下文
             execute: this.sendRandomSticker.bind(this)
         });
     }
