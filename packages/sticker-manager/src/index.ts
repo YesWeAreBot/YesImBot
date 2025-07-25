@@ -304,7 +304,6 @@ export default class StickerTools {
 
             await this.registerToolDescriptions();
 
-
             return Success({
                 id: record.id,
                 category: record.category,
@@ -332,7 +331,6 @@ export default class StickerTools {
             await session.sendQueued(sticker);
 
             return Success({
-                element: sticker,
                 message: `已发送 ${category} 分类的表情包`
             });
         } catch (error) {

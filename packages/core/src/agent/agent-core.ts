@@ -1,5 +1,5 @@
 import type { ImagePart, Message, TextPart } from "@xsai/shared-chat";
-import { Context, h, Logger, Service, Session } from "koishi";
+import { Context, h, Service, Session } from "koishi";
 
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
@@ -61,7 +61,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private readonly modelSwitcher: ModelSwitcher<IChatModel>;
     private readonly willing: WillingnessManager;
 
-    // 内部状态
+    // 内部状态_performSingleHeartbeat
     private readonly allowedChannels = new Set<string>();
     private willingnessDecayTimer: NodeJS.Timeout;
     private readonly debouncedReplyTasks: Map<string, WithDispose<(sid: string) => void>> = new Map();
@@ -78,7 +78,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         super(ctx, "agent", true);
         this.ctx = ctx;
         this.config = config;
-        this.logger = ctx.logger("[智能体核心]");
+        this.logger = this.ctx[Services.Logger].getLogger("[智能体核心]");
 
         this.assetService = this.ctx[Services.Asset];
         this.modelService = this.ctx[Services.Model];
