@@ -167,11 +167,11 @@ export default class CoreUtilExtension {
         const BASE_DELAY = this.config.typing.baseDelay;
 
         // 中文输入模拟 (拼音输入法)
-        const DELAY_PER_CHINESE_CHAR = this.config.typing.charPerSecond;
+        const CHINESE_CHAR_PER_SECOND = this.config.typing.charPerSecond;
         const CHINESE_RANDOM_FACTOR = 0.5;
 
         // 英文输入模拟
-        const DELAY_PER_ENGLISH_CHAR = this.config.typing.charPerSecond * 1.5;
+        const ENGLISH_CHAR_PER_SECOND = this.config.typing.charPerSecond * 1.5;
         const ENGLISH_RANDOM_FACTOR = 0.3; // 英文输入的随机性较小
 
         // 延迟上下限
@@ -199,8 +199,8 @@ export default class CoreUtilExtension {
         englishCharCount = text.length - chineseCharCount;
 
         // 2. 分别计算中英文部分的延迟
-        const chineseDelay = chineseCharCount * DELAY_PER_CHINESE_CHAR;
-        const englishDelay = englishCharCount * DELAY_PER_ENGLISH_CHAR;
+        const chineseDelay = (chineseCharCount / CHINESE_CHAR_PER_SECOND) * 1000;
+        const englishDelay = (englishCharCount / ENGLISH_CHAR_PER_SECOND) * 1000;
 
         // 3. 计算总延迟并加入随机性
         // 随机性的大小也与中英文字符数量有关，让节奏更真实
@@ -261,7 +261,7 @@ export default class CoreUtilExtension {
             // --- 处理图片元素 ---
             const content = await this.assetService.encode(msg);
 
-            this.logger.info(`发送消息 | 延迟: ${delay}ms`);
+            this.logger.debug(`发送消息 | 延迟: ${delay}ms`);
 
             await sleep(delay);
 
