@@ -4,7 +4,7 @@ import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
-import { ModelDescriptor } from "@/services/model";
+import { IChatModel, ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
 
 interface CoreUtilConfig {
@@ -87,13 +87,13 @@ export default class CoreUtilExtension {
                 return Failed(`未找到平台 ${target} 对应的机器人实例。`);
             }
 
-            this.logger.info(`🚀 准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
+            // this.logger.info(`准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
 
             await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
 
             return Success();
         } catch (error) {
-            return Failed(`发送消息失败: ${error.message}`);
+            return Failed(`发送消息失败，可能是已被禁言。错误: ${error.message}`);
         }
     }
 
@@ -123,15 +123,23 @@ export default class CoreUtilExtension {
             return Failed(`不是图片文件`);
         }
         const visionModel = this.config.vision.model;
-        const model = this.ctx[Services.Model].getChatModel(visionModel.providerName, visionModel.modelId);
-        if (!model) {
-            this.logger.warn(`✖ 模型未找到 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
-            return Failed(`模型未找到`);
+        let model: IChatModel | null = null;
+
+        try {
+            model = this.ctx[Services.Model].getChatModel(visionModel.providerName, visionModel.modelId);
+            if (!model) {
+                this.logger.warn(`✖ 模型未找到 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
+                return Failed(`模型未找到`);
+            }
+            if (!model.isVisionModel()) {
+                this.logger.warn(`✖ 模型不支持多模态 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
+                return Failed(`模型不支持多模态`);
+            }
+        } catch (error) {
+            this.logger.error(`获取视觉模型失败: ${error.message}`);
+            return Failed(`获取视觉模型失败: ${error.message}`);
         }
-        if (!model.isVisionModel()) {
-            this.logger.warn(`✖ 模型不支持多模态 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
-            return Failed(`模型不支持多模态`);
-        }
+
         const prompt = `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
 
         try {
@@ -252,6 +260,8 @@ export default class CoreUtilExtension {
 
             // --- 处理图片元素 ---
             const content = await this.assetService.encode(msg);
+
+            this.logger.info(`发送消息 | 延迟: ${delay}ms`);
 
             await sleep(delay);
 
