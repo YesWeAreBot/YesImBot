@@ -1,9 +1,7 @@
-
 import { Services, TableName } from "@/shared/constants";
 import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
 import { Context, Dict, Element, Service, h } from "koishi";
-import { fetch } from "undici";
 import { v4 as uuidv4 } from "uuid";
 import { AssetServiceConfig } from "./config";
 import { LocalStorageDriver } from "./drivers";
@@ -60,19 +58,20 @@ export class AssetService extends Service<AssetServiceConfig> {
 
     public async transform(source: string): Promise<string> {
         const handle = async (type: AssetType, attrs: Dict, tagName: string) => {
-            if (!attrs.src || attrs.id) return h(tagName, attrs);
+            const originalUrl = attrs.src || attrs.url || attrs.file;
+            if (!originalUrl || attrs.id) return h(tagName, attrs);
             try {
                 const metadata = {
                     filename: attrs.filename || attrs.fileName,
-                    src: attrs.src || attrs.url,
+                    src: originalUrl,
                     summary: attrs.summary,
                 };
-                const id = await this.create(attrs.src, type, metadata);
+                const id = await this.create(originalUrl, type, metadata);
                 // 只保留ID，其他信息存放于数据库
                 const { src, ...display } = metadata;
                 return h(tagName, { id, ...display });
             } catch (error) {
-                this.logger.error(`Failed to persist asset from ${attrs.src}: ${error.message}`);
+                this.logger.error(`Failed to persist asset from ${originalUrl}: ${error.message}`);
                 return h(type, attrs);
             }
         };
@@ -149,11 +148,25 @@ export class AssetService extends Service<AssetServiceConfig> {
 
         if (typeof source === "string") {
             originalUrl = source;
-            const response = await fetch(source);
-            if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-            buffer = Buffer.from(await response.arrayBuffer());
+            const response = await this.ctx.http(source, {
+                method: "GET",
+                responseType: "arraybuffer",
+                timeout: 10000,
+                headers: {
+                    "User-Agent":
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                },
+            });
+            // if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
+            if (response.status !== 200) throw new Error(`Failed to download: ${response.statusText}`);
+
+            buffer = Buffer.from(response.data);
         } else {
             buffer = source;
+        }
+
+        if (!buffer || buffer.length === 0) {
+            throw new Error("Empty file");
         }
 
         if (buffer.length > this.config.maxFileSize) {
