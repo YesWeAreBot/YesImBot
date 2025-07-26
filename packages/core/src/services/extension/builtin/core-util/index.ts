@@ -4,6 +4,7 @@ import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
+import { ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
 
 interface CoreUtilConfig {
@@ -13,6 +14,10 @@ interface CoreUtilConfig {
         minDelay: number;
         maxDelay: number;
     };
+    vision: {
+        model: ModelDescriptor;
+        detail: "low" | "high" | "auto";
+    };
 }
 
 const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
@@ -21,6 +26,10 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
         charPerSecond: Schema.number().default(5).description("每秒字符数"),
         minDelay: Schema.number().default(800).description("最小延迟 (毫秒)"),
         maxDelay: Schema.number().default(4000).description("最大延迟 (毫秒)"),
+    }),
+    vision: Schema.object({
+        model: Schema.dynamic("modelService.selectableModels").description("用于图片描述的多模态模型"),
+        detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
     }),
 });
 
@@ -32,7 +41,7 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
     builtin: true,
 })
 export default class CoreUtilExtension {
-    static readonly inject = [Services.Logger, Services.Asset];
+    static readonly inject = [Services.Logger, Services.Asset, Services.Model];
     static readonly Config = CoreUtilConfigSchema;
 
     private readonly logger: Logger;
@@ -85,6 +94,63 @@ export default class CoreUtilExtension {
             return Success();
         } catch (error) {
             return Failed(`发送消息失败: ${error.message}`);
+        }
+    }
+
+    @Tool({
+        name: "get_image_description",
+        description: "使用外部视觉模型获取图片描述，当你无法查看图片，或者此图片数据在上下文中丢失时使用此工具",
+        parameters: withInnerThoughts({
+            image_id: Schema.string()
+                .required()
+                .description("要获取的图片ID，如在 `<img id='12345'>` 中的 12345 即是其 ID"),
+            question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
+        }),
+    })
+    async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
+        const { image_id, question } = args;
+        const image = await this.assetService.getAssetDataWithContent(image_id);
+        if (!image) {
+            this.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
+            return Failed(`图片未找到`);
+        }
+        if (!image.content) {
+            this.logger.warn(`✖ 图片内容为空 | ID: ${image_id}`);
+            return Failed(`图片内容为空`);
+        }
+        if (!image.data.mime.startsWith("image/")) {
+            this.logger.warn(`✖ 不是图片文件 | ID: ${image_id}`);
+            return Failed(`不是图片文件`);
+        }
+        const visionModel = this.config.vision.model;
+        const model = this.ctx[Services.Model].getChatModel(visionModel.providerName, visionModel.modelId);
+        if (!model) {
+            this.logger.warn(`✖ 模型未找到 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
+            return Failed(`模型未找到`);
+        }
+        if (!model.isVisionModel()) {
+            this.logger.warn(`✖ 模型不支持多模态 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
+            return Failed(`模型不支持多模态`);
+        }
+        const prompt = `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
+
+        try {
+            const response = await model.chat({
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            { type: "image_url", image_url: { url: image.content, detail: this.config.vision.detail } },
+                        ],
+                    },
+                ],
+                temperature: 0.2,
+            });
+            return Success(response.text);
+        } catch (error) {
+            this.logger.error(`图片描述失败: ${error.message}`);
+            return Failed(`图片描述失败: ${error.message}`);
         }
     }
 
