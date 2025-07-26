@@ -6,6 +6,7 @@ import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extension
 import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
 import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
+import { ErrorReporterConfig, ErrorReporterConfigSchema } from "./shared/errors";
 
 export interface SystemConfig {
     /** 平台服务缓存配置 */
@@ -15,16 +16,8 @@ export interface SystemConfig {
     };
     /** 全局日志配置 */
     logging: LoggingConfig;
-    /** 调试与诊断 */
-    debug: {
-        /**
-         * 启用全局调试模式。会覆盖 logging.level 为 'debug'。
-         * 这通常意味着更详细的内部状态输出。
-         */
-        enable: boolean;
-        /** 应用出错时自动上报详细日志给开发者 */
-        uploadDump: boolean;
-    };
+
+    errorReporting: ErrorReporterConfig;
 }
 
 export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
@@ -35,12 +28,7 @@ export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
         maxSize: Schema.number().default(1000).description("缓存最大项目数"),
     }).description("平台服务缓存配置"),
     logging: LoggingConfigSchema.description("日志配置"),
-    debug: Schema.object({
-        enable: Schema.boolean().default(false).description("启用全局调试模式"),
-        uploadDump: Schema.boolean()
-            .default(false)
-            .description("应用出错时自动上报详细日志给开发者（包含聊天内容和 LLM 输出）"),
-    }).description("调试与诊断"),
+    errorReporting: ErrorReporterConfigSchema.description("错误上报配置"),
 });
 
 // =================================================================

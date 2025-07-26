@@ -11,7 +11,7 @@ import {
     ToolService,
     WorldStateService,
 } from "./services";
-import { handleError } from "./shared/errors";
+import { handleError, initializeErrorReporter } from "./shared/errors";
 
 declare module "koishi" {
     interface Context {
@@ -80,6 +80,8 @@ export default class YesImBot extends Service<Config> {
                 worldStateService,
                 agentCore,
             ];
+
+            initializeErrorReporter(config.system.errorReporting, this.ctx.logger("[错误报告]"));
 
             waitForServices(services).then(() => {
                 this.ctx.logger.info("所有服务已就绪");

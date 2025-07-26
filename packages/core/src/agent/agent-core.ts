@@ -8,7 +8,7 @@ import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/mo
 import { loadTemplate, PromptService } from "@/services/prompt";
 import { AgentResponse, WorldState, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
-import { handleError } from "@/shared/errors";
+import { AppError, ErrorCodes, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { WillingnessManager } from "./willing";
@@ -93,8 +93,11 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.willing = new WillingnessManager(this.ctx, this.config.willingness);
 
         if (!this.modelSwitcher) {
-            this.logger.error("❌❌ 未配置模型组，智能体核心无法启动。");
-            handleError(this.logger, new Error("未配置模型组"), "智能体核心启动失败");
+            const error = new AppError("未配置模型组，智能体核心无法启动", {
+                code: ErrorCodes.CONFIG.MISSING,
+                context: { service: "AgentCore", component: "modelSwitcher" },
+            });
+            handleError(this.logger, error, "智能体核心启动失败");
         }
     }
 
@@ -490,24 +493,48 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 平均: ${Math.round((prompt_tokens+completion_tokens)/(Date.now()-stime)*1000)} t/s`);
 
         // 5. 解析和处理响应
+
+        // A. 预先创建用于错误上报的上下文对象，避免重复
+        const errorContext = {
+            rawResponse: llmRawResponse.text,
+            channelId: session.cid,
+            segmentId: sid,
+            modelUsed: chatModel.id,
+            promptTokens: llmRawResponse.usage?.prompt_tokens,
+            completionTokens: llmRawResponse.usage?.completion_tokens,
+        };
+
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
+
+        // B. 处理JSON解析失败
         if (llmParsedResponse.error || !llmParsedResponse.data) {
-            /* prettier-ignore */
-            this.logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            const parseError = new AppError("解析 LLM 响应失败", {
+                code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED,
+                // cause: llmParsedResponse.error,
+                context: errorContext,
+            });
+            handleError(this.logger, parseError, `解析 LLM 响应时 (Channel: ${session.cid})`);
             return null;
         }
 
         const agentResponseData = llmParsedResponse.data;
 
-        if (!agentResponseData.thoughts) {
-            /* prettier-ignore */
-            this.logger.warn(`✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+        if (!agentResponseData.thoughts || typeof agentResponseData.thoughts !== "object") {
+            const formatError = new AppError("LLM 响应格式无效：缺少必需的 'thoughts' 对象", {
+                code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED,
+                context: errorContext,
+            });
+            handleError(this.logger, formatError, `验证 LLM 响应格式时 (Channel: ${session.cid})`);
             return null;
         }
 
+        // D. (新) 处理 'actions' 字段格式无效
         if (!Array.isArray(agentResponseData.actions)) {
-            /* prettier-ignore */
-            this.logger.warn(`✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            const formatError = new AppError("LLM 响应格式无效：'actions' 字段不是一个数组", {
+                code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED,
+                context: errorContext,
+            });
+            handleError(this.logger, formatError, `验证 LLM 响应格式时 (Channel: ${session.cid})`);
             return null;
         }
 
