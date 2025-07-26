@@ -27,7 +27,7 @@ export class ProviderInstance {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
         }
 
-        this.logger.info(`[初始化] 🔌 提供商实例已创建`);
+        // this.logger.info(`[初始化] 🔌 提供商实例已创建`);
     }
 
     /**

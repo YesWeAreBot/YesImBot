@@ -385,12 +385,14 @@ export class ToolService extends Service<ToolServiceConfig> {
             }
 
             if (!enabled) {
-                this._logger.info(`扩展 "${metadata.name}" 已禁用。`);
+                // this._logger.info(`扩展 "${metadata.name}" 已禁用`);
                 return;
             }
 
-            this._logger.info(`正在注册扩展: "${extensionInstance.metadata.name}"`);
-            this.extensions.set(extensionInstance.metadata.name, extensionInstance);
+            const display = metadata.display || metadata.name;
+
+            this._logger.info(`正在注册扩展: "${display}"`);
+            this.extensions.set(metadata.name, extensionInstance);
 
             if (extensionInstance.tools) {
                 for (const [name, tool] of extensionInstance.tools.entries()) {
@@ -399,7 +401,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                 }
             }
 
-            this._logger.debug(`扩展 "${metadata.name}" 已加载。`);
+            // this._logger.debug(`扩展 "${metadata.name}" 已加载`);
         } catch (error) {
             this._logger.error(`扩展配置验证失败: ${error.message}`);
             return;
@@ -436,7 +438,7 @@ export class ToolService extends Service<ToolServiceConfig> {
         // 1. 获取工具，这里已经包含了 isSupported 的检查
         const tool = this.getTool(functionName, session);
         if (!tool) {
-            this._logger.warn(`[执行] 工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
+            this._logger.warn(`工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
             return Failed(`Tool ${functionName} not found or not supported in this context.`);
         }
 
@@ -447,20 +449,20 @@ export class ToolService extends Service<ToolServiceConfig> {
                 // Schema 对象本身就是验证函数
                 validatedParams = tool.parameters(params);
             } catch (error) {
-                this._logger.warn(`[执行] ✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
+                this._logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
                 // 将详细的验证错误返回给 AI
                 return Failed(`Parameter validation failed: ${error.message}`); // 参数错误不可重试
             }
         }
 
         const stringifyParams = truncate(stringify(params), 100);
-        this._logger.info(`[执行] → 调用: ${functionName} | 参数: ${stringifyParams}`);
+        this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
         for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
             try {
                 if (attempt > 1) {
-                    this._logger.info(`  - [执行] 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
+                    this._logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
@@ -470,22 +472,22 @@ export class ToolService extends Service<ToolServiceConfig> {
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
-                    this._logger.success(`[执行] ✔ 成功 ← 返回: ${resultString}`);
+                    this._logger.success(`✔ 成功 ← 返回: ${resultString}`);
                     return lastResult;
                 }
                 if (!lastResult.retryable) {
-                    this._logger.warn(`[执行] ✖ 失败 (不可重试) ← 原因: ${lastResult.error}`);
+                    this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${lastResult.error}`);
                     return lastResult;
                 }
-                this._logger.warn(`[执行] ⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
+                this._logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
             } catch (error) {
-                this._logger.error(`[执行] 💥 异常 | 调用 ${functionName} 时出错`, error.message);
+                this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
                 this._logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);
                 return lastResult;
             }
         }
-        this._logger.error(`[执行] ✖ 失败 (耗尽重试) | 工具: ${functionName}`);
+        this._logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
         return lastResult;
     }
 

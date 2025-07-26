@@ -92,7 +92,7 @@ export class DialogueSegmentManager {
         const openSegments = await this.ctx.database.get(TableName.DialogueSegments, { status: "open" });
 
         if (openSegments.length === 0) {
-            this.logger.debug("没有需要检查的开放片段");
+            // this.logger.debug("没有需要检查的开放片段");
             return;
         }
 

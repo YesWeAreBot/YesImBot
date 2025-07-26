@@ -106,7 +106,7 @@ export default class FavorExtension {
 
     @Tool({
         name: "add_favor",
-        description: "为指定用户增加或减少好感度。最终好感度会被限制在 [0, maxFavor] 范围内。",
+        description: "为指定用户增加或减少好感度",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要增加好感度的用户 ID"),
             amount: Schema.number().required().description("要增加的好感度数量。负数则为减少。"),
@@ -134,7 +134,7 @@ export default class FavorExtension {
 
     @Tool({
         name: "set_favor",
-        description: "为指定用户直接设置好感度。最终好感度会被限制在 [0, maxFavor] 范围内。",
+        description: "为指定用户直接设置好感度。",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要设置好感度的用户 ID"),
             amount: Schema.number().required().description("要设置的好感度目标值。"),

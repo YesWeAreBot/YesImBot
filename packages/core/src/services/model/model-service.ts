@@ -77,7 +77,7 @@ export class ModelService extends Service<ModelServiceConfig> {
      * 4. 为核心任务分配的模型组存在
      */
     private validateConfig(): void {
-        this._logger.debug("⚙️ 开始验证服务配置...");
+        // this._logger.debug("开始验证服务配置");
         if (this.config.providers.length === 0) {
             throw new Error("配置错误: 至少需要配置一个提供商。");
         }
@@ -100,14 +100,14 @@ export class ModelService extends Service<ModelServiceConfig> {
                 throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
             }
         }
-        this._logger.debug("⚙️ 配置验证通过。");
+        this._logger.debug("配置验证通过");
     }
 
     private initializeProviders(): void {
-        this._logger.info("开始初始化提供商...");
+        // this._logger.info("开始初始化提供商...");
         for (const providerConfig of this.config.providers) {
             if (!providerConfig.enabled) {
-                this._logger.info(`🔌 跳过 (未启用) | 提供商: ${providerConfig.name}`);
+                this._logger.info(`跳过 (未启用) | 提供商: ${providerConfig.name}`);
                 continue;
             }
 
@@ -121,7 +121,7 @@ export class ModelService extends Service<ModelServiceConfig> {
                 const client = factory.createClient(providerConfig);
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this._logger.success(`✔ 提供商初始化成功 | 名称: ${instance.name}`);
+                // this._logger.success(`✔ 提供商初始化成功 | 名称: ${instance.name}`);
             } catch (error) {
                 this._logger.error(`✖ 提供商初始化失败 | 名称: ${providerConfig.name} | 错误: ${error.message}`);
             }
@@ -239,7 +239,7 @@ export class ModelSwitcher<T extends BaseModel> {
         modelGetter: (providerName: string, modelId: string) => T | null
     ) {
         this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupName}]`);
-        this._logger.debug(`开始加载模型组...`);
+        // this._logger.debug(`开始加载模型组...`);
 
         this._models = modelDescriptors
             .map((descriptor) => {
@@ -254,7 +254,7 @@ export class ModelSwitcher<T extends BaseModel> {
             .filter((model): model is T => model !== null);
 
         if (this._models.length === 0) {
-            this._logger.error("✖ 致命错误 | 模型组中无任何可用的模型 (请检查模型配置和能力声明)");
+            this._logger.error("✖ 加载失败 | 模型组中无任何可用的模型 (请检查模型配置和能力声明)");
             throw new AppError("模型组中未找到任何可用的模型", {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
                 context: { resourceType: "Model", resourceId: `group:${groupName}` },

@@ -48,13 +48,11 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                     }
 
                     ctx.on("ready", () => {
-                        const toolService = ctx[Services.Tool];
                         //@ts-ignore
                         toolService.register(this, enabled, config);
                     });
 
                     ctx.on("dispose", () => {
-                        const toolService = ctx[Services.Tool];
                         if (toolService) {
                             toolService.unregister(metadata.name);
                             logger.info(`扩展 "${metadata.name}" 已卸载。`);
@@ -73,7 +71,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
 
         WrappedAsAny.prototype.metadata = metadata;
 
-        Object.defineProperty(TargetClass, "name", {
+        Object.defineProperty(WrappedAsAny, "name", {
             value: metadata.name,
             writable: false,
         });

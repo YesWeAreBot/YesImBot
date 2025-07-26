@@ -10,7 +10,6 @@ import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "kois
 
 const exec = promisify(childProcess.exec);
 
-// (Config 接口和 Schema 定义保持不变)
 export interface CodeInterpreterConfig {
     timeout: number;
     packageManager: "npm" | "yarn" | "bun";
@@ -85,7 +84,6 @@ export default class CodeInterpreterExtension {
             return Failed(error.message);
         }
 
-        // 优化点 3: 使用 async/await 替代 new Promise 封装 worker 逻辑，代码更线性、易读
         try {
             const result = await this.runWorker(code);
             if (this.config.enableCache) {
@@ -114,7 +112,6 @@ export default class CodeInterpreterExtension {
                 },
             });
 
-            // 优化点 2: 更明确的超时信息
             const timeoutId = setTimeout(() => {
                 worker.terminate();
                 const errorMessage = `代码执行超时。最长允许执行时间为 ${this.config.timeout / 1000} 秒。`;
@@ -128,11 +125,9 @@ export default class CodeInterpreterExtension {
                 if (result.status === "success") {
                     resolve(result.data);
                 } else {
-                    // 附带建议的错误信息
                     const suggestion =
                         "建议: 请检查代码中的语法错误、变量名拼写、以及是否正确处理了 null 或 undefined 的情况。查看下方控制台日志获取更详细的线索。";
                     const errorMessage = `代码执行时发生错误: ${result.error.message}\n${suggestion}`;
-                    // 将console日志作为附加信息传递
                     const errorDetails = { console: result.error.console };
                     const error = new Error(errorMessage) as any;
                     error.details = errorDetails;
@@ -151,16 +146,13 @@ export default class CodeInterpreterExtension {
 
             worker.on("exit", (code) => {
                 if (code !== 0) {
-                    // 非正常退出通常伴随着 'error' 事件，这里仅作日志记录
                     this.logger.warn(`Worker stopped with non-zero exit code: ${code}`);
                 }
             });
         });
     }
 
-    // 优化点 1: 统一的环境准备和依赖校验逻辑
     private async prepareEnvironment(code: string) {
-        // 确保依赖目录和 package.json 存在
         await fs.mkdir(this.config.dependenciesPath, { recursive: true });
         const packageJsonPath = path.join(this.config.dependenciesPath, "package.json");
         try {
@@ -179,9 +171,8 @@ export default class CodeInterpreterExtension {
             // 核心校验逻辑：所有模块都必须在白名单中
             if (!allowedSet.has(moduleName)) {
                 // 为 LLM 提供清晰的错误和指导
-                const suggestion = `你可以使用的模块列表为: [${[...allowedSet].join(
-                    ", "
-                )}]。请修改代码，只使用列表中的模块，或者请求管理员将 '${moduleName}' 添加到白名单。`;
+                /* prettier-ignore */
+                const suggestion = `你可以使用的模块列表为: [${[...allowedSet].join(", ")}]。请修改代码，只使用列表中的模块，或者请求管理员将 '${moduleName}' 添加到白名单。`;
                 throw new Error(`模块导入失败: 模块 '${moduleName}' 不在允许的白名单中。\n${suggestion}`);
             }
 
@@ -201,7 +192,6 @@ export default class CodeInterpreterExtension {
         }
     }
 
-    // 优化点 4: 将包安装逻辑提取为独立方法，并增加错误捕获
     private async installPackage(moduleName: string) {
         let installCommand: string;
         switch (this.config.packageManager) {
@@ -232,6 +222,4 @@ export default class CodeInterpreterExtension {
     private generateCacheKey(code: string): string {
         return crypto.createHash("sha256").update(code).digest("hex");
     }
-
-    // 优化点 3: 移除了 _preprocessCodeForReturnValue 方法，因为它未被使用且与工具描述的输出方式（console.log）不一致。
 }

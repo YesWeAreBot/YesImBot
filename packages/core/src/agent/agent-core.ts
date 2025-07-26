@@ -176,7 +176,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                         // --- 解锁 ---
                         // 无论成功还是失败，都必须在 finally 块中释放锁
                         this.runningTasks.delete(channelKey);
-                        this.logger.debug(`[${channelKey}] 频道锁已释放。`);
+                        this.logger.debug(`[${channelKey}] 频道锁已释放`);
 
                         // 策略2：立即处理被跳过的消息（如果有）
                         this.handleSkippedMessagesAfterReply(channelKey);
@@ -190,7 +190,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             // 触发防抖流程
             // 每次调用都会重置计时器。只有当 DEBOUNCE_DELAY 毫秒内没有新的调用时，上面的回调才会执行。
             /* prettier-ignore */
-            this.logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）。`);
+            this.logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）`);
             debouncedTask(sid);
         });
 
@@ -482,18 +482,18 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             abortSignal: abortController.signal,
             onStreamStart: () => clearTimeout(timeout),
         });
-        this.logger.info(`💬💬 响应时间: ${Date.now() - stime}ms`);
+        this.logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
         const prompt_tokens =
             llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
         /* prettier-ignore */
-        this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+        this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 平均: ${Math.round((prompt_tokens+completion_tokens)/(Date.now()-stime)*1000)} t/s`);
 
         // 5. 解析和处理响应
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
         if (llmParsedResponse.error || !llmParsedResponse.data) {
             /* prettier-ignore */
-            this.logger.warn(`✖✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this.logger.warn(`✖ 解析失败 | 错误: ${llmParsedResponse.error} | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
@@ -501,13 +501,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         if (!agentResponseData.thoughts) {
             /* prettier-ignore */
-            this.logger.warn(`✖✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this.logger.warn(`✖ 格式无效 | 无法解析 thoughts 对象 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
         if (!Array.isArray(agentResponseData.actions)) {
             /* prettier-ignore */
-            this.logger.warn(`✖✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
+            this.logger.warn(`✖ 格式无效 | 无法解析 actions 数组 | 原始响应: ${truncate(llmRawResponse.text, 100).replace(/\n/g, " ")}`);
             return null;
         }
 
