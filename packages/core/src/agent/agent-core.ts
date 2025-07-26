@@ -628,16 +628,18 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const allMessages = allSegments.flatMap((s) => s.dialogue);
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
+        const imageTags = ["img", "image"];
+
         // 2. 收集所有潜在的图片候选者，并赋予优先级
         const imageCandidates = allMessages.flatMap((msg) => {
             const elements = h.parse(msg.content);
-            const imageIds = elements.filter((e) => e.type === "image" && e.attrs.id).map((e) => e.attrs.id as string);
+            const imageIds = elements.filter((e) => imageTags.includes(e.type)  && e.attrs.id).map((e) => e.attrs.id as string);
 
             // 检查引用，为被引用的图片赋予更高优先级
             let isQuotedImage = false;
             if (msg.quoteId && messageMap.has(msg.quoteId)) {
                 const quotedElements = h.parse(messageMap.get(msg.quoteId).content);
-                if (quotedElements.some((e) => e.type === "image")) {
+                if (quotedElements.some((e) => imageTags.includes(e.type))) {
                     isQuotedImage = true;
                 }
             }
