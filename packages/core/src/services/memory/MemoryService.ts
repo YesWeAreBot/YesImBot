@@ -24,7 +24,6 @@ import {
     SearchOptions,
     UserProfile,
 } from "./types";
-import { CircuitBreaker } from "./utils/CircuitBreaker";
 import { LockManager } from "./utils/LockManager";
 
 declare module "koishi" {
@@ -54,7 +53,6 @@ export class MemoryService extends Service<MemoryConfig> {
 
     // 工具类实例
     private readonly lockManager: LockManager;
-    private readonly circuitBreaker: CircuitBreaker;
 
     // 模型实例
     private readonly chatModel: IChatModel;
@@ -84,11 +82,6 @@ export class MemoryService extends Service<MemoryConfig> {
 
         // 初始化工具类
         this.lockManager = new LockManager(config.errorHandling.lockTimeoutMs);
-        this.circuitBreaker = new CircuitBreaker({
-            failureThreshold: config.errorHandling.circuitBreakerThreshold,
-            resetTimeoutMs: config.errorHandling.circuitBreakerResetMs,
-            monitoringPeriodMs: 60000,
-        });
 
         // 实例化辅助类
         this.cache = new MemoryCache(this.config, this.logger);
@@ -143,7 +136,6 @@ export class MemoryService extends Service<MemoryConfig> {
         }
 
         this.lockManager.clearAllLocks();
-        this.circuitBreaker.reset();
         this.logger.info("服务已停止");
     }
 
@@ -308,47 +300,20 @@ export class MemoryService extends Service<MemoryConfig> {
             enableCircuitBreaker?: boolean;
         } = {}
     ): Promise<T> {
-        const { timeoutMs = this.config.errorHandling.lockTimeoutMs, enableCircuitBreaker = true } = options;
+        const { timeoutMs = this.config.errorHandling.lockTimeoutMs } = options;
 
-        // 检查熔断器状态
-        if (enableCircuitBreaker) {
-            const breakerResult = await this.circuitBreaker.execute(async () => {
-                // 使用锁管理器执行操作
-                const lockResult = await this.lockManager.withLock(lockKey, operation, timeoutMs);
+        const lockResult = await this.lockManager.withLock(lockKey, operation, timeoutMs);
 
-                if (!lockResult.success) {
-                    throw new Error(lockResult.error || "操作失败");
-                }
-
-                return lockResult.data!;
+        if (!lockResult.success) {
+            throw new AppError(lockResult.error || "操作失败", {
+                code: lockResult.lockAcquired
+                    ? ErrorCodes.OPERATION.RETRY_EXHAUSTED
+                    : ErrorCodes.OPERATION.LOCK_TIMEOUT,
+                context: { lockKey, lockAcquired: lockResult.lockAcquired },
             });
-
-            if (!breakerResult.success) {
-                throw new AppError(breakerResult.error || "操作失败", {
-                    code:
-                        breakerResult.state === "OPEN"
-                            ? ErrorCodes.OPERATION.CIRCUIT_BREAKER_OPEN
-                            : ErrorCodes.OPERATION.RETRY_EXHAUSTED,
-                    context: { lockKey, breakerState: breakerResult.state },
-                });
-            }
-
-            return breakerResult.data!;
-        } else {
-            // 不使用熔断器，直接使用锁管理器
-            const lockResult = await this.lockManager.withLock(lockKey, operation, timeoutMs);
-
-            if (!lockResult.success) {
-                throw new AppError(lockResult.error || "操作失败", {
-                    code: lockResult.lockAcquired
-                        ? ErrorCodes.OPERATION.RETRY_EXHAUSTED
-                        : ErrorCodes.OPERATION.LOCK_TIMEOUT,
-                    context: { lockKey, lockAcquired: lockResult.lockAcquired },
-                });
-            }
-
-            return lockResult.data!;
         }
+
+        return lockResult.data!;
     }
 
     /**
