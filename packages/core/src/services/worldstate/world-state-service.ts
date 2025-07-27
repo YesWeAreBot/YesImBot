@@ -171,33 +171,40 @@ class EventListenerManager {
             this.ctx.on("internal/session", (session) => {
                 if (session.type === "guild-member" && session.event?.subtype === "ban") {
                     const duration = session.event._data?.duration || 0;
+                    const isTargetingBot = session.event.user?.id === session.bot.selfId;
 
-                    // 如果被操作的是机器人自己，则更新内部状态
-                    if (session.event.user?.id === session.bot.selfId) {
-                        const expiresAt = duration > 0 ? Date.now() + duration : 0; // 0 for unban
-                        this.service.updateMuteStatus(session.cid, expiresAt);
-                    }
-
-                    const stimulus: AgentStimulus<SystemEventPayload> = {
-                        type: "system_event",
-                        channelCid: session.cid,
-                        session,
-                        priority: 8, // 系统事件优先级较高
-                        payload: {
-                            eventType: "guild-member-ban", // 统一使用 ban 事件
-                            details: {
-                                user: session.event.user,
-                                operator: session.event.operator,
-                                duration: duration, // 传递标准化的 duration
-                            },
+                    const payload: SystemEventPayload = {
+                        eventType: "guild-member-ban",
+                        details: {
+                            user: session.event.user,
+                            operator: session.event.operator,
+                            duration: duration,
                         },
                     };
-                    this.ctx.emit("agent/stimulus", stimulus);
+
+                    if (isTargetingBot) {
+                        // --- 高优先级路径 (告警) ---
+                        const expiresAt = duration > 0 ? Date.now() + duration : 0;
+                        this.service.updateMuteStatus(session.cid, expiresAt);
+
+                        const stimulus: AgentStimulus<SystemEventPayload> = {
+                            type: "system_event",
+                            channelCid: session.cid,
+                            session,
+                            priority: 8, // 高优先级
+                            payload: payload, // 渲染器稍后会添加消息
+                        };
+                        this.ctx.emit("agent/stimulus", stimulus);
+                        this.logger.debug(`侦测到高优先级系统事件 (禁言/解禁自身) | 频道: ${session.cid}`);
+                    } else {
+                        // --- 低优先级路径 (事件) ---
+                        this.service.recordSystemEvent(session, payload);
+                        this.logger.debug(`记录了低优先级系统事件 (他人被禁言/解禁) | 频道: ${session.cid}`);
+                    }
                 }
             })
         );
     }
-
     private async handleOperatorMessage(session: Session): Promise<void> {
         if (!this.service.isChannelAllowed(session)) return;
 
@@ -461,8 +468,7 @@ class HistoryCommandManager {
                 };
 
                 if (options.all) {
-                    if (options.all === undefined)
-                        return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
+                    if (options.all === undefined) return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
                     let query: Query<DialogueSegmentData> = {};
                     let description = "";
                     switch (options.all) {
@@ -710,16 +716,16 @@ export class WorldStateService extends Service<HistoryConfig> {
         const [platform, channelId] = channelKey.split(":", 2);
         if (!platform || !channelId) return;
 
-		const bot = this.ctx.bots.find(b => b.platform === platform);
-		if (!bot) return;
+        const bot = this.ctx.bots.find((b) => b.platform === platform);
+        if (!bot) return;
 
-		const session = {
-		    platform,
-		    channelId,
-		    isDirect: channelId.startsWith('private:'),
-		    bot,
-		    // 其他必要属性
-		} as any as Session;
+        const session = {
+            platform,
+            channelId,
+            isDirect: channelId.startsWith("private:"),
+            bot,
+            // 其他必要属性
+        } as any as Session;
 
         if (!session) return;
 
@@ -734,10 +740,27 @@ export class WorldStateService extends Service<HistoryConfig> {
                 sender: {
                     id: "system",
                     name: "系统",
-                    roles: ["system"]
-                }
+                    roles: ["system"],
+                },
             });
         }
+    }
+
+    public async recordSystemEvent(session: Session, payload: SystemEventPayload): Promise<void> {
+        const segment = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
+
+        // 在保存前渲染消息
+        const renderedMessage = this.eventRenderer.render(payload);
+        const payloadWithRenderedMessage = { ...payload, message: renderedMessage };
+
+        await this.ctx.database.create(TableName.SystemEvents, {
+            id: `sysevt_${Random.id()}`,
+            sid: segment.id,
+            type: payload.eventType,
+            timestamp: new Date(),
+            payload: payloadWithRenderedMessage,
+        });
+        this._logger.debug(`记录了低优先级系统事件: ${payload.eventType} | 频道: ${session.cid}`);
     }
 
     // #endregion

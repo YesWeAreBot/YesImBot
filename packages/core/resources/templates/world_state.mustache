@@ -3,7 +3,8 @@
 {{!              最优先的触发上下文                         }}
 {{! ======================================================= }}
 <trigger_context>
-  {{#triggerContext.isScheduledTask}}
+  {{#triggerContext}}
+  {{#isScheduledTask}}
   <system_alert priority="high">
     <reason>SCHEDULED TASK</reason>
     <instructions>
@@ -14,8 +15,8 @@
       <content>{{task.taskContent}}</content>
     </task_details>
   </system_alert>
-  {{/triggerContext.isScheduledTask}}
-  {{#triggerContext.isTaskCompletion}}
+  {{/isScheduledTask}}
+  {{#isTaskCompletion}}
   <system_alert priority="high">
     <reason>BACKGROUND TASK COMPLETED</reason>
     <instructions>
@@ -24,11 +25,11 @@
     <task_result>
       <original_task>{{taskResult.originalTask}}</original_task>
       <status>{{taskResult.status}}</status>
-      <result>{{_toString(taskResult.result)}}</result>
+      <result>{{#taskResult.result}}{{_toString}}{{/taskResult.result}}</result>
     </task_result>
   </system_alert>
-  {{/triggerContext.isTaskCompletion}}
-  {{#triggerContext.isSystemEvent}}
+  {{/isTaskCompletion}}
+  {{#isSystemEvent}}
   <system_alert priority="medium">
     <reason>SYSTEM EVENT DETECTED</reason>
     <instructions>
@@ -36,10 +37,11 @@
     </instructions>
     <event_details>
       <type>{{event.eventType}}</type>
-      <details>{{_toString(event.details)}}</details>
+      <message>{{event.message}}</message>
     </event_details>
   </system_alert>
-  {{/triggerContext.isSystemEvent}}
+  {{/isSystemEvent}}
+  {{/triggerContext}}
 </trigger_context>
 {{! ======================================================= }}
 {{!              原有的世界状态（历史记录等）               }}
@@ -92,6 +94,13 @@
         {{/dialogue}}
         </dialogue>
         {{/dialogue.length}}
+        {{#systemEvents.length}}
+        <system_events>
+        {{#systemEvents}}
+          <event type="{{type}}" timestamp="{{date}}">{{#payload.message}}{{_toString}}{{/payload.message}}</event>
+        {{/systemEvents}}
+        </system_events>
+        {{/systemEvents.length}}
         {{#agentTurn.responses.length}}
         {{#agentTurn}}
         <agent_turn timestamp="{{timestamp}}">
@@ -136,7 +145,7 @@
         {{#systemEvents.length}}
         <system_events>
         {{#systemEvents}}
-          <event type="{{type}}" timestamp="{{date}}">{{#payload}}{{_toString}}{{/payload}}</event>
+          <event type="{{type}}" timestamp="{{date}}">{{#payload.message}}{{_toString}}{{/payload.message}}</event>
         {{/systemEvents}}
         </system_events>
         {{/systemEvents.length}}

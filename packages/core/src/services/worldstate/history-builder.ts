@@ -70,7 +70,7 @@ export class HistoryBuilder {
         // 3. 并行构建对话片段对象
         const [pending, closed, folded, summarized] = await Promise.all([
             pendingSegment ? this.buildPendingSegment(pendingSegment, messagesBySegment, eventsBySegment) : undefined,
-            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r, messagesBySegment))),
+            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r, messagesBySegment, eventsBySegment))),
             foldedSegments.length > 0
                 ? this.buildFoldedSegment(foldedSegments, messagesBySegment, eventsBySegment)
                 : undefined,
@@ -120,9 +120,12 @@ export class HistoryBuilder {
 
     private buildClosedSegment(
         record: DialogueSegmentData,
-        messagesBySegment: Map<string, MessageData[]>
+        messagesBySegment: Map<string, MessageData[]>,
+        eventsBySegment: Map<string, SystemEventData[]>
     ): ClosedDialogueSegment {
         const messageRecords = messagesBySegment.get(record.id) || [];
+        const systemEventRecords = eventsBySegment.get(record.id) || [];
+
         return {
             type: "dialogue-segment",
             id: record.id,
@@ -134,7 +137,13 @@ export class HistoryBuilder {
             endTimestamp: record.endTimestamp,
             agentTurn: record.agentTurn,
             dialogue: this.buildDialogueMessages(messageRecords),
-            systemEvents: [],
+            systemEvents: systemEventRecords.map((eventRecord) => ({
+                id: eventRecord.id,
+                type: eventRecord.type,
+                timestamp: eventRecord.timestamp,
+                date: formatDate(eventRecord.timestamp, "MM-DD"),
+                payload: eventRecord.payload,
+            })),
         };
     }
 
