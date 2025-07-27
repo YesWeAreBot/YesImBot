@@ -455,7 +455,7 @@ export class ToolService extends Service<ToolServiceConfig> {
             }
         }
 
-        const stringifyParams = truncate(stringify(params), 100);
+        const stringifyParams = stringify(params);
         this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 

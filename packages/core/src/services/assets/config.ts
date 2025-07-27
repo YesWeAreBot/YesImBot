@@ -8,6 +8,7 @@ export interface AssetServiceConfig {
     maxAssetAgeDays: number;
     endpoint?: string;
     maxFileSize: number;
+    downloadTimeout: number;
 }
 
 export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
@@ -31,4 +32,9 @@ export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
         .min(1024)
         .default(100 * 1024 * 1024) // 100MB
         .description("允许存储的单个文件的最大大小（单位：字节）。"),
+
+    downloadTimeout: Schema.number()
+        .min(1000)
+        .default(30000) // 30秒
+        .description("下载资源的超时时间（单位：毫秒）。"),
 });
