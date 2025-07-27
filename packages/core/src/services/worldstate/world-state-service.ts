@@ -161,6 +161,7 @@ class EventListenerManager {
 
         this.disposers.push(
             this.ctx.on("message", (session) => {
+                if (!this.service.isChannelAllowed(session)) return;
                 if (session.userId === session.bot.selfId && !session.scope) {
                     this.handleOperatorMessage(session);
                 }
@@ -169,42 +170,107 @@ class EventListenerManager {
 
         this.disposers.push(
             this.ctx.on("internal/session", (session) => {
-                if (session.type === "guild-member" && session.event?.subtype === "ban") {
-                    const duration = session.event._data?.duration * 1000 || 0; // ms
-                    const isTargetingBot = session.event.user?.id === session.bot.selfId;
+                if (!this.service.isChannelAllowed(session)) return;
 
-                    const payload: SystemEventPayload = {
-                        eventType: "guild-member-ban",
-                        details: {
-                            user: session.event.user,
-                            operator: session.event.operator,
-                            duration: duration,
-                        },
-                    };
-
-                    if (isTargetingBot) {
-                        // --- 高优先级路径 (告警) ---
-                        const expiresAt = duration > 0 ? Date.now() + duration : 0;
-                        this.service.updateMuteStatus(session.cid, expiresAt);
-
-                        const stimulus: AgentStimulus<SystemEventPayload> = {
-                            type: "system_event",
-                            channelCid: session.cid,
-                            session,
-                            priority: 8, // 高优先级
-                            payload: payload, // 渲染器稍后会添加消息
-                        };
-                        this.ctx.emit("agent/stimulus", stimulus);
-                        this.logger.debug(`侦测到高优先级系统事件 (禁言/解禁自身) | 频道: ${session.cid}`);
-                    } else {
-                        // --- 低优先级路径 (事件) ---
-                        this.service.recordSystemEvent(session, payload);
-                        this.logger.debug(`记录了低优先级系统事件 (他人被禁言/解禁) | 频道: ${session.cid}`);
-                    }
-                }
+                if (session.type == "notice" && session.platform == "onebot") return this.handleNotice(session);
+                /* prettier-ignore */
+                if (session.type === "guild-member" && session.platform == "onebot") return this.handleGuildMember(session);
             })
         );
     }
+
+    private async handleNotice(session: Session): Promise<void> {
+        switch (session.subtype) {
+            case "poke":
+                const authorId = session.event._data.user_id;
+                const targetId = session.event._data.target_id;
+                const action = session.event._data.action;
+                const suffix = session.event._data.suffix;
+
+                const payload: SystemEventPayload = {
+                    eventType: "notice",
+                    details: {
+                        authorId,
+                        targetId,
+                        action,
+                        suffix,
+                    },
+                    message: `系统提示：${authorId} ${action} ${targetId} ${suffix}`,
+                };
+
+                this.service.recordSystemEvent(session, payload);
+
+                break;
+        }
+    }
+
+    private async handleGuildMember(session: Session): Promise<void> {
+        switch (session.subtype) {
+            case "ban":
+                const duration = session.event._data?.duration * 1000; // ms
+                const isTargetingBot = session.event.user?.id === session.bot.selfId;
+
+                if (duration < 0) {
+                    // 全体禁言
+                    const payload: SystemEventPayload = {
+                        eventType: "guild-all-member-ban",
+                        details: {
+                            operator: session.event.operator,
+                            duration: duration,
+                            message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言。`,
+                        },
+                    };
+
+                    this.service.recordSystemEvent(session, payload);
+                    return;
+                }
+
+                if (duration === 0) {
+                    // 解除禁言
+                    const payload: SystemEventPayload = {
+                        eventType: "guild-member-unban",
+                        details: {
+                            user: session.event.user,
+                            operator: session.event.operator,
+                            message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言。`,
+                        },
+                    };
+
+                    this.service.recordSystemEvent(session, payload);
+                    return;
+                }
+
+                const payload: SystemEventPayload = {
+                    eventType: "guild-member-ban",
+                    details: {
+                        user: session.event.user,
+                        operator: session.event.operator,
+                        duration: duration,
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms。`,
+                    },
+                };
+
+                this.service.recordSystemEvent(session, payload);
+
+                if (isTargetingBot) {
+                    // --- 高优先级路径 (告警) ---
+                    const expiresAt = duration > 0 ? Date.now() + duration : 0;
+                    this.service.updateMuteStatus(session.cid, expiresAt);
+
+                    const stimulus: AgentStimulus<SystemEventPayload> = {
+                        type: "system_event",
+                        channelCid: session.cid,
+                        session,
+                        priority: 8, // 高优先级
+                        payload: payload, // 渲染器稍后会添加消息
+                    };
+                    this.ctx.emit("agent/stimulus", stimulus);
+                }
+
+                break;
+        }
+    }
+
     private async handleOperatorMessage(session: Session): Promise<void> {
         if (!this.service.isChannelAllowed(session)) return;
 
@@ -296,6 +362,7 @@ class EventListenerManager {
     }
 
     private async recordBotSentMessage(session: Session, segmentId?: string): Promise<void> {
+        if (!this.service.isChannelAllowed(session)) return;
         if (!session.content || !session.messageId) return;
 
         this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
