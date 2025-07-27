@@ -43,6 +43,41 @@ interface PendingCommand {
 }
 
 // =================================================================================
+// #region SystemEventRenderer - 负责将系统事件渲染为自然语言
+// =================================================================================
+class SystemEventRenderer {
+    render(payload: SystemEventPayload): string {
+        const { eventType, details } = payload;
+        const operator = details.operator?.id || "未知操作者";
+        const user = details.user?.id || "未知用户";
+
+        switch (eventType) {
+            case "guild-member-ban": {
+                const duration = details.duration || 0;
+                if (duration > 0) {
+                    const durationSeconds = duration / 1000;
+                    let durationText = "";
+                    if (durationSeconds < 3600) {
+                        durationText = `${Math.round(durationSeconds / 60)}分钟`;
+                    } else if (durationSeconds < 86400) {
+                        durationText = `${Math.round(durationSeconds / 3600)}小时`;
+                    } else {
+                        durationText = `${Math.round(durationSeconds / 86400)}天`;
+                    }
+                    return `系统提示：管理员 "${operator}" 已将用户 "${user}" 禁言，时长为 ${durationText}。`;
+                } else if (duration === 0) {
+                    return `系统提示：用户 "${user}" 已被管理员 "${operator}" 解除禁言。`;
+                }
+                return `系统提示：管理员 "${operator}" 已将用户 "${user}" 永久禁言。`;
+            }
+            default:
+                return `系统提示：侦测到未知的系统事件 "${eventType}"。`;
+        }
+    }
+}
+// #endregion
+
+// =================================================================================
 // #region EventListenerManager - 负责所有事件监听与处理
 // =================================================================================
 class EventListenerManager {
@@ -135,10 +170,11 @@ class EventListenerManager {
         this.disposers.push(
             this.ctx.on("internal/session", (session) => {
                 if (session.type === "guild-member" && session.event?.subtype === "ban") {
-                    // 如果被禁言的是机器人自己，则更新内部状态
+                    const duration = session.event._data?.duration || 0;
+
+                    // 如果被操作的是机器人自己，则更新内部状态
                     if (session.event.user?.id === session.bot.selfId) {
-                        const duration = session.event._data?.duration * 1000 || 0;
-                        const expiresAt = Date.now() + duration;
+                        const expiresAt = duration > 0 ? Date.now() + duration : 0; // 0 for unban
                         this.service.updateMuteStatus(session.cid, expiresAt);
                     }
 
@@ -148,17 +184,16 @@ class EventListenerManager {
                         session,
                         priority: 8, // 系统事件优先级较高
                         payload: {
-                            eventType: "guild-member-ban",
+                            eventType: "guild-member-ban", // 统一使用 ban 事件
                             details: {
                                 user: session.event.user,
                                 operator: session.event.operator,
-                                duration: session.event._data?.duration,
+                                duration: duration, // 传递标准化的 duration
                             },
                         },
                     };
                     this.ctx.emit("agent/stimulus", stimulus);
                 }
-                // TODO: Handle unmute event (e.g., when duration is 0 on an update)
             })
         );
     }
@@ -531,6 +566,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     private maintenanceTimer: NodeJS.Timeout;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
+    private readonly eventRenderer: SystemEventRenderer;
     private readonly mutedChannels = new Map<string, number>(); // Key: channelCid, Value: mute expiration timestamp
 
     constructor(ctx: Context, config: HistoryConfig) {
@@ -544,6 +580,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.contextBuilder = new ContextBuilder(ctx, config);
         this.eventListenerManager = new EventListenerManager(ctx, this, config);
         this.commandManager = new HistoryCommandManager(ctx, this, config);
+        this.eventRenderer = new SystemEventRenderer();
     }
 
     protected start(): void {
@@ -587,9 +624,11 @@ export class WorldStateService extends Service<HistoryConfig> {
                 triggerContext = { isUserMessage: true, sid: (payload as UserMessagePayload).sid };
                 break;
             case "system_event":
+                // 在这里进行语义化渲染
+                payload.message = this.eventRenderer.render(payload);
                 triggerContext = {
                     isSystemEvent: true,
-                    event: payload,
+                    event: payload, // 传递已包含 message 的 payload
                 };
                 break;
             // Future cases
@@ -722,8 +761,10 @@ export class WorldStateService extends Service<HistoryConfig> {
     public updateMuteStatus(cid: string, expiresAt: number): void {
         if (expiresAt > Date.now()) {
             this.mutedChannels.set(cid, expiresAt);
+            this.logger.debug(`[${cid}] | 已被禁言 | 解封时间: ${new Date(expiresAt).toLocaleString()}`);
         } else {
             this.mutedChannels.delete(cid);
+            this.logger.debug(`[${cid}] | 禁言状态已解除`);
         }
     }
 
@@ -825,6 +866,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     private runMaintenanceTasks(): void {
         this.eventListenerManager.cleanupPendingCommands();
+        this.cleanupExpiredMutes();
 
         // **核心优化：执行片段状态检查**
         this.segmentManager
@@ -859,6 +901,21 @@ export class WorldStateService extends Service<HistoryConfig> {
                 await db.remove(TableName.DialogueSegments, { id: { $in: segmentIds } });
             });
             this._logger.info(`清理了 ${expiredSegments.length} 个过期的对话片段及其相关记录`);
+        }
+    }
+
+    private cleanupExpiredMutes(): void {
+        const now = Date.now();
+        let cleanedCount = 0;
+        for (const [channelCid, expiresAt] of this.mutedChannels.entries()) {
+            if (now > expiresAt) {
+                this.mutedChannels.delete(channelCid);
+                cleanedCount++;
+                this.logger.info(`频道 ${channelCid} 的机器人禁言状态已到期并移除。`);
+            }
+        }
+        if (cleanedCount > 0) {
+            this.logger.debug(`清理了 ${cleanedCount} 个过期的禁言状态。`);
         }
     }
     // #endregion

@@ -118,64 +118,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             } else {
                 // 对于高优先级事件，直接决定回复
                 decision = true;
-                this.logger.info(`[${channelKey}] 接收到 [${type}] 刺激，直接触发响应`);
+                this.logger.info(`[${channelKey}] 接收到 [${type}]，触发响应`);
             }
 
-            // --- 第2步: 检查决策并触发防抖任务 ---
-            if (!decision) {
-                return;
+            // --- 第2步: 调度刺激 ---
+            if (decision) {
+                this.scheduleStimulus(stimulus);
             }
-
-            // --- 禁言检查 ---
-            if (this.worldState.isBotMuted(channelKey)) {
-                this.logger.warn(`[${channelKey}] 机器人已被禁言，无法发送消息。响应流程终止`);
-                return;
-            }
-
-            if (this.runningTasks.has(channelKey)) {
-                this.logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行将根据策略处理`);
-                if (type === "user_message") {
-                    this.handleBusyChannel(session, stimulus, channelKey);
-                }
-                return;
-            }
-
-            let debouncedTask = this.debouncedReplyTasks.get(channelKey);
-
-            if (!debouncedTask) {
-                debouncedTask = this.ctx.debounce(async (stimulus: AgentStimulus<any>) => {
-                    // --- 第3步: 执行回复任务 (加锁 -> 执行 -> 解锁) ---
-                    try {
-                        this.runningTasks.add(channelKey);
-                        this.logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务`);
-
-                        this.willing.handlePreReply(channelKey);
-
-                        const success = await this.runAgentCycle(stimulus);
-
-                        if (success) {
-                            const willingnessBeforeReply = this.willing.getCurrentWillingness(channelKey);
-                            this.willing.handlePostReply(channelKey);
-                            const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
-                            /* prettier-ignore */
-                            this.logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
-                        }
-                    } catch (error) {
-                        /* prettier-ignore */
-                        handleError(this.logger, error, `执行回复任务时发生错误 (Channel: ${channelKey})`);
-                    } finally {
-                        this.runningTasks.delete(channelKey);
-                        this.logger.debug(`[${channelKey}] 频道锁已释放`);
-                        this.handleSkippedMessagesAfterReply(channelKey);
-                    }
-                }, this.config.arousal.debounceMs);
-
-                this.debouncedReplyTasks.set(channelKey, debouncedTask);
-            }
-
-            /* prettier-ignore */
-            this.logger.debug(`[${channelKey}] 决策为回复，触发防抖机制（延迟 ${this.config.arousal.debounceMs}ms）`);
-            debouncedTask(stimulus);
         });
 
         this.willing.startDecayCycle();
@@ -237,6 +186,68 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     /**
      * 处理频道正忙时的消息
      */
+    private scheduleStimulus(stimulus: AgentStimulus<any>): void {
+        const { type, channelCid: channelKey, priority, session } = stimulus;
+
+        // 禁言检查
+        if (this.worldState.isBotMuted(channelKey)) {
+            this.logger.warn(`[${channelKey}] 机器人已被禁言，无法发送消息。响应流程终止。`);
+            return;
+        }
+
+        // 并发处理
+        if (this.runningTasks.has(channelKey)) {
+            this.logger.warn(`[${channelKey}] 决策为回复，但发现已有任务在运行。本次执行将根据策略处理。`);
+            if (type === "user_message") {
+                this.handleBusyChannel(session, stimulus, channelKey);
+            }
+            return;
+        }
+
+        // 基于优先级的调度策略
+        if (priority > 7) {
+            this.logger.info(`[${channelKey}] 接收到高优先级(${priority})刺激，尝试立即执行。`);
+            // 对于高优先级事件，我们可以考虑绕过防抖，直接执行
+            // 为保持简单，这里我们仍然使用防抖，但可以设置更短的延迟或直接调用
+            this.getDebouncedTask(channelKey)(stimulus);
+        } else {
+            this.logger.debug(`[${channelKey}] 接收到普通优先级(${priority})刺激，进入防抖流程。`);
+            this.getDebouncedTask(channelKey)(stimulus);
+        }
+    }
+
+    private getDebouncedTask(channelKey: string): WithDispose<(stimulus: AgentStimulus<any>) => void> {
+        let debouncedTask = this.debouncedReplyTasks.get(channelKey);
+
+        if (!debouncedTask) {
+            debouncedTask = this.ctx.debounce(async (stimulus: AgentStimulus<any>) => {
+                try {
+                    this.runningTasks.add(channelKey);
+                    this.logger.debug(`[${channelKey}] 锁定频道并开始执行回复任务。`);
+                    this.willing.handlePreReply(channelKey);
+                    const success = await this.runAgentCycle(stimulus);
+                    if (success) {
+                        const willingnessBeforeReply = this.willing.getCurrentWillingness(channelKey);
+                        this.willing.handlePostReply(channelKey);
+                        const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
+                        /* prettier-ignore */
+                        this.logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+                    }
+                } catch (error) {
+                    /* prettier-ignore */
+                    handleError(this.logger, error, `执行回复任务时发生错误 (Channel: ${channelKey})`);
+                } finally {
+                    this.runningTasks.delete(channelKey);
+                    this.logger.debug(`[${channelKey}] 频道锁已释放`);
+                    this.handleSkippedMessagesAfterReply(channelKey);
+                }
+            }, this.config.arousal.debounceMs);
+
+            this.debouncedReplyTasks.set(channelKey, debouncedTask);
+        }
+        return debouncedTask;
+    }
+
     private handleBusyChannel(session: Session, stimulus: AgentStimulus<any>, channelKey: string) {
         const strategy = this.config.newMessageStrategy;
         this.logger.debug(`[${channelKey}] 频道正忙，采用策略: ${strategy}`);

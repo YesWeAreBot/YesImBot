@@ -364,6 +364,8 @@ export interface SystemEventPayload {
     eventType: string;
     /** 事件相关的详细信息 */
     details: any;
+    /** [新增] 由系统预渲染的、用于给LLM阅读的自然语言消息 */
+    message?: string;
 }
 
 /**
