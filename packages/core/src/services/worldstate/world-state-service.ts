@@ -9,7 +9,15 @@ import { ContextBuilder } from "./context-builder";
 import { DialogueSegmentData, MessageData } from "./database-models";
 import { DialogueSegmentManager } from "./segment-manager";
 import { SummarizationManager } from "./summarize";
-import { AgentResponse, CommandInvocationPayload, ContextualMessage, WorldState } from "./types";
+import {
+    AgentResponse,
+    AgentStimulus,
+    CommandInvocationPayload,
+    ContextualMessage,
+    SystemEventPayload,
+    UserMessagePayload,
+    WorldState,
+} from "./types";
 import { pruneHistoryByMessages } from "./utils";
 
 // 扩展 Koishi 的 Context 和 Events 接口
@@ -18,7 +26,6 @@ declare module "koishi" {
         [Services.WorldState]: WorldStateService;
     }
     interface Events {
-        "worldstate:segment-updated"(session: Session, sid: string): void;
         "worldstate:summary"(summaryChunk: {
             self: { id: string; name: string };
             platform: string;
@@ -95,7 +102,14 @@ class EventListenerManager {
                         session.channelId,
                         session.guildId
                     );
-                    this.ctx.emit("worldstate:segment-updated", session, segmentRecord.id);
+                    const stimulus: AgentStimulus<UserMessagePayload> = {
+                        type: "user_message",
+                        channelCid: session.cid,
+                        session,
+                        priority: 5, // 普通消息优先级为中等
+                        payload: { sid: segmentRecord.id },
+                    };
+                    this.ctx.emit("agent/stimulus", stimulus);
                 }
             })
         );
@@ -115,6 +129,36 @@ class EventListenerManager {
                 if (session.userId === session.bot.selfId && !session.scope) {
                     this.handleOperatorMessage(session);
                 }
+            })
+        );
+
+        this.disposers.push(
+            this.ctx.on("internal/session", (session) => {
+                if (session.type === "guild-member" && session.event?.subtype === "ban") {
+                    // 如果被禁言的是机器人自己，则更新内部状态
+                    if (session.event.user?.id === session.bot.selfId) {
+                        const duration = session.event._data?.duration * 1000 || 0;
+                        const expiresAt = Date.now() + duration;
+                        this.service.updateMuteStatus(session.cid, expiresAt);
+                    }
+
+                    const stimulus: AgentStimulus<SystemEventPayload> = {
+                        type: "system_event",
+                        channelCid: session.cid,
+                        session,
+                        priority: 8, // 系统事件优先级较高
+                        payload: {
+                            eventType: "guild-member-ban",
+                            details: {
+                                user: session.event.user,
+                                operator: session.event.operator,
+                                duration: session.event._data?.duration,
+                            },
+                        },
+                    };
+                    this.ctx.emit("agent/stimulus", stimulus);
+                }
+                // TODO: Handle unmute event (e.g., when duration is 0 on an update)
             })
         );
     }
@@ -487,6 +531,7 @@ export class WorldStateService extends Service<HistoryConfig> {
     private maintenanceTimer: NodeJS.Timeout;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
+    private readonly mutedChannels = new Map<string, number>(); // Key: channelCid, Value: mute expiration timestamp
 
     constructor(ctx: Context, config: HistoryConfig) {
         super(ctx, Services.WorldState, true);
@@ -530,7 +575,34 @@ export class WorldStateService extends Service<HistoryConfig> {
     // #region 公共 API
     // =================================================================================
 
-    public async getWorldState(session: Session): Promise<WorldState> {
+    /* prettier-ignore */
+    public async buildContextForStimulus(stimulus: AgentStimulus<any>): Promise<{ worldState: WorldState; triggerContext: object }> {
+        const { type, session, payload } = stimulus;
+
+        const worldState = await this.getBaseWorldState(session);
+
+        let triggerContext: object = {};
+        switch (type) {
+            case "user_message":
+                triggerContext = { isUserMessage: true, sid: (payload as UserMessagePayload).sid };
+                break;
+            case "system_event":
+                triggerContext = {
+                    isSystemEvent: true,
+                    event: payload,
+                };
+                break;
+            // Future cases
+            case "scheduled_task":
+            case "background_task_completion":
+                // Placeholder for future implementation
+                break;
+        }
+
+        return { worldState, triggerContext };
+    }
+
+    private async getBaseWorldState(session: Session): Promise<WorldState> {
         const { platform, channelId } = session;
         const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
 
@@ -612,7 +684,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
         if (!session) return;
 
-        const worldState = await this.getWorldState(session);
+        const worldState = await this.getBaseWorldState(session);
 
         // 添加提示引导模型关注被跳过的话题
         if (worldState.channel.history.pending) {
@@ -634,6 +706,26 @@ export class WorldStateService extends Service<HistoryConfig> {
     // =================================================================================
     // #region 内部辅助方法
     // =================================================================================
+
+    public isBotMuted(channelCid: string): boolean {
+        const expiresAt = this.mutedChannels.get(channelCid);
+        if (!expiresAt) return false;
+
+        if (Date.now() > expiresAt) {
+            this.mutedChannels.delete(channelCid);
+            return false;
+        }
+
+        return true;
+    }
+
+    public updateMuteStatus(cid: string, expiresAt: number): void {
+        if (expiresAt > Date.now()) {
+            this.mutedChannels.set(cid, expiresAt);
+        } else {
+            this.mutedChannels.delete(cid);
+        }
+    }
 
     public isChannelAllowed(session: Session): boolean {
         const cid = session.cid;

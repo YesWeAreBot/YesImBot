@@ -7,6 +7,9 @@
  * 这些对象是 Agent 感知世界和进行决策的基础
  */
 
+import { ToolSchema } from "@/services/extension";
+import { MemoryBlockData } from "@/services/memory";
+import { ImagePart, TextPart } from "@xsai/shared-chat";
 import { Element, User } from "koishi";
 
 type Genres = "friend" | "channel" | "guild" | "guild-member" | "guild-role" | "guild-file" | "guild-emoji";
@@ -312,3 +315,98 @@ export interface ActionResult {
     result?: any;
     error?: any;
 }
+
+
+// =================================================================================
+// #region Agent Stimulus - 智能体统一刺激模型
+// =================================================================================
+
+/**
+ * 定义了所有可能驱动 Agent 行为的刺激类型。
+ * 这是对原始事件（如用户消息、系统事件）的更高层次抽象。
+ */
+export type StimulusType = "user_message" | "scheduled_task" | "background_task_completion" | "system_event";
+
+// --- 刺激载荷 (Payload) 定义 ---
+
+/**
+ * 用户消息刺激的载荷。
+ */
+export interface UserMessagePayload {
+    /** 关联的对话片段 ID */
+    sid: string;
+}
+
+/**
+ * 定时任务刺激的载荷。
+ */
+export interface ScheduledTaskPayload {
+    taskId: string;
+    taskName: string;
+    taskContent: string;
+}
+
+/**
+ * 后台任务完成刺激的载荷。
+ */
+export interface TaskCompletionPayload {
+    taskId: string;
+    originalTask: string;
+    result: any;
+    status: "success" | "failed";
+}
+
+/**
+ * 系统事件刺激的载荷。
+ */
+export interface SystemEventPayload {
+    /** Koishi 内部事件类型，如 'guild-member-ban' */
+    eventType: string;
+    /** 事件相关的详细信息 */
+    details: any;
+}
+
+/**
+ * 统一的智能体刺激接口。
+ * 所有外部或内部事件都应被转换为此标准格式，再由 AgentCore 处理。
+ * @template T 载荷的具体类型。
+ */
+export interface AgentStimulus<T>{
+    /** 刺激的类型 */
+    type: StimulusType;
+    /** 刺激发生的目标频道 CID ('platform:channelId') */
+    channelCid: string;
+    /** 触发刺激的原始 Session 对象，用于获取 Bot 实例等上下文信息 */
+    session: import("koishi").Session;
+    /** 刺激的优先级 (e.g., 1-10)，用于未来处理冲突或进行决策 */
+    priority: number;
+    /** 与刺激类型相关的具体数据 */
+    payload: T;
+}
+
+export interface PromptContext {
+    triggerContext: object;
+    toolSchemas: ToolSchema[];
+    memoryBlocks: MemoryBlockData[];
+    worldState: WorldState; // 世界状态快照
+    previousResponses: AgentResponse[]; // Agent 最近的回合历史
+    multiModalData: {
+        images: (ImagePart | TextPart)[];
+    };
+}
+
+
+// --- Koishi 事件扩展 ---
+
+declare module "koishi" {
+    interface Events {
+        /**
+         * 当一个标准化的智能体刺激产生时触发。
+         * 这是 AgentCore 监听的唯一入口点。
+         * @param stimulus 转换后的标准刺激对象
+         */
+        "agent/stimulus"(stimulus: AgentStimulus<any>): void;
+    }
+}
+
+// #endregion
