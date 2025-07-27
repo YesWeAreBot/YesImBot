@@ -32,7 +32,9 @@ export default class CommandExtension {
         try {
             const result = await session.sendQueued(h("execute", {}, command));
 
-            if (result.length === 0) return Failed("指令执行失败，可能是因为指令不存在或格式错误。");
+            // if (result.length === 0) return Failed("指令执行失败，可能是因为指令不存在或格式错误。");
+
+            // if (result.length === 0) this.ctx.logger.warn(`Bot[${session.selfId}]执行了指令: ${command}，但是没有返回任何结果。`);
 
             this.ctx.logger.info(`Bot[${session.selfId}]执行了指令: ${command}`);
             return Success();

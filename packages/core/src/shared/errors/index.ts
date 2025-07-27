@@ -1,4 +1,5 @@
 import { Logger, Schema } from "koishi";
+import { resolve } from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { truncate } from "@/shared/utils";
@@ -94,7 +95,7 @@ export class ErrorReporter {
     private formatErrorDump(context: ReportContext): string {
         const { error, errorId, additionalInfo } = context;
         const dumpSections: string[] = [];
-        const packageJson = require("../../package.json"); // 假设在项目根目录
+        const packageJson = require(resolve(__dirname, "../../../package.json"));
 
         dumpSections.push(
             `# 智能体错误报告\n`,
