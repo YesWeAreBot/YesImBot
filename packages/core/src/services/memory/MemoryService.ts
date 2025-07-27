@@ -48,7 +48,6 @@ export class MemoryService extends Service<MemoryConfig> {
     private ingestor: MemoryIngestor;
     private consolidator: ProfileConsolidator;
     private maintenance: MemoryMaintenance;
-    private cache: MemoryCache;
     private coreMemoryLoader: CoreMemoryLoader;
 
     // 工具类实例
@@ -84,7 +83,6 @@ export class MemoryService extends Service<MemoryConfig> {
         this.lockManager = new LockManager(config.errorHandling.lockTimeoutMs);
 
         // 实例化辅助类
-        this.cache = new MemoryCache(this.config, this.logger);
         this.coreMemoryLoader = new CoreMemoryLoader(this.ctx, this.config, this.logger);
         this.consolidator = new ProfileConsolidator(
             this.ctx,
@@ -104,7 +102,6 @@ export class MemoryService extends Service<MemoryConfig> {
             this.ctx[Services.Prompt],
             // 传入一个回调来触发画像整合，避免循环依赖
             (userId: string, contextId: string) => this.consolidateProfile(userId, contextId),
-            (userId: string) => this.cache.clearUserCache(userId)
         );
     }
 
@@ -117,13 +114,11 @@ export class MemoryService extends Service<MemoryConfig> {
         this.ctx.on("worldstate:summary", (summaryChunk) => this.ingestor.handleSummaryChunk(summaryChunk));
 
         this.startMaintenanceTasks();
-        this.cache.startCacheCleanup();
     }
 
     protected async stop(): Promise<void> {
         this.isShuttingDown = true;
         if (this.maintenanceTimer) clearInterval(this.maintenanceTimer);
-        this.cache.stopCacheCleanup();
 
         // 优雅关闭逻辑
         const maxWaitTime = 30000;
@@ -526,7 +521,6 @@ export class MemoryService extends Service<MemoryConfig> {
                 accessCount: 0,
             };
             const createdFact = await this.ctx.database.create(TableName.Facts, newFact);
-            this.cache.clearUserCache(factData.userId);
             return { success: true, data: createdFact };
         } catch (error) {
             this.logger.error(`添加用户事实失败: ${error.message}`);
@@ -587,14 +581,11 @@ export class MemoryService extends Service<MemoryConfig> {
     }
 
     public async getUserFacts(userId: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Fact[]>> {
-        const cached = this.cache.getCachedFacts(userId);
-        if (cached) return { success: true, data: cached };
 
         try {
             const { limit = 100, includeDeleted = false } = options;
             const facts = await this.ctx.database.get(TableName.Facts, { userId, isDeleted: { $ne: !includeDeleted } });
             const sortedFacts = facts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit);
-            this.cache.setCachedFacts(userId, sortedFacts);
             return { success: true, data: sortedFacts };
         } catch (error) {
             this.logger.error(`获取用户事实失败: ${error.message}`);
@@ -733,16 +724,12 @@ export class MemoryService extends Service<MemoryConfig> {
         userId: string,
         contextId: string | "global"
     ): Promise<MemoryOperationResult<UserProfile | null>> {
-        const cached = this.cache.getCachedProfile(`${contextId}:${userId}`);
-        if (cached) return { success: true, data: cached };
-
         try {
             const [profile] = await this.ctx.database.get(TableName.UserProfiles, {
                 userId,
                 contextId,
                 isDeleted: false,
             });
-            if (profile) this.cache.setCachedProfile(`${contextId}:${userId}`, profile);
             return { success: true, data: profile || null };
         } catch (error) {
             this.logger.error(`获取用户画像失败: ${error.message}`);
@@ -804,10 +791,6 @@ export class MemoryService extends Service<MemoryConfig> {
         const lockKey = `profile_consolidation_${userId}`;
         return this.withLock(lockKey, async () => {
             const result = await this.consolidator.consolidate(userId, contextId, options);
-            // 成功后更新缓存
-            if (result.success && result.data) {
-                this.cache.setCachedProfile(`${contextId}:${userId}`, result.data);
-            }
             return result;
         });
     }
@@ -834,7 +817,6 @@ class MemoryIngestor {
         private embeddingModel: IEmbedModel,
         private promptService: PromptService,
         private triggerProfileConsolidation: (userId: string, contextId: string) => Promise<any>,
-        private clearUserCache: (userId: string) => void
     ) {}
 
     public async handleSummaryChunk(summaryChunk: {
@@ -988,9 +970,6 @@ class MemoryIngestor {
                 };
 
                 await this.ctx.database.create(TableName.Facts, newFact);
-
-                // 清除用户相关缓存
-                this.clearUserCache(extractedFact.userId);
             } else {
                 // 这是一个 ExtractedInsight
                 const extractedInsight = memoryData as ExtractedInsight;
@@ -1506,161 +1485,6 @@ class MemoryMaintenance {
             this.logger.error(`数据一致性检查失败: ${error.message}`);
             return { success: false, error: error.message };
         }
-    }
-}
-
-class MemoryCache {
-    private readonly profileCache = new Map<string, { data: UserProfile; timestamp: number }>();
-    private readonly factsCache = new Map<string, { data: Fact[]; timestamp: number }>();
-    private cacheCleanupTimer?: NodeJS.Timeout;
-
-    constructor(private config: MemoryConfig, private logger: Logger) {}
-
-    /**
-     * 启动缓存清理任务
-     */
-    public startCacheCleanup(): void {
-        if (!this.config.caching.enabled) {
-            return;
-        }
-
-        const intervalMs = this.config.caching.cleanupIntervalMinutes * 60 * 1000;
-        this.cacheCleanupTimer = setInterval(() => {
-            this.cleanupExpiredCache();
-        }, intervalMs);
-    }
-    public stopCacheCleanup(): void {
-        if (this.cacheCleanupTimer) clearInterval(this.cacheCleanupTimer);
-    }
-
-    /**
-     * 清理过期的缓存条目
-     */
-    private cleanupExpiredCache(): void {
-        const now = Date.now();
-        const profileTtlMs = this.config.caching.profileCacheTtlMinutes * 60 * 1000;
-        const factsTtlMs = this.config.caching.factsCacheTtlMinutes * 60 * 1000;
-
-        // 清理用户画像缓存
-        let cleanedProfiles = 0;
-        for (const [key, entry] of this.profileCache.entries()) {
-            if (now - entry.timestamp > profileTtlMs) {
-                this.profileCache.delete(key);
-                cleanedProfiles++;
-            }
-        }
-
-        // 清理事实缓存
-        let cleanedFacts = 0;
-        for (const [key, entry] of this.factsCache.entries()) {
-            if (now - entry.timestamp > factsTtlMs) {
-                this.factsCache.delete(key);
-                cleanedFacts++;
-            }
-        }
-
-        // 检查缓存大小限制
-        this.enforceMaxCacheSize();
-
-        if (cleanedProfiles > 0 || cleanedFacts > 0) {
-            this.logger.debug(`缓存清理完成: 清理了 ${cleanedProfiles} 个画像缓存, ${cleanedFacts} 个事实缓存`);
-        }
-    }
-
-    /**
-     * 强制执行最大缓存大小限制
-     */
-    private enforceMaxCacheSize(): void {
-        const maxEntries = this.config.caching.maxCacheEntries;
-
-        // 如果画像缓存超过限制，删除最旧的条目
-        if (this.profileCache.size > maxEntries) {
-            const entries = Array.from(this.profileCache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp);
-            const toDelete = entries.slice(0, this.profileCache.size - maxEntries);
-            toDelete.forEach(([key]) => this.profileCache.delete(key));
-        }
-
-        // 如果事实缓存超过限制，删除最旧的条目
-        if (this.factsCache.size > maxEntries) {
-            const entries = Array.from(this.factsCache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp);
-            const toDelete = entries.slice(0, this.factsCache.size - maxEntries);
-            toDelete.forEach(([key]) => this.factsCache.delete(key));
-        }
-    }
-
-    /**
-     * 从缓存获取用户画像
-     */
-    public getCachedProfile(userId: string): UserProfile | null {
-        if (!this.config.caching.enabled) {
-            return null;
-        }
-        const entry = this.profileCache.get(userId);
-        if (!entry) {
-            return null;
-        }
-
-        const ttlMs = this.config.caching.profileCacheTtlMinutes * 60 * 1000;
-        if (Date.now() - entry.timestamp > ttlMs) {
-            this.profileCache.delete(userId);
-            return null;
-        }
-        return entry.data;
-    }
-
-    /**
-     * 缓存用户画像
-     */
-    public setCachedProfile(userId: string, profile: UserProfile): void {
-        if (!this.config.caching.enabled) {
-            return;
-        }
-
-        this.profileCache.set(userId, {
-            data: profile,
-            timestamp: Date.now(),
-        });
-    }
-
-    /**
-     * 从缓存获取用户事实
-     */
-    public getCachedFacts(userId: string): Fact[] | null {
-        if (!this.config.caching.enabled) {
-            return null;
-        }
-        const entry = this.factsCache.get(userId);
-        if (!entry) {
-            return null;
-        }
-        const ttlMs = this.config.caching.factsCacheTtlMinutes * 60 * 1000;
-        if (Date.now() - entry.timestamp > ttlMs) {
-            this.factsCache.delete(userId);
-            return null;
-        }
-        return entry.data;
-    }
-
-    /**
-     * 缓存用户事实
-     */
-    public setCachedFacts(userId: string, facts: Fact[]): void {
-        if (!this.config.caching.enabled) {
-            return;
-        }
-
-        this.factsCache.set(userId, {
-            data: facts,
-            timestamp: Date.now(),
-        });
-    }
-
-    /**
-     * 清除用户相关的所有缓存
-     */
-    public clearUserCache(userId: string): void {
-        this.profileCache.delete(userId);
-        this.factsCache.delete(userId);
     }
 }
 
