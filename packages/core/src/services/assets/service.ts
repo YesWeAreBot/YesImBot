@@ -71,7 +71,7 @@ export class AssetService extends Service<AssetServiceConfig> {
                 const id = await this.create(originalUrl, type, metadata);
                 // 持久化成功后, 仅保留ID和其他非src属性
                 const { src, ...display } = metadata;
-                return h(tagName, { ...display , id });
+                return h(tagName, { id, ...display });
             } catch (error) {
                 this.logger.error(`持久化资源失败 | 源: "${originalUrl}" | 原因: ${error.message}`);
                 // 失败时返回原始元素, 保证消息能继续发送

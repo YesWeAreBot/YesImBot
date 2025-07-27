@@ -170,7 +170,7 @@ class EventListenerManager {
         this.disposers.push(
             this.ctx.on("internal/session", (session) => {
                 if (session.type === "guild-member" && session.event?.subtype === "ban") {
-                    const duration = session.event._data?.duration || 0;
+                    const duration = session.event._data?.duration * 1000 || 0; // ms
                     const isTargetingBot = session.event.user?.id === session.bot.selfId;
 
                     const payload: SystemEventPayload = {
