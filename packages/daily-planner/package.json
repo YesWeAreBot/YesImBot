@@ -1,5 +1,5 @@
 {
-  "name": "koishi-plugin-yesimbot-extension-daily-planer",
+  "name": "koishi-plugin-yesimbot-extension-daily-planner",
   "description": "YesImBot 日程规划器",
   "version": "0.0.1",
   "main": "lib/index.js",
