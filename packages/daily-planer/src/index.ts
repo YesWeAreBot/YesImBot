@@ -2,7 +2,7 @@ import { Context, Schema } from "koishi";
 import { Extension, Failed, ModelDescriptor, Success } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { DailyPlannerService } from './service';
-import { } from "koishi-plugin-cron"
+// import { } from "koishi-plugin-cron"
 
 export interface DailyPlannerConfig {
     scheduleGenerationTime: string;
@@ -46,6 +46,7 @@ export default class DailyPlannerExtension {
         const cronExpression = `${minutes} ${hours} * * *`;
 
         // 注册每日定时任务
+        // @ts-ignore
         ctx.cron(cronExpression, async () => {
             await this.service.generateDailySchedule();
             await this.registerTools();
@@ -100,7 +101,7 @@ export default class DailyPlannerExtension {
                 ).join('\n');
             });
     }
-    
+
     private async registerTools() {
         // 注册日程管理工具
         await this.ctx[Services.Tool].registerTool({
