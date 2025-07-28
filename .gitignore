@@ -21,6 +21,7 @@ yarn.lock
 *.ntvs*
 *.njsproj
 *.sln
+bun.lock
 
 *.mdt
 coverage

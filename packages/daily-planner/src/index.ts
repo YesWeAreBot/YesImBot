@@ -57,7 +57,7 @@ export default class DailyPlannerExtension {
             await this.registerTools();
         });
 
-        ctx.on("ready", () => {this.registerTools(); this.registerCommands()});
+        ctx.on("ready", () => { this.registerTools(); this.registerCommands() });
     }
 
     private registerCommands() {
@@ -84,7 +84,7 @@ export default class DailyPlannerExtension {
         this.ctx.command('daily.add <start> <end> <content>', '添加自定义时段', { authority: 3 })
             .action(async ({ session }, start, end, content) => {
                 await this.service.addCustomTimeSegment(start, end, content);
-                await  this.registerTools();
+                await this.registerTools();
                 return `已添加时段：${start}-${end}: ${content}`;
             });
 
