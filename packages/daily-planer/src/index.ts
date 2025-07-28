@@ -1,16 +1,17 @@
 import { Context, Schema } from "koishi";
-import { Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { DailyPlannerService } from './service';
 import {} from "koishi-plugin-cron"
 
 export interface DailyPlannerConfig {
     scheduleGenerationTime: string;
+    model: ModelDescriptor;
+    coreMemoryLabel: string[];
+    characterName: string;
     timeSegments: string[];
     coreMemoryWeight: number;
 }
-
-export const inject = ["cron"]
 
 @Extension({
     name: "daily-planner",
@@ -20,11 +21,16 @@ export const inject = ["cron"]
     version: "1.0.0",
 })
 export default class DailyPlannerExtension {
+    static readonly inject = ["cron", "database", "yesimbot.model", "yesimbot.memory"];
 
     static readonly Config: Schema<DailyPlannerConfig> = Schema.object({
         scheduleGenerationTime: Schema.string()
             .default("03:00")
             .description("每日生成日程的时间 (HH:mm 格式)"),
+        characterName: Schema.string().required().description("日程的主体，也就是 Bot 的名称"),
+        coreMemoryLabel: Schema.array(String).default(["persona"]).description("用于生成日程的描述 Bot 的核心记忆"),
+        model: Schema.dynamic("modelService.selectableModels")
+            .description("用于生成日程表的模型"),
         timeSegments: Schema.array(String)
             .default(["上午", "下午", "晚上"])
             .role("table")
@@ -39,9 +45,13 @@ export default class DailyPlannerExtension {
 
     constructor(public ctx: Context, public config: DailyPlannerConfig) {
         this.service = new DailyPlannerService(ctx, config);
+ 
+        // 将 HH:mm 格式转换为 cron 表达式
+        const [hours, minutes] = config.scheduleGenerationTime.split(':').map(Number);
+        const cronExpression = `${minutes} ${hours} * * *`;
         
         // 注册每日定时任务
-        ctx.cron(config.scheduleGenerationTime, async () => {
+        ctx.cron(cronExpression, async () => {
             await this.service.generateDailySchedule();
         });
         
