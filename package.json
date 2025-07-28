@@ -36,5 +36,18 @@
     "turbo": "2.5.4",
     "typescript": "^5.8.3",
     "yml-register": "^1.2.5"
+  },
+  "typedoc": {
+    "entryPoints": [
+      "packages/core/src"
+    ],
+    "out": "docs/api",
+    "plugin": [
+      "typedoc-plugin-markdown"
+    ],
+    "exclude": [
+      "**/__tests__/**",
+      "**/mocks/**"
+    ]
   }
 }
