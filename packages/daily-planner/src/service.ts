@@ -74,7 +74,7 @@ export class DailyPlannerService {
 
         // 1. 获取核心记忆和近期事件
         const coreMemories = await this.getCoreMemories();
-        const recentEvents = await this.ctx["yesimbot.memory"].searchMemories("我最近要做的事");
+        const recentEvents = await this.ctx["yesimbot.memory"].searchMemories("我");
 
         // 2. 构建提示词
         const prompt = this.buildSchedulePrompt(coreMemories, recentEvents.data?.map(d => d.content) || []);

@@ -111,7 +111,7 @@ export default class DailyPlannerExtension {
         // 注册日程管理工具
         await this.ctx[Services.Tool].registerTool({
             name: 'get_daily_schedule',
-            description: `获取今天的完整日程安排。当前时段的安排为：${await this.getCurrentSchedule()}`,
+            description: `获取今天的完整日程安排。当前时段的安排为：${await this.getCurrentSchedule()}。`,
             parameters: Schema.object({}),
             execute: this.getFullSchedule.bind(this)
         });
