@@ -30,11 +30,11 @@
   },
   "devDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "*"
+    "koishi-plugin-yesimbot": ">=3.0.0-beta.4"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "*"
+    "koishi-plugin-yesimbot": ">=3.0.0-beta.4"
   },
   "koishi": {
     "description": {

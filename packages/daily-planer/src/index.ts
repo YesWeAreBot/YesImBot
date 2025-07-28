@@ -1,8 +1,8 @@
 import { Context, Schema } from "koishi";
-import { Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, ModelDescriptor, Success } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { DailyPlannerService } from './service';
-import {} from "koishi-plugin-cron"
+import { } from "koishi-plugin-cron"
 
 export interface DailyPlannerConfig {
     scheduleGenerationTime: string;
@@ -20,7 +20,7 @@ export interface DailyPlannerConfig {
     version: "1.0.0",
 })
 export default class DailyPlannerExtension {
-    static readonly inject = ["cron", "database", "yesimbot.model", "yesimbot.memory"];
+    static readonly inject = ["cron", "database", "yesimbot.model", "yesimbot.memory", "yesimbot.prompt"];
 
     static readonly Config: Schema<DailyPlannerConfig> = Schema.object({
         scheduleGenerationTime: Schema.string()
@@ -40,19 +40,61 @@ export default class DailyPlannerExtension {
 
     constructor(public ctx: Context, public config: DailyPlannerConfig) {
         this.service = new DailyPlannerService(ctx, config);
- 
+
         // 将 HH:mm 格式转换为 cron 表达式
         const [hours, minutes] = config.scheduleGenerationTime.split(':').map(Number);
         const cronExpression = `${minutes} ${hours} * * *`;
-        
+
         // 注册每日定时任务
         ctx.cron(cronExpression, async () => {
             await this.service.generateDailySchedule();
         });
-        
-        ctx.on("ready", () => this.registerTools());
+
+        ctx.on("ready", () => {this.registerTools(); this.registerCommands()});
     }
 
+    private registerCommands() {
+        // 手动生成今日日程
+        this.ctx.command('daily.generate', '手动生成今日日程', { authority: 3 })
+            .action(async ({ session }) => {
+                session.sendQueued("正在生成日程，请稍后...")
+                await this.service.generateDailySchedule()
+                return `生成成功`
+            });
+
+        // 强制覆盖今日日程
+        this.ctx.command('daily.override <content>', '覆盖当前时段安排', { authority: 3 })
+            .option('duration', '-d <minutes>', { fallback: 60 })
+            .action(async ({ session, options }, content) => {
+                const duration = options.duration || 60;
+                await this.service.overrideCurrentSchedule(content, duration);
+                return `当前时段安排已更新为：${content}`;
+            });
+
+        // 添加自定义时段
+        this.ctx.command('daily.add <start> <end> <content>', '添加自定义时段', { authority: 3 })
+            .action(async ({ session }, start, end, content) => {
+                await this.service.addCustomTimeSegment(start, end, content);
+                return `已添加时段：${start}-${end}: ${content}`;
+            });
+
+        // 删除时段
+        this.ctx.command('daily.remove <index>', '删除指定时段', { authority: 3 })
+            .action(async ({ session }, index) => {
+                const idx = parseInt(index) - 1;
+                await this.service.removeTimeSegment(idx);
+                return `已删除第 ${index} 个时段安排`;
+            });
+
+        // 查看今日日程
+        this.ctx.command('daily.show', '查看今日完整日程')
+            .action(async ({ session }) => {
+                const schedule = await this.service.getTodaysSchedule();
+                return schedule.segments.map((s, i) =>
+                    `${i + 1}. ${s.start}-${s.end}: ${s.content}`
+                ).join('\n');
+            });
+    }
     private registerTools() {
         // 注册日程管理工具
         this.ctx[Services.Tool].registerTool({
@@ -61,7 +103,7 @@ export default class DailyPlannerExtension {
             parameters: Schema.object({}),
             execute: this.getFullSchedule.bind(this)
         });
-        
+
         this.ctx[Services.Tool].registerTool({
             name: 'get_current_schedule',
             description: '获取当前时间段的日程安排',
@@ -88,7 +130,7 @@ export default class DailyPlannerExtension {
                     content: "休息或自由时间"
                 });
             }
-            
+
             return Success({
                 start: currentSegment.start,
                 end: currentSegment.end,
