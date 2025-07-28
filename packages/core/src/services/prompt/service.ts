@@ -33,7 +33,8 @@ export class PromptService extends Service<PromptServiceConfig> {
         this.ctx = ctx;
         this.config = config;
         this.renderer = config.renderer || new MustacheRenderer();
-        this._logger = ctx[Services.Logger].getLogger("[提示词]");
+        // @ts-ignore
+        this._logger = this.ctx[Services.Logger].getLogger("[提示词]");
     }
 
     protected async start() {

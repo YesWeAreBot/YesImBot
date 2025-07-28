@@ -415,8 +415,13 @@ export class ToolService extends Service<ToolServiceConfig> {
             return false;
         }
         this.extensions.delete(name);
-        for (const tool of ext.tools.values()) {
-            this.tools.delete(tool.name);
+       try {
+            for (const tool of ext.tools.values()) {
+
+                this.tools.delete(tool.name);
+            }
+        } catch (error) {
+            this._logger.warn(`卸载扩展 ${name} 时出错：${error.message}`)
         }
         this._logger.info(`已卸载扩展: "${name}"`);
         return true;

@@ -70,32 +70,32 @@ export default class DailyPlannerExtension {
                 return `生成成功`
             });
 
-        // 强制覆盖今日日程
-        this.ctx.command('daily.override <content>', '覆盖当前时段安排', { authority: 3 })
-            .option('duration', '-d <minutes>', { fallback: 60 })
-            .action(async ({ session, options }, content) => {
-                const duration = options.duration || 60;
-                await this.service.overrideCurrentSchedule(content, duration);
-                await this.registerTools();
-                return `当前时段安排已更新为：${content}`;
-            });
+        // // 强制覆盖今日日程
+        // this.ctx.command('daily.override <content>', '覆盖当前时段安排', { authority: 3 })
+        //     .option('duration', '-d <minutes>', { fallback: 60 })
+        //     .action(async ({ session, options }, content) => {
+        //         const duration = options.duration || 60;
+        //         await this.service.overrideCurrentSchedule(content, duration);
+        //         await this.registerTools();
+        //         return `当前时段安排已更新为：${content}`;
+        //     });
 
-        // 添加自定义时段
-        this.ctx.command('daily.add <start> <end> <content>', '添加自定义时段', { authority: 3 })
-            .action(async ({ session }, start, end, content) => {
-                await this.service.addCustomTimeSegment(start, end, content);
-                await this.registerTools();
-                return `已添加时段：${start}-${end}: ${content}`;
-            });
+        // // 添加自定义时段
+        // this.ctx.command('daily.add <start> <end> <content>', '添加自定义时段', { authority: 3 })
+        //     .action(async ({ session }, start, end, content) => {
+        //         await this.service.addCustomTimeSegment(start, end, content);
+        //         await this.registerTools();
+        //         return `已添加时段：${start}-${end}: ${content}`;
+        //     });
 
-        // 删除时段
-        this.ctx.command('daily.remove <index>', '删除指定时段', { authority: 3 })
-            .action(async ({ session }, index) => {
-                const idx = parseInt(index) - 1;
-                await this.service.removeTimeSegment(idx);
-                await this.registerTools();
-                return `已删除第 ${index} 个时段安排`;
-            });
+        // // 删除时段
+        // this.ctx.command('daily.remove <index>', '删除指定时段', { authority: 3 })
+        //     .action(async ({ session }, index) => {
+        //         const idx = parseInt(index) - 1;
+        //         await this.service.removeTimeSegment(idx);
+        //         await this.registerTools();
+        //         return `已删除第 ${index} 个时段安排`;
+        //     });
 
         // 查看今日日程
         this.ctx.command('daily.show', '查看今日完整日程')
