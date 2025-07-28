@@ -9,7 +9,6 @@ export interface DailyPlannerConfig {
     model: ModelDescriptor;
     coreMemoryLabel: string[];
     characterName: string;
-    timeSegments: string[];
     coreMemoryWeight: number;
 }
 
@@ -31,10 +30,6 @@ export default class DailyPlannerExtension {
         coreMemoryLabel: Schema.array(String).default(["persona"]).description("用于生成日程的描述 Bot 的核心记忆"),
         model: Schema.dynamic("modelService.selectableModels")
             .description("用于生成日程表的模型"),
-        timeSegments: Schema.array(String)
-            .default(["上午", "下午", "晚上"])
-            .role("table")
-            .description("时间分段 (如上午/下午/晚上)"),
         coreMemoryWeight: Schema.number()
             .default(0.7)
             .min(0).max(1)
@@ -73,20 +68,6 @@ export default class DailyPlannerExtension {
             parameters: Schema.object({}),
             execute: this.getCurrentSchedule.bind(this)
         });
-        
-        this.ctx[Services.Tool].registerTool({
-            name: 'update_schedule',
-            description: '修改指定时间段的日程',
-            parameters: Schema.object({
-                timeSegment: Schema.string()
-                    .required()
-                    .description(`要修改的时间段: ${this.config.timeSegments.join("/")}`),
-                newContent: Schema.string()
-                    .required()
-                    .description("新的日程内容")
-            }),
-            execute: this.updateSchedule.bind(this)
-        });
     }
 
     private async getFullSchedule() {
@@ -100,25 +81,21 @@ export default class DailyPlannerExtension {
 
     private async getCurrentSchedule() {
         try {
-            const currentSegment = this.service.getCurrentTimeSegment();
-            const schedule = await this.service.getTodaysSchedule();
+            const currentSegment = await this.service.getCurrentTimeSegment();
+            if (!currentSegment) {
+                return Success({
+                    message: "当前没有安排活动",
+                    content: "休息或自由时间"
+                });
+            }
+            
             return Success({
-                timeSegment: currentSegment,
-                content: schedule.segments[currentSegment] || "暂无安排"
+                start: currentSegment.start,
+                end: currentSegment.end,
+                content: currentSegment.content
             });
         } catch (error) {
             return Failed(`获取当前日程失败: ${error.message}`);
-        }
-    }
-
-    private async updateSchedule({ timeSegment, newContent }: Infer<{ 
-        timeSegment: string; newContent: string 
-    }>) {
-        try {
-            const updated = await this.service.updateScheduleSegment(timeSegment, newContent);
-            return Success(updated);
-        } catch (error) {
-            return Failed(`更新日程失败: ${error.message}`);
         }
     }
 }

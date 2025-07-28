@@ -3,10 +3,18 @@ import { DailyPlannerConfig } from ".";
 import { IChatModel, TaskType, MemoryService, MemoryBlockData, LoggerService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { debug } from "console";
+
+// 时间段接口
+interface TimeSegment {
+    start: string; // HH:mm 格式
+    end: string;   // HH:mm 格式
+    content: string;
+}
+
 // 日程数据结构
 interface DailySchedule {
     date: string; // YYYY-MM-DD
-    segments: Record<string, string>; // 时间段 -> 内容
+    segments: TimeSegment[]; // 时间段数组
     memoryContext?: string[]; // 关联的记忆ID
 }
 
@@ -15,7 +23,6 @@ declare module "koishi" {
         'yesimbot.daily_schedules': DailySchedule;
     }
 }
-
 
 export class DailyPlannerService {
     private readonly memoryService: MemoryService;
@@ -81,213 +88,278 @@ export class DailyPlannerService {
         return schedule[0];
     }
 
-    // 更新日程时间段
-    public async updateScheduleSegment(
-        segment: string,
-        newContent: string
-    ): Promise<DailySchedule> {
-        const schedule = await this.getTodaysSchedule();
-
-        if (!this.config.timeSegments.includes(segment)) {
-            throw new Error(`无效时间段: ${segment}`);
-        }
-
-        schedule.segments[segment] = newContent;
-        await this.saveSchedule(schedule);
-        return schedule;
-    }
-
     // 获取当前时间段
-    public getCurrentTimeSegment(): string {
-        const hour = new Date().getHours();
+    public async getCurrentTimeSegment(): Promise<TimeSegment | null> {
+        const now = new Date();
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const currentTime = `${hours}:${minutes}`;
 
-        if (this.config.timeSegments.length === 3) {
-            // 默认上午/下午/晚上分段
-            if (hour < 12) return this.config.timeSegments[0];
-            if (hour < 18) return this.config.timeSegments[1];
-            return this.config.timeSegments[2];
-        }
-
-        // 自定义时间段处理
-        return this.config.timeSegments[0];
-    }
-
-    // --- 私有方法 ---
-
-    private async getCoreMemories(): Promise<MemoryBlockData[]> {
+        // 找到当前时间所在的时间段
         try {
-            const blocks = await this.memoryService.getMemoryBlocksForRendering();
-            return blocks.filter(b => this.config.coreMemoryLabel.includes(b.label));
-        } catch {
-            return [];
-        }
-    }
-
-    private buildSchedulePrompt(coreMemories: MemoryBlockData[], recentEvents: any[]): string {
-        let prompt = `你是一个小说家，请基于以下信息为虚拟人物${this.config.characterName}规划今日日程：\n\n`;
-
-        // 添加核心记忆
-        prompt += `## ${this.config.characterName}的核心记忆:\n`;
-        coreMemories.forEach((memory, i) => {
-            prompt += `${i + 1}. ${memory.title}: ${truncate(memory.content.join(" "), 200)}\n`;
-        });
-
-        // 添加近期事件
-        if (recentEvents.length) {
-            prompt += "\n## 近期事件:\n";
-            recentEvents.forEach((event, i) => {
-                prompt += `${i + 1}. ${event.toString()}\n`;
-            });
-        }
-
-        // 添加时间分段和格式要求
-        prompt += `\n## 时间分段:\n请按以下时间段规划日程: ${this.config.timeSegments.join(", ")}\n`;
-        prompt += "## 输出格式要求:\n";
-        prompt += "请严格按照以下JSON格式返回日程安排：\n";
-        prompt += `{\n  "schedule": {\n    "${this.config.timeSegments[0]}": "内容1",\n    "${this.config.timeSegments[1]}": "内容2",\n    ...\n  }\n}\n\n`;
-        prompt += "注意：必须包含所有时间段！每个时间段用1-2句话描述主要活动，使用自然语言。这个日程是主人公日常生活的日程，你需要根据他的核心记忆来虚构。你要把他当人类来看待。请注意，这只是计划，还没有正式开始，不是写日记。";
-
-        this.logger.debug("生成的提示词:", prompt);
-        return prompt;
-    }
-
-
-    private parseScheduleOutput(text: string): Record<string, string> {
-        this.logger.debug("解析日程文本:", text);
-
-        try {
-            // 尝试提取JSON部分
-            const jsonStart = text.indexOf('{');
-            const jsonEnd = text.lastIndexOf('}');
-            if (jsonStart === -1 || jsonEnd === -1) {
-                throw new Error("未找到JSON结构");
-            }
-
-            const jsonStr = text.slice(jsonStart, jsonEnd + 1);
-            this.logger.debug("提取的JSON字符串:", jsonStr);
-
-            const parsed = JSON.parse(jsonStr);
-            if (!parsed.schedule || typeof parsed.schedule !== 'object') {
-                throw new Error("JSON中缺少schedule字段");
-            }
-
-            const schedule = parsed.schedule;
-            // 检查是否包含所有时间段
-            for (const segment of this.config.timeSegments) {
-                if (!(segment in schedule)) {
-                    throw new Error(`JSON中缺少时间段: ${segment}`);
+            const schedule = await this.getTodaysSchedule();
+            for (const segment of schedule.segments) {
+                if (this.compareTime(currentTime, segment.start) >= 0 &&
+                    this.compareTime(currentTime, segment.end) < 0) {
+                    return segment;
                 }
             }
-
-            return schedule;
+            return null;
         } catch (error) {
-            this.logger.error("JSON解析失败:", error.message);
-            return this.fallbackParse(text);
+            this.logger.error('获取当前时间段失败', error);
+            return null;
         }
     }
 
-    private fallbackParse(text: string): Record<string, string> {
-        this.logger.warn("使用备用解析方法");
-        const segments: Record<string, string> = {};
+  // --- 私有方法 ---
 
-        // 1. 尝试按指定格式解析
-        const lines = text.split('\n');
-        for (const line of lines) {
-            for (const segment of this.config.timeSegments) {
-                // 匹配格式: "时间段: 内容"
-                const regex = new RegExp(`^${segment}\\s*[:：]\\s*(.+)`);
-                const match = line.match(regex);
+  private async getCoreMemories(): Promise < MemoryBlockData[] > {
+    try {
+        const blocks = await this.memoryService.getMemoryBlocksForRendering();
+        return blocks.filter(b => this.config.coreMemoryLabel.includes(b.label));
+    } catch {
+        return [];
+    }
+}
 
-                if (match) {
-                    segments[segment] = match[1].trim();
-                    break;
-                }
-            }
+  private buildSchedulePrompt(coreMemories: MemoryBlockData[], recentEvents: any[]): string {
+    let prompt = `你是一个专业的生活规划师，请基于以下信息为${this.config.characterName}规划今天的详细日程安排：\n\n`;
+
+    // 添加核心记忆
+    prompt += `## ${this.config.characterName}的核心记忆:\n`;
+    coreMemories.forEach((memory, i) => {
+        prompt += `${i + 1}. ${memory.title}: ${truncate(memory.content.join(" "), 200)}\n`;
+    });
+
+    // 添加近期事件
+    if (recentEvents.length) {
+        prompt += "\n## 近期事件:\n";
+        recentEvents.forEach((event, i) => {
+            prompt += `${i + 1}. ${event.toString()}\n`;
+        });
+    }
+
+    // 添加时间要求
+    prompt += `\n## 日程规划要求:\n`;
+    prompt += "1. 将一天划分为6-10个时间段，每个时间段应有明确的开始和结束时间（HH:mm格式）\n";
+    prompt += "2. 每个时间段安排1-2个主要活动，活动内容应具体且有可执行性\n";
+    prompt += "3. 合理安排休息时间，避免长时间连续工作\n";
+    prompt += "4. 考虑${this.config.characterName}的习惯和偏好，让日程更人性化\n";
+    prompt += "5. 预留一定的缓冲时间应对突发事件\n\n";
+
+    prompt += "## 输出格式要求:\n";
+    prompt += "请严格按照以下JSON格式返回日程安排：\n";
+    prompt += `[\n`;
+    prompt += `  {\n`;
+    prompt += `    "start": "08:00",\n`;
+    prompt += `    "end": "09:00",\n`;
+    prompt += `    "content": "日程1"\n`;
+    prompt += `  },\n`;
+    prompt += `  {\n`;
+    prompt += `    "start": "09:00",\n`;
+    prompt += `    "end": "12:00",\n`;
+    prompt += `    "content": "日程2"\n`;
+    prompt += `  },\n`;
+    prompt += `  ...\n`;
+    prompt += `]\n\n`;
+    prompt += "注意：时间段之间不应有重叠，每个时间段的活动描述应清晰具体，避免模糊描述。";
+
+    this.logger.debug("生成的提示词:", prompt);
+    return prompt;
+}
+
+  private parseScheduleOutput(text: string): TimeSegment[] {
+    this.logger.debug("解析日程文本:", text);
+
+    try {
+        // 尝试提取JSON部分
+        const jsonStart = text.indexOf('[');
+        const jsonEnd = text.lastIndexOf(']');
+        if (jsonStart === -1 || jsonEnd === -1) {
+            throw new Error("未找到JSON数组结构");
         }
 
-        // 2. 如果部分解析成功，填充缺失的时间段
-        if (Object.keys(segments).length > 0) {
-            for (const segment of this.config.timeSegments) {
-                if (!segments[segment]) {
-                    segments[segment] = "处理用户请求和系统任务";
-                }
-            }
-            return segments;
+        const jsonStr = text.slice(jsonStart, jsonEnd + 1);
+        this.logger.debug("提取的JSON字符串:", jsonStr);
+
+        const parsed = JSON.parse(jsonStr);
+        if (!Array.isArray(parsed)) {
+            throw new Error("JSON中缺少数组");
         }
 
-        // 3. 回退到关键词匹配
-        for (const segment of this.config.timeSegments) {
-            const regex = new RegExp(`${segment}[^\\n]+`, 'i');
-            const match = text.match(regex);
-            if (match) {
-                // 提取内容部分（去掉时间段名称）
-                const content = match[0].replace(new RegExp(`${segment}\\s*[:：]?\\s*`, 'i'), '').trim();
-                segments[segment] = content;
+        // 验证每个时间段
+        const segments: TimeSegment[] = [];
+        for (const item of parsed) {
+            if (!item.start || !item.end || !item.content) {
+                throw new Error("时间段缺少必要字段");
             }
-        }
 
-        // 4. 如果仍然无法解析，使用默认分配
-        if (Object.keys(segments).length === 0) {
-            this.logger.warn("无法解析日程，使用默认值");
-            this.config.timeSegments.forEach(segment => {
-                segments[segment] = "处理用户请求和系统任务";
+            // 验证时间格式
+            if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(item.start) ||
+                !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(item.end)) {
+                throw new Error(`无效的时间格式: ${item.start} 或 ${item.end}`);
+            }
+
+            segments.push({
+                start: item.start,
+                end: item.end,
+                content: item.content
             });
+        }
+
+        // 按开始时间排序
+        segments.sort((a, b) => this.compareTime(a.start, b.start));
+
+        // 验证时间段是否有重叠
+        for (let i = 0; i < segments.length - 1; i++) {
+            if (this.compareTime(segments[i].end, segments[i + 1].start) > 0) {
+                throw new Error(`时间段重叠: ${segments[i].end} > ${segments[i + 1].start}`);
+            }
         }
 
         return segments;
+    } catch (error) {
+        this.logger.error("JSON解析失败:", error.message);
+        return this.fallbackParse(text);
+    }
+}
+
+  private fallbackParse(text: string): TimeSegment[] {
+    this.logger.warn("使用备用解析方法");
+    const segments: TimeSegment[] = [];
+
+    // 尝试匹配时间模式：HH:mm-HH:mm 内容
+    const timeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})\s*[:：]?\s*(.+)/g;
+    let match;
+
+    while ((match = timeRegex.exec(text)) !== null) {
+        segments.push({
+            start: match[1],
+            end: match[2],
+            content: match[3].trim()
+        });
     }
 
-    private async generateWithModel(prompt: string): Promise<string> {
-        if (!this.chatModel) {
-            throw new Error("日程生成模型不可用");
-        }
+    // 如果找到了时间段，返回它们
+    if (segments.length > 0) {
+        // 按开始时间排序
+        segments.sort((a, b) => this.compareTime(a.start, b.start));
+        return segments;
+    }
 
-        let retryCount = 0;
-        const maxRetries = 2;
+    // 尝试匹配仅包含时间的行
+    const simpleTimeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})/g;
+    const contentLines = text.split('\n');
+    let currentContent = "";
 
-        while (retryCount <= maxRetries) {
-            try {
-                const response = await this.chatModel.chat({
-                    messages: [{
-                        role: "system",
-                        content: `你是一个专业的日程规划助手，请根据提供的信息为${this.config.characterName}创建合理的日程安排。必须使用指定的JSON格式！`
-                    }, {
-                        role: "user",
-                        content: prompt
-                    }],
-                    temperature: 0.3
-                });
+    for (let i = 0; i < contentLines.length; i++) {
+        const line = contentLines[i].trim();
 
-                this.logger.debug("模型原始响应:", response.text);
-
-                // 验证响应是否为JSON格式
-                try {
-                    const jsonStart = response.text.indexOf('{');
-                    const jsonEnd = response.text.lastIndexOf('}');
-                    if (jsonStart === -1 || jsonEnd === -1) {
-                        throw new Error("响应中未找到JSON");
-                    }
-
-                    const jsonStr = response.text.slice(jsonStart, jsonEnd + 1);
-                    JSON.parse(jsonStr); // 验证是否能解析
-                    return response.text;
-                } catch (error) {
-                    this.logger.warn("响应不是有效的JSON，将重试");
-                    retryCount++;
-                    continue;
+        // 检查是否是时间行
+        const timeMatch = simpleTimeRegex.exec(line);
+        if (timeMatch) {
+            // 如果已有内容，添加到上一个时间段
+            if (currentContent) {
+                if (segments.length > 0) {
+                    segments[segments.length - 1].content += currentContent;
                 }
-            } catch (error) {
-                this.logger.error("模型调用失败:", error);
-                retryCount++;
+                currentContent = "";
             }
+
+            // 创建新时间段
+            segments.push({
+                start: timeMatch[1],
+                end: timeMatch[2],
+                content: ""
+            });
+        } else if (line && segments.length > 0) {
+            // 添加到当前时间段的内容
+            segments[segments.length - 1].content += (segments[segments.length - 1].content ? " " : "") + line;
         }
-
-        throw new Error("日程生成失败，重试次数用尽");
     }
 
-    private async saveSchedule(schedule: DailySchedule): Promise<void> {
-        await this.ctx.database.upsert('yesimbot.daily_schedules', [schedule], ['date']);
+    // 处理最后一个时间段的内容
+    if (segments.length > 0 && currentContent) {
+        segments[segments.length - 1].content += currentContent;
     }
+
+    // 如果仍然无法解析，使用默认分配
+    if (segments.length === 0) {
+        this.logger.warn("无法解析日程，使用默认值");
+        return [
+            { start: "08:00", end: "12:00", content: "处理用户请求和系统任务" },
+            { start: "12:00", end: "13:00", content: "午餐与休息" },
+            { start: "13:00", end: "18:00", content: "继续处理用户请求和系统任务" },
+            { start: "18:00", end: "19:00", content: "晚餐时间" },
+            { start: "19:00", end: "22:00", content: "个人学习与发展时间" }
+        ];
+    }
+
+    return segments;
+}
+
+  // 比较两个时间字符串 (HH:mm)
+  private compareTime(timeA: string, timeB: string): number {
+    const [hoursA, minutesA] = timeA.split(':').map(Number);
+    const [hoursB, minutesB] = timeB.split(':').map(Number);
+
+    if (hoursA !== hoursB) {
+        return hoursA - hoursB;
+    }
+    return minutesA - minutesB;
+}
+
+  private async generateWithModel(prompt: string): Promise < string > {
+    if(!this.chatModel) {
+    throw new Error("日程生成模型不可用");
+}
+
+let retryCount = 0;
+const maxRetries = 2;
+
+while (retryCount <= maxRetries) {
+    try {
+        const response = await this.chatModel.chat({
+            messages: [{
+                role: "system",
+                content: `你是一个专业的日程规划助手，请根据提供的信息为${this.config.characterName}创建合理的日程安排。必须使用指定的JSON格式！`
+            }, {
+                role: "user",
+                content: prompt
+            }],
+            temperature: 0.3
+        });
+
+        this.logger.debug("模型原始响应:", response.text);
+
+        // 验证响应是否为JSON数组格式
+        try {
+            const jsonStart = response.text.indexOf('[');
+            const jsonEnd = response.text.lastIndexOf(']');
+            if (jsonStart === -1 || jsonEnd === -1) {
+                throw new Error("响应中未找到JSON数组");
+            }
+
+            const jsonStr = response.text.slice(jsonStart, jsonEnd + 1);
+            JSON.parse(jsonStr); // 验证是否能解析
+            return response.text;
+        } catch (error) {
+            this.logger.warn("响应不是有效的JSON数组，将重试");
+            retryCount++;
+            continue;
+        }
+    } catch (error) {
+        this.logger.error("模型调用失败:", error);
+        retryCount++;
+    }
+}
+
+throw new Error("日程生成失败，重试次数用尽");
+  }
+
+  private async saveSchedule(schedule: DailySchedule): Promise < void> {
+    await this.ctx.database.upsert('yesimbot.daily_schedules', [schedule], ['date']);
+}
 }
 
 // 辅助函数
