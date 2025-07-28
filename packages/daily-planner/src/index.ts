@@ -53,7 +53,7 @@ export default class DailyPlannerExtension {
         });
 
         // @ts-ignore
-        ctx.cron("0 0,30 * * * ? *", async () => {
+        ctx.cron("0,30 * * * *", async () => {
             await this.registerTools();
         });
 
