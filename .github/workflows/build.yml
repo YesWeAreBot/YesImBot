@@ -1,40 +1,98 @@
-name: Build
+name: Build, Package, and Upload
 
 on:
   push:
-  pull_request:
-    branches: ["main"]
-    types: [opened, synchronize]
+    branches: [dev]
 
 jobs:
-  build:
-    name: Build and Test
-    timeout-minutes: 15
+  build-and-package:
+    name: Build and Pack All Packages
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      packages: ${{ steps.list-packages.outputs.names }}
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Cache turbo build setup
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
-      - uses: oven-sh/setup-bun@v2
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.0
 
+      - name: Configure Git for Changesets
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Cache dependencies and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            .turbo
+            node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      # 新增的测试步骤
+      - name: Run tests
+        run: bun test
+        env:
+          # 为embed.test.ts设置必要的环境变量
+          API_KEY_SILICON: ${{ secrets.API_KEY_SILICON }}
 
-    #   - name: Test
-    #     run: bun run test
+      - name: Version packages and create tarballs
+        id: package
+        run: |
+          bunx changeset version --snapshot
+          bun run pack
+
+      - name: Collect all packaged tarballs
+        run: bun run collect-packages
+
+      - name: Upload all packages as a single artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-tgz
+          path: artifacts/
+          retention-days: 7
+
+      - name: List packaged tarballs for matrix
+        id: list-packages
+        run: |
+          cd artifacts
+          package_list=$(find . -maxdepth 1 -name "*.tgz" | sed 's|^\./||; s|\.tgz$||' | jq -R . | jq -s -c .)
+          echo "Generated package list: ${package_list}"
+          echo "names=${package_list}" >> $GITHUB_OUTPUT
+
+  upload-individual-packages:
+    name: Upload Individual Package
+    runs-on: ubuntu-latest
+    needs: build-and-package
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.build-and-package.outputs.packages) }}
+    steps:
+      - name: Download all-packages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-tgz
+          path: artifacts/
+
+      - name: Upload ${{ matrix.package }} as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: artifacts/${{ matrix.package }}.tgz
+          retention-days: 7
