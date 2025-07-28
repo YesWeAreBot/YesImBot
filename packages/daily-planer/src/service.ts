@@ -124,7 +124,7 @@ export class DailyPlannerService {
     }
 
     private buildSchedulePrompt(coreMemories: MemoryBlockData[], recentEvents: any[]): string {
-        let prompt = `你是一个日程规划家，请基于以下信息为${this.config.characterName}规划今日日程：\n\n`;
+        let prompt = `你是一个小说家，请基于以下信息为虚拟人物${this.config.characterName}规划今日日程：\n\n`;
 
         // 添加核心记忆
         prompt += `## ${this.config.characterName}的核心记忆:\n`;
@@ -145,7 +145,7 @@ export class DailyPlannerService {
         prompt += "## 输出格式要求:\n";
         prompt += "请严格按照以下JSON格式返回日程安排：\n";
         prompt += `{\n  "schedule": {\n    "${this.config.timeSegments[0]}": "内容1",\n    "${this.config.timeSegments[1]}": "内容2",\n    ...\n  }\n}\n\n`;
-        prompt += "注意：必须包含所有时间段！每个时间段用1-2句话描述主要活动，使用自然语言。";
+        prompt += "注意：必须包含所有时间段！每个时间段用1-2句话描述主要活动，使用自然语言。这个日程是主人公日常生活的日程，你需要根据他的核心记忆来虚构。你要把他当人类来看待。请注意，这只是计划，还没有正式开始，不是写日记。";
 
         this.logger.debug("生成的提示词:", prompt);
         return prompt;
