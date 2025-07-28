@@ -48,6 +48,7 @@ export default class DailyPlannerExtension {
         // 注册每日定时任务
         ctx.cron(cronExpression, async () => {
             await this.service.generateDailySchedule();
+            await this.registerTools();
         });
 
         ctx.on("ready", () => {this.registerTools(); this.registerCommands()});
@@ -57,8 +58,9 @@ export default class DailyPlannerExtension {
         // 手动生成今日日程
         this.ctx.command('daily.generate', '手动生成今日日程', { authority: 3 })
             .action(async ({ session }) => {
-                session.sendQueued("正在生成日程，请稍后...")
-                await this.service.generateDailySchedule()
+                session.sendQueued("正在生成日程，请稍后...");
+                await this.service.generateDailySchedule();
+                this.registerTools();
                 return `生成成功`
             });
 
@@ -68,6 +70,7 @@ export default class DailyPlannerExtension {
             .action(async ({ session, options }, content) => {
                 const duration = options.duration || 60;
                 await this.service.overrideCurrentSchedule(content, duration);
+                await this.registerTools();
                 return `当前时段安排已更新为：${content}`;
             });
 
@@ -75,6 +78,7 @@ export default class DailyPlannerExtension {
         this.ctx.command('daily.add <start> <end> <content>', '添加自定义时段', { authority: 3 })
             .action(async ({ session }, start, end, content) => {
                 await this.service.addCustomTimeSegment(start, end, content);
+                await  this.registerTools();
                 return `已添加时段：${start}-${end}: ${content}`;
             });
 
@@ -83,6 +87,7 @@ export default class DailyPlannerExtension {
             .action(async ({ session }, index) => {
                 const idx = parseInt(index) - 1;
                 await this.service.removeTimeSegment(idx);
+                await this.registerTools();
                 return `已删除第 ${index} 个时段安排`;
             });
 
@@ -95,21 +100,22 @@ export default class DailyPlannerExtension {
                 ).join('\n');
             });
     }
-    private registerTools() {
+    
+    private async registerTools() {
         // 注册日程管理工具
-        this.ctx[Services.Tool].registerTool({
+        await this.ctx[Services.Tool].registerTool({
             name: 'get_daily_schedule',
-            description: '获取今天的完整日程安排',
+            description: `获取今天的完整日程安排。当前时段的安排为：${await this.getCurrentSchedule()}`,
             parameters: Schema.object({}),
             execute: this.getFullSchedule.bind(this)
         });
 
-        this.ctx[Services.Tool].registerTool({
-            name: 'get_current_schedule',
-            description: '获取当前时间段的日程安排',
-            parameters: Schema.object({}),
-            execute: this.getCurrentSchedule.bind(this)
-        });
+        // this.ctx[Services.Tool].registerTool({
+        //     name: 'get_current_schedule',
+        //     description: '获取当前时间段的日程安排',
+        //     parameters: Schema.object({}),
+        //     execute: this.getCurrentSchedule.bind(this)
+        // });
     }
 
     private async getFullSchedule() {
@@ -125,19 +131,12 @@ export default class DailyPlannerExtension {
         try {
             const currentSegment = await this.service.getCurrentTimeSegment();
             if (!currentSegment) {
-                return Success({
-                    message: "当前没有安排活动",
-                    content: "休息或自由时间"
-                });
+                return "当前没有安排活动，为休息或自由时间"
             }
 
-            return Success({
-                start: currentSegment.start,
-                end: currentSegment.end,
-                content: currentSegment.content
-            });
+            return `${currentSegment.start}-${currentSegment.end}: ${currentSegment.content}`
         } catch (error) {
-            return Failed(`获取当前日程失败: ${error.message}`);
+            return `获取当前日程失败: ${error.message}`;
         }
     }
 }
