@@ -212,7 +212,7 @@ export class MemoryService extends Service<MemoryConfig> {
                 isDeleted: { type: "boolean", initial: false },
                 tags: "array",
             },
-            { primary: "id", unique: [["userId"]] } // 每个用户只能有一个画像
+            { primary: "id", unique: [["userId", "contextId"]] } // 每个用户只能有一个画像
         );
     }
 
