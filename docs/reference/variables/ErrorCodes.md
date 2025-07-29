@@ -1,0 +1,197 @@
+[**koishi-plugin-yesimbot**](../README.md)
+
+***
+
+[koishi-plugin-yesimbot](../packages.md) / ErrorCodes
+
+# Variable: ErrorCodes
+
+> `const` **ErrorCodes**: `object`
+
+Defined in: [packages/core/src/shared/errors/index.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/errors/index.ts#L161)
+
+应用程序的统一错误码
+使用常量对象而不是枚举，以获得更好的灵活性和 Tree-shaking 效果
+格式: DOMAIN.CATEGORY_OR_DETAIL
+
+## Type declaration
+
+### AUTH
+
+> `readonly` **AUTH**: `object`
+
+#### AUTH.AUTHENTICATION\_FAILED
+
+> `readonly` **AUTHENTICATION\_FAILED**: `"AUTH.AUTHENTICATION_FAILED"` = `"AUTH.AUTHENTICATION_FAILED"`
+
+#### AUTH.PERMISSION\_DENIED
+
+> `readonly` **PERMISSION\_DENIED**: `"AUTH.PERMISSION_DENIED"` = `"AUTH.PERMISSION_DENIED"`
+
+### CONFIG
+
+> `readonly` **CONFIG**: `object`
+
+#### CONFIG.INVALID
+
+> `readonly` **INVALID**: `"CONFIG.INVALID"` = `"CONFIG.INVALID"`
+
+#### CONFIG.MISSING
+
+> `readonly` **MISSING**: `"CONFIG.MISSING"` = `"CONFIG.MISSING"`
+
+### LLM
+
+> `readonly` **LLM**: `object`
+
+#### LLM.ADAPTER\_ERROR
+
+> `readonly` **ADAPTER\_ERROR**: `"LLM.ADAPTER_ERROR"` = `"LLM.ADAPTER_ERROR"`
+
+#### LLM.MODEL\_NOT\_FOUND
+
+> `readonly` **MODEL\_NOT\_FOUND**: `"LLM.MODEL_NOT_FOUND"` = `"LLM.MODEL_NOT_FOUND"`
+
+#### LLM.OUTPUT\_PARSING\_FAILED
+
+> `readonly` **OUTPUT\_PARSING\_FAILED**: `"LLM.OUTPUT_PARSING_FAILED"` = `"LLM.OUTPUT_PARSING_FAILED"`
+
+#### LLM.REQUEST\_FAILED
+
+> `readonly` **REQUEST\_FAILED**: `"LLM.REQUEST_FAILED"` = `"LLM.REQUEST_FAILED"`
+
+#### LLM.RETRY\_EXHAUSTED
+
+> `readonly` **RETRY\_EXHAUSTED**: `"LLM.RETRY_EXHAUSTED"` = `"LLM.RETRY_EXHAUSTED"`
+
+#### LLM.TIMEOUT
+
+> `readonly` **TIMEOUT**: `"LLM.TIMEOUT"` = `"LLM.TIMEOUT"`
+
+### MEMORY
+
+> `readonly` **MEMORY**: `object`
+
+#### MEMORY.PROVIDER\_ERROR
+
+> `readonly` **PROVIDER\_ERROR**: `"MEMORY.PROVIDER_ERROR"` = `"MEMORY.PROVIDER_ERROR"`
+
+### NETWORK
+
+> `readonly` **NETWORK**: `object`
+
+#### NETWORK.DOWNLOAD\_FAILED
+
+> `readonly` **DOWNLOAD\_FAILED**: `"NETWORK.DOWNLOAD_FAILED"` = `"NETWORK.DOWNLOAD_FAILED"`
+
+### OPERATION
+
+> `readonly` **OPERATION**: `object`
+
+#### OPERATION.CIRCUIT\_BREAKER\_OPEN
+
+> `readonly` **CIRCUIT\_BREAKER\_OPEN**: `"OPERATION.CIRCUIT_BREAKER_OPEN"` = `"OPERATION.CIRCUIT_BREAKER_OPEN"`
+
+#### OPERATION.LOCK\_TIMEOUT
+
+> `readonly` **LOCK\_TIMEOUT**: `"OPERATION.LOCK_TIMEOUT"` = `"OPERATION.LOCK_TIMEOUT"`
+
+#### OPERATION.RETRY\_EXHAUSTED
+
+> `readonly` **RETRY\_EXHAUSTED**: `"OPERATION.RETRY_EXHAUSTED"` = `"OPERATION.RETRY_EXHAUSTED"`
+
+#### OPERATION.SERVICE\_SHUTTING\_DOWN
+
+> `readonly` **SERVICE\_SHUTTING\_DOWN**: `"OPERATION.SERVICE_SHUTTING_DOWN"` = `"OPERATION.SERVICE_SHUTTING_DOWN"`
+
+### RESOURCE
+
+> `readonly` **RESOURCE**: `object`
+
+#### RESOURCE.CONFLICT
+
+> `readonly` **CONFLICT**: `"RESOURCE.CONFLICT"` = `"RESOURCE.CONFLICT"`
+
+#### RESOURCE.EXHAUSTED
+
+> `readonly` **EXHAUSTED**: `"RESOURCE.EXHAUSTED"` = `"RESOURCE.EXHAUSTED"`
+
+#### RESOURCE.LIMIT\_EXCEEDED
+
+> `readonly` **LIMIT\_EXCEEDED**: `"RESOURCE.LIMIT_EXCEEDED"` = `"RESOURCE.LIMIT_EXCEEDED"`
+
+#### RESOURCE.NOT\_FOUND
+
+> `readonly` **NOT\_FOUND**: `"RESOURCE.NOT_FOUND"` = `"RESOURCE.NOT_FOUND"`
+
+#### RESOURCE.STORAGE\_FAILURE
+
+> `readonly` **STORAGE\_FAILURE**: `"RESOURCE.STORAGE_FAILURE"` = `"RESOURCE.STORAGE_FAILURE"`
+
+### SERVICE
+
+> `readonly` **SERVICE**: `object`
+
+#### SERVICE.INITIALIZATION\_FAILURE
+
+> `readonly` **INITIALIZATION\_FAILURE**: `"SERVICE.INITIALIZATION_FAILURE"` = `"SERVICE.INITIALIZATION_FAILURE"`
+
+#### SERVICE.START\_FAILURE
+
+> `readonly` **START\_FAILURE**: `"SERVICE.START_FAILURE"` = `"SERVICE.START_FAILURE"`
+
+#### SERVICE.STOP\_FAILURE
+
+> `readonly` **STOP\_FAILURE**: `"SERVICE.STOP_FAILURE"` = `"SERVICE.STOP_FAILURE"`
+
+#### SERVICE.UNAVAILABLE
+
+> `readonly` **UNAVAILABLE**: `"SERVICE.UNAVAILABLE"` = `"SERVICE.UNAVAILABLE"`
+
+### SYSTEM
+
+> `readonly` **SYSTEM**: `object`
+
+#### SYSTEM.DATABASE\_ERROR
+
+> `readonly` **DATABASE\_ERROR**: `"SYSTEM.DATABASE_ERROR"` = `"SYSTEM.DATABASE_ERROR"`
+
+#### SYSTEM.NETWORK\_ERROR
+
+> `readonly` **NETWORK\_ERROR**: `"SYSTEM.NETWORK_ERROR"` = `"SYSTEM.NETWORK_ERROR"`
+
+#### SYSTEM.SERVICE\_UNAVAILABLE
+
+> `readonly` **SERVICE\_UNAVAILABLE**: `"SYSTEM.SERVICE_UNAVAILABLE"` = `"SYSTEM.SERVICE_UNAVAILABLE"`
+
+#### SYSTEM.UNKNOWN
+
+> `readonly` **UNKNOWN**: `"SYSTEM.UNKNOWN"` = `"SYSTEM.UNKNOWN"`
+
+### TOOL
+
+> `readonly` **TOOL**: `object`
+
+#### TOOL.EXECUTION\_ERROR
+
+> `readonly` **EXECUTION\_ERROR**: `"TOOL.EXECUTION_ERROR"` = `"TOOL.EXECUTION_ERROR"`
+
+#### TOOL.NOT\_FOUND
+
+> `readonly` **NOT\_FOUND**: `"TOOL.NOT_FOUND"` = `"TOOL.NOT_FOUND"`
+
+#### TOOL.TIMEOUT
+
+> `readonly` **TIMEOUT**: `"TOOL.TIMEOUT"` = `"TOOL.TIMEOUT"`
+
+### VALIDATION
+
+> `readonly` **VALIDATION**: `object`
+
+#### VALIDATION.INVALID\_INPUT
+
+> `readonly` **INVALID\_INPUT**: `"VALIDATION.INVALID_INPUT"` = `"VALIDATION.INVALID_INPUT"`
+
+#### VALIDATION.IS\_NULL\_OR\_UNDEFINED
+
+> `readonly` **IS\_NULL\_OR\_UNDEFINED**: `"VALIDATION.IS_NULL_OR_UNDEFINED"` = `"VALIDATION.IS_NULL_OR_UNDEFINED"`
