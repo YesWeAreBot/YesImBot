@@ -111,3 +111,6 @@ async function waitForServices(services: ForkScope[]) {
         check();
     });
 }
+
+export * from "./services";
+export * from "./shared";

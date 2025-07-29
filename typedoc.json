@@ -1,0 +1,21 @@
+{
+  "entryPointStrategy": "packages",
+  "entryPoints": [
+    "packages/core"
+  ],
+  "packageOptions": {
+    "entryPoints": [
+      "src/index.ts"
+    ]
+  },
+  "plugin": [
+    "typedoc-plugin-markdown",
+    "typedoc-plugin-rename-defaults"
+  ],
+  "outputs": [
+    {
+      "name": "markdown",
+      "path": "docs/reference"
+    }
+  ]
+}

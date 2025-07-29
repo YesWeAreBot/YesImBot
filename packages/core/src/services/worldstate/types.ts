@@ -10,7 +10,7 @@
 import { ToolSchema } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
 import { ImagePart, TextPart } from "@xsai/shared-chat";
-import { Element, User } from "koishi";
+import { Element, Session, User } from "koishi";
 
 type Genres = "friend" | "channel" | "guild" | "guild-member" | "guild-role" | "guild-file" | "guild-emoji";
 type Actions = "added" | "deleted" | "updated";
@@ -379,7 +379,7 @@ export interface AgentStimulus<T>{
     /** 刺激发生的目标频道 CID ('platform:channelId') */
     channelCid: string;
     /** 触发刺激的原始 Session 对象，用于获取 Bot 实例等上下文信息 */
-    session: import("koishi").Session;
+    session: Session;
     /** 刺激的优先级 (e.g., 1-10)，用于未来处理冲突或进行决策 */
     priority: number;
     /** 与刺激类型相关的具体数据 */
