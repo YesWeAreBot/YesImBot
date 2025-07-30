@@ -87,10 +87,19 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
         // 合并 inject 依赖
         const originalInjects = TargetAsAny.inject || [];
 
-        Object.defineProperty(WrappedAsAny, "inject", {
-            value: [...new Set([Services.Tool, Services.Logger, ...originalInjects])],
-            writable: false,
-        });
+        if (Array.isArray(originalInjects)) {
+            Object.defineProperty(WrappedAsAny, "inject", {
+                value: [...new Set([Services.Tool, Services.Logger, ...originalInjects])],
+                writable: false,
+            });
+        } else {
+            const required = originalInjects["required"] || [];
+            originalInjects["required"] = [...new Set([...required, Services.Tool, Services.Logger])];
+            Object.defineProperty(WrappedAsAny, "inject", {
+                value: originalInjects,
+                writable: false,
+            });
+        }
 
         return WrappedExtension as unknown as T;
     };
