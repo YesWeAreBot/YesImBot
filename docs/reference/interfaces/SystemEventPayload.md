@@ -6,7 +6,7 @@
 
 # Interface: SystemEventPayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:362](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L362)
+Defined in: [packages/core/src/services/worldstate/types.ts:362](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L362)
 
 系统事件刺激的载荷。
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:362](https://github.
 
 > **details**: `any`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:366](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L366)
+Defined in: [packages/core/src/services/worldstate/types.ts:366](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L366)
 
 事件相关的详细信息
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:366](https://github.
 
 > **eventType**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:364](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L364)
+Defined in: [packages/core/src/services/worldstate/types.ts:364](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L364)
 
 Koishi 内部事件类型，如 'guild-member-ban'
 
@@ -36,6 +36,6 @@ Koishi 内部事件类型，如 'guild-member-ban'
 
 > `optional` **message**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:368](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L368)
+Defined in: [packages/core/src/services/worldstate/types.ts:368](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L368)
 
 [新增] 由系统预渲染的、用于给LLM阅读的自然语言消息

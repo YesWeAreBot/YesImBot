@@ -6,7 +6,7 @@
 
 # Interface: PromptContext
 
-Defined in: [packages/core/src/services/worldstate/types.ts:389](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L389)
+Defined in: [packages/core/src/services/worldstate/types.ts:389](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L389)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:389](https://github.
 
 > **memoryBlocks**: [`MemoryBlockData`](MemoryBlockData.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:392](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L392)
+Defined in: [packages/core/src/services/worldstate/types.ts:392](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L392)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:392](https://github.
 
 > **multiModalData**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:395](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L395)
+Defined in: [packages/core/src/services/worldstate/types.ts:395](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L395)
 
 #### images
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:395](https://github.
 
 > **previousResponses**: [`AgentResponse`](AgentResponse.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:394](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L394)
+Defined in: [packages/core/src/services/worldstate/types.ts:394](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L394)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:394](https://github.
 
 > **toolSchemas**: [`ToolSchema`](ToolSchema.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:391](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L391)
+Defined in: [packages/core/src/services/worldstate/types.ts:391](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L391)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:391](https://github.
 
 > **triggerContext**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:390](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L390)
+Defined in: [packages/core/src/services/worldstate/types.ts:390](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L390)
 
 ***
 
@@ -58,4 +58,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:390](https://github.
 
 > **worldState**: [`WorldState`](WorldState.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:393](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L393)
+Defined in: [packages/core/src/services/worldstate/types.ts:393](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L393)

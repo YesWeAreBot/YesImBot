@@ -6,7 +6,7 @@
 
 # Class: EmbedModel
 
-Defined in: [packages/core/src/services/model/embed-model.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/embed-model.ts#L14)
+Defined in: [packages/core/src/services/model/embed-model.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/embed-model.ts#L14)
 
 所有模型类的基类，封装了通用属性和方法。
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/model/embed-model.ts:14](https://github.
 
 > **new EmbedModel**(`ctx`, `embedProvider`, `modelConfig`, `fetch`): `EmbedModel`
 
-Defined in: [packages/core/src/services/model/embed-model.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/embed-model.ts#L15)
+Defined in: [packages/core/src/services/model/embed-model.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/embed-model.ts#L15)
 
 #### Parameters
 
@@ -58,7 +58,7 @@ Defined in: [packages/core/src/services/model/embed-model.ts:15](https://github.
 
 > `readonly` **config**: [`ModelConfig`](../interfaces/ModelConfig.md)
 
-Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/base-model.ts#L10)
+Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/base-model.ts#L10)
 
 #### Implementation of
 
@@ -74,7 +74,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.c
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/base-model.ts#L12)
+Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/base-model.ts#L12)
 
 #### Implementation of
 
@@ -90,7 +90,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.c
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/base-model.ts#L9)
+Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/base-model.ts#L9)
 
 #### Implementation of
 
@@ -106,7 +106,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.co
 
 > `protected` `readonly` **logger**: `__module`
 
-Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/base-model.ts#L11)
+Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/base-model.ts#L11)
 
 #### Implementation of
 
@@ -122,7 +122,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.c
 
 > **embed**(`text`): `Promise`\<`EmbedResult`\>
 
-Defined in: [packages/core/src/services/model/embed-model.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/embed-model.ts#L24)
+Defined in: [packages/core/src/services/model/embed-model.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/embed-model.ts#L24)
 
 #### Parameters
 
@@ -144,7 +144,7 @@ Defined in: [packages/core/src/services/model/embed-model.ts:24](https://github.
 
 > **embedMany**(`texts`): `Promise`\<`EmbedManyResult`\>
 
-Defined in: [packages/core/src/services/model/embed-model.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/embed-model.ts#L34)
+Defined in: [packages/core/src/services/model/embed-model.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/model/embed-model.ts#L34)
 
 #### Parameters
 

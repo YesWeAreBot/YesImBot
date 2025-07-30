@@ -8,6 +8,6 @@
 
 > **GenericSystemEvent** = [`BaseSystemEvent`](../interfaces/BaseSystemEvent.md)\<`string`, `object`\>
 
-Defined in: [packages/core/src/services/worldstate/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L53)
+Defined in: [packages/core/src/services/worldstate/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L53)
 
 通用系统事件，用于未明确定义具体类型的事件
