@@ -377,7 +377,12 @@ export class StickerService {
 
         const fileUrl = pathToFileURL(sticker.filePath).href;
 
-        return h.image(fileUrl, { "sub-type": "1" });
+        const ext = sticker.filePath.split('.').pop();
+
+        const b64 = await readFile(sticker.filePath, 'base64');
+        const base64Data = `data:image/${ext};base64,${b64}`;
+
+        return h.image(base64Data, { "sub-type": "1" });
     }
 
     async getStickersByCategory(category: string): Promise<StickerRecord[]> {

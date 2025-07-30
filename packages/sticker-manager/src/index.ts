@@ -1,3 +1,4 @@
+import { readFile } from 'fs/promises';
 import { Context, Schema, Session, h } from 'koishi';
 import { AssetService, Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
@@ -241,7 +242,13 @@ export default class StickerTools {
 
 		    // 发送表情包
 		    const fileUrl = pathToFileURL(targetSticker.filePath).href;
-		    await session.sendQueued(h.image(fileUrl));
+
+            const ext = targetSticker.filePath.split('.').pop();
+
+            const b64 = await readFile(targetSticker.filePath, 'base64');
+            const base64Data = `data:image/${ext};base64,${b64}`;
+
+		    await session.sendQueued(h.image(base64Data))
 		    return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
 		  });
 
