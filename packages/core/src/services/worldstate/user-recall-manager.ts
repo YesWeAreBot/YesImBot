@@ -284,31 +284,53 @@ export class UserRecallManager {
         }
     }
 
-    /**
-     * 基于姓名提及查找用户
-     * @param messages
-     * @returns
-     */
-    private async findNamedUsers(messages: ContextualMessage[]): Promise<Array<{ userId: string; score: number }>> {
-        try {
-            const messageText = messages.map((m) => cleanContent(m.content)).join(" ");
-            const users = await this.ctx.database.get(TableName.UserProfiles, { isDeleted: false });
-            const namedUsers: Array<{ userId: string; score: number }> = [];
+/**
+ * 基于姓名提及查找用户
+ * @param messages
+ * @returns
+ */
+private async findNamedUsers(messages: ContextualMessage[]): Promise<Array<{ userId: string; score: number }>> {
+    try {
+        const messageText = messages.map((m) => cleanContent(m.content)).join(" ");
+        const users = await this.ctx.database.get(TableName.UserProfiles, { isDeleted: false });
 
-            users.forEach((profile) => {
-                if (profile.userName && profile.userName.length > 1) {
-                    const matches = messageText.match(new RegExp(`\\b${profile.userName}\\b`, "gi"));
-                    if (matches?.length > 0) {
-                        namedUsers.push({ userId: profile.userId, score: Math.min(matches.length * 0.2 + 0.3, 0.8) });
-                    }
-                }
-            });
-            return namedUsers.sort((a, b) => b.score - a.score);
-        } catch (error) {
-            this.logger.warn(`基于姓名的用户查找失败: ${error.message}`);
+        const userNames = users.map(profile => profile.userName).filter(name => name && name.length > 1);
+
+        if (userNames.length === 0) {
             return [];
         }
+
+        const AhoCorasick = require("@/dependencies/ahocorasick");
+
+        const ac = new AhoCorasick(userNames);
+
+        // 一次性在文本中查找所有用户名
+        const results = ac.search(messageText);
+
+        // 处理匹配结果
+        const userMatchCounts = new Map<string, number>();
+        results.forEach(result => {
+            const userName = result[1][0]; // result 格式为 [endIndex, [keyword]]
+            userMatchCounts.set(userName, (userMatchCounts.get(userName) || 0) + 1);
+        });
+
+        const namedUsers: Array<{ userId: string; score: number }> = [];
+        users.forEach(profile => {
+            if (userMatchCounts.has(profile.userName)) {
+                const matchCount = userMatchCounts.get(profile.userName);
+                namedUsers.push({
+                    userId: profile.userId,
+                    score: Math.min(matchCount * 0.2 + 0.3, 0.8)
+                });
+            }
+        });
+
+        return namedUsers.sort((a, b) => b.score - a.score);
+    } catch (error) {
+        this.logger.warn(`基于姓名的用户查找失败: ${error.message}`);
+        return [];
     }
+}
 
     private _generateMessageHash(messages: ContextualMessage[]): string {
         const hashInput = messages.map((m) => `${m.id}:${m.timestamp.getTime()}:${m.sender.id}`).join("|");
@@ -328,7 +350,7 @@ function cleanContent(content: string): string {
         .parse(content)
         .filter((el) => allowedTypes.includes(el.type))
         .map((el) => {
-            if (el.type === "at") return `@${el.attrs.name}`.replace("@@", "@") || `@${el.attrs.id}`;
+            if (el.type === "at") return `@${el.attrs.name || el.attrs.id}`.replace("@@", "@");
             if (el.type === "image") return el.attrs.summary || "[图片]";
             return el.toString();
         })
