@@ -277,34 +277,34 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
      * 设置延迟处理定时器（策略3）
      */
     private setupDeferredTimer(channelKey: string) {
-        // 清除现有定时器
-        if (this.deferredTimers.has(channelKey)) {
-            clearTimeout(this.deferredTimers.get(channelKey));
-            this.deferredTimers.delete(channelKey);
-        }
-
-        const timer = setTimeout(() => {
-            this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
-            if (this.skippedStimulus.has(channelKey)) {
-                const stimulus = this.skippedStimulus.get(channelKey);
-                this.skippedStimulus.delete(channelKey);
-
-                // 添加引导提示
-                this.guideToSkippedTopic(channelKey);
-
-                // 获取防抖任务并执行
-                const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-                if (debouncedTask) {
-                    this.logger.debug(`[${channelKey}] 处理被跳过的段落`);
-                    debouncedTask(stimulus);
-                }
-            }
-            this.deferredTimers.delete(channelKey);
-        }, this.config.deferredProcessingTime || 10000);
-
-        this.deferredTimers.set(channelKey, timer);
-        this.logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
-    }
+	    // 清除现有定时器
+	    if (this.deferredTimers.has(channelKey)) {
+	        clearTimeout(this.deferredTimers.get(channelKey));
+	        this.deferredTimers.delete(channelKey);
+	    }
+	
+	    const timer = setTimeout(() => {
+	        this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
+	        if (this.skippedStimulus.has(channelKey)) {
+	            const stimulus = this.skippedStimulus.get(channelKey);
+	            this.skippedStimulus.delete(channelKey);
+	
+	            this.runningTasks.add(channelKey);
+	            this.logger.debug(`[${channelKey}] 处理被跳过的段落（重新锁定频道）`);
+	
+	            // 获取防抖任务并执行
+	            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+	            if (debouncedTask) {
+	                this.logger.debug(`[${channelKey}] 处理被跳过的段落`);
+	                debouncedTask(stimulus);
+	            }
+	        }
+	        this.deferredTimers.delete(channelKey);
+	    }, this.config.deferredProcessingTime || 10000);
+	
+	    this.deferredTimers.set(channelKey, timer);
+	    this.logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
+	}
 
     /**
      * 引导模型关注被跳过的话题（策略3）
@@ -322,27 +322,31 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     /**
      * 当前任务完成后处理被跳过的消息（策略2 & 3）
      */
-    private handleSkippedMessagesAfterReply(channelKey: string) {
-        if (this.config.newMessageStrategy === "immediate" && this.skippedStimulus.has(channelKey)) {
-            const skippedStimulus = this.skippedStimulus.get(channelKey);
-            this.skippedStimulus.delete(channelKey);
+	private handleSkippedMessagesAfterReply(channelKey: string) {
+	    if (this.config.newMessageStrategy === "immediate" && this.skippedStimulus.has(channelKey)) {
+	        const skippedStimulus = this.skippedStimulus.get(channelKey);
+	        this.skippedStimulus.delete(channelKey);
+	
+	        // 清除策略3的定时器（如果有）
+	        if (this.deferredTimers.has(channelKey)) {
+	            clearTimeout(this.deferredTimers.get(channelKey));
+	            this.deferredTimers.delete(channelKey);
+	        }
+	
+	        // 重新获取频道锁
+	        this.runningTasks.add(channelKey);
+	        this.logger.debug(`[${channelKey}] 立即处理被跳过的段落（重新锁定频道）`);
+	
+	        const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+	        if (debouncedTask) {
+	            debouncedTask(skippedStimulus);
+	        }
+	    } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
+	        // 任务完成后才启动定时器
+	        this.setupDeferredTimer(channelKey);
+	    }
+	}
 
-            // 清除策略3的定时器（如果有）
-            if (this.deferredTimers.has(channelKey)) {
-                clearTimeout(this.deferredTimers.get(channelKey));
-                this.deferredTimers.delete(channelKey);
-            }
-
-            this.logger.debug(`[${channelKey}] 立即处理被跳过的段落`);
-            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-            if (debouncedTask) {
-                debouncedTask(skippedStimulus);
-            }
-        } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
-            // 任务完成后才启动定时器
-            this.setupDeferredTimer(channelKey);
-        }
-    }
 
     /**
      * Agent 的核心心跳循环。现在只负责控制循环流程。
