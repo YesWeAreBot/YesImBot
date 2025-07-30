@@ -6,7 +6,7 @@
 
 # Enumeration: TaskType
 
-Defined in: [packages/core/src/services/model/config.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L22)
+Defined in: [packages/core/src/services/model/config.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L22)
 
 TaskType
 
@@ -20,7 +20,7 @@ TaskType
 
 > **Chat**: `"chat"`
 
-Defined in: [packages/core/src/services/model/config.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L23)
+Defined in: [packages/core/src/services/model/config.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L23)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [packages/core/src/services/model/config.ts:23](https://github.com/Y
 
 > **Embedding**: `"embed"`
 
-Defined in: [packages/core/src/services/model/config.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L24)
+Defined in: [packages/core/src/services/model/config.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L24)
 
 ***
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/model/config.ts:24](https://github.com/Y
 
 > **Memory**: `"memory"`
 
-Defined in: [packages/core/src/services/model/config.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L26)
+Defined in: [packages/core/src/services/model/config.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L26)
 
 ***
 
@@ -44,4 +44,4 @@ Defined in: [packages/core/src/services/model/config.ts:26](https://github.com/Y
 
 > **Summarization**: `"summarize"`
 
-Defined in: [packages/core/src/services/model/config.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L25)
+Defined in: [packages/core/src/services/model/config.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L25)

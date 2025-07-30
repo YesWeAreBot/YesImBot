@@ -6,7 +6,7 @@
 
 # Enumeration: ModelAbility
 
-Defined in: [packages/core/src/services/model/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L9)
+Defined in: [packages/core/src/services/model/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L9)
 
 定义模型支持的能力
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/config.ts:9](https://github.com/Ye
 
 > **Chat**: `"对话"`
 
-Defined in: [packages/core/src/services/model/config.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L15)
+Defined in: [packages/core/src/services/model/config.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L15)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/model/config.ts:15](https://github.com/Y
 
 > **Embedding**: `"嵌入"`
 
-Defined in: [packages/core/src/services/model/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L14)
+Defined in: [packages/core/src/services/model/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L14)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/model/config.ts:14](https://github.com/Y
 
 > **FunctionCalling**: `"函数调用"`
 
-Defined in: [packages/core/src/services/model/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L13)
+Defined in: [packages/core/src/services/model/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L13)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/model/config.ts:13](https://github.com/Y
 
 > **Reasoning**: `"推理"`
 
-Defined in: [packages/core/src/services/model/config.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L12)
+Defined in: [packages/core/src/services/model/config.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L12)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/model/config.ts:12](https://github.com/Y
 
 > **Vision**: `"视觉"`
 
-Defined in: [packages/core/src/services/model/config.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L10)
+Defined in: [packages/core/src/services/model/config.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L10)
 
 ***
 
@@ -56,4 +56,4 @@ Defined in: [packages/core/src/services/model/config.ts:10](https://github.com/Y
 
 > **WebSearch**: `"网络搜索"`
 
-Defined in: [packages/core/src/services/model/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/model/config.ts#L11)
+Defined in: [packages/core/src/services/model/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L11)

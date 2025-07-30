@@ -6,7 +6,7 @@
 
 # Class: AppError
 
-Defined in: [packages/core/src/shared/errors/index.ts:239](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/errors/index.ts#L239)
+Defined in: [packages/core/src/shared/errors/index.ts:239](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L239)
 
 统一的应用程序错误类
 扩展自原生的 Error，并添加了 code、context 和唯一的 errorId
@@ -21,7 +21,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:239](https://github.com/Ye
 
 > **new AppError**(`message`, `options`): `AppError`
 
-Defined in: [packages/core/src/shared/errors/index.ts:244](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/errors/index.ts#L244)
+Defined in: [packages/core/src/shared/errors/index.ts:244](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L244)
 
 #### Parameters
 
@@ -69,7 +69,7 @@ Defined in: node\_modules/typescript/lib/lib.es2022.error.d.ts:26
 
 > `readonly` **code**: [`ErrorCode`](../type-aliases/ErrorCode.md)
 
-Defined in: [packages/core/src/shared/errors/index.ts:240](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/errors/index.ts#L240)
+Defined in: [packages/core/src/shared/errors/index.ts:240](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L240)
 
 ***
 
@@ -77,7 +77,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:240](https://github.com/Ye
 
 > `readonly` `optional` **context**: `Record`\<`string`, `any`\>
 
-Defined in: [packages/core/src/shared/errors/index.ts:241](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/errors/index.ts#L241)
+Defined in: [packages/core/src/shared/errors/index.ts:241](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L241)
 
 ***
 
@@ -85,7 +85,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:241](https://github.com/Ye
 
 > `readonly` **errorId**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:242](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/errors/index.ts#L242)
+Defined in: [packages/core/src/shared/errors/index.ts:242](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L242)
 
 ***
 

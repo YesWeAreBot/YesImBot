@@ -6,7 +6,7 @@
 
 # Interface: SearchOptions
 
-Defined in: [packages/core/src/services/memory/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/memory/types.ts#L23)
+Defined in: [packages/core/src/services/memory/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/memory/types.ts#L23)
 
 搜索选项
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/types.ts:23](https://github.com/Y
 
 > `optional` **includeDeleted**: `boolean`
 
-Defined in: [packages/core/src/services/memory/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/memory/types.ts#L33)
+Defined in: [packages/core/src/services/memory/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/memory/types.ts#L33)
 
 是否包含已删除的记录
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/memory/types.ts:33](https://github.com/Y
 
 > `optional` **limit**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/memory/types.ts#L27)
+Defined in: [packages/core/src/services/memory/types.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/memory/types.ts#L27)
 
 返回结果数量限制
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/memory/types.ts:27](https://github.com/Y
 
 > `optional` **minSalience**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/memory/types.ts#L29)
+Defined in: [packages/core/src/services/memory/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/memory/types.ts#L29)
 
 最小显著性阈值
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/memory/types.ts:29](https://github.com/Y
 
 > `optional` **minSimilarity**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/memory/types.ts#L31)
+Defined in: [packages/core/src/services/memory/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/memory/types.ts#L31)
 
 最小相似度阈值
 
@@ -56,6 +56,6 @@ Defined in: [packages/core/src/services/memory/types.ts:31](https://github.com/Y
 
 > `optional` **userIds**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/memory/types.ts#L25)
+Defined in: [packages/core/src/services/memory/types.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/memory/types.ts#L25)
 
 相关用户ID列表

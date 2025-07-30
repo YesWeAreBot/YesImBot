@@ -8,7 +8,7 @@
 
 > **dotProduct**(`vecA`, `vecB`): `number`
 
-Defined in: [packages/core/src/shared/utils/vector.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/utils/vector.ts#L12)
+Defined in: [packages/core/src/shared/utils/vector.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/utils/vector.ts#L12)
 
 计算两个向量的点积（Dot Product）。
 

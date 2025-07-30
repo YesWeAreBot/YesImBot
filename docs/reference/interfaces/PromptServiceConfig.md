@@ -6,7 +6,7 @@
 
 # Interface: PromptServiceConfig
 
-Defined in: [packages/core/src/services/prompt/service.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/prompt/service.ts#L17)
+Defined in: [packages/core/src/services/prompt/service.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/prompt/service.ts#L17)
 
 PromptService 的配置项
 
@@ -16,4 +16,4 @@ PromptService 的配置项
 
 > `optional` **renderer**: [`IRenderer`](IRenderer.md)
 
-Defined in: [packages/core/src/services/prompt/service.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/services/prompt/service.ts#L18)
+Defined in: [packages/core/src/services/prompt/service.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/prompt/service.ts#L18)

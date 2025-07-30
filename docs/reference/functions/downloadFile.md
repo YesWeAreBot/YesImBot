@@ -8,7 +8,7 @@
 
 > **downloadFile**(`url`, `filePath`, `overwrite`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:92](https://github.com/YesWeAreBot/YesImBot/blob/abd5a050f920df8554502742d8ed9e55cbaab3d3/packages/core/src/shared/utils/toolkit.ts#L92)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:92](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/utils/toolkit.ts#L92)
 
 从 URL 下载文件并保存到本地，支持流式写入以优化大文件处理。
 
