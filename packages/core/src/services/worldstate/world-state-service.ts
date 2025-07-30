@@ -145,7 +145,7 @@ class EventListenerManager {
                         payload: { sid: segmentRecord.id },
                     };
                     this.ctx.emit("agent/stimulus", stimulus);
-                    return next();
+                    return;
                 }
             })
         );
