@@ -6,7 +6,7 @@
 
 # Class: ErrorReporter
 
-Defined in: [packages/core/src/shared/errors/index.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L34)
+Defined in: [packages/core/src/shared/errors/index.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/shared/errors/index.ts#L34)
 
 负责格式化错误详情并将其上报到外部服务。
 设计灵感来源于您提供的 ErrorHandlingMiddleware。
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:34](https://github.com/Yes
 
 > **new ErrorReporter**(`config`, `logger`): `ErrorReporter`
 
-Defined in: [packages/core/src/shared/errors/index.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L38)
+Defined in: [packages/core/src/shared/errors/index.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/shared/errors/index.ts#L38)
 
 #### Parameters
 
@@ -39,7 +39,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:38](https://github.com/Yes
 
 > **report**(`context`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/shared/errors/index.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/shared/errors/index.ts#L55)
+Defined in: [packages/core/src/shared/errors/index.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/shared/errors/index.ts#L55)
 
 格式化并上报错误。
 

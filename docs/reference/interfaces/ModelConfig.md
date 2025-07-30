@@ -6,7 +6,7 @@
 
 # Interface: ModelConfig
 
-Defined in: [packages/core/src/services/model/config.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L39)
+Defined in: [packages/core/src/services/model/config.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/config.ts#L39)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/config.ts:39](https://github.com/Y
 
 > **abilities**: [`ModelAbility`](../enumerations/ModelAbility.md)[]
 
-Defined in: [packages/core/src/services/model/config.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L41)
+Defined in: [packages/core/src/services/model/config.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/config.ts#L41)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/model/config.ts:41](https://github.com/Y
 
 > **modelId**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L40)
+Defined in: [packages/core/src/services/model/config.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/config.ts#L40)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/model/config.ts:40](https://github.com/Y
 
 > `optional` **parameters**: `object`
 
-Defined in: [packages/core/src/services/model/config.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/config.ts#L42)
+Defined in: [packages/core/src/services/model/config.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/config.ts#L42)
 
 #### custom?
 

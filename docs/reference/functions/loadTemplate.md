@@ -8,7 +8,7 @@
 
 > **loadTemplate**(`name`, `ext`): `string`
 
-Defined in: [packages/core/src/services/prompt/index.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/prompt/index.ts#L18)
+Defined in: [packages/core/src/services/prompt/index.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/prompt/index.ts#L18)
 
 ## Parameters
 

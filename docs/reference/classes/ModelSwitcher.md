@@ -6,7 +6,7 @@
 
 # Class: ModelSwitcher\<T\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:208](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/model-service.ts#L208)
+Defined in: [packages/core/src/services/model/model-service.ts:208](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/model-service.ts#L208)
 
 泛型模型切换器
 支持代理任何继承自 BaseModel 的模型类型，并在初始化时验证其能力。
@@ -23,7 +23,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:208](https://gith
 
 > **new ModelSwitcher**\<`T`\>(`ctx`, `modelDescriptors`, `groupName`, `modelGetter`): `ModelSwitcher`\<`T`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:235](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/model-service.ts#L235)
+Defined in: [packages/core/src/services/model/model-service.ts:235](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/model-service.ts#L235)
 
 #### Parameters
 
@@ -55,7 +55,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:235](https://gith
 
 > **get** **current**(): `T`
 
-Defined in: [packages/core/src/services/model/model-service.ts:217](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/model-service.ts#L217)
+Defined in: [packages/core/src/services/model/model-service.ts:217](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/model-service.ts#L217)
 
 ##### Returns
 
@@ -69,7 +69,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:217](https://gith
 
 > **get** **length**(): `number`
 
-Defined in: [packages/core/src/services/model/model-service.ts:231](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/model-service.ts#L231)
+Defined in: [packages/core/src/services/model/model-service.ts:231](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/model-service.ts#L231)
 
 ##### Returns
 
@@ -83,7 +83,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:231](https://gith
 
 > **get** **models**(): `T`[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:213](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/model-service.ts#L213)
+Defined in: [packages/core/src/services/model/model-service.ts:213](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/model-service.ts#L213)
 
 ##### Returns
 
@@ -95,7 +95,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:213](https://gith
 
 > **next**(): `T`
 
-Defined in: [packages/core/src/services/model/model-service.ts:221](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/model/model-service.ts#L221)
+Defined in: [packages/core/src/services/model/model-service.ts:221](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/model-service.ts#L221)
 
 #### Returns
 

@@ -6,7 +6,7 @@
 
 # Interface: ToolCallResult\<TResult\>
 
-Defined in: [packages/core/src/services/extension/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/extension/types.ts#L62)
+Defined in: [packages/core/src/services/extension/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/extension/types.ts#L62)
 
 工具调用结果
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/extension/types.ts:62](https://github.co
 
 > `optional` **error**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/extension/types.ts#L67)
+Defined in: [packages/core/src/services/extension/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/extension/types.ts#L67)
 
 错误信息
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/extension/types.ts:67](https://github.co
 
 > `optional` **metadata**: `Record`\<`string`, `any`\>
 
-Defined in: [packages/core/src/services/extension/types.ts:71](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/extension/types.ts#L71)
+Defined in: [packages/core/src/services/extension/types.ts:71](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/extension/types.ts#L71)
 
 附加元数据，如执行时间等
 
@@ -42,7 +42,7 @@ Defined in: [packages/core/src/services/extension/types.ts:71](https://github.co
 
 > `optional` **result**: `TResult`
 
-Defined in: [packages/core/src/services/extension/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/extension/types.ts#L65)
+Defined in: [packages/core/src/services/extension/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/extension/types.ts#L65)
 
 返回结果
 
@@ -52,7 +52,7 @@ Defined in: [packages/core/src/services/extension/types.ts:65](https://github.co
 
 > `optional` **retryable**: `boolean`
 
-Defined in: [packages/core/src/services/extension/types.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/extension/types.ts#L69)
+Defined in: [packages/core/src/services/extension/types.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/extension/types.ts#L69)
 
 是否可重试
 
@@ -62,4 +62,4 @@ Defined in: [packages/core/src/services/extension/types.ts:69](https://github.co
 
 > **status**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:63](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/extension/types.ts#L63)
+Defined in: [packages/core/src/services/extension/types.ts:63](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/extension/types.ts#L63)

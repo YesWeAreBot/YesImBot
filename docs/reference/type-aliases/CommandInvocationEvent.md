@@ -8,6 +8,6 @@
 
 > **CommandInvocationEvent** = [`BaseSystemEvent`](../interfaces/BaseSystemEvent.md)\<`"command-invoked"`, [`CommandInvocationPayload`](../interfaces/CommandInvocationPayload.md)\>
 
-Defined in: [packages/core/src/services/worldstate/types.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/28d9c27d09ded76d0214b02d0254e49c1f0f0ecd/packages/core/src/services/worldstate/types.ts#L77)
+Defined in: [packages/core/src/services/worldstate/types.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L77)
 
 定义一个具体的指令调用事件类型
