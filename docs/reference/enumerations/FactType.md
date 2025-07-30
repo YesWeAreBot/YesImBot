@@ -6,7 +6,7 @@
 
 # Enumeration: FactType
 
-Defined in: [packages/core/src/services/memory/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L47)
+Defined in: [packages/core/src/services/memory/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L47)
 
 事实类型枚举
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/types.ts:47](https://github.com/Y
 
 > **Event**: `"event"`
 
-Defined in: [packages/core/src/services/memory/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L55)
+Defined in: [packages/core/src/services/memory/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L55)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/memory/types.ts:55](https://github.com/Y
 
 > **Interaction**: `"interaction"`
 
-Defined in: [packages/core/src/services/memory/types.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L49)
+Defined in: [packages/core/src/services/memory/types.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L49)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/memory/types.ts:49](https://github.com/Y
 
 > **Observation**: `"observation"`
 
-Defined in: [packages/core/src/services/memory/types.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L48)
+Defined in: [packages/core/src/services/memory/types.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L48)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/memory/types.ts:48](https://github.com/Y
 
 > **Opinion**: `"opinion"`
 
-Defined in: [packages/core/src/services/memory/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L52)
+Defined in: [packages/core/src/services/memory/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L52)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/memory/types.ts:52](https://github.com/Y
 
 > **Plan**: `"plan"`
 
-Defined in: [packages/core/src/services/memory/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L54)
+Defined in: [packages/core/src/services/memory/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L54)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/memory/types.ts:54](https://github.com/Y
 
 > **Preference**: `"preference"`
 
-Defined in: [packages/core/src/services/memory/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L53)
+Defined in: [packages/core/src/services/memory/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L53)
 
 ***
 
@@ -64,4 +64,4 @@ Defined in: [packages/core/src/services/memory/types.ts:53](https://github.com/Y
 
 > **Statement**: `"statement"`
 
-Defined in: [packages/core/src/services/memory/types.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/memory/types.ts#L51)
+Defined in: [packages/core/src/services/memory/types.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/memory/types.ts#L51)

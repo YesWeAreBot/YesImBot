@@ -6,7 +6,7 @@
 
 # Interface: AgentResponse
 
-Defined in: [packages/core/src/services/worldstate/types.ts:272](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L272)
+Defined in: [packages/core/src/services/worldstate/types.ts:272](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L272)
 
 代表 Agent 在 ReAct 循环中的一个完整步骤 (Thought -> Action -> Observation)
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:272](https://github.
 
 > **actions**: [`Action`](Action.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:283](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L283)
+Defined in: [packages/core/src/services/worldstate/types.ts:283](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L283)
 
 行动 (Action): Agent 决定执行的一个或多个具体动作
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:283](https://github.
 
 > **observations**: [`ActionResult`](ActionResult.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:288](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L288)
+Defined in: [packages/core/src/services/worldstate/types.ts:288](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L288)
 
 观察 (Observation): 执行动作后从环境中获得的结果
 这个结果将成为下一个 `AgentResponse` 中 `thoughts.observe` 的输入
@@ -37,7 +37,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:288](https://github.
 
 > **request\_heartbeat**: `boolean`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:294](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L294)
+Defined in: [packages/core/src/services/worldstate/types.ts:294](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L294)
 
 是否请求心跳
 若为 true，表示 Agent 希望立即进入下一个处理循环，即使没有新的外部事件
@@ -49,7 +49,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:294](https://github.
 
 > **thoughts**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:279](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L279)
+Defined in: [packages/core/src/services/worldstate/types.ts:279](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L279)
 
 思考过程 (Thought): Agent 的内心独白
 - `observe`: 对当前情景的观察和总结

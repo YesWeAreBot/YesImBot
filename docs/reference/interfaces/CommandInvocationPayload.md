@@ -6,7 +6,7 @@
 
 # Interface: CommandInvocationPayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L62)
+Defined in: [packages/core/src/services/worldstate/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L62)
 
 定义一个指令调用事件的负载结构
 我们只记录安全和必要的信息
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:62](https://github.c
 
 > **invoker**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L65)
+Defined in: [packages/core/src/services/worldstate/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L65)
 
 #### name
 
@@ -33,7 +33,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:65](https://github.c
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:63](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L63)
+Defined in: [packages/core/src/services/worldstate/types.ts:63](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L63)
 
 ***
 
@@ -41,7 +41,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:63](https://github.c
 
 > `optional` **result**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:71](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L71)
+Defined in: [packages/core/src/services/worldstate/types.ts:71](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L71)
 
 ***
 
@@ -49,4 +49,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:71](https://github.c
 
 > **source**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/worldstate/types.ts#L64)
+Defined in: [packages/core/src/services/worldstate/types.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/worldstate/types.ts#L64)

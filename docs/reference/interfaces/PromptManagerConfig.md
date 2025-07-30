@@ -6,7 +6,7 @@
 
 # Interface: PromptManagerConfig
 
-Defined in: [packages/core/src/services/prompt/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/prompt/config.ts#L6)
+Defined in: [packages/core/src/services/prompt/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/prompt/config.ts#L6)
 
 PromptManager 配置接口
 
@@ -16,7 +16,7 @@ PromptManager 配置接口
 
 > `optional` **debug**: `boolean`
 
-Defined in: [packages/core/src/services/prompt/config.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/prompt/config.ts#L10)
+Defined in: [packages/core/src/services/prompt/config.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/prompt/config.ts#L10)
 
 是否开启调试模式，输出更详细的日志
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/prompt/config.ts:10](https://github.com/
 
 > `optional` **defaultTimeout**: `number`
 
-Defined in: [packages/core/src/services/prompt/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/prompt/config.ts#L8)
+Defined in: [packages/core/src/services/prompt/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/prompt/config.ts#L8)
 
 片段执行的默认超时时间（毫秒）

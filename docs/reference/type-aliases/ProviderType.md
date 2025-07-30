@@ -8,4 +8,4 @@
 
 > **ProviderType** = *typeof* [`PROVIDER_TYPES`](../variables/PROVIDER_TYPES.md)\[`number`\]
 
-Defined in: [packages/core/src/services/model/config.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/services/model/config.ts#L98)
+Defined in: [packages/core/src/services/model/config.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/services/model/config.ts#L98)

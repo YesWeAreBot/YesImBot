@@ -8,7 +8,7 @@
 
 > **formatDate**(`date`, `format`): `string`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/shared/utils/toolkit.ts#L45)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/shared/utils/toolkit.ts#L45)
 
 格式化日期对象或时间戳为指定格式的字符串。
 

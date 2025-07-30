@@ -8,7 +8,7 @@
 
 > **stringify**(`obj`, `fallback`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:88](https://github.com/YesWeAreBot/YesImBot/blob/7efb55270e1fad46d92b069b01167f6f3387305c/packages/core/src/shared/utils/string.ts#L88)
+Defined in: [packages/core/src/shared/utils/string.ts:88](https://github.com/YesWeAreBot/YesImBot/blob/a16835ba7199f4e637261e869677e184b506cc48/packages/core/src/shared/utils/string.ts#L88)
 
 将任何类型的对象安全地转换为字符串。
 如果输入是字符串，则直接返回；否则，使用 JSON.stringify 进行转换。
