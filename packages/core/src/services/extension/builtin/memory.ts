@@ -120,9 +120,10 @@ export default class MemoryExtension {
                 .required()
                 .description("The search term to find in past messages. This is a keyword-based search."),
             limit: Schema.number()
+                .min(1)
                 .default(10)
                 .max(25)
-                .description("Maximum number of messages to return (default: 10)."),
+                .description("Maximum number of messages to return (default: 10, max: 25)."),
             channel_id: Schema.string().description("Optional: Filter by a specific channel ID."),
             user_id: Schema.string().description(
                 "Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."
