@@ -2,7 +2,7 @@
 // #region 自动总结管理
 // =================================================================================
 
-import { IChatModel, TaskType } from "@/services/model";
+import { ChatModelSwitcher, IChatModel, TaskType } from "@/services/model";
 import { PromptService } from "@/services/prompt";
 import { formatDate } from "@/shared";
 import { Services, TableName } from "@/shared/constants";
@@ -18,7 +18,7 @@ export class SummarizationManager {
 
     private promptService: PromptService;
 
-    private chatModel: IChatModel;
+    private chatModel: ChatModelSwitcher;
 
     /**
      * 正在处理总结的频道集合
@@ -28,7 +28,7 @@ export class SummarizationManager {
     constructor(private ctx: Context, private config: HistoryConfig) {
         this.logger = ctx[Services.Logger].getLogger("[自动总结]");
         this.promptService = ctx[Services.Prompt];
-        this.chatModel = ctx[Services.Model].useChatGroup(TaskType.Summarization)?.current;
+        this.chatModel = ctx[Services.Model].useChatGroup(TaskType.Summarization);
 
         this.registerTemplates();
     }

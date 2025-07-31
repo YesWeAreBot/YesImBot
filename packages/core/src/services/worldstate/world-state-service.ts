@@ -659,7 +659,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     protected start(): void {
         this._logger = this.ctx[Services.Logger].getLogger("[世界状态]");
-        this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding)?.current;
+        this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
         if (!this.embedModel) this._logger.warn("未找到任何可用的嵌入模型");
 
         this.registerModels();

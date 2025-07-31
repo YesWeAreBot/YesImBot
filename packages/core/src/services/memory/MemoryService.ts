@@ -3,7 +3,7 @@ import { Context, h, Logger, Query, Service } from "koishi";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
-import { IChatModel, IEmbedModel, TaskType } from "@/services/model";
+import { ChatModelSwitcher, IChatModel, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, PromptService } from "@/services/prompt";
 import { ContextualMessage, MemberData, MessageData } from "@/services/worldstate";
 import { Services, TableName } from "@/shared/constants";
@@ -54,7 +54,7 @@ export class MemoryService extends Service<MemoryConfig> {
     private readonly lockManager: LockManager;
 
     // 模型实例
-    private readonly chatModel: IChatModel;
+    private readonly chatModel: ChatModelSwitcher;
     private readonly embeddingModel: IEmbedModel;
 
     // 定时器引用
@@ -66,6 +66,7 @@ export class MemoryService extends Service<MemoryConfig> {
 
     private promptService: PromptService;
 
+
     constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, Services.Memory, true);
         this.config = config;
@@ -73,8 +74,8 @@ export class MemoryService extends Service<MemoryConfig> {
         this.promptService = ctx[Services.Prompt];
 
         // 初始化模型
-        this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Memory)?.current;
-        this.embeddingModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding)?.current;
+        this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Memory);
+        this.embeddingModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
         if (!this.chatModel || !this.embeddingModel) {
             this.logger.warn("聊天模型或嵌入模型不可用，记忆服务功能将受限");
         }
@@ -101,7 +102,7 @@ export class MemoryService extends Service<MemoryConfig> {
             this.embeddingModel,
             this.ctx[Services.Prompt],
             // 传入一个回调来触发画像整合，避免循环依赖
-            (userId: string, contextId: string) => this.consolidateProfile(userId, contextId),
+            (userId: string, contextId: string) => this.consolidateProfile(userId, contextId)
         );
     }
 
@@ -581,7 +582,6 @@ export class MemoryService extends Service<MemoryConfig> {
     }
 
     public async getUserFacts(userId: string, options: SearchOptions = {}): Promise<MemoryOperationResult<Fact[]>> {
-
         try {
             const { limit = 100, includeDeleted = false } = options;
             const facts = await this.ctx.database.get(TableName.Facts, { userId, isDeleted: { $ne: !includeDeleted } });
@@ -813,10 +813,10 @@ class MemoryIngestor {
         private ctx: Context,
         private config: MemoryConfig,
         private logger: Logger,
-        private chatModel: IChatModel,
+        private chatModel: ChatModelSwitcher,
         private embeddingModel: IEmbedModel,
         private promptService: PromptService,
-        private triggerProfileConsolidation: (userId: string, contextId: string) => Promise<any>,
+        private triggerProfileConsolidation: (userId: string, contextId: string) => Promise<any>
     ) {}
 
     public async handleSummaryChunk(summaryChunk: {
@@ -1001,7 +1001,7 @@ class ProfileConsolidator {
         private ctx: Context,
         private config: MemoryConfig,
         private logger: Logger,
-        private chatModel: IChatModel,
+        private chatModel: ChatModelSwitcher,
         private embeddingModel: IEmbedModel,
         private promptService: PromptService
     ) {}

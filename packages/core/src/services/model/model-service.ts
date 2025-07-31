@@ -4,62 +4,88 @@ import { isNotEmpty } from "@/shared/utils";
 import { Awaitable, Context, Logger, Schema, Service } from "koishi";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { ContentFailureAction, ModelDescriptor, ModelServiceConfig } from "./config";
+import {
+    ContentFailureAction,
+    ModelDescriptor,
+    ModelServiceConfig,
+    CircuitBreakerPolicy,
+    RetryPolicy,
+    TimeoutPolicy,
+} from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
-import { ModelSwitchingStrategy, RetryPolicy, TimeoutPolicy, CircuitBreakerPolicy } from "./config"; // 引入新类型
 import { GenerateTextResult } from "@xsai/generate-text";
+import { EmbedResult } from "@xsai/embed";
+
+// --- 断路器 (CircuitBreaker) ---
+// 职责：跟踪单个模型的故障，在故障过多时暂时禁用它。
 
 enum CircuitBreakerState {
-    OPEN,
-    CLOSED,
-    HALF_OPEN,
+    CLOSED, // 允许请求
+    OPEN, // 阻止请求
+    HALF_OPEN, // 允许一次探测请求
 }
 
 class CircuitBreaker {
     private state = CircuitBreakerState.CLOSED;
     private failureCount = 0;
     private lastFailureTime: number = 0;
+    private readonly logger: Logger;
 
-    constructor(private policy: CircuitBreakerPolicy, private logger: Logger, private modelId: string) {}
+    constructor(private readonly policy: CircuitBreakerPolicy, parentLogger: Logger, private readonly modelId: string) {
+        this.logger = parentLogger.extend(`[断路器][${modelId}]`);
+    }
 
-    public get isOpen(): boolean {
+    /** 检查断路器是否处于“打开”状态（即阻止请求） */
+    public isOpen(): boolean {
         if (this.state === CircuitBreakerState.OPEN) {
             const now = Date.now();
             if (now - this.lastFailureTime > this.policy.cooldownSeconds * 1000) {
                 this.state = CircuitBreakerState.HALF_OPEN;
-                this.logger.info(`[断路器] 状态改变: OPEN -> HALF_OPEN | 模型: ${this.modelId}`);
+                this.logger.info(`状态变更: OPEN -> HALF_OPEN (冷却期结束，准备探测)`);
                 return false; // 允许一次探测请求
             }
-            return true;
+            return true; // 仍然在冷却期，保持打开
         }
         return false;
     }
 
+    /** 记录一次成功调用 */
+    public recordSuccess(): void {
+        if (this.state !== CircuitBreakerState.CLOSED) {
+            this.logger.success(`状态变更: -> CLOSED (探测成功，恢复服务)`);
+        }
+        this.state = CircuitBreakerState.CLOSED;
+        this.failureCount = 0;
+    }
+
+    /** 记录一次失败调用 */
     public recordFailure(): void {
         this.failureCount++;
         this.lastFailureTime = Date.now();
-        if (this.failureCount >= this.policy.failureThreshold) {
-            this.state = CircuitBreakerState.OPEN;
-            this.logger.warn(`[断路器] 触发！状态改变: -> OPEN | 模型: ${this.modelId}`);
-        }
-    }
 
-    public recordSuccess(): void {
-        this.failureCount = 0;
-        if (this.state !== CircuitBreakerState.CLOSED) {
-            this.state = CircuitBreakerState.CLOSED;
-            this.logger.success(`[断路器] 状态改变: -> CLOSED | 模型: ${this.modelId}`);
+        if (this.state === CircuitBreakerState.HALF_OPEN) {
+            this.state = CircuitBreakerState.OPEN;
+            this.logger.warn(`状态变更: HALF_OPEN -> OPEN (探测失败，重新开启断路器)`);
+        } else if (this.failureCount >= this.policy.failureThreshold) {
+            if (this.state !== CircuitBreakerState.OPEN) {
+                this.state = CircuitBreakerState.OPEN;
+                this.logger.warn(`状态变更: -> OPEN (达到失败阈值 ${this.policy.failureThreshold})`);
+            }
         }
     }
 }
 
+// --- 服务声明 ---
 declare module "koishi" {
     interface Context {
         [Services.Model]: ModelService;
     }
 }
+
+// --- 模型服务 (ModelService) ---
+// 职责：管理和初始化所有模型提供商 (Provider)。
 
 export class ModelService extends Service<ModelServiceConfig> {
     static readonly inject = [Services.Logger];
@@ -75,9 +101,98 @@ export class ModelService extends Service<ModelServiceConfig> {
             this.validateConfig();
             this.initializeProviders();
         } catch (error) {
-            this._logger.error(`配置错误: ${error.message}`);
-            // throw error;
+            this._logger.error(`初始化失败，请检查配置: ${error.message}`);
+            // 配置错误是致命的，应该阻止服务启动
+            throw error;
         }
+    }
+
+    private initializeProviders(): void {
+        this._logger.info("--- 开始初始化模型提供商 ---");
+        for (const providerConfig of this.config.providers) {
+            const providerId = `${providerConfig.name} (${providerConfig.type})`;
+            if (!providerConfig.enabled) {
+                this._logger.info(`⚪ 跳过 (已禁用) | 提供商: ${providerId}`);
+                continue;
+            }
+
+            const factory = ProviderFactoryRegistry.get(providerConfig.type);
+            if (!factory) {
+                this._logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
+                continue;
+            }
+
+            try {
+                const client = factory.createClient(providerConfig);
+                const instance = new ProviderInstance(this.ctx, providerConfig, client);
+                this.providerInstances.set(instance.name, instance);
+                this._logger.success(`✅ 初始化成功 | 提供商: ${providerId}`);
+            } catch (error) {
+                this._logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
+            }
+        }
+        this._logger.info("--- 模型提供商初始化完成 ---");
+    }
+
+    public getChatModel(providerName: string, modelId: string): IChatModel | null {
+        const instance = this.providerInstances.get(providerName);
+        return instance ? instance.getChatModel(modelId) : null;
+    }
+
+    public getEmbedModel(providerName: string, modelId: string): IEmbedModel | null {
+        const instance = this.providerInstances.get(providerName);
+        return instance ? instance.getEmbedModel(modelId) : null;
+    }
+
+    public useChatGroup(name: string): ChatModelSwitcher | undefined {
+        const groupName = this.resolveGroupName(name);
+        if (!groupName) return undefined;
+
+        const group = this.config.modelGroups.find((g) => g.name === groupName);
+        if (!group) {
+            this._logger.warn(`[模型组] 查找失败，组名不存在: ${groupName}`);
+            return undefined;
+        }
+        try {
+            return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this));
+        } catch (error) {
+            this._logger.error(`[模型组] "${groupName}" 创建失败: ${error.message}`);
+            return undefined;
+        }
+    }
+
+    /**
+     * 验证是否有无效配置
+     * 1. 至少有一个 Provider
+     * 2. 每个 Provider 至少有一个模型
+     * 3. 每个模型组至少有一个模型，且模型存在于已启用的 Provider 中
+     * 4. 为核心任务分配的模型组存在
+     */
+    private validateConfig(): void {
+        // this._logger.debug("开始验证服务配置");
+        if (this.config.providers.length === 0) {
+            throw new Error("配置错误: 至少需要配置一个提供商。");
+        }
+
+        for (const providerConfig of this.config.providers) {
+            if (providerConfig.models.length === 0) {
+                throw new Error(`配置错误: 提供商 ${providerConfig.name} 至少需要配置一个模型。`);
+            }
+        }
+
+        for (const group of this.config.modelGroups) {
+            if (group.models.length === 0) {
+                throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型。`);
+            }
+        }
+
+        for (const task in this.config.task) {
+            const groupName = this.config.task[task];
+            if (!this.config.modelGroups.some((group) => group.name === groupName)) {
+                throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
+            }
+        }
+        this._logger.debug("配置验证通过");
     }
 
     protected start(): Awaitable<void> {
@@ -115,126 +230,22 @@ export class ModelService extends Service<ModelServiceConfig> {
         );
     }
 
-    /**
-     * 验证是否有无效配置
-     * 1. 至少有一个 Provider
-     * 2. 每个 Provider 至少有一个模型
-     * 3. 每个模型组至少有一个模型，且模型存在于已启用的 Provider 中
-     * 4. 为核心任务分配的模型组存在
-     */
-    private validateConfig(): void {
-        // this._logger.debug("开始验证服务配置");
-        if (this.config.providers.length === 0) {
-            throw new Error("配置错误: 至少需要配置一个提供商。");
-        }
-
-        for (const providerConfig of this.config.providers) {
-            if (providerConfig.models.length === 0) {
-                throw new Error(`配置错误: 提供商 ${providerConfig.name} 至少需要配置一个模型。`);
-            }
-        }
-
-        for (const group of this.config.modelGroups) {
-            if (group.models.length === 0) {
-                throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型。`);
-            }
-        }
-
-        for (const task in this.config.task) {
-            const groupName = this.config.task[task];
-            if (!this.config.modelGroups.some((group) => group.name === groupName)) {
-                throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
-            }
-        }
-        this._logger.debug("配置验证通过");
-    }
-
-    private initializeProviders(): void {
-        // this._logger.info("开始初始化提供商...");
-        for (const providerConfig of this.config.providers) {
-            if (!providerConfig.enabled) {
-                this._logger.info(`跳过 (未启用) | 提供商: ${providerConfig.name}`);
-                continue;
-            }
-
-            const factory = ProviderFactoryRegistry.get(providerConfig.type);
-            if (!factory) {
-                this._logger.error(`✖ 不支持的提供商类型 | 类型: ${providerConfig.type}`);
-                continue;
-            }
-
-            try {
-                const client = factory.createClient(providerConfig);
-                const instance = new ProviderInstance(this.ctx, providerConfig, client);
-                this.providerInstances.set(instance.name, instance);
-                // this._logger.success(`✔ 提供商初始化成功 | 名称: ${instance.name}`);
-            } catch (error) {
-                this._logger.error(`✖ 提供商初始化失败 | 名称: ${providerConfig.name} | 错误: ${error.message}`);
-            }
-        }
-    }
-
-    private getModel<T extends BaseModel>(
-        providerName: string,
-        modelId: string,
-        getter: (instance: ProviderInstance, modelId: string) => T | null
-    ): T | null {
-        const instance = this.providerInstances.get(providerName);
-        return instance ? getter(instance, modelId) : null;
-    }
-
-    /**
-     * 获取一个聊天模型
-     * @param providerName
-     * @param modelId
-     * @returns
-     */
-    public getChatModel(providerName: string, modelId: string): IChatModel | null {
-        return this.getModel(providerName, modelId, (instance, id) => instance.getChatModel(id));
-    }
-
-    public getEmbedModel(providerName: string, modelId: string): IEmbedModel | null {
-        return this.getModel(providerName, modelId, (instance, id) => instance.getEmbedModel(id));
-    }
-
-    /**
-     * 创建一个模型切换器
-     * @param groupName
-     * @param modelGetter
-     * @returns
-     */
-    /* prettier-ignore */
-    private _createSwitcher<T extends BaseModel>(groupName: string, modelGetter: (provider: string, modelId: string) => T | null): ModelSwitcher<T> | undefined {
-    const group = this.config.modelGroups.find((g) => g.name === groupName);
-        if (!group) {
-            this._logger.warn(`[切换器] ⚠ 组未找到 | 名称: ${groupName}`);
-            return undefined;
-        }
-
-        try {
-            // 在这里传入模型获取函数，实现泛型
-            return new ModelSwitcher<T>(this.ctx, group, modelGetter);
-        } catch (error) {
-            this._logger.error(`[切换器] ✖ 创建失败 | 组: ${groupName} | 错误: ${error.message}`);
-            return undefined;
-        }
-    }
-
-    /**
-     * 通过模型组名称获取一个聊天模型切换器
-     * @param name
-     * @returns
-     */
-    public useChatGroup(name: string): ModelSwitcher<IChatModel> | undefined {
-        const groupName = this.resolveGroupName(name);
-        if (!groupName) return undefined;
-        return this._createSwitcher(groupName, this.getChatModel.bind(this));
-    }
-
     public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
         const groupName = this.resolveGroupName(name);
-        if (!groupName) return undefined;
-        return this._createSwitcher(groupName, this.getEmbedModel.bind(this));
+        if (!groupName) return undefined; // resolveGroupName 内部会记录日志
+
+        const group = this.config.modelGroups.find((g) => g.name === groupName);
+        if (!group) {
+            this._logger.warn(`[模型组] 查找失败，组名不存在: ${groupName}`);
+            return undefined;
+        }
+        try {
+            // 直接创建 ModelSwitcher<IEmbedModel> 实例
+            return new ModelSwitcher<IEmbedModel>(this.ctx, group, this.getEmbedModel.bind(this));
+        } catch (error) {
+            this._logger.error(`[模型组] "${groupName}" 创建失败: ${error.message}`);
+            return undefined;
+        }
     }
 
     private resolveGroupName(name: string): string | undefined {
@@ -247,209 +258,221 @@ export class ModelService extends Service<ModelServiceConfig> {
     }
 }
 
-export class ModelSwitcher<T extends BaseModel> {
-    private readonly _models: T[];
-    private readonly strategy: ModelSwitchingStrategy;
-    private readonly circuitBreakers = new Map<string, CircuitBreaker>();
-    private currentIndex = 0;
-    private readonly _logger: Logger;
-
-    private visionModels: IChatModel[] = [];
-    private nonVisionModels: IChatModel[] = [];
-
-    get models(): T[] {
-        return this._models;
-    }
-
-    get current(): T {
-        return this._models[this.currentIndex];
-    }
-
-    public next(): T {
-        if (this._models.length <= 1) return this.current;
-        const oldIndex = this.currentIndex;
-        this.currentIndex = (this.currentIndex + 1) % this._models.length;
-        const oldModel = this._models[oldIndex].id;
-        const newModel = this.current.id;
-        this._logger.info(`模型切换 | 从: ${oldModel} -> 到: ${newModel}`);
-        return this.current;
-    }
-
-    get length(): number {
-        return this._models.length;
-    }
+// --- 新增: 请求执行器 (RequestExecutor) ---
+// 职责：封装单次请求的全部执行逻辑，包括重试、超时、断路器检查和故障转移。
+class RequestExecutor {
+    private readonly logger: Logger;
+    private readonly accumulatedErrors: { modelId: string; error: Error }[] = [];
 
     constructor(
         ctx: Context,
-        private readonly groupConfig: { name: string; strategy: ModelSwitchingStrategy; models: ModelDescriptor[] },
+        private readonly groupName: string,
+        private readonly candidateModels: IChatModel[],
+        private readonly circuitBreakers: Map<string, CircuitBreaker>
+    ) {
+        this.logger = ctx[Services.Logger].getLogger(`[请求执行器][${groupName}]`);
+    }
+
+    public async execute(options: ChatRequestOptions): Promise<GenerateTextResult> {
+        const originalMessages = JSON.parse(JSON.stringify(options.messages));
+
+        for (const model of this.candidateModels) {
+            const breaker = this.circuitBreakers.get(model.id);
+            if (breaker?.isOpen()) {
+                this.logger.info(`[跳过] 模型 ${model.id} (断路器开启)`);
+                continue;
+            }
+
+            // 执行单个模型的请求尝试（包含内部重试）
+            const result = await this.tryRequestWithModel(model, options, originalMessages);
+
+            // 如果成功，立即返回
+            if (result.success) {
+                breaker?.recordSuccess();
+                return result.data;
+            }
+
+            // 如果失败，记录错误并继续尝试下一个模型（故障转移）
+            breaker?.recordFailure();
+            this.accumulatedErrors.push({ modelId: model.id, error: (result as any)?.error });
+        }
+
+        // 所有模型都尝试失败后
+        this.logger.error("所有可用模型均未能成功处理请求。");
+        throw new AppError(`模型组 "${this.groupName}" 中所有模型均调用失败`, {
+            code: ErrorCodes.SERVICE.UNAVAILABLE,
+            cause: this.accumulatedErrors as any,
+        });
+    }
+
+    private async tryRequestWithModel(
+        model: IChatModel,
+        options: ChatRequestOptions,
+        originalMessages: any[]
+    ): Promise<{ success: true; data: GenerateTextResult } | { success: false; error: Error }> {
+        const retryPolicy = model.config.retryPolicy ?? {
+            maxRetries: 0,
+            onContentFailure: ContentFailureAction.FailoverToNext,
+        };
+        const timeoutPolicy = model.config.timeoutPolicy ?? { totalTimeout: 90 };
+
+        for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
+            const attemptLogger = this.logger.extend(
+                `[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`
+            );
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                attemptLogger.warn(`超时 (${timeoutPolicy.totalTimeout}s)`);
+                controller.abort(new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`));
+            }, timeoutPolicy.totalTimeout * 1000);
+
+            try {
+                attemptLogger.info("发送请求...");
+                const result = await model.chat(options, controller.signal);
+                clearTimeout(timeoutId);
+                attemptLogger.success("请求成功");
+                return { success: true, data: result };
+            } catch (error) {
+                clearTimeout(timeoutId);
+
+                // 内容验证失败的特定处理
+                if (error instanceof AppError && error.code === ErrorCodes.LLM.OUTPUT_PARSING_FAILED) {
+                    if (
+                        retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry &&
+                        attempt < retryPolicy.maxRetries
+                    ) {
+                        attemptLogger.warn("内容无效，修正 Prompt 并重试...");
+                        options.messages = [
+                            ...originalMessages,
+                            {
+                                role: "user",
+                                content:
+                                    "Note: Your previous response was invalid. Please strictly adhere to the required format.",
+                            },
+                        ];
+                        continue; // 进入下一次重试循环
+                    } else {
+                        attemptLogger.error(`内容无效，放弃重试 | 错误: ${error.message}`);
+                        return { success: false, error }; // 放弃当前模型
+                    }
+                }
+
+                // 其他错误（网络，API限流等）
+                attemptLogger.error(`请求失败 | 错误: ${error.message}`);
+                if (attempt >= retryPolicy.maxRetries) {
+                    return { success: false, error }; // 所有重试用尽
+                }
+
+                await new Promise((res) => setTimeout(res, 500 * (attempt + 1))); // 退避等待
+            }
+        }
+        return { success: false, error: new Error("模型重试次数已用尽") };
+    }
+}
+
+// --- 简化的模型切换器 (ModelSwitcher) ---
+// 职责：管理一个模型组中的模型列表，并根据上下文（如是否包含图片）提供合适的模型。
+export class ModelSwitcher<T extends BaseModel> {
+    protected readonly _logger: Logger;
+    protected readonly _models: T[];
+    private readonly circuitBreakers = new Map<string, CircuitBreaker>();
+
+    constructor(
+        protected readonly ctx: Context,
+        protected readonly groupConfig: { name: string; models: ModelDescriptor[] },
         modelGetter: (providerName: string, modelId: string) => T | null
     ) {
-        this._logger = ctx[Services.Logger].getLogger(`[模型切换器] [${groupConfig.name}]`);
-        this.strategy = groupConfig.strategy;
+        this._logger = ctx[Services.Logger].getLogger(`[模型组][${groupConfig.name}]`);
 
         this._models = groupConfig.models
-            .map((descriptor) => {
-                const model = modelGetter(descriptor.providerName, descriptor.modelId);
-                if (!model) {
-                    // getModel 方法内部已经记录了详细日志 (未找到/能力不匹配)
-                    // this._logger.warn(`⚠ 模型不可用 | ID: ${descriptor.modelId}, 提供商: ${descriptor.providerName}`);
-                    return null;
-                }
-                return model;
-            })
-            .filter((model): model is T => model !== null);
+            .map((desc) => modelGetter(desc.providerName, desc.modelId))
+            .filter((model): model is T => {
+                if (!model) this._logger.warn(`模型加载失败，将从组中移除`);
+                return model !== null;
+            });
 
         if (this._models.length === 0) {
-            this._logger.error("✖ 加载失败 | 模型组中无任何可用的模型 (请检查模型配置和能力声明)");
-            throw new AppError("模型组中未找到任何可用的模型", {
-                code: ErrorCodes.RESOURCE.NOT_FOUND,
-                context: { resourceType: "Model", resourceId: `group:${groupConfig.name}` },
-            });
+            const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
+            this._logger.error(`❌ 加载失败 | ${errorMsg}`);
+            throw new AppError(errorMsg, { code: ErrorCodes.RESOURCE.NOT_FOUND });
         }
-        this._logger.debug(`✔ 加载成功 | 可用模型数: ${this._models.length}`);
-
-        this._models.forEach((model) => {
-            if ((model as unknown as IChatModel).isVisionModel?.()) {
-                this.visionModels.push(model as unknown as IChatModel);
-            } else {
-                this.nonVisionModels.push(model as unknown as IChatModel);
-            }
-        });
-
-        this._logger.debug(
-            `✔ 能力分类完成 | 视觉模型: ${this.visionModels.length} | 非视觉模型: ${this.nonVisionModels.length}`
-        );
 
         // 初始化断路器
         this._models.forEach((model) => {
-            const policy = model.config.circuitBreakerPolicy;
-            if (policy) {
-                this.circuitBreakers.set(model.id, new CircuitBreaker(policy, this._logger, model.id));
+            if (model.config.circuitBreakerPolicy) {
+                this.circuitBreakers.set(
+                    model.id,
+                    new CircuitBreaker(model.config.circuitBreakerPolicy, this._logger, model.id)
+                );
             }
         });
 
-        if (this._models.length === 0) {
-            this._logger.error("✖ 加载失败 | 模型组中无任何可用的模型 (请检查模型配置和能力声明)");
-        }
+        this._logger.debug(`✅ 加载成功 | 可用模型数: ${this._models.length}`);
     }
 
-    /**
-     * 检查此模型组是否包含任何支持视觉（图片识别）的模型。
-     */
-    public hasVisionCapability(): boolean {
-        return this.visionModels.length > 0;
-    }
-
-    /**
-     * 获取此模型组中所有模型的列表（只读）。
-     */
     public getModels(): readonly T[] {
         return this._models;
     }
 
-    private getNextModelIndex(): number {
-        if (this.strategy === ModelSwitchingStrategy.RoundRobin) {
-            const nextIndex = this.currentIndex;
-            this.currentIndex = (this.currentIndex + 1) % this._models.length;
-            return nextIndex;
-        }
-        // 对于 Failover，索引由外部循环控制
-        return this.currentIndex;
+    protected getCircuitBreakers(): Map<string, CircuitBreaker> {
+        return this.circuitBreakers;
+    }
+}
+
+// --- 专用于聊天的模型切换器 ---
+// 职责：提供一个简单的 `.chat()` 接口，内部处理视觉/非视觉模型选择，并调用 RequestExecutor。
+export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
+    private readonly visionModels: IChatModel[];
+    private readonly nonVisionModels: IChatModel[];
+
+    constructor(
+        ctx: Context,
+        groupConfig: { name: string; models: ModelDescriptor[] },
+        modelGetter: (providerName: string, modelId: string) => IChatModel | null
+    ) {
+        super(ctx, groupConfig, modelGetter);
+
+        // 根据能力对模型进行分类
+        this.visionModels = this._models.filter((m) => m.isVisionModel?.());
+        this.nonVisionModels = this._models.filter((m) => !m.isVisionModel?.());
+        this._logger.debug(`模型能力分类 | 视觉: ${this.visionModels.length} | 非视觉: ${this.nonVisionModels.length}`);
     }
 
-    // --- 新的核心执行方法 ---
-    public async executeChat(options: ChatRequestOptions): Promise<GenerateTextResult> {
+    public hasVisionCapability(): boolean {
+        return this.visionModels.length > 0;
+    }
+
+    public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
         /* prettier-ignore */
         // @ts-ignore
         const hasImages = options.messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"));
 
-        // 关键：根据上下文内容选择要遍历的模型列表
-        const candidateModels = hasImages && this.visionModels.length > 0 ? this.visionModels : this._models; // 如果没有图片或没有视觉模型，则使用所有模型
+        let candidateModels: IChatModel[];
 
-        if (hasImages && this.visionModels.length === 0) {
-            this._logger.warn(
-                `上下文包含图片，但模型组 "${this.groupConfig.name}" 中没有支持视觉的模型。将按纯文本处理。`
-            );
+        if (hasImages) {
+            if (this.visionModels.length > 0) {
+                this._logger.info("检测到图片内容，将使用视觉模型。");
+                candidateModels = this.visionModels;
+            } else {
+                this._logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理。");
+                candidateModels = this.nonVisionModels;
+            }
+        } else {
+            candidateModels = this._models; // 无图片，使用所有模型
         }
 
-        const maxAttemptsPerModel = 1; // 默认值
-        const originalMessages = JSON.parse(JSON.stringify(options.messages)); // 深拷贝以备重试
+        if (candidateModels.length === 0) {
+            throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求。`, {
+                code: ErrorCodes.RESOURCE.NOT_FOUND,
+            });
+        }
 
-        for (let i = 0; i < candidateModels.length; i++) {
-            const model = candidateModels[i] as unknown as IChatModel;
-            const breaker = this.circuitBreakers.get(model.id);
-
-            if (breaker?.isOpen) {
-                this._logger.warn(`跳过模型 (断路器开启) | 模型: ${model.id}`);
-                continue;
-            }
-
-            const retryPolicy = model.config.retryPolicy ?? {
-                maxRetries: 0,
-                onContentFailure: ContentFailureAction.FailoverToNext,
-            };
-            const timeoutPolicy = model.config.timeoutPolicy ?? { totalTimeout: 90 };
-
-            for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => {
-                    this._logger.warn(`总超时触发 (${timeoutPolicy.totalTimeout}s) | 模型: ${model.id}`);
-                    controller.abort();
-                }, timeoutPolicy.totalTimeout * 1000);
-
-                try {
-                    this._logger.info(
-                        `尝试请求 | 模型: ${model.id} | 尝试: ${attempt + 1}/${retryPolicy.maxRetries + 1}`
-                    );
-                    const result = await model.chat(options, controller.signal);
-
-                    clearTimeout(timeoutId);
-                    breaker?.recordSuccess();
-                    this._logger.success(`请求成功 | 模型: ${model.id}`);
-                    return result;
-                } catch (error) {
-                    clearTimeout(timeoutId);
-
-                    // 内容验证失败的特定处理
-                    if (error instanceof AppError && error.code === ErrorCodes.LLM.OUTPUT_PARSING_FAILED) {
-                        if (
-                            retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry &&
-                            attempt < retryPolicy.maxRetries
-                        ) {
-                            this._logger.warn(`内容无效，修正Prompt并重试... | 模型: ${model.id}`);
-                            options.messages = [
-                                ...originalMessages,
-                                {
-                                    role: "user",
-                                    content:
-                                        "Note: Your previous response was not in the correct format. Please strictly follow the required output format.",
-                                },
-                            ];
-                            continue; // 进入下一次重试循环
-                        } else {
-                            this._logger.error(`内容无效，切换到下一个模型 | 模型: ${model.id}`);
-                            breaker?.recordFailure();
-                            break; // 跳出重试循环，进入下一个模型
-                        }
-                    }
-
-                    // 其他错误（网络，超时等）
-                    this._logger.error(`请求失败 | 模型: ${model.id} | 错误: ${error.message}`);
-                    if (attempt >= retryPolicy.maxRetries) {
-                        breaker?.recordFailure();
-                        break; // 所有重试用尽，切换模型
-                    }
-                    // 等待一小段时间再重试
-                    await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
-                }
-            } // end of retry loop
-        } // end of model loop
-        // 如果 visionModels 失败了，是否要回退到 nonVisionModels？
-        // 当前设计是：如果提供了图片，就只尝试 visionModels。如果它们都失败了，整个请求就失败。
-        // 这是合理的，因为非视觉模型无法处理图片。
-
-        throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型能够成功响应请求`, {
-            code: ErrorCodes.SERVICE.UNAVAILABLE,
-        });
+        const executor = new RequestExecutor(
+            this.ctx,
+            this.groupConfig.name,
+            candidateModels,
+            this.getCircuitBreakers()
+        );
+        return executor.execute(options);
     }
 }

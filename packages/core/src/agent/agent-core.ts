@@ -4,7 +4,7 @@ import { Context, h, Service, Session } from "koishi";
 import { AssetService } from "@/services/assets";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
-import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/model";
+import { ChatModelSwitcher, IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
 import {
     AgentResponse,
@@ -55,7 +55,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
     // 内部组件
     private readonly parser: JsonParser<AgentResponse>;
-    private readonly modelSwitcher: ModelSwitcher<IChatModel>;
+    private readonly modelSwitcher: ChatModelSwitcher;
     private readonly willing: WillingnessManager;
 
     // 内部状态_performSingleHeartbeat
@@ -466,7 +466,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     } else {
         // 模型组不支持视觉或配置未开启，直接使用纯文本
         if (this.config.vision.enabled) {
-          
+
         }
         userMessageContent = userPromptText;
     }
@@ -479,7 +479,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     // --- 5. 调用LLM（现在它只接收最终构建好的 messages） ---
     const stime = Date.now();
 
-        const llmRawResponse = await this.modelSwitcher.executeChat({ messages, validation: { format: "json", validator: (text)=>{
+        const llmRawResponse = await this.modelSwitcher.chat({ messages, validation: { format: "json", validator: (text)=>{
             const parser = new JsonParser<any>();
             const result = parser.parse(text);
 
