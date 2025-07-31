@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
-import type { ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
+import { Failed, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
@@ -200,9 +200,9 @@ export class MCPManager {
             }
 
             if (result.isError) {
-                const errorMsg = result.error || content;
+                const errorMsg = (result.error as string) || content;
                 this.logger.error(`工具执行失败: ${errorMsg}`);
-                return { status: "failed", error: errorMsg as string };
+                return Failed(errorMsg);
             }
 
             this.logger.success(`工具 ${toolName} 执行成功`);
@@ -210,7 +210,7 @@ export class MCPManager {
         } catch (error) {
             if (timer) clearTimeout(timer);
             this.logger.error(`工具执行异常: ${error.message}`);
-            return { status: "failed", error: error.message };
+            return Failed(error.message);
         }
     }
 
