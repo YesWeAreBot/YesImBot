@@ -6,7 +6,7 @@
 
 # Class: ToolService
 
-Defined in: [packages/core/src/services/extension/service.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L25)
+Defined in: [packages/core/src/services/extension/service.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L25)
 
 ToolService
 负责注册、管理和提供所有扩展和工具。
@@ -21,7 +21,7 @@ ToolService
 
 > **new ToolService**(`ctx`, `config`): `ToolService`
 
-Defined in: [packages/core/src/services/extension/service.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L33)
+Defined in: [packages/core/src/services/extension/service.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L33)
 
 #### Parameters
 
@@ -135,7 +135,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: [`Services`](../enumerations/Services.md)[]
 
-Defined in: [packages/core/src/services/extension/service.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L26)
+Defined in: [packages/core/src/services/extension/service.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L26)
 
 ***
 
@@ -277,7 +277,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getAvailableTools**(`session?`): [`ToolDefinition`](../interfaces/ToolDefinition.md)\<`any`\>[]
 
-Defined in: [packages/core/src/services/extension/service.ts:509](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L509)
+Defined in: [packages/core/src/services/extension/service.ts:513](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L513)
 
 #### Parameters
 
@@ -295,7 +295,7 @@ Defined in: [packages/core/src/services/extension/service.ts:509](https://github
 
 > **getExtension**(`name`): [`IExtension`](../interfaces/IExtension.md)\<`any`\>
 
-Defined in: [packages/core/src/services/extension/service.ts:518](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L518)
+Defined in: [packages/core/src/services/extension/service.ts:522](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L522)
 
 #### Parameters
 
@@ -313,7 +313,7 @@ Defined in: [packages/core/src/services/extension/service.ts:518](https://github
 
 > **getSchema**(`name`, `session?`): [`ToolSchema`](../interfaces/ToolSchema.md)
 
-Defined in: [packages/core/src/services/extension/service.ts:529](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L529)
+Defined in: [packages/core/src/services/extension/service.ts:533](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L533)
 
 根据工具名称获取其 schema。
 如果工具在当前会话中不可用，则返回 undefined。
@@ -344,7 +344,7 @@ Defined in: [packages/core/src/services/extension/service.ts:529](https://github
 
 > **getTool**(`name`, `session?`): [`ToolDefinition`](../interfaces/ToolDefinition.md)\<`any`\>
 
-Defined in: [packages/core/src/services/extension/service.ts:499](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L499)
+Defined in: [packages/core/src/services/extension/service.ts:503](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L503)
 
 #### Parameters
 
@@ -366,7 +366,7 @@ Defined in: [packages/core/src/services/extension/service.ts:499](https://github
 
 > **getToolSchemas**(`session?`): [`ToolSchema`](../interfaces/ToolSchema.md)[]
 
-Defined in: [packages/core/src/services/extension/service.ts:539](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L539)
+Defined in: [packages/core/src/services/extension/service.ts:543](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L543)
 
 获取在当前会话中所有可用工具的 Schema 列表。
 
@@ -388,9 +388,9 @@ Defined in: [packages/core/src/services/extension/service.ts:539](https://github
 
 ### invoke()
 
-> **invoke**(`functionName`, `params`, `session?`): `Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)\<`any`\>\>
+> **invoke**(`functionName`, `params`, `session?`): `Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)\<`any`, [`ToolError`](../interfaces/ToolError.md)\>\>
 
-Defined in: [packages/core/src/services/extension/service.ts:438](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L438)
+Defined in: [packages/core/src/services/extension/service.ts:436](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L436)
 
 #### Parameters
 
@@ -408,7 +408,7 @@ Defined in: [packages/core/src/services/extension/service.ts:438](https://github
 
 #### Returns
 
-`Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)\<`any`\>\>
+`Promise`\<[`ToolCallResult`](../interfaces/ToolCallResult.md)\<`any`, [`ToolError`](../interfaces/ToolError.md)\>\>
 
 ***
 
@@ -416,7 +416,7 @@ Defined in: [packages/core/src/services/extension/service.ts:438](https://github
 
 > **register**(`extensionInstance`, `enabled`, `extConfig`): `void`
 
-Defined in: [packages/core/src/services/extension/service.ts:355](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L355)
+Defined in: [packages/core/src/services/extension/service.ts:354](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L354)
 
 注册一个新的扩展。
 
@@ -448,7 +448,7 @@ Defined in: [packages/core/src/services/extension/service.ts:355](https://github
 
 > **registerTool**(`definition`): `void`
 
-Defined in: [packages/core/src/services/extension/service.ts:430](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L430)
+Defined in: [packages/core/src/services/extension/service.ts:428](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L428)
 
 #### Parameters
 
@@ -466,7 +466,7 @@ Defined in: [packages/core/src/services/extension/service.ts:430](https://github
 
 > `protected` **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/extension/service.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L40)
+Defined in: [packages/core/src/services/extension/service.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L40)
 
 #### Returns
 
@@ -498,7 +498,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:10
 
 > **unregister**(`name`): `boolean`
 
-Defined in: [packages/core/src/services/extension/service.ts:411](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L411)
+Defined in: [packages/core/src/services/extension/service.ts:410](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L410)
 
 #### Parameters
 
@@ -516,7 +516,7 @@ Defined in: [packages/core/src/services/extension/service.ts:411](https://github
 
 > **unregisterTool**(`name`): `boolean`
 
-Defined in: [packages/core/src/services/extension/service.ts:434](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/service.ts#L434)
+Defined in: [packages/core/src/services/extension/service.ts:432](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/service.ts#L432)
 
 #### Parameters
 

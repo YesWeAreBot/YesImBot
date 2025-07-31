@@ -8,7 +8,7 @@
 
 > **Failed**(`error`, `metadata?`): [`ToolCallResult`](../interfaces/ToolCallResult.md)
 
-Defined in: [packages/core/src/services/extension/helpers.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/helpers.ts#L18)
+Defined in: [packages/core/src/services/extension/helpers.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/helpers.ts#L20)
 
 失败结果辅助函数
 
@@ -16,11 +16,17 @@ Defined in: [packages/core/src/services/extension/helpers.ts:18](https://github.
 
 ### error
 
-`string`
+结构化的错误对象或一个简单的错误消息字符串
+
+`string` | [`ToolError`](../interfaces/ToolError.md)
 
 ### metadata?
 
-`Record`\<`string`, `any`\>
+附加元数据
+
+#### execution_duration_ms?
+
+`number`
 
 ## Returns
 

@@ -6,7 +6,7 @@
 
 # Interface: AgentTurn
 
-Defined in: [packages/core/src/services/worldstate/types.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L192)
+Defined in: [packages/core/src/services/worldstate/types.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L192)
 
 Agent 的一个完整处理回合，通常对应一次或多次 ReAct 循环
 
@@ -16,7 +16,7 @@ Agent 的一个完整处理回合，通常对应一次或多次 ReAct 循环
 
 > **responses**: [`AgentResponse`](AgentResponse.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L194)
+Defined in: [packages/core/src/services/worldstate/types.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L194)
 
 此回合中发生的所有响应步骤（思考->行动->观察）
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:194](https://github.
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:196](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L196)
+Defined in: [packages/core/src/services/worldstate/types.ts:196](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L196)
 
 Agent 回合完成的时间戳

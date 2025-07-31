@@ -6,7 +6,7 @@
 
 # Enumeration: LogLevel
 
-Defined in: [packages/core/src/services/logger/index.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/logger/index.ts#L8)
+Defined in: [packages/core/src/services/logger/index.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/logger/index.ts#L8)
 
 定义日志的详细级别，与 Koishi (reggol) 的模型对齐。
 数值越大，输出的日志越详细。
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/services/logger/index.ts:8](https://github.com/Ye
 
 > **DEBUG**: `3`
 
-Defined in: [packages/core/src/services/logger/index.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/logger/index.ts#L16)
+Defined in: [packages/core/src/services/logger/index.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/logger/index.ts#L16)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/core/src/services/logger/index.ts:16](https://github.com/Y
 
 > **ERROR**: `1`
 
-Defined in: [packages/core/src/services/logger/index.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/logger/index.ts#L12)
+Defined in: [packages/core/src/services/logger/index.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/logger/index.ts#L12)
 
 ***
 
@@ -33,7 +33,7 @@ Defined in: [packages/core/src/services/logger/index.ts:12](https://github.com/Y
 
 > **INFO**: `2`
 
-Defined in: [packages/core/src/services/logger/index.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/logger/index.ts#L14)
+Defined in: [packages/core/src/services/logger/index.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/logger/index.ts#L14)
 
 ***
 
@@ -41,4 +41,4 @@ Defined in: [packages/core/src/services/logger/index.ts:14](https://github.com/Y
 
 > **SILENT**: `0`
 
-Defined in: [packages/core/src/services/logger/index.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/logger/index.ts#L10)
+Defined in: [packages/core/src/services/logger/index.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/logger/index.ts#L10)

@@ -6,7 +6,7 @@
 
 # Interface: AssetMetadata
 
-Defined in: [packages/core/src/services/assets/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/assets/types.ts#L29)
+Defined in: [packages/core/src/services/assets/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/assets/types.ts#L29)
 
 资源元数据
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:29](https://github.com/Y
 
 > `optional` **filename**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/assets/types.ts#L38)
+Defined in: [packages/core/src/services/assets/types.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/assets/types.ts#L38)
 
 文件属性
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/assets/types.ts:38](https://github.com/Y
 
 > `optional` **height**: `number`
 
-Defined in: [packages/core/src/services/assets/types.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/assets/types.ts#L32)
+Defined in: [packages/core/src/services/assets/types.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/assets/types.ts#L32)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/assets/types.ts:32](https://github.com/Y
 
 > `optional` **src**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/assets/types.ts#L41)
+Defined in: [packages/core/src/services/assets/types.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/assets/types.ts#L41)
 
 通用属性
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/assets/types.ts:41](https://github.com/Y
 
 > `optional` **summary**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/assets/types.ts#L33)
+Defined in: [packages/core/src/services/assets/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/assets/types.ts#L33)
 
 ***
 
@@ -52,6 +52,6 @@ Defined in: [packages/core/src/services/assets/types.ts:33](https://github.com/Y
 
 > `optional` **width**: `number`
 
-Defined in: [packages/core/src/services/assets/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/assets/types.ts#L31)
+Defined in: [packages/core/src/services/assets/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/assets/types.ts#L31)
 
 图片属性

@@ -4,11 +4,11 @@
 
 [koishi-plugin-yesimbot](../packages.md) / ToolCallResult
 
-# Interface: ToolCallResult\<TResult\>
+# Interface: ToolCallResult\<TResult, TError\>
 
-Defined in: [packages/core/src/services/extension/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L62)
+Defined in: [packages/core/src/services/extension/types.ts:74](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L74)
 
-工具调用结果
+标准化的工具调用结果
 
 ## Type Parameters
 
@@ -16,25 +16,37 @@ Defined in: [packages/core/src/services/extension/types.ts:62](https://github.co
 
 `TResult` = `any`
 
+### TError
+
+`TError` *extends* [`ToolError`](ToolError.md) = [`ToolError`](ToolError.md)
+
 ## Properties
 
 ### error?
 
-> `optional` **error**: `string`
+> `optional` **error**: `TError`
 
-Defined in: [packages/core/src/services/extension/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L67)
+Defined in: [packages/core/src/services/extension/types.ts:84](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L84)
 
-错误信息
+失败时的结构化错误信息
 
 ***
 
 ### metadata?
 
-> `optional` **metadata**: `Record`\<`string`, `any`\>
+> `optional` **metadata**: `object`
 
-Defined in: [packages/core/src/services/extension/types.ts:71](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L71)
+Defined in: [packages/core/src/services/extension/types.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L86)
 
-附加元数据，如执行时间等
+附加元数据，如执行时间(ms)、Token消耗等
+
+#### Index Signature
+
+\[`key`: `string`\]: `any`
+
+#### execution\_duration\_ms?
+
+> `optional` **execution\_duration\_ms**: `number`
 
 ***
 
@@ -42,24 +54,18 @@ Defined in: [packages/core/src/services/extension/types.ts:71](https://github.co
 
 > `optional` **result**: `TResult`
 
-Defined in: [packages/core/src/services/extension/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L65)
+Defined in: [packages/core/src/services/extension/types.ts:82](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L82)
 
-返回结果
-
-***
-
-### retryable?
-
-> `optional` **retryable**: `boolean`
-
-Defined in: [packages/core/src/services/extension/types.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L69)
-
-是否可重试
+成功时的返回结果
 
 ***
 
 ### status
 
-> **status**: `string`
+> **status**: `"success"` \| `"error"`
 
-Defined in: [packages/core/src/services/extension/types.ts:63](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L63)
+Defined in: [packages/core/src/services/extension/types.ts:80](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L80)
+
+调用状态:
+- 'success': 成功
+- 'error': 失败

@@ -6,7 +6,7 @@
 
 # Interface: TaskCompletionPayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:352](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L352)
+Defined in: [packages/core/src/services/worldstate/types.ts:352](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L352)
 
 后台任务完成刺激的载荷。
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:352](https://github.
 
 > **originalTask**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:354](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L354)
+Defined in: [packages/core/src/services/worldstate/types.ts:354](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L354)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:354](https://github.
 
 > **result**: `any`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:355](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L355)
+Defined in: [packages/core/src/services/worldstate/types.ts:355](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L355)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:355](https://github.
 
 > **status**: `"success"` \| `"failed"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:356](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L356)
+Defined in: [packages/core/src/services/worldstate/types.ts:356](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L356)
 
 ***
 
@@ -40,4 +40,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:356](https://github.
 
 > **taskId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:353](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L353)
+Defined in: [packages/core/src/services/worldstate/types.ts:353](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L353)

@@ -6,7 +6,7 @@
 
 # Interface: MemoryOperationResult\<T\>
 
-Defined in: [packages/core/src/services/memory/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L15)
+Defined in: [packages/core/src/services/memory/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/memory/types.ts#L15)
 
 记忆服务操作结果
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/memory/types.ts:15](https://github.com/Y
 
 > `optional` **data**: `T`
 
-Defined in: [packages/core/src/services/memory/types.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L17)
+Defined in: [packages/core/src/services/memory/types.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/memory/types.ts#L17)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/memory/types.ts:17](https://github.com/Y
 
 > `optional` **error**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L18)
+Defined in: [packages/core/src/services/memory/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/memory/types.ts#L18)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/memory/types.ts:18](https://github.com/Y
 
 > `optional` **metadata**: `Record`\<`string`, `any`\>
 
-Defined in: [packages/core/src/services/memory/types.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L19)
+Defined in: [packages/core/src/services/memory/types.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/memory/types.ts#L19)
 
 ***
 
@@ -46,4 +46,4 @@ Defined in: [packages/core/src/services/memory/types.ts:19](https://github.com/Y
 
 > **success**: `boolean`
 
-Defined in: [packages/core/src/services/memory/types.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L16)
+Defined in: [packages/core/src/services/memory/types.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/memory/types.ts#L16)

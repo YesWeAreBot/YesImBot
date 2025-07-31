@@ -6,10 +6,7 @@
 
 # Class: ModelSwitcher\<T\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:208](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/model-service.ts#L208)
-
-泛型模型切换器
-支持代理任何继承自 BaseModel 的模型类型，并在初始化时验证其能力。
+Defined in: [packages/core/src/services/model/model-service.ts:250](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L250)
 
 ## Type Parameters
 
@@ -21,9 +18,9 @@ Defined in: [packages/core/src/services/model/model-service.ts:208](https://gith
 
 ### Constructor
 
-> **new ModelSwitcher**\<`T`\>(`ctx`, `modelDescriptors`, `groupName`, `modelGetter`): `ModelSwitcher`\<`T`\>
+> **new ModelSwitcher**\<`T`\>(`ctx`, `groupConfig`, `modelGetter`): `ModelSwitcher`\<`T`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:235](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/model-service.ts#L235)
+Defined in: [packages/core/src/services/model/model-service.ts:282](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L282)
 
 #### Parameters
 
@@ -31,13 +28,19 @@ Defined in: [packages/core/src/services/model/model-service.ts:235](https://gith
 
 `Context`
 
-##### modelDescriptors
+##### groupConfig
+
+###### models
 
 [`ModelDescriptor`](../type-aliases/ModelDescriptor.md)[]
 
-##### groupName
+###### name
 
 `string`
+
+###### strategy
+
+[`ModelSwitchingStrategy`](../enumerations/ModelSwitchingStrategy.md)
 
 ##### modelGetter
 
@@ -55,7 +58,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:235](https://gith
 
 > **get** **current**(): `T`
 
-Defined in: [packages/core/src/services/model/model-service.ts:217](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/model-service.ts#L217)
+Defined in: [packages/core/src/services/model/model-service.ts:264](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L264)
 
 ##### Returns
 
@@ -69,7 +72,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:217](https://gith
 
 > **get** **length**(): `number`
 
-Defined in: [packages/core/src/services/model/model-service.ts:231](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/model-service.ts#L231)
+Defined in: [packages/core/src/services/model/model-service.ts:278](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L278)
 
 ##### Returns
 
@@ -83,7 +86,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:231](https://gith
 
 > **get** **models**(): `T`[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:213](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/model-service.ts#L213)
+Defined in: [packages/core/src/services/model/model-service.ts:260](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L260)
 
 ##### Returns
 
@@ -91,11 +94,57 @@ Defined in: [packages/core/src/services/model/model-service.ts:213](https://gith
 
 ## Methods
 
+### executeChat()
+
+> **executeChat**(`options`): `Promise`\<`GenerateTextResult`\>
+
+Defined in: [packages/core/src/services/model/model-service.ts:361](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L361)
+
+#### Parameters
+
+##### options
+
+[`ChatRequestOptions`](../interfaces/ChatRequestOptions.md)
+
+#### Returns
+
+`Promise`\<`GenerateTextResult`\>
+
+***
+
+### getModels()
+
+> **getModels**(): readonly `T`[]
+
+Defined in: [packages/core/src/services/model/model-service.ts:346](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L346)
+
+获取此模型组中所有模型的列表（只读）。
+
+#### Returns
+
+readonly `T`[]
+
+***
+
+### hasVisionCapability()
+
+> **hasVisionCapability**(): `boolean`
+
+Defined in: [packages/core/src/services/model/model-service.ts:339](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L339)
+
+检查此模型组是否包含任何支持视觉（图片识别）的模型。
+
+#### Returns
+
+`boolean`
+
+***
+
 ### next()
 
 > **next**(): `T`
 
-Defined in: [packages/core/src/services/model/model-service.ts:221](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/model-service.ts#L221)
+Defined in: [packages/core/src/services/model/model-service.ts:268](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L268)
 
 #### Returns
 

@@ -8,4 +8,4 @@
 
 > `const` **PROVIDER\_TYPES**: readonly \[`"OpenAI"`, `"Anthropic"`, `"Google Gemini"`, `"Ollama"`, `"OpenAI Compatible"`, `"Fireworks"`, `"DeepSeek"`, `"LM Studio"`, `"Workers AI"`, `"Zhipu"`, `"Silicon Flow"`, `"Qwen"`\]
 
-Defined in: [packages/core/src/services/model/config.ts:83](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/config.ts#L83)
+Defined in: [packages/core/src/services/model/config.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/config.ts#L146)

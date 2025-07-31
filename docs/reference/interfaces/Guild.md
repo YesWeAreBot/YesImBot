@@ -6,7 +6,7 @@
 
 # Interface: Guild
 
-Defined in: [packages/core/src/services/worldstate/types.ts:108](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L108)
+Defined in: [packages/core/src/services/worldstate/types.ts:108](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L108)
 
 代表一个群组
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:108](https://github.
 
 > `optional` **avatar**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:114](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L114)
+Defined in: [packages/core/src/services/worldstate/types.ts:114](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L114)
 
 群组头像URL
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:114](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:110](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L110)
+Defined in: [packages/core/src/services/worldstate/types.ts:110](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L110)
 
 平台提供的唯一群组ID
 
@@ -36,6 +36,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:110](https://github.
 
 > `optional` **name**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L112)
+Defined in: [packages/core/src/services/worldstate/types.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/worldstate/types.ts#L112)
 
 群组名称

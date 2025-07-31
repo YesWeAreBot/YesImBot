@@ -6,7 +6,7 @@
 
 # Interface: Param
 
-Defined in: [packages/core/src/services/extension/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L5)
+Defined in: [packages/core/src/services/extension/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L5)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/extension/types.ts:5](https://github.com
 
 > `optional` **default**: `any`
 
-Defined in: [packages/core/src/services/extension/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L8)
+Defined in: [packages/core/src/services/extension/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L8)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/extension/types.ts:8](https://github.com
 
 > `optional` **description**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L7)
+Defined in: [packages/core/src/services/extension/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L7)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/extension/types.ts:7](https://github.com
 
 > `optional` **enum**: `any`[]
 
-Defined in: [packages/core/src/services/extension/types.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L13)
+Defined in: [packages/core/src/services/extension/types.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L13)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/extension/types.ts:13](https://github.co
 
 > `optional` **items**: `Param`
 
-Defined in: [packages/core/src/services/extension/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L15)
+Defined in: [packages/core/src/services/extension/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L15)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/extension/types.ts:15](https://github.co
 
 > `optional` **properties**: [`Properties`](../type-aliases/Properties.md)
 
-Defined in: [packages/core/src/services/extension/types.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L11)
+Defined in: [packages/core/src/services/extension/types.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L11)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [packages/core/src/services/extension/types.ts:11](https://github.co
 
 > `optional` **required**: `boolean`
 
-Defined in: [packages/core/src/services/extension/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L9)
+Defined in: [packages/core/src/services/extension/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L9)
 
 ***
 
@@ -62,4 +62,4 @@ Defined in: [packages/core/src/services/extension/types.ts:9](https://github.com
 
 > **type**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L6)
+Defined in: [packages/core/src/services/extension/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/extension/types.ts#L6)

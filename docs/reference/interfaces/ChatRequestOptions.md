@@ -6,7 +6,7 @@
 
 # Interface: ChatRequestOptions
 
-Defined in: [packages/core/src/services/model/chat-model.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L15)
+Defined in: [packages/core/src/services/model/chat-model.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/chat-model.ts#L47)
 
 Chat 方法的请求选项。
 包含所有必要的聊天信息和可覆盖的运行时参数。
@@ -15,41 +15,13 @@ Chat 方法的请求选项。
 
 \[`key`: `string`\]: `any`
 
-其他任何可以传递给聊天提供程序的参数
-
 ## Properties
-
-### abortSignal?
-
-> `optional` **abortSignal**: `AbortSignal`
-
-Defined in: [packages/core/src/services/model/chat-model.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L19)
-
-用于中止请求的 AbortSignal
-
-***
 
 ### messages
 
 > **messages**: `Message`[]
 
-Defined in: [packages/core/src/services/model/chat-model.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L17)
-
-聊天消息列表
-
-***
-
-### onStreamStart()?
-
-> `optional` **onStreamStart**: () => `void`
-
-Defined in: [packages/core/src/services/model/chat-model.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L21)
-
-流式传输开始时的回调
-
-#### Returns
-
-`void`
+Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/chat-model.ts#L48)
 
 ***
 
@@ -57,9 +29,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:21](https://github.c
 
 > `optional` **stream**: `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L27)
-
-是否使用流式传输。如果未提供，则使用模型配置的默认值。
+Defined in: [packages/core/src/services/model/chat-model.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/chat-model.ts#L50)
 
 ***
 
@@ -67,9 +37,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:27](https://github.c
 
 > `optional` **temperature**: `number`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L29)
-
-温度参数
+Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/chat-model.ts#L51)
 
 ***
 
@@ -77,6 +45,12 @@ Defined in: [packages/core/src/services/model/chat-model.ts:29](https://github.c
 
 > `optional` **topP**: `number`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/model/chat-model.ts#L31)
+Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/chat-model.ts#L52)
 
-Top-P 采样参数
+***
+
+### validation?
+
+> `optional` **validation**: [`ValidationOptions`](ValidationOptions.md)
+
+Defined in: [packages/core/src/services/model/chat-model.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/chat-model.ts#L49)
