@@ -6,7 +6,7 @@
 
 # Enumeration: InsightType
 
-Defined in: [packages/core/src/services/memory/types.ts:201](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/memory/types.ts#L201)
+Defined in: [packages/core/src/services/memory/types.ts:201](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L201)
 
 洞察类型枚举
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/types.ts:201](https://github.com/
 
 > **BehavioralPattern**: `"behavioral_pattern"`
 
-Defined in: [packages/core/src/services/memory/types.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/memory/types.ts#L202)
+Defined in: [packages/core/src/services/memory/types.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L202)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/memory/types.ts:202](https://github.com/
 
 > **GroupConsensus**: `"group_consensus"`
 
-Defined in: [packages/core/src/services/memory/types.ts:204](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/memory/types.ts#L204)
+Defined in: [packages/core/src/services/memory/types.ts:204](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L204)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: [packages/core/src/services/memory/types.ts:204](https://github.com/
 
 > **RelationshipChange**: `"relationship_change"`
 
-Defined in: [packages/core/src/services/memory/types.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/memory/types.ts#L203)
+Defined in: [packages/core/src/services/memory/types.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/memory/types.ts#L203)

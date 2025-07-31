@@ -6,7 +6,7 @@
 
 # Interface: ExtensionMetadata
 
-Defined in: [packages/core/src/services/extension/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L29)
+Defined in: [packages/core/src/services/extension/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L29)
 
 扩展包元数据接口，用于描述一个扩展包的基本信息。
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/extension/types.ts:29](https://github.co
 
 > `optional` **author**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L33)
+Defined in: [packages/core/src/services/extension/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L33)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/extension/types.ts:33](https://github.co
 
 > `optional` **builtin**: `boolean`
 
-Defined in: [packages/core/src/services/extension/types.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L35)
+Defined in: [packages/core/src/services/extension/types.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L35)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/extension/types.ts:35](https://github.co
 
 > **description**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L32)
+Defined in: [packages/core/src/services/extension/types.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L32)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/extension/types.ts:32](https://github.co
 
 > `optional` **display**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L30)
+Defined in: [packages/core/src/services/extension/types.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L30)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/extension/types.ts:30](https://github.co
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L31)
+Defined in: [packages/core/src/services/extension/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L31)
 
 ***
 
@@ -56,4 +56,4 @@ Defined in: [packages/core/src/services/extension/types.ts:31](https://github.co
 
 > **version**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/extension/types.ts#L34)
+Defined in: [packages/core/src/services/extension/types.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/extension/types.ts#L34)

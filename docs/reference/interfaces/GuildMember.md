@@ -6,7 +6,7 @@
 
 # Interface: GuildMember
 
-Defined in: [packages/core/src/services/worldstate/types.ts:90](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L90)
+Defined in: [packages/core/src/services/worldstate/types.ts:90](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L90)
 
 代表一个群组或服务器中的成员，是用户在特定群组上下文中的表现
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:90](https://github.c
 
 > `optional` **isSelf**: `boolean`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:102](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L102)
+Defined in: [packages/core/src/services/worldstate/types.ts:102](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L102)
 
 [NEW] 一个布尔值，用于明确标记此成员是否为机器人自身
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:102](https://github.
 
 > `optional` **joinedAt**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:100](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L100)
+Defined in: [packages/core/src/services/worldstate/types.ts:100](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L100)
 
 加入群组的时间戳
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:100](https://github.
 
 > `optional` **name**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L96)
+Defined in: [packages/core/src/services/worldstate/types.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L96)
 
 成员的全局用户名
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:96](https://github.c
 
 > `optional` **nick**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:94](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L94)
+Defined in: [packages/core/src/services/worldstate/types.ts:94](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L94)
 
 成员在群内的显示名称 (通常是昵称)
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:94](https://github.c
 
 > **pid**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:92](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L92)
+Defined in: [packages/core/src/services/worldstate/types.ts:92](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L92)
 
 关联的用户平台 ID (pid)
 
@@ -66,6 +66,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:92](https://github.c
 
 > `optional` **roles**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/c9126b8ecca4a32cc724d3c58cbe1e003093cd79/packages/core/src/services/worldstate/types.ts#L98)
+Defined in: [packages/core/src/services/worldstate/types.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/f40a2c3f35bb44bbd9f41261b4cceea534e7e968/packages/core/src/services/worldstate/types.ts#L98)
 
 成员拥有的角色列表
