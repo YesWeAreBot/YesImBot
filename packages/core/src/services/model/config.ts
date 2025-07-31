@@ -1,6 +1,43 @@
 import { Schema } from "koishi";
 import { SystemConfig } from "../../config";
 
+/** 模型切换策略 */
+export enum ModelSwitchingStrategy {
+    Failover = "failover", // 故障转移 (默认)
+    RoundRobin = "round-robin", // 轮询
+    // Retry 策略将通过 RetryPolicy 实现，而不是作为一个独立的切换策略
+}
+
+/** 内容验证失败时的处理动作 */
+export enum ContentFailureAction {
+    FailoverToNext = "failover_to_next", // 立即切换到下一个模型
+    AugmentAndRetry = "augment_and_retry", // 增强提示词并在当前模型重试
+}
+
+/** 定义超时策略 */
+export interface TimeoutPolicy {
+    /** 首次响应超时 (秒) */
+    firstTokenTimeout?: number;
+    /** 总请求超时 (秒) */
+    totalTimeout: number;
+}
+
+/** 定义重试策略 */
+export interface RetryPolicy {
+    /** 最大重试次数 (在同一模型上) */
+    maxRetries: number;
+    /** 内容验证失败时的动作 */
+    onContentFailure: ContentFailureAction;
+}
+
+/** 定义断路器策略 */
+export interface CircuitBreakerPolicy {
+    /** 触发断路的连续失败次数 */
+    failureThreshold: number;
+    /** 断路器开启后的冷却时间 (秒) */
+    cooldownSeconds: number;
+}
+
 // =================================================================
 // 1. 核心与共享类型 (Core & Shared Types)
 // =================================================================
@@ -45,6 +82,12 @@ export interface ModelConfig {
         stream?: boolean;
         custom?: { [key: string]: { type: "string" | "number" | "boolean" | "object"; value: any } };
     };
+    /** 超时策略 */
+    timeoutPolicy?: TimeoutPolicy;
+    /** 重试策略 */
+    retryPolicy?: RetryPolicy;
+    /** 断路器策略 */
+    circuitBreakerPolicy?: CircuitBreakerPolicy;
 }
 
 export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
@@ -76,6 +119,26 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             .role("table")
             .description("自定义参数"),
     }),
+
+    timeoutPolicy: Schema.object({
+        firstTokenTimeout: Schema.number().description("首次响应超时 (秒)。用于快速识别网络或冷启动问题。建议 15。"),
+        totalTimeout: Schema.number().default(90).description("总请求超时 (秒)。"),
+    }).description("超时策略"),
+
+    retryPolicy: Schema.object({
+        maxRetries: Schema.number().default(1).description("在切换到下一个模型前，在当前模型上的最大重试次数。"),
+        onContentFailure: Schema.union([
+            Schema.const(ContentFailureAction.FailoverToNext).description("立即切换"),
+            Schema.const(ContentFailureAction.AugmentAndRetry).description("修正Prompt并重试"),
+        ])
+            .default(ContentFailureAction.FailoverToNext)
+            .description("响应内容无效时的处理方式"),
+    }).description("重试策略"),
+
+    circuitBreakerPolicy: Schema.object({
+        failureThreshold: Schema.number().default(3).description("连续失败多少次后开启断路器。"),
+        cooldownSeconds: Schema.number().default(300).description("断路器开启后，模型被禁用的时长(秒)。"),
+    }).description("断路器策略"),
 })
     .collapse()
     .description("单个模型配置");
@@ -121,7 +184,7 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.object({
 
 export interface ModelServiceConfig {
     providers: ProviderConfig[];
-    modelGroups: { name: string; models: ModelDescriptor[] }[];
+    modelGroups: { name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }[];
     task: {
         [TaskType.Chat]: string;
         [TaskType.Embedding]: string;
@@ -138,16 +201,29 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
     modelGroups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组名称"),
-            models: Schema.array(Schema.dynamic("modelService.selectableModels")).required().role("table").description("此模型组包含的模型"),
+            strategy: Schema.union([
+                Schema.const(ModelSwitchingStrategy.Failover).description("故障转移"),
+                Schema.const(ModelSwitchingStrategy.RoundRobin).description("轮询/负载均衡"),
+            ])
+                .default(ModelSwitchingStrategy.Failover)
+                .description("模型切换策略"),
+            models: Schema.array(Schema.dynamic("modelService.selectableModels"))
+                .required()
+                .role("table")
+                .description("此模型组包含的模型"),
         })
     )
         .role("table")
         .collapse()
-        .description("**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值。"),
+        .description(
+            "**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值。"
+        ),
     task: Schema.object({
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型**组**"),
-        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型**组**"),
-        [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型**组**"),
+        [TaskType.Embedding]:
+            Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型**组**"),
+        [TaskType.Summarization]:
+            Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型**组**"),
         [TaskType.Memory]: Schema.dynamic("modelService.availableGroups").description("记忆管理时使用的模型**组**"),
     }).description("为不同核心任务分配一个模型组"),
 });

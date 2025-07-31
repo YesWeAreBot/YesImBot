@@ -4,32 +4,52 @@ import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolRes
 import { Context } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
-import { toBoolean } from "@/shared/utils";
+import { AppError, ErrorCodes } from "@/shared/errors";
+import { JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
+
+/**
+ * 验证器函数的返回值
+ */
+export interface ValidationResult {
+    /** 内容是否有效 */
+    valid: boolean;
+    /** 是否可以提前结束流并返回 */
+    earlyExit: boolean;
+    /** 解析后的数据 (可选) */
+    parsedData?: any;
+    /** 错误信息 (可选) */
+    error?: string;
+}
+
+/**
+ * 自定义验证函数
+ * @param chunk - 当前收到的所有文本内容
+ * @returns ValidationResult
+ */
+export type ContentValidator = (chunk: string) => ValidationResult;
+
+/**
+ * 传递给 chat 方法的验证选项
+ */
+export interface ValidationOptions {
+    /** 预期的响应格式，用于选择内置验证器 */
+    format?: "json";
+    /** 自定义验证函数，优先级高于 format */
+    validator?: ContentValidator;
+}
 
 /**
  * Chat 方法的请求选项。
  * 包含所有必要的聊天信息和可覆盖的运行时参数。
  */
 export interface ChatRequestOptions {
-    /** 聊天消息列表 */
     messages: Message[];
-    /** 用于中止请求的 AbortSignal */
-    abortSignal?: AbortSignal;
-    /** 流式传输开始时的回调 */
-    onStreamStart?: () => void;
-    /** 可用的工具定义 */
-    // tools?: ToolDefinition[];
-
-    // --- 可覆盖的运行时参数 ---
-    /** 是否使用流式传输。如果未提供，则使用模型配置的默认值。 */
+    validation?: ValidationOptions;
     stream?: boolean;
-    /** 温度参数 */
     temperature?: number;
-    /** Top-P 采样参数 */
     topP?: number;
-    /** 其他任何可以传递给聊天提供程序的参数 */
     [key: string]: any;
 }
 
@@ -38,7 +58,7 @@ export interface IChatModel extends BaseModel {
      * 发起聊天请求。
      * @param options 包含消息和所有运行时参数的对象。
      */
-    chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
+    chat(options: ChatRequestOptions, abortSignal?: AbortSignal): Promise<GenerateTextResult>;
 
     isVisionModel(): boolean;
 }
@@ -147,12 +167,40 @@ export class ChatModel extends BaseModel implements IChatModel {
         return result;
     }
 
-    // _executeStream 方法保持不变，因为它已经从 chatOptions 中获取所需的一切。
-    private async _executeStream(chatOptions: ChatOptions, onStreamStart?: () => void): Promise<GenerateTextResult> {
-        // ... (此处代码无需修改)
-        // this.logger.debug("→ 流式请求 (并发处理)");
+    /* prettier-ignore */
+    private async _executeStream(chatOptions: ChatOptions, onStreamStart?: () => void, validation?: ValidationOptions): Promise<GenerateTextResult> {
+        this.logger.debug("→ 流式请求");
         let streamStarted = false;
 
+        // --- 1. 选择或创建验证器 ---
+        const getValidator = (): ContentValidator | null => {
+            if (validation?.validator) return validation.validator;
+            if (validation?.format === "json") {
+                const jsonParser = new JsonParser();
+                // 返回一个符合 ContentValidator 接口的函数
+                return (text: string) => {
+                    // 简单的JSON验证器，寻找闭合的 {} 或 []
+                    const trimmedText = text.trim();
+                    if (
+                        (trimmedText.startsWith("{") && trimmedText.endsWith("}")) ||
+                        (trimmedText.startsWith("[") && trimmedText.endsWith("]"))
+                    ) {
+                        const result = jsonParser.parse(trimmedText);
+                        return {
+                            valid: !result.error,
+                            earlyExit: !result.error,
+                            parsedData: result.data,
+                            error: result.error,
+                        };
+                    }
+                    return { valid: false, earlyExit: false };
+                };
+            }
+            return null;
+        };
+        const validator = getValidator();
+
+        // --- 2. 准备流式处理 ---
         const stime = Date.now();
         const stream = await streamText({
             ...chatOptions,
@@ -186,11 +234,40 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalToolResults: CompletionToolResult[] = [];
         let finalUsage: GenerateTextResult["usage"];
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
-
-        // 2. 创建一个 async 函数来处理文本流 (打字机效果)
+        
         const textProcessor = async () => {
+            const buffer: string[] = [];
             for await (const textPart of stream.textStream) {
-                finalContentParts.push(textPart); // 收集文本块
+                buffer.push(textPart);
+                finalContentParts.push(textPart);
+
+                if (validator) {
+                    const currentText = buffer.join("");
+                    const validationResult = validator(currentText);
+
+                    if (validationResult.valid && validationResult.earlyExit) {
+                        this.logger.debug(`[验证] ✅ 内容验证通过，提前返回 | 耗时: ${Date.now() - stime}ms`);
+                        // @ts-ignore - 强制中断流
+                        if (stream.abort) stream.abort(); // 如果底层库支持
+                        else if (chatOptions.abortSignal && chatOptions.abortSignal.aborted === false) {
+                            // 通过外部传入的 AbortController 来中断
+                            const controller = (chatOptions.abortSignal as any).controller;
+                            if (controller) controller.abort();
+                        }
+
+                        // 如果验证器返回了解析后的数据，用它覆盖原始文本
+                        if (validationResult.parsedData) {
+                            finalContentParts.splice(
+                                0,
+                                finalContentParts.length,
+                                JSON.stringify(validationResult.parsedData)
+                            );
+                        }
+
+                        // 立即退出循环
+                        return;
+                    }
+                }
             }
         };
 
@@ -219,18 +296,39 @@ export class ChatModel extends BaseModel implements IChatModel {
         };
 
         // 4. 使用 Promise.all 来并发执行这两个处理器
-        await Promise.all([textProcessor(), stepProcessor()]);
+        // 捕获因我们主动abort导致的错误，并优雅地处理
+        try {
+            await Promise.all([textProcessor(), stepProcessor()]);
+        } catch (error) {
+            if (error.name === "AbortError") {
+                this.logger.debug("[验证] 捕获到预期的 AbortError，流程正常结束。");
+            } else {
+                throw error; // 重新抛出其他未预料的错误
+            }
+        }
 
         // --- 流处理结束，组装并返回结果 ---
 
         //process.stdout.write("\n\n");
         this.logger.debug(`🌊 流式传输完毕 | 总耗时: ${Date.now() - stime}ms`);
 
+        // --- 4. 验证最终结果 ---
+        const finalText = finalContentParts.join("");
+        if (validator) {
+            const finalValidation = validator(finalText);
+            if (!finalValidation.valid) {
+                const errorMsg = `内容验证失败: ${finalValidation.error || "格式不匹配"}`;
+                this.logger.warn(`[验证] 💥 ${errorMsg}`);
+                // 抛出一个特定类型的错误，以便上层捕获和处理
+                throw new AppError(errorMsg, { code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED });
+            }
+        }
+
         // 5. 组装成一个完整的 GenerateTextResult 对象
         const finalResult: GenerateTextResult = {
             steps: finalSteps as CompletionStep<true>[],
             messages: finalMessages,
-            text: finalContentParts.join(""),
+            text: finalText,
             toolCalls: finalToolCalls,
             toolResults: finalToolResults,
             usage: finalUsage,

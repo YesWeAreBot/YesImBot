@@ -6,7 +6,14 @@ import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryBlockData } from "@/services/memory";
 import { IChatModel, ModelService, ModelSwitcher, TaskType } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
-import { AgentResponse, WorldState, WorldStateService, AgentStimulus, UserMessagePayload, PromptContext } from "@/services/worldstate";
+import {
+    AgentResponse,
+    WorldState,
+    WorldStateService,
+    AgentStimulus,
+    UserMessagePayload,
+    PromptContext,
+} from "@/services/worldstate";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorCodes, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser, truncate } from "@/shared/utils";
@@ -20,7 +27,6 @@ declare module "koishi" {
 }
 
 type WithDispose<T> = T & { dispose: () => void };
-
 
 // 用于多模态上下文筛选的内部类型
 interface ImageCandidate {
@@ -277,34 +283,34 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
      * 设置延迟处理定时器（策略3）
      */
     private setupDeferredTimer(channelKey: string) {
-	    // 清除现有定时器
-	    if (this.deferredTimers.has(channelKey)) {
-	        clearTimeout(this.deferredTimers.get(channelKey));
-	        this.deferredTimers.delete(channelKey);
-	    }
-	
-	    const timer = setTimeout(() => {
-	        this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
-	        if (this.skippedStimulus.has(channelKey)) {
-	            const stimulus = this.skippedStimulus.get(channelKey);
-	            this.skippedStimulus.delete(channelKey);
-	
-	            this.runningTasks.add(channelKey);
-	            this.logger.debug(`[${channelKey}] 处理被跳过的段落（重新锁定频道）`);
-	
-	            // 获取防抖任务并执行
-	            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-	            if (debouncedTask) {
-	                this.logger.debug(`[${channelKey}] 处理被跳过的段落`);
-	                debouncedTask(stimulus);
-	            }
-	        }
-	        this.deferredTimers.delete(channelKey);
-	    }, this.config.deferredProcessingTime || 10000);
-	
-	    this.deferredTimers.set(channelKey, timer);
-	    this.logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
-	}
+        // 清除现有定时器
+        if (this.deferredTimers.has(channelKey)) {
+            clearTimeout(this.deferredTimers.get(channelKey));
+            this.deferredTimers.delete(channelKey);
+        }
+
+        const timer = setTimeout(() => {
+            this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
+            if (this.skippedStimulus.has(channelKey)) {
+                const stimulus = this.skippedStimulus.get(channelKey);
+                this.skippedStimulus.delete(channelKey);
+
+                this.runningTasks.add(channelKey);
+                this.logger.debug(`[${channelKey}] 处理被跳过的段落（重新锁定频道）`);
+
+                // 获取防抖任务并执行
+                const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+                if (debouncedTask) {
+                    this.logger.debug(`[${channelKey}] 处理被跳过的段落`);
+                    debouncedTask(stimulus);
+                }
+            }
+            this.deferredTimers.delete(channelKey);
+        }, this.config.deferredProcessingTime || 10000);
+
+        this.deferredTimers.set(channelKey, timer);
+        this.logger.debug(`[${channelKey}] 延迟定时器启动，等待 ${this.config.deferredProcessingTime}ms`);
+    }
 
     /**
      * 引导模型关注被跳过的话题（策略3）
@@ -322,31 +328,30 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     /**
      * 当前任务完成后处理被跳过的消息（策略2 & 3）
      */
-	private handleSkippedMessagesAfterReply(channelKey: string) {
-	    if (this.config.newMessageStrategy === "immediate" && this.skippedStimulus.has(channelKey)) {
-	        const skippedStimulus = this.skippedStimulus.get(channelKey);
-	        this.skippedStimulus.delete(channelKey);
-	
-	        // 清除策略3的定时器（如果有）
-	        if (this.deferredTimers.has(channelKey)) {
-	            clearTimeout(this.deferredTimers.get(channelKey));
-	            this.deferredTimers.delete(channelKey);
-	        }
-	
-	        // 重新获取频道锁
-	        this.runningTasks.add(channelKey);
-	        this.logger.debug(`[${channelKey}] 立即处理被跳过的段落（重新锁定频道）`);
-	
-	        const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-	        if (debouncedTask) {
-	            debouncedTask(skippedStimulus);
-	        }
-	    } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
-	        // 任务完成后才启动定时器
-	        this.setupDeferredTimer(channelKey);
-	    }
-	}
+    private handleSkippedMessagesAfterReply(channelKey: string) {
+        if (this.config.newMessageStrategy === "immediate" && this.skippedStimulus.has(channelKey)) {
+            const skippedStimulus = this.skippedStimulus.get(channelKey);
+            this.skippedStimulus.delete(channelKey);
 
+            // 清除策略3的定时器（如果有）
+            if (this.deferredTimers.has(channelKey)) {
+                clearTimeout(this.deferredTimers.get(channelKey));
+                this.deferredTimers.delete(channelKey);
+            }
+
+            // 重新获取频道锁
+            this.runningTasks.add(channelKey);
+            this.logger.debug(`[${channelKey}] 立即处理被跳过的段落（重新锁定频道）`);
+
+            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
+            if (debouncedTask) {
+                debouncedTask(skippedStimulus);
+            }
+        } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
+            // 任务完成后才启动定时器
+            this.setupDeferredTimer(channelKey);
+        }
+    }
 
     /**
      * Agent 的核心心跳循环。现在只负责控制循环流程。
@@ -389,15 +394,14 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
      */
     /* prettier-ignore */
     private async _performSingleHeartbeat(stimulus: AgentStimulus<any>, previousResponses: AgentResponse[]): Promise<{ response: AgentResponse; continue: boolean } | null> {
-        if (!this.modelSwitcher) {
-            this.logger.warn("未配置有效的模型组，无法生成回复 | 请检查配置");
-            return null;
-        }
-        const { session } = stimulus;
-        const sid = stimulus.type === "user_message" ? (stimulus.payload as UserMessagePayload).sid : null;
+    if (!this.modelSwitcher) {
+        this.logger.warn("未配置有效的模型组，无法生成回复 | 请检查配置");
+        return null;
+    }
+    const { session } = stimulus;
 
-        // 1. 构建提示词所需的所有上下文信息
-        const promptContext = await this.buildPromptContext(stimulus, previousResponses);
+    // --- 1. 构建非消息部分的上下文（与之前相同）---
+    const promptContext = await this.buildPromptContext(stimulus, previousResponses);
 
         // 2. 准备模板渲染所需的数据视图 (View)
         const view = {
@@ -433,55 +437,58 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             },
         };
 
-        // 3. 渲染提示词并选择模型
-        const systemPrompt = await this.promptService.render("agent.system", view);
-        const userPromptText = await this.promptService.render("agent.user", view);
+    // --- 3. 渲染核心提示词文本 ---
+    const systemPrompt = await this.promptService.render("agent.system", view);
+    const userPromptText = await this.promptService.render("agent.user", view);
 
-        let chatModel: IChatModel;
-        let userMessageContent: string | (ImagePart | TextPart)[];
+    // --- 4. (新) 条件化构建多模态上下文并组装最终的 messages ---
+    let userMessageContent: string | (ImagePart | TextPart)[];
 
-        const hasImages = promptContext.multiModalData.images.length > 0;
-        if (hasImages) {
-            // 寻找支持多模态的模型，如果找不到则降级
-            const visionModel = this.modelSwitcher.models.find((m) => m.isVisionModel());
-            if (visionModel) {
-                chatModel = visionModel;
+    // 查询模型组是否具备视觉能力
+    const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.vision.enabled;
 
-                userMessageContent = [
-                    { type: "text", text: this.config.prompt.multiModalSystemTemplate },
-                    ...promptContext.multiModalData.images,
-                    { type: "text", text: userPromptText },
-                ];
-            } else {
-                this.logger.warn(`上下文包含图片，但当前模型组中没有支持多模态的模型。将忽略图片`);
-                chatModel = this.modelSwitcher.next(); // 使用默认轮询模型
-                userMessageContent = userPromptText;
-            }
+    if (canUseVision) {
+        // 只有在模型组支持且配置开启时，才去构建多模态上下文
+        const multiModalData = await this.buildMultimodalContext(promptContext.worldState);
+
+        if (multiModalData.images.length > 0) {
+            this.logger.debug(`[上下文] 包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
+            // 将图片和文本组合成多模态消息内容
+            userMessageContent = [
+                { type: "text", text: this.config.prompt.multiModalSystemTemplate },
+                ...multiModalData.images,
+                { type: "text", text: userPromptText },
+            ];
         } else {
-            chatModel = this.modelSwitcher.next();
+            // 支持视觉，但当前上下文中没有图片
             userMessageContent = userPromptText;
         }
-
-        if (!chatModel) {
-            this.logger.error(`✖✖ 模型未找到，停止回复 | 频道 - ${session.cid}`);
-            return null;
+    } else {
+        // 模型组不支持视觉或配置未开启，直接使用纯文本
+        if (this.config.vision.enabled) {
+          
         }
+        userMessageContent = userPromptText;
+    }
 
-        const messages: Message[] = [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessageContent },
-        ];
+    const messages: Message[] = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessageContent },
+    ];
 
-        // 4. 调用 LLM
-        const stime = Date.now();
-        const abortController = new AbortController();
-        const timeout = setTimeout(() => abortController.abort(), this.config.timeout * 1000);
+    // --- 5. 调用LLM（现在它只接收最终构建好的 messages） ---
+    const stime = Date.now();
 
-        const llmRawResponse = await chatModel.chat({
-            messages,
-            abortSignal: abortController.signal,
-            onStreamStart: () => clearTimeout(timeout),
-        });
+        const llmRawResponse = await this.modelSwitcher.executeChat({ messages, validation: { format: "json", validator: (text)=>{
+            const parser = new JsonParser<any>();
+            const result = parser.parse(text);
+
+            if (!result.error) {
+                if (result.data.thoughts && typeof result.data.thoughts === "object" && Array.isArray (result.data.actions)) {
+                    return { valid: true, earlyExit: true, parsedData: result.data };
+                }
+            }
+         } } });
         this.logger.info(`💬 响应时间: ${Date.now() - stime}ms`);
         const prompt_tokens =
             llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
@@ -495,8 +502,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const errorContext = {
             rawResponse: llmRawResponse.text,
             channelId: session.cid,
-            segmentId: sid,
-            modelUsed: chatModel.id,
             promptTokens: llmRawResponse.usage?.prompt_tokens,
             completionTokens: llmRawResponse.usage?.completion_tokens,
         };
@@ -578,9 +583,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         const { worldState, triggerContext } = await this.worldState.buildContextForStimulus(stimulus);
 
         // 2. 获取多模态上下文（如果启用）
-        const multiModalContent = this.config.vision.enabled
-            ? await this.buildMultimodalContext(worldState)
-            : { images: [] };
 
         // 3. 聚合所有数据
         return {
@@ -589,9 +591,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             memoryBlocks: await this.ctx[Services.Memory].getMemoryBlocksForRendering(),
             worldState: worldState,
             previousResponses: previousResponses,
-            multiModalData: {
-                images: multiModalContent.images,
-            },
         };
     }
 
@@ -617,7 +616,9 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 2. 收集所有潜在的图片候选者，并赋予优先级
         const imageCandidates = allMessages.flatMap((msg) => {
             const elements = h.parse(msg.content);
-            const imageIds = elements.filter((e) => imageTags.includes(e.type)  && e.attrs.id).map((e) => e.attrs.id as string);
+            const imageIds = elements
+                .filter((e) => imageTags.includes(e.type) && e.attrs.id)
+                .map((e) => e.attrs.id as string);
 
             // 检查引用，为被引用的图片赋予更高优先级
             let isQuotedImage = false;

@@ -392,9 +392,6 @@ export interface PromptContext {
     memoryBlocks: MemoryBlockData[];
     worldState: WorldState; // 世界状态快照
     previousResponses: AgentResponse[]; // Agent 最近的回合历史
-    multiModalData: {
-        images: (ImagePart | TextPart)[];
-    };
 }
 
 
