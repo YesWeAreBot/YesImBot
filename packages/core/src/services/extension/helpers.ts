@@ -1,5 +1,5 @@
 import { Schema } from "koishi";
-import { Param, Properties, ToolCallResult } from "./types";
+import { Param, Properties, ToolCallResult, ToolError } from "./types";
 
 /**
  * 成功结果辅助函数
@@ -14,10 +14,20 @@ export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): T
 
 /**
  * 失败结果辅助函数
+ * @param error - 结构化的错误对象或一个简单的错误消息字符串
+ * @param metadata - 附加元数据
  */
-export function Failed(error: string, metadata?: ToolCallResult["metadata"]): ToolCallResult {
+export function Failed(error: ToolError | string, metadata?: ToolCallResult["metadata"]): ToolCallResult {
+    if (typeof error === 'string') {
+        // 如果只提供一个字符串，自动包装成基础的 ToolError
+        return {
+            status: "error",
+            error: { name: "ToolError", message: error },
+            metadata,
+        };
+    }
     return {
-        status: "failed",
+        status: "error",
         error,
         metadata,
     };

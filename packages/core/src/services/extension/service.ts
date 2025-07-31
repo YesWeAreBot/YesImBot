@@ -41,7 +41,6 @@ export class ToolService extends Service<ToolServiceConfig> {
         const builtinExtensions = [
             CoreUtilExtension,
             CommandExtension,
-            // CreatorExtension,
             MemoryExtension,
             QManagerExtension,
             SearchExtension,
@@ -185,7 +184,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                     /* prettier-ignore */
                     return `✅ 工具 ${name} 调用成功！\n执行结果：${typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2)}`;
                 } else {
-                    return `❌ 工具 ${name} 调用失败。\n原因：${result.error}`;
+                    return `❌ 工具 ${name} 调用失败。\n原因：${stringify(result.error)}`;
                 }
             });
 
@@ -415,15 +414,14 @@ export class ToolService extends Service<ToolServiceConfig> {
             return false;
         }
         this.extensions.delete(name);
-       try {
+        try {
             for (const tool of ext.tools.values()) {
-
                 this.tools.delete(tool.name);
             }
+            this._logger.info(`已卸载扩展: "${name}"`);
         } catch (error) {
-            this._logger.warn(`卸载扩展 ${name} 时出错：${error.message}`)
+            this._logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
         }
-        this._logger.info(`已卸载扩展: "${name}"`);
         return true;
     }
 
@@ -480,11 +478,17 @@ export class ToolService extends Service<ToolServiceConfig> {
                     this._logger.success(`✔ 成功 ← 返回: ${resultString}`);
                     return lastResult;
                 }
-                if (!lastResult.retryable) {
-                    this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${lastResult.error}`);
+                if (lastResult.error) {
+                    if (!lastResult.error.retryable) {
+                        this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
+                        return lastResult;
+                    } else {
+                        this._logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
+                        continue;
+                    }
+                } else {
                     return lastResult;
                 }
-                this._logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
             } catch (error) {
                 this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
                 this._logger.debug(error.stack);

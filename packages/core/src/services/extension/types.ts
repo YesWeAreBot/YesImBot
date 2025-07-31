@@ -57,18 +57,36 @@ export interface ToolDefinition<TParams = any> {
 }
 
 /**
- * 工具调用结果
+ * 标准化的工具错误接口
  */
-export interface ToolCallResult<TResult = any> {
-    status: "success" | "failed" | string;
-    /** 返回结果 */
-    result?: TResult;
-    /** 错误信息 */
-    error?: string;
-    /** 是否可重试 */
+export interface ToolError {
+    /** 错误的类型或名称 (例如: 'ValidationError', 'APIFailure', 'RuntimeError') */
+    name: string;
+    /** 人类可读的错误信息 */
+    message: string;
+    /** 错误是否可重试 */
     retryable?: boolean;
-    /** 附加元数据，如执行时间等 */
-    metadata?: Record<string, any>;
+}
+
+/**
+ * 标准化的工具调用结果
+ */
+export interface ToolCallResult<TResult = any, TError extends ToolError = ToolError> {
+    /**
+     * 调用状态:
+     * - 'success': 成功
+     * - 'error': 失败
+     */
+    status: "success" | "error";
+    /** 成功时的返回结果 */
+    result?: TResult;
+    /** 失败时的结构化错误信息 */
+    error?: TError;
+    /** 附加元数据，如执行时间(ms)、Token消耗等 */
+    metadata?: {
+        execution_duration_ms?: number;
+        [key: string]: any;
+    };
 }
 
 /**
