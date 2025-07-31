@@ -16,6 +16,7 @@ async function executeInSandbox() {
     const { allowedBuiltins, allowedModules, dependenciesPath, timeout, memoryLimit } = config;
 
     const capturedLogs: CapturedLog[] = [];
+    const processedRequests = [];
     let isolate: ivm.Isolate;
 
     try {
@@ -106,6 +107,37 @@ async function executeInSandbox() {
 
         await jail.set("require", requireCallback);
 
+        const createArtifactCallback = new ivm.Callback((fileName, content, type) => {
+            // 在这个回调函数的作用域内，`content` 是一个功能完备的 ivm.ExternalCopy
+            try {
+                let extractedContent;
+
+                // 检查 .buffer 属性，这是最可靠的方式来识别二进制数据
+                if (content && typeof content.buffer === "object" && content.buffer instanceof ArrayBuffer) {
+                    extractedContent = Buffer.from(content.buffer);
+                } else {
+                    extractedContent = Buffer.from(String(content));
+                }
+
+                // 直接将处理好的、可序列化的对象存入数组
+                processedRequests.push({
+                    fileName: String(fileName), // 确保文件名也是原生类型
+                    content: extractedContent, // content 现在是 Buffer
+                    type: String(type), // 确保类型也是原生类型
+                });
+            } catch (err) {
+                // 如果在回调内部处理失败，可以向沙箱内抛出错误，或通过 console.error 报告
+                const errorMessage = `[Artifact Creation Callback Error] Failed to process artifact '${fileName}': ${err.message}`;
+                // 使用 console.error 将错误信息传递出去
+                context.evalClosureSync("console.error($0)", [errorMessage]);
+            }
+        });
+
+        // 将 callback 注入到沙箱的全局作用域
+        await jail.set("__createArtifact__", createArtifactCallback);
+
+        await context.eval(`global.Uint8Array = Uint8Array`);
+
         // 3. 将代码包装在 async IIFE (立即执行的异步函数表达式) 中，以支持顶层 await
         const wrappedCode = `(async () => { ${code} })();`;
 
@@ -125,7 +157,7 @@ async function executeInSandbox() {
                     .filter((it) => it.level !== "log")
                     .map((it) => it.message)
                     .join("\n"),
-                artifacts: [],
+                artifactRequests: processedRequests,
             },
         });
     } catch (error) {
@@ -148,6 +180,7 @@ async function executeInSandbox() {
                     .filter((it) => it.level !== "log")
                     .map((it) => it.message)
                     .join("\n"),
+                artifactRequests: processedRequests,
             },
             error: finalError,
         });

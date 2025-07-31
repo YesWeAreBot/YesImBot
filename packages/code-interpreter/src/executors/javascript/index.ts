@@ -1,20 +1,27 @@
 import { exec } from "child_process";
 import fs from "fs/promises";
 import { Context, Logger, Schema } from "koishi";
-import { ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { AssetService, AssetType, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import path from "path";
 import { promisify } from "util";
 import { Worker } from "worker_threads";
 
 import { SharedConfig } from "../../config";
-import { CodeExecutionResult, CodeExecutor, ExecutionError } from "../base";
+import { CodeExecutionResult, CodeExecutor, ExecutionArtifact, ExecutionError } from "../base";
+import { Services } from "koishi-plugin-yesimbot/shared";
 
 const asyncExec = promisify(exec);
+
+interface ProcessedArtifactsResult {
+    artifacts: ExecutionArtifact[];
+    errorMessages: string[];
+}
 
 export interface JavaScriptConfig {
     type: "javascript";
     enabled: boolean;
     packageManager: "npm" | "yarn" | "bun" | "pnpm";
+    registry: string;
     timeout: number;
     memoryLimit: number;
     allowedBuiltins: string[];
@@ -34,6 +41,9 @@ export const JavaScriptConfigSchema: Schema<JavaScriptConfig> = Schema.intersect
             packageManager: Schema.union(["npm", "yarn", "bun", "pnpm"])
                 .default("npm")
                 .description("用于动态安装依赖的包管理器"),
+            registry: Schema.string()
+                .default("https://registry.npmmirror.com")
+                .description("npm包的自定义注册表URL"),
             memoryLimit: Schema.number().min(64).default(128).description("代码执行的内存限制（MB）"),
             allowedBuiltins: Schema.array(String)
                 .default(["path", "util", "crypto"])
@@ -55,9 +65,13 @@ export class JavaScriptExecutor implements CodeExecutor {
     readonly type = "javascript";
     private readonly logger: Logger;
 
+    private assetService: AssetService;
+
     constructor(private ctx: Context, private config: JavaScriptConfig, private sharedConfig: SharedConfig) {
         this.logger = ctx.logger(`[executor:${this.type}]`);
         this.logger.info("JavaScript executor initialized.");
+
+        this.assetService = ctx.get(Services.Asset);
     }
 
     public getToolDefinition(): ToolDefinition {
@@ -68,7 +82,19 @@ export class JavaScriptExecutor implements CodeExecutor {
 - 必须使用 console.log() 输出结果，它将作为 stdout 返回
 - 返回结果仅你可见，根据返回结果调整你的下一步行动
 - 任何未捕获的异常或执行超时都将导致工具调用失败
-- 可以使用 'fs' 等模块与文件系统交互，生成的文件将保存在安全目录并可能返回URL`;
+- 你无法直接访问文件系统（如 \`fs\` 模块）。要创建文件、图片或任何数据产物，你必须使用全局提供的异步函数 \`__createArtifact__\`
+- **函数签名:** \`async function __createArtifact__(fileName: string, content: string | Uint8Array, type: string): Promise<void>\`
+- **参数说明:**
+  - fileName: 你希望为文件指定的名字，例如 'data.csv' 或 'chart.png'。
+  - content: 文件内容。
+    - 对于文本文件（如JSON, CSV, HTML），请提供字符串。
+    - 对于二进制文件（如图片、压缩包），请提供 \`Uint8Array\` 格式的数据。
+  - type: 资源的类型。**必须是以下之一**:
+    - 'text': 纯文本文档。
+    - 'json': JSON 数据。
+    - 'html': HTML 文档。
+    - 'image': 图片文件（如 PNG, JPEG, SVG）。
+    - 'file': 其他通用二进制文件。`;
 
         return {
             name: "execute_javascript",
@@ -100,13 +126,14 @@ export class JavaScriptExecutor implements CodeExecutor {
 
         try {
             const resultFromWorker = await this.runWorker(code);
-
+            const { artifacts, errorMessages } = await this.processArtifactRequests(resultFromWorker.artifactRequests);
             return {
                 status: "success",
                 result: {
                     stdout: this.truncate(resultFromWorker.stdout),
                     stderr: this.truncate(resultFromWorker.stderr),
-                    artifacts: resultFromWorker.artifacts || [],
+                    artifacts: artifacts,
+                    ...(errorMessages.length > 0 ? { artifactCreationErrors: errorMessages } : {}),
                 },
             };
         } catch (error) {
@@ -123,6 +150,42 @@ export class JavaScriptExecutor implements CodeExecutor {
                 },
             };
         }
+    }
+
+    /**
+     * 新增的辅助方法，用于处理产物创建请求。
+     * @param requests 来自 worker 的产物创建请求列表。
+     */
+    private async processArtifactRequests(requests: any[]): Promise<ProcessedArtifactsResult> {
+        if (!requests || requests.length === 0) {
+            return { artifacts: [], errorMessages: [] };
+        }
+
+        const createdArtifacts: ExecutionArtifact[] = [];
+        const errorMessages: string[] = [];
+
+        for (const req of requests) {
+            try {
+                const resourceSource = req.content as Uint8Array;
+                const assetType = req.type as AssetType;
+
+                const assetId = await this.assetService.create(Buffer.from(resourceSource), assetType, {
+                    filename: req.fileName,
+                });
+
+                createdArtifacts.push({
+                    assetId,
+                    type: assetType,
+                    fileName: req.fileName,
+                });
+            } catch (error) {
+                // **核心改动：捕获错误并格式化消息**
+                const errorMessage = `[Artifact Creation Failed] 资源 '${req.fileName}' 创建失败: ${error.message}`;
+                this.logger.warn(errorMessage, error); // 在后端日志中记录详细错误
+                errorMessages.push(errorMessage); // 将格式化的错误消息存入数组
+            }
+        }
+        return { artifacts: createdArtifacts, errorMessages };
     }
 
     /**
@@ -244,17 +307,17 @@ export class JavaScriptExecutor implements CodeExecutor {
         let installCommand: string;
         switch (pm) {
             case "yarn":
-                installCommand = `yarn add ${moduleName} --silent --non-interactive`;
+                installCommand = `yarn add ${moduleName} --silent --non-interactive --registry ${this.config.registry}`;
                 break;
             case "bun":
-                installCommand = `bun add ${moduleName}`;
+                installCommand = `bun add ${moduleName} --registry ${this.config.registry}`;
                 break;
             case "pnpm":
-                installCommand = `pnpm add ${moduleName}`;
+                installCommand = `pnpm add ${moduleName} --registry ${this.config.registry}`;
                 break;
             case "npm":
             default:
-                installCommand = `npm install ${moduleName} --no-save --omit=dev`;
+                installCommand = `npm install ${moduleName} --no-save --omit=dev --registry ${this.config.registry}`;
                 break;
         }
 

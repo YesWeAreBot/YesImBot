@@ -1,6 +1,4 @@
-// 优化后的 a/base.ts
-
-import { ToolCallResult, ToolDefinition, ToolError } from "koishi-plugin-yesimbot/services";
+import { AssetType, ToolCallResult, ToolDefinition, ToolError } from "koishi-plugin-yesimbot/services";
 
 /**
  * 代表一个标准化的执行错误结构。
@@ -30,24 +28,21 @@ export interface ExecutionError extends ToolError {
  */
 export interface ExecutionArtifact {
     /**
-     * 产物类型
-     * - 'text': 纯文本输出
-     * - 'json': 格式化的JSON数据
-     * - 'html': 可渲染的HTML内容
-     * - 'image': 图片，content为base64编码或URL
-     * - 'file': 其他类型的文件，会提供一个可访问的URL
+     * 资源的唯一ID，由 `ResourceManager.create` 返回。
+     * 这是与资源交互的唯一标识符。
      */
-    type: "text" | "json" | "html" | "image" | "file";
+    assetId: string;
+
     /**
-     * 产物的内容。
-     * 对于 'image', 可以是 base64 字符串。
-     * 对于 'file', 通常是文件名或简短描述。
+     * 资源的类型，用于帮助AI和前端理解如何展示这个资源。
      */
-    content: string;
+    type: AssetType;
+
     /**
-     * 如果产物是文件，这里是文件的可访问URL。
+     * AI请求创建时使用的原始文件名或描述。
+     * 例如 "monthly_sales_chart.png"。这对于向用户展示非常重要。
      */
-    url?: string;
+    fileName: string;
 }
 
 /**
