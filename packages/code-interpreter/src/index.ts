@@ -12,6 +12,7 @@ const exec = promisify(childProcess.exec);
 
 export interface CodeInterpreterConfig {
     timeout: number;
+    memoryLimit: number;
     packageManager: "npm" | "yarn" | "bun";
     allowedBuiltins: string[];
     allowedModules: string[];
@@ -30,6 +31,7 @@ export interface CodeInterpreterConfig {
 export default class CodeInterpreterExtension {
     static readonly Config: Schema<CodeInterpreterConfig> = Schema.object({
         timeout: Schema.number().default(10000).description("代码执行的超时时间（毫秒）。"),
+        memoryLimit: Schema.number().min(64).default(128).description("代码执行的内存限制（MB）。"),
         packageManager: Schema.union(["npm", "yarn", "bun"])
             .default("npm")
             .description("用于动态安装依赖的包管理器。请确保您选择的包管理器已在系统环境中安装。"),
@@ -105,6 +107,7 @@ export default class CodeInterpreterExtension {
                     code,
                     config: {
                         timeout: this.config.timeout,
+                        memoryLimit: this.config.memoryLimit,
                         allowedModules: this.config.allowedModules,
                         allowedBuiltins: this.config.allowedBuiltins,
                         dependenciesPath: path.resolve(this.config.dependenciesPath),
