@@ -6,7 +6,7 @@
 
 # Interface: MemoryBlockData
 
-Defined in: [packages/core/src/services/memory/types.ts:1](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/memory/types.ts#L1)
+Defined in: [packages/core/src/services/memory/types.ts:1](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/memory/types.ts#L1)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/memory/types.ts:1](https://github.com/Ye
 
 > **content**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/memory/types.ts#L5)
+Defined in: [packages/core/src/services/memory/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/memory/types.ts#L5)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/memory/types.ts:5](https://github.com/Ye
 
 > **description**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/memory/types.ts#L4)
+Defined in: [packages/core/src/services/memory/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/memory/types.ts#L4)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/memory/types.ts:4](https://github.com/Ye
 
 > **label**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/memory/types.ts#L3)
+Defined in: [packages/core/src/services/memory/types.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/memory/types.ts#L3)
 
 ***
 
@@ -38,4 +38,4 @@ Defined in: [packages/core/src/services/memory/types.ts:3](https://github.com/Ye
 
 > **title**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:2](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/memory/types.ts#L2)
+Defined in: [packages/core/src/services/memory/types.ts:2](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/memory/types.ts#L2)

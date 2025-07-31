@@ -8,7 +8,7 @@
 
 > **trimEnd**(`text`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:115](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/shared/utils/string.ts#L115)
+Defined in: [packages/core/src/shared/utils/string.ts:115](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/shared/utils/string.ts#L115)
 
 移除字符串末尾的空白字符。
 

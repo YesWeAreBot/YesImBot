@@ -6,7 +6,7 @@
 
 # Interface: WorldState
 
-Defined in: [packages/core/src/services/worldstate/types.ts:257](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/worldstate/types.ts#L257)
+Defined in: [packages/core/src/services/worldstate/types.ts:257](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/worldstate/types.ts#L257)
 
 代表 Agent 感知到的整个世界状态的快照
 这是 Agent 进行决策时最重要的输入信息
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:257](https://github.
 
 > **channel**: [`Channel`](Channel.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:264](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/worldstate/types.ts#L264)
+Defined in: [packages/core/src/services/worldstate/types.ts:264](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/worldstate/types.ts#L264)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:264](https://github.
 
 > `optional` **users**: `object`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:259](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/worldstate/types.ts#L259)
+Defined in: [packages/core/src/services/worldstate/types.ts:259](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/worldstate/types.ts#L259)
 
 #### description
 

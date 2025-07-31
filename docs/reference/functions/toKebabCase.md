@@ -8,7 +8,7 @@
 
 > **toKebabCase**(`str`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/shared/utils/string.ts#L187)
+Defined in: [packages/core/src/shared/utils/string.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/shared/utils/string.ts#L187)
 
 将字符串转换为烤串命名（kebab-case）。
 
