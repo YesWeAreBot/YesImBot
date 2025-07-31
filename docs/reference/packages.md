@@ -24,6 +24,7 @@
 - [AssetService](classes/AssetService.md)
 - [BaseModel](classes/BaseModel.md)
 - [ChatModel](classes/ChatModel.md)
+- [ChatModelSwitcher](classes/ChatModelSwitcher.md)
 - [EmbedModel](classes/EmbedModel.md)
 - [ErrorReporter](classes/ErrorReporter.md)
 - [JsonParser](classes/JsonParser.md)

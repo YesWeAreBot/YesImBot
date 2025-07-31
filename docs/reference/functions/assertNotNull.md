@@ -8,7 +8,7 @@
 
 > **assertNotNull**\<`T`\>(`value`, `name`): `asserts value is T`
 
-Defined in: [packages/core/src/shared/errors/index.ts:275](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/shared/errors/index.ts#L275)
+Defined in: [packages/core/src/shared/errors/index.ts:275](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/shared/errors/index.ts#L275)
 
 ## Type Parameters
 

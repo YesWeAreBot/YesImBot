@@ -6,7 +6,7 @@
 
 # Class: MustacheRenderer
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/renderer.ts#L21)
+Defined in: [packages/core/src/services/prompt/renderer.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/renderer.ts#L21)
 
 基于 Mustache.js 的默认渲染器实现
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/prompt/renderer.ts:21](https://github.co
 
 > **render**(`templateContent`, `scope`, `partials?`): `string`
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/renderer.ts#L22)
+Defined in: [packages/core/src/services/prompt/renderer.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/renderer.ts#L22)
 
 渲染模板
 

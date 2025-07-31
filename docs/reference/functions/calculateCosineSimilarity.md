@@ -8,7 +8,7 @@
 
 > **calculateCosineSimilarity**(`vec1`, `vec2`): `number`
 
-Defined in: [packages/core/src/services/model/embed-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/embed-model.ts#L52)
+Defined in: [packages/core/src/services/model/embed-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/embed-model.ts#L52)
 
 Calculates the cosine similarity between two vectors.
 The similarity is normalized to a [0, 1] range.

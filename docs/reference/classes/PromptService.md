@@ -6,7 +6,7 @@
 
 # Class: PromptService
 
-Defined in: [packages/core/src/services/prompt/service.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L24)
+Defined in: [packages/core/src/services/prompt/service.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L24)
 
 通用提示词构建服务
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:24](https://github.com
 
 > **new PromptService**(`ctx`, `config`): `PromptService`
 
-Defined in: [packages/core/src/services/prompt/service.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L31)
+Defined in: [packages/core/src/services/prompt/service.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L31)
 
 #### Parameters
 
@@ -78,7 +78,7 @@ use `this.ctx.logger` instead
 
 #### Inherited from
 
-`Service.logger`
+[`YesImBot`](YesImBot.md).[`logger`](YesImBot.md#logger)
 
 ***
 
@@ -134,7 +134,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: [`Services`](../enumerations/Services.md)[]
 
-Defined in: [packages/core/src/services/prompt/service.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L25)
+Defined in: [packages/core/src/services/prompt/service.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L25)
 
 ***
 
@@ -276,7 +276,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **registerSnippet**(`key`, `snippetFn`): `void`
 
-Defined in: [packages/core/src/services/prompt/service.ts:104](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L104)
+Defined in: [packages/core/src/services/prompt/service.ts:104](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L104)
 
 注册一个动态片段 (Snippet)
 
@@ -304,7 +304,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:104](https://github.co
 
 > **registerTemplate**(`name`, `content`): `void`
 
-Defined in: [packages/core/src/services/prompt/service.ts:92](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L92)
+Defined in: [packages/core/src/services/prompt/service.ts:92](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L92)
 
 注册一个提示词模板
 
@@ -332,7 +332,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:92](https://github.com
 
 > **render**(`templateName`, `initialScope`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:117](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L117)
+Defined in: [packages/core/src/services/prompt/service.ts:117](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L117)
 
 渲染一个提示词模板
 
@@ -362,7 +362,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:117](https://github.co
 
 > **renderRaw**(`templateContent`, `initialScope`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:139](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L139)
+Defined in: [packages/core/src/services/prompt/service.ts:139](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L139)
 
 渲染一个原始的模板字符串，不经过注册
 
@@ -386,7 +386,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:139](https://github.co
 
 > `protected` **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L40)
+Defined in: [packages/core/src/services/prompt/service.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L40)
 
 #### Returns
 
@@ -402,7 +402,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:40](https://github.com
 
 > `protected` **stop**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:83](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/prompt/service.ts#L83)
+Defined in: [packages/core/src/services/prompt/service.ts:83](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/prompt/service.ts#L83)
 
 #### Returns
 

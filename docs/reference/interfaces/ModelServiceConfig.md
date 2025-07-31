@@ -6,7 +6,7 @@
 
 # Interface: ModelServiceConfig
 
-Defined in: [packages/core/src/services/model/config.ts:185](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/config.ts#L185)
+Defined in: [packages/core/src/services/model/config.ts:185](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/config.ts#L185)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/config.ts:185](https://github.com/
 
 > **modelGroups**: `object`[]
 
-Defined in: [packages/core/src/services/model/config.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/config.ts#L187)
+Defined in: [packages/core/src/services/model/config.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/config.ts#L187)
 
 #### models
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/model/config.ts:187](https://github.com/
 
 > **providers**: [`ProviderConfig`](ProviderConfig.md)[]
 
-Defined in: [packages/core/src/services/model/config.ts:186](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/config.ts#L186)
+Defined in: [packages/core/src/services/model/config.ts:186](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/config.ts#L186)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [packages/core/src/services/model/config.ts:186](https://github.com/
 
 > `readonly` `optional` **system**: `SystemConfig`
 
-Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/config.ts#L193)
+Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/config.ts#L193)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/
 
 > **task**: `object`
 
-Defined in: [packages/core/src/services/model/config.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/config.ts#L188)
+Defined in: [packages/core/src/services/model/config.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/config.ts#L188)
 
 #### chat
 

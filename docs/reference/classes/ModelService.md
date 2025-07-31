@@ -6,7 +6,7 @@
 
 # Class: ModelService
 
-Defined in: [packages/core/src/services/model/model-service.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L64)
+Defined in: [packages/core/src/services/model/model-service.ts:90](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L90)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:64](https://githu
 
 > **new ModelService**(`ctx`, `config`): `ModelService`
 
-Defined in: [packages/core/src/services/model/model-service.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L69)
+Defined in: [packages/core/src/services/model/model-service.ts:95](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L95)
 
 #### Parameters
 
@@ -76,7 +76,7 @@ use `this.ctx.logger` instead
 
 #### Inherited from
 
-`Service.logger`
+[`YesImBot`](YesImBot.md).[`logger`](YesImBot.md#logger)
 
 ***
 
@@ -132,7 +132,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: [`Services`](../enumerations/Services.md)[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L65)
+Defined in: [packages/core/src/services/model/model-service.ts:91](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L91)
 
 ***
 
@@ -274,9 +274,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getChatModel**(`providerName`, `modelId`): [`IChatModel`](../interfaces/IChatModel.md)
 
-Defined in: [packages/core/src/services/model/model-service.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L192)
-
-获取一个聊天模型
+Defined in: [packages/core/src/services/model/model-service.ts:137](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L137)
 
 #### Parameters
 
@@ -298,7 +296,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:192](https://gith
 
 > **getEmbedModel**(`providerName`, `modelId`): [`IEmbedModel`](../interfaces/IEmbedModel.md)
 
-Defined in: [packages/core/src/services/model/model-service.ts:196](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L196)
+Defined in: [packages/core/src/services/model/model-service.ts:142](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L142)
 
 #### Parameters
 
@@ -320,7 +318,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:196](https://gith
 
 > `protected` **start**(): `void` \| `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:83](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L83)
+Defined in: [packages/core/src/services/model/model-service.ts:198](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L198)
 
 #### Returns
 
@@ -350,11 +348,9 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:10
 
 ### useChatGroup()
 
-> **useChatGroup**(`name`): [`ModelSwitcher`](ModelSwitcher.md)\<[`IChatModel`](../interfaces/IChatModel.md)\>
+> **useChatGroup**(`name`): [`ChatModelSwitcher`](ChatModelSwitcher.md)
 
-Defined in: [packages/core/src/services/model/model-service.ts:228](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L228)
-
-通过模型组名称获取一个聊天模型切换器
+Defined in: [packages/core/src/services/model/model-service.ts:147](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L147)
 
 #### Parameters
 
@@ -364,7 +360,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:228](https://gith
 
 #### Returns
 
-[`ModelSwitcher`](ModelSwitcher.md)\<[`IChatModel`](../interfaces/IChatModel.md)\>
+[`ChatModelSwitcher`](ChatModelSwitcher.md)
 
 ***
 
@@ -372,7 +368,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:228](https://gith
 
 > **useEmbeddingGroup**(`name`): [`ModelSwitcher`](ModelSwitcher.md)\<[`IEmbedModel`](../interfaces/IEmbedModel.md)\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:234](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/services/model/model-service.ts#L234)
+Defined in: [packages/core/src/services/model/model-service.ts:233](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/services/model/model-service.ts#L233)
 
 #### Parameters
 

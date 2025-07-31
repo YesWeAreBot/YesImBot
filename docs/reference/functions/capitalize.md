@@ -8,7 +8,7 @@
 
 > **capitalize**(`str`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/4e044b1ec2226c145f49107053f00a90b7003b02/packages/core/src/shared/utils/string.ts#L154)
+Defined in: [packages/core/src/shared/utils/string.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/43ab446decb3ac78a2b539bbb042478596e4f630/packages/core/src/shared/utils/string.ts#L154)
 
 将字符串的第一个字符转换为大写。
 
