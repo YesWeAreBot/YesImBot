@@ -136,7 +136,7 @@ export default class CodeToImage {
         }
 
         // 合并用户输入和默认配置
-        const {
+        let {
             code,
             lang = "ts",
             theme = this.config.defaultTheme,
@@ -149,7 +149,13 @@ export default class CodeToImage {
 
         try {
             // 动态加载 Shiki 主题和语言
-            await this.highlighter.loadTheme(import(`@shikijs/themes/${theme}`));
+            try {
+                await this.highlighter.loadTheme(import(`@shikijs/themes/${theme}`));
+            } catch (e) {
+                logger.warn(`尝试加载主题 "${theme}" 失败: ${e.message}`);
+                theme = this.config.defaultTheme;
+            }
+
             const loadedLanguages = this.highlighter.getLoadedLanguages();
             if (!loadedLanguages.includes(lang)) {
                 try {
@@ -247,8 +253,8 @@ export default class CodeToImage {
         parameters: withInnerThoughts({
             code: Schema.string().required().description("要转换为图片的代码字符串"),
             lang: Schema.string().default("plaintext").description("代码的语言，例如 `typescript`, `python`, `json`"),
-            theme: Schema.string().description(`代码高亮的主题。默认为插件配置`),
-            fontFamily: Schema.string().description("渲染时使用的字体。默认为插件配置"),
+            //theme: Schema.string().description(`代码高亮的主题。默认为插件配置`),
+            //fontFamily: Schema.string().description("渲染时使用的字体。默认为插件配置"),
             fontSize: Schema.number().description("字体大小。默认为插件配置"),
             padding: Schema.number().description("图片内边距。默认为插件配置"),
         }),
