@@ -118,9 +118,12 @@ export class ChatModel extends BaseModel implements IChatModel {
         //this.logger.info(`💬 开始 | 流式: ${useStream}`);
         const chatOptions = this.buildChatOptions(options);
 
+        const validation = options.validation;
+        delete options.validation;
+
         try {
             if (useStream) {
-                return await this._executeStream(chatOptions, options.onStreamStart);
+                return await this._executeStream(chatOptions, options.onStreamStart, validation);
             } else {
                 return await this._executeNonStream(chatOptions);
             }
@@ -234,7 +237,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalToolResults: CompletionToolResult[] = [];
         let finalUsage: GenerateTextResult["usage"];
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
-        
+
         const textProcessor = async () => {
             const buffer: string[] = [];
             for await (const textPart of stream.textStream) {
