@@ -44,7 +44,7 @@ export class JsonParser<T> {
 
         // 优先检测并提取 Markdown 代码块。
         // 如果存在代码块，我们假定这才是我们真正需要解析的内容。
-        const codeBlockStartIndex = processedString.indexOf("```");
+        const codeBlockStartIndex = processedString.indexOf("```json");
         // 使用更健壮的检查来代替简单的 startsWith
         const isLikelyStartOfJson = this.isLikelyJsonStart(processedString);
 
