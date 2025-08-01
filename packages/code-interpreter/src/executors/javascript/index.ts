@@ -70,6 +70,7 @@ export class JavaScriptExecutor implements CodeExecutor {
     private hostRequireCallback: ivm.Callback;
 
     private proxiedModuleCache = new Map<string, any>();
+    private proxyToTargetMap = new WeakMap<object, any>();
 
     constructor(private ctx: Context, private config: JavaScriptConfig, private sharedConfig: SharedConfig) {
         this.logger = ctx.logger(`[executor:${this.type}]`);
@@ -361,35 +362,58 @@ export class JavaScriptExecutor implements CodeExecutor {
      * @returns 一个可以被安全地复制到沙箱中的代理版本。
      */
     private createDeepProxy(target: any, ivmInstance: typeof ivm, owner: any, visited = new WeakMap()): any {
-        // 1. 基本类型和 null 直接返回，它们可以被 isolated-vm 安全地复制。
+        // 1. 基本类型和 null 直接返回
         if ((typeof target !== "object" && typeof target !== "function") || target === null) {
             return target;
         }
 
-        // 2. 检查是否已经处理过这个对象，如果是，则返回之前创建的代理以避免无限循环。
+        // 2. 检查循环引用
         if (visited.has(target)) {
             return visited.get(target);
         }
 
+        // [核心改动] 定义一个通用的参数解包函数
+        const unwrapArgs = (args: any[]): any[] => {
+            return args.map((arg) =>
+                typeof arg === "object" && arg !== null && this.proxyToTargetMap.has(arg)
+                    ? this.proxyToTargetMap.get(arg)
+                    : arg
+            );
+        };
+
         // 3. 处理函数
         if (typeof target === "function") {
-            // 创建一个宿主函数，当沙箱调用时，它会执行。
-            const proxyFunction = (...args: any[]) => {
-                // 在主进程中用正确的 `this` 上下文 (owner) 调用原始函数。
-                const result = target.apply(owner, args);
-                // 重要的递归步骤：函数返回的结果也必须被代理，才能安全地传回沙箱。
-                // 为结果的代理链创建一个新的 WeakMap，以避免与当前对象的代理链混淆。
-                return this.createDeepProxy(result, ivmInstance, result, new WeakMap());
-            };
+            // [新增] 检测是否是 Class/Constructor
+            // 启发式检测：一个函数，并且其原型上有 constructor 指向自身
+            const isConstructor = target.prototype && target.prototype.constructor === target;
 
-            // 将宿主函数包装成一个 isolated-vm 回调。
-            // { result: { copy: true } } 告诉 ivm 自动将返回结果深拷贝回沙箱。
-            //@ts-ignore
-            const callback = new ivmInstance.Callback(proxyFunction, { result: { copy: true } });
+            if (isConstructor) {
+                // 如果是构造函数，使用 constructor 选项来创建回调
+                const proxyConstructor = (...args: any[]) => {
+                    const unwrappedArgs = unwrapArgs(args);
+                    // 使用 `new` 关键字来实例化
+                    const instance = new target(...unwrappedArgs);
+                    // 同样需要代理返回的实例，以便在沙箱中可以访问其方法
+                    return this.createDeepProxy(instance, ivmInstance, instance, new WeakMap());
+                };
 
-            // 在返回前，将新创建的回调存入 visited 映射中。
-            visited.set(target, callback);
-            return callback;
+                // @ts-ignore
+                const callback = new ivmInstance.Callback(proxyConstructor, { constructor: { copy: true } });
+                visited.set(target, callback);
+                return callback;
+            } else {
+                // 如果是普通函数，保持原有逻辑
+                const proxyFunction = (...args: any[]) => {
+                    const unwrappedArgs = unwrapArgs(args);
+                    const result = target.apply(owner, unwrappedArgs);
+                    return this.createDeepProxy(result, ivmInstance, result, new WeakMap());
+                };
+
+                // @ts-ignore
+                const callback = new ivmInstance.Callback(proxyFunction, { result: { copy: true } });
+                visited.set(target, callback);
+                return callback;
+            }
         }
 
         // 4. 处理对象和数组
@@ -400,6 +424,8 @@ export class JavaScriptExecutor implements CodeExecutor {
         // 如果后续在递归中遇到对 `target` 的循环引用，第2步的检查会立即返回这个 `proxy` 对象，
         // 从而中断无限递归。此时 `proxy` 还是空的，但之后会被填充完整。
         visited.set(target, proxy);
+        // 存储 代理 -> 真实目标 的映射
+        this.proxyToTargetMap.set(proxy, target);
 
         // 5. 遍历原型链以获取所有属性（包括继承的属性，例如 fs.promises）。
         let current = target;
@@ -412,10 +438,24 @@ export class JavaScriptExecutor implements CodeExecutor {
                 if (["constructor", "prototype", "caller", "arguments"].includes(key)) continue;
 
                 try {
-                    // 递归地为每个属性创建代理。
-                    // 注意：属性的 `owner` 是原始的 `target` 对象。
-                    // 例如，代理 `fs.readFileSync` 时，当它被调用，`this` 应该是 `fs` 对象。
-                    proxy[key] = this.createDeepProxy(target[key], ivmInstance, target, visited);
+                    // [核心改动] 为对象的属性创建 getter/setter 代理，而不是直接赋值
+                    // 这能确保在访问属性时，我们能正确处理函数调用的 `this` 上下文
+                    Object.defineProperty(proxy, key, {
+                        enumerable: true,
+                        get: () => {
+                            // 代理属性的访问
+                            return this.createDeepProxy(target[key], ivmInstance, target, visited);
+                        },
+                        set: (value) => {
+                            // 代理属性的设置，同样需要解包
+                            const unwrappedValue =
+                                typeof value === "object" && value !== null && this.proxyToTargetMap.has(value)
+                                    ? this.proxyToTargetMap.get(value)
+                                    : value;
+                            target[key] = unwrappedValue;
+                            return true;
+                        },
+                    });
                 } catch (e) {
                     // 某些属性（如废弃的 getter）在访问时可能会抛出异常，安全地忽略它们。
                 }
