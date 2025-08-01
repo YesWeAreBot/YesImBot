@@ -6,7 +6,7 @@
 
 # Class: AssetService
 
-Defined in: [packages/core/src/services/assets/service.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L22)
+Defined in: [packages/core/src/services/assets/service.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L22)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/assets/service.ts:22](https://github.com
 
 > **new AssetService**(`ctx`, `config`): `AssetService`
 
-Defined in: [packages/core/src/services/assets/service.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L26)
+Defined in: [packages/core/src/services/assets/service.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L26)
 
 #### Parameters
 
@@ -132,7 +132,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: `string`[]
 
-Defined in: [packages/core/src/services/assets/service.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L23)
+Defined in: [packages/core/src/services/assets/service.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L23)
 
 ***
 
@@ -248,7 +248,7 @@ Defined in: node\_modules/@koishijs/core/lib/index.d.ts:768
 
 > **create**(`source`, `type`, `metadata`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L146)
+Defined in: [packages/core/src/services/assets/service.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L146)
 
 创建一个新资源.
 此方法会处理不同来源 (Buffer, data:, file:, http(s):) 的资源,
@@ -286,7 +286,7 @@ Defined in: [packages/core/src/services/assets/service.ts:146](https://github.co
 
 > **encode**(`source`): `Promise`\<`Element`[]\>
 
-Defined in: [packages/core/src/services/assets/service.ts:111](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L111)
+Defined in: [packages/core/src/services/assets/service.ts:111](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L111)
 
 将消息中带有内部 ID 的资源元素转换为平台可发送的 URL 格式.
 
@@ -336,7 +336,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getAssetDataWithContent**(`id`): `Promise`\<\{ `content`: `string`; `data`: [`AssetData`](../interfaces/AssetData.md); \}\>
 
-Defined in: [packages/core/src/services/assets/service.ts:288](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L288)
+Defined in: [packages/core/src/services/assets/service.ts:288](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L288)
 
 获取资源的 Base64 编码内容（兼容 ImageService 接口）
 
@@ -360,7 +360,7 @@ Defined in: [packages/core/src/services/assets/service.ts:288](https://github.co
 
 > **getImageLocalPath**(`id`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:311](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L311)
+Defined in: [packages/core/src/services/assets/service.ts:311](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L311)
 
 兼容 ImageService 的 getImageLocalPath 方法
 
@@ -384,7 +384,7 @@ Defined in: [packages/core/src/services/assets/service.ts:311](https://github.co
 
 > **getInfo**(`id`): `Promise`\<[`AssetInfo`](../interfaces/AssetInfo.md)\>
 
-Defined in: [packages/core/src/services/assets/service.ts:251](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L251)
+Defined in: [packages/core/src/services/assets/service.ts:251](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L251)
 
 根据 ID 获取资源的元信息.
 
@@ -408,7 +408,7 @@ Defined in: [packages/core/src/services/assets/service.ts:251](https://github.co
 
 > **getPublicUrl**(`id`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:267](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L267)
+Defined in: [packages/core/src/services/assets/service.ts:267](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L267)
 
 获取资源的公开访问链接.
 如果配置了 endpoint, 则返回基于 endpoint 的 URL.
@@ -434,7 +434,7 @@ Defined in: [packages/core/src/services/assets/service.ts:267](https://github.co
 
 > **read**(`id`): `Promise`\<`Buffer`\<`ArrayBufferLike`\>\>
 
-Defined in: [packages/core/src/services/assets/service.ts:237](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L237)
+Defined in: [packages/core/src/services/assets/service.ts:237](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L237)
 
 根据 ID 读取资源的二进制内容.
 
@@ -458,7 +458,7 @@ Defined in: [packages/core/src/services/assets/service.ts:237](https://github.co
 
 > `protected` **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L32)
+Defined in: [packages/core/src/services/assets/service.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L32)
 
 #### Returns
 
@@ -490,7 +490,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:10
 
 > **transform**(`source`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/service.ts#L61)
+Defined in: [packages/core/src/services/assets/service.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/service.ts#L61)
 
 #### Parameters
 

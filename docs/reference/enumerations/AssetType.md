@@ -6,7 +6,7 @@
 
 # Enumeration: AssetType
 
-Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/types.ts#L4)
+Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/types.ts#L4)
 
 资源类型枚举
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/Ye
 
 > **Audio**: `"audio"`
 
-Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/types.ts#L6)
+Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/types.ts#L6)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/Ye
 
 > **File**: `"file"`
 
-Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/types.ts#L8)
+Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/types.ts#L8)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/Ye
 
 > **Image**: `"image"`
 
-Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/types.ts#L5)
+Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/types.ts#L5)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/Ye
 
 > **Unknown**: `"unknown"`
 
-Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/types.ts#L9)
+Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/types.ts#L9)
 
 ***
 
@@ -48,4 +48,4 @@ Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/Ye
 
 > **Video**: `"video"`
 
-Defined in: [packages/core/src/services/assets/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/d2253e77ca577ebc8cece14ecd60820dcfb9833e/packages/core/src/services/assets/types.ts#L7)
+Defined in: [packages/core/src/services/assets/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/assets/types.ts#L7)
