@@ -93,6 +93,7 @@ class EventListenerManager {
 
     public start(): void {
         this.registerEventListeners();
+        migrateSystemEvents(this.ctx).catch((error) => this.logger.error("迁移系统事件失败", error.message));
     }
 
     public stop(): void {
@@ -132,11 +133,7 @@ class EventListenerManager {
                 await next();
 
                 if (!session["__commandHandled"]) {
-                    const segmentRecord = await this.service.getOpenSegment(
-                        session.platform,
-                        session.channelId,
-                        session.guildId
-                    );
+                    const segmentRecord = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
                     const stimulus: AgentStimulus<UserMessagePayload> = {
                         type: "user_message",
                         channelCid: session.cid,
@@ -328,11 +325,7 @@ class EventListenerManager {
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
         if (existingEvent) {
             const updatedPayload = { ...existingEvent.payload, result: session.content };
-            await this.ctx.database.set(
-                TableName.SystemEvents,
-                { id: pendingCmd.commandEventId },
-                { payload: updatedPayload }
-            );
+            await this.ctx.database.set(TableName.SystemEvents, { id: pendingCmd.commandEventId }, { payload: updatedPayload });
         }
     }
 
@@ -367,8 +360,7 @@ class EventListenerManager {
         if (!session.content || !session.messageId) return;
 
         this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
-        const sid =
-            segmentId || (await this.service.getOpenSegment(session.platform, session.channelId, session.guildId)).id;
+        const sid = segmentId || (await this.service.getOpenSegment(session.platform, session.channelId, session.guildId)).id;
 
         await this.service.recordMessage(sid, {
             id: session.messageId,
@@ -439,9 +431,7 @@ class HistoryCommandManager {
 
                 if (channelId) {
                     if (!platform) {
-                        const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, [
-                            "platform",
-                        ]);
+                        const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, ["platform"]);
                         const platforms = [...new Set(dialogues.map((d) => d.platform))];
 
                         if (platforms.length === 0) return `🟡🟡🟡 频道 "${channelId}" 未找到任何历史记录，已跳过`;
@@ -503,35 +493,45 @@ class HistoryCommandManager {
                 const actionPastTense = isDelete ? "永久删除" : "归档";
                 const results: string[] = [];
 
-                const performClear = async (query: Query<DialogueSegmentData>, description: string) => {
+                // 优化后的核心操作函数
+                const performClear = async (query: Query<Partial<DialogueSegmentData>>, description: string) => {
                     try {
-                        const segmentsToClear = await this.ctx.database.get(TableName.DialogueSegments, query, ["id"]);
-                        if (segmentsToClear.length === 0) {
-                            results.push(`🟡🟡🟡 ${description} - 未找到匹配的历史记录`);
+                        const segmentCount = await this.ctx.database
+                            .get(TableName.DialogueSegments, query, { fields: ["id"] })
+                            .then((res) => res.length);
+
+                        if (segmentCount === 0) {
+                            results.push(`🟡 ${description} - 未找到匹配的历史记录`);
                             return;
                         }
-                        const segmentIds = segmentsToClear.map((s) => s.id);
 
-                        await this.ctx.database.transact(async (db) => {
-                            if (isDelete) {
-                                await db.remove(TableName.Messages, { sid: { $in: segmentIds } });
-                                await db.remove(TableName.SystemEvents, { sid: { $in: segmentIds } });
-                                await db.remove(TableName.DialogueSegments, { id: { $in: segmentIds } });
+                        if (isDelete) {
+                            // 使用事务确保操作的原子性
+                            await this.ctx.database.transact(async (db) => {
+                                // 1. 直接删除关联的消息
+                                const { removed: messagesRemoved } = await db.remove(TableName.Messages, query as any);
+
+                                // 2. 直接删除关联的事件 (依赖于第一步的模型修改)
+                                const { removed: eventsRemoved } = await db.remove(TableName.SystemEvents, query as any);
+
+                                // 3. 最后删除对话片段本身
+                                const { removed: segmentsRemoved } = await db.remove(TableName.DialogueSegments, query);
+
                                 /* prettier-ignore */
-                                results.push(`✅ ${description} - ${segmentsToClear.length} 条对话片段已${actionPastTense}`);
-                            } else {
-                                const writeResult = await db.set(
-                                    TableName.DialogueSegments,
-                                    { ...(query as any), status: { $ne: "archived" } },
-                                    { status: "archived" }
-                                );
-                                /* prettier-ignore */
-                                results.push(`✅ ${description} - ${writeResult.modified || writeResult.matched || 0} 条对话片段已${actionPastTense}`);
-                            }
-                        });
+                                results.push(`✅ ${description} - 操作成功，共${actionPastTense}了 ${segmentsRemoved} 条对话片段、${messagesRemoved} 条消息和 ${eventsRemoved} 条事件。`);
+                            });
+                        } else {
+                            const writeResult = await this.ctx.database.set(
+                                TableName.DialogueSegments,
+                                { ...(query as any), status: { $ne: "archived" } },
+                                { status: "archived" }
+                            );
+                            /* prettier-ignore */
+                            results.push(`✅ ${description} - ${writeResult.modified || writeResult.matched || 0} 条对话片段已${actionPastTense}`);
+                        }
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
-                        results.push(`❌❌ ${description} - 操作失败，数据库更改已回滚`);
+                        results.push(`❌ ${description} - 操作失败，数据库更改已回滚`);
                     }
                 };
 
@@ -545,7 +545,7 @@ class HistoryCommandManager {
                             description = "所有私聊频道";
                             break;
                         case "guild":
-                            query = { channelId: { $not: /^private:/ } };
+                            query = { channelId: { $not: { $regex: /^private:/ } } };
                             description = "所有群聊频道";
                             break;
                         case "all":
@@ -567,7 +567,7 @@ class HistoryCommandManager {
                         .filter(Boolean)) {
                         const parts = target.split(":");
                         if (parts.length < 2) {
-                            results.push(`❌❌ 格式错误的目标: "${target}"`);
+                            results.push(`❌ 格式错误的目标: "${target}"`);
                             continue;
                         }
                         targetsToProcess.push({ platform: parts[0], channelId: parts.slice(1).join(":") });
@@ -582,20 +582,16 @@ class HistoryCommandManager {
                         if (options.platform) {
                             targetsToProcess.push({ platform: options.platform, channelId });
                         } else {
-                            const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, [
-                                "platform",
-                            ]);
+                            const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, ["platform"]);
                             const platforms = [...new Set(dialogues.map((d) => d.platform))];
-                            if (platforms.length === 0) results.push(`🟡🟡🟡 频道 "${channelId}" 未找到`);
-                            else if (platforms.length === 1)
-                                targetsToProcess.push({ platform: platforms[0], channelId });
+                            if (platforms.length === 0) results.push(`🟡 频道 "${channelId}" 未找到`);
+                            else if (platforms.length === 1) targetsToProcess.push({ platform: platforms[0], channelId });
                             else ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}`);
                         }
                     }
                 }
 
-                if (ambiguousChannels.length > 0)
-                    return `操作已中止:\n${ambiguousChannels.join("\n")}\n请使用 -p 或 -t 指定平台`;
+                if (ambiguousChannels.length > 0) return `操作已中止:\n${ambiguousChannels.join("\n")}\n请使用 -p 或 -t 指定平台`;
 
                 if (targetsToProcess.length === 0 && !options.target && !options.channel) {
                     if (session.platform && session.channelId)
@@ -622,14 +618,7 @@ class HistoryCommandManager {
 // #region WorldStateService - 核心协调器
 // =================================================================================
 export class WorldStateService extends Service<HistoryConfig> {
-    static readonly inject = [
-        Services.Model,
-        Services.Asset,
-        Services.Logger,
-        Services.Prompt,
-        Services.Memory,
-        "database",
-    ];
+    static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
 
     public summarizationManager: SummarizationManager;
     public contextBuilder: ContextBuilder;
@@ -744,9 +733,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // 委托给 segmentManager
         await this.segmentManager.closeSegmentByAgent(sid, responses);
 
-        const segmentRecord = await this.ctx.database
-            .get(TableName.DialogueSegments, { id: sid })
-            .then((res) => res[0]);
+        const segmentRecord = await this.ctx.database.get(TableName.DialogueSegments, { id: sid }).then((res) => res[0]);
         if (segmentRecord) {
             await this.applyFoldingPolicy(segmentRecord.platform, segmentRecord.channelId);
         }
@@ -924,12 +911,27 @@ export class WorldStateService extends Service<HistoryConfig> {
                 content: "text",
                 quoteId: "string(255)",
             },
-            { foreign: { sid: [TableName.DialogueSegments, "id"] } }
+            {
+                foreign: { sid: [TableName.DialogueSegments, "id"] },
+                indexes: [["platform", "channelId"]],
+            }
         );
         this.ctx.model.extend(
             TableName.SystemEvents,
-            { id: "string(64)", sid: "string(64)", type: "string(64)", timestamp: "timestamp", payload: "json" },
-            { primary: "id", foreign: { sid: [TableName.DialogueSegments, "id"] } }
+            {
+                id: "string(64)",
+                sid: "string(64)",
+                platform: "string(255)",
+                channelId: "string(255)",
+                type: "string(64)",
+                timestamp: "timestamp",
+                payload: "json",
+            },
+            {
+                primary: "id",
+                foreign: { sid: [TableName.DialogueSegments, "id"] },
+                indexes: [["platform", "channelId"], ["sid"]],
+            }
         );
     }
 
@@ -945,11 +947,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 .slice(0, closedSegments.length - this.config.fullContextSegmentCount);
             const idsToFold = segmentsToFold.map((s) => s.id);
             if (idsToFold.length > 0) {
-                await this.ctx.database.set(
-                    TableName.DialogueSegments,
-                    { id: { $in: idsToFold } },
-                    { status: "folded" }
-                );
+                await this.ctx.database.set(TableName.DialogueSegments, { id: { $in: idsToFold } }, { status: "folded" });
                 this._logger.debug(`折叠了 ${idsToFold.length} 个旧片段 | 频道: ${platform}:${channelId}`);
             }
         }
@@ -1012,3 +1010,22 @@ export class WorldStateService extends Service<HistoryConfig> {
     // #endregion
 }
 // #endregion
+
+async function migrateSystemEvents(ctx: Context) {
+    const eventsToUpdate = await ctx.database.get(TableName.SystemEvents, { platform: { $exists: false } });
+    for (const event of eventsToUpdate) {
+        const segment = await ctx.database
+            .get(TableName.DialogueSegments, { id: event.sid }, ["platform", "channelId"])
+            .then((res) => res.shift());
+        if (segment) {
+            await ctx.database.set(
+                TableName.SystemEvents,
+                { id: event.id },
+                {
+                    platform: segment.platform,
+                    channelId: segment.channelId,
+                }
+            );
+        }
+    }
+}

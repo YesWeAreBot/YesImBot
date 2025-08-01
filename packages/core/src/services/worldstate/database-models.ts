@@ -62,6 +62,8 @@ export interface MessageData {
 export interface SystemEventData {
     id: string;
     sid: string;
+    platform: string;
+    channelId: string;
     type: EventName;
     timestamp: Date;
     payload: object;
@@ -76,7 +78,7 @@ export interface AgentResponseData {
     thoughts: AgentResponse["thoughts"];
     actions: Action[];
     observations: ActionResult[];
-    request_heartbeat: boolean; // 新增字段
+    request_heartbeat: boolean;
 }
 
 declare module "koishi" {
