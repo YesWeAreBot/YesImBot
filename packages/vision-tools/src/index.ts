@@ -612,6 +612,7 @@ export default class VisionTools {
 
         const assetService = this.ctx.get(Services.Asset);
         const imageBuffer = await assetService.read(image_id);
+        //@ts-ignore
         const file = new File([imageBuffer], `image.${image.data.mime.split("/")[1] || "jpeg"}`, {
             type: image.data.mime,
         });
