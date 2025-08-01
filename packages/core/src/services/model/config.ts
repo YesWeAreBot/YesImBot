@@ -121,12 +121,12 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     }),
 
     timeoutPolicy: Schema.object({
-        firstTokenTimeout: Schema.number().description("首次响应超时 (秒)。用于快速识别网络或冷启动问题。建议 15。"),
-        totalTimeout: Schema.number().default(90).description("总请求超时 (秒)。"),
+        firstTokenTimeout: Schema.number().default(15).description("首字响应超时 (秒)"),
+        totalTimeout: Schema.number().default(90).description("总请求超时 (秒)"),
     }).description("超时策略"),
 
     retryPolicy: Schema.object({
-        maxRetries: Schema.number().default(1).description("在切换到下一个模型前，在当前模型上的最大重试次数。"),
+        maxRetries: Schema.number().default(1).description("在切换到下一个模型前，在当前模型上的最大重试次数"),
         onContentFailure: Schema.union([
             Schema.const(ContentFailureAction.FailoverToNext).description("立即切换"),
             Schema.const(ContentFailureAction.AugmentAndRetry).description("修正Prompt并重试"),
@@ -136,8 +136,8 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     }).description("重试策略"),
 
     circuitBreakerPolicy: Schema.object({
-        failureThreshold: Schema.number().default(3).description("连续失败多少次后开启断路器。"),
-        cooldownSeconds: Schema.number().default(300).description("断路器开启后，模型被禁用的时长(秒)。"),
+        failureThreshold: Schema.number().default(3).description("连续失败多少次后开启断路器"),
+        cooldownSeconds: Schema.number().default(300).description("断路器开启后，模型被禁用的时长(秒)"),
     }).description("断路器策略"),
 })
     .collapse()
@@ -194,10 +194,7 @@ export interface ModelServiceConfig {
 }
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
-    providers: Schema.array(ProviderConfigSchema)
-        .required()
-        .role("table")
-        .description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
+    providers: Schema.array(ProviderConfigSchema).required().role("table").description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
     modelGroups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组名称"),
@@ -211,19 +208,14 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
                 .required()
                 .role("table")
                 .description("此模型组包含的模型"),
-        })
+        }).collapse()
     )
         .role("table")
-        .collapse()
-        .description(
-            "**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值。"
-        ),
+        .description("**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值"),
     task: Schema.object({
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型**组**"),
-        [TaskType.Embedding]:
-            Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型**组**"),
-        [TaskType.Summarization]:
-            Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型**组**"),
+        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型**组**"),
+        [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型**组**"),
         [TaskType.Memory]: Schema.dynamic("modelService.availableGroups").description("记忆管理时使用的模型**组**"),
     }).description("为不同核心任务分配一个模型组"),
 });

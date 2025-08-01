@@ -66,7 +66,6 @@ export class MemoryService extends Service<MemoryConfig> {
 
     private promptService: PromptService;
 
-
     constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, Services.Memory, true);
         this.config = config;
@@ -74,8 +73,13 @@ export class MemoryService extends Service<MemoryConfig> {
         this.promptService = ctx[Services.Prompt];
 
         // 初始化模型
-        this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Memory);
-        this.embeddingModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
+        try {
+            this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Memory);
+            this.embeddingModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
+        } catch {
+            this.chatModel = null;
+            this.embeddingModel = null;
+        }
         if (!this.chatModel || !this.embeddingModel) {
             this.logger.warn("聊天模型或嵌入模型不可用，记忆服务功能将受限");
         }
@@ -302,9 +306,7 @@ export class MemoryService extends Service<MemoryConfig> {
 
         if (!lockResult.success) {
             throw new AppError(lockResult.error || "操作失败", {
-                code: lockResult.lockAcquired
-                    ? ErrorCodes.OPERATION.RETRY_EXHAUSTED
-                    : ErrorCodes.OPERATION.LOCK_TIMEOUT,
+                code: lockResult.lockAcquired ? ErrorCodes.OPERATION.RETRY_EXHAUSTED : ErrorCodes.OPERATION.LOCK_TIMEOUT,
                 context: { lockKey, lockAcquired: lockResult.lockAcquired },
             });
         }
@@ -688,9 +690,7 @@ export class MemoryService extends Service<MemoryConfig> {
                 relatedUserIds: { $some: [userId] },
                 isDeleted: { $ne: !includeDeleted },
             });
-            const sortedInsights = insights
-                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-                .slice(0, limit);
+            const sortedInsights = insights.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, limit);
             return { success: true, data: sortedInsights };
         } catch (error) {
             this.logger.error(`获取用户洞察失败: ${error.message}`, error);
@@ -720,10 +720,7 @@ export class MemoryService extends Service<MemoryConfig> {
         }
     }
 
-    async getUserProfile(
-        userId: string,
-        contextId: string | "global"
-    ): Promise<MemoryOperationResult<UserProfile | null>> {
+    async getUserProfile(userId: string, contextId: string | "global"): Promise<MemoryOperationResult<UserProfile | null>> {
         try {
             const [profile] = await this.ctx.database.get(TableName.UserProfiles, {
                 userId,
@@ -845,11 +842,7 @@ class MemoryIngestor {
             relatedPersons.delete(summaryChunk.self.id);
 
             this.logger.info(`正在更新 ${relatedPersons.size} 个相关用户的画像`);
-            await Promise.all(
-                Array.from(relatedPersons).map((userId) =>
-                    this.triggerProfileConsolidation(userId, summaryChunk.contextId)
-                )
-            );
+            await Promise.all(Array.from(relatedPersons).map((userId) => this.triggerProfileConsolidation(userId, summaryChunk.contextId)));
         } catch (error) {
             this.logger.error("处理 summary chunk 时出错:", error);
         }
@@ -1310,12 +1303,7 @@ class ProfileConsolidator {
 }
 
 class MemoryMaintenance {
-    constructor(
-        private ctx: Context,
-        private config: MemoryConfig,
-        private logger: Logger,
-        private embeddingModel: IEmbedModel
-    ) {}
+    constructor(private ctx: Context, private config: MemoryConfig, private logger: Logger, private embeddingModel: IEmbedModel) {}
 
     /**
      * 执行定期维护任务

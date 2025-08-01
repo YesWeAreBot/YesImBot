@@ -11,6 +11,7 @@ import {
     CircuitBreakerPolicy,
     RetryPolicy,
     TimeoutPolicy,
+    ModelSwitchingStrategy,
 } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
@@ -100,6 +101,7 @@ export class ModelService extends Service<ModelServiceConfig> {
         try {
             this.validateConfig();
             this.initializeProviders();
+            this.registerSchemas();
         } catch (error) {
             this._logger.error(`初始化失败，请检查配置: ${error.message}`);
             // 配置错误是致命的，应该阻止服务启动
@@ -169,6 +171,7 @@ export class ModelService extends Service<ModelServiceConfig> {
      * 4. 为核心任务分配的模型组存在
      */
     private validateConfig(): void {
+        let modified = false;
         // this._logger.debug("开始验证服务配置");
         if (this.config.providers.length === 0) {
             throw new Error("配置错误: 至少需要配置一个提供商。");
@@ -176,29 +179,47 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         for (const providerConfig of this.config.providers) {
             if (providerConfig.models.length === 0) {
-                throw new Error(`配置错误: 提供商 ${providerConfig.name} 至少需要配置一个模型。`);
+                throw new Error(`配置错误: 提供商 ${providerConfig.name} 至少需要配置一个模型`);
             }
+        }
+
+        if (this.config.modelGroups.length === 0) {
+            const defaultGroup = {
+                name: "default",
+                models: this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat(),
+                strategy: ModelSwitchingStrategy.Failover,
+            };
+            this.config.modelGroups.push(defaultGroup);
+            modified = true;
         }
 
         for (const group of this.config.modelGroups) {
             if (group.models.length === 0) {
-                throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型。`);
+                throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型`);
             }
         }
+
+        const defaultGroup = this.config.modelGroups.find((g) => g.models.length > 0);
 
         for (const task in this.config.task) {
             const groupName = this.config.task[task];
             if (!this.config.modelGroups.some((group) => group.name === groupName)) {
-                throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在。`);
+                this.config.task[task] = defaultGroup.name;
+                //throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在`);
+                this._logger.warn(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在，已自动更正为默认组 ${defaultGroup.name}`);
+                modified = true;
             }
         }
-        this._logger.debug("配置验证通过");
+        if (modified) {
+            this._logger.warn("配置已自动更正，请检查并保存更改");
+            this.ctx.scope.update(this.config);
+        } else {
+            this._logger.debug("配置验证通过");
+        }
     }
 
-    protected start(): Awaitable<void> {
-        const models = this.config.providers
-            .map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId })))
-            .flat();
+    private registerSchemas() {
+        const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
 
         const selectableModels = models
             .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
@@ -229,6 +250,8 @@ export class ModelService extends Service<ModelServiceConfig> {
             ]).default("default")
         );
     }
+
+    protected start(): Awaitable<void> {}
 
     public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
         const groupName = this.resolveGroupName(name);
@@ -317,9 +340,7 @@ class RequestExecutor {
         const timeoutPolicy = model.config.timeoutPolicy ?? { totalTimeout: 90 };
 
         for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
-            const attemptLogger = this.logger.extend(
-                `[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`
-            );
+            const attemptLogger = this.logger.extend(`[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
                 attemptLogger.warn(`超时 (${timeoutPolicy.totalTimeout}s)`);
@@ -337,17 +358,13 @@ class RequestExecutor {
 
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorCodes.LLM.OUTPUT_PARSING_FAILED) {
-                    if (
-                        retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry &&
-                        attempt < retryPolicy.maxRetries
-                    ) {
+                    if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
                         attemptLogger.warn("内容无效，修正 Prompt 并重试...");
                         options.messages = [
                             ...originalMessages,
                             {
                                 role: "user",
-                                content:
-                                    "Note: Your previous response was invalid. Please strictly adhere to the required format.",
+                                content: "Note: Your previous response was invalid. Please strictly adhere to the required format.",
                             },
                         ];
                         continue; // 进入下一次重试循环
@@ -400,10 +417,7 @@ export class ModelSwitcher<T extends BaseModel> {
         // 初始化断路器
         this._models.forEach((model) => {
             if (model.config.circuitBreakerPolicy) {
-                this.circuitBreakers.set(
-                    model.id,
-                    new CircuitBreaker(model.config.circuitBreakerPolicy, this._logger, model.id)
-                );
+                this.circuitBreakers.set(model.id, new CircuitBreaker(model.config.circuitBreakerPolicy, this._logger, model.id));
             }
         });
 
@@ -462,17 +476,12 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         }
 
         if (candidateModels.length === 0) {
-            throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求。`, {
+            throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求`, {
                 code: ErrorCodes.RESOURCE.NOT_FOUND,
             });
         }
 
-        const executor = new RequestExecutor(
-            this.ctx,
-            this.groupConfig.name,
-            candidateModels,
-            this.getCircuitBreakers()
-        );
+        const executor = new RequestExecutor(this.ctx, this.groupConfig.name, candidateModels, this.getCircuitBreakers());
         return executor.execute(options);
     }
 }

@@ -150,7 +150,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         });
 
         this.willing.startDecayCycle();
-        this.logger.info("服务已启动，并开始监听刺激。");
+        //this.logger.info("服务已启动，并开始监听刺激。");
     }
 
     protected stop(): void {
