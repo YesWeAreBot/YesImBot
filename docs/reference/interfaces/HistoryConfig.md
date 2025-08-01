@@ -6,7 +6,7 @@
 
 # Interface: HistoryConfig
 
-Defined in: [packages/core/src/services/worldstate/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L13)
+Defined in: [packages/core/src/services/worldstate/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L13)
 
 对话历史管理配置
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:13](https://github.
 
 > `readonly` `optional` **allowedChannels**: `Set`\<`string`\>
 
-Defined in: [packages/core/src/services/worldstate/config.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L49)
+Defined in: [packages/core/src/services/worldstate/config.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L49)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:49](https://github.
 
 > **cleanupIntervalSec**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L47)
+Defined in: [packages/core/src/services/worldstate/config.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L47)
 
 后台清理任务的执行频率（秒）
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:47](https://github.
 
 > **dataRetentionDays**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L45)
+Defined in: [packages/core/src/services/worldstate/config.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L45)
 
 历史数据在被永久删除前的最大保留天数
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:45](https://github.
 
 > **fullContextSegmentCount**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L28)
+Defined in: [packages/core/src/services/worldstate/config.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L28)
 
 在上下文中保留的最新"完整"对话片段数量
 
@@ -54,7 +54,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:28](https://github.
 
 > **inactivityTimeoutSec**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L31)
+Defined in: [packages/core/src/services/worldstate/config.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L31)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:31](https://github.
 
 > **maxMessages**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L30)
+Defined in: [packages/core/src/services/worldstate/config.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L30)
 
 上下文中最多包含的用户消息数
 
@@ -72,7 +72,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:30](https://github.
 
 > **recall**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L34)
+Defined in: [packages/core/src/services/worldstate/config.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L34)
 
 #### guild
 
@@ -98,7 +98,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:34](https://github.
 
 > **summarization**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L15)
+Defined in: [packages/core/src/services/worldstate/config.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L15)
 
 #### enabled
 
@@ -130,4 +130,4 @@ Defined in: [packages/core/src/services/worldstate/config.ts:15](https://github.
 
 > `readonly` `optional` **system**: `SystemConfig`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/config.ts#L50)
+Defined in: [packages/core/src/services/worldstate/config.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/config.ts#L50)

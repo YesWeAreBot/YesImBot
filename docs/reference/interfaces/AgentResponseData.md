@@ -6,7 +6,7 @@
 
 # Interface: AgentResponseData
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:73](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L73)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:75](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L75)
 
 `worldstate.agent_responses` 表的数据结构
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:73](https:
 
 > **actions**: [`Action`](Action.md)[]
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L77)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L79)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:77](https:
 
 > **id**: `number`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:74](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L74)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:76](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L76)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:74](https:
 
 > **observations**: [`ActionResult`](ActionResult.md)[]
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:78](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L78)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:80](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L80)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:78](https:
 
 > **request\_heartbeat**: `boolean`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L79)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:81](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L81)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:79](https:
 
 > **thoughts**: `object`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:76](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L76)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:78](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L78)
 
 #### analyze\_infer
 
@@ -68,4 +68,4 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:76](https:
 
 > **turnId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:75](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/database-models.ts#L75)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/worldstate/database-models.ts#L77)

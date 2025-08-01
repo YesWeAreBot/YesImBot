@@ -6,7 +6,7 @@
 
 # Interface: ParserOptions
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/utils/json-parser.ts#L4)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/shared/utils/json-parser.ts#L4)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:4](https://github.com
 
 > `optional` **debug**: `boolean`
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/utils/json-parser.ts#L5)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/shared/utils/json-parser.ts#L5)
 
 ***
 
@@ -22,4 +22,4 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:5](https://github.com
 
 > `optional` **logger**: `__module`
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/utils/json-parser.ts#L6)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/shared/utils/json-parser.ts#L6)

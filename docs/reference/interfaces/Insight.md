@@ -6,7 +6,7 @@
 
 # Interface: Insight
 
-Defined in: [packages/core/src/services/memory/types.ts:102](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L102)
+Defined in: [packages/core/src/services/memory/types.ts:102](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L102)
 
 记忆洞察 (Insight)
 记录从对话中提炼出的、关于群体动态或个人深层模式的更高层次判断
@@ -21,7 +21,7 @@ Defined in: [packages/core/src/services/memory/types.ts:102](https://github.com/
 
 > **accessCount**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:121](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L121)
+Defined in: [packages/core/src/services/memory/types.ts:121](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L121)
 
 ***
 
@@ -29,7 +29,7 @@ Defined in: [packages/core/src/services/memory/types.ts:121](https://github.com/
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:106](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L106)
+Defined in: [packages/core/src/services/memory/types.ts:106](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L106)
 
 ***
 
@@ -37,7 +37,7 @@ Defined in: [packages/core/src/services/memory/types.ts:106](https://github.com/
 
 > **contextId**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:114](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L114)
+Defined in: [packages/core/src/services/memory/types.ts:114](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L114)
 
 ***
 
@@ -45,7 +45,7 @@ Defined in: [packages/core/src/services/memory/types.ts:114](https://github.com/
 
 > **createdAt**: `Date`
 
-Defined in: [packages/core/src/services/memory/types.ts:118](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L118)
+Defined in: [packages/core/src/services/memory/types.ts:118](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L118)
 
 ***
 
@@ -53,7 +53,7 @@ Defined in: [packages/core/src/services/memory/types.ts:118](https://github.com/
 
 > **embedding**: `number`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:107](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L107)
+Defined in: [packages/core/src/services/memory/types.ts:107](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L107)
 
 #### Overrides
 
@@ -65,7 +65,7 @@ Defined in: [packages/core/src/services/memory/types.ts:107](https://github.com/
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:103](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L103)
+Defined in: [packages/core/src/services/memory/types.ts:103](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L103)
 
 ***
 
@@ -73,7 +73,7 @@ Defined in: [packages/core/src/services/memory/types.ts:103](https://github.com/
 
 > `optional` **isDeleted**: `boolean`
 
-Defined in: [packages/core/src/services/memory/types.ts:125](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L125)
+Defined in: [packages/core/src/services/memory/types.ts:125](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L125)
 
 是否已删除（软删除）
 
@@ -87,7 +87,7 @@ Defined in: [packages/core/src/services/memory/types.ts:125](https://github.com/
 
 > **lastAccessedAt**: `Date`
 
-Defined in: [packages/core/src/services/memory/types.ts:120](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L120)
+Defined in: [packages/core/src/services/memory/types.ts:120](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L120)
 
 ***
 
@@ -95,7 +95,7 @@ Defined in: [packages/core/src/services/memory/types.ts:120](https://github.com/
 
 > **lifespan**: [`LifespanType`](../enumerations/LifespanType.md)
 
-Defined in: [packages/core/src/services/memory/types.ts:117](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L117)
+Defined in: [packages/core/src/services/memory/types.ts:117](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L117)
 
 ***
 
@@ -103,7 +103,7 @@ Defined in: [packages/core/src/services/memory/types.ts:117](https://github.com/
 
 > **relatedUserIds**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:111](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L111)
+Defined in: [packages/core/src/services/memory/types.ts:111](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L111)
 
 ***
 
@@ -111,7 +111,7 @@ Defined in: [packages/core/src/services/memory/types.ts:111](https://github.com/
 
 > **salience**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:122](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L122)
+Defined in: [packages/core/src/services/memory/types.ts:122](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L122)
 
 #### Overrides
 
@@ -123,7 +123,7 @@ Defined in: [packages/core/src/services/memory/types.ts:122](https://github.com/
 
 > **sourceMessageIds**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L112)
+Defined in: [packages/core/src/services/memory/types.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L112)
 
 ***
 
@@ -131,7 +131,7 @@ Defined in: [packages/core/src/services/memory/types.ts:112](https://github.com/
 
 > **type**: [`InsightType`](../enumerations/InsightType.md)
 
-Defined in: [packages/core/src/services/memory/types.ts:108](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L108)
+Defined in: [packages/core/src/services/memory/types.ts:108](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L108)
 
 ***
 
@@ -139,4 +139,4 @@ Defined in: [packages/core/src/services/memory/types.ts:108](https://github.com/
 
 > `optional` **updatedAt**: `Date`
 
-Defined in: [packages/core/src/services/memory/types.ts:119](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/types.ts#L119)
+Defined in: [packages/core/src/services/memory/types.ts:119](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/types.ts#L119)

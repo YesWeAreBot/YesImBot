@@ -8,7 +8,7 @@
 
 > `const` **ErrorCodes**: `object`
 
-Defined in: [packages/core/src/shared/errors/index.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/errors/index.ts#L161)
+Defined in: [packages/core/src/shared/errors/index.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/shared/errors/index.ts#L161)
 
 应用程序的统一错误码
 使用常量对象而不是枚举，以获得更好的灵活性和 Tree-shaking 效果

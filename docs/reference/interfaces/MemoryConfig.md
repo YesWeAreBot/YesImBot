@@ -6,7 +6,7 @@
 
 # Interface: MemoryConfig
 
-Defined in: [packages/core/src/services/memory/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/config.ts#L5)
+Defined in: [packages/core/src/services/memory/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/config.ts#L5)
 
 记忆服务配置
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/config.ts:5](https://github.com/Y
 
 > **coreMemoryPath**: `string`
 
-Defined in: [packages/core/src/services/memory/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/config.ts#L6)
+Defined in: [packages/core/src/services/memory/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/config.ts#L6)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/memory/config.ts:6](https://github.com/Y
 
 > **errorHandling**: `object`
 
-Defined in: [packages/core/src/services/memory/config.ts:36](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/config.ts#L36)
+Defined in: [packages/core/src/services/memory/config.ts:36](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/config.ts#L36)
 
 错误处理和重试设置
 
@@ -64,7 +64,7 @@ Defined in: [packages/core/src/services/memory/config.ts:36](https://github.com/
 
 > **forgetting**: `object`
 
-Defined in: [packages/core/src/services/memory/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/config.ts#L8)
+Defined in: [packages/core/src/services/memory/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/config.ts#L8)
 
 记忆衰减设置
 
@@ -98,7 +98,7 @@ Defined in: [packages/core/src/services/memory/config.ts:8](https://github.com/Y
 
 > **profileGeneration**: `object`
 
-Defined in: [packages/core/src/services/memory/config.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/memory/config.ts#L19)
+Defined in: [packages/core/src/services/memory/config.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/61974070b8a0960f92d55b24b168032ee3547a7a/packages/core/src/services/memory/config.ts#L19)
 
 用户画像生成设置
 
