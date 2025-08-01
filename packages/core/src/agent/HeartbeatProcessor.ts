@@ -144,7 +144,12 @@ export class HeartbeatProcessor {
                 validator: (text) => {
                     const parser = new JsonParser<any>();
                     const result = parser.parse(text);
-                    if (!result.error && result.data.thoughts && Array.isArray(result.data.actions)) {
+                    if (
+                        !result.error &&
+                        result.data.thoughts &&
+                        Array.isArray(result.data.actions) &&
+                        typeof result.data.request_heartbeat === "boolean"
+                    ) {
                         return { valid: true, earlyExit: true, parsedData: result.data };
                     }
                     return { valid: false, earlyExit: false };
@@ -157,11 +162,7 @@ export class HeartbeatProcessor {
         const prompt_tokens =
             llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
-        this.logger.info(
-            `💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 速率: ${Math.round(
-                (prompt_tokens + completion_tokens) / (responseTime / 1000)
-            )} t/s`
-        );
+        this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
 
         // 6. 解析和验证响应
         this.logger.debug("步骤 6/7: 解析并验证LLM响应...");
@@ -203,7 +204,7 @@ export class HeartbeatProcessor {
 
         let agentResponseData: any;
 
-        // B. 检查是否由 validator 提前解析了数据 (优化项)
+        // B. 检查是否由 validator 提前解析了数据
 
         // C. 正常解析JSON
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
@@ -239,7 +240,7 @@ export class HeartbeatProcessor {
 
         // E. (可选) 对 request_heartbeat 进行默认值处理
         if (typeof agentResponseData.request_heartbeat !== "boolean") {
-            this.logger.warn(`'request_heartbeat' 字段缺失或类型错误，将默认为 false。`);
+            //this.logger.warn(`'request_heartbeat' 字段缺失或类型错误，将默认为 false。`);
             agentResponseData.request_heartbeat = false;
         }
 

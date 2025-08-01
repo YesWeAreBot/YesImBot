@@ -134,7 +134,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             }
 
             if (!decision) {
-                this.logger.debug(`[${channelCid}] 意愿计算决策为：跳过`);
+                //this.logger.debug(`[${channelCid}] 意愿计算决策为：跳过`);
                 return;
             }
 
