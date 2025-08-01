@@ -7,64 +7,76 @@ import type { PyProxy } from "pyodide/ffi";
 import { SharedConfig } from "../../config";
 import { CodeExecutionResult, CodeExecutor, ExecutionArtifact, ExecutionError } from "../base";
 
-// --- 新增：用于管理引擎实例的池 ---
 class PyodideEnginePool {
     private readonly logger: Logger;
     private pool: PyodideInterface[] = [];
     private waiting: ((engine: PyodideInterface) => void)[] = [];
     private readonly maxSize: number;
-    private readonly pyodideLoader: Promise<PyodideInterface>;
     private isInitialized = false;
 
     constructor(private ctx: Context, private config: PythonConfig, private sharedConfig: SharedConfig) {
-        this.logger = ctx.logger(`[executor:python:pool]`);
+        // 为日志源添加特定前缀，方便区分
+        this.logger = ctx.logger(`[执行器:Python:引擎池]`);
         this.maxSize = config.poolSize;
-        this.pyodideLoader = this.createEngine();
     }
 
     private async createEngine(): Promise<PyodideInterface> {
-        this.logger.info(`Creating new Pyodide engine instance...`);
+        this.logger.info(`[创建实例] 开始创建新的 Pyodide 引擎实例...`);
 
         const pyodide = await loadPyodide({
-            packageCacheDir: path.join(this.sharedConfig.dependenciesPath, "pyodide"),
+            // 确保依赖路径正确
+            packageCacheDir: path.join(this.ctx.baseDir, this.sharedConfig.dependenciesPath, "pyodide"),
         });
+        this.logger.info(`[创建实例] Pyodide 核心加载完成`);
 
         if (this.config.packages && this.config.packages.length > 0) {
-            this.logger.info(`Loading base packages: ${this.config.packages.join(", ")}`);
-            await pyodide.loadPackage(this.config.packages);
+            const packageList = this.config.packages.join(", ");
+            this.logger.info(`[创建实例] 准备加载预设包: ${packageList}`);
+            try {
+                await pyodide.loadPackage(this.config.packages);
+                this.logger.info(`[创建实例] 成功加载预设包: ${packageList}`);
+            } catch (error) {
+                this.logger.error(`[创建实例] 加载预设包失败: ${packageList}。错误: ${error.message}`);
+                // 抛出更具体的错误，方便上层捕获
+                throw new Error(`Pyodide 引擎在加载包时创建失败: ${error.message}`);
+            }
         }
-        this.logger.info("New Pyodide engine instance created and configured.");
+        this.logger.info("[创建实例] 新的 Pyodide 引擎实例已准备就绪");
         return pyodide;
     }
 
     public async initialize(): Promise<void> {
         if (this.isInitialized) return;
-        this.logger.info(`Initializing engine pool with size ${this.maxSize}...`);
+        this.logger.info(`[初始化] 开始初始化引擎池，目标大小: ${this.maxSize}`);
         try {
-            const initialEngine = await this.pyodideLoader;
-            this.pool.push(initialEngine);
-            // 并行创建其他实例
-            const promises = Array.from({ length: this.maxSize - 1 }, () => this.createEngine());
-            const otherEngines = await Promise.all(promises);
-            this.pool.push(...otherEngines);
+            // 并行创建所有引擎实例，以加快启动速度
+            const enginePromises = Array.from({ length: this.maxSize }, () => this.createEngine());
+            const engines = await Promise.all(enginePromises);
+
+            this.pool.push(...engines);
             this.isInitialized = true;
-            this.logger.info(`Engine pool initialized successfully with ${this.pool.length} instances.`);
+            this.logger.info(`[初始化] 引擎池初始化成功，已创建 ${this.pool.length} 个可用实例`);
         } catch (error) {
-            this.logger.error("Failed to initialize Pyodide engine pool:", error);
-            this.isInitialized = false;
+            this.logger.error(`[初始化] Pyodide 引擎池初始化失败！`, error);
+            this.isInitialized = false; // 确保状态正确
+            // 将初始化错误向上抛出，让启动逻辑知道失败了
             throw error;
         }
     }
 
     public async acquire(): Promise<PyodideInterface> {
         if (!this.isInitialized) {
-            throw new Error("Pyodide pool is not initialized or failed to initialize.");
+            this.logger.error("[获取引擎] 尝试在未初始化的引擎池中获取引擎");
+            throw new Error("Pyodide 引擎池未初始化或初始化失败");
         }
+
         if (this.pool.length > 0) {
-            this.logger.debug(`Acquiring engine from pool. Available: ${this.pool.length - 1}`);
-            return this.pool.pop()!;
+            const engine = this.pool.pop()!;
+            this.logger.debug(`[获取引擎] 从池中获取实例。池中剩余: ${this.pool.length}`);
+            return engine;
         }
-        this.logger.debug("No available engine in pool, waiting...");
+
+        this.logger.debug("[获取引擎] 池中无可用实例，进入等待队列...");
         return new Promise<PyodideInterface>((resolve) => {
             this.waiting.push(resolve);
         });
@@ -72,12 +84,12 @@ class PyodideEnginePool {
 
     public release(engine: PyodideInterface): void {
         if (this.waiting.length > 0) {
-            this.logger.debug("Releasing engine to a waiting consumer.");
-            const next = this.waiting.shift()!;
-            next(engine);
+            const nextConsumer = this.waiting.shift()!;
+            this.logger.debug("[释放引擎] 引擎被直接传递给等待中的任务");
+            nextConsumer(engine);
         } else {
-            this.logger.debug(`Releasing engine back to pool. Available: ${this.pool.length + 1}`);
             this.pool.push(engine);
+            this.logger.debug(`[释放引擎] 引擎已返回池中。池中可用: ${this.pool.length}`);
         }
     }
 }
@@ -118,34 +130,35 @@ export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
     ]),
 ]) as Schema<PythonConfig>;
 
-// --- 重构后的 PythonExecutor ---
 export class PythonExecutor implements CodeExecutor {
     readonly type = "python";
     private readonly logger: Logger;
     private readonly pool: PyodideEnginePool;
-    // 假设你有一个资源管理器服务
     private readonly assetService: AssetService;
     private isReady = false;
 
     constructor(private ctx: Context, private config: PythonConfig, private sharedConfig: SharedConfig) {
-        this.logger = ctx.logger(`[executor:${this.type}]`);
+        this.logger = ctx.logger(`[执行器:Python]`);
         this.assetService = ctx[Services.Asset];
         this.pool = new PyodideEnginePool(ctx, config, sharedConfig);
 
         ctx.on("ready", async () => {
             if (config.enabled) {
+                this.logger.info("Python 执行器已启用，正在初始化...");
                 try {
                     await this.pool.initialize();
                     this.isReady = true;
-                    this.logger.info("Python executor is ready.");
+                    this.logger.info("Python 执行器初始化成功，已准备就绪");
                 } catch (error) {
-                    this.logger.error("Python executor failed to start.", error);
+                    this.logger.error("Python 执行器启动失败，将不可用", error);
+                    // isReady 保持 false
                 }
             }
         });
     }
 
     private _checkCodeSecurity(code: string): void {
+        this.logger.debug("[安全检查] 开始进行代码安全检查...");
         const forbiddenImports = ["os", "subprocess", "sys", "shutil", "socket", "http.server", "ftplib"];
         const userAllowed = new Set(this.config.allowedModules);
 
@@ -154,57 +167,53 @@ export class PythonExecutor implements CodeExecutor {
         while ((match = importRegex.exec(code)) !== null) {
             const moduleName = (match[1] || match[2]).split(".")[0];
             if (forbiddenImports.includes(moduleName) && !userAllowed.has(moduleName)) {
-                throw new Error(`SecurityError: Importing the module '${moduleName}' is not allowed.`);
+                this.logger.warn(`[安全检查] 检测到禁用模块导入: ${moduleName}`);
+                throw new Error(`安全错误：不允许导入模块 '${moduleName}'，因为它在禁止列表中`);
             }
             if (!userAllowed.has(moduleName)) {
-                // 如果需要严格白名单，取消此注释
-                // throw new Error(`SecurityError: Module '${moduleName}' is not in the list of allowed modules.`);
+                // 如果需要严格白名单，可以解除此注释并抛出错误
+                this.logger.warn(`[安全检查] 模块 '${moduleName}' 不在白名单中，但未被禁止`);
             }
         }
 
-        // 简化的文件访问检查，更严格的控制在 Pyodide 的虚拟环境中完成
         if (code.includes("open(") && !code.includes("/workspace/")) {
-            this.logger.warn(`Potential file access outside of /workspace. Code: ${code}`);
+            this.logger.warn(`[安全检查] 检测到可能访问 /workspace 之外的文件。代码: ${code}`);
         }
+        this.logger.debug("[安全检查] 代码安全检查通过");
     }
 
     private async _resetEngineState(engine: PyodideInterface): Promise<void> {
-        // 清理全局变量，除了Pyodide默认的
+        this.logger.debug("[状态重置] 重置引擎状态，清理变量和文件...");
         engine.runPython(`
-            import sys
-            # 存储初始的全局变量名
-            if 'initial_globals' not in globals():
-                initial_globals = set(globals().keys())
-
-            # 删除非初始的全局变量
-            for name in list(globals().keys()):
-                if name not in initial_globals:
-                    del globals()[name]
-
-            # 重置 matplotlib 状态
-            try:
-                import matplotlib.pyplot as plt
-                plt.close('all')
-            except ImportError:
-                pass
-
-            # 清理工作区文件
-            import os
-            workspace = '/workspace'
-            if os.path.exists(workspace):
-                for item in os.listdir(workspace):
-                    item_path = os.path.join(workspace, item)
-                    if os.path.isfile(item_path):
-                        os.remove(item_path)
-        `);
+import sys, os
+# 存储初始全局变量，如果不存在
+if 'initial_globals' not in globals():
+    initial_globals = set(globals().keys())
+# 清理非初始全局变量
+for name in list(globals().keys()):
+    if name not in initial_globals:
+        del globals()[name]
+# 重置 matplotlib 状态
+try:
+    import matplotlib.pyplot as plt
+    plt.close('all')
+except ImportError:
+    pass
+# 清理工作区文件
+workspace = '/workspace'
+if os.path.exists(workspace):
+    for item in os.listdir(workspace):
+        item_path = os.path.join(workspace, item)
+        if os.path.isfile(item_path):
+            os.remove(item_path)
+`);
     }
 
     private _parsePyodideError(error: any): ExecutionError {
         const err = error as Error;
-        const isTimeout = err.message.includes("TimeoutError");
         let suggestion = "There might be a logical error in the code. Please review the logic and try again.";
 
-        if (isTimeout) {
+        if (err.message.includes("TimeoutError")) {
             return {
                 name: "TimeoutError",
                 message: `Code execution exceeded the time limit of ${this.config.timeout}ms.`,
@@ -224,24 +233,20 @@ export class PythonExecutor implements CodeExecutor {
             };
         }
 
-        // Pyodide 包装的 Python 异常
         if (err.name === "PythonError") {
             const messageLines = err.message.split("\n");
-            const errorType = messageLines[messageLines.length - 2]; // e.g., "NameError: name 'x' is not defined"
+            const errorType = messageLines[messageLines.length - 2] || "";
 
             if (errorType.startsWith("SyntaxError")) {
-                suggestion =
-                    "The code has a Python syntax error. Please check for typos, indentation issues, or incorrect grammar.";
+                suggestion = "The code has a Python syntax error. Please check for typos, indentation issues, or incorrect grammar.";
             } else if (errorType.startsWith("NameError")) {
-                suggestion =
-                    "A variable or function was used before it was defined. Ensure all variables are assigned and all necessary libraries (from the allowed list) are imported correctly.";
+                suggestion = "A variable or function was used before it was defined. Ensure all variables are assigned and all necessary libraries (from the allowed list) are imported correctly.";
             } else if (errorType.startsWith("ModuleNotFoundError")) {
                 suggestion = `The code tried to import a module that is not available or not allowed. You can only import from this list: [${this.config.allowedModules.join(
                     ", "
                 )}].`;
             } else if (errorType.startsWith("TypeError")) {
-                suggestion =
-                    "An operation was applied to an object of an inappropriate type. Check the data types of the variables involved in the error line.";
+                suggestion = "An operation was applied to an object of an inappropriate type. Check the data types of the variables involved in the error line.";
             } else if (errorType.startsWith("IndexError") || errorType.startsWith("KeyError")) {
                 suggestion =
                     "The code tried to access an element from a list or dictionary with an invalid index or key. Check if the index is within the bounds of the list or if the key exists in the dictionary.";
@@ -257,13 +262,14 @@ export class PythonExecutor implements CodeExecutor {
     }
 
     getToolDefinition(): ToolDefinition {
+        // 工具描述通常面向 LLM，保持英文可能更佳，但可按需翻译
         const defaultDescription = `Executes Python code in a sandboxed WebAssembly-based environment (Pyodide).
 - Python Version: 3.11
 - Pre-installed Libraries: ${this.config.packages.join(", ") || "Python Standard Library"}
 - Allowed Importable Modules: ${this.config.allowedModules.join(", ")}
-- Use print() to output results. The final expression is also automatically printed.
+- Use print() to output results. The final expression's value is also returned.
 - File I/O is restricted to a temporary '/workspace' directory.
-- Generate visualizations (e.g., with matplotlib) or files using the built-in '__create_artifact__' function. These will be returned as downloadable assets.`;
+- To generate files (like images, plots, data files), use the special function '__create_artifact__(fileName, content, type)'. It returns assets for download. For example, to save a plot, use matplotlib to save it to a BytesIO buffer and pass it to this function.`;
 
         return {
             name: "execute_python",
@@ -277,6 +283,7 @@ export class PythonExecutor implements CodeExecutor {
 
     async execute(code: string): Promise<CodeExecutionResult> {
         if (!this.isReady) {
+            this.logger.warn("[执行] 由于执行器未准备就绪，已拒绝执行请求");
             return {
                 status: "error",
                 error: {
@@ -287,6 +294,7 @@ export class PythonExecutor implements CodeExecutor {
             };
         }
 
+        this.logger.info("[执行] 收到新的代码执行请求");
         let engine: PyodideInterface | null = null;
         try {
             this._checkCodeSecurity(code);
@@ -303,9 +311,11 @@ export class PythonExecutor implements CodeExecutor {
                 const jsFileName = typeof fileName === "string" ? fileName : fileName.toJs();
                 const jsType = (typeof type === "string" ? type : type.toJs()) as AssetType;
 
+                this.logger.debug(`[产物创建] 文件名: ${jsFileName}, 类型: ${jsType}`);
+
                 if (!["text", "json", "html", "image", "file"].includes(jsType)) {
                     throw new Error(
-                        `Invalid artifact type: '${jsType}'. Must be one of 'text', 'json', 'html', 'image', 'file'.`
+                        `无效的产物类型: '${jsType}'。必须是 'text', 'json', 'html', 'image', 'file' 之一`
                     );
                 }
 
@@ -313,30 +323,29 @@ export class PythonExecutor implements CodeExecutor {
                 if (typeof content === "string" || content instanceof ArrayBuffer) {
                     bufferContent = content instanceof ArrayBuffer ? Buffer.from(content) : content;
                 } else {
-                    // It's a PyProxy, likely bytes or BytesIO, convert it to a JS Buffer.
-                    const pyBuffer = content.toJs(); // This should result in a Uint8Array for bytes.
+                    const pyBuffer = content.toJs(); // PyProxy -> Uint8Array
                     bufferContent = Buffer.from(pyBuffer);
                 }
 
-                // const assetId = await this.resourceManager.create(bufferContent, jsType);
                 const assetId = await this.assetService.create(bufferContent, jsType, { filename: jsFileName });
                 artifacts.push({ assetId, type: jsType, fileName: jsFileName });
+                this.logger.info(`[产物创建] 成功创建产物: ${jsFileName} (AssetID: ${assetId})`);
             };
 
             engine.globals.set("__create_artifact__", createArtifact);
-            // 确保 /workspace 存在
             engine.FS.mkdirTree("/workspace");
 
-            let stdout: string[] = [];
-            let stderr: string[] = [];
+            const stdout: string[] = [];
+            const stderr: string[] = [];
             engine.setStdout({ batched: (msg) => stdout.push(msg) });
             engine.setStderr({ batched: (msg) => stderr.push(msg) });
 
-            // Wrap user code to handle matplotlib plots automatically
-            const wrappedCode = `
+            let finalCode = code;
+            if (code.includes("matplotlib")) {
+                this.logger.debug("[执行] 检测到 Matplotlib，将注入自动绘图保存逻辑");
+                finalCode = `
 import matplotlib
-matplotlib.use('Agg') # <--- [核心优化] 在这里自动设置后端!
-
+matplotlib.use('Agg')
 import io
 import matplotlib.pyplot as plt
 
@@ -344,49 +353,46 @@ import matplotlib.pyplot as plt
 ${code}
 # --- 用户代码结束 ---
 
-# 自动检查并保存图表
-# 如果用户代码中已经有 plt.savefig() 和 __create_artifact__，这部分可能会重复保存，但通常是安全的。
-# 更好的做法是让LLM依赖这个自动机制。
+# 自动检查并保存所有打开的图表
 if plt.get_fignums():
     for i in plt.get_fignums():
-        plt.figure(i) # 切换到指定的 figure
+        plt.figure(i)
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches='tight')
         buf.seek(0)
-
-        # 为多个图表创建唯一的 artifact 名称
         __create_artifact__(f'chart_{i}.png', buf.getvalue(), 'image')
-
-    plt.close('all') # 关闭所有图表
+    plt.close('all') # 关闭所有图表以释放内存
 `;
+            }
 
-            const executionPromise = engine.runPythonAsync(wrappedCode);
-
+            const executionPromise = engine.runPythonAsync(finalCode);
             const result = await Promise.race([
                 executionPromise,
                 new Promise((_, reject) => setTimeout(() => reject(new Error("TimeoutError")), this.config.timeout)),
             ]);
 
+            let resultString = "";
             if (result !== undefined && result !== null) {
-                stdout.push(String(result));
+                resultString = String(result);
             }
 
+            this.logger.info("[执行] 代码执行成功");
             return {
                 status: "success",
                 result: {
-                    stdout: stdout.join("\n"),
+                    stdout: [...stdout, resultString].filter(Boolean).join("\n"),
                     stderr: stderr.join("\n"),
                     artifacts: artifacts,
                 },
             };
         } catch (error) {
+            this.logger.error("[执行] 代码执行时发生错误", error);
             return {
                 status: "error",
                 error: this._parsePyodideError(error),
             };
         } finally {
             if (engine) {
-                // 清理注入的函数并释放回池中
                 engine.globals.delete("__create_artifact__");
                 this.pool.release(engine);
             }
