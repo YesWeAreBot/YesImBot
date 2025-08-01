@@ -8,7 +8,7 @@
 
 > **Failed**(`error`, `metadata?`): [`ToolCallResult`](../interfaces/ToolCallResult.md)
 
-Defined in: [packages/core/src/services/extension/helpers.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/extension/helpers.ts#L20)
+Defined in: [packages/core/src/services/extension/helpers.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/extension/helpers.ts#L20)
 
 失败结果辅助函数
 

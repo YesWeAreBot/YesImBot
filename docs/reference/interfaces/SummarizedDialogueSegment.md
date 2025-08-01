@@ -6,7 +6,7 @@
 
 # Interface: SummarizedDialogueSegment
 
-Defined in: [packages/core/src/services/worldstate/types.ts:247](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L247)
+Defined in: [packages/core/src/services/worldstate/types.ts:247](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L247)
 
 状态为 `summarized` 的对话片段，包含一个总结文本，不包含详细对话内容
 通常是一个 `folded` 片段总结而来
@@ -21,7 +21,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:247](https://github.
 
 > **channelId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:205](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L205)
+Defined in: [packages/core/src/services/worldstate/types.ts:205](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L205)
 
 #### Inherited from
 
@@ -33,7 +33,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:205](https://github.
 
 > **endTimestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:250](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L250)
+Defined in: [packages/core/src/services/worldstate/types.ts:250](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L250)
 
 ***
 
@@ -41,7 +41,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:250](https://github.
 
 > `optional` **guildId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:206](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L206)
+Defined in: [packages/core/src/services/worldstate/types.ts:206](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L206)
 
 #### Inherited from
 
@@ -53,7 +53,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:206](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L203)
+Defined in: [packages/core/src/services/worldstate/types.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L203)
 
 #### Inherited from
 
@@ -65,7 +65,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:203](https://github.
 
 > **platform**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:204](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L204)
+Defined in: [packages/core/src/services/worldstate/types.ts:204](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L204)
 
 #### Inherited from
 
@@ -77,7 +77,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:204](https://github.
 
 > **startTimestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:216](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L216)
+Defined in: [packages/core/src/services/worldstate/types.ts:216](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L216)
 
 #### Inherited from
 
@@ -89,7 +89,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:216](https://github.
 
 > **status**: `"summarized"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:248](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L248)
+Defined in: [packages/core/src/services/worldstate/types.ts:248](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L248)
 
 片段的生命周期状态
 - `open`: 开放中，正在接收新事件
@@ -108,7 +108,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:248](https://github.
 
 > **summary**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:249](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L249)
+Defined in: [packages/core/src/services/worldstate/types.ts:249](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L249)
 
 ***
 
@@ -116,7 +116,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:249](https://github.
 
 > **type**: `"dialogue-segment"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/worldstate/types.ts#L202)
+Defined in: [packages/core/src/services/worldstate/types.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/worldstate/types.ts#L202)
 
 #### Inherited from
 

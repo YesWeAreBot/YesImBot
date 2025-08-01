@@ -6,7 +6,7 @@
 
 # Interface: ReportContext
 
-Defined in: [packages/core/src/shared/errors/index.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/shared/errors/index.ts#L24)
+Defined in: [packages/core/src/shared/errors/index.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/errors/index.ts#L24)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:24](https://github.com/Yes
 
 > `optional` **additionalInfo**: `Record`\<`string`, `any`\>
 
-Defined in: [packages/core/src/shared/errors/index.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/shared/errors/index.ts#L27)
+Defined in: [packages/core/src/shared/errors/index.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/errors/index.ts#L27)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:27](https://github.com/Yes
 
 > **error**: `Error`
 
-Defined in: [packages/core/src/shared/errors/index.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/shared/errors/index.ts#L26)
+Defined in: [packages/core/src/shared/errors/index.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/errors/index.ts#L26)
 
 ***
 
@@ -30,4 +30,4 @@ Defined in: [packages/core/src/shared/errors/index.ts:26](https://github.com/Yes
 
 > **errorId**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/shared/errors/index.ts#L25)
+Defined in: [packages/core/src/shared/errors/index.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/shared/errors/index.ts#L25)

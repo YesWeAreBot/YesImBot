@@ -6,7 +6,7 @@
 
 # Interface: ChatRequestOptions
 
-Defined in: [packages/core/src/services/model/chat-model.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/model/chat-model.ts#L47)
+Defined in: [packages/core/src/services/model/chat-model.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/model/chat-model.ts#L47)
 
 Chat 方法的请求选项。
 包含所有必要的聊天信息和可覆盖的运行时参数。
@@ -21,7 +21,7 @@ Chat 方法的请求选项。
 
 > **messages**: `Message`[]
 
-Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/model/chat-model.ts#L48)
+Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/model/chat-model.ts#L48)
 
 ***
 
@@ -29,7 +29,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.c
 
 > `optional` **stream**: `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/model/chat-model.ts#L50)
+Defined in: [packages/core/src/services/model/chat-model.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/model/chat-model.ts#L50)
 
 ***
 
@@ -37,7 +37,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:50](https://github.c
 
 > `optional` **temperature**: `number`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/model/chat-model.ts#L51)
+Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/model/chat-model.ts#L51)
 
 ***
 
@@ -45,7 +45,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.c
 
 > `optional` **topP**: `number`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/model/chat-model.ts#L52)
+Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/model/chat-model.ts#L52)
 
 ***
 
@@ -53,4 +53,4 @@ Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.c
 
 > `optional` **validation**: [`ValidationOptions`](ValidationOptions.md)
 
-Defined in: [packages/core/src/services/model/chat-model.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/7ef28a691ce81d31b3075d68b83f6c934b67bb24/packages/core/src/services/model/chat-model.ts#L49)
+Defined in: [packages/core/src/services/model/chat-model.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/dfa0f43b5c34b9e1bd33ab6df2bf8b09eb335d1a/packages/core/src/services/model/chat-model.ts#L49)
