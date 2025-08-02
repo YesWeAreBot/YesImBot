@@ -6,7 +6,7 @@
 
 # Interface: Searchable
 
-Defined in: [packages/core/src/services/memory/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L65)
+Defined in: [packages/core/src/services/memory/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L65)
 
 ## Extended by
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/services/memory/types.ts:65](https://github.com/Y
 
 > **embedding**: `number`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L66)
+Defined in: [packages/core/src/services/memory/types.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L66)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [packages/core/src/services/memory/types.ts:66](https://github.com/Y
 
 > `optional` **isDeleted**: `boolean`
 
-Defined in: [packages/core/src/services/memory/types.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L68)
+Defined in: [packages/core/src/services/memory/types.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L68)
 
 ***
 
@@ -36,4 +36,4 @@ Defined in: [packages/core/src/services/memory/types.ts:68](https://github.com/Y
 
 > **salience**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L67)
+Defined in: [packages/core/src/services/memory/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L67)

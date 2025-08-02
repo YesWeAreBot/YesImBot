@@ -8,7 +8,7 @@
 
 > **assert**(`condition`, `message`, `code`): `asserts condition`
 
-Defined in: [packages/core/src/shared/errors/index.ts:265](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/shared/errors/index.ts#L265)
+Defined in: [packages/core/src/shared/errors/index.ts:265](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/shared/errors/index.ts#L265)
 
 ## Parameters
 

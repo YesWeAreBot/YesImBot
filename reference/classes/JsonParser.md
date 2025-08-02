@@ -6,7 +6,7 @@
 
 # Class: JsonParser\<T\>
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/shared/utils/json-parser.ts#L21)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/shared/utils/json-parser.ts#L21)
 
 ## Type Parameters
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:21](https://github.co
 
 > **new JsonParser**\<`T`\>(`options`): `JsonParser`\<`T`\>
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/shared/utils/json-parser.ts#L25)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/shared/utils/json-parser.ts#L25)
 
 #### Parameters
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:25](https://github.co
 
 > **parse**(`rawOutput`): [`ParseResult`](../interfaces/ParseResult.md)\<`T`\>
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/shared/utils/json-parser.ts#L39)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/shared/utils/json-parser.ts#L39)
 
 #### Parameters
 

@@ -6,7 +6,7 @@
 
 # Interface: IProviderFactory
 
-Defined in: [packages/core/src/services/model/factories.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/factories.ts#L34)
+Defined in: [packages/core/src/services/model/factories.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/factories.ts#L34)
 
 ## Methods
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/factories.ts:34](https://github.co
 
 > **createClient**(`config`): [`IProviderClient`](IProviderClient.md)
 
-Defined in: [packages/core/src/services/model/factories.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/factories.ts#L35)
+Defined in: [packages/core/src/services/model/factories.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/factories.ts#L35)
 
 #### Parameters
 

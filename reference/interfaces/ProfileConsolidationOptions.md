@@ -6,7 +6,7 @@
 
 # Interface: ProfileConsolidationOptions
 
-Defined in: [packages/core/src/services/memory/types.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L37)
+Defined in: [packages/core/src/services/memory/types.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L37)
 
 用户画像整合选项
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/types.ts:37](https://github.com/Y
 
 > `optional` **confidenceThreshold**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L43)
+Defined in: [packages/core/src/services/memory/types.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L43)
 
 置信度阈值
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/memory/types.ts:43](https://github.com/Y
 
 > `optional` **forceReconsolidate**: `boolean`
 
-Defined in: [packages/core/src/services/memory/types.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L39)
+Defined in: [packages/core/src/services/memory/types.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L39)
 
 是否强制重新整合
 
@@ -36,6 +36,6 @@ Defined in: [packages/core/src/services/memory/types.ts:39](https://github.com/Y
 
 > `optional` **minFactsThreshold**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/memory/types.ts#L41)
+Defined in: [packages/core/src/services/memory/types.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L41)
 
 最小事实数量阈值

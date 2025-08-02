@@ -6,7 +6,7 @@
 
 # Enumeration: ModelSwitchingStrategy
 
-Defined in: [packages/core/src/services/model/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/config.ts#L5)
+Defined in: [packages/core/src/services/model/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/config.ts#L5)
 
 模型切换策略
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/config.ts:5](https://github.com/Ye
 
 > **Failover**: `"failover"`
 
-Defined in: [packages/core/src/services/model/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/config.ts#L6)
+Defined in: [packages/core/src/services/model/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/config.ts#L6)
 
 ***
 
@@ -24,4 +24,4 @@ Defined in: [packages/core/src/services/model/config.ts:6](https://github.com/Ye
 
 > **RoundRobin**: `"round-robin"`
 
-Defined in: [packages/core/src/services/model/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/config.ts#L7)
+Defined in: [packages/core/src/services/model/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/config.ts#L7)

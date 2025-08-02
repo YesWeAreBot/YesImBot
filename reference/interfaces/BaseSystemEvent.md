@@ -6,7 +6,7 @@
 
 # Interface: BaseSystemEvent\<T, P\>
 
-Defined in: [packages/core/src/services/worldstate/types.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/worldstate/types.ts#L45)
+Defined in: [packages/core/src/services/worldstate/types.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/worldstate/types.ts#L45)
 
 所有非消息类系统事件的基类接口
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:45](https://github.c
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/worldstate/types.ts#L46)
+Defined in: [packages/core/src/services/worldstate/types.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/worldstate/types.ts#L46)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:46](https://github.c
 
 > **payload**: `P`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/worldstate/types.ts#L49)
+Defined in: [packages/core/src/services/worldstate/types.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/worldstate/types.ts#L49)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:49](https://github.c
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/worldstate/types.ts#L48)
+Defined in: [packages/core/src/services/worldstate/types.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/worldstate/types.ts#L48)
 
 ***
 
@@ -54,4 +54,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:48](https://github.c
 
 > **type**: `T`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/worldstate/types.ts#L47)
+Defined in: [packages/core/src/services/worldstate/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/worldstate/types.ts#L47)

@@ -8,7 +8,7 @@
 
 > **Snippet** = (`currentScope`) => `any` \| `Promise`\<`any`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/prompt/service.ts#L12)
+Defined in: [packages/core/src/services/prompt/service.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/prompt/service.ts#L12)
 
 片段 (Snippet) 是一个函数，用于在运行时动态生成内容。
 

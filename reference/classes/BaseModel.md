@@ -6,7 +6,7 @@
 
 # Abstract Class: BaseModel
 
-Defined in: [packages/core/src/services/model/base-model.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/base-model.ts#L8)
+Defined in: [packages/core/src/services/model/base-model.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/base-model.ts#L8)
 
 所有模型类的基类，封装了通用属性和方法。
 
@@ -23,7 +23,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:8](https://github.co
 
 > **new BaseModel**(`ctx`, `modelConfig`, `loggerName`): `BaseModel`
 
-Defined in: [packages/core/src/services/model/base-model.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/base-model.ts#L14)
+Defined in: [packages/core/src/services/model/base-model.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/base-model.ts#L14)
 
 #### Parameters
 
@@ -49,7 +49,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:14](https://github.c
 
 > `readonly` **config**: [`ModelConfig`](../interfaces/ModelConfig.md)
 
-Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/base-model.ts#L10)
+Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/base-model.ts#L10)
 
 ***
 
@@ -57,7 +57,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.c
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/base-model.ts#L12)
+Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/base-model.ts#L12)
 
 ***
 
@@ -65,7 +65,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.c
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/base-model.ts#L9)
+Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/base-model.ts#L9)
 
 ***
 
@@ -73,4 +73,4 @@ Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.co
 
 > `protected` `readonly` **logger**: `__module`
 
-Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/model/base-model.ts#L11)
+Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/base-model.ts#L11)

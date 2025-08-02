@@ -8,7 +8,7 @@
 
 > **euclideanDistance**(`vecA`, `vecB`): `number`
 
-Defined in: [packages/core/src/shared/utils/vector.ts:70](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/shared/utils/vector.ts#L70)
+Defined in: [packages/core/src/shared/utils/vector.ts:70](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/shared/utils/vector.ts#L70)
 
 计算两个向量的欧氏距离。
 

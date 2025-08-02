@@ -6,7 +6,7 @@
 
 # Interface: AssetData
 
-Defined in: [packages/core/src/services/assets/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L15)
+Defined in: [packages/core/src/services/assets/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L15)
 
 数据库中存储的资源元数据模型
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:15](https://github.com/Y
 
 > **createdAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L21)
+Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L21)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/Y
 
 > **hash**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L19)
+Defined in: [packages/core/src/services/assets/types.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L19)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/assets/types.ts:19](https://github.com/Y
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L16)
+Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L16)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/Y
 
 > **lastUsedAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L22)
+Defined in: [packages/core/src/services/assets/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L22)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/assets/types.ts:22](https://github.com/Y
 
 > `optional` **metadata**: [`AssetMetadata`](AssetMetadata.md)
 
-Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L23)
+Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L23)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/Y
 
 > **mime**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L18)
+Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L18)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/Y
 
 > **size**: `number`
 
-Defined in: [packages/core/src/services/assets/types.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L20)
+Defined in: [packages/core/src/services/assets/types.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L20)
 
 ***
 
@@ -72,4 +72,4 @@ Defined in: [packages/core/src/services/assets/types.ts:20](https://github.com/Y
 
 > **type**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L17)
+Defined in: [packages/core/src/services/assets/types.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L17)

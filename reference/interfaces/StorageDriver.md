@@ -6,7 +6,7 @@
 
 # Interface: StorageDriver
 
-Defined in: [packages/core/src/services/assets/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L52)
+Defined in: [packages/core/src/services/assets/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L52)
 
 存储驱动接口
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:52](https://github.com/Y
 
 > **delete**(`id`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L55)
+Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L55)
 
 #### Parameters
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/Y
 
 > **read**(`id`): `Promise`\<`Buffer`\<`ArrayBufferLike`\>\>
 
-Defined in: [packages/core/src/services/assets/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L54)
+Defined in: [packages/core/src/services/assets/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L54)
 
 #### Parameters
 
@@ -52,7 +52,7 @@ Defined in: [packages/core/src/services/assets/types.ts:54](https://github.com/Y
 
 > **write**(`id`, `buffer`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/assets/types.ts#L53)
+Defined in: [packages/core/src/services/assets/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L53)
 
 #### Parameters
 

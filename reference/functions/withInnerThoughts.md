@@ -8,7 +8,7 @@
 
 > **withInnerThoughts**(`params`): `Schema`\<`any`\>
 
-Defined in: [packages/core/src/services/extension/decorators.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/6b3381d3f0c5981890bc7b4a4f816558387d8a84/packages/core/src/services/extension/decorators.ts#L161)
+Defined in: [packages/core/src/services/extension/decorators.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/extension/decorators.ts#L161)
 
 ## Parameters
 
