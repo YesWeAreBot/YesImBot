@@ -1,13 +1,8 @@
 {
-    "endOfLine": "lf",
     "objectWrap": "preserve",
     "quoteProps": "as-needed",
     "semi": true,
-    "tabWidth": 4,
     "singleQuote": false,
     "arrowParens": "always",
-    "bracketSpacing": true,
-    "bracketSameLine": false,
-    "printWidth": 120,
     "trailingComma": "es5"
 }

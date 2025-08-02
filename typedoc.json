@@ -1,17 +1,11 @@
 {
   "entryPointStrategy": "packages",
-  "entryPoints": [
-    "packages/core"
-  ],
+  "entryPoints": ["packages/core"],
   "packageOptions": {
-    "entryPoints": [
-      "src/index.ts"
-    ]
+    "entryPoints": ["src/index.ts"]
   },
-  "plugin": [
-    "typedoc-plugin-markdown",
-    "typedoc-plugin-rename-defaults"
-  ],
+  "exclude": ["**/__tests__/**", "**/mocks/**"],
+  "plugin": ["typedoc-plugin-markdown", "typedoc-plugin-rename-defaults"],
   "outputs": [
     {
       "name": "markdown",
