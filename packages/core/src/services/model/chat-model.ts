@@ -119,7 +119,6 @@ export class ChatModel extends BaseModel implements IChatModel {
         const chatOptions = this.buildChatOptions(options);
 
         const validation = options.validation;
-        delete options.validation;
 
         try {
             if (useStream) {
@@ -142,6 +141,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 1. 模型配置中的基础参数 (temperature, topP)
         // 2. 模型配置中的自定义参数 (this.customParameters)
         // 3. 运行时传入的参数 (options)
+        delete options.validation;
         return {
             ...this.chatProvider(this.config.modelId),
             fetch: this.fetch,
