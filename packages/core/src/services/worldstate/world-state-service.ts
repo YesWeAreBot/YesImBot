@@ -43,41 +43,6 @@ interface PendingCommand {
 }
 
 // =================================================================================
-// #region SystemEventRenderer - 负责将系统事件渲染为自然语言
-// =================================================================================
-class SystemEventRenderer {
-    render(payload: SystemEventPayload): string {
-        const { eventType, details } = payload;
-        const operator = details.operator?.id || "未知操作者";
-        const user = details.user?.id || "未知用户";
-
-        switch (eventType) {
-            case "guild-member-ban": {
-                const duration = details.duration || 0;
-                if (duration > 0) {
-                    const durationSeconds = duration / 1000;
-                    let durationText = "";
-                    if (durationSeconds < 3600) {
-                        durationText = `${Math.round(durationSeconds / 60)}分钟`;
-                    } else if (durationSeconds < 86400) {
-                        durationText = `${Math.round(durationSeconds / 3600)}小时`;
-                    } else {
-                        durationText = `${Math.round(durationSeconds / 86400)}天`;
-                    }
-                    return `系统提示：管理员 "${operator}" 已将用户 "${user}" 禁言，时长为 ${durationText}。`;
-                } else if (duration === 0) {
-                    return `系统提示：用户 "${user}" 已被管理员 "${operator}" 解除禁言。`;
-                }
-                return `系统提示：管理员 "${operator}" 已将用户 "${user}" 永久禁言。`;
-            }
-            default:
-                return `系统提示：侦测到未知的系统事件 "${eventType}"。`;
-        }
-    }
-}
-// #endregion
-
-// =================================================================================
 // #region EventListenerManager - 负责所有事件监听与处理
 // =================================================================================
 class EventListenerManager {
@@ -86,7 +51,11 @@ class EventListenerManager {
     private logger: Logger;
     private assetService: AssetService;
 
-    constructor(private ctx: Context, private service: WorldStateService, private config: HistoryConfig) {
+    constructor(
+        private ctx: Context,
+        private service: WorldStateService,
+        private config: HistoryConfig
+    ) {
         this.logger = ctx[Services.Logger].getLogger("[世界状态]");
         this.assetService = ctx[Services.Asset];
     }
@@ -215,9 +184,11 @@ class EventListenerManager {
                         details: {
                             operator: session.event.operator,
                             duration: duration,
-                            message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言。`,
                         },
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言。`,
                     };
+
+                    this.service.updateMuteStatus(session.cid, Number.POSITIVE_INFINITY);
 
                     this.service.recordSystemEvent(session, payload);
                     return;
@@ -230,9 +201,21 @@ class EventListenerManager {
                         details: {
                             user: session.event.user,
                             operator: session.event.operator,
-                            message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言。`,
                         },
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言。`,
                     };
+
+                    if (isTargetingBot) {
+                        this.service.updateMuteStatus(session.cid, 0);
+                        const stimulus: AgentStimulus<SystemEventPayload> = {
+                            type: "system_event",
+                            channelCid: session.cid,
+                            session,
+                            priority: 8,
+                            payload: payload,
+                        };
+                        this.ctx.emit("agent/stimulus", stimulus);
+                    }
 
                     this.service.recordSystemEvent(session, payload);
                     return;
@@ -244,25 +227,15 @@ class EventListenerManager {
                         user: session.event.user,
                         operator: session.event.operator,
                         duration: duration,
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms。`,
                     },
+                    message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms。`,
                 };
 
                 this.service.recordSystemEvent(session, payload);
 
                 if (isTargetingBot) {
-                    // --- 高优先级路径 (告警) ---
                     const expiresAt = duration > 0 ? Date.now() + duration : 0;
                     this.service.updateMuteStatus(session.cid, expiresAt);
-
-                    const stimulus: AgentStimulus<SystemEventPayload> = {
-                        type: "system_event",
-                        channelCid: session.cid,
-                        session,
-                        priority: 8, // 高优先级
-                        payload: payload, // 渲染器稍后会添加消息
-                    };
-                    this.ctx.emit("agent/stimulus", stimulus);
                 }
 
                 break;
@@ -403,7 +376,11 @@ class EventListenerManager {
 class HistoryCommandManager {
     private _logger: Logger;
 
-    constructor(private ctx: Context, private service: WorldStateService, private config: HistoryConfig) {
+    constructor(
+        private ctx: Context,
+        private service: WorldStateService,
+        private config: HistoryConfig
+    ) {
         this._logger = ctx[Services.Logger].getLogger("[世界状态.指令]");
     }
 
@@ -629,7 +606,6 @@ export class WorldStateService extends Service<HistoryConfig> {
     private maintenanceTimer: NodeJS.Timeout;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
-    private readonly eventRenderer: SystemEventRenderer;
     private readonly mutedChannels = new Map<string, number>(); // Key: channelCid, Value: mute expiration timestamp
 
     constructor(ctx: Context, config: HistoryConfig) {
@@ -643,7 +619,6 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.contextBuilder = new ContextBuilder(ctx, config);
         this.eventListenerManager = new EventListenerManager(ctx, this, config);
         this.commandManager = new HistoryCommandManager(ctx, this, config);
-        this.eventRenderer = new SystemEventRenderer();
     }
 
     protected start(): void {
@@ -691,11 +666,9 @@ export class WorldStateService extends Service<HistoryConfig> {
                 triggerContext = { isUserMessage: true, sid: (payload as UserMessagePayload).sid };
                 break;
             case "system_event":
-                // 在这里进行语义化渲染
-                payload.message = this.eventRenderer.render(payload);
                 triggerContext = {
                     isSystemEvent: true,
-                    event: payload, // 传递已包含 message 的 payload
+                    event: payload,
                 };
                 break;
             // Future cases
@@ -807,19 +780,13 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     public async recordSystemEvent(session: Session, payload: SystemEventPayload): Promise<void> {
         const segment = await this.getOpenSegment(session.platform, session.channelId, session.guildId);
-
-        // 在保存前渲染消息
-        const renderedMessage = this.eventRenderer.render(payload);
-        const payloadWithRenderedMessage = { ...payload, message: renderedMessage };
-
         await this.ctx.database.create(TableName.SystemEvents, {
             id: `sysevt_${Random.id()}`,
             sid: segment.id,
             type: payload.eventType,
             timestamp: new Date(),
-            payload: payloadWithRenderedMessage,
+            payload,
         });
-        this._logger.debug(`记录了低优先级系统事件: ${payload.eventType} | 频道: ${session.cid}`);
     }
 
     // #endregion
