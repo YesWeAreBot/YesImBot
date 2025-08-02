@@ -13,7 +13,7 @@
     },
     {
       "name": "html",
-      "path": "docs/dist"
+      "path": "docs/docs"
     }
   ]
 }
