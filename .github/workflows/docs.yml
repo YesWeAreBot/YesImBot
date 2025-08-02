@@ -1,53 +1,51 @@
-name: Generate TS API Docs
+name: Generate and Deploy TS API Docs
 
 on:
-  push:
-    branches: [dev]
+    push:
+        branches: [dev]
 
 jobs:
-  generate-docs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    generate-and-deploy-docs:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        permissions:
+            contents: write
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.2.0
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            .turbo
-            node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
+            - name: Cache dependencies
+              uses: actions/cache@v4
+              with:
+                  path: ~/.bun/install/cache
+                  key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+                  restore-keys: |
+                      ${{ runner.os }}-bun-
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
 
-      - name: Install TypeDoc
-        run: bun add -D typedoc@^0.28 typedoc-plugin-markdown@^4.7.0 typedoc-plugin-rename-defaults@^0.7.3
+            - name: Install TypeDoc
+              run: bun add -D typedoc typedoc-plugin-markdown typedoc-plugin-rename-defaults
 
-      - name: Generate API documentation
-        run: |
-          bunx typedoc
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
+            - name: Generate API documentation
+              run: bunx typedoc
+              env:
+                  NODE_OPTIONS: --max-old-space-size=4096
 
-      - name: Commit and push docs
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add docs/reference
-          git commit -m "chore: update API documentation [skip ci]" || exit 0
-          git push
+            - name: Deploy to GitHub Pages
+              uses: peaceiris/actions-gh-pages@v4
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_branch: gh-pages
+                  publish_dir: ./docs
+                  user_name: "github-actions[bot]"
+                  user_email: "github-actions[bot]@users.noreply.github.com"
+                  commit_message: "docs: deploy generated API documentation [skip ci]"
