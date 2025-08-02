@@ -21,33 +21,39 @@
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "pack": "turbo run pack",
-    "add-change": "changeset add",
+    "prepare": "husky install",
+    "add-changeset": "changeset add",
     "version-packages": "changeset version",
     "release": "bun run build && changeset publish",
     "create-packages": "changeset version && turbo run pack",
-    "collect-packages": "bun scripts/collect-packages.js"
+    "collect-packages": "bun scripts/collect-packages.js",
+    "commit": "cz"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.5",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@types/node": "^22.16.2",
+    "commitizen": "^4.3.1",
+    "commitlint-config-gitmoji": "^2.3.1",
+    "cz-git": "^1.12.0",
     "esbuild": "^0.25.6",
     "glob": "^11.0.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.2",
+    "prettier": "^3.6.2",
+    "prettier-plugin-align": "^0.0.1-alpha.1",
     "tsc-alias": "^1.8.16",
     "turbo": "2.5.4",
     "typescript": "^5.8.3",
     "yml-register": "^1.2.5"
   },
-  "typedoc": {
-    "entryPoints": [
-      "packages/core/src"
-    ],
-    "out": "docs/api",
-    "plugin": [
-      "typedoc-plugin-markdown"
-    ],
-    "exclude": [
-      "**/__tests__/**",
-      "**/mocks/**"
-    ]
+  "lint-staged": {
+    "*.{js,ts,jsx,tsx,json,md,yml}": "prettier --write"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-git"
+    }
   }
 }
