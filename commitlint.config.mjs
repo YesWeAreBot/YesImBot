@@ -29,7 +29,7 @@ export default {
             { value: 'perf', name: 'perf:     ⚡️  性能优化', emoji: '⚡️' },
             { value: 'test', name: 'test:     ✅  添加疏漏测试或已有测试改动', emoji: '✅' },
             { value: 'build', name: 'build:    📦️  构建流程、外部依赖变更', emoji: '📦️' },
-            { value: 'ci', name: 'ci:       🎡  修改 CI 配置、脚本', emoji: '🎡' },
+            { value: 'ci', name: 'ci:       👷  修改 CI 配置、脚本', emoji: '👷' },
             { value: 'chore', name: 'chore:    🔨  对构建过程或辅助工具和库的更改', emoji: '🔨' },
             { value: 'revert', name: 'revert:   ⏪️  回滚 commit', emoji: '⏪️' },
         ],
