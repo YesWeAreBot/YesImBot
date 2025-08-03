@@ -639,7 +639,7 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.runMaintenanceTasks();
         }, this.config.cleanupIntervalSec * 1000);
 
-        this._logger.info("服务已启动");
+        //this._logger.info("服务已启动");
     }
 
     protected stop(): void {

@@ -61,7 +61,7 @@ export class ToolService extends Service<ToolServiceConfig> {
         }
         this._registerPromptTemplates();
         this.registerCommands();
-        this._logger.info("服务已启动");
+        //this._logger.info("服务已启动");
     }
 
     private registerCommands() {
@@ -90,9 +90,7 @@ export class ToolService extends Service<ToolServiceConfig> {
                 const filterKeyword = options.filter?.toLowerCase();
                 if (filterKeyword) {
                     allTools = allTools.filter(
-                        (t) =>
-                            t.name.toLowerCase().includes(filterKeyword) ||
-                            t.description.toLowerCase().includes(filterKeyword)
+                        (t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword)
                     );
                 }
 
@@ -213,51 +211,47 @@ export class ToolService extends Service<ToolServiceConfig> {
                 return `发现 ${extensions.size} 个已加载的扩展：\n${extList}`;
             });
 
-        this.ctx
-            .command("extension.enable <name:string>", "启用扩展", { authority: 3 })
-            .action(async ({ session }, name) => {
-                try {
-                    const ext = (await import(name)) as IExtension;
-                    if (!ext) {
-                        return `扩展未找到`;
-                    }
-                    if (this.extensions.has(name)) {
-                        return `扩展已启用`;
-                    }
-                    if (!ext.metadata) {
-                        return `扩展元数据未定义`;
-                    }
-                    if (!ext.metadata.name) {
-                        return `扩展元数据中缺少名称`;
-                    }
-                    if (!ext.metadata.description) {
-                        return `扩展元数据中缺少描述`;
-                    }
-                    if (!ext.metadata.version) {
-                        return `扩展元数据中缺少版本`;
-                    }
-                    if (!ext.metadata.author) {
-                        return `扩展元数据中缺少作者`;
-                    }
-                    if (!ext.metadata.display) {
-                        return `扩展元数据中缺少显示名称`;
-                    }
-                    const config = resolveConfig(ext, this.config.extra[name] || {});
-                    this.register(ext, true, config);
-                    this.ctx.scope.update({ [name]: { enabled: true } }, false);
-                    return `启用成功`;
-                } catch (error) {
-                    return `启用失败: ${error.message}`;
+        this.ctx.command("extension.enable <name:string>", "启用扩展", { authority: 3 }).action(async ({ session }, name) => {
+            try {
+                const ext = (await import(name)) as IExtension;
+                if (!ext) {
+                    return `扩展未找到`;
                 }
-            });
+                if (this.extensions.has(name)) {
+                    return `扩展已启用`;
+                }
+                if (!ext.metadata) {
+                    return `扩展元数据未定义`;
+                }
+                if (!ext.metadata.name) {
+                    return `扩展元数据中缺少名称`;
+                }
+                if (!ext.metadata.description) {
+                    return `扩展元数据中缺少描述`;
+                }
+                if (!ext.metadata.version) {
+                    return `扩展元数据中缺少版本`;
+                }
+                if (!ext.metadata.author) {
+                    return `扩展元数据中缺少作者`;
+                }
+                if (!ext.metadata.display) {
+                    return `扩展元数据中缺少显示名称`;
+                }
+                const config = resolveConfig(ext, this.config.extra[name] || {});
+                this.register(ext, true, config);
+                this.ctx.scope.update({ [name]: { enabled: true } }, false);
+                return `启用成功`;
+            } catch (error) {
+                return `启用失败: ${error.message}`;
+            }
+        });
 
-        this.ctx
-            .command("extension.disable <name:string>", "禁用扩展", { authority: 3 })
-            .action(async ({ session }, name) => {
-                const result = this.unregister(name);
-                this.ctx.scope.update({ [name]: { enabled: false } }, false);
-                return result ? `禁用成功` : `禁用失败`;
-            });
+        this.ctx.command("extension.disable <name:string>", "禁用扩展", { authority: 3 }).action(async ({ session }, name) => {
+            const result = this.unregister(name);
+            this.ctx.scope.update({ [name]: { enabled: false } }, false);
+            return result ? `禁用成功` : `禁用失败`;
+        });
     }
 
     private _registerPromptTemplates() {
@@ -433,11 +427,7 @@ export class ToolService extends Service<ToolServiceConfig> {
         return this.tools.delete(name);
     }
 
-    public async invoke(
-        functionName: string,
-        params: Record<string, unknown>,
-        session?: Session
-    ): Promise<ToolCallResult> {
+    public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
         // 1. 获取工具，这里已经包含了 isSupported 的检查
         const tool = this.getTool(functionName, session);
         if (!tool) {

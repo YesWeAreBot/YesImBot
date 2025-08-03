@@ -31,7 +31,7 @@ export class AssetService extends Service<AssetServiceConfig> {
 
     protected async start() {
         this.storage = new LocalStorageDriver(this.ctx, { path: this.config.storagePath });
-        this.logger.debug(`本地存储驱动已初始化, 路径: ${this.config.storagePath}`);
+        //this.logger.debug(`本地存储驱动已初始化, 路径: ${this.config.storagePath}`);
 
         this.ctx.model.extend(
             TableName.Assets,
@@ -50,7 +50,7 @@ export class AssetService extends Service<AssetServiceConfig> {
 
         if (this.config.autoClearEnabled) {
             this.ctx.setInterval(() => this.runAutoClear(), this.config.autoClearIntervalHours * 3600 * 1000);
-            this.logger.info(`已启用资源自动清理功能, 清理超过 ${this.config.maxAssetAgeDays} 天未使用的资源`);
+            //this.logger.info(`已启用资源自动清理功能, 清理超过 ${this.config.maxAssetAgeDays} 天未使用的资源`);
         }
 
         if (this.config.endpoint) {
@@ -125,11 +125,17 @@ export class AssetService extends Service<AssetServiceConfig> {
         }
         return h.transformAsync(source, async (element) => {
             switch (element.type) {
-                case "img": case "image": return handle(element.attrs, "img");
-                case "audio": return handle(element.attrs, "audio");
-                case "video": return handle(element.attrs, "video");
-                case "file": return handle(element.attrs, "file");
-                default: return element;
+                case "img":
+                case "image":
+                    return handle(element.attrs, "img");
+                case "audio":
+                    return handle(element.attrs, "audio");
+                case "video":
+                    return handle(element.attrs, "video");
+                case "file":
+                    return handle(element.attrs, "file");
+                default:
+                    return element;
             }
         });
     }
@@ -149,27 +155,28 @@ export class AssetService extends Service<AssetServiceConfig> {
             let mime: string | undefined;
 
             if (Buffer.isBuffer(source)) {
-                this.logger.debug("从 Buffer 创建资源");
+                //this.logger.debug("从 Buffer 创建资源");
                 buffer = source;
             } else if (typeof source === "string") {
                 if (source.startsWith("data:")) {
-                    this.logger.debug("从 data: URL 创建资源");
+                    //this.logger.debug("从 data: URL 创建资源");
                     const match = source.match(/^data:([^;]+);base64,(.*)$/);
                     if (!match) throw new Error("无效的 data: URL 格式");
                     mime = match[1];
                     buffer = Buffer.from(match[2], "base64");
                 } else if (source.startsWith("file://")) {
-                    this.logger.debug(`从 file: URL 创建资源: ${source}`);
+                    //this.logger.debug(`从 file: URL 创建资源: ${source}`);
                     const filePath = fileURLToPath(source);
                     buffer = await fs.readFile(filePath);
                 } else if (source.startsWith("http")) {
-                    this.logger.debug(`从 http(s): URL 创建资源: ${source}`);
+                    //this.logger.debug(`从 http(s): URL 创建资源: ${source}`);
                     const response = await this.ctx.http(source, {
                         method: "GET",
                         responseType: "arraybuffer",
                         timeout: this.config.downloadTimeout,
                         headers: {
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                            "User-Agent":
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
                         },
                     });
                     if (response.status < 200 || response.status >= 300) {
@@ -197,7 +204,7 @@ export class AssetService extends Service<AssetServiceConfig> {
 
             if (existing.length > 0) {
                 const assetId = existing[0].id;
-                this.logger.debug(`资源哈希命中 | ID: ${assetId} | 更新最后使用时间`);
+                //this.logger.debug(`资源哈希命中 | ID: ${assetId} | 更新最后使用时间`);
                 await this.ctx.database.set(TableName.Assets, { id: assetId }, { lastUsedAt: new Date() });
                 return assetId;
             }
@@ -322,9 +329,7 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private registerHttpEndpoint() {
-        const route = this.config.endpoint.startsWith("/")
-            ? this.config.endpoint
-            : new URL(this.config.endpoint).pathname;
+        const route = this.config.endpoint.startsWith("/") ? this.config.endpoint : new URL(this.config.endpoint).pathname;
 
         this.ctx.server.get(`${route}/:id`, async (ctx) => {
             const { id } = ctx.params;

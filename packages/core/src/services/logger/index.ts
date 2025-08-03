@@ -94,11 +94,11 @@ export class LoggerService extends Service<LoggingConfig> {
     }
 
     protected start(): void {
-        this._logger.info("服务已启动");
+        //this._logger.info("服务已启动");
     }
 
     protected stop(): void {
-        this._logger.info("服务已停止");
+        //this._logger.info("服务已停止");
     }
 
     public getLogger(name?: string): Logger {

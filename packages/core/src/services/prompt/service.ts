@@ -33,7 +33,6 @@ export class PromptService extends Service<PromptServiceConfig> {
         this.ctx = ctx;
         this.config = config;
         this.renderer = config.renderer || new MustacheRenderer();
-        // @ts-ignore
         this._logger = this.ctx[Services.Logger].getLogger("[提示词]");
     }
 
@@ -77,11 +76,11 @@ export class PromptService extends Service<PromptServiceConfig> {
             };
         });
 
-        this._logger.info("服务已启动");
+        //this._logger.info("服务已启动");
     }
 
     protected async stop() {
-        this._logger.info("服务已停止");
+        //this._logger.info("服务已停止");
     }
 
     /**

@@ -13,7 +13,11 @@ export class ProviderInstance {
     private readonly fetch: typeof globalThis.fetch;
     private logger: Logger;
 
-    constructor(private ctx: Context, public readonly config: ProviderConfig, private readonly client: IProviderClient) {
+    constructor(
+        private ctx: Context,
+        public readonly config: ProviderConfig,
+        private readonly client: IProviderClient
+    ) {
         this.name = config.name;
         this.logger = ctx[Services.Logger].getLogger(`[提供商] [${this.name}]`);
 
@@ -42,22 +46,22 @@ export class ProviderInstance {
         capabilityName: string
     ): T | null {
         if (!providerCapability) {
-            this.logger.debug(`[获取模型] 🟡 跳过 | 模型ID: ${modelId} | 原因: 提供商不支持 ${capabilityName} 能力`);
+            //this.logger.debug(`[获取模型] 🟡 跳过 | 模型ID: ${modelId} | 原因: 提供商不支持 ${capabilityName} 能力`);
             return null;
         }
 
         const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
-            this.logger.warn(`[获取模型] 🟡 未找到 | 模型ID: ${modelId}`);
+            //this.logger.warn(`[获取模型] 🟡 未找到 | 模型ID: ${modelId}`);
             return null;
         }
 
         if (!modelConfig.abilities.includes(requiredAbility)) {
-            this.logger.warn(`[获取模型] 🟡 跳过 | 模型 ${modelId} 未声明 '${requiredAbility}' 能力`);
+            //this.logger.warn(`[获取模型] 🟡 跳过 | 模型 ${modelId} 未声明 '${requiredAbility}' 能力`);
             return null;
         }
 
-        this.logger.debug(`[获取模型] 🟢 成功 | 模型ID: ${modelId} | 能力: ${capabilityName}`);
+        //this.logger.debug(`[获取模型] 🟢 成功 | 模型ID: ${modelId} | 能力: ${capabilityName}`);
         return new modelConstructor(this.ctx, providerCapability, modelConfig, this.fetch);
     }
 

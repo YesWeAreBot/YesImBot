@@ -34,7 +34,11 @@ class CircuitBreaker {
     private lastFailureTime: number = 0;
     private readonly logger: Logger;
 
-    constructor(private readonly policy: CircuitBreakerPolicy, parentLogger: Logger, private readonly modelId: string) {
+    constructor(
+        private readonly policy: CircuitBreakerPolicy,
+        parentLogger: Logger,
+        private readonly modelId: string
+    ) {
         this.logger = parentLogger.extend(`[断路器][${modelId}]`);
     }
 
@@ -128,7 +132,7 @@ export class ModelService extends Service<ModelServiceConfig> {
                 const client = factory.createClient(providerConfig);
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this._logger.success(`✅ 初始化成功 | 提供商: ${providerId}`);
+                this._logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
             } catch (error) {
                 this._logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
             }
@@ -174,7 +178,7 @@ export class ModelService extends Service<ModelServiceConfig> {
         let modified = false;
         // this._logger.debug("开始验证服务配置");
         if (this.config.providers.length === 0) {
-            throw new Error("配置错误: 至少需要配置一个提供商。");
+            throw new Error("配置错误: 至少需要配置一个提供商");
         }
 
         for (const providerConfig of this.config.providers) {
@@ -211,10 +215,10 @@ export class ModelService extends Service<ModelServiceConfig> {
             }
         }
         if (modified) {
-            this._logger.warn("配置已自动更正，请检查并保存更改");
+            //this._logger.warn("配置已自动更正，请检查并保存更改");
             this.ctx.scope.update(this.config);
         } else {
-            this._logger.debug("配置验证通过");
+            //this._logger.debug("配置验证通过");
         }
     }
 
@@ -321,7 +325,7 @@ class RequestExecutor {
         }
 
         // 所有模型都尝试失败后
-        this.logger.error("所有可用模型均未能成功处理请求。");
+        this.logger.error("所有可用模型均未能成功处理请求");
         throw new AppError(`模型组 "${this.groupName}" 中所有模型均调用失败`, {
             code: ErrorCodes.SERVICE.UNAVAILABLE,
             cause: this.accumulatedErrors as any,
@@ -421,7 +425,7 @@ export class ModelSwitcher<T extends BaseModel> {
             }
         });
 
-        this._logger.debug(`✅ 加载成功 | 可用模型数: ${this._models.length}`);
+        //this._logger.debug(`✅ 加载成功 | 可用模型数: ${this._models.length}`);
     }
 
     public getModels(): readonly T[] {
@@ -449,7 +453,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         // 根据能力对模型进行分类
         this.visionModels = this._models.filter((m) => m.isVisionModel?.());
         this.nonVisionModels = this._models.filter((m) => !m.isVisionModel?.());
-        this._logger.debug(`模型能力分类 | 视觉: ${this.visionModels.length} | 非视觉: ${this.nonVisionModels.length}`);
+        //this._logger.debug(`模型能力分类 | 视觉: ${this.visionModels.length} | 非视觉: ${this.nonVisionModels.length}`);
     }
 
     public hasVisionCapability(): boolean {
@@ -465,10 +469,10 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
 
         if (hasImages) {
             if (this.visionModels.length > 0) {
-                this._logger.info("检测到图片内容，将使用视觉模型。");
+                this._logger.info("检测到图片内容，将使用视觉模型");
                 candidateModels = this.visionModels;
             } else {
-                this._logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理。");
+                this._logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理");
                 candidateModels = this.nonVisionModels;
             }
         } else {
