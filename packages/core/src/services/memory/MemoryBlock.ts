@@ -4,7 +4,7 @@ import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 
 import { Services } from "@/shared/constants";
-import { AppError, ErrorCodes } from "@/shared/errors";
+import { AppError, ErrorCodes, ErrorDefinitions } from "@/shared/errors";
 import { MemoryBlockData } from "./types";
 
 export class MemoryBlock {
@@ -146,10 +146,10 @@ export class MemoryBlock {
             return block;
         } catch (error) {
             logger.error(`加载失败 | 路径: "${filePath}" | 错误: ${error.message}`);
-            throw new AppError(`Failed to create MemoryBlock from file: ${filePath}`, {
-                code: ErrorCodes.RESOURCE.STORAGE_FAILURE,
-                context: { filePath },
+
+            throw new AppError(ErrorDefinitions.MEMORY.PROVIDER_ERROR, {
                 cause: error,
+                context: { filePath },
             });
         }
     }

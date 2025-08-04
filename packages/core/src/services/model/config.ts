@@ -5,7 +5,6 @@ import { SystemConfig } from "../../config";
 export enum ModelSwitchingStrategy {
     Failover = "failover", // 故障转移 (默认)
     RoundRobin = "round-robin", // 轮询
-    // Retry 策略将通过 RetryPolicy 实现，而不是作为一个独立的切换策略
 }
 
 /** 内容验证失败时的处理动作 */
@@ -74,6 +73,7 @@ export type ModelDescriptor = {
 // =================================================================
 
 export interface ModelConfig {
+    providerName?: string;
     modelId: string;
     abilities: ModelAbility[];
     parameters?: {
@@ -122,7 +122,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
 
     timeoutPolicy: Schema.object({
         firstTokenTimeout: Schema.number().default(15).description("首字响应超时 (秒)"),
-        totalTimeout: Schema.number().default(90).description("总请求超时 (秒)"),
+        totalTimeout: Schema.number().default(60).description("总请求超时 (秒)"),
     }).description("超时策略"),
 
     retryPolicy: Schema.object({

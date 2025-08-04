@@ -1,23 +1,14 @@
 import { Services } from "@/shared/constants";
-import { AppError, ErrorCodes } from "@/shared/errors";
+import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isNotEmpty } from "@/shared/utils";
+import { GenerateTextResult } from "@xsai/generate-text";
 import { Awaitable, Context, Logger, Schema, Service } from "koishi";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import {
-    ContentFailureAction,
-    ModelDescriptor,
-    ModelServiceConfig,
-    CircuitBreakerPolicy,
-    RetryPolicy,
-    TimeoutPolicy,
-    ModelSwitchingStrategy,
-} from "./config";
+import { CircuitBreakerPolicy, ContentFailureAction, ModelDescriptor, ModelServiceConfig, ModelSwitchingStrategy } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
-import { GenerateTextResult } from "@xsai/generate-text";
-import { EmbedResult } from "@xsai/embed";
 
 // --- 断路器 (CircuitBreaker) ---
 // 职责：跟踪单个模型的故障，在故障过多时暂时禁用它。
@@ -177,8 +168,10 @@ export class ModelService extends Service<ModelServiceConfig> {
     private validateConfig(): void {
         let modified = false;
         // this._logger.debug("开始验证服务配置");
-        if (this.config.providers.length === 0) {
-            throw new Error("配置错误: 至少需要配置一个提供商");
+        if (!this.config.providers || this.config.providers.length === 0) {
+            throw new AppError(ErrorDefinitions.CONFIG.INVALID, {
+                args: ["至少需要配置一个提供商"],
+            });
         }
 
         for (const providerConfig of this.config.providers) {
@@ -317,18 +310,23 @@ class RequestExecutor {
             if (result.success) {
                 breaker?.recordSuccess();
                 return result.data;
+            } else {
+                // 如果失败，记录错误并继续尝试下一个模型（故障转移）
+                breaker?.recordFailure();
+                this.accumulatedErrors.push({ modelId: model.id, error: (result as any).error });
             }
-
-            // 如果失败，记录错误并继续尝试下一个模型（故障转移）
-            breaker?.recordFailure();
-            this.accumulatedErrors.push({ modelId: model.id, error: (result as any)?.error });
         }
 
         // 所有模型都尝试失败后
         this.logger.error("所有可用模型均未能成功处理请求");
-        throw new AppError(`模型组 "${this.groupName}" 中所有模型均调用失败`, {
-            code: ErrorCodes.SERVICE.UNAVAILABLE,
-            cause: this.accumulatedErrors as any,
+        const individualErrors = this.accumulatedErrors.map((e) => e.error);
+        throw new AppError(ErrorDefinitions.MODEL.ALL_FAILED_IN_GROUP, {
+            args: [this.groupName],
+
+            cause: new AggregateError(individualErrors, "所有模型均失败"),
+            context: {
+                failedModels: this.accumulatedErrors.map((e) => ({ modelId: e.modelId, errorCode: (e.error as AppError).code })),
+            },
         });
     }
 
@@ -346,10 +344,22 @@ class RequestExecutor {
         for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
             const attemptLogger = this.logger.extend(`[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
             const controller = new AbortController();
+
+            const firstTokenTimeoutId = setTimeout(() => {
+                const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
+                timeoutError.name = "AbortError";
+                controller.abort(timeoutError);
+            }, timeoutPolicy.firstTokenTimeout * 1000);
+
             const timeoutId = setTimeout(() => {
-                attemptLogger.warn(`超时 (${timeoutPolicy.totalTimeout}s)`);
-                controller.abort(new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`));
+                const timeoutError = new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`);
+                timeoutError.name = "AbortError";
+                controller.abort(timeoutError);
             }, timeoutPolicy.totalTimeout * 1000);
+
+            options.onStreamStart = () => {
+                clearTimeout(firstTokenTimeoutId);
+            };
 
             try {
                 attemptLogger.info("发送请求...");
@@ -361,7 +371,7 @@ class RequestExecutor {
                 clearTimeout(timeoutId);
 
                 // 内容验证失败的特定处理
-                if (error instanceof AppError && error.code === ErrorCodes.LLM.OUTPUT_PARSING_FAILED) {
+                if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
                     if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
                         attemptLogger.warn("内容无效，修正 Prompt 并重试...");
                         options.messages = [
@@ -381,13 +391,16 @@ class RequestExecutor {
                 // 其他错误（网络，API限流等）
                 attemptLogger.error(`请求失败 | 错误: ${error.message}`);
                 if (attempt >= retryPolicy.maxRetries) {
-                    return { success: false, error }; // 所有重试用尽
+                    return { success: false, error };
                 }
 
                 await new Promise((res) => setTimeout(res, 500 * (attempt + 1))); // 退避等待
             }
         }
-        return { success: false, error: new Error("模型重试次数已用尽") };
+        return {
+            success: false,
+            error: new AppError(ErrorDefinitions.MODEL.RETRY_EXHAUSTED, { args: [model.id] }),
+        };
     }
 }
 
@@ -415,7 +428,8 @@ export class ModelSwitcher<T extends BaseModel> {
         if (this._models.length === 0) {
             const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
             this._logger.error(`❌ 加载失败 | ${errorMsg}`);
-            throw new AppError(errorMsg, { code: ErrorCodes.RESOURCE.NOT_FOUND });
+
+            throw new AppError(ErrorDefinitions.MODEL.GROUP_INIT_FAILED, { args: [groupConfig.name] });
         }
 
         // 初始化断路器
@@ -480,8 +494,11 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         }
 
         if (candidateModels.length === 0) {
-            throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求`, {
-                code: ErrorCodes.RESOURCE.NOT_FOUND,
+            // throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求`, {
+            //     code: ErrorCodes.RESOURCE.NOT_FOUND,
+            // });
+            throw new AppError(ErrorDefinitions.MODEL.NO_SUITABLE_MODEL, {
+                args: [this.groupConfig.name],
             });
         }
 

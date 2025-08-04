@@ -3,11 +3,10 @@ import { Context, h, Logger, Query, Service } from "koishi";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
-import { ChatModelSwitcher, IChatModel, IEmbedModel, TaskType } from "@/services/model";
+import { ChatModelSwitcher, IEmbedModel, TaskType } from "@/services/model";
 import { loadPrompt, PromptService } from "@/services/prompt";
 import { ContextualMessage, MemberData, MessageData } from "@/services/worldstate";
 import { Services, TableName } from "@/shared/constants";
-import { AppError, ErrorCodes } from "@/shared/errors";
 import { cosineSimilarity, formatDate, JsonParser } from "@/shared/utils";
 import { MemoryConfig } from "./config";
 import { MemoryBlock } from "./MemoryBlock";
@@ -140,14 +139,17 @@ export class MemoryService extends Service<MemoryConfig> {
     }
 
     private startMaintenanceTasks(): void {
-        this.maintenanceTimer = setInterval(async () => {
-            if (this.isShuttingDown) return;
-            try {
-                await this.maintenance.performMaintenance();
-            } catch (error) {
-                this.logger.error("定期维护任务执行失败:", error);
-            }
-        }, 60 * 60 * 1000); // 1小时
+        this.maintenanceTimer = setInterval(
+            async () => {
+                if (this.isShuttingDown) return;
+                try {
+                    await this.maintenance.performMaintenance();
+                } catch (error) {
+                    this.logger.error("定期维护任务执行失败:", error);
+                }
+            },
+            60 * 60 * 1000
+        ); // 1小时
     }
 
     // === 注册与初始化方法 ===
@@ -305,10 +307,11 @@ export class MemoryService extends Service<MemoryConfig> {
         const lockResult = await this.lockManager.withLock(lockKey, operation, timeoutMs);
 
         if (!lockResult.success) {
-            throw new AppError(lockResult.error || "操作失败", {
-                code: lockResult.lockAcquired ? ErrorCodes.OPERATION.RETRY_EXHAUSTED : ErrorCodes.OPERATION.LOCK_TIMEOUT,
-                context: { lockKey, lockAcquired: lockResult.lockAcquired },
-            });
+            // throw new AppError(lockResult.error || "操作失败", {
+            //     code: lockResult.lockAcquired ? ErrorCodes.OPERATION.RETRY_EXHAUSTED : ErrorCodes.OPERATION.LOCK_TIMEOUT,
+            //     context: { lockKey, lockAcquired: lockResult.lockAcquired },
+            // });
+            return Promise.reject(lockResult.error || "操作失败");
         }
 
         return lockResult.data!;
@@ -782,7 +785,8 @@ export class MemoryService extends Service<MemoryConfig> {
     /* prettier-ignore */
     public async consolidateProfile(userId: string, contextId: string, options: ProfileConsolidationOptions = {}): Promise<MemoryOperationResult<UserProfile | null>> {
         if (!userId) {
-            throw new AppError("用户ID不能为空", { code: ErrorCodes.VALIDATION.INVALID_INPUT });
+            // throw new AppError("用户ID不能为空", { code: ErrorCodes.VALIDATION.INVALID_INPUT });
+            return { success: false, error: "用户ID不能为空" };
         }
 
         const lockKey = `profile_consolidation_${userId}`;
@@ -1303,7 +1307,12 @@ class ProfileConsolidator {
 }
 
 class MemoryMaintenance {
-    constructor(private ctx: Context, private config: MemoryConfig, private logger: Logger, private embeddingModel: IEmbedModel) {}
+    constructor(
+        private ctx: Context,
+        private config: MemoryConfig,
+        private logger: Logger,
+        private embeddingModel: IEmbedModel
+    ) {}
 
     /**
      * 执行定期维护任务
@@ -1479,7 +1488,11 @@ class MemoryMaintenance {
 class CoreMemoryLoader {
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
 
-    constructor(private ctx: Context, private config: MemoryConfig, private logger: Logger) {}
+    constructor(
+        private ctx: Context,
+        private config: MemoryConfig,
+        private logger: Logger
+    ) {}
 
     public getMemoryBlocksForRendering(): MemoryBlockData[] {
         return Array.from(this.coreMemoryBlocks.values()).map((block) => block.toData());
@@ -1516,10 +1529,6 @@ class CoreMemoryLoader {
             }
         } catch (error) {
             this.logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
-            throw new AppError("Failed to discover core memory blocks", {
-                code: ErrorCodes.SERVICE.INITIALIZATION_FAILURE,
-                cause: error,
-            });
         }
     }
 }

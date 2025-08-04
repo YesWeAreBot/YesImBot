@@ -2,7 +2,7 @@ import { Context } from "koishi";
 
 import { AgentStimulus } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
-import { handleError } from "@/shared/errors";
+import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { AgentBehaviorConfig } from "./config";
 
 type TaskCallback = (stimulus: AgentStimulus<any>) => Promise<any>;
@@ -38,20 +38,31 @@ export class StimulusScheduler {
             return;
         }
 
-        // 简化：所有刺激都通过防抖任务来启动，以统一入口点
-        this.getDebouncedTask(channelKey)(stimulus);
+        const schedulingStack = new Error("Scheduling context stack").stack;
+
+        // 将堆栈传递给任务
+        this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
     }
 
-    private getDebouncedTask(channelKey: string): WithDispose<(stimulus: AgentStimulus<any>) => void> {
+    private getDebouncedTask(channelKey: string, schedulingStack?: string): WithDispose<(stimulus: AgentStimulus<any>) => void> {
         let debouncedTask = this.debouncedReplyTasks.get(channelKey);
         if (!debouncedTask) {
             debouncedTask = this.ctx.debounce(async (stimulus: AgentStimulus<any>) => {
                 this.runningTasks.add(channelKey);
-                this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务。`);
+                this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
                 try {
                     await this.taskCallback(stimulus);
                 } catch (error) {
-                    handleError(this.logger, error, `调度任务执行失败 (Channel: ${channelKey})`);
+                    // 创建错误时附加调度堆栈
+                    const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
+                        cause: error as Error,
+                        context: {
+                            channelCid: channelKey,
+                            stimulusType: stimulus.type,
+                            schedulingStack: schedulingStack,
+                        },
+                    });
+                    handleError(this.logger, taskError, `调度任务执行失败 (Channel: ${channelKey})`);
                 } finally {
                     this.runningTasks.delete(channelKey);
                     this.logger.debug(`[${channelKey}] 频道锁已释放`);

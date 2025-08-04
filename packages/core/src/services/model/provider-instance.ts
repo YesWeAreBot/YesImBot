@@ -61,8 +61,10 @@ export class ProviderInstance {
             return null;
         }
 
+        const finalModelConfig: ModelConfig = { ...modelConfig, providerName: this.name };
+
         //this.logger.debug(`[获取模型] 🟢 成功 | 模型ID: ${modelId} | 能力: ${capabilityName}`);
-        return new modelConstructor(this.ctx, providerCapability, modelConfig, this.fetch);
+        return new modelConstructor(this.ctx, providerCapability, finalModelConfig, this.fetch);
     }
 
     public getChatModel(modelId: string): IChatModel | null {

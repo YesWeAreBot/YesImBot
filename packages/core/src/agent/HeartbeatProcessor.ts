@@ -7,7 +7,7 @@ import { ChatModelSwitcher } from "@/services/model";
 import { PromptService } from "@/services/prompt";
 import { AgentResponse, AgentStimulus, UserMessagePayload, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
-import { AppError, ErrorCodes, handleError } from "@/shared/errors";
+import { AppError, ErrorCodes, ErrorDefinitions, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./ContextBuilder";
@@ -55,7 +55,7 @@ export class HeartbeatProcessor {
                     shouldContinueHeartbeat = false;
                 }
             } catch (error) {
-                handleError(this.logger, error, `心跳 #${heartbeatCount} 失败 (刺激类型: ${stimulus.type})`);
+                handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
                 shouldContinueHeartbeat = false;
                 success = false;
             }
@@ -122,11 +122,8 @@ export class HeartbeatProcessor {
         const userPromptText = await this.promptService.render("agent.user", view);
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
-        this.logger.debug("步骤 4/7: 构建最终消息 (含多模态)...");
-        const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(
-            userPromptText,
-            promptContext.worldState
-        );
+        this.logger.debug("步骤 4/7: 构建最终消息...");
+        const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(userPromptText, promptContext.worldState);
 
         const messages: Message[] = [
             { role: "system", content: systemPrompt },
@@ -159,8 +156,7 @@ export class HeartbeatProcessor {
 
         const responseTime = Date.now() - stime;
         this.logger.info(`💬 LLM 响应时间: ${responseTime}ms`);
-        const prompt_tokens =
-            llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
+        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
 
@@ -190,11 +186,7 @@ export class HeartbeatProcessor {
      * @param channelId - 用于日志记录的频道ID。
      * @returns 如果成功，则返回格式正确的 AgentResponse 数据；否则返回 null。
      */
-    private parseAndValidateResponse(
-        llmRawResponse: GenerateTextResult,
-        channelId: string
-    ): Omit<AgentResponse, "observations"> | null {
-        // A. 预先创建用于错误上报的上下文对象
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, channelId: string): Omit<AgentResponse, "observations"> | null {
         const errorContext = {
             rawResponse: llmRawResponse.text,
             channelId: channelId,
@@ -202,27 +194,23 @@ export class HeartbeatProcessor {
             completionTokens: llmRawResponse.usage?.completion_tokens,
         };
 
-        let agentResponseData: any;
-
-        // B. 检查是否由 validator 提前解析了数据
-
-        // C. 正常解析JSON
         const llmParsedResponse = this.parser.parse(llmRawResponse.text);
         if (llmParsedResponse.error || !llmParsedResponse.data) {
-            const parseError = new AppError("解析 LLM 响应失败，内容非有效JSON", {
-                code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED,
+            // 使用新的错误定义，并传入完整的上下文
+            const parseError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
                 cause: llmParsedResponse.error as any,
                 context: errorContext,
             });
+            // handleError 会处理日志、建议和上报
             handleError(this.logger, parseError, `解析LLM响应时 (Channel: ${channelId})`);
             return null;
         }
-        agentResponseData = llmParsedResponse.data;
+
+        const agentResponseData = llmParsedResponse.data;
 
         // D. 验证JSON对象结构
         if (!agentResponseData.thoughts || typeof agentResponseData.thoughts !== "object") {
-            const formatError = new AppError("LLM 响应格式无效：缺少必需的 'thoughts' 对象", {
-                code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED,
+            const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
                 context: { ...errorContext, checkedField: "thoughts" },
             });
             handleError(this.logger, formatError, `验证LLM响应格式时 (Channel: ${channelId})`);
@@ -230,8 +218,7 @@ export class HeartbeatProcessor {
         }
 
         if (!Array.isArray(agentResponseData.actions)) {
-            const formatError = new AppError("LLM 响应格式无效：'actions' 字段不是一个数组", {
-                code: ErrorCodes.LLM.OUTPUT_PARSING_FAILED,
+            const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
                 context: { ...errorContext, checkedField: "actions" },
             });
             handleError(this.logger, formatError, `验证LLM响应格式时 (Channel: ${channelId})`);
@@ -252,17 +239,13 @@ export class HeartbeatProcessor {
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
         if (!thoughts) return;
         const { observe, analyze_infer, plan } = thoughts;
-        // 使用 info 级别，因为这是理解 Agent 行为的关键日志
         this.logger.info(`[思考过程]
   - 观察: ${observe}
   - 分析: ${analyze_infer}
   - 计划: ${plan}`);
     }
 
-    private async executeActions(
-        session: Session,
-        actions: AgentResponse["actions"]
-    ): Promise<AgentResponse["observations"]> {
+    private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {
         if (actions.length === 0) {
             this.logger.info("无动作需要执行。");
             return [];

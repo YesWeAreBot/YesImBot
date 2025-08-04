@@ -10,6 +10,7 @@ import { PromptContextBuilder } from "./ContextBuilder";
 import { HeartbeatProcessor } from "./HeartbeatProcessor";
 import { StimulusScheduler } from "./StimulusScheduler";
 import { WillingnessManager } from "./willing";
+import { ErrorDefinitions } from "@/shared/errors/definitions";
 
 declare module "koishi" {
     interface Events {
@@ -59,11 +60,14 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // 2. 初始化核心组件
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
         if (!this.modelSwitcher) {
-            const error = new AppError("未配置模型组，智能体核心无法启动", {
-                code: ErrorCodes.CONFIG.MISSING,
+            // 使用新的、声明式的错误
+            const error = new AppError(ErrorDefinitions.CONFIG.MISSING_MODEL_GROUP, {
                 context: { service: "AgentCore", component: "modelSwitcher" },
             });
-            handleError(this.logger, error, "智能体核心启动失败");
+            // handleError 会自动格式化和记录
+            handleError(this.logger, error, "AgentCore startup check");
+            // 这里可以考虑抛出错误让上层服务停止
+            throw error;
         }
 
         this.willing = new WillingnessManager(ctx, config.willingness);
@@ -124,7 +128,14 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                     /* prettier-ignore */
                     this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
                 } catch (error) {
-                    handleError(this.logger, error, `意愿计算失败 (Channel: ${channelCid})`);
+                    handleError(
+                        this.logger,
+                        new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
+                            cause: error as Error,
+                            context: { channelCid },
+                        }),
+                        `Willingness calculation (Channel: ${channelCid})`
+                    );
                     return; // 出现错误时终止处理
                 }
             } else {
