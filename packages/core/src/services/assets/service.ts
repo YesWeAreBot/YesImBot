@@ -47,7 +47,7 @@ declare module "koishi" {
  * 负责资源的持久化存储、去重、读取、处理和生命周期管理
  */
 export class AssetService extends Service<AssetServiceConfig> {
-    static readonly inject = ["database", "server", "http"];
+    static readonly inject = ["database", "server", "http", Services.Logger];
 
     // 缓存和常量
     private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
@@ -143,7 +143,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
 
         if (existing) {
-            this.logger.debug(`资源哈希命中 (源: ${truncate(String(source), 50)})，复用ID: ${existing.id}`);
+            //this.logger.debug(`资源哈希命中 (源: ${truncate(String(source), 50)})，复用ID: ${existing.id}`);
             await this._updateLastUsed(existing.id);
             return existing.id;
         }
@@ -311,6 +311,11 @@ export class AssetService extends Service<AssetServiceConfig> {
         // 移除原有的 src/url/file 属性，保留其他属性
         const { src, url, file, ...displayAttrs } = element.attrs;
 
+        if (tagName === "img") {
+            delete displayAttrs["filename"];
+            delete displayAttrs["subType"];
+        }
+
         if (isAsync) {
             const placeholderId = uuidv4();
             // 立即返回带占位符ID的元素，后台执行持久化
@@ -359,7 +364,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         } catch (error) {
             // 如果预检失败（如服务器不支持HEAD），下载时仍会受限于 maxBodySize。
             if (error.message.includes("超出限制")) throw error;
-            this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载。`);
+            //this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载。`);
         }
 
         // 2. 下载文件
