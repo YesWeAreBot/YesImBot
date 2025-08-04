@@ -3,6 +3,7 @@ import { resolve } from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { truncate } from "@/shared/utils";
+import { ErrorDefinitions } from "./definitions";
 
 // --- 错误上报模块 ---
 
@@ -14,10 +15,7 @@ export interface ErrorReporterConfig {
 
 export const ErrorReporterConfigSchema = Schema.object({
     enabled: Schema.boolean().default(false).description("是否启用错误上报"),
-    pasteServiceUrl: Schema.string()
-        .role("link")
-        .default("https://dump.yesimbot.chat/")
-        .description("错误上报服务的 URL"),
+    pasteServiceUrl: Schema.string().role("link").default("https://dump.yesimbot.chat/").description("错误上报服务的 URL"),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
 
@@ -28,8 +26,7 @@ export interface ReportContext {
 }
 
 /**
- * 负责格式化错误详情并将其上报到外部服务。
- * 设计灵感来源于您提供的 ErrorHandlingMiddleware。
+ * 负责格式化错误详情并将其上报到外部服务
  */
 export class ErrorReporter {
     private readonly config: ErrorReporterConfig;
@@ -44,12 +41,12 @@ export class ErrorReporter {
         this.logger = logger;
 
         if (this.config.enabled && !this.config.pasteServiceUrl) {
-            this.logger.warn("[ErrorReporter] 已启用上报但未配置 pasteServiceUrl，上报功能将不会生效。");
+            this.logger.warn("已启用上报但未配置 pasteServiceUrl，上报功能将不会生效。");
         }
     }
 
     /**
-     * 格式化并上报错误。
+     * 格式化并上报错误
      * @param context 包含错误和附加上下文的对象
      */
     public async report(context: ReportContext): Promise<void> {
@@ -93,50 +90,53 @@ export class ErrorReporter {
     }
 
     private formatErrorDump(context: ReportContext): string {
-        const { error, errorId, additionalInfo } = context;
-        const dumpSections: string[] = [];
-        const packageJson = require(resolve(__dirname, "../../../package.json"));
+        const { error, errorId } = context;
+        const appError = error instanceof AppError ? error : new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: error });
 
+        const { code, suggestion, context: errorContext, cause, stack } = appError;
+        const packageJson = require(resolve(__dirname, "../../../package.json"));
+        const dumpSections: string[] = [];
+
+        // --- 摘要 ---
         dumpSections.push(
             `# 智能体错误报告\n`,
-            `**错误 ID:** \`${errorId}\`\n`,
-            `**时间戳 (UTC):** \`${new Date().toISOString()}\`\n`,
+            `**ID:** \`${errorId}\`\n`,
+            `**时间 (UTC):** \`${new Date().toISOString()}\`\n`,
             `**插件版本:** \`${packageJson.version || "N/A"}\`\n`,
+            `**错误码:** \`${code}\`\n`,
             `---`
         );
 
-        dumpSections.push(`## 🔴 错误详情\n`, `**类型:** \`${error.name}\`\n`, `**消息:** \`${error.message}\`\n`);
-        if (error.stack) {
-            dumpSections.push(`### 堆栈追踪:\n`, "```\n" + error.stack + "\n```");
-        }
-        if ((error as AppError).cause) {
-            const cause = (error as AppError).cause as Error;
-            dumpSections.push(
-                `### 根本原因 (Cause):\n`,
-                `**类型:** \`${cause.name}\`\n`,
-                `**消息:** \`${cause.message}\`\n`,
-                "```\n" + cause.stack + "\n```"
-            );
-        }
+        // --- 错误与建议 ---
+        dumpSections.push(`## 🔴 错误摘要\n`, `**${appError.message}**\n`, `## 💡 用户建议\n`, `*${suggestion}*\n`, `---`);
 
-        // 关键：将附加信息格式化，特别是 LLM 的原始响应
-        if (additionalInfo && Object.keys(additionalInfo).length > 0) {
-            dumpSections.push(`\n---\n`, `## ➕ 附加上下文\n`);
-            for (const [key, value] of Object.entries(additionalInfo)) {
-                // 对 rawResponse 进行特殊格式化
+        // --- 技术细节 ---
+        if (errorContext && Object.keys(errorContext).length > 0) {
+            dumpSections.push(`## 🛠️ 技术上下文\n`);
+            for (const [key, value] of Object.entries(errorContext)) {
+                // 特殊处理长文本和对象
                 if (key === "rawResponse" && typeof value === "string") {
-                    dumpSections.push(`### 原始 LLM 响应 (Raw LLM Response):\n`, "```json\n" + value + "\n```");
+                    dumpSections.push(`### 原始 LLM 响应:\n`, "```json\n" + value + "\n```");
+                } else if (key === "schedulingStack" && typeof value === "string") {
+                    dumpSections.push(`### 调度堆栈:\n`, "```\n" + value + "\n```");
                 } else {
                     dumpSections.push(`**${key}:**\n`, "```json\n" + JSON.stringify(value, null, 2) + "\n```");
                 }
             }
+            dumpSections.push(`---`);
         }
 
-        if (this.config.includeSystemInfo) {
+        // --- 堆栈追踪 ---
+        if (stack) {
+            dumpSections.push(`## 📄 主堆栈追踪:\n`, "```\n" + stack + "\n```");
+        }
+        if (cause) {
+            const causeError = cause as Error;
             dumpSections.push(
-                `\n---\n`,
-                `## ⚙️ 系统信息\n`,
-                `**Node.js:** \`${process.version}\` | **平台:** \`${process.platform}\` | **架构:** \`${process.arch}\``
+                `## 🔗 根本原因 (Cause):\n`,
+                `**Type:** \`${causeError.name}\`\n`,
+                `**Message:** \`${causeError.message}\`\n`,
+                "```\n" + (causeError.stack || "No stack available.") + "\n```"
             );
         }
 
@@ -146,208 +146,119 @@ export class ErrorReporter {
 
 // --- 统一错误处理器 ---
 
-// 在服务启动时创建单例
 let globalErrorReporter: ErrorReporter | null = null;
 
 export function initializeErrorReporter(config: ErrorReporterConfig, logger: Logger) {
     globalErrorReporter = new ErrorReporter(config, logger);
 }
 
-/**
- * 应用程序的统一错误码
- * 使用常量对象而不是枚举，以获得更好的灵活性和 Tree-shaking 效果
- * 格式: DOMAIN.CATEGORY_OR_DETAIL
- */
-export const ErrorCodes = {
-    // 服务相关错误
-    SERVICE: {
-        UNAVAILABLE: "SERVICE.UNAVAILABLE",
-        INITIALIZATION_FAILURE: "SERVICE.INITIALIZATION_FAILURE",
-        START_FAILURE: "SERVICE.START_FAILURE",
-        STOP_FAILURE: "SERVICE.STOP_FAILURE",
-    },
-    // 通用系统错误
-    SYSTEM: {
-        UNKNOWN: "SYSTEM.UNKNOWN",
-        DATABASE_ERROR: "SYSTEM.DATABASE_ERROR",
-        NETWORK_ERROR: "SYSTEM.NETWORK_ERROR",
-        SERVICE_UNAVAILABLE: "SYSTEM.SERVICE_UNAVAILABLE",
-    },
-    // 配置错误
-    CONFIG: {
-        MISSING: "CONFIG.MISSING",
-        INVALID: "CONFIG.INVALID",
-    },
-    // 验证错误
-    VALIDATION: {
-        INVALID_INPUT: "VALIDATION.INVALID_INPUT",
-        IS_NULL_OR_UNDEFINED: "VALIDATION.IS_NULL_OR_UNDEFINED",
-    },
-    // 资源错误
-    RESOURCE: {
-        NOT_FOUND: "RESOURCE.NOT_FOUND",
-        CONFLICT: "RESOURCE.CONFLICT",
-        EXHAUSTED: "RESOURCE.EXHAUSTED",
-        STORAGE_FAILURE: "RESOURCE.STORAGE_FAILURE",
-        LIMIT_EXCEEDED: "RESOURCE.LIMIT_EXCEEDED",
-    },
-    // 权限与认证
-    AUTH: {
-        PERMISSION_DENIED: "AUTH.PERMISSION_DENIED",
-        AUTHENTICATION_FAILED: "AUTH.AUTHENTICATION_FAILED",
-    },
-    // LLM 相关错误
-    LLM: {
-        REQUEST_FAILED: "LLM.REQUEST_FAILED",
-        TIMEOUT: "LLM.TIMEOUT",
-        ADAPTER_ERROR: "LLM.ADAPTER_ERROR",
-        RETRY_EXHAUSTED: "LLM.RETRY_EXHAUSTED",
-        OUTPUT_PARSING_FAILED: "LLM.OUTPUT_PARSING_FAILED",
-        MODEL_NOT_FOUND: "LLM.MODEL_NOT_FOUND",
-    },
-    NETWORK: {
-        DOWNLOAD_FAILED: "NETWORK.DOWNLOAD_FAILED",
-    },
-    // 记忆相关错误
-    MEMORY: {
-        PROVIDER_ERROR: "MEMORY.PROVIDER_ERROR",
-    },
-    // 工具相关错误
-    TOOL: {
-        NOT_FOUND: "TOOL.NOT_FOUND",
-        EXECUTION_ERROR: "TOOL.EXECUTION_ERROR",
-        TIMEOUT: "TOOL.TIMEOUT",
-    },
-    // 操作相关错误
-    OPERATION: {
-        LOCK_TIMEOUT: "OPERATION.LOCK_TIMEOUT",
-        CIRCUIT_BREAKER_OPEN: "OPERATION.CIRCUIT_BREAKER_OPEN",
-        SERVICE_SHUTTING_DOWN: "OPERATION.SERVICE_SHUTTING_DOWN",
-        RETRY_EXHAUSTED: "OPERATION.RETRY_EXHAUSTED",
-    },
-} as const;
+type ErrorDomains = keyof typeof ErrorDefinitions;
 
-// 从 ErrorCodes 对象中提取所有可能的值作为类型
-type ObjectValues<T> = T[keyof T];
-type NestedObjectValues<T> = { [K in keyof T]: ObjectValues<T[K]> }[keyof T];
-export type ErrorCode = NestedObjectValues<typeof ErrorCodes>;
+export type ErrorDefinitionValue = {
+    [K in ErrorDomains]: (typeof ErrorDefinitions)[K][keyof (typeof ErrorDefinitions)[K]];
+}[ErrorDomains];
 
-/**
- * 统一的应用程序错误类
- * 扩展自原生的 Error，并添加了 code、context 和唯一的 errorId
- */
 export class AppError extends Error {
-    public readonly code: ErrorCode;
-    public readonly context?: Record<string, any>;
-    public readonly errorId: string; // 新增：可追踪的错误ID
+    public readonly code: string;
+    public readonly suggestion: string;
+    public readonly errorId: string;
+
+    public context?: Record<string, any>;
 
     constructor(
-        message: string,
-        options: {
-            code: ErrorCode;
+        definition: ErrorDefinitionValue,
+        options?: {
             context?: Record<string, any>;
             cause?: Error;
+            args?: any[];
         }
     ) {
-        super(message, { cause: options.cause });
-        this.name = "AppError"; // 明确错误名称
-        this.code = options.code;
-        this.context = options.context;
-        this.errorId = uuidv4(); // 实例化时即生成唯一ID
+        let message: string;
+        let suggestion: string;
 
-        // 恢复原型链，确保 `instanceof AppError` 能正常工作
+        if (typeof definition.message === "function") {
+            message = definition.message.apply(null, options?.args || []);
+        } else {
+            message = definition.message;
+        }
+
+        if (typeof definition.suggestion === "function") {
+            suggestion = definition.suggestion.apply(null, options?.args || []);
+        } else {
+            suggestion = definition.suggestion;
+        }
+
+        super(message, { cause: options?.cause });
+
+        this.name = "AppError";
+        this.code = definition.code;
+        this.suggestion = suggestion;
+        this.context = options?.context;
+        this.errorId = uuidv4();
+
         Object.setPrototypeOf(this, AppError.prototype);
     }
-}
 
-// --- 实用断言函数 (保持不变, 设计得很好) ---
-
-export function assert(
-    condition: unknown,
-    message: string,
-    code: ErrorCode = ErrorCodes.VALIDATION.INVALID_INPUT
-): asserts condition {
-    if (!condition) {
-        throw new AppError(message, { code });
+    addContext(context: Record<string, any>) {
+        this.context = { ...this.context, ...context };
     }
 }
-
-export function assertNotNull<T>(value: T | null | undefined, name: string): asserts value is T {
-    if (value === null || value === undefined) {
-        throw new AppError(`${name} 不能为空`, {
-            code: ErrorCodes.VALIDATION.IS_NULL_OR_UNDEFINED,
-            context: { field: name },
-        });
-    }
-}
-
-export function assertExists<T>(
-    value: T | null | undefined,
-    resourceType: string,
-    resourceId?: string
-): asserts value is T {
-    if (value === null || value === undefined) {
-        throw new AppError(`${resourceType} 不存在`, {
-            code: ErrorCodes.RESOURCE.NOT_FOUND,
-            context: { resourceType, resourceId },
-        });
-    }
-}
-
-// --- 错误处理与日志记录函数 ---
 
 /**
- * 统一错误处理函数。
- * 现在会自动触发上报（如果已配置）。
+ * 统一错误处理函数
+ * 实现了分层日志记录和可选的错误自动上报功能
+ * @param logger - Koishi 的 Logger 实例，用于记录日志
+ * @param error - 捕获到的未知类型的错误
+ * @param contextDescription - 描述错误发生时的操作或环节，例如 "处理聊天请求"
+ * @returns 返回生成的唯一错误 ID
  */
 export function handleError(logger: Logger, error: unknown, contextDescription: string): string {
     let appError: AppError;
 
+    // 步骤 1: 确保错误是 AppError 类型
+    // 如果捕获到的不是 AppError，则将其包装成一个通用的系统未知错误，以便统一处理
     if (error instanceof AppError) {
         appError = error;
-    } else if (error instanceof Error) {
-        // 将标准 Error 包装成 AppError，以便统一处理
-        appError = new AppError(error.message, {
-            code: ErrorCodes.SYSTEM.UNKNOWN, // 标记为未知系统错误
-            cause: error,
-        });
     } else {
-        // 将非 Error 对象包装成 AppError
-        const message = "捕获到非标准错误对象";
-        appError = new AppError(message, {
-            code: ErrorCodes.SYSTEM.UNKNOWN,
+        // 保留原始错误信息作为排查线索
+        const cause = error instanceof Error ? error : undefined;
+        appError = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, {
+            cause,
             context: { capturedValue: error },
         });
     }
 
-    const { errorId, code, message, context, cause, stack, name } = appError;
+    const { errorId, message, suggestion, context, stack } = appError;
 
-    // 记录美观的日志
-    logger.error(`[错误] [ID: ${errorId}] 在 ${contextDescription} 期间发生错误。`);
-    logger.error(`  - 类型: ${name} | 错误码: ${code}`);
-    logger.error(`  - 信息: ${message}`);
-    if (context) {
-        // 特别注意：不要在日志中打印可能非常长的原始响应
-        const logContext = { ...context };
-        if ("rawResponse" in logContext) {
-            logContext.rawResponse = truncate(logContext.rawResponse as string, 200) + "... (完整内容见上报)";
-        }
-        logger.error(`  - 上下文: ${JSON.stringify(logContext)}`);
-    }
-    if (cause) {
-        logger.error(`  - 根本原因: ${(cause as Error).name} - ${(cause as Error).message}`);
-    }
-    logger.debug(`  - 堆栈追踪:\n${stack}`);
+    // 步骤 2: 分层记录日志
+    // 第一层：面向用户/管理员的清晰错误报告 (ERROR 级别)
+    logger.error(`🛑 [错误报告]`);
+    logger.error(`   - 环节: ${contextDescription}`);
+    logger.error(`   - 详情: ${message}`);
+    logger.error(`   - 建议: ${suggestion}`);
 
-    // 触发上报
+    // 第二层：面向开发者的详细调试信息 (WARN / DEBUG 级别，避免日志泛滥)
+    const devContext = { ...context };
+    // 对可能很长的原始响应进行截断，防止刷屏
+    if (devContext.rawResponse) {
+        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见上报信息)";
+    }
+    if (Object.keys(devContext).length > 0) {
+        logger.warn(`   - 调试上下文: ${JSON.stringify(devContext)}`);
+    }
+    // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
+    logger.debug(`   - 堆栈追踪:\n${stack}`);
+
+    // 步骤 3: 触发全局错误上报 (例如上报到 Sentry 等监控服务)
     if (globalErrorReporter) {
         globalErrorReporter.report({
             errorId,
             error: appError,
-            // 将 AppError 的 context 作为上报的 additionalInfo
-            additionalInfo: context,
         });
+        logger.info(`   - 追踪: 此错误已上报，可凭错误 ID [${errorId}] 查询详情。`);
     }
 
     return errorId;
 }
+
+export * from "./definitions";
