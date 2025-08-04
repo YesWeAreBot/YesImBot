@@ -289,6 +289,7 @@ export class AssetService extends Service<AssetServiceConfig> {
     private async _processTransformElement(element: Element, isAsync: boolean): Promise<Element> {
         if (!ELEMENT_TO_PROCESS.includes(element.type)) return element;
         const originalUrl = element.attrs.src || element.attrs.url || element.attrs.file;
+        const filename = element.attrs.filename || element.attrs.name || element.attrs.fileName;
         if (!originalUrl || element.attrs.id) return element;
 
         // 根据元素类型和URL协议决定是否处理
@@ -303,17 +304,15 @@ export class AssetService extends Service<AssetServiceConfig> {
         }
 
         const metadata: AssetMetadata = {
-            filename: element.attrs.filename,
+            filename,
             src: originalUrl,
             summary: element.attrs.summary,
         };
 
-        // 移除原有的 src/url/file 属性，保留其他属性
-        const { src, url, file, ...displayAttrs } = element.attrs;
+        const { src, ...displayAttrs } = metadata;
 
         if (tagName === "img") {
             delete displayAttrs["filename"];
-            delete displayAttrs["subType"];
         }
 
         if (isAsync) {

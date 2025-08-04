@@ -113,12 +113,18 @@ export default class CoreUtilExtension {
     })
     async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
         const { image_id, question } = args;
-        const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
 
-        if (!image) {
+        const imageInfo = await this.assetService.getInfo(image_id);
+        if (!imageInfo) {
             this.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
             return Failed(`图片未找到`);
         }
+        if (!imageInfo.mime.startsWith("image/")) {
+            this.logger.warn(`✖ 资源不是图片 | ID: ${image_id}`);
+            return Failed(`资源不是图片`);
+        }
+
+        const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
 
         const visionModel = this.config.vision.model;
         let model: IChatModel | null = null;
@@ -138,7 +144,13 @@ export default class CoreUtilExtension {
             return Failed(`获取视觉模型失败: ${error.message}`);
         }
 
-        const prompt = `请详细描述以下图片，并回答问题：${question}\n\n如果由多张图片拼接而成，则可能是gif的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述\n\n图片内容：`;
+        let prompt;
+
+        if (imageInfo.mime === "image/gif") {
+            prompt = `这是一张GIF动图的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述，并回答问题：${question}\n\n图片内容：`;
+        } else {
+            prompt = `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
+        }
 
         try {
             const response = await model.chat({
