@@ -6,7 +6,7 @@
 
 # Interface: StorageDriver
 
-Defined in: [packages/core/src/services/assets/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L52)
+Defined in: [packages/core/src/services/assets/types.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L33)
 
 存储驱动接口
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:52](https://github.com/Y
 
 > **delete**(`id`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L55)
+Defined in: [packages/core/src/services/assets/types.ts:36](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L36)
 
 #### Parameters
 
@@ -30,11 +30,29 @@ Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/Y
 
 ***
 
+### exists()
+
+> **exists**(`id`): `Promise`\<`boolean`\>
+
+Defined in: [packages/core/src/services/assets/types.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L37)
+
+#### Parameters
+
+##### id
+
+`string`
+
+#### Returns
+
+`Promise`\<`boolean`\>
+
+***
+
 ### read()
 
 > **read**(`id`): `Promise`\<`Buffer`\<`ArrayBufferLike`\>\>
 
-Defined in: [packages/core/src/services/assets/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L54)
+Defined in: [packages/core/src/services/assets/types.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L35)
 
 #### Parameters
 
@@ -52,7 +70,7 @@ Defined in: [packages/core/src/services/assets/types.ts:54](https://github.com/Y
 
 > **write**(`id`, `buffer`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L53)
+Defined in: [packages/core/src/services/assets/types.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L34)
 
 #### Parameters
 

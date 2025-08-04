@@ -6,7 +6,7 @@
 
 # Enumeration: ContentFailureAction
 
-Defined in: [packages/core/src/services/model/config.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/config.ts#L12)
+Defined in: [packages/core/src/services/model/config.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/model/config.ts#L12)
 
 内容验证失败时的处理动作
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/config.ts:12](https://github.com/Y
 
 > **AugmentAndRetry**: `"augment_and_retry"`
 
-Defined in: [packages/core/src/services/model/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/config.ts#L14)
+Defined in: [packages/core/src/services/model/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/model/config.ts#L14)
 
 ***
 
@@ -24,4 +24,4 @@ Defined in: [packages/core/src/services/model/config.ts:14](https://github.com/Y
 
 > **FailoverToNext**: `"failover_to_next"`
 
-Defined in: [packages/core/src/services/model/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/model/config.ts#L13)
+Defined in: [packages/core/src/services/model/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/model/config.ts#L13)

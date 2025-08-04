@@ -6,7 +6,7 @@
 
 # Interface: AssetData
 
-Defined in: [packages/core/src/services/assets/types.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L15)
+Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L4)
 
 数据库中存储的资源元数据模型
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:15](https://github.com/Y
 
 > **createdAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L21)
+Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L9)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/Y
 
 > **hash**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L19)
+Defined in: [packages/core/src/services/assets/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L7)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/assets/types.ts:19](https://github.com/Y
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L16)
+Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L5)
 
 ***
 
@@ -40,15 +40,15 @@ Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/Y
 
 > **lastUsedAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L22)
+Defined in: [packages/core/src/services/assets/types.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L10)
 
 ***
 
-### metadata?
+### metadata
 
-> `optional` **metadata**: [`AssetMetadata`](AssetMetadata.md)
+> **metadata**: [`AssetMetadata`](AssetMetadata.md)
 
-Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L23)
+Defined in: [packages/core/src/services/assets/types.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L11)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/Y
 
 > **mime**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L18)
+Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L6)
 
 ***
 
@@ -64,12 +64,4 @@ Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/Y
 
 > **size**: `number`
 
-Defined in: [packages/core/src/services/assets/types.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L20)
-
-***
-
-### type
-
-> **type**: `string`
-
-Defined in: [packages/core/src/services/assets/types.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L17)
+Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L8)

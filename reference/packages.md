@@ -6,7 +6,6 @@
 
 ## Enumerations
 
-- [AssetType](enumerations/AssetType.md)
 - [ContentFailureAction](enumerations/ContentFailureAction.md)
 - [FactType](enumerations/FactType.md)
 - [InsightType](enumerations/InsightType.md)
@@ -76,6 +75,7 @@
 - [IChatModel](interfaces/IChatModel.md)
 - [IEmbedModel](interfaces/IEmbedModel.md)
 - [IExtension](interfaces/IExtension.md)
+- [ImageProcessingOptions](interfaces/ImageProcessingOptions.md)
 - [Insight](interfaces/Insight.md)
 - [IProviderClient](interfaces/IProviderClient.md)
 - [IProviderFactory](interfaces/IProviderFactory.md)
@@ -97,6 +97,7 @@
 - [PromptManagerConfig](interfaces/PromptManagerConfig.md)
 - [PromptServiceConfig](interfaces/PromptServiceConfig.md)
 - [ProviderConfig](interfaces/ProviderConfig.md)
+- [ReadAssetOptions](interfaces/ReadAssetOptions.md)
 - [ReportContext](interfaces/ReportContext.md)
 - [RetryPolicy](interfaces/RetryPolicy.md)
 - [ScheduledTaskPayload](interfaces/ScheduledTaskPayload.md)

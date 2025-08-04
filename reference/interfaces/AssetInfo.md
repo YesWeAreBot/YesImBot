@@ -6,13 +6,13 @@
 
 # Interface: AssetInfo
 
-Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L47)
+Defined in: [packages/core/src/services/assets/types.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L28)
 
 对外暴露的资源信息
 
 ## Extends
 
-- `Omit`\<[`AssetData`](AssetData.md), `"hash"` \| `"url"`\>
+- `Omit`\<[`AssetData`](AssetData.md), `"hash"`\>
 
 ## Properties
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/Y
 
 > **createdAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L21)
+Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L9)
 
 #### Inherited from
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/assets/types.ts:21](https://github.com/Y
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L16)
+Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L5)
 
 #### Inherited from
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/assets/types.ts:16](https://github.com/Y
 
 > **lastUsedAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L22)
+Defined in: [packages/core/src/services/assets/types.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L10)
 
 #### Inherited from
 
@@ -52,11 +52,11 @@ Defined in: [packages/core/src/services/assets/types.ts:22](https://github.com/Y
 
 ***
 
-### metadata?
+### metadata
 
-> `optional` **metadata**: [`AssetMetadata`](AssetMetadata.md)
+> **metadata**: [`AssetMetadata`](AssetMetadata.md)
 
-Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L23)
+Defined in: [packages/core/src/services/assets/types.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L11)
 
 #### Inherited from
 
@@ -68,7 +68,7 @@ Defined in: [packages/core/src/services/assets/types.ts:23](https://github.com/Y
 
 > **mime**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L18)
+Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L6)
 
 #### Inherited from
 
@@ -80,20 +80,8 @@ Defined in: [packages/core/src/services/assets/types.ts:18](https://github.com/Y
 
 > **size**: `number`
 
-Defined in: [packages/core/src/services/assets/types.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L20)
+Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/types.ts#L8)
 
 #### Inherited from
 
 [`AssetData`](AssetData.md).[`size`](AssetData.md#size)
-
-***
-
-### type
-
-> **type**: `string`
-
-Defined in: [packages/core/src/services/assets/types.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/types.ts#L17)
-
-#### Inherited from
-
-[`AssetData`](AssetData.md).[`type`](AssetData.md#type)

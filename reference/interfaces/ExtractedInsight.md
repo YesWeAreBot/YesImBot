@@ -6,7 +6,7 @@
 
 # Interface: ExtractedInsight
 
-Defined in: [packages/core/src/services/memory/types.ts:208](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L208)
+Defined in: [packages/core/src/services/memory/types.ts:208](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L208)
 
 LLM提炼后输出的结构化洞察
 
@@ -16,7 +16,7 @@ LLM提炼后输出的结构化洞察
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:210](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L210)
+Defined in: [packages/core/src/services/memory/types.ts:210](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L210)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/memory/types.ts:210](https://github.com/
 
 > **insightType**: [`InsightType`](../enumerations/InsightType.md)
 
-Defined in: [packages/core/src/services/memory/types.ts:209](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L209)
+Defined in: [packages/core/src/services/memory/types.ts:209](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L209)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/memory/types.ts:209](https://github.com/
 
 > **lifespan**: [`LifespanType`](../enumerations/LifespanType.md)
 
-Defined in: [packages/core/src/services/memory/types.ts:212](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L212)
+Defined in: [packages/core/src/services/memory/types.ts:212](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L212)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/memory/types.ts:212](https://github.com/
 
 > **relatedUserIds**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:211](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L211)
+Defined in: [packages/core/src/services/memory/types.ts:211](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L211)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/memory/types.ts:211](https://github.com/
 
 > `optional` **salience**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:214](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L214)
+Defined in: [packages/core/src/services/memory/types.ts:214](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L214)
 
 ***
 
@@ -56,4 +56,4 @@ Defined in: [packages/core/src/services/memory/types.ts:214](https://github.com/
 
 > **sourceMessageIds**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:213](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/memory/types.ts#L213)
+Defined in: [packages/core/src/services/memory/types.ts:213](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/memory/types.ts#L213)

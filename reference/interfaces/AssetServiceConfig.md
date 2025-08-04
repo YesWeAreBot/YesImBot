@@ -6,23 +6,27 @@
 
 # Interface: AssetServiceConfig
 
-Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L3)
+Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L3)
 
 ## Properties
 
-### autoClearEnabled
+### autoClear
 
-> **autoClearEnabled**: `boolean`
+> **autoClear**: `object`
 
-Defined in: [packages/core/src/services/assets/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L6)
+Defined in: [packages/core/src/services/assets/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L9)
 
-***
+#### enabled
 
-### autoClearIntervalHours
+> **enabled**: `boolean`
 
-> **autoClearIntervalHours**: `number`
+#### intervalHours
 
-Defined in: [packages/core/src/services/assets/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L7)
+> **intervalHours**: `number`
+
+#### maxAgeDays
+
+> **maxAgeDays**: `number`
 
 ***
 
@@ -30,7 +34,7 @@ Defined in: [packages/core/src/services/assets/config.ts:7](https://github.com/Y
 
 > **downloadTimeout**: `number`
 
-Defined in: [packages/core/src/services/assets/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L11)
+Defined in: [packages/core/src/services/assets/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L8)
 
 ***
 
@@ -38,7 +42,7 @@ Defined in: [packages/core/src/services/assets/config.ts:11](https://github.com/
 
 > **driver**: `"local"`
 
-Defined in: [packages/core/src/services/assets/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L5)
+Defined in: [packages/core/src/services/assets/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L5)
 
 ***
 
@@ -46,15 +50,35 @@ Defined in: [packages/core/src/services/assets/config.ts:5](https://github.com/Y
 
 > `optional` **endpoint**: `string`
 
-Defined in: [packages/core/src/services/assets/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L9)
+Defined in: [packages/core/src/services/assets/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L6)
 
 ***
 
-### maxAssetAgeDays
+### image
 
-> **maxAssetAgeDays**: `number`
+> **image**: `object`
 
-Defined in: [packages/core/src/services/assets/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L8)
+Defined in: [packages/core/src/services/assets/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L14)
+
+#### gifFramesToExtract
+
+> **gifFramesToExtract**: `number`
+
+#### gifProcessingStrategy
+
+> **gifProcessingStrategy**: `"firstFrame"` \| `"stitch"`
+
+#### maxSizeMB
+
+> **maxSizeMB**: `number`
+
+#### processedCachePath
+
+> **processedCachePath**: `string`
+
+#### targetSize
+
+> **targetSize**: `number`
 
 ***
 
@@ -62,7 +86,15 @@ Defined in: [packages/core/src/services/assets/config.ts:8](https://github.com/Y
 
 > **maxFileSize**: `number`
 
-Defined in: [packages/core/src/services/assets/config.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L10)
+Defined in: [packages/core/src/services/assets/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L7)
+
+***
+
+### recoveryEnabled
+
+> **recoveryEnabled**: `boolean`
+
+Defined in: [packages/core/src/services/assets/config.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L22)
 
 ***
 
@@ -70,4 +102,4 @@ Defined in: [packages/core/src/services/assets/config.ts:10](https://github.com/
 
 > **storagePath**: `string`
 
-Defined in: [packages/core/src/services/assets/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/9f92331ebfc2b4dcfa92d459f1cf500505226bc6/packages/core/src/services/assets/config.ts#L4)
+Defined in: [packages/core/src/services/assets/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/assets/config.ts#L4)
