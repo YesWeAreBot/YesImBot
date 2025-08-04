@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import { Context, Schema, Session, h } from "koishi";
-import { AssetService, Extension, Failed, Infer, ModelDescriptor, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { AssetService, Extension, Failed, Infer, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { pathToFileURL } from "url";
 import { StickerService } from "./service";
@@ -59,7 +59,8 @@ export default class StickerTools {
                 if (!this.initialized) {
                     this.initialized = true;
                     this.stickerService.logger.info("插件已成功启动");
-                    await this.registerToolDescriptions();
+
+                    this.registerSnippets();
                 }
             } catch (error) {
                 this.stickerService.logger.warn("插件初始化失败！");
@@ -95,9 +96,6 @@ export default class StickerTools {
                         }
                     }
 
-                    await session.sendQueued("正在重新注册工具...");
-                    await this.registerToolDescriptions();
-
                     return message;
                 } catch (error) {
                     return `导入失败: ${error.message}`;
@@ -131,9 +129,6 @@ export default class StickerTools {
                         }
                     }
 
-                    await session.sendQueued("正在重新注册工具...");
-                    await this.registerToolDescriptions();
-
                     return message;
                 } catch (error) {
                     return `导入失败: ${error.message}`;
@@ -159,8 +154,7 @@ export default class StickerTools {
 
                 try {
                     const count = await this.stickerService.renameCategory(oldName, newName);
-                    await session.sendQueued("正在重新注册工具...");
-                    await this.registerToolDescriptions();
+
                     return `✅ 已将分类 "${oldName}" 重命名为 "${newName}"，共更新 ${count} 个表情包`;
                 } catch (error) {
                     return `❌ 重命名失败: ${error.message}`;
@@ -194,8 +188,7 @@ export default class StickerTools {
 
                 try {
                     const deletedCount = await this.stickerService.deleteCategory(category);
-                    await session.sendQueued("正在重新注册工具...");
-                    await this.registerToolDescriptions();
+
                     return `✅ 已删除分类 "${category}"，共移除 ${deletedCount} 个表情包`;
                 } catch (error) {
                     return `❌ 删除失败: ${error.message}`;
@@ -210,8 +203,7 @@ export default class StickerTools {
 
                 try {
                     const movedCount = await this.stickerService.mergeCategories(sourceCategory, targetCategory);
-                    await session.sendQueued("正在重新注册工具...");
-                    await this.registerToolDescriptions();
+
                     return `✅ 已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，共移动 ${movedCount} 个表情包`;
                 } catch (error) {
                     return `❌ 合并失败: ${error.message}`;
@@ -274,8 +266,7 @@ export default class StickerTools {
             .action(async ({ session }) => {
                 try {
                     const deletedCount = await this.stickerService.cleanupUnreferenced();
-                    session.sendQueued("正在重新注册工具...");
-                    await this.registerToolDescriptions();
+
                     return `✅ 已清理 ${deletedCount} 个未使用的表情包`;
                 } catch (error) {
                     return `❌ 清理失败: ${error.message}`;
@@ -285,18 +276,12 @@ export default class StickerTools {
 
     private initialized = false;
 
-    private async registerToolDescriptions() {
-        const categories = await this.stickerService.getCategories();
-        const categoryList = categories.join(", ");
-        this.stickerService.logger.debug("工具已重新注册");
-        // 更新发送表情包工具的描述
-        this.ctx["yesimbot.tool"].registerTool({
-            name: "send_sticker",
-            description: `发送一个随机表情包。可用分类: ${categoryList ? categoryList : "暂无分类，请先收藏表情包"}`,
-            parameters: Schema.object({
-                category: Schema.string().required().description(`表情包分类名称，可用选项: ${categoryList}`),
-            }),
-            execute: this.sendRandomSticker.bind(this),
+    private registerSnippets() {
+        const promptService: PromptService = this.ctx[Services.Prompt];
+
+        promptService.registerSnippet("sticker.categories", async () => {
+            const categories = await this.stickerService.getCategories();
+            return categories.join(", ") || "暂无分类，请先收藏表情包";
         });
     }
 
@@ -315,8 +300,6 @@ export default class StickerTools {
             // 这里直接传入图片ID
             const record = await this.stickerService.stealSticker(image_id, session);
 
-            await this.registerToolDescriptions();
-
             return Success({
                 id: record.id,
                 category: record.category,
@@ -327,12 +310,11 @@ export default class StickerTools {
         }
     }
 
-    // 改回普通方法，使用 bind 确保上下文
     @Tool({
         name: "send_sticker",
         description: "发送一个表情包，用于辅助表达情感，结合语境酌情使用。",
         parameters: Schema.object({
-            category: Schema.string().required().description("表情包分类名称"),
+            category: Schema.string().required().description("表情包分类名称。当前可用分类: {{ sticker.categories }}"),
         }),
     })
     async sendRandomSticker({ session, category }: Infer<{ category: string }>) {
