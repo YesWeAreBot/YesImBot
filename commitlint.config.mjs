@@ -36,7 +36,7 @@ export default {
         useEmoji: true,
         emojiAlign: 'center',
         themeColorCode: '',
-        scopes: ['root', 'core', 'mcp', 'llm', 'memory', 'config'],
+        scopes: ['root', 'core', 'mcp', 'interpreter', 'daily', 'favor', 'sticker'],
         allowCustomScopes: true,
         allowEmptyScopes: true,
         customScopesAlign: 'bottom',
