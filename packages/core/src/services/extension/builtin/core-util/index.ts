@@ -6,6 +6,7 @@ import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { IChatModel, ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
+import { isEmpty } from "@/shared/utils";
 
 interface CoreUtilConfig {
     typing: {
@@ -47,7 +48,10 @@ export default class CoreUtilExtension {
     private readonly logger: Logger;
     private readonly assetService: AssetService;
 
-    constructor(public ctx: Context, public config: CoreUtilConfig) {
+    constructor(
+        public ctx: Context,
+        public config: CoreUtilConfig
+    ) {
         this.logger = ctx[Services.Logger].getLogger("[核心工具]");
         this.assetService = ctx[Services.Asset];
     }
@@ -56,9 +60,11 @@ export default class CoreUtilExtension {
         name: "send_message",
         description: "发送消息",
         parameters: withInnerThoughts({
-            message: Schema.string().description(
-                "The message content to send. Use `<sep/>` to split a long response into multiple, shorter messages, which will be sent with natural delays. E.g., 'Hello there<sep/>How are you?'"
-            ),
+            message: Schema.string()
+                .required()
+                .description(
+                    "The message content to send. Use `<sep/>` to split a long response into multiple, shorter messages, which will be sent with natural delays. E.g., 'Hello there<sep/>How are you?'"
+                ),
             target: Schema.string().description(
                 "Optional. Specifies where to send the message, using `platform:id` format. Defaults to the current channel. E.g., `onebot:123456789` for a group, or `discord:private:987654321` for a private chat."
             ),
@@ -101,9 +107,7 @@ export default class CoreUtilExtension {
         name: "get_image_description",
         description: "使用外部视觉模型获取图片描述，当你无法查看图片，或者此图片数据在上下文中丢失时使用此工具",
         parameters: withInnerThoughts({
-            image_id: Schema.string()
-                .required()
-                .description("要获取的图片ID，如在 `<img id='12345'>` 中的 12345 即是其 ID"),
+            image_id: Schema.string().required().description("要获取的图片ID，如在 `<img id='12345'>` 中的 12345 即是其 ID"),
             question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
         }),
     })
@@ -190,6 +194,10 @@ export default class CoreUtilExtension {
             .filter((e) => e.type === "text")
             .join("");
 
+        if (isEmpty(text)) {
+            return MIN_DELAY;
+        }
+
         // 使用正则表达式匹配中文字符 (Unicode范围)
         const chineseRegex = /[\u4e00-\u9fa5]/g;
         const chineseMatches = text.match(chineseRegex);
@@ -204,8 +212,7 @@ export default class CoreUtilExtension {
 
         // 3. 计算总延迟并加入随机性
         // 随机性的大小也与中英文字符数量有关，让节奏更真实
-        const totalRandomness =
-            (chineseCharCount * CHINESE_RANDOM_FACTOR + englishCharCount * ENGLISH_RANDOM_FACTOR) / text.length;
+        const totalRandomness = (chineseCharCount * CHINESE_RANDOM_FACTOR + englishCharCount * ENGLISH_RANDOM_FACTOR) / text.length;
         const randomFactor = 1 + (Math.random() - 0.5) * 2 * totalRandomness; // 在 (1-totalRandomness) 到 (1+totalRandomness) 之间
 
         const calculatedDelay = BASE_DELAY + (chineseDelay + englishDelay) * randomFactor;
@@ -217,10 +224,7 @@ export default class CoreUtilExtension {
     /**
      * 决定消息的最终目标和使用的机器人实例
      */
-    private determineTarget(
-        koishiSession: Session,
-        target?: string
-    ): { bot: Bot | undefined; channelId: string; finalTarget: string } {
+    private determineTarget(koishiSession: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
         if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
             // 发送至当前会话
             return {
@@ -245,12 +249,7 @@ export default class CoreUtilExtension {
      * @param channelId 目标频道ID
      * @param originalSession 原始会话，用于创建after-send事件
      */
-    private async sendMessagesWithHumanLikeDelay(
-        messages: string[],
-        bot: Bot,
-        channelId: string,
-        originalSession: Session
-    ): Promise<void> {
+    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
             if (!msg) continue;
@@ -286,13 +285,7 @@ export default class CoreUtilExtension {
     /**
      * 封装 after-send 事件的发射逻辑
      */
-    private emitAfterSendEvent(
-        bot: Bot,
-        channelId: string,
-        content: string,
-        messageId: string,
-        originalSession: Session
-    ): void {
+    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): void {
         const session = bot.session({
             ...originalSession.event,
             type: "after-send",
