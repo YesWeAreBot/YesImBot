@@ -11,6 +11,8 @@ import { AssetServiceConfig } from "./config";
 import { LocalStorageDriver } from "./drivers/local";
 import { AssetData, AssetInfo, AssetMetadata, ReadAssetOptions, StorageDriver } from "./types";
 
+const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
+
 /**
  * 根据 MIME 类型获取对应的 Koishi 元素标签名
  * @param mime - MIME 类型字符串
@@ -56,6 +58,9 @@ export class AssetService extends Service<AssetServiceConfig> {
 
     constructor(ctx: Context, config: AssetServiceConfig) {
         super(ctx, Services.Asset, true);
+        this.config = config;
+        this.config.maxFileSize *= 1024 * 1024; // 转换为字节
+        this.logger = ctx[Services.Logger].getLogger("[资源服务]");
     }
 
     protected async start() {
@@ -255,6 +260,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         const elements = typeof source === "string" ? h.parse(source) : source;
         return h.transformAsync(elements, async (element) => {
             if (!element.attrs.id) return element;
+            if (!ELEMENT_TO_PROCESS.includes(element.type)) return element;
 
             const info = await this.getInfo(element.attrs.id);
             if (!info) {
@@ -281,11 +287,17 @@ export class AssetService extends Service<AssetServiceConfig> {
      * 处理 transform/transformAsync 中的单个元素
      */
     private async _processTransformElement(element: Element, isAsync: boolean): Promise<Element> {
+        if (!ELEMENT_TO_PROCESS.includes(element.type)) return element;
         const originalUrl = element.attrs.src || element.attrs.url || element.attrs.file;
         if (!originalUrl || element.attrs.id) return element;
 
         // 根据元素类型和URL协议决定是否处理
-        const tagName = getTagNameFromMime(element.type === "image" ? "image/jpeg" : "");
+        let tagName = element.type;
+
+        if (tagName === "mface") {
+            tagName = "img";
+        }
+
         if (tagName === "file" && !String(originalUrl).startsWith("http")) {
             return element; // 只处理网络文件资源
         }
@@ -388,16 +400,17 @@ export class AssetService extends Service<AssetServiceConfig> {
             if (this.config.image.gifProcessingStrategy === "firstFrame") {
                 // 处理GIF第一帧
                 const firstFrameBuffer = await sharp(buffer, { page: 0 }).toBuffer();
-                return this._compressAndResizeImage(sharp(firstFrameBuffer));
+                return this._compressAndResizeImage(firstFrameBuffer);
             }
             // `gifProcessingStrategy` 为 'none' 或其他值，不处理
             return buffer;
         }
 
-        return this._compressAndResizeImage(sharp(buffer));
+        return this._compressAndResizeImage(buffer);
     }
 
-    private async _compressAndResizeImage(sharpInstance: sharp.Sharp): Promise<Buffer> {
+    private async _compressAndResizeImage(buffer: Buffer): Promise<Buffer> {
+        const sharpInstance = sharp(buffer);
         const meta = await sharpInstance.metadata();
         const { targetSize } = this.config.image;
 
@@ -425,6 +438,11 @@ export class AssetService extends Service<AssetServiceConfig> {
         return compressedBuffer;
     }
 
+    /**
+     * 处理GIF动图，提取关键帧并拼接成静态图
+     * @param buffer
+     * @returns
+     */
     private async _processGifStitch(buffer: Buffer): Promise<Buffer> {
         const { gifFramesToExtract } = this.config.image;
         const meta = await sharp(buffer, { animated: true }).metadata();
@@ -453,7 +471,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         // 创建透明背景并拼接图片
         return sharp({ create: { width: finalWidth, height: finalHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
             .composite(compositeOps)
-            .webp({ quality: 85 })
+            .jpeg({ quality: 85 })
             .toBuffer();
     }
 

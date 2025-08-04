@@ -143,14 +143,14 @@ export class StickerService {
         // 目标文件路径
         // 从b64获取mime
         const mimeType = imageDataForLLM.split(";")[0].split(":")[1];
-        const extension = mimeType.split("/")[1] || "png";
+        const extension = this.getExtensionFromContentType(mimeType) || "png";
         const destPath = path.resolve(this.config.storagePath, `${stickerId}.${extension}`);
 
         // 保存文件到表情目录
         await writeFile(destPath, imageData);
 
         // 分类表情
-        const category = await this.classifySticker(destPath);
+        const category = await this.classifySticker(imageDataForLLM);
 
         // 创建数据库记录
         const record: StickerRecord = {

@@ -138,7 +138,7 @@ export default class CoreUtilExtension {
             return Failed(`获取视觉模型失败: ${error.message}`);
         }
 
-        const prompt = `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
+        const prompt = `请详细描述以下图片，并回答问题：${question}\n\n如果由多张图片拼接而成，则可能是gif的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述\n\n图片内容：`;
 
         try {
             const response = await model.chat({
