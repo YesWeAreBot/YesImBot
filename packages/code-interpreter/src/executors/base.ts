@@ -1,4 +1,4 @@
-import { AssetType, ToolCallResult, ToolDefinition, ToolError } from "koishi-plugin-yesimbot/services";
+import { ToolCallResult, ToolDefinition, ToolError } from "koishi-plugin-yesimbot/services";
 
 /**
  * 代表一个标准化的执行错误结构。
@@ -32,11 +32,6 @@ export interface ExecutionArtifact {
      * 这是与资源交互的唯一标识符。
      */
     assetId: string;
-
-    /**
-     * 资源的类型，用于帮助AI和前端理解如何展示这个资源。
-     */
-    type: AssetType;
 
     /**
      * AI请求创建时使用的原始文件名或描述。

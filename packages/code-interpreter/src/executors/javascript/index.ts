@@ -2,7 +2,7 @@ import { exec } from "child_process";
 import fs from "fs/promises";
 import ivm from "isolated-vm";
 import { Context, Logger, Schema } from "koishi";
-import { AssetService, AssetType, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { promisify } from "util";
@@ -38,19 +38,14 @@ export const JavaScriptConfigSchema: Schema<JavaScriptConfig> = Schema.intersect
         Schema.object({
             enabled: Schema.const(true).required(),
             timeout: Schema.number().default(10000).description("代码执行的超时时间（毫秒）"),
-            packageManager: Schema.union(["npm", "yarn", "bun", "pnpm"])
-                .default("npm")
-                .description("用于动态安装依赖的包管理器"),
+            packageManager: Schema.union(["npm", "yarn", "bun", "pnpm"]).default("npm").description("用于动态安装依赖的包管理器"),
             registry: Schema.string().default("https://registry.npmmirror.com").description("npm包的自定义注册表URL"),
             memoryLimit: Schema.number().min(64).default(128).description("代码执行的内存限制（MB）"),
             allowedBuiltins: Schema.array(String)
                 .default(["path", "util", "crypto"])
                 .role("table")
                 .description("允许使用的Node.js内置模块"),
-            allowedModules: Schema.array(String)
-                .default([])
-                .role("table")
-                .description("允许动态安装的外部npm模块白名单"),
+            allowedModules: Schema.array(String).default([]).role("table").description("允许动态安装的外部npm模块白名单"),
             customToolDescription: Schema.string()
                 .role("textarea", { rows: [2, 4] })
                 .description("自定义工具描述，留空则使用默认描述"),
@@ -72,7 +67,11 @@ export class JavaScriptExecutor implements CodeExecutor {
     private proxiedModuleCache = new Map<string, any>();
     private proxyToTargetMap = new WeakMap<object, any>();
 
-    constructor(private ctx: Context, private config: JavaScriptConfig, private sharedConfig: SharedConfig) {
+    constructor(
+        private ctx: Context,
+        private config: JavaScriptConfig,
+        private sharedConfig: SharedConfig
+    ) {
         this.logger = ctx.logger(`[executor:${this.type}]`);
         this.assetService = ctx.get(Services.Asset);
 
@@ -339,9 +338,7 @@ export class JavaScriptExecutor implements CodeExecutor {
         } catch (error) {
             const stderr = error.stderr || "No stderr output.";
             this.logger.error(`Failed to install dependencies. Stderr: ${stderr}`, error);
-            const suggestion = `请检查模块名 '${moduleNames.join(
-                ", "
-            )}' 是否拼写正确，以及它们是否存在于 ${pm} 仓库中。`;
+            const suggestion = `请检查模块名 '${moduleNames.join(", ")}' 是否拼写正确，以及它们是否存在于 ${pm} 仓库中。`;
             throw new Error(`依赖安装失败: 无法安装模块。\n错误详情: ${stderr}\n${suggestion}`);
         }
     }
@@ -375,9 +372,7 @@ export class JavaScriptExecutor implements CodeExecutor {
         // [核心改动] 定义一个通用的参数解包函数
         const unwrapArgs = (args: any[]): any[] => {
             return args.map((arg) =>
-                typeof arg === "object" && arg !== null && this.proxyToTargetMap.has(arg)
-                    ? this.proxyToTargetMap.get(arg)
-                    : arg
+                typeof arg === "object" && arg !== null && this.proxyToTargetMap.has(arg) ? this.proxyToTargetMap.get(arg) : arg
             );
         };
 
@@ -482,22 +477,12 @@ export class JavaScriptExecutor implements CodeExecutor {
         for (const req of requests) {
             try {
                 const resourceSource = req.content as Uint8Array;
-                const assetType = req.type as AssetType;
-
-                const assetId = await this.assetService.create(Buffer.from(resourceSource), assetType, {
-                    filename: req.fileName,
-                });
-
-                createdArtifacts.push({
-                    assetId,
-                    type: assetType,
-                    fileName: req.fileName,
-                });
+                const assetId = await this.assetService.create(Buffer.from(resourceSource), { filename: req.fileName });
+                createdArtifacts.push({ assetId, fileName: req.fileName });
             } catch (error) {
-                // **核心改动：捕获错误并格式化消息**
                 const errorMessage = `[Artifact Creation Failed] 资源 '${req.fileName}' 创建失败: ${error.message}`;
-                this.logger.warn(errorMessage, error); // 在后端日志中记录详细错误
-                errorMessages.push(errorMessage); // 将格式化的错误消息存入数组
+                this.logger.warn(errorMessage, error);
+                errorMessages.push(errorMessage);
             }
         }
         return { artifacts: createdArtifacts, errorMessages };

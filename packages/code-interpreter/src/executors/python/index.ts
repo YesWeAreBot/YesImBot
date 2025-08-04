@@ -1,5 +1,5 @@
 import { Context, Logger, Schema } from "koishi";
-import { AssetService, AssetType, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { loadPyodide, PyodideInterface } from "pyodide";
@@ -14,7 +14,11 @@ class PyodideEnginePool {
     private readonly maxSize: number;
     private isInitialized = false;
 
-    constructor(private ctx: Context, private config: PythonConfig, private sharedConfig: SharedConfig) {
+    constructor(
+        private ctx: Context,
+        private config: PythonConfig,
+        private sharedConfig: SharedConfig
+    ) {
         // 为日志源添加特定前缀，方便区分
         this.logger = ctx.logger(`[执行器:Python:引擎池]`);
         this.maxSize = config.poolSize;
@@ -137,7 +141,11 @@ export class PythonExecutor implements CodeExecutor {
     private readonly assetService: AssetService;
     private isReady = false;
 
-    constructor(private ctx: Context, private config: PythonConfig, private sharedConfig: SharedConfig) {
+    constructor(
+        private ctx: Context,
+        private config: PythonConfig,
+        private sharedConfig: SharedConfig
+    ) {
         this.logger = ctx.logger(`[执行器:Python]`);
         this.assetService = ctx[Services.Asset];
         this.pool = new PyodideEnginePool(ctx, config, sharedConfig);
@@ -240,13 +248,15 @@ if os.path.exists(workspace):
             if (errorType.startsWith("SyntaxError")) {
                 suggestion = "The code has a Python syntax error. Please check for typos, indentation issues, or incorrect grammar.";
             } else if (errorType.startsWith("NameError")) {
-                suggestion = "A variable or function was used before it was defined. Ensure all variables are assigned and all necessary libraries (from the allowed list) are imported correctly.";
+                suggestion =
+                    "A variable or function was used before it was defined. Ensure all variables are assigned and all necessary libraries (from the allowed list) are imported correctly.";
             } else if (errorType.startsWith("ModuleNotFoundError")) {
                 suggestion = `The code tried to import a module that is not available or not allowed. You can only import from this list: [${this.config.allowedModules.join(
                     ", "
                 )}].`;
             } else if (errorType.startsWith("TypeError")) {
-                suggestion = "An operation was applied to an object of an inappropriate type. Check the data types of the variables involved in the error line.";
+                suggestion =
+                    "An operation was applied to an object of an inappropriate type. Check the data types of the variables involved in the error line.";
             } else if (errorType.startsWith("IndexError") || errorType.startsWith("KeyError")) {
                 suggestion =
                     "The code tried to access an element from a list or dictionary with an invalid index or key. Check if the index is within the bounds of the list or if the key exists in the dictionary.";
@@ -303,21 +313,8 @@ if os.path.exists(workspace):
             await this._resetEngineState(engine);
 
             const artifacts: ExecutionArtifact[] = [];
-            const createArtifact = async (
-                fileName: PyProxy | string,
-                content: PyProxy | ArrayBuffer | string,
-                type: PyProxy | AssetType
-            ) => {
+            const createArtifact = async (fileName: PyProxy | string, content: PyProxy | ArrayBuffer | string) => {
                 const jsFileName = typeof fileName === "string" ? fileName : fileName.toJs();
-                const jsType = (typeof type === "string" ? type : type.toJs()) as AssetType;
-
-                this.logger.debug(`[产物创建] 文件名: ${jsFileName}, 类型: ${jsType}`);
-
-                if (!["text", "json", "html", "image", "file"].includes(jsType)) {
-                    throw new Error(
-                        `无效的产物类型: '${jsType}'。必须是 'text', 'json', 'html', 'image', 'file' 之一`
-                    );
-                }
 
                 let bufferContent: Buffer | string;
                 if (typeof content === "string" || content instanceof ArrayBuffer) {
@@ -327,8 +324,8 @@ if os.path.exists(workspace):
                     bufferContent = Buffer.from(pyBuffer);
                 }
 
-                const assetId = await this.assetService.create(bufferContent, jsType, { filename: jsFileName });
-                artifacts.push({ assetId, type: jsType, fileName: jsFileName });
+                const assetId = await this.assetService.create(bufferContent, { filename: jsFileName });
+                artifacts.push({ assetId, fileName: jsFileName });
                 this.logger.info(`[产物创建] 成功创建产物: ${jsFileName} (AssetID: ${assetId})`);
             };
 

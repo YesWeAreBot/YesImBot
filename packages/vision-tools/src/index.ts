@@ -1,16 +1,7 @@
 import * as fs from "fs/promises";
 import { Context, Logger, Schema, sleep } from "koishi";
 import {} from "koishi-plugin-puppeteer";
-import {
-    AssetService,
-    Extension,
-    Failed,
-    Infer,
-    Success,
-    Tool,
-    ToolCallResult,
-    withInnerThoughts,
-} from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, Infer, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import * as os from "os";
 import * as path from "path";
@@ -237,9 +228,7 @@ export const Config: Schema<Config> = Schema.object({
         api_key: Schema.string().role("secret").description("Google Cloud Vision API Key，用于传统的图片内容分析。"),
     }).description("Google Vision 服务配置"),
     uploader: Schema.object({
-        apiKey: Schema.string()
-            .role("secret")
-            .description("Imgur.la 图床的 API Key，用于上传图片以获取 SerpApi 所需的公开 URL。"),
+        apiKey: Schema.string().role("secret").description("Imgur.la 图床的 API Key，用于上传图片以获取 SerpApi 所需的公开 URL。"),
     }).description("临时图片上传服务配置"),
 });
 
@@ -271,7 +260,10 @@ export default class VisionTools {
 
     private readonly logger: Logger;
 
-    constructor(private ctx: Context, private config: Config) {
+    constructor(
+        private ctx: Context,
+        private config: Config
+    ) {
         this.logger = ctx.get(Services.Logger).getLogger("[视觉工具]");
         this.ctx.on("ready", async () => {
             this.logger.info("增强视觉工具已加载");
@@ -306,9 +298,7 @@ export default class VisionTools {
         name: "search_image_source",
         description: "对图片进行反向搜索，查找其网络来源、识别内容（角色、作品、梗）或寻找视觉上相似的图片。",
         parameters: withInnerThoughts({
-            image_id: Schema.string()
-                .required()
-                .description("要搜索的图片ID，例如在 `<img id='12345'>` 中的 `12345`。"),
+            image_id: Schema.string().required().description("要搜索的图片ID，例如在 `<img id='12345'>` 中的 `12345`。"),
         }),
     })
     public async searchImageSource(args: Infer<{ image_id: string; method: string }>): Promise<ToolCallResult> {
@@ -316,21 +306,25 @@ export default class VisionTools {
         this.logger.info(`请求使用方法: ${method}`);
 
         const assetService = this.ctx.get(Services.Asset);
-        const image = await assetService.getAssetDataWithContent(image_id);
-        if (!image?.content || !image.data.mime.startsWith("image/")) {
+        const image = (await assetService.read(image_id, { format: "data-url" })) as string;
+        const imageInfo = await assetService.getInfo(image_id);
+        if (!image || !imageInfo?.mime.startsWith("image/")) {
             return Failed(`图片获取失败 (ID: ${image_id})，请确认图片ID是否正确。`);
         }
 
+        const data = { content: image, data: { mime: imageInfo.mime } };
+
         switch (this.config.engine) {
             case "google_lens_serpapi":
-                return this.searchImageSourceWithGoogleLens(image_id, image);
+                return this.searchImageSourceWithGoogleLens(image_id, data);
             case "google_lens_scraper":
-                return this.searchImageSourceWithGoogleLensScraper(image_id, image);
+                return this.searchImageSourceWithGoogleLensScraper(image_id, data);
             case "google_vision":
-                return this.searchImageSourceWithGoogleVision(image_id, image);
+                return this.searchImageSourceWithGoogleVision(image_id, data);
             case "serpapi_reverse_image":
-                return this.searchImageSourceWithSerpApi(image_id, image);
+                return this.searchImageSourceWithSerpApi(image_id, data);
             default:
+                data;
                 return Failed("没有可用的图片搜索服务，请检查插件配置。");
         }
     }
@@ -372,9 +366,7 @@ export default class VisionTools {
 
             if (!webDetection) {
                 this.logger.info(`${logPrefix} API 未返回有效的 webDetection 结果`);
-                return Success(
-                    "分析完成，但未能从网络上找到关于此图片的明确信息。可能是一张个人原创图片或非常新的内容。"
-                );
+                return Success("分析完成，但未能从网络上找到关于此图片的明确信息。可能是一张个人原创图片或非常新的内容。");
             }
             return Success(this.formatWebDetectionResult(webDetection));
         } catch (error) {
@@ -523,9 +515,7 @@ export default class VisionTools {
         }
         if (image_results?.length > 0) {
             summaryParts.push("\n**[🌐 来源网页参考]**");
-            const pages = image_results
-                .slice(0, 5)
-                .map((s) => `- **标题**: ${s.title}\n  **链接**: ${s.redirect_link || s.link}`);
+            const pages = image_results.slice(0, 5).map((s) => `- **标题**: ${s.title}\n  **链接**: ${s.redirect_link || s.link}`);
             summaryParts.push(...pages);
         }
         if (summaryParts.length <= 1) return "分析完成，但未能从网络上找到关于此图片的明确信息。";
@@ -678,9 +668,7 @@ export default class VisionTools {
 
             // AI Hint
             const aiHintSelector = "div[jsname][data-rl][data-lht]";
-            const aiHint = await page
-                .$eval(aiHintSelector, (el) => (el as HTMLElement).innerText.trim())
-                .catch(() => null);
+            const aiHint = await page.$eval(aiHintSelector, (el) => (el as HTMLElement).innerText.trim()).catch(() => null);
             if (aiHint) {
                 this.logger.info(`💡 AI 提示: ${aiHint}`);
             }
@@ -744,9 +732,7 @@ export default class VisionTools {
 
             let visualMatches: { title: string; link: string }[] = [];
             if (visualMatchesUrl) {
-                this.logger.info(
-                    `  - 找到“完全匹配”页链接，准备跳转抓取最多 ${options.limits.visualMatches} 条结果...`
-                );
+                this.logger.info(`  - 找到“完全匹配”页链接，准备跳转抓取最多 ${options.limits.visualMatches} 条结果...`);
                 await page.goto(visualMatchesUrl, { waitUntil: "networkidle2" });
                 // 传入数量限制
                 visualMatches = await this.scrapeGoogleSearchResultsPage(page, options.limits.visualMatches);

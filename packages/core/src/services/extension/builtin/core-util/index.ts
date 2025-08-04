@@ -113,19 +113,13 @@ export default class CoreUtilExtension {
     })
     async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
         const { image_id, question } = args;
-        const image = await this.assetService.getAssetDataWithContent(image_id);
+        const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
+
         if (!image) {
             this.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
             return Failed(`图片未找到`);
         }
-        if (!image.content) {
-            this.logger.warn(`✖ 图片内容为空 | ID: ${image_id}`);
-            return Failed(`图片内容为空`);
-        }
-        if (!image.data.mime.startsWith("image/")) {
-            this.logger.warn(`✖ 不是图片文件 | ID: ${image_id}`);
-            return Failed(`不是图片文件`);
-        }
+
         const visionModel = this.config.vision.model;
         let model: IChatModel | null = null;
 
@@ -153,7 +147,7 @@ export default class CoreUtilExtension {
                         role: "user",
                         content: [
                             { type: "text", text: prompt },
-                            { type: "image_url", image_url: { url: image.content, detail: this.config.vision.detail } },
+                            { type: "image_url", image_url: { url: image, detail: this.config.vision.detail } },
                         ],
                     },
                 ],

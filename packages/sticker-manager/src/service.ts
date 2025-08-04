@@ -1,11 +1,11 @@
-import { createHash } from 'crypto';
-import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from 'fs/promises';
-import { Context, h, Logger, Session } from 'koishi';
-import { AssetData, PromptService } from 'koishi-plugin-yesimbot/services';
-import { Services } from 'koishi-plugin-yesimbot/shared';
-import path from 'path';
-import { pathToFileURL } from 'url';
-import { StickerConfig } from './index';
+import { createHash } from "crypto";
+import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
+import { Context, h, Logger, Session } from "koishi";
+import { AssetData, PromptService } from "koishi-plugin-yesimbot/services";
+import { Services } from "koishi-plugin-yesimbot/shared";
+import path from "path";
+import { pathToFileURL } from "url";
+import { StickerConfig } from "./index";
 
 // 添加表情包表结构
 interface StickerRecord {
@@ -25,23 +25,25 @@ const TableName = "yesimbot.stickers";
 
 declare module "koishi" {
     interface Tables {
-		[TableName]: StickerRecord;
+        [TableName]: StickerRecord;
     }
 }
 
 export class StickerService {
     public logger: Logger;
 
-
     private static tablesRegistered = false;
     public isReady: boolean = false;
 
-    constructor(private ctx: Context, private config: StickerConfig) {
-        this.logger = ctx[Services.Logger].getLogger('[表情管理]');
+    constructor(
+        private ctx: Context,
+        private config: StickerConfig
+    ) {
+        this.logger = ctx[Services.Logger].getLogger("[表情管理]");
         this.start();
     }
 
-        private async start() {
+    private async start() {
         // 确保初始化只执行一次
         if (this.isReady) return;
 
@@ -51,7 +53,7 @@ export class StickerService {
 
         // 标记服务已就绪
         this.isReady = true;
-        this.logger.debug('表情包服务已就绪');
+        this.logger.debug("表情包服务已就绪");
     }
 
     public whenReady() {
@@ -74,17 +76,17 @@ export class StickerService {
     private registerPromptSnippet() {
         const promptService: PromptService = this.ctx[Services.Prompt];
         if (!promptService) {
-            this.logger.warn('提示词服务未找到，无法注册分类列表');
+            this.logger.warn("提示词服务未找到，无法注册分类列表");
             return;
         }
 
         // 注册动态片段
-        promptService.registerSnippet('sticker.categories', async () => {
+        promptService.registerSnippet("sticker.categories", async () => {
             const categories = await this.getCategories();
-            return categories.join(', ');
+            return categories.join(", ");
         });
 
-        this.logger.debug('表情包分类列表已注册到提示词系统');
+        this.logger.debug("表情包分类列表已注册到提示词系统");
     }
 
     private async initStorage() {
@@ -99,46 +101,55 @@ export class StickerService {
 
         try {
             // 使用 extend 创建表
-            this.ctx.model.extend(TableName, {
-                id: 'string(64)',
-                category: 'string(255)',
-                filePath: 'string(255)',
-                source: 'json',
-                createdAt: 'timestamp',
-            }, { primary: 'id' });
+            this.ctx.model.extend(
+                TableName,
+                {
+                    id: "string(64)",
+                    category: "string(255)",
+                    filePath: "string(255)",
+                    source: "json",
+                    createdAt: "timestamp",
+                },
+                { primary: "id" }
+            );
 
-            this.logger.debug('表情包表已创建');
+            this.logger.debug("表情包表已创建");
         } catch (error) {
-            this.logger.error('创建表情包表失败', error);
+            this.logger.error("创建表情包表失败", error);
             throw error;
         }
     }
 
-    public async stealSticker(imageData: AssetData, session: Session): Promise<StickerRecord> {
-        const { id, metadata: { src: originalUrl } , mime: mimeType } = imageData;
-
-        // 获取图片的实际文件路径
+    /**
+     * 偷取表情包
+     * @param image_id string
+     * @param session
+     * @returns
+     */
+    public async stealSticker(image_id: string, session: Session): Promise<StickerRecord> {
         const assetService = this.ctx[Services.Asset];
-        const filePath = await assetService.getImageLocalPath(id);
 
-        if (!filePath) {
-            throw new Error('找不到图片本地文件');
-        }
+        const imageDataForLLM = (await assetService.read(image_id, {
+            format: "data-url",
+            image: { process: true, format: "jpeg" },
+        })) as string;
+        const imageData = (await assetService.read(image_id, { format: "buffer" })) as Buffer;
 
         // 生成唯一ID - 使用URL作为哈希输入
-        const hash = createHash('sha256');
-        hash.update(originalUrl || imageData.id);
-        const stickerId = hash.digest('hex');
+        const hash = createHash("sha256");
+        hash.update(image_id);
+        const stickerId = hash.digest("hex");
 
         // 目标文件路径
-        const extension = mimeType ? mimeType.split('/')[1] || 'png' : 'png';
+        // 从b64获取mime
+        const mimeType = imageDataForLLM.split(";")[0].split(":")[1];
+        const extension = mimeType.split("/")[1] || "png";
         const destPath = path.resolve(this.config.storagePath, `${stickerId}.${extension}`);
 
-        // 移动文件到表情目录
-        await rename(filePath, destPath);
+        // 保存文件到表情目录
+        await writeFile(destPath, imageData);
 
         // 分类表情
-        // @ts-ignore
         const category = await this.classifySticker(destPath);
 
         // 创建数据库记录
@@ -160,14 +171,13 @@ export class StickerService {
         return record;
     }
 
-    private async classifySticker(filePath: string): Promise<string> {
+    private async classifySticker(imageData: string): Promise<string> {
         // 动态获取分类列表
         const categories = await this.getCategories();
-        const categoryList = categories.join(', ');
+        const categoryList = categories.join(", ");
 
         // 使用分类列表替换模板中的占位符
-        const prompt = this.config.classificationPrompt
-            .replace('{{categories}}', categoryList);
+        const prompt = this.config.classificationPrompt.replace("{{categories}}", categoryList);
 
         const model = this.ctx[Services.Model].getChatModel(this.config.classifiModel.providerName, this.config.classifiModel.modelId);
 
@@ -177,36 +187,27 @@ export class StickerService {
         }
 
         try {
-            // 读取文件内容并转换为base64
-            const fileBuffer = await readFile(filePath);
-            const base64Image = fileBuffer.toString('base64');
-
-            // 获取文件扩展名（不带点）
-            const extension = path.extname(filePath).slice(1).toLowerCase();
-
-            // 处理特殊扩展名
-            let mimeType = `image/${extension}`;
-            if (extension === 'jpg') mimeType = 'image/jpeg';
-
             const response = await model.chat({
-                messages: [{
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: prompt }, // 使用动态生成的提示词
-                        {
-                            type: 'image_url',
-                            image_url: {
-                                url: `data:${mimeType};base64,${base64Image}`
-                            }
-                        }
-                    ]
-                }]
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt }, // 使用动态生成的提示词
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: imageData,
+                                },
+                            },
+                        ],
+                    },
+                ],
             });
 
             return response.text.trim();
         } catch (error) {
-            this.logger.error('表情分类失败', error);
-            return '分类失败';
+            this.logger.error("表情分类失败", error);
+            return "分类失败";
         }
     }
 
@@ -223,7 +224,7 @@ export class StickerService {
             success: 0,
             failed: 0,
             skipped: 0,
-            failedFiles: []
+            failedFiles: [],
         };
 
         // 检查源目录是否存在
@@ -232,7 +233,7 @@ export class StickerService {
         }
 
         // 创建进度消息
-        const progressMsg = await session.sendQueued('开始导入表情包，正在扫描目录...');
+        const progressMsg = await session.sendQueued("开始导入表情包，正在扫描目录...");
 
         try {
             // 获取所有子目录（每个目录作为一个分类）
@@ -251,7 +252,7 @@ export class StickerService {
                         const filePath = path.join(subdir, file);
                         const result = await this.importSingleSticker(filePath, category);
 
-                        if (result === 'success') {
+                        if (result === "success") {
                             stats.success++;
                         } else {
                             stats.skipped++;
@@ -265,7 +266,6 @@ export class StickerService {
             }
         } finally {
             // 移除进度消息
-
         }
 
         return stats;
@@ -274,41 +274,32 @@ export class StickerService {
     /** 获取有效的子目录列表 */
     private async getValidSubdirectories(dir: string): Promise<string[]> {
         const items = await readdir(dir, { withFileTypes: true });
-        return items
-            .filter(item => item.isDirectory())
-            .map(item => path.join(dir, item.name));
+        return items.filter((item) => item.isDirectory()).map((item) => path.join(dir, item.name));
     }
 
     /** 获取目录下的所有图片文件 */
     private async getImageFiles(dir: string): Promise<string[]> {
         const items = await readdir(dir, { withFileTypes: true });
-        return items
-            .filter(item => item.isFile() && this.isValidImageType(item.name))
-            .map(item => item.name);
+        return items.filter((item) => item.isFile() && this.isValidImageType(item.name)).map((item) => item.name);
     }
 
     /** 校验文件类型 */
     private isValidImageType(fileName: string): boolean {
         const ext = path.extname(fileName).toLowerCase().slice(1);
-        return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+        return ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
     }
 
     /** 计算文件哈希值 */
     private async calculateFileHash(filePath: string): Promise<string> {
         const buffer = await readFile(filePath);
-        const hash = createHash('sha256');
+        const hash = createHash("sha256");
         hash.update(buffer);
-        return hash.digest('hex');
+        return hash.digest("hex");
     }
 
-
-    private async saveImageToLocal(
-        url: string,
-        content: ArrayBuffer,
-        contentType: string
-    ): Promise<{ localPath: string }> {
-        const id = createHash('sha256').update(url).digest('hex');
-        const extension = contentType.split('/')[1] || 'bin';
+    private async saveImageToLocal(url: string, content: ArrayBuffer, contentType: string): Promise<{ localPath: string }> {
+        const id = createHash("sha256").update(url).digest("hex");
+        const extension = contentType.split("/")[1] || "bin";
         const fileName = `${id}.${extension}`;
         const filePath = path.join(this.config.storagePath, fileName);
 
@@ -322,23 +313,23 @@ export class StickerService {
      */
     private normalizeEmojiHubUrl(rawUrl: string): string {
         // 1. 完整的 URL 直接返回
-        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+        if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
             return rawUrl;
         }
 
         // 2. 处理特定前缀问题 (如重复的 "https:")
-        if (rawUrl.startsWith('https:https://')) {
-            return rawUrl.replace('https:', '');
+        if (rawUrl.startsWith("https:https://")) {
+            return rawUrl.replace("https:", "");
         }
 
         // 3. 添加 B 站默认前缀
-        if (rawUrl.startsWith('bfs/') || rawUrl.startsWith('/bfs/')) {
-            return `https://i0.hdslb.com/${rawUrl.replace(/^\//, '')}`;
+        if (rawUrl.startsWith("bfs/") || rawUrl.startsWith("/bfs/")) {
+            return `https://i0.hdslb.com/${rawUrl.replace(/^\//, "")}`;
         }
 
         // 4. 添加 Koishi Meme 默认前缀
-        if (rawUrl.startsWith('meme/') || rawUrl.startsWith('/meme/')) {
-            return `https://memes.none.bot/${rawUrl.replace(/^\//, '')}`;
+        if (rawUrl.startsWith("meme/") || rawUrl.startsWith("/meme/")) {
+            return `https://memes.none.bot/${rawUrl.replace(/^\//, "")}`;
         }
 
         // 5. 其他情况视为相对路径
@@ -355,20 +346,14 @@ export class StickerService {
         }
     }
 
-
     async getCategories(): Promise<string[]> {
-
         const records = await this.ctx.database.select(TableName).execute();
 
-        return [...new Set(records.map(r => r.category))];
+        return [...new Set(records.map((r) => r.category))];
     }
 
     async getRandomSticker(category: string): Promise<h> {
-
-        const records = await this.ctx.database
-            .select(TableName)
-            .where({ category })
-            .execute();
+        const records = await this.ctx.database.select(TableName).where({ category }).execute();
 
         if (records.length === 0) return null;
 
@@ -377,24 +362,21 @@ export class StickerService {
 
         const fileUrl = pathToFileURL(sticker.filePath).href;
 
-        const ext = sticker.filePath.split('.').pop();
+        const ext = sticker.filePath.split(".").pop();
 
-        const b64 = await readFile(sticker.filePath, 'base64');
+        const b64 = await readFile(sticker.filePath, "base64");
         const base64Data = `data:image/${ext};base64,${b64}`;
 
         return h.image(base64Data, { "sub-type": "1" });
     }
 
     async getStickersByCategory(category: string): Promise<StickerRecord[]> {
+        const records = await this.ctx.database.select(TableName).where({ category }).execute();
 
-            const records = await this.ctx.database.select(TableName).where({ category })
-                .execute();
+        if (records.length === 0) return [];
 
-            if (records.length === 0) return [];
-
-            return records;
-        }
-
+        return records;
+    }
 
     public async importEmojiHubTxt(filePath: string, category: string, session: Session): Promise<ImportStats> {
         const stats: ImportStats = {
@@ -402,23 +384,24 @@ export class StickerService {
             success: 0,
             failed: 0,
             skipped: 0,
-            failedUrls: []
+            failedUrls: [],
         };
 
         // 读取 TXT 文件
         let urls: string[];
         try {
-            const content = await readFile(filePath, 'utf-8');
-            urls = content.split('\n')
-                .map(url => url.trim())
-                .filter(url => url.length > 0);
+            const content = await readFile(filePath, "utf-8");
+            urls = content
+                .split("\n")
+                .map((url) => url.trim())
+                .filter((url) => url.length > 0);
         } catch (error) {
             throw new Error(`无法读取文件: ${error.message}`);
         }
 
         stats.total = urls.length;
         if (stats.total === 0) {
-            throw new Error('文件为空或没有有效的 URL');
+            throw new Error("文件为空或没有有效的 URL");
         }
 
         // 创建进度消息
@@ -426,7 +409,7 @@ export class StickerService {
 
         try {
             // 准备临时下载目录
-            const tempDir = path.join(this.config.storagePath, 'temp');
+            const tempDir = path.join(this.config.storagePath, "temp");
             await mkdir(tempDir, { recursive: true });
             this.logger.debug(`创建临时目录: ${tempDir}`);
 
@@ -449,13 +432,13 @@ export class StickerService {
                     }
 
                     // 获取内容类型
-                    const contentType = response.headers.get('content-type') || 'image/jpeg';
+                    const contentType = response.headers.get("content-type") || "image/jpeg";
 
                     // 获取文件扩展名
-                    const extension = this.getExtensionFromContentType(contentType) || 'bin';
+                    const extension = this.getExtensionFromContentType(contentType) || "bin";
 
                     // 生成文件名 (使用URL哈希)
-                    const fileHash = createHash('sha256').update(url).digest('hex');
+                    const fileHash = createHash("sha256").update(url).digest("hex");
                     const tempFilePath = path.join(this.config.storagePath, `${fileHash}.${extension}`);
 
                     // 将图片数据写入文件
@@ -466,9 +449,9 @@ export class StickerService {
                     // 使用 importSingleSticker 方法导入
                     const result = await this.importSingleSticker(tempFilePath, category, session);
 
-                    if (result === 'success') {
+                    if (result === "success") {
                         stats.success++;
-                    } else if (result === 'duplicate') {
+                    } else if (result === "duplicate") {
                         stats.skipped++;
 
                         // 清理重复文件
@@ -490,7 +473,6 @@ export class StickerService {
                 // await session.cancelQueued(progressMsg);
             }
 
-
             // await this.cleanupTempDir(tempDir);
         }
 
@@ -502,17 +484,17 @@ export class StickerService {
      */
     private getExtensionFromContentType(contentType: string): string | null {
         const mimeMap: Record<string, string> = {
-            'image/jpeg': 'jpg',
-            'image/jpg': 'jpg',
-            'image/png': 'png',
-            'image/gif': 'gif',
-            'image/webp': 'webp',
-            'image/svg+xml': 'svg',
-            'image/bmp': 'bmp'
+            "image/jpeg": "jpg",
+            "image/jpg": "jpg",
+            "image/png": "png",
+            "image/gif": "gif",
+            "image/webp": "webp",
+            "image/svg+xml": "svg",
+            "image/bmp": "bmp",
         };
 
         // 移除参数部分（如 charset）
-        const cleanType = contentType.split(';')[0].trim().toLowerCase();
+        const cleanType = contentType.split(";")[0].trim().toLowerCase();
         return mimeMap[cleanType] || null;
     }
 
@@ -523,16 +505,16 @@ export class StickerService {
         return new Promise((resolve, reject) => {
             // 设置超时定时器
             const timeoutId = setTimeout(() => {
-                reject(new Error('请求超时'));
+                reject(new Error("请求超时"));
             }, timeout);
 
             // 发起 fetch 请求
             fetch(url)
-                .then(response => {
+                .then((response) => {
                     clearTimeout(timeoutId);
                     resolve(response);
                 })
-                .catch(error => {
+                .catch((error) => {
                     clearTimeout(timeoutId);
                     reject(error);
                 });
@@ -558,25 +540,21 @@ export class StickerService {
     /**
      * 增强版 importSingleSticker 方法
      */
-    private async importSingleSticker(
-        filePath: string,
-        category: string,
-        session?: Session
-    ): Promise<'success' | 'duplicate'> {
+    private async importSingleSticker(filePath: string, category: string, session?: Session): Promise<"success" | "duplicate"> {
         // 校验文件类型
         if (!this.isValidImageFile(filePath)) {
-            throw new Error('不支持的文件类型');
+            throw new Error("不支持的文件类型");
         }
 
         // 检查文件是否已存在
         const fileHash = await this.calculateFileHash(filePath);
         const existing = await this.ctx.database.get(TableName, { id: fileHash });
         if (existing.length > 0) {
-            return 'duplicate';
+            return "duplicate";
         }
 
         // 获取文件扩展名
-        const extension = path.extname(filePath) || '.png';
+        const extension = path.extname(filePath) || ".png";
 
         // 目标文件路径
         const destPath = path.resolve(this.config.storagePath, `${fileHash}${extension}`);
@@ -590,10 +568,10 @@ export class StickerService {
             category,
             filePath: destPath,
             source: {
-                platform: session?.platform || 'import',
-                channelId: session?.channelId || '',
-                userId: session?.userId || '',
-                messageId: session?.messageId || '',
+                platform: session?.platform || "import",
+                channelId: session?.channelId || "",
+                userId: session?.userId || "",
+                messageId: session?.messageId || "",
             },
             createdAt: new Date(),
         };
@@ -601,7 +579,7 @@ export class StickerService {
         await this.ctx.database.create(TableName, record);
         this.logger.info(`已导入表情: ${category}/${fileHash}${extension}`);
 
-        return 'success';
+        return "success";
     }
 
     /**
@@ -610,18 +588,14 @@ export class StickerService {
     private isValidImageFile(filePath: string): boolean {
         try {
             const extension = path.extname(filePath).toLowerCase().slice(1);
-            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension);
+            return ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(extension);
         } catch {
             return false;
         }
     }
 
     public async renameCategory(oldName: string, newName: string): Promise<number> {
-        const result = await this.ctx.database.set(
-            TableName,
-            { category: oldName },
-            { category: newName }
-        );
+        const result = await this.ctx.database.set(TableName, { category: oldName }, { category: newName });
         const modified = result.matched;
         this.logger.info(`已将分类 "${oldName}" 重命名为 "${newName}"，更新了 ${modified} 个表情包`);
         return modified;
@@ -630,14 +604,11 @@ export class StickerService {
     public async deleteCategory(category: string): Promise<number> {
         // 获取该分类的所有表情包
         const stickers = await this.ctx.database.get(TableName, {
-            category: { $eq: category }
+            category: { $eq: category },
         });
 
         // 删除数据库记录
-        const result = await this.ctx.database.remove(
-            TableName,
-            { category }
-        );
+        const result = await this.ctx.database.remove(TableName, { category });
 
         // 删除文件
         for (const sticker of stickers) {
@@ -657,11 +628,7 @@ export class StickerService {
      * 合并两个分类
      */
     public async mergeCategories(sourceCategory: string, targetCategory: string): Promise<number> {
-        const result = await this.ctx.database.set(
-            TableName,
-            { category: sourceCategory },
-            { category: targetCategory }
-        );
+        const result = await this.ctx.database.set(TableName, { category: sourceCategory }, { category: targetCategory });
 
         this.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.modified} 个表情包`);
         return result.modified;
@@ -671,14 +638,10 @@ export class StickerService {
      * 移动表情包到新分类
      */
     public async moveSticker(stickerId: string, newCategory: string): Promise<number> {
-        const result = await this.ctx.database.set(
-            TableName,
-            { id: stickerId },
-            { category: newCategory }
-        );
+        const result = await this.ctx.database.set(TableName, { id: stickerId }, { category: newCategory });
 
         if (result.modified === 0) {
-            throw new Error('未找到该表情包');
+            throw new Error("未找到该表情包");
         }
 
         this.logger.info(`已将表情包 ${stickerId} 移动到分类 "${newCategory}"`);
@@ -690,7 +653,7 @@ export class StickerService {
      */
     public async getStickerCount(category: string): Promise<number> {
         const result = await this.ctx.database.get(TableName, {
-            category: { $eq: category }
+            category: { $eq: category },
         });
 
         return result.length;
@@ -708,7 +671,7 @@ export class StickerService {
      * 清理未使用的表情包
      */
     public async cleanupUnreferenced(): Promise<number> {
-        const dbFiles = new Set((await this.ctx.database.select(TableName).execute()).map(r => path.basename(r.filePath)));
+        const dbFiles = new Set((await this.ctx.database.select(TableName).execute()).map((r) => path.basename(r.filePath)));
         const fsFiles = await readdir(this.config.storagePath);
 
         let deletedCount = 0;
@@ -726,20 +689,17 @@ export class StickerService {
 
         return deletedCount;
     }
-
 }
 
-
-
 interface ImportStats {
-    total: number;       // 总尝试导入数
-    success: number;     // 成功导入数
-    failed: number;      // 导入失败数
-    skipped: number;     // 跳过数（重复表情包）
+    total: number; // 总尝试导入数
+    success: number; // 成功导入数
+    failed: number; // 导入失败数
+    skipped: number; // 跳过数（重复表情包）
     failedFiles?: string[]; // 失败的文件名列表
-    failedUrls?: {        // 失败的 URL 列表
+    failedUrls?: {
+        // 失败的 URL 列表
         url: string;
         error: string;
     }[];
 }
-

@@ -58,10 +58,7 @@ export class PromptContextBuilder {
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
      */
-    public async buildMultimodalUserMessage(
-        userPromptText: string,
-        worldState: WorldState
-    ): Promise<string | (ImagePart | TextPart)[]> {
+    public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | (ImagePart | TextPart)[]> {
         const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.vision.enabled;
         if (!canUseVision) {
             return userPromptText;
@@ -104,9 +101,7 @@ export class PromptContextBuilder {
         // 2. 收集所有潜在的图片候选者，并赋予优先级
         const imageCandidates = allMessages.flatMap((msg) => {
             const elements = h.parse(msg.content);
-            const imageIds = elements
-                .filter((e) => imageTags.includes(e.type) && e.attrs.id)
-                .map((e) => e.attrs.id as string);
+            const imageIds = elements.filter((e) => imageTags.includes(e.type) && e.attrs.id).map((e) => e.attrs.id as string);
 
             // 检查引用，为被引用的图片赋予更高优先级
             let isQuotedImage = false;
@@ -155,20 +150,22 @@ export class PromptContextBuilder {
             return { images: [] };
         }
 
-        const imageDataResults = await Promise.all(
-            Array.from(finalImageIds).map((id) => this.assetService.getAssetDataWithContent(id))
-        );
+        const imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
 
         const finalImages: (ImagePart | TextPart)[] = [];
         const allowedImageTypes = new Set(this.config.vision.allowedImageTypes);
 
         for (const result of imageDataResults) {
-            if (result && result.data && allowedImageTypes.has(result.data.mime)) {
+            if (result && allowedImageTypes.has(result.mime)) {
+                const imageBuffer = await this.assetService.read(result.id, {
+                    format: "data-url",
+                    image: { process: true, format: "jpeg" },
+                });
                 // 为LLM提供更明确的图片标识
-                finalImages.push({ type: "text", text: `The following is an image with ID #${result.data.id}:` });
+                finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
                 finalImages.push({
                     type: "image_url",
-                    image_url: { url: result.content, detail: this.config.vision.detail },
+                    image_url: { url: imageBuffer as string, detail: this.config.vision.detail },
                 });
             }
         }
