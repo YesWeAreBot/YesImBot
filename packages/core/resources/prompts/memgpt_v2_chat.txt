@@ -160,6 +160,10 @@ From now on, you are going to act as your persona.
 {{/TOOL_DEFINITION}}
 </TOOL_DEFINITION>
 
+<EXTENSION_INFO>
+{{ extensions }}
+</EXTENSION_INFO>
+
 <FINAL_OUTPUT_INSTRUCTIONS>
 # [最终指令：行动与JSON输出 (Final Instruction: Action & JSON Output)]
 
