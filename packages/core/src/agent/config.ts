@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { Schema } from "koishi";
 import path from "path";
- 
+
 import { SystemConfig } from "@/config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
@@ -24,21 +24,20 @@ export interface ArousalConfig {
      * 这是一个 "OR" 关系的列表，其中每个子列表是 "AND" 关系。
      * UI 建议: 提供一个可动态增减的列表，每个列表项里又能动态增减频道，会非常直观。
      */
-    allowedChannelGroups: ChannelDescriptor[][];
+    allowedChannels: ChannelDescriptor[];
     /** 消息防抖时间 (毫秒)，防止短时间内对相同模式的重复响应 */
     debounceMs: number;
 }
 
-export const ArousalConfigSchema = Schema.object({
-    allowedChannelGroups: Schema.array(
-        Schema.array(
-            Schema.object({
-                platform: Schema.string().required().description("平台"),
-                id: Schema.string().required().description("频道 ID"),
-            })
-        ).role("table")
+export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
+    allowedChannels: Schema.array(
+        Schema.object({
+            platform: Schema.string().required().description("平台"),
+            id: Schema.string().required().description("频道 ID"),
+        })
     )
-        .required()
+        .role("table")
+        .default([{ platform: "onebot", id: "*" }])
         .description("允许 Agent 响应的频道"),
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
 });
@@ -171,7 +170,7 @@ const EditableWillingnessSchema = Schema.object({
         decayHalfLifeSeconds: Schema.number().default(90).min(5).description("意愿值衰减到一半所需的时间（秒）"),
         probabilityThreshold: Schema.number().min(0).default(60).description("将意愿值转换为回复概率的激活门槛"),
         probabilityAmplifier: Schema.number().default(0.05).min(0.01).max(1).description("概率放大系数"),
-        replyCost: Schema.number().min(0).default(30).description("决定回复后，扣除的\"发言精力惩罚\""),
+        replyCost: Schema.number().min(0).default(30).description('决定回复后，扣除的"发言精力惩罚"'),
     }),
 });
 
@@ -189,7 +188,7 @@ const WillingnessForm: Schema<WillingnessConfig> = Schema.intersect([
             Schema.const(customOption).description("自定义"),
         ])
             .default("default")
-            .description("选择发言行为预设。选择\"自定义\"以手动调整下方所有参数。此参数只影响发言频率。"),
+            .description('选择发言行为预设。选择"自定义"以手动调整下方所有参数。此参数只影响发言频率。'),
     }),
     Schema.union([
         ...personalityOptions.map((presetName) => {
@@ -285,7 +284,7 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
     newMessageStrategy: Schema.union([
         Schema.const("skip").description("跳过新消息（默认）"),
         Schema.const("immediate").description("立即处理新消息"),
-        Schema.const("deferred").description("延迟处理被跳过话题")
+        Schema.const("deferred").description("延迟处理被跳过话题"),
     ])
         .default("skip")
         .description("处理新消息的策略"),

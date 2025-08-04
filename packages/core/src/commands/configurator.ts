@@ -29,9 +29,7 @@ export class ConfiguratorService extends Service {
             // 1. 首先生成一个验证码，用户提交验证码进入后续流程
             const captcha = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-            await session.send(
-                `(｡･ω･｡)ﾉ♡ 主人，为了确认是你本人在操作，请输入下面的验证码哦：\n\`\`\`\n${captcha}\n\`\`\``
-            );
+            await session.send(`(｡･ω･｡)ﾉ♡ 主人，为了确认是你本人在操作，请输入下面的验证码哦：\n\`\`\`\n${captcha}\n\`\`\``);
 
             // 2. 监听用户的回复，验证验证码
             const response = await session.prompt(60 * 1000); // 60秒超时
@@ -197,7 +195,7 @@ export class ConfiguratorService extends Service {
         const visionEnabled = config.agentBehavior?.vision?.enabled;
         addLine(`视觉能力: ${visionEnabled ? "✅ 开启" : "❌ 关闭"}`, 1);
 
-        const allowedChannels = config.agentBehavior?.arousal?.allowedChannelGroups?.[0] || [];
+        const allowedChannels = config.agentBehavior?.arousal?.allowedChannels || [];
         addLine(`响应频道 (${allowedChannels.length}个):`, 1);
         if (allowedChannels.length > 0) {
             allowedChannels.slice(0, 3).forEach((c) => addLine(`- ${c.platform}:${c.id}`, 2));
@@ -231,11 +229,7 @@ export class ConfiguratorService extends Service {
             return;
         }
 
-        if (
-            finalConfirm.toLowerCase() === "y" ||
-            finalConfirm.toLowerCase() === "/s" ||
-            finalConfirm.toLowerCase() === "s"
-        ) {
+        if (finalConfirm.toLowerCase() === "y" || finalConfirm.toLowerCase() === "/s" || finalConfirm.toLowerCase() === "s") {
             await this.saveConfig(state);
         } else {
             await state.session.send("好的，已经放弃所有更改，配置向导已退出。下次再见啦~ ( ´ ▽ ` )ﾉ");
@@ -250,7 +244,11 @@ class SetupSessionState {
     public steps: SetupStep[];
     private navAction: "next" | "prev" | "save" | "quit" | null = null;
 
-    constructor(public ctx: Context, public session: Session, initialConfig: Config) {
+    constructor(
+        public ctx: Context,
+        public session: Session,
+        initialConfig: Config
+    ) {
         this.tempConfig = initialConfig;
         // 在这里定义我们所有的配置步骤！
         this.steps = [
@@ -276,19 +274,16 @@ class SetupSessionState {
                 title: "💬 主要聊天任务模型",
                 description: "请选择一个模型组用于日常的聊天对话。这是我最核心的功能哦！",
                 handler: this.createChoiceHandler({
-                    getChoices: (config) =>
-                        config.modelService.modelGroups.map((g) => ({ value: g.name, description: g.name })),
+                    getChoices: (config) => config.modelService.modelGroups.map((g) => ({ value: g.name, description: g.name })),
                 }),
                 shouldShow: (config) => config.modelService?.modelGroups?.length > 0,
             },
             {
                 key: "modelService.task.summarization",
                 title: "📜 对话总结任务模型",
-                description:
-                    "当对话历史太长时，我会进行总结。请选择一个模型组来执行这个任务。通常选一个便宜又快速的模型就好啦~",
+                description: "当对话历史太长时，我会进行总结。请选择一个模型组来执行这个任务。通常选一个便宜又快速的模型就好啦~",
                 handler: this.createChoiceHandler({
-                    getChoices: (config) =>
-                        config.modelService.modelGroups.map((g) => ({ value: g.name, description: g.name })),
+                    getChoices: (config) => config.modelService.modelGroups.map((g) => ({ value: g.name, description: g.name })),
                 }),
                 shouldShow: (config) => config.modelService?.modelGroups?.length > 0,
             },
@@ -336,8 +331,7 @@ class SetupSessionState {
             {
                 key: "capabilities.history.enableSummarization",
                 title: "📚 启用历史总结",
-                description:
-                    "要不要我拥有“长期记忆”？开启后，我会自动总结旧的聊天记录，这样就能记住更久远的事情啦！(y/n)",
+                description: "要不要我拥有“长期记忆”？开启后，我会自动总结旧的聊天记录，这样就能记住更久远的事情啦！(y/n)",
                 handler: this.createBooleanHandler(),
             },
             {
@@ -350,8 +344,7 @@ class SetupSessionState {
             {
                 key: "capabilities.memory.coreMemoryPath",
                 title: "🗂️ 核心记忆路径",
-                description:
-                    "我可以加载一些核心记忆文件（.md格式），这些是我永远不会忘记的“设定”。请提供存放这些文件的目录路径。",
+                description: "我可以加载一些核心记忆文件（.md格式），这些是我永远不会忘记的“设定”。请提供存放这些文件的目录路径。",
                 handler: this.createStringHandler({ placeholder: "data/yesimbot/memory/core" }),
             },
             {
@@ -446,9 +439,7 @@ class SetupSessionState {
             const step = this.steps[this.currentStep];
             const currentValue = this.getProperty(tempConfig, step.key);
 
-            await session.send(
-                `${step.title}\n${step.description}\n当前值是: \`${currentValue}\`\n请输入新的数值，或者输入 \`/n\` 跳过。`
-            );
+            await session.send(`${step.title}\n${step.description}\n当前值是: \`${currentValue}\`\n请输入新的数值，或者输入 \`/n\` 跳过。`);
 
             while (true) {
                 const input = await this.promptWithCommands(session);
@@ -502,9 +493,7 @@ class SetupSessionState {
         };
     }
 
-    private createChoiceHandler(options: {
-        getChoices: (config: any) => { value: string; description: string }[];
-    }): SetupStep["handler"] {
+    private createChoiceHandler(options: { getChoices: (config: any) => { value: string; description: string }[] }): SetupStep["handler"] {
         return async (session, tempConfig) => {
             const step = this.steps[this.currentStep];
             const currentValue = this.getProperty(tempConfig, step.key);
@@ -586,9 +575,7 @@ class SetupSessionState {
 
                 const [name, type, apiKey, baseURL] = parts;
                 if (!PROVIDER_TYPES.includes(type as any)) {
-                    await session.send(
-                        `类型 "${type}" 不支持哦！支持的类型有: ${PROVIDER_TYPES.join(", ")}。请重新输入~`
-                    );
+                    await session.send(`类型 "${type}" 不支持哦！支持的类型有: ${PROVIDER_TYPES.join(", ")}。请重新输入~`);
                     continue;
                 }
 
@@ -692,11 +679,7 @@ class SetupSessionState {
                     for (const model of validSelections) {
                         selectedModels.push({ providerName: model.providerName, modelId: model.modelId });
                     }
-                    await session.send(
-                        `已将 ${validSelections
-                            .map((m) => `\`${m.displayName}\``)
-                            .join(", ")} 加入组 \`${groupName}\`。`
-                    );
+                    await session.send(`已将 ${validSelections.map((m) => `\`${m.displayName}\``).join(", ")} 加入组 \`${groupName}\`。`);
                     break;
                 }
 

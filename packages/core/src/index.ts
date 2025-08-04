@@ -2,15 +2,7 @@ import { Context, ForkScope, Service, sleep } from "koishi";
 import { AgentCore } from "./agent";
 import { ConfiguratorService } from "./commands/configurator";
 import { Config } from "./config";
-import {
-    AssetService,
-    LoggerService,
-    MemoryService,
-    ModelService,
-    PromptService,
-    ToolService,
-    WorldStateService,
-} from "./services";
+import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
 import { handleError, initializeErrorReporter } from "./shared/errors";
 
 declare module "koishi" {
@@ -55,10 +47,8 @@ export default class YesImBot extends Service<Config> {
             // 转换 allowedChannelGroups 为 Set
             const allowedChannels: Set<string> = new Set();
 
-            for (const channelGroup of config.agentBehavior.arousal.allowedChannelGroups) {
-                for (const channel of channelGroup) {
-                    allowedChannels.add(`${channel.platform}:${channel.id}`);
-                }
+            for (const channel of config.agentBehavior.arousal.allowedChannels) {
+                allowedChannels.add(`${channel.platform}:${channel.id}`);
             }
 
             // 注册 WorldState 服务
