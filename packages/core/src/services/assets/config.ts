@@ -3,38 +3,55 @@ import { Schema } from "koishi";
 export interface AssetServiceConfig {
     storagePath: string;
     driver: "local";
-    autoClearEnabled: boolean;
-    autoClearIntervalHours: number;
-    maxAssetAgeDays: number;
     endpoint?: string;
     maxFileSize: number;
     downloadTimeout: number;
+    autoClear: {
+        enabled: boolean;
+        intervalHours: number;
+        maxAgeDays: number;
+    };
+    image: {
+        processedCachePath: string;
+        resizeEnabled: boolean;
+        targetSize: number;
+        maxSizeMB: number;
+        gifProcessingStrategy: "firstFrame" | "stitch";
+        gifFramesToExtract: number;
+    };
+    recoveryEnabled: boolean;
 }
 
 export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
     storagePath: Schema.path({ allowCreate: true, filters: ["directory"] })
         .default("data/assets")
-        .description("资源本地存储路径。"),
+        .description("资源本地存储路径"),
 
-    driver: Schema.union(["local"]).default("local").description("存储驱动类型。目前仅支持本地存储。"),
+    driver: Schema.union(["local"]).default("local").description("存储驱动类型"),
 
-    autoClearEnabled: Schema.boolean().default(true).description("是否启用自动清理过期资源的功能。"),
+    endpoint: Schema.string().role("link").description("公开访问端点 URL (可选)"),
 
-    autoClearIntervalHours: Schema.number().min(1).default(24).description("自动清理任务的执行周期（单位：小时）。"),
+    maxFileSize: Schema.number().min(1).default(100).description("允许存储的单个文件的最大大小（MB）"),
+    downloadTimeout: Schema.number().min(1000).default(30000).description("下载外部资源的超时时间（毫秒）"),
 
-    maxAssetAgeDays: Schema.number().min(1).default(30).description("资源最长保留天数（根据最后使用时间判断）。"),
+    autoClear: Schema.object({
+        enabled: Schema.boolean().default(true).description("是否启用自动清理过期资源"),
+        intervalHours: Schema.number().min(1).default(24).description("自动清理周期（小时）"),
+        maxAgeDays: Schema.number().min(1).default(30).description("资源最长保留天数"),
+    }).description("自动清理配置"),
 
-    endpoint: Schema.string()
-        .role("link")
-        .description("公开访问端点 URL (可选)。配置后，资源将通过此 URL 对外提供，例如 `https://mybot.com/assets`。"),
+    image: Schema.object({
+        processedCachePath: Schema.path({ allowCreate: true, filters: ["directory"] })
+            .default("data/assets/processed")
+            .description("处理后图片的缓存存储路径"),
+        resizeEnabled: Schema.boolean().default(true).description("读取图片时是否启用动态缩放和压缩"),
+        targetSize: Schema.union([512, 768, 1024, 1536, 2048]).default(1024).description("图片处理后长边的目标最大像素") as Schema<number>,
+        maxSizeMB: Schema.number().min(0.5).max(10).default(3).description("处理后图片文件的最大体积（MB）"),
+        gifProcessingStrategy: Schema.union(["firstFrame", "stitch"])
+            .default("stitch")
+            .description("GIF 动图处理策略：'firstFrame' (提取第一帧) 或 'stitch' (拼接多帧)"),
+        gifFramesToExtract: Schema.number().min(2).max(16).default(6).description("当策略为 'stitch' 时，提取并拼接的 GIF 关键帧数量"),
+    }).description("图片处理配置"),
 
-    maxFileSize: Schema.number()
-        .min(1024)
-        .default(100 * 1024 * 1024) // 100MB
-        .description("允许存储的单个文件的最大大小（单位：字节）。"),
-
-    downloadTimeout: Schema.number()
-        .min(1000)
-        .default(30000) // 30秒
-        .description("下载资源的超时时间（单位：毫秒）。"),
+    recoveryEnabled: Schema.boolean().default(true).description("是否启用资源恢复机制"),
 });

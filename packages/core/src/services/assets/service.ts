@@ -1,14 +1,35 @@
 import { Services, TableName } from "@/shared/constants";
+import { formatSize, truncate } from "@/shared/utils";
 import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
 import { promises as fs } from "fs";
-import { Context, Dict, Element, Service, h } from "koishi";
+import { Context, Element, Service, h } from "koishi";
+import sharp from "sharp";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import { AssetServiceConfig } from "./config";
-import { LocalStorageDriver } from "./drivers";
-import { AssetData, AssetInfo, AssetMetadata, AssetType, StorageDriver } from "./types";
-import { formatSize, truncate } from "@/shared/utils";
+import { LocalStorageDriver } from "./drivers/local";
+import { AssetData, AssetInfo, AssetMetadata, ReadAssetOptions, StorageDriver } from "./types";
+
+/**
+ * 根据 MIME 类型获取对应的 Koishi 元素标签名
+ * @param mime - MIME 类型字符串
+ * @returns 元素标签名 ('img', 'audio', 'video', 'file')
+ */
+function getTagNameFromMime(mime: string): string {
+    if (!mime) return "file";
+    const mainType = mime.split("/")[0];
+    switch (mainType) {
+        case "image":
+            return "img";
+        case "audio":
+            return "audio";
+        case "video":
+            return "video";
+        default:
+            return "file";
+    }
+}
 
 declare module "koishi" {
     interface Context {
@@ -19,25 +40,36 @@ declare module "koishi" {
     }
 }
 
+/**
+ * 资源管理服务 (AssetService)
+ * 负责资源的持久化存储、去重、读取、处理和生命周期管理
+ */
 export class AssetService extends Service<AssetServiceConfig> {
-    static readonly inject = ["database", "server", Services.Logger];
+    static readonly inject = ["database", "server", "http"];
+
+    // 缓存和常量
+    private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
+    private static readonly MAX_COMPRESSION_ATTEMPTS = 5; // 压缩图片时的最大尝试次数
+
     private storage: StorageDriver;
+    private cacheStorage: StorageDriver;
 
     constructor(ctx: Context, config: AssetServiceConfig) {
         super(ctx, Services.Asset, true);
-        this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[资源服务]");
     }
 
     protected async start() {
-        this.storage = new LocalStorageDriver(this.ctx, { path: this.config.storagePath });
-        //this.logger.debug(`本地存储驱动已初始化, 路径: ${this.config.storagePath}`);
+        this.logger.info("资源服务正在启动...");
 
+        // 初始化存储驱动
+        this.storage = new LocalStorageDriver(this.ctx, this.config.storagePath);
+        this.cacheStorage = new LocalStorageDriver(this.ctx, this.config.image.processedCachePath);
+
+        // 扩展数据库表
         this.ctx.model.extend(
             TableName.Assets,
             {
                 id: "string(36)",
-                type: "string(32)",
                 mime: "string(128)",
                 hash: "string(64)",
                 size: "unsigned",
@@ -48,333 +80,450 @@ export class AssetService extends Service<AssetServiceConfig> {
             { primary: "id", unique: ["hash"] }
         );
 
-        if (this.config.autoClearEnabled) {
-            this.ctx.setInterval(() => this.runAutoClear(), this.config.autoClearIntervalHours * 3600 * 1000);
-            //this.logger.info(`已启用资源自动清理功能, 清理超过 ${this.config.maxAssetAgeDays} 天未使用的资源`);
+        // 设置自动清理任务
+        if (this.config.autoClear.enabled) {
+            const interval = this.config.autoClear.intervalHours * 3600 * 1000;
+            this.ctx.setInterval(() => this.runAutoClear(), interval);
+            this.logger.info(
+                `已启用资源自动清理，周期: ${this.config.autoClear.intervalHours} 小时，保留天数: ${this.config.autoClear.maxAgeDays}`
+            );
         }
 
+        // 注册 HTTP 访问端点
         if (this.config.endpoint) {
             this.registerHttpEndpoint();
         }
-    }
 
-    public async transform(source: string): Promise<string> {
-        const handle = async (type: AssetType, attrs: Dict, tagName: string) => {
-            const originalUrl = attrs.src || attrs.url || attrs.file;
-            if (!originalUrl && attrs.id) return h(tagName, attrs); // 如果没有源或已有ID, 直接返回
-            try {
-                const metadata = {
-                    filename: attrs.filename || attrs.fileName,
-                    src: originalUrl,
-                    summary: attrs.summary,
-                };
-                const id = await this.create(originalUrl, type, metadata);
-                // 持久化成功后, 仅保留ID和其他非src属性
-                const { src, ...display } = metadata;
-                return h(tagName, { id, ...display });
-            } catch (error) {
-                this.logger.error(`持久化资源失败 | 源: "${originalUrl}" | 原因: ${error.message}`);
-                // 失败时返回原始元素, 保证消息能继续发送
-                return h(type, attrs);
-            }
-        };
-        try {
-            return await h.transformAsync(source, async (element) => {
-                switch (element.type) {
-                    case "img":
-                    case "image":
-                        return handle(AssetType.Image, element.attrs, "img");
-                    case "audio":
-                        return handle(AssetType.Audio, element.attrs, "audio");
-                    case "video":
-                        return handle(AssetType.Video, element.attrs, "video");
-                    case "file":
-                        return handle(AssetType.File, element.attrs, "file");
-                    // 兼容 mface
-                    case "mface":
-                        return handle(AssetType.Image, element.attrs, "img");
-                    default:
-                        return element;
-                }
-            });
-        } catch (error) {
-            this.logger.warn(`转换消息元素时发生未知错误: ${error.message}`);
-            return source;
-        }
+        this.logger.success("资源服务已启动。");
     }
 
     /**
-     * 将消息中带有内部 ID 的资源元素转换为平台可发送的 URL 格式.
-     * @param source 待编码的消息字符串或元素数组
-     * @returns 编码后的消息元素数组
+     * 同步转换消息内容，将外部资源链接持久化并替换为内部ID
+     * 此方法会等待所有资源持久化完成
+     * @param source - 原始消息字符串或元素数组
+     * @returns 转换后的消息字符串
      */
-    public async encode(source: string | Element[]): Promise<Element[]> {
-        const handle = async (attrs: Dict, tagName: string) => {
-            if (!attrs.id) return h(tagName, attrs);
-            try {
-                const src = await this.getPublicUrl(attrs.id);
-                const { id, ...rest } = attrs;
-                return h(tagName, { ...rest, src });
-            } catch (error) {
-                this.logger.error(`获取资源 "${attrs.id}" 的公开链接失败: ${error.message}`);
-                return h(tagName, attrs);
-            }
-        };
-        if (typeof source === "string") {
-            source = h.parse(source);
-        }
-        return h.transformAsync(source, async (element) => {
-            switch (element.type) {
-                case "img":
-                case "image":
-                    return handle(element.attrs, "img");
-                case "audio":
-                    return handle(element.attrs, "audio");
-                case "video":
-                    return handle(element.attrs, "video");
-                case "file":
-                    return handle(element.attrs, "file");
-                default:
-                    return element;
-            }
-        });
+    async transform(source: string | Element[]): Promise<string> {
+        const elements = typeof source === "string" ? h.parse(source) : source;
+        const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, false));
+        // return h.render(transformedElements);
+        return transformedElements.join("");
     }
 
     /**
-     * 创建一个新资源.
-     * 此方法会处理不同来源 (Buffer, data:, file:, http(s):) 的资源,
-     * 进行大小校验、哈希查重、文件存储和数据库记录, 最终返回资源的唯一ID.
-     * @param source 资源的来源, 可以是 Buffer, data URL, file URL 或 http/https URL.
-     * @param type 资源的类型.
-     * @param metadata 资源的元数据.
-     * @returns 资源的唯一 ID.
+     * 异步转换消息内容，立即返回带占位符ID的消息，并在后台进行资源持久化
+     * 适用于不要求立即使用资源的场景，可以提高响应速度
+     * @param source - 原始消息字符串或元素数组
+     * @returns 转换后的消息字符串
      */
-    public async create(source: string | Buffer, type: AssetType, metadata: AssetMetadata = {}): Promise<string> {
-        try {
-            let buffer: Buffer;
-            let mime: string | undefined;
+    async transformAsync(source: string | Element[]): Promise<string> {
+        const elements = typeof source === "string" ? h.parse(source) : source;
+        const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, true));
+        // return h.render(transformedElements);
+        return transformedElements.join("");
+    }
 
-            if (Buffer.isBuffer(source)) {
-                //this.logger.debug("从 Buffer 创建资源");
-                buffer = source;
-            } else if (typeof source === "string") {
-                if (source.startsWith("data:")) {
-                    //this.logger.debug("从 data: URL 创建资源");
-                    const match = source.match(/^data:([^;]+);base64,(.*)$/);
-                    if (!match) throw new Error("无效的 data: URL 格式");
-                    mime = match[1];
-                    buffer = Buffer.from(match[2], "base64");
-                } else if (source.startsWith("file://")) {
-                    //this.logger.debug(`从 file: URL 创建资源: ${source}`);
-                    const filePath = fileURLToPath(source);
-                    buffer = await fs.readFile(filePath);
-                } else if (source.startsWith("http")) {
-                    //this.logger.debug(`从 http(s): URL 创建资源: ${source}`);
-                    const response = await this.ctx.http(source, {
-                        method: "GET",
-                        responseType: "arraybuffer",
-                        timeout: this.config.downloadTimeout,
-                        headers: {
-                            "User-Agent":
-                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-                        },
-                    });
-                    if (response.status < 200 || response.status >= 300) {
-                        throw new Error(`下载失败, HTTP 状态码: ${response.status}`);
-                    }
-                    mime = response.headers["content-type"];
-                    buffer = Buffer.from(response.data);
-                } else {
-                    throw new Error(`不支持的资源来源: "${truncate(source, 50)}"`);
-                }
+    /**
+     * 创建一个新资源。
+     * @param source - 资源的来源 (Buffer, data:, file:, http(s): URL)
+     * @param metadata - 资源的元数据
+     * @param options - 内部选项，如预设的ID
+     * @returns 资源的唯一 ID
+     */
+    async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string } = {}): Promise<string> {
+        const buffer = await this._getSourceBuffer(source);
+        if (!buffer || buffer.length === 0) throw new Error("资源内容为空");
+
+        const hash = createHash("sha256").update(buffer).digest("hex");
+        const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
+
+        if (existing) {
+            this.logger.debug(`资源哈希命中 (源: ${truncate(String(source), 50)})，复用ID: ${existing.id}`);
+            await this._updateLastUsed(existing.id);
+            return existing.id;
+        }
+
+        const fileType = await fromBuffer(buffer);
+        const mime = fileType?.mime || "application/octet-stream";
+
+        // 如果是图片，尝试获取尺寸信息
+        if (mime.startsWith("image/")) {
+            try {
+                const imageMeta = await sharp(buffer).metadata();
+                metadata.width = imageMeta.width;
+                metadata.height = imageMeta.height;
+            } catch (e) {
+                this.logger.warn(`无法解析图片元数据: ${e.message}`);
+            }
+        }
+
+        const id = options.id || uuidv4();
+        await this.storage.write(id, buffer);
+
+        const assetData: AssetData = {
+            id,
+            mime,
+            hash,
+            size: buffer.length,
+            createdAt: new Date(),
+            lastUsedAt: new Date(),
+            metadata,
+        };
+
+        await this.ctx.database.upsert(TableName.Assets, [assetData]);
+        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${mime} | 大小: ${formatSize(buffer.length)}`);
+        return id;
+    }
+
+    /**
+     * 根据ID读取资源
+     * 支持按需进行图片处理和缓存
+     * @param id - 资源 ID
+     * @param options - 读取选项，可控制是否处理图片和返回格式
+     * @returns 资源内容，格式由 options.format 决定
+     */
+    async read(id: string, options: ReadAssetOptions = {}): Promise<Buffer | string> {
+        const asset = await this._getAssetWithUpdate(id);
+        if (!asset) throw new Error(`数据库中找不到资源: ${id}`);
+
+        let finalBuffer: Buffer;
+        const shouldProcess = options.image?.process && asset.mime.startsWith("image/");
+        const cacheId = id + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX;
+
+        if (shouldProcess && (await this.cacheStorage.exists(cacheId))) {
+            this.logger.debug(`命中处理后图片缓存: ${cacheId}`);
+            finalBuffer = await this.cacheStorage.read(cacheId);
+        } else {
+            const originalBuffer = await this._readOriginalWithRecovery(id, asset);
+            if (shouldProcess) {
+                this.logger.debug(`无缓存，开始实时处理图片: ${id}`);
+                finalBuffer = await this._processImage(originalBuffer, asset.mime);
+                await this.cacheStorage.write(cacheId, finalBuffer);
+                this.logger.debug(`处理结果已缓存: ${cacheId}`);
             } else {
-                throw new Error("无效的资源来源类型");
+                finalBuffer = originalBuffer;
             }
+        }
 
-            if (!buffer || buffer.length === 0) {
-                throw new Error("资源内容为空");
-            }
-
-            if (buffer.length > this.config.maxFileSize) {
-                throw new Error(`文件大小 (${formatSize(buffer.length)}) 超出限制 (${formatSize(this.config.maxFileSize)})`);
-            }
-
-            const hash = createHash("sha256").update(buffer).digest("hex");
-            const existing = await this.ctx.database.get(TableName.Assets, { hash });
-
-            if (existing.length > 0) {
-                const assetId = existing[0].id;
-                //this.logger.debug(`资源哈希命中 | ID: ${assetId} | 更新最后使用时间`);
-                await this.ctx.database.set(TableName.Assets, { id: assetId }, { lastUsedAt: new Date() });
-                return assetId;
-            }
-
-            // 如果 MIME 未知, 则从 buffer 推断
-            mime = mime || (await fromBuffer(buffer).then((info) => info?.mime)) || "application/octet-stream";
-
-            const id = uuidv4();
-            await this.storage.write(id, buffer);
-
-            const assetData: AssetData = {
-                id,
-                type,
-                mime,
-                hash,
-                size: buffer.length,
-                createdAt: new Date(),
-                lastUsedAt: new Date(),
-                metadata,
-            };
-
-            await this.ctx.database.create(TableName.Assets, assetData);
-            this.logger.info(`成功创建新资源 | ID: ${id} | 类型: ${mime} | 大小: ${formatSize(buffer.length)}`);
-            return id;
-        } catch (error) {
-            this.logger.error(`创建资源时发生错误: ${error.message}`);
-            // 将错误继续向上抛出, 以便调用方 (如 transform) 能捕获到
-            throw error;
+        const { format = "buffer" } = options;
+        switch (format) {
+            case "base64":
+                return finalBuffer.toString("base64");
+            case "data-url":
+                // 处理后的图片统一为 webp 或 jpeg，需要确定MIME
+                const outputMime = shouldProcess ? "image/jpeg" : asset.mime;
+                return `data:${outputMime};base64,${finalBuffer.toString("base64")}`;
+            default:
+                return finalBuffer;
         }
     }
 
     /**
-     * 根据 ID 读取资源的二进制内容.
-     * @param id 资源 ID
-     * @returns 资源的 Buffer.
+     * 根据 ID 获取资源的元信息
+     * @param id - 资源 ID
+     * @returns 资源的元信息，若不存在则返回 null
      */
-    public async read(id: string): Promise<Buffer> {
-        const [asset] = await this.ctx.database.get(TableName.Assets, { id });
-        if (!asset) throw new Error(`找不到资源 | ID: "${id}"`);
-
-        const buffer = await this.storage.read(id);
-        await this.ctx.database.set(TableName.Assets, { id }, { lastUsedAt: new Date() });
-        return buffer;
-    }
-
-    /**
-     * 根据 ID 获取资源的元信息.
-     * @param id 资源 ID
-     * @returns 资源的元信息.
-     */
-    public async getInfo(id: string): Promise<AssetInfo> {
-        const [asset] = await this.ctx.database.get(TableName.Assets, { id });
-        if (!asset) throw new Error(`找不到资源 | ID: "${id}"`);
-
-        await this.ctx.database.set(TableName.Assets, { id }, { lastUsedAt: new Date() });
-        const { hash, ...info } = asset; // 排除内部字段 hash
+    async getInfo(id: string): Promise<AssetInfo | null> {
+        const asset = await this._getAssetWithUpdate(id);
+        if (!asset) return null;
+        const { hash, ...info } = asset; // 移除不应公开的 hash 字段
         return info;
     }
 
     /**
-     * 获取资源的公开访问链接.
-     * 如果配置了 endpoint, 则返回基于 endpoint 的 URL.
-     * 否则, 返回 Base64 编码的 Data URL.
-     * @param id 资源 ID
-     * @returns 资源的公开链接
+     * 获取资源的公开访问链接
+     * @param id - 资源 ID
+     * @returns 资源的公开链接，若未配置 endpoint 则回退到 data URL
      */
-    public async getPublicUrl(id: string): Promise<string> {
-        const [asset] = await this.ctx.database.get(TableName.Assets, { id });
-        if (!asset) throw new Error(`找不到资源 | ID: "${id}"`);
+    async getPublicUrl(id: string): Promise<string> {
+        if (!this.config.endpoint) {
+            this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL。`);
+            return (await this.read(id, { format: "data-url" })) as string;
+        }
 
-        await this.ctx.database.set(TableName.Assets, { id }, { lastUsedAt: new Date() });
+        await this._updateLastUsed(id); // 确保访问时更新使用时间
+        const endpoint = this.config.endpoint.endsWith("/") ? this.config.endpoint : `${this.config.endpoint}/`;
+        return `${endpoint}${id}`;
+    }
 
-        if (this.config.endpoint) {
-            const endpoint = this.config.endpoint.endsWith("/") ? this.config.endpoint : `${this.config.endpoint}/`;
-            return `${endpoint}${id}`;
+    /**
+     * 将包含内部资源ID的消息元素编码为平台可发送的URL或元素
+     * @param source - 消息字符串或元素数组
+     * @returns 编码后的元素数组
+     */
+    async encode(source: string | Element[]): Promise<Element[]> {
+        const elements = typeof source === "string" ? h.parse(source) : source;
+        return h.transformAsync(elements, async (element) => {
+            if (!element.attrs.id) return element;
+
+            const info = await this.getInfo(element.attrs.id);
+            if (!info) {
+                this.logger.warn(`编码时找不到资源: ${element.attrs.id}，将返回原始元素。`);
+                return element;
+            }
+
+            try {
+                // 使用 getPublicUrl 确保逻辑统一
+                const src = await this.getPublicUrl(element.attrs.id);
+                const tagName = getTagNameFromMime(info.mime);
+                const { id, ...restAttrs } = element.attrs;
+                return h(tagName, { ...restAttrs, src });
+            } catch (error) {
+                this.logger.error(`获取资源 "${element.attrs.id}" 的公开链接失败: ${error.message}`);
+                return element;
+            }
+        });
+    }
+
+    // --- 私有方法 ---
+
+    /**
+     * 处理 transform/transformAsync 中的单个元素
+     */
+    private async _processTransformElement(element: Element, isAsync: boolean): Promise<Element> {
+        const originalUrl = element.attrs.src || element.attrs.url || element.attrs.file;
+        if (!originalUrl || element.attrs.id) return element;
+
+        // 根据元素类型和URL协议决定是否处理
+        const tagName = getTagNameFromMime(element.type === "image" ? "image/jpeg" : "");
+        if (tagName === "file" && !String(originalUrl).startsWith("http")) {
+            return element; // 只处理网络文件资源
+        }
+
+        const metadata: AssetMetadata = {
+            filename: element.attrs.filename,
+            src: originalUrl,
+            summary: element.attrs.summary,
+        };
+
+        // 移除原有的 src/url/file 属性，保留其他属性
+        const { src, url, file, ...displayAttrs } = element.attrs;
+
+        if (isAsync) {
+            const placeholderId = uuidv4();
+            // 立即返回带占位符ID的元素，后台执行持久化
+            (async () => {
+                try {
+                    await this.create(originalUrl, metadata, { id: placeholderId });
+                } catch (error) {
+                    this.logger.error(`后台资源持久化失败 (ID: ${placeholderId}, 源: ${truncate(originalUrl, 100)}): ${error.message}`);
+                    // 可在此处添加失败处理逻辑，如更新数据库标记此ID无效
+                }
+            })();
+            return h(tagName, { ...displayAttrs, id: placeholderId });
         } else {
-            this.logger.warn(`未配置公开访问端点, 将为资源 ${id} 回退到 Base64 Data URL. 这对于大文件可能效率低下`);
-            const buffer = await this.storage.read(id);
-            return `data:${asset.mime};base64,${buffer.toString("base64")}`;
+            try {
+                const id = await this.create(originalUrl, metadata);
+                return h(tagName, { ...displayAttrs, id });
+            } catch (error) {
+                this.logger.error(`资源持久化失败 (源: ${truncate(originalUrl, 100)}): ${error.message}`);
+                return element; // 失败时返回原始元素
+            }
         }
     }
 
-    /**
-     * 获取资源的 Base64 编码内容（兼容 ImageService 接口）
-     * @param id 资源 ID
-     * @returns 包含资源数据和 Base64 内容的对象
-     */
-    public async getAssetDataWithContent(id: string): Promise<{ data: AssetData; content: string } | null> {
-        const [asset] = await this.ctx.database.get(TableName.Assets, { id });
-        if (!asset) {
-            this.logger.warn(`Asset not found: ${id}`);
-            return null;
+    private async _getSourceBuffer(source: string | Buffer): Promise<Buffer> {
+        if (Buffer.isBuffer(source)) return source;
+        if (source.startsWith("data:")) {
+            const match = source.match(/^data:.+;base64,(.*)$/);
+            if (!match) throw new Error("无效的 data: URL 格式");
+            return Buffer.from(match[1], "base64");
         }
+        if (source.startsWith("file://")) return fs.readFile(fileURLToPath(source));
+        if (source.startsWith("http")) {
+            return this._downloadResource(source);
+        }
+        throw new Error(`不支持的资源来源: "${truncate(source, 50)}"`);
+    }
 
+    private async _downloadResource(url: string): Promise<Buffer> {
+        // 1. 预检文件大小
         try {
-            const buffer = await this.storage.read(id);
-            const base64Content = `data:${asset.mime};base64,${buffer.toString("base64")}`;
-            await this.ctx.database.set(TableName.Assets, { id }, { lastUsedAt: new Date() });
-            return { data: asset, content: base64Content };
+            const head = await this.ctx.http.head(url, { timeout: this.config.downloadTimeout / 2 });
+            const contentLength = head.get("content-length");
+            if (contentLength && Number(contentLength) > this.config.maxFileSize) {
+                throw new Error(`文件大小 (${formatSize(Number(contentLength))}) 超出限制 (${formatSize(this.config.maxFileSize)})`);
+            }
         } catch (error) {
-            this.logger.error(`Failed to read asset ${id}: ${error.message}`);
-            return null;
+            // 如果预检失败（如服务器不支持HEAD），下载时仍会受限于 maxBodySize。
+            if (error.message.includes("超出限制")) throw error;
+            this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载。`);
+        }
+
+        // 2. 下载文件
+        const response = await this.ctx.http.get(url, {
+            responseType: "arraybuffer",
+            timeout: this.config.downloadTimeout,
+            // maxBodySize: this.config.maxFileSize,
+        });
+        return Buffer.from(response);
+    }
+
+    private async _readOriginalWithRecovery(id: string, asset: AssetData): Promise<Buffer> {
+        try {
+            return await this.storage.read(id);
+        } catch (error) {
+            // 如果文件在本地丢失，且开启了恢复功能，且有原始链接，则尝试恢复
+            if (error.code === "ENOENT" && this.config.recoveryEnabled && asset.metadata.src) {
+                this.logger.warn(`本地文件 ${id} 丢失，尝试从 ${asset.metadata.src} 恢复...`);
+                try {
+                    const buffer = await this._getSourceBuffer(asset.metadata.src);
+                    await this.storage.write(id, buffer); // 恢复文件
+                    this.logger.success(`资源 ${id} 已成功恢复。`);
+                    return buffer;
+                } catch (recoveryError) {
+                    this.logger.error(`资源 ${id} 恢复失败: ${recoveryError.message}`);
+                    throw recoveryError; // 抛出恢复失败的错误
+                }
+            }
+            throw error; // 抛出原始的读取错误
         }
     }
 
-    /**
-     * 兼容 ImageService 的 getImageLocalPath 方法
-     * @param id 资源 ID
-     * @returns 资源的本地存储路径
-     */
-    public async getImageLocalPath(id: string): Promise<string | null> {
+    private async _processImage(buffer: Buffer, mime: string): Promise<Buffer> {
+        if (mime === "image/gif") {
+            if (this.config.image.gifProcessingStrategy === "stitch") {
+                return this._processGifStitch(buffer);
+            }
+            if (this.config.image.gifProcessingStrategy === "firstFrame") {
+                // 处理GIF第一帧
+                const firstFrameBuffer = await sharp(buffer, { page: 0 }).toBuffer();
+                return this._compressAndResizeImage(sharp(firstFrameBuffer));
+            }
+            // `gifProcessingStrategy` 为 'none' 或其他值，不处理
+            return buffer;
+        }
+
+        return this._compressAndResizeImage(sharp(buffer));
+    }
+
+    private async _compressAndResizeImage(sharpInstance: sharp.Sharp): Promise<Buffer> {
+        const meta = await sharpInstance.metadata();
+        const { targetSize } = this.config.image;
+
+        // 调整尺寸
+        if (meta.width > targetSize || meta.height > targetSize) {
+            sharpInstance.resize({ width: targetSize, height: targetSize, fit: "inside", withoutEnlargement: true });
+        }
+
+        // 动态调整质量进行压缩
+        const maxSizeBytes = this.config.image.maxSizeMB * 1024 * 1024;
+        let quality = 90;
+        let compressedBuffer: Buffer;
+
+        for (let i = 0; i < AssetService.MAX_COMPRESSION_ATTEMPTS; i++) {
+            compressedBuffer = await sharpInstance.jpeg({ quality, progressive: true, mozjpeg: true }).toBuffer();
+            if (compressedBuffer.length <= maxSizeBytes) {
+                this.logger.debug(`图片压缩成功，质量: ${quality}, 大小: ${formatSize(compressedBuffer.length)}`);
+                return compressedBuffer;
+            }
+            quality -= 10;
+            this.logger.debug(`压缩后大小为 ${formatSize(compressedBuffer.length)}，超出限制，降低质量至 ${quality} 重试...`);
+        }
+
+        this.logger.warn(`无法将图片压缩到 ${this.config.image.maxSizeMB}MB 以下，将使用最后一次压缩结果。`);
+        return compressedBuffer;
+    }
+
+    private async _processGifStitch(buffer: Buffer): Promise<Buffer> {
+        const { gifFramesToExtract } = this.config.image;
+        const meta = await sharp(buffer, { animated: true }).metadata();
+        const pageCount = meta.pages || 1;
+
+        // 计算要抽取的帧的索引
+        const frameIndices = Array.from({ length: Math.min(gifFramesToExtract, pageCount) }, (_, i) =>
+            Math.floor(i * (pageCount / Math.min(gifFramesToExtract, pageCount)))
+        );
+
+        const frames = await Promise.all(frameIndices.map((index) => sharp(buffer, { page: index }).resize({ width: 384 }).toBuffer()));
+        const frameMetas = await Promise.all(frames.map((f) => sharp(f).metadata()));
+
+        // 计算拼接后画布的尺寸
+        const cols = Math.ceil(Math.sqrt(frames.length));
+        const maxFrameHeight = Math.max(...frameMetas.map((m) => m.height));
+        const finalWidth = cols * 384;
+        const finalHeight = Math.ceil(frames.length / cols) * maxFrameHeight;
+
+        const compositeOps = frames.map((frame, i) => ({
+            input: frame,
+            top: Math.floor(i / cols) * maxFrameHeight,
+            left: (i % cols) * 384,
+        }));
+
+        // 创建透明背景并拼接图片
+        return sharp({ create: { width: finalWidth, height: finalHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+            .composite(compositeOps)
+            .webp({ quality: 85 })
+            .toBuffer();
+    }
+
+    private async _getAssetWithUpdate(id: string): Promise<AssetData | null> {
         const [asset] = await this.ctx.database.get(TableName.Assets, { id });
         if (!asset) return null;
+        await this._updateLastUsed(id);
+        return asset;
+    }
 
-        // 对于 assets 服务，我们返回存储驱动的路径
-        // 这主要用于兼容性，实际应该使用 read() 方法
-        if (this.storage instanceof LocalStorageDriver) {
-            return this.storage.getPath(id);
-        }
-
-        return null;
+    private async _updateLastUsed(id: string): Promise<void> {
+        await this.ctx.database.set(TableName.Assets, { id }, { lastUsedAt: new Date() });
     }
 
     private registerHttpEndpoint() {
-        const route = this.config.endpoint.startsWith("/") ? this.config.endpoint : new URL(this.config.endpoint).pathname;
+        const routePath = this.config.endpoint.startsWith("/") ? this.config.endpoint : new URL(this.config.endpoint).pathname;
+        const finalRoute = `${routePath.replace(/\/$/, "")}/:id`; // 确保路径格式正确
 
-        this.ctx.server.get(`${route}/:id`, async (ctx) => {
+        this.ctx.server.get(finalRoute, async (ctx) => {
             const { id } = ctx.params;
             try {
-                const info = await this.getInfo(id); // getInfo 内部会更新 lastUsedAt
+                // getInfo 内部会更新 lastUsedAt，但这里我们主要获取元数据
+                const info = await this.getInfo(id);
+                if (!info) throw new Error("Asset not found in database");
+
                 const buffer = await this.storage.read(id);
                 ctx.status = 200;
                 ctx.set("Content-Type", info.mime);
                 ctx.set("Content-Length", info.size.toString());
-                // 为资源设置长期缓存, 优化客户端加载
-                ctx.set("Cache-Control", "public, max-age=31536000, immutable");
+                ctx.set("Cache-Control", "public, max-age=31536000, immutable"); // 长期缓存
                 ctx.body = buffer;
             } catch (err) {
+                // 如果是文件找不到，返回404，否则可能为其他服务器错误，但为简单起见统一返回404
                 this.logger.warn(`通过 HTTP 端点提供资源 ${id} 失败: ${err.message}`);
                 ctx.status = 404;
                 ctx.body = "Asset not found";
             }
         });
-        this.logger.info(`HTTP 服务端点已注册: GET ${route}/:id`);
+        this.logger.info(`HTTP 服务端点已注册: GET ${finalRoute}`);
     }
 
     private async runAutoClear() {
-        this.logger.info("开始执行过期资源自动清理任务..");
-        const cutoff = new Date(Date.now() - this.config.maxAssetAgeDays * 24 * 3600 * 1000);
-        const expiredAssets = await this.ctx.database.get(TableName.Assets, { lastUsedAt: { $lt: cutoff } });
+        this.logger.info("开始执行过期资源自动清理任务...");
+        const cutoffDate = new Date(Date.now() - this.config.autoClear.maxAgeDays * 24 * 3600 * 1000);
+        const expiredAssets = await this.ctx.database.get(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
 
         if (!expiredAssets.length) {
-            this.logger.info("没有需要清理的过期资源");
+            this.logger.info("没有需要清理的过期资源。");
             return;
         }
 
-        this.logger.info(`发现 ${expiredAssets.length} 个待清理的过期资源`);
-        let successCount = 0;
+        this.logger.info(`发现 ${expiredAssets.length} 个待清理的过期资源...`);
+        let deletedFileCount = 0;
         for (const asset of expiredAssets) {
             try {
                 await this.storage.delete(asset.id);
-                successCount++;
+                // 同时删除可能存在的处理后缓存
+                await this.cacheStorage.delete(asset.id + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
+                deletedFileCount++;
             } catch (error) {
-                this.logger.error(`删除资源 ${asset.id} 的物理文件失败: ${error.message}`);
+                if (error.code !== "ENOENT") {
+                    // 如果文件本就不存在，则忽略错误
+                    this.logger.error(`删除物理文件 ${asset.id} 失败: ${error.message}`);
+                }
             }
         }
-        this.logger.info(`已成功删除 ${successCount} 个物理文件`);
+        this.logger.info(`已成功清理 ${deletedFileCount} 个资源的物理文件。`);
 
         const idsToDelete = expiredAssets.map((a) => a.id);
         const { removed } = await this.ctx.database.remove(TableName.Assets, { id: { $in: idsToDelete } });
-        this.logger.info(`成功从数据库中清理了 ${removed} 个资源记录`);
+        this.logger.success(`成功从数据库中清理了 ${removed} 条资源记录。任务完成。`);
     }
 }

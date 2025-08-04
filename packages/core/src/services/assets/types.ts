@@ -1,50 +1,31 @@
 /**
- * 资源类型枚举
- */
-export enum AssetType {
-    Image = "image",
-    Audio = "audio",
-    Video = "video",
-    File = "file",
-    Unknown = "unknown",
-}
-
-/**
  * 数据库中存储的资源元数据模型
  */
 export interface AssetData {
-    id: string; // 主键，唯一的内部资源 ID (UUID)
-    type: string; // 资源类型 (AssetType)
-    mime: string; // 资源的 MIME 类型
-    hash: string; // 文件内容的 SHA256 哈希，用于去重
-    size: number; // 文件大小（字节）
-    createdAt: Date; // 创建时间
-    lastUsedAt: Date; // 最后使用时间
-    metadata?: AssetMetadata; // 可选的元数据，如图片宽高、视频时长、原始的外部 URL、原始文件名等
+    id: string; // 主键, UUID
+    mime: string; // 原始资源的 MIME 类型
+    hash: string; // 原始文件内容的 SHA256 哈希
+    size: number; // 原始文件大小（字节）
+    createdAt: Date;
+    lastUsedAt: Date;
+    metadata: AssetMetadata;
 }
 
 /**
  * 资源元数据
  */
 export interface AssetMetadata {
-    /** 图片属性 */
-    width?: number;
-    height?: number;
-    summary?: string;
-
-    /** 音频属性 */
-
-    /** 文件属性 */
     filename?: string;
-
-    /** 通用属性 */
-    src?: string; // 原始的外部 URL
+    src?: string; // 原始 URL, 用于恢复
+    summary?: string;
+    width?: number; // 原始图片宽度
+    height?: number; // 原始图片高度
 }
 
 /**
  * 对外暴露的资源信息
  */
-export interface AssetInfo extends Omit<AssetData, "hash" | "url"> {}
+export interface AssetInfo extends Omit<AssetData, "hash"> {}
 
 /**
  * 存储驱动接口
@@ -53,4 +34,25 @@ export interface StorageDriver {
     write(id: string, buffer: Buffer): Promise<void>;
     read(id: string): Promise<Buffer>;
     delete(id: string): Promise<void>;
+    exists(id: string): Promise<boolean>;
+}
+
+/**
+ * 图片处理选项
+ */
+export interface ImageProcessingOptions {
+    /** 是否对图片进行处理 */
+    process?: boolean;
+    /** 目标格式，如 'webp' 或 'jpeg' */
+    format?: "webp" | "jpeg";
+}
+
+/**
+ * 读取资源时的选项
+ */
+export interface ReadAssetOptions {
+    /** 输出格式 */
+    format?: "buffer" | "base64" | "data-url";
+    /** 针对图片资源的特定处理选项 */
+    image?: ImageProcessingOptions;
 }
