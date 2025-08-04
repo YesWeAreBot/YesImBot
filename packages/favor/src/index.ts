@@ -1,5 +1,5 @@
-import { Context, Schema } from "koishi";
-import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Context, Schema, Session } from "koishi";
+import { Extension, Failed, Infer, PromptService, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
 // --- 配置项接口定义 ---
@@ -29,8 +29,7 @@ export interface FavorTable {
     name: "favor",
     display: "好感度管理",
     version: "1.0.0",
-    description:
-        "管理用户的好感度，并提供相应的状态描述。可通过 `{{roleplay.favor}}` 和 `{{roleplay.state}}` 将信息注入提示词。",
+    description: "管理用户的好感度，并提供相应的状态描述。可通过 `{{roleplay.favor}}` 和 `{{roleplay.state}}` 将信息注入提示词。",
 })
 export default class FavorExtension {
     // --- 静态配置 ---
@@ -54,7 +53,10 @@ export default class FavorExtension {
 
     private logger: ReturnType<Context["logger"]>;
 
-    constructor(public ctx: Context, public config: FavorSystemConfig) {
+    constructor(
+        public ctx: Context,
+        public config: FavorSystemConfig
+    ) {
         this.logger = ctx.logger("favor-extension");
 
         // 扩展数据库模型
@@ -82,22 +84,20 @@ export default class FavorExtension {
         this.ctx.scope.update(this.config, false);
 
         // 注入 Koishi 的 Prompt 服务 (来自 yesimbot)
-        const promptService = this.ctx[Services.Prompt];
+        const promptService: PromptService = this.ctx[Services.Prompt];
 
-        // 注册'roleplay.favor'片段，提供当前好感度数值
-        promptService.registerSnippet("roleplay.favor", async (context) => {
+        promptService.inject("roleplay.favor", 10, async (context) => {
             const { session } = context;
-            const favorEntry = await this._getOrCreateFavorEntry(session.userId);
-            return `当前你与用户 ${session.username} (ID: ${session.userId}) 的好感度为 ${favorEntry.amount}。`;
-        });
-
-        // 注册'roleplay.state'片段，提供当前好感度所处的阶段描述
-        promptService.registerSnippet("roleplay.state", async (context) => {
-            const { session } = context;
+            // 仅在私聊中注入好感度信息
+            if (!(session as Session)?.isDirect) return "";
             const favorEntry = await this._getOrCreateFavorEntry(session.userId);
             const stageDescription = this._getFavorStage(favorEntry.amount);
-            return `当前你与用户 ${session.username} (ID: ${session.userId}) 的关系阶段是：${stageDescription}。`;
+            return `## 好感度设定
+当前你与用户 ${session.username} (ID: ${session.userId}) 的好感度为 ${favorEntry.amount}，关系阶段是：${stageDescription}。
+请时刻参考这些信息，并根据当前的好感度和关系阶段，以合适的语气和内容与用户互动。`;
         });
+
+        promptService.registerSnippet("roleplay.config.maxFavor", () => this.config.maxFavor);
 
         this.logger.info("好感度系统扩展已加载。");
     }
@@ -111,6 +111,7 @@ export default class FavorExtension {
             user_id: Schema.string().required().description("要增加好感度的用户 ID"),
             amount: Schema.number().required().description("要增加的好感度数量。负数则为减少。"),
         }),
+        isSupported: (session) => session.isDirect,
     })
     async addFavor({ user_id, amount }: Infer<{ user_id: string; amount: number }>) {
         if (!user_id) return Failed("必须提供 user_id。");
@@ -134,11 +135,12 @@ export default class FavorExtension {
 
     @Tool({
         name: "set_favor",
-        description: "为指定用户直接设置好感度。",
+        description: "为指定用户直接设置好感度。上限为 {{ roleplay.config.maxFavor }}。",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要设置好感度的用户 ID"),
             amount: Schema.number().required().description("要设置的好感度目标值。"),
         }),
+        isSupported: (session) => session.isDirect,
     })
     async setFavor({ user_id, amount }: Infer<{ user_id: string; amount: number }>) {
         if (!user_id) return Failed("必须提供 user_id。");
