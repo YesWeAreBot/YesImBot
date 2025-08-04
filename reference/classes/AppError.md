@@ -6,10 +6,7 @@
 
 # Class: AppError
 
-Defined in: [packages/core/src/shared/errors/index.ts:239](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L239)
-
-统一的应用程序错误类
-扩展自原生的 Error，并添加了 code、context 和唯一的 errorId
+Defined in: [packages/core/src/shared/errors/index.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L161)
 
 ## Extends
 
@@ -19,25 +16,25 @@ Defined in: [packages/core/src/shared/errors/index.ts:239](https://github.com/Ye
 
 ### Constructor
 
-> **new AppError**(`message`, `options`): `AppError`
+> **new AppError**(`definition`, `options?`): `AppError`
 
-Defined in: [packages/core/src/shared/errors/index.ts:244](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L244)
+Defined in: [packages/core/src/shared/errors/index.ts:168](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L168)
 
 #### Parameters
 
-##### message
+##### definition
 
-`string`
+[`ErrorDefinitionValue`](../type-aliases/ErrorDefinitionValue.md)
 
-##### options
+##### options?
+
+###### args?
+
+`any`[]
 
 ###### cause?
 
 `Error`
-
-###### code
-
-[`ErrorCode`](../type-aliases/ErrorCode.md)
 
 ###### context?
 
@@ -67,17 +64,17 @@ Defined in: node\_modules/typescript/lib/lib.es2022.error.d.ts:26
 
 ### code
 
-> `readonly` **code**: [`ErrorCode`](../type-aliases/ErrorCode.md)
+> `readonly` **code**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:240](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L240)
+Defined in: [packages/core/src/shared/errors/index.ts:162](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L162)
 
 ***
 
 ### context?
 
-> `readonly` `optional` **context**: `Record`\<`string`, `any`\>
+> `optional` **context**: `Record`\<`string`, `any`\>
 
-Defined in: [packages/core/src/shared/errors/index.ts:241](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L241)
+Defined in: [packages/core/src/shared/errors/index.ts:166](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L166)
 
 ***
 
@@ -85,7 +82,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:241](https://github.com/Ye
 
 > `readonly` **errorId**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:242](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L242)
+Defined in: [packages/core/src/shared/errors/index.ts:164](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L164)
 
 ***
 
@@ -125,6 +122,14 @@ Defined in: node\_modules/typescript/lib/lib.es5.d.ts:1078
 
 ***
 
+### suggestion
+
+> `readonly` **suggestion**: `string`
+
+Defined in: [packages/core/src/shared/errors/index.ts:163](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L163)
+
+***
+
 ### stackTraceLimit
 
 > `static` **stackTraceLimit**: `number`
@@ -146,6 +151,24 @@ not capture any frames.
 `Error.stackTraceLimit`
 
 ## Methods
+
+### addContext()
+
+> **addContext**(`context`): `void`
+
+Defined in: [packages/core/src/shared/errors/index.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L202)
+
+#### Parameters
+
+##### context
+
+`Record`\<`string`, `any`\>
+
+#### Returns
+
+`void`
+
+***
 
 ### captureStackTrace()
 

@@ -129,7 +129,7 @@
 - [CommandInvocationEvent](type-aliases/CommandInvocationEvent.md)
 - [ContentValidator](type-aliases/ContentValidator.md)
 - [DialogueSegmentStatus](type-aliases/DialogueSegmentStatus.md)
-- [ErrorCode](type-aliases/ErrorCode.md)
+- [ErrorDefinitionValue](type-aliases/ErrorDefinitionValue.md)
 - [EventName](type-aliases/EventName.md)
 - [GenericSystemEvent](type-aliases/GenericSystemEvent.md)
 - [Infer](type-aliases/Infer.md)
@@ -148,6 +148,7 @@
 - [BASE\_DIR](variables/BASE_DIR.md)
 - [DEFAULT\_SUMMARY\_PROMPT](variables/DEFAULT_SUMMARY_PROMPT.md)
 - [ErrorCodes](variables/ErrorCodes.md)
+- [ErrorDefinitions](variables/ErrorDefinitions.md)
 - [ErrorReporterConfigSchema](variables/ErrorReporterConfigSchema.md)
 - [HistoryConfigSchema](variables/HistoryConfigSchema.md)
 - [LoggingConfigSchema](variables/LoggingConfigSchema.md)
@@ -166,9 +167,6 @@
 ## Functions
 
 - [add](functions/add.md)
-- [assert](functions/assert.md)
-- [assertExists](functions/assertExists.md)
-- [assertNotNull](functions/assertNotNull.md)
 - [calculateCosineSimilarity](functions/calculateCosineSimilarity.md)
 - [capitalize](functions/capitalize.md)
 - [clamp](functions/clamp.md)

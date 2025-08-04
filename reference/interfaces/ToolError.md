@@ -6,7 +6,7 @@
 
 # Interface: ToolError
 
-Defined in: [packages/core/src/services/extension/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L62)
+Defined in: [packages/core/src/services/extension/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/extension/types.ts#L62)
 
 标准化的工具错误接口
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/extension/types.ts:62](https://github.co
 
 > **message**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L66)
+Defined in: [packages/core/src/services/extension/types.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/extension/types.ts#L66)
 
 人类可读的错误信息
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/extension/types.ts:66](https://github.co
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L64)
+Defined in: [packages/core/src/services/extension/types.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/extension/types.ts#L64)
 
 错误的类型或名称 (例如: 'ValidationError', 'APIFailure', 'RuntimeError')
 
@@ -36,6 +36,6 @@ Defined in: [packages/core/src/services/extension/types.ts:64](https://github.co
 
 > `optional` **retryable**: `boolean`
 
-Defined in: [packages/core/src/services/extension/types.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L68)
+Defined in: [packages/core/src/services/extension/types.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/extension/types.ts#L68)
 
 错误是否可重试

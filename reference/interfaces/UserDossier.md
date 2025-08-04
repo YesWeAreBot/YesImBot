@@ -6,7 +6,7 @@
 
 # Interface: UserDossier
 
-Defined in: [packages/core/src/services/memory/types.ts:171](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/types.ts#L171)
+Defined in: [packages/core/src/services/memory/types.ts:171](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L171)
 
 用户档案 (User Dossier)
 这是一个在代码中动态构建的、用户的完整多面化档案索引
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/memory/types.ts:171](https://github.com/
 
 > **contextualProfileIds**: `Map`\<`string`, `string`\>
 
-Defined in: [packages/core/src/services/memory/types.ts:186](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/types.ts#L186)
+Defined in: [packages/core/src/services/memory/types.ts:186](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L186)
 
 情境化画像ID的映射
 Key是 contextId (如群聊ID), Value是对应的 UserProfile ID
@@ -29,7 +29,7 @@ Key是 contextId (如群聊ID), Value是对应的 UserProfile ID
 
 > **globalProfileId**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:180](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/types.ts#L180)
+Defined in: [packages/core/src/services/memory/types.ts:180](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L180)
 
 全局画像的ID
 引用存储在UserProfile表中的、contextId为'global'的记录
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/memory/types.ts:180](https://github.com/
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:172](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/types.ts#L172)
+Defined in: [packages/core/src/services/memory/types.ts:172](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L172)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/memory/types.ts:172](https://github.com/
 
 > **userId**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:173](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/types.ts#L173)
+Defined in: [packages/core/src/services/memory/types.ts:173](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L173)
 
 ***
 
@@ -56,4 +56,4 @@ Defined in: [packages/core/src/services/memory/types.ts:173](https://github.com/
 
 > **userName**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/types.ts#L174)
+Defined in: [packages/core/src/services/memory/types.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L174)

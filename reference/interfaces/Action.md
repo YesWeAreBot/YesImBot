@@ -6,7 +6,7 @@
 
 # Interface: Action
 
-Defined in: [packages/core/src/services/worldstate/types.ts:300](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L300)
+Defined in: [packages/core/src/services/worldstate/types.ts:300](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/types.ts#L300)
 
 定义了一个 Agent 可以执行的动作
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:300](https://github.
 
 > **function**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:302](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L302)
+Defined in: [packages/core/src/services/worldstate/types.ts:302](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/types.ts#L302)
 
 要调用的函数或工具的名称
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:302](https://github.
 
 > **params**: `Record`\<`string`, `unknown`\>
 
-Defined in: [packages/core/src/services/worldstate/types.ts:304](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L304)
+Defined in: [packages/core/src/services/worldstate/types.ts:304](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/types.ts#L304)
 
 调用函数时传入的参数

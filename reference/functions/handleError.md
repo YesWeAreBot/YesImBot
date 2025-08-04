@@ -8,10 +8,10 @@
 
 > **handleError**(`logger`, `error`, `contextDescription`): `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:303](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L303)
+Defined in: [packages/core/src/shared/errors/index.ts:215](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/index.ts#L215)
 
-统一错误处理函数。
-现在会自动触发上报（如果已配置）。
+统一错误处理函数
+实现了分层日志记录和可选的错误自动上报功能
 
 ## Parameters
 
@@ -19,14 +19,22 @@ Defined in: [packages/core/src/shared/errors/index.ts:303](https://github.com/Ye
 
 `__module`
 
+Koishi 的 Logger 实例，用于记录日志
+
 ### error
 
 `unknown`
+
+捕获到的未知类型的错误
 
 ### contextDescription
 
 `string`
 
+描述错误发生时的操作或环节，例如 "处理聊天请求"
+
 ## Returns
 
 `string`
+
+返回生成的唯一错误 ID

@@ -6,7 +6,7 @@
 
 # Class: MemoryService
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L44)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L43)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:44](https://gith
 
 > **new MemoryService**(`ctx`, `config`): `MemoryService`
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L69)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L68)
 
 #### Parameters
 
@@ -132,7 +132,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: `string`[]
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L45)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L44)
 
 ***
 
@@ -248,7 +248,7 @@ Defined in: node\_modules/@koishijs/core/lib/index.d.ts:768
 
 > **addUserFact**(`factData`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`Fact`](../interfaces/Fact.md)\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:514](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L514)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:517](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L517)
 
 #### Parameters
 
@@ -266,7 +266,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:514](https://git
 
 > **addUserInsight**(`insightData`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`Insight`](../interfaces/Insight.md)\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:621](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L621)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:624](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L624)
 
 #### Parameters
 
@@ -284,7 +284,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:621](https://git
 
 > **consolidateProfile**(`userId`, `contextId`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`UserProfile`](../interfaces/UserProfile.md)\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:783](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L783)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:786](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L786)
 
 #### Parameters
 
@@ -310,7 +310,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:783](https://git
 
 > **decayAndForget**(): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<\{ `removedCount`: `number`; \}\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:795](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L795)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:799](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L799)
 
 #### Returns
 
@@ -348,7 +348,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getMemoryBlocksForRendering**(): `Promise`\<[`MemoryBlockData`](../interfaces/MemoryBlockData.md)[]\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:382](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L382)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:385](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L385)
 
 #### Returns
 
@@ -360,7 +360,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:382](https://git
 
 > **getUserFacts**(`userId`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`Fact`](../interfaces/Fact.md)[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:586](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L586)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:589](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L589)
 
 #### Parameters
 
@@ -382,7 +382,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:586](https://git
 
 > **getUserInsights**(`userId`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`Insight`](../interfaces/Insight.md)[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:686](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L686)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:689](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L689)
 
 #### Parameters
 
@@ -404,7 +404,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:686](https://git
 
 > **getUserProfile**(`userId`, `contextId`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`UserProfile`](../interfaces/UserProfile.md)\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:723](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L723)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:726](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L726)
 
 #### Parameters
 
@@ -426,7 +426,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:723](https://git
 
 > **search**(`type`, `query`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<([`Fact`](../interfaces/Fact.md) \| [`Insight`](../interfaces/Insight.md))[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:398](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L398)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:401](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L401)
 
 在内存中对指定类型的实体（'insights' 或 'facts'）进行语义搜索
 
@@ -462,7 +462,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:398](https://git
 
 > **searchMemories**(`query`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`MemorySearchResult`](../type-aliases/MemorySearchResult.md)[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:444](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L444)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:447](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L447)
 
 使用单个查询嵌入，同时在用户事实（Facts）和洞察（Insights）中进行语义搜索
 返回一个按相似度统一排序的混合结果列表
@@ -493,7 +493,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:444](https://git
 
 > **searchUserFacts**(`query`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`Fact`](../interfaces/Fact.md)[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:535](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L535)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:538](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L538)
 
 #### Parameters
 
@@ -515,7 +515,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:535](https://git
 
 > **searchUserInsights**(`query`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`Insight`](../interfaces/Insight.md)[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:642](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L642)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:645](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L645)
 
 #### Parameters
 
@@ -537,7 +537,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:642](https://git
 
 > **searchUserProfiles**(`query`, `options`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<[`UserProfile`](../interfaces/UserProfile.md)[]\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:738](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L738)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:741](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L741)
 
 #### Parameters
 
@@ -559,7 +559,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:738](https://git
 
 > `protected` **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:113](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L113)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L112)
 
 #### Returns
 
@@ -575,7 +575,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:113](https://git
 
 > `protected` **stop**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:124](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L124)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:123](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L123)
 
 #### Returns
 
@@ -591,7 +591,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:124](https://git
 
 > **updateFactAccess**(`factId`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<`void`\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:598](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L598)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:601](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L601)
 
 #### Parameters
 
@@ -609,7 +609,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:598](https://git
 
 > **updateInsightAccess**(`insightId`): `Promise`\<[`MemoryOperationResult`](../interfaces/MemoryOperationResult.md)\<`void`\>\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:701](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/memory/MemoryService.ts#L701)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:704](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/MemoryService.ts#L704)
 
 #### Parameters
 

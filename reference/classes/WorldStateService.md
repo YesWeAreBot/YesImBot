@@ -6,7 +6,7 @@
 
 # Class: WorldStateService
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:597](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L597)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:597](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L597)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:597](h
 
 > **new WorldStateService**(`ctx`, `config`): `WorldStateService`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:611](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L611)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:611](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L611)
 
 #### Parameters
 
@@ -56,7 +56,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:14
 
 > **contextBuilder**: `ContextBuilder`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:601](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L601)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:601](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L601)
 
 ***
 
@@ -116,7 +116,7 @@ Defined in: node\_modules/cordis/lib/index.d.ts:20
 
 > **segmentManager**: `DialogueSegmentManager`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:602](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L602)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:602](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L602)
 
 ***
 
@@ -124,7 +124,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:602](h
 
 > **summarizationManager**: `SummarizationManager`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:600](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L600)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:600](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L600)
 
 ***
 
@@ -156,7 +156,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:598](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L598)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:598](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L598)
 
 ***
 
@@ -272,7 +272,7 @@ Defined in: node\_modules/@koishijs/core/lib/index.d.ts:768
 
 > **buildContextForStimulus**(`stimulus`): `Promise`\<\{ `triggerContext`: `object`; `worldState`: [`WorldState`](../interfaces/WorldState.md); \}\>
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:658](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L658)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:658](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L658)
 
 #### Parameters
 
@@ -316,7 +316,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getOpenSegment**(`platform`, `channelId`, `guildId?`): `Promise`\<[`DialogueSegmentData`](../interfaces/DialogueSegmentData.md)\>
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:719](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L719)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:719](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L719)
 
 #### Parameters
 
@@ -342,7 +342,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:719](h
 
 > **guideToSkippedTopic**(`channelKey`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:747](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L747)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:747](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L747)
 
 引导模型关注被跳过的话题
 
@@ -364,7 +364,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:747](h
 
 > **isBotMuted**(`channelCid`): `boolean`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:798](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L798)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:798](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L798)
 
 #### Parameters
 
@@ -382,7 +382,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:798](h
 
 > **isChannelAllowed**(`session`): `boolean`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:820](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L820)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:820](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L820)
 
 #### Parameters
 
@@ -400,7 +400,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:820](h
 
 > **recordAgentTurn**(`sid`, `responses`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:709](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L709)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:709](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L709)
 
 #### Parameters
 
@@ -422,7 +422,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:709](h
 
 > **recordMessage**(`segmentId`, `message`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:738](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L738)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:738](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L738)
 
 #### Parameters
 
@@ -444,7 +444,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:738](h
 
 > **recordSystemEvent**(`session`, `payload`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:781](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L781)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:781](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L781)
 
 #### Parameters
 
@@ -466,7 +466,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:781](h
 
 > `protected` **start**(): `void`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:624](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L624)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:624](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L624)
 
 #### Returns
 
@@ -482,7 +482,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:624](h
 
 > `protected` **stop**(): `void`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:645](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L645)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:645](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L645)
 
 #### Returns
 
@@ -498,7 +498,7 @@ Defined in: [packages/core/src/services/worldstate/world-state-service.ts:645](h
 
 > **updateMuteStatus**(`cid`, `expiresAt`): `void`
 
-Defined in: [packages/core/src/services/worldstate/world-state-service.ts:810](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/world-state-service.ts#L810)
+Defined in: [packages/core/src/services/worldstate/world-state-service.ts:810](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/world-state-service.ts#L810)
 
 #### Parameters
 

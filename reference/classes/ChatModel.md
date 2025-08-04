@@ -6,9 +6,10 @@
 
 # Class: ChatModel
 
-Defined in: [packages/core/src/services/model/chat-model.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/chat-model.ts#L66)
+Defined in: [packages/core/src/services/model/chat-model.ts:60](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/chat-model.ts#L60)
 
-所有模型类的基类，封装了通用属性和方法。
+ChatModel 类提供了与大语言模型进行聊天交互的核心功能
+它封装了流式与非流式请求、参数合并、内容验证以及统一的错误处理逻辑
 
 ## Extends
 
@@ -24,7 +25,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:66](https://github.c
 
 > **new ChatModel**(`ctx`, `chatProvider`, `modelConfig`, `fetch`): `ChatModel`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/chat-model.ts#L69)
+Defined in: [packages/core/src/services/model/chat-model.ts:63](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/chat-model.ts#L63)
 
 #### Parameters
 
@@ -58,7 +59,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:69](https://github.c
 
 > `readonly` **config**: [`ModelConfig`](../interfaces/ModelConfig.md)
 
-Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/base-model.ts#L10)
+Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/base-model.ts#L10)
 
 #### Implementation of
 
@@ -74,7 +75,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.c
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/base-model.ts#L12)
+Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/base-model.ts#L12)
 
 #### Implementation of
 
@@ -90,7 +91,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.c
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/base-model.ts#L9)
+Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/base-model.ts#L9)
 
 #### Implementation of
 
@@ -106,7 +107,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.co
 
 > `protected` `readonly` **logger**: `__module`
 
-Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/base-model.ts#L11)
+Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/base-model.ts#L11)
 
 #### Implementation of
 
@@ -122,17 +123,16 @@ Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.c
 
 > **chat**(`options`): `Promise`\<`GenerateTextResult`\>
 
-Defined in: [packages/core/src/services/model/chat-model.ts:115](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/chat-model.ts#L115)
+Defined in: [packages/core/src/services/model/chat-model.ts:117](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/chat-model.ts#L117)
 
-发起聊天请求。
+发起聊天请求的核心方法
+根据配置和运行时参数，自动选择流式或非流式处理
 
 #### Parameters
 
 ##### options
 
 [`ChatRequestOptions`](../interfaces/ChatRequestOptions.md)
-
-包含消息和所有运行时参数的对象。
 
 #### Returns
 
@@ -148,7 +148,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:115](https://github.
 
 > **isVisionModel**(): `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/model/chat-model.ts#L79)
+Defined in: [packages/core/src/services/model/chat-model.ts:73](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/model/chat-model.ts#L73)
 
 #### Returns
 

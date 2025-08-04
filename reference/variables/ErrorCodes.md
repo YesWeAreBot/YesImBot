@@ -8,11 +8,11 @@
 
 > `const` **ErrorCodes**: `object`
 
-Defined in: [packages/core/src/shared/errors/index.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/shared/errors/index.ts#L161)
+Defined in: [packages/core/src/shared/errors/definitions.ts:158](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/shared/errors/definitions.ts#L158)
 
-应用程序的统一错误码
-使用常量对象而不是枚举，以获得更好的灵活性和 Tree-shaking 效果
-格式: DOMAIN.CATEGORY_OR_DETAIL
+应用程序的统一错误码。
+使用常量对象而非枚举，以获得更好的灵活性和 Tree-shaking 效果。
+格式: 领域.类别或详情
 
 ## Type declaration
 
