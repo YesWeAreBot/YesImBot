@@ -33,7 +33,7 @@ export default class YesImBot extends Service<Config> {
             const assetService = ctx.plugin(AssetService, config.assetService);
 
             // 注册提示词管理器
-            const promptService = ctx.plugin(PromptService, {});
+            const promptService = ctx.plugin(PromptService, config.promptService);
 
             // 注册工具管理器
             const toolService = ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });

@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
 import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
-import { LoggingConfig, LoggingConfigSchema } from "./services";
+import { LoggingConfig, LoggingConfigSchema, PromptServiceConfig, PromptServiceConfigSchema } from "./services";
 import { AssetServiceConfig, AssetServiceConfig as AssetServiceConfigSchema } from "./services/assets";
 import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extension";
 import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
@@ -49,6 +49,8 @@ export interface Config {
     };
     /** 资源服务配置 */
     assetService: AssetServiceConfig;
+    /** 提示词相关配置 */
+    promptService: PromptServiceConfig;
     /** 系统缓存、调试等底层设置 */
     system: SystemConfig;
 }
@@ -62,5 +64,6 @@ export const Config: Schema<Config> = Schema.object({
         tools: ToolServiceConfigSchema.description("工具能力配置"),
     }),
     assetService: AssetServiceConfigSchema.description("资源服务配置"),
+    promptService: PromptServiceConfigSchema,
     system: SystemConfigSchema,
 });
