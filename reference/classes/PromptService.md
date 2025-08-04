@@ -6,7 +6,7 @@
 
 # Class: PromptService
 
-Defined in: [packages/core/src/services/prompt/service.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L24)
+Defined in: [packages/core/src/services/prompt/service.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L33)
 
 通用提示词构建服务
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:24](https://github.com
 
 > **new PromptService**(`ctx`, `config`): `PromptService`
 
-Defined in: [packages/core/src/services/prompt/service.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L31)
+Defined in: [packages/core/src/services/prompt/service.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L41)
 
 #### Parameters
 
@@ -134,7 +134,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: [`Services`](../enumerations/Services.md)[]
 
-Defined in: [packages/core/src/services/prompt/service.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L25)
+Defined in: [packages/core/src/services/prompt/service.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L34)
 
 ***
 
@@ -272,13 +272,48 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 ***
 
+### inject()
+
+> **inject**(`name`, `priority`, `renderFn`): `void`
+
+Defined in: [packages/core/src/services/prompt/service.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L79)
+
+(供插件使用) 注入一个将自动添加到主提示词的片段。
+
+#### Parameters
+
+##### name
+
+`string`
+
+注入的唯一名称，用于标识和调试。
+
+##### priority
+
+`number`
+
+优先级，数字越小越靠前。
+
+##### renderFn
+
+[`Snippet`](../type-aliases/Snippet.md)
+
+渲染函数，返回一个字符串。其返回值可以包含其他占位符，将进行二次渲染。
+
+#### Returns
+
+`void`
+
+***
+
 ### registerSnippet()
 
 > **registerSnippet**(`key`, `snippetFn`): `void`
 
-Defined in: [packages/core/src/services/prompt/service.ts:103](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L103)
+Defined in: [packages/core/src/services/prompt/service.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L62)
 
-注册一个动态片段 (Snippet)
+注册一个核心动态片段 (Snippet)
+用于构建作用域，通常由核心服务或高级插件使用。
 
 #### Parameters
 
@@ -286,7 +321,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:103](https://github.co
 
 `string`
 
-片段的唯一键 (e.g., "user.name", "tools.availableList.json")
+片段的唯一键 (e.g., "user.name")
 
 ##### snippetFn
 
@@ -304,7 +339,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:103](https://github.co
 
 > **registerTemplate**(`name`, `content`): `void`
 
-Defined in: [packages/core/src/services/prompt/service.ts:91](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L91)
+Defined in: [packages/core/src/services/prompt/service.ts:94](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L94)
 
 注册一个提示词模板
 
@@ -332,7 +367,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:91](https://github.com
 
 > **render**(`templateName`, `initialScope`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:116](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L116)
+Defined in: [packages/core/src/services/prompt/service.ts:107](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L107)
 
 渲染一个提示词模板
 
@@ -348,7 +383,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:116](https://github.co
 
 `Record`\<`string`, `any`\> = `{}`
 
-用户在调用时传入的初始数据 (e.g., { query: "How to use TypeScript?" })
+用户在调用时传入的初始数据
 
 #### Returns
 
@@ -362,7 +397,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:116](https://github.co
 
 > **renderRaw**(`templateContent`, `initialScope`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:138](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L138)
+Defined in: [packages/core/src/services/prompt/service.ts:123](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L123)
 
 渲染一个原始的模板字符串，不经过注册
 
@@ -386,7 +421,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:138](https://github.co
 
 > `protected` **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:39](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L39)
+Defined in: [packages/core/src/services/prompt/service.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L49)
 
 #### Returns
 
@@ -402,7 +437,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:39](https://github.com
 
 > `protected` **stop**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/prompt/service.ts:82](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/service.ts#L82)
+Defined in: [packages/core/src/services/prompt/service.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/service.ts#L54)
 
 #### Returns
 

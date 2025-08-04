@@ -6,7 +6,7 @@
 
 # Interface: ActionResult
 
-Defined in: [packages/core/src/services/worldstate/types.ts:310](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/worldstate/types.ts#L310)
+Defined in: [packages/core/src/services/worldstate/types.ts:310](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L310)
 
 定义了一个动作执行后的结果
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:310](https://github.
 
 > `optional` **error**: `any`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:316](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/worldstate/types.ts#L316)
+Defined in: [packages/core/src/services/worldstate/types.ts:316](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L316)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:316](https://github.
 
 > **function**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:312](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/worldstate/types.ts#L312)
+Defined in: [packages/core/src/services/worldstate/types.ts:312](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L312)
 
 执行的函数名称，与 `Action.function` 对应
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:312](https://github.
 
 > `optional` **result**: `any`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:315](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/worldstate/types.ts#L315)
+Defined in: [packages/core/src/services/worldstate/types.ts:315](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L315)
 
 ***
 
@@ -42,6 +42,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:315](https://github.
 
 > **status**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:314](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/worldstate/types.ts#L314)
+Defined in: [packages/core/src/services/worldstate/types.ts:314](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/worldstate/types.ts#L314)
 
 函数执行的返回结果

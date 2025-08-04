@@ -6,9 +6,10 @@
 
 # Class: MustacheRenderer
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/renderer.ts#L21)
+Defined in: [packages/core/src/services/prompt/renderer.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/renderer.ts#L33)
 
 基于 Mustache.js 的默认渲染器实现
+支持二次渲染和循环保护
 
 ## Implements
 
@@ -28,9 +29,9 @@ Defined in: [packages/core/src/services/prompt/renderer.ts:21](https://github.co
 
 ### render()
 
-> **render**(`templateContent`, `scope`, `partials?`): `string`
+> **render**(`templateContent`, `scope`, `partials?`, `options?`): `string`
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/prompt/renderer.ts#L22)
+Defined in: [packages/core/src/services/prompt/renderer.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/prompt/renderer.ts#L34)
 
 渲染模板
 
@@ -53,6 +54,12 @@ Defined in: [packages/core/src/services/prompt/renderer.ts:22](https://github.co
 `Record`\<`string`, `string`\>
 
 用于模板引用的可重用模板片段 (例如 {{> myPartial}})
+
+##### options?
+
+[`RenderOptions`](../interfaces/RenderOptions.md)
+
+渲染选项，如最大深度
 
 #### Returns
 

@@ -6,7 +6,7 @@
 
 # Interface: IExtension\<TConfig\>
 
-Defined in: [packages/core/src/services/extension/types.ts:95](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/extension/types.ts#L95)
+Defined in: [packages/core/src/services/extension/types.ts:95](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L95)
 
 扩展包实例需要实现的接口。
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/extension/types.ts:95](https://github.co
 
 > **config**: `TConfig`
 
-Defined in: [packages/core/src/services/extension/types.ts:97](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/extension/types.ts#L97)
+Defined in: [packages/core/src/services/extension/types.ts:97](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L97)
 
 ***
 
@@ -48,7 +48,7 @@ The initial value of Object.prototype.constructor is the standard built-in Objec
 
 > **ctx**: `Context`
 
-Defined in: [packages/core/src/services/extension/types.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/extension/types.ts#L96)
+Defined in: [packages/core/src/services/extension/types.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L96)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/extension/types.ts:96](https://github.co
 
 > **metadata**: [`ExtensionMetadata`](ExtensionMetadata.md)
 
-Defined in: [packages/core/src/services/extension/types.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/extension/types.ts#L98)
+Defined in: [packages/core/src/services/extension/types.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L98)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [packages/core/src/services/extension/types.ts:98](https://github.co
 
 > **tools**: `Map`\<`string`, [`ToolDefinition`](ToolDefinition.md)\<`any`\>\>
 
-Defined in: [packages/core/src/services/extension/types.ts:99](https://github.com/YesWeAreBot/YesImBot/blob/ed507fe86c15f0be7e3d9c320a120a6a9c0fbd8b/packages/core/src/services/extension/types.ts#L99)
+Defined in: [packages/core/src/services/extension/types.ts:99](https://github.com/YesWeAreBot/YesImBot/blob/215bf0ff2d6077bafe8eaba9c8d77ae9c419a409/packages/core/src/services/extension/types.ts#L99)
 
 ## Methods
 
