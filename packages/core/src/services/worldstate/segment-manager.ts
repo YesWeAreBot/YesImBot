@@ -8,7 +8,6 @@ import { AgentResponse, AgentTurn } from "./types";
 export class DialogueSegmentManager {
     private ctx: Context;
     private config: HistoryConfig;
-    private db: Database;
     private logger: Logger;
 
     constructor(ctx: Context, config: HistoryConfig) {
@@ -22,11 +21,7 @@ export class DialogueSegmentManager {
      * 如果没有，则创建一个新的
      * 如果有多个，则关闭多余的
      */
-    public async getOrCreateOpenSegment(
-        platform: string,
-        channelId: string,
-        guildId?: string
-    ): Promise<DialogueSegmentData> {
+    public async getOrCreateOpenSegment(platform: string, channelId: string, guildId?: string): Promise<DialogueSegmentData> {
         const openSegments = await this.ctx.database.get(
             TableName.DialogueSegments,
             { platform, channelId, status: "open" },
@@ -68,7 +63,8 @@ export class DialogueSegmentManager {
         try {
             await this.ctx.database.create(TableName.Messages, { ...message, sid: segmentId });
         } catch (error) {
-            this.logger.error(`记录消息失败 | 片段ID: ${segmentId} | 消息ID: ${message.id}`, error);
+            this.logger.error(`记录消息失败 | 片段ID: ${segmentId} | 消息ID: ${message.id}`);
+            this.logger.debug(error);
         }
     }
 
@@ -77,11 +73,7 @@ export class DialogueSegmentManager {
      */
     public async closeSegmentByAgent(sid: string, responses: AgentResponse[]): Promise<void> {
         const agentTurn: AgentTurn = { responses, timestamp: new Date() };
-        await this.ctx.database.set(
-            TableName.DialogueSegments,
-            { id: sid },
-            { status: "closed", agentTurn, endTimestamp: new Date() }
-        );
+        await this.ctx.database.set(TableName.DialogueSegments, { id: sid }, { status: "closed", agentTurn, endTimestamp: new Date() });
         this.logger.debug(`片段已由Agent关闭 | ID: ${sid}`);
     }
 

@@ -1,9 +1,19 @@
 import { ChannelDescriptor } from "@/agent";
 import { Services, TableName } from "@/shared/constants";
+import { formatDate } from "@/shared/utils";
 import { Bot, Context, Logger } from "koishi";
 import { HistoryConfig } from "./config";
-import { HistoryBuilder } from "./history-builder";
-import { ContextualMessage, GuildMember, History, WorldState } from "./types";
+import { DialogueSegmentData, MessageData, SystemEventData } from "./database-models";
+import {
+    ClosedDialogueSegment,
+    ContextualMessage,
+    FoldedDialogueSegment,
+    GuildMember,
+    History,
+    PendingDialogueSegment,
+    SummarizedDialogueSegment,
+    WorldState,
+} from "./types";
 import { UserRecallManager } from "./user-recall-manager";
 
 // =================================================================================
@@ -12,15 +22,18 @@ import { UserRecallManager } from "./user-recall-manager";
 
 export class ContextBuilder {
     private logger: Logger;
-    private historyBuilder: HistoryBuilder;
+
     private dataProvider: ContextDataProvider;
     private recallManager: UserRecallManager;
 
-    constructor(private ctx: Context, private config: HistoryConfig) {
+    constructor(
+        private ctx: Context,
+        private config: HistoryConfig
+    ) {
         this.logger = ctx[Services.Logger].getLogger("[上下文构建]");
 
         // 初始化辅助工具
-        this.historyBuilder = new HistoryBuilder(ctx, config);
+
         this.dataProvider = new ContextDataProvider(ctx, this.logger);
         this.recallManager = new UserRecallManager(ctx, config, this.logger);
     }
@@ -33,10 +46,7 @@ export class ContextBuilder {
         const userId = id.replace("private:", "");
 
         // 1. 并行获取历史记录和用户信息
-        const [history, user] = await Promise.all([
-            this.historyBuilder.build(channel),
-            this.dataProvider.getUserInfo(bot, userId, platform),
-        ]);
+        const [history, user] = await Promise.all([this.build(channel), this.dataProvider.getUserInfo(bot, userId, platform)]);
 
         const userName = user?.name || user?.nick || userId;
         const members: GuildMember[] = [
@@ -79,10 +89,7 @@ export class ContextBuilder {
         const { platform, id } = channel;
 
         // 1. 并行获取历史记录和频道信息
-        const [history, channelInfo] = await Promise.all([
-            this.historyBuilder.build(channel),
-            this.dataProvider.getChannelInfo(bot, id, platform),
-        ]);
+        const [history, channelInfo] = await Promise.all([this.build(channel), this.dataProvider.getChannelInfo(bot, id, platform)]);
 
         if (!channelInfo) {
             return {
@@ -117,9 +124,184 @@ export class ContextBuilder {
     }
 
     private getAllMessagesFromHistory(history: History): ContextualMessage[] {
-        return [history.pending, ...history.closed, history.folded]
-            .filter(Boolean)
-            .flatMap((segment) => segment.dialogue);
+        return [history.pending, ...history.closed, history.folded].filter(Boolean).flatMap((segment) => segment.dialogue);
+    }
+
+    /**
+     * 从数据库获取并构建完整的对话历史记录
+     */
+    public async build(channel: ChannelDescriptor): Promise<History> {
+        const { platform, id: channelId } = channel;
+
+        // 1. 获取各状态的对话片段
+        const [openSegments, rawClosedSegments, rawFoldedSegments, summarizedSegments] = await Promise.all([
+            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "open" }),
+            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "closed" }),
+            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "folded" }),
+            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "summarized" }),
+        ]);
+
+        const pendingSegment = openSegments[0];
+        const closedSegments = rawClosedSegments
+            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
+            .slice(0, this.config.fullContextSegmentCount)
+            .reverse();
+        const foldedSegments = rawFoldedSegments
+            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
+            .slice(0, this.config.summarization.triggerCount)
+            .reverse();
+        const summarizedSegment = summarizedSegments.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0];
+
+        // 2. 批量获取所有需要内容的消息和事件
+        const segmentsNeedingContent = [...(pendingSegment ? [pendingSegment] : []), ...closedSegments, ...foldedSegments];
+        const segmentIds = segmentsNeedingContent.map((s) => s.id);
+
+        const [allMessages, allSystemEvents] =
+            segmentIds.length > 0
+                ? await Promise.all([
+                      this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
+                      this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } }),
+                  ])
+                : [[], []];
+
+        const messagesBySegment = this.groupDataBySegmentId(allMessages);
+        const eventsBySegment = this.groupDataBySegmentId(allSystemEvents);
+
+        // 3. 并行构建对话片段对象
+        const [pending, closed, folded, summarized] = await Promise.all([
+            pendingSegment ? this.buildPendingSegment(pendingSegment, messagesBySegment, eventsBySegment) : undefined,
+            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r, messagesBySegment, eventsBySegment))),
+            foldedSegments.length > 0 ? this.buildFoldedSegment(foldedSegments, messagesBySegment, eventsBySegment) : undefined,
+            summarizedSegment ? this.buildSummarizedSegment(summarizedSegment) : undefined,
+        ]);
+
+        return { pending, closed, folded, summarized };
+    }
+
+    private groupDataBySegmentId<T extends { sid: string }>(data: T[]): Map<string, T[]> {
+        const map = new Map<string, T[]>();
+        data.forEach((item) => {
+            if (!map.has(item.sid)) {
+                map.set(item.sid, []);
+            }
+            map.get(item.sid)!.push(item);
+        });
+        return map;
+    }
+
+    private buildPendingSegment(
+        segmentRecord: DialogueSegmentData,
+        messagesBySegment: Map<string, MessageData[]>,
+        eventsBySegment: Map<string, SystemEventData[]>
+    ): PendingDialogueSegment {
+        const messageRecords = messagesBySegment.get(segmentRecord.id) || [];
+        const systemEventRecords = eventsBySegment.get(segmentRecord.id) || [];
+
+        return {
+            type: "dialogue-segment",
+            id: segmentRecord.id,
+            platform: segmentRecord.platform,
+            channelId: segmentRecord.channelId,
+            guildId: segmentRecord.guildId,
+            status: "open",
+            startTimestamp: segmentRecord.startTimestamp,
+            dialogue: this.buildDialogueMessages(messageRecords),
+            systemEvents: systemEventRecords.map((record) => ({
+                id: record.id,
+                type: record.type,
+                timestamp: record.timestamp,
+                date: formatDate(record.timestamp, "MM-DD"),
+                payload: record.payload,
+            })),
+        };
+    }
+
+    private buildClosedSegment(
+        record: DialogueSegmentData,
+        messagesBySegment: Map<string, MessageData[]>,
+        eventsBySegment: Map<string, SystemEventData[]>
+    ): ClosedDialogueSegment {
+        const messageRecords = messagesBySegment.get(record.id) || [];
+        const systemEventRecords = eventsBySegment.get(record.id) || [];
+
+        return {
+            type: "dialogue-segment",
+            id: record.id,
+            platform: record.platform,
+            channelId: record.channelId,
+            guildId: record.guildId,
+            status: "closed",
+            startTimestamp: record.startTimestamp,
+            endTimestamp: record.endTimestamp,
+            agentTurn: record.agentTurn,
+            dialogue: this.buildDialogueMessages(messageRecords),
+            systemEvents: systemEventRecords.map((eventRecord) => ({
+                id: eventRecord.id,
+                type: eventRecord.type,
+                timestamp: eventRecord.timestamp,
+                date: formatDate(eventRecord.timestamp, "MM-DD"),
+                payload: eventRecord.payload,
+            })),
+        };
+    }
+
+    private buildFoldedSegment(
+        foldedSegments: DialogueSegmentData[],
+        messagesBySegment: Map<string, MessageData[]>,
+        eventsBySegment: Map<string, SystemEventData[]>
+    ): FoldedDialogueSegment {
+        const allMessages = foldedSegments.flatMap((s) => messagesBySegment.get(s.id) || []);
+        const allSystemEvents = foldedSegments.flatMap((s) => eventsBySegment.get(s.id) || []);
+
+        allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        allSystemEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        return {
+            type: "dialogue-segment",
+            id: foldedSegments[0].id,
+            platform: foldedSegments[0].platform,
+            channelId: foldedSegments[0].channelId,
+            guildId: foldedSegments[0].guildId,
+            status: "folded",
+            dialogue: this.buildDialogueMessages(allMessages),
+            systemEvents: allSystemEvents.map((record) => ({
+                id: record.id,
+                type: record.type,
+                timestamp: record.timestamp,
+                date: formatDate(record.timestamp, "MM-DD"),
+                payload: record.payload,
+            })),
+            startTimestamp: foldedSegments[0].startTimestamp,
+            endTimestamp: foldedSegments[foldedSegments.length - 1].endTimestamp,
+        };
+    }
+
+    private buildSummarizedSegment(record: DialogueSegmentData): SummarizedDialogueSegment {
+        return {
+            type: "dialogue-segment",
+            id: record.id,
+            platform: record.platform,
+            channelId: record.channelId,
+            guildId: record.guildId,
+            status: "summarized",
+            summary: record.summary,
+            startTimestamp: record.startTimestamp,
+            endTimestamp: record.endTimestamp,
+        };
+    }
+
+    private buildDialogueMessages(messageRecords: MessageData[]): ContextualMessage[] {
+        const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
+        return messageRecords.map((record) => ({
+            id: record.id,
+            content: record.content,
+            timestamp: record.timestamp,
+            date: formatDate(record.timestamp, "MM-DD"),
+            time: formatDate(record.timestamp, "HH:mm"),
+            quoted: quotedMsgIds.has(record.id),
+            quoteId: record.quoteId,
+            sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
+        }));
     }
 }
 
@@ -128,7 +310,10 @@ export class ContextBuilder {
 // =================================================================================
 
 class ContextDataProvider {
-    constructor(private ctx: Context, private logger: Logger) {}
+    constructor(
+        private ctx: Context,
+        private logger: Logger
+    ) {}
 
     public async getUserInfo(bot: Bot, userId: string, platform: string): Promise<any> {
         try {
@@ -154,12 +339,7 @@ class ContextDataProvider {
         return null;
     }
 
-    public async getMembersFromHistory(
-        bot: Bot,
-        history: History,
-        platform: string,
-        guildId: string
-    ): Promise<GuildMember[]> {
+    public async getMembersFromHistory(bot: Bot, history: History, platform: string, guildId: string): Promise<GuildMember[]> {
         const memberIds = new Set<string>();
         [history.pending, ...history.closed, history.folded]
             .filter(Boolean)
