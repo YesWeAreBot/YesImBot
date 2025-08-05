@@ -8,7 +8,7 @@
 
 > **cosineSimilarity**(`vecA`, `vecB`): `number`
 
-Defined in: [packages/core/src/shared/utils/vector.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/shared/utils/vector.ts#L44)
+Defined in: [packages/core/src/shared/utils/vector.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/utils/vector.ts#L44)
 
 计算两个向量之间的余弦相似度。
 返回值范围为 -1 到 1，值越接近 1 表示两个向量越相似。

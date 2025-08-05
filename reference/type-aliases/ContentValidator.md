@@ -8,7 +8,7 @@
 
 > **ContentValidator** = (`chunk`) => [`ValidationResult`](../interfaces/ValidationResult.md)
 
-Defined in: [packages/core/src/services/model/chat-model.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/model/chat-model.ts#L31)
+Defined in: [packages/core/src/services/model/chat-model.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/model/chat-model.ts#L31)
 
 自定义验证函数
 

@@ -8,4 +8,4 @@
 
 > `const` **ErrorReporterConfigSchema**: `Schema`\<`ObjectS`\<\{ `enabled`: `Schema`\<`boolean`, `boolean`\>; `includeSystemInfo`: `Schema`\<`boolean`, `boolean`\>; `pasteServiceUrl`: `Schema`\<`string`, `string`\>; \}\>, `ObjectT`\<\{ `enabled`: `Schema`\<`boolean`, `boolean`\>; `includeSystemInfo`: `Schema`\<`boolean`, `boolean`\>; `pasteServiceUrl`: `Schema`\<`string`, `string`\>; \}\>\>
 
-Defined in: [packages/core/src/shared/errors/index.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/shared/errors/index.ts#L16)
+Defined in: [packages/core/src/shared/errors/index.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/errors/index.ts#L16)

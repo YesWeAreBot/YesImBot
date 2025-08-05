@@ -8,4 +8,4 @@
 
 > **ErrorDefinitionValue** = `{ [K in ErrorDomains]: typeof ErrorDefinitions[K][keyof typeof ErrorDefinitions[K]] }`\[`ErrorDomains`\]
 
-Defined in: [packages/core/src/shared/errors/index.ts:157](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/shared/errors/index.ts#L157)
+Defined in: [packages/core/src/shared/errors/index.ts:157](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/errors/index.ts#L157)
