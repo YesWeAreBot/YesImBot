@@ -8,7 +8,7 @@
 
 > **StimulusType** = `"user_message"` \| `"scheduled_task"` \| `"background_task_completion"` \| `"system_event"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:328](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/worldstate/types.ts#L328)
+Defined in: [packages/core/src/services/worldstate/types.ts:328](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/worldstate/types.ts#L328)
 
 定义了所有可能驱动 Agent 行为的刺激类型。
 这是对原始事件（如用户消息、系统事件）的更高层次抽象。

@@ -6,7 +6,7 @@
 
 # Interface: UserProfile
 
-Defined in: [packages/core/src/services/memory/types.ts:133](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L133)
+Defined in: [packages/core/src/services/memory/types.ts:133](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L133)
 
 用户画像 (UserProfile)
 对特定用户在特定上下文中的深度、动态总结
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/memory/types.ts:133](https://github.com/
 
 > `optional` **confidence**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:163](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L163)
+Defined in: [packages/core/src/services/memory/types.ts:163](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L163)
 
 画像置信度评分，用于判断画像的准确性和完整性
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/memory/types.ts:163](https://github.com/
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:145](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L145)
+Defined in: [packages/core/src/services/memory/types.ts:145](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L145)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/memory/types.ts:145](https://github.com/
 
 > **contextId**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:143](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L143)
+Defined in: [packages/core/src/services/memory/types.ts:143](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L143)
 
 画像的上下文ID
 'global' 代表这是一个全局画像
@@ -52,7 +52,7 @@ Defined in: [packages/core/src/services/memory/types.ts:143](https://github.com/
 
 > `optional` **createdAt**: `Date`
 
-Defined in: [packages/core/src/services/memory/types.ts:151](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L151)
+Defined in: [packages/core/src/services/memory/types.ts:151](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L151)
 
 创建时间
 
@@ -62,7 +62,7 @@ Defined in: [packages/core/src/services/memory/types.ts:151](https://github.com/
 
 > **embedding**: `number`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L146)
+Defined in: [packages/core/src/services/memory/types.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L146)
 
 #### Overrides
 
@@ -74,7 +74,7 @@ Defined in: [packages/core/src/services/memory/types.ts:146](https://github.com/
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L134)
+Defined in: [packages/core/src/services/memory/types.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L134)
 
 ***
 
@@ -82,7 +82,7 @@ Defined in: [packages/core/src/services/memory/types.ts:134](https://github.com/
 
 > `optional` **isDeleted**: `boolean`
 
-Defined in: [packages/core/src/services/memory/types.ts:155](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L155)
+Defined in: [packages/core/src/services/memory/types.ts:155](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L155)
 
 是否已删除（软删除）
 
@@ -96,7 +96,7 @@ Defined in: [packages/core/src/services/memory/types.ts:155](https://github.com/
 
 > `optional` **keyFactsForUpdate**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:159](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L159)
+Defined in: [packages/core/src/services/memory/types.ts:159](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L159)
 
 关键事实用于下次增量更新
 
@@ -106,7 +106,7 @@ Defined in: [packages/core/src/services/memory/types.ts:159](https://github.com/
 
 > **salience**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L161)
+Defined in: [packages/core/src/services/memory/types.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L161)
 
 显著性评分，用于搜索排序
 
@@ -120,7 +120,7 @@ Defined in: [packages/core/src/services/memory/types.ts:161](https://github.com/
 
 > **supportingFactIds**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:147](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L147)
+Defined in: [packages/core/src/services/memory/types.ts:147](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L147)
 
 ***
 
@@ -128,7 +128,7 @@ Defined in: [packages/core/src/services/memory/types.ts:147](https://github.com/
 
 > `optional` **tags**: `string`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:157](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L157)
+Defined in: [packages/core/src/services/memory/types.ts:157](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L157)
 
 画像标签，用于分类
 
@@ -138,7 +138,7 @@ Defined in: [packages/core/src/services/memory/types.ts:157](https://github.com/
 
 > **updatedAt**: `Date`
 
-Defined in: [packages/core/src/services/memory/types.ts:149](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L149)
+Defined in: [packages/core/src/services/memory/types.ts:149](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L149)
 
 ***
 
@@ -146,7 +146,7 @@ Defined in: [packages/core/src/services/memory/types.ts:149](https://github.com/
 
 > **userId**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:135](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L135)
+Defined in: [packages/core/src/services/memory/types.ts:135](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L135)
 
 ***
 
@@ -154,7 +154,7 @@ Defined in: [packages/core/src/services/memory/types.ts:135](https://github.com/
 
 > **userName**: `string`
 
-Defined in: [packages/core/src/services/memory/types.ts:136](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L136)
+Defined in: [packages/core/src/services/memory/types.ts:136](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L136)
 
 ***
 
@@ -162,6 +162,6 @@ Defined in: [packages/core/src/services/memory/types.ts:136](https://github.com/
 
 > `optional` **version**: `number`
 
-Defined in: [packages/core/src/services/memory/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/3acef27bf0908a52f344fc7c792c2548c86c96e2/packages/core/src/services/memory/types.ts#L153)
+Defined in: [packages/core/src/services/memory/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/d81a9a66524cf3cbf62c7f9a48801dbb459c0b9c/packages/core/src/services/memory/types.ts#L153)
 
 画像版本号，用于跟踪更新
