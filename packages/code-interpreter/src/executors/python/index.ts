@@ -2,15 +2,69 @@ import { Context, Logger, Schema } from "koishi";
 import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
-import { loadPyodide, PyodideInterface } from "pyodide";
+import { loadPyodide, PyodideAPI } from "pyodide";
 import type { PyProxy } from "pyodide/ffi";
 import { SharedConfig } from "../../config";
 import { CodeExecutionResult, CodeExecutor, ExecutionArtifact, ExecutionError } from "../base";
 
+export interface PythonConfig {
+    type: "python";
+    enabled: boolean;
+    timeout?: number;
+    poolSize?: number;
+    pyodideVersion?: string;
+    cdnBaseUrl?: string;
+    allowedModules?: string[];
+    packages?: string[];
+    customToolDescription?: string;
+}
+
+export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
+    Schema.object({
+        type: Schema.const("python").hidden().description("引擎类型"),
+        enabled: Schema.boolean().default(false).description("是否启用此引擎"),
+    }).description("Python 执行引擎"),
+    Schema.union([
+        Schema.object({
+            enabled: Schema.const(true).required(),
+            timeout: Schema.number().default(30000).description("代码执行的超时时间（毫秒）"),
+            poolSize: Schema.number().default(2).min(1).max(10).description("Pyodide 引擎池的大小，用于并发执行"),
+            pyodideVersion: Schema.string()
+                .pattern(/^\d+\.\d+\.\d+$/)
+                .default("0.28.1")
+                .disabled()
+                .description("Pyodide 的版本"),
+            cdnBaseUrl: Schema.union([
+                "https://cdn.jsdelivr.net",
+                "https://fastly.jsdelivr.net",
+                "https://testingcf.jsdelivr.net",
+                "https://quantil.jsdelivr.net",
+                "https://gcore.jsdelivr.net",
+                "https://originfastly.jsdelivr.net",
+                Schema.string().role("link").description("自定义CDN"),
+            ])
+                .default("https://fastly.jsdelivr.net")
+                .description("Pyodide 包下载镜像源"),
+            allowedModules: Schema.array(String)
+                .default(["matplotlib", "numpy", "pandas", "sklearn", "scipy", "requests"])
+                .role("table")
+                .description("允许代码通过 import 导入的模块白名单"),
+            packages: Schema.array(String)
+                .default(["numpy", "pandas", "matplotlib", "scikit-learn"])
+                .role("table")
+                .description("预加载到每个 Pyodide 实例中的 Python 包"),
+            customToolDescription: Schema.string()
+                .role("textarea", { rows: [2, 4] })
+                .description("自定义工具描述，留空则使用默认描述"),
+        }),
+        Schema.object({}),
+    ]),
+]) as Schema<PythonConfig>;
+
 class PyodideEnginePool {
     private readonly logger: Logger;
-    private pool: PyodideInterface[] = [];
-    private waiting: ((engine: PyodideInterface) => void)[] = [];
+    private pool: PyodideAPI[] = [];
+    private waiting: ((engine: PyodideAPI) => void)[] = [];
     private readonly maxSize: number;
     private isInitialized = false;
 
@@ -24,12 +78,12 @@ class PyodideEnginePool {
         this.maxSize = config.poolSize;
     }
 
-    private async createEngine(): Promise<PyodideInterface> {
+    private async createEngine(): Promise<PyodideAPI> {
         this.logger.info(`[创建实例] 开始创建新的 Pyodide 引擎实例...`);
-
         const pyodide = await loadPyodide({
             // 确保依赖路径正确
             packageCacheDir: path.join(this.ctx.baseDir, this.sharedConfig.dependenciesPath, "pyodide"),
+            packageBaseUrl: `${this.config.cdnBaseUrl}/pyodide/v${this.config.pyodideVersion}/full/`,
         });
         this.logger.info(`[创建实例] Pyodide 核心加载完成`);
 
@@ -54,8 +108,12 @@ class PyodideEnginePool {
         this.logger.info(`[初始化] 开始初始化引擎池，目标大小: ${this.maxSize}`);
         try {
             // 并行创建所有引擎实例，以加快启动速度
-            const enginePromises = Array.from({ length: this.maxSize }, () => this.createEngine());
-            const engines = await Promise.all(enginePromises);
+            // const enginePromises = Array.from({ length: this.maxSize }, () => this.createEngine());
+            // const engines = await Promise.all(enginePromises);
+            const engines = [];
+            for (let i = 0; i < this.maxSize; i++) {
+                engines.push(await this.createEngine());
+            }
 
             this.pool.push(...engines);
             this.isInitialized = true;
@@ -68,7 +126,7 @@ class PyodideEnginePool {
         }
     }
 
-    public async acquire(): Promise<PyodideInterface> {
+    public async acquire(): Promise<PyodideAPI> {
         if (!this.isInitialized) {
             this.logger.error("[获取引擎] 尝试在未初始化的引擎池中获取引擎");
             throw new Error("Pyodide 引擎池未初始化或初始化失败");
@@ -81,12 +139,12 @@ class PyodideEnginePool {
         }
 
         this.logger.debug("[获取引擎] 池中无可用实例，进入等待队列...");
-        return new Promise<PyodideInterface>((resolve) => {
+        return new Promise<PyodideAPI>((resolve) => {
             this.waiting.push(resolve);
         });
     }
 
-    public release(engine: PyodideInterface): void {
+    public release(engine: PyodideAPI): void {
         if (this.waiting.length > 0) {
             const nextConsumer = this.waiting.shift()!;
             this.logger.debug("[释放引擎] 引擎被直接传递给等待中的任务");
@@ -97,42 +155,6 @@ class PyodideEnginePool {
         }
     }
 }
-
-export interface PythonConfig {
-    type: "python";
-    enabled: boolean;
-    timeout?: number;
-    poolSize?: number;
-    allowedModules?: string[];
-    packages?: string[];
-    customToolDescription?: string;
-}
-
-export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
-    Schema.object({
-        type: Schema.const("python").hidden().description("引擎类型"),
-        enabled: Schema.boolean().default(false).description("是否启用此引擎"),
-    }).description("Python 执行引擎"),
-    Schema.union([
-        Schema.object({
-            enabled: Schema.const(true).required(),
-            timeout: Schema.number().default(30000).description("代码执行的超时时间（毫秒）"),
-            poolSize: Schema.number().default(2).min(1).max(10).description("Pyodide 引擎池的大小，用于并发执行"),
-            allowedModules: Schema.array(String)
-                .default(["matplotlib", "numpy", "pandas", "sklearn", "scipy", "requests"])
-                .role("table")
-                .description("允许代码通过 import 导入的模块白名单"),
-            packages: Schema.array(String)
-                .default(["numpy", "pandas", "matplotlib", "scikit-learn"])
-                .role("table")
-                .description("预加载到每个 Pyodide 实例中的 Python 包"),
-            customToolDescription: Schema.string()
-                .role("textarea", { rows: [2, 4] })
-                .description("自定义工具描述，留空则使用默认描述"),
-        }),
-        Schema.object({}),
-    ]),
-]) as Schema<PythonConfig>;
 
 export class PythonExecutor implements CodeExecutor {
     readonly type = "python";
@@ -190,7 +212,7 @@ export class PythonExecutor implements CodeExecutor {
         this.logger.debug("[安全检查] 代码安全检查通过");
     }
 
-    private async _resetEngineState(engine: PyodideInterface): Promise<void> {
+    private async _resetEngineState(engine: PyodideAPI): Promise<void> {
         this.logger.debug("[状态重置] 重置引擎状态，清理变量和文件...");
         engine.runPython(`
 import sys, os
@@ -305,7 +327,7 @@ if os.path.exists(workspace):
         }
 
         this.logger.info("[执行] 收到新的代码执行请求");
-        let engine: PyodideInterface | null = null;
+        let engine: PyodideAPI | null = null;
         try {
             this._checkCodeSecurity(code);
 

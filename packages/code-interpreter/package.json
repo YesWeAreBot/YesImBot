@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "isolated-vm": "^5.0.4",
-    "pyodide": "^0.28.0"
+    "pyodide": "^0.28.1"
   },
   "devDependencies": {
     "koishi": "^4.18.7",
