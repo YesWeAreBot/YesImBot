@@ -135,16 +135,27 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command("sticker.list", "列出表情包分类", { authority: 3 })
-            .alias("表情分类")
-            .action(async ({ session }) => {
-                const categories = await this.stickerService.getCategories();
-                if (categories.length === 0) {
-                    return "暂无表情包分类";
-                }
-
-                return `📁 表情包分类列表:\n${categories.map((c) => `- ${c}`).join("\n")}`;
-            });
+        ctx.command("sticker.list", "列出表情包分类", { authority: 3 }).alias("表情分类").action(async ({ session }) => {
+          const categories = await this.stickerService.getCategories();
+          if (categories.length === 0) {
+            return "暂无表情包分类";
+          }
+        
+          // 1. 创建一个 promises 数组
+          //    我们使用 map 来遍历每个分类，并为每个分类创建一个异步任务，用于获取其数量
+          const categoryWithCountPromises = categories.map(async (category) => {
+            const count = await this.stickerService.getStickerCount(category);
+            return `- ${category} (${count}个)`; // 返回我们想要的最终格式
+          });
+        
+          // 2. 等待所有异步任务完成
+          //    Promise.all 会等待数组中所有的 promise 都完成后，返回一个包含所有结果的新数组
+          const formattedCategories = await Promise.all(categoryWithCountPromises);
+        
+          // 3. 将格式化后的所有行合并成一个字符串并返回
+          return `📁 表情包分类列表:
+        ${formattedCategories.join("\n")}`;
+        });
 
         ctx.command("sticker.rename <oldName> <newName>", "重命名表情包分类", { authority: 3 })
             .alias("表情重命名")
@@ -224,31 +235,58 @@ export default class StickerTools {
             });
 
         ctx.command("sticker.get <category> [index]", "获取指定分类的表情包").action(async ({ session }, category, index) => {
-            if (!category) return "请提供分类名称";
-
-            // 获取分类下所有表情包
-            const stickers = await this.stickerService.getStickersByCategory(category);
-            if (!stickers.length) return `分类 "${category}" 中没有表情包`;
-
-            // 处理索引或随机选择
-            let targetSticker;
-            if (index) {
-                targetSticker = stickers[parseInt(index) - 1];
-                if (!targetSticker) return `无效序号，该分类共有 ${stickers.length} 个表情包`;
-            } else {
-                targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
+          if (!category) return "请提供分类名称";
+          const stickers = await this.stickerService.getStickersByCategory(category);
+          if (!stickers.length) return `分类 "${category}" 中没有表情包`;
+        
+          // --- 新增逻辑：处理 'all' 参数 ---
+          if (index === 'all') {
+            await session.sendQueued(`即将按顺序发送分类 "${category}" 下的所有 ${stickers.length} 个表情包...`);
+            // 使用 for 循环来确保按顺序发送并可以添加延时
+            for (let i = 0; i < stickers.length; i++) {
+              const sticker = stickers[i];
+              const ext = sticker.filePath.split(".").pop();
+              try {
+                const b64 = await (0, import_promises.readFile)(sticker.filePath, "base64");
+                const base64Data = `data:image/${ext};base64,${b64}`;
+                await session.sendQueued(import_koishi.h.image(base64Data));
+                await session.sendQueued(`[${i + 1}/${stickers.length}] 🆔 ID: ${sticker.id}`);
+                // 添加一个 500 毫秒的延时，防止发送过快
+                await new Promise(res => setTimeout(res, 500));
+              } catch (error) {
+                this.stickerService.logger.warn(`无法读取或发送表情文件: ${sticker.filePath}`, error);
+                await session.sendQueued(`❌ 发送第 ${i + 1} 个表情失败，文件可能已损坏或被移动。`);
+              }
             }
-
-            // 发送表情包
-            const fileUrl = pathToFileURL(targetSticker.filePath).href;
-
+            return `✅ 已发送完毕。`;
+          }
+          // --- 新增逻辑结束 ---
+        
+          // --- 保留原有逻辑 ---
+          let targetSticker;
+          if (index) {
+            const numericIndex = parseInt(index, 10);
+            // 检查是否为有效数字
+            if (isNaN(numericIndex)) {
+                return `无效的序号 "${index}"。请提供一个数字，或使用 "all" 获取全部。`;
+            }
+            targetSticker = stickers[numericIndex - 1];
+            if (!targetSticker) return `无效序号，该分类共有 ${stickers.length} 个表情包`;
+          } else {
+            targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
+          }
+        
+          try {
             const ext = targetSticker.filePath.split(".").pop();
-
-            const b64 = await readFile(targetSticker.filePath, "base64");
+            const b64 = await (0, import_promises.readFile)(targetSticker.filePath, "base64");
             const base64Data = `data:image/${ext};base64,${b64}`;
-
-            await session.sendQueued(h.image(base64Data));
-            return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
+            await session.sendQueued(import_koishi.h.image(base64Data));
+            return `🆔 ID: ${targetSticker.id}
+        📁 分类: ${category}`;
+          } catch (error) {
+            this.stickerService.logger.warn(`无法读取或发送表情文件: ${targetSticker.filePath}`, error);
+            return `❌ 发送表情失败，文件可能已损坏或被移动。`;
+          }
         });
 
         ctx.command("sticker.info <category>", "查看分类详情", { authority: 3 }).action(async ({ session }, category) => {
