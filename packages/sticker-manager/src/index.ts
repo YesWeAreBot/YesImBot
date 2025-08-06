@@ -143,7 +143,14 @@ export default class StickerTools {
                     return "暂无表情包分类";
                 }
 
-                return `📁 表情包分类列表:\n${categories.map((c) => `- ${c}`).join("\n")}`;
+                const categoryWithCounts = await Promise.all(
+                    categories.map(async (c) => {
+                        const count = await this.stickerService.getStickerCount(c);
+                        return `- ${c} (${count} 个表情包)`;
+                    })
+                );
+
+                return `📁 表情包分类列表:\n${categoryWithCounts.join("\n")}`;
             });
 
         ctx.command("sticker.rename <oldName> <newName>", "重命名表情包分类", { authority: 3 })
@@ -223,7 +230,10 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command("sticker.get <category> [index]", "获取指定分类的表情包").action(async ({ session }, category, index) => {
+        ctx.command("sticker.get <category> [index:posint]", "获取指定分类的表情包")
+            .option("all", "-a 发送该分类下所有表情包")
+            .option("delay", "-d [delay:posint] 发送所有表情包时的延时 (毫秒), 默认为 500 毫秒")
+            .action(async ({ session, options }, category, index) => {
             if (!category) return "请提供分类名称";
 
             // 获取分类下所有表情包
@@ -232,18 +242,26 @@ export default class StickerTools {
 
             // 处理索引或随机选择
             let targetSticker;
-            if (index) {
-                targetSticker = stickers[parseInt(index) - 1];
+            if (options.all) {
+                // 发送所有表情包
+                const delay = options.delay || 500; // 默认延时 500 毫秒
+                for (const sticker of stickers) {
+                    const ext = sticker.filePath.split(".").pop();
+                    const b64 = await readFile(sticker.filePath, "base64");
+                    const base64Data = `data:image/${ext};base64,${b64}`;
+                    await session.sendQueued(h.image(base64Data));
+                    await new Promise((resolve) => setTimeout(resolve, delay)); // 延时
+                }
+                return `✅ 已发送分类 "${category}" 下所有 ${stickers.length} 个表情包。`;
+            } else if (index) {
+                targetSticker = stickers[index - 1];
                 if (!targetSticker) return `无效序号，该分类共有 ${stickers.length} 个表情包`;
             } else {
                 targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
             }
 
             // 发送表情包
-            const fileUrl = pathToFileURL(targetSticker.filePath).href;
-
             const ext = targetSticker.filePath.split(".").pop();
-
             const b64 = await readFile(targetSticker.filePath, "base64");
             const base64Data = `data:image/${ext};base64,${b64}`;
 
