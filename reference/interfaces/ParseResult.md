@@ -6,7 +6,7 @@
 
 # Interface: ParseResult\<T\>
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/utils/json-parser.ts#L9)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/shared/utils/json-parser.ts#L9)
 
 ## Type Parameters
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:9](https://github.com
 
 > **data**: `T`
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/utils/json-parser.ts#L10)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/shared/utils/json-parser.ts#L10)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:10](https://github.co
 
 > **error**: `string`
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/utils/json-parser.ts#L11)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/shared/utils/json-parser.ts#L11)
 
 ***
 
@@ -36,4 +36,4 @@ Defined in: [packages/core/src/shared/utils/json-parser.ts:11](https://github.co
 
 > **logs**: `string`[]
 
-Defined in: [packages/core/src/shared/utils/json-parser.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/utils/json-parser.ts#L12)
+Defined in: [packages/core/src/shared/utils/json-parser.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/shared/utils/json-parser.ts#L12)

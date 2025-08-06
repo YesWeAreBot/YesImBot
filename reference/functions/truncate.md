@@ -8,7 +8,7 @@
 
 > **truncate**(`str`, `length`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:73](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/shared/utils/string.ts#L73)
+Defined in: [packages/core/src/shared/utils/string.ts:73](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/shared/utils/string.ts#L73)
 
 截断长字符串以便于显示，并在末尾添加省略号。
 

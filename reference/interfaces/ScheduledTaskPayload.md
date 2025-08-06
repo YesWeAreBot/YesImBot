@@ -6,7 +6,7 @@
 
 # Interface: ScheduledTaskPayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:343](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/worldstate/types.ts#L343)
+Defined in: [packages/core/src/services/worldstate/types.ts:343](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L343)
 
 定时任务刺激的载荷。
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:343](https://github.
 
 > **taskContent**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:346](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/worldstate/types.ts#L346)
+Defined in: [packages/core/src/services/worldstate/types.ts:346](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L346)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:346](https://github.
 
 > **taskId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:344](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/worldstate/types.ts#L344)
+Defined in: [packages/core/src/services/worldstate/types.ts:344](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L344)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:344](https://github.
 
 > **taskName**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:345](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/worldstate/types.ts#L345)
+Defined in: [packages/core/src/services/worldstate/types.ts:345](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L345)

@@ -6,7 +6,7 @@
 
 # Enumeration: LifespanType
 
-Defined in: [packages/core/src/services/memory/types.ts:59](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/memory/types.ts#L59)
+Defined in: [packages/core/src/services/memory/types.ts:59](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/memory/types.ts#L59)
 
 生命周期枚举
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/types.ts:59](https://github.com/Y
 
 > **Long**: `"long"`
 
-Defined in: [packages/core/src/services/memory/types.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/memory/types.ts#L61)
+Defined in: [packages/core/src/services/memory/types.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/memory/types.ts#L61)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/memory/types.ts:61](https://github.com/Y
 
 > **Permanent**: `"permanent"`
 
-Defined in: [packages/core/src/services/memory/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/memory/types.ts#L62)
+Defined in: [packages/core/src/services/memory/types.ts:62](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/memory/types.ts#L62)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: [packages/core/src/services/memory/types.ts:62](https://github.com/Y
 
 > **Short**: `"short"`
 
-Defined in: [packages/core/src/services/memory/types.ts:60](https://github.com/YesWeAreBot/YesImBot/blob/fb48ed04032f4b5a158b252aad13c4c7a3ffb363/packages/core/src/services/memory/types.ts#L60)
+Defined in: [packages/core/src/services/memory/types.ts:60](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/memory/types.ts#L60)
