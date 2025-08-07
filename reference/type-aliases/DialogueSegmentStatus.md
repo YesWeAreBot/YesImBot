@@ -8,4 +8,4 @@
 
 > **DialogueSegmentStatus** = `"open"` \| `"closed"` \| `"folded"` \| `"summarized"` \| `"archived"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L187)
+Defined in: [packages/core/src/services/worldstate/types.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L187)

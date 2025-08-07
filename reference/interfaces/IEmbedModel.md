@@ -6,7 +6,7 @@
 
 # Interface: IEmbedModel
 
-Defined in: [packages/core/src/services/model/embed-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/embed-model.ts#L9)
+Defined in: [packages/core/src/services/model/embed-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/embed-model.ts#L9)
 
 所有模型类的基类，封装了通用属性和方法。
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/services/model/embed-model.ts:9](https://github.c
 
 > `readonly` **config**: [`ModelConfig`](ModelConfig.md)
 
-Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/base-model.ts#L10)
+Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/base-model.ts#L10)
 
 #### Inherited from
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.c
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/base-model.ts#L12)
+Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/base-model.ts#L12)
 
 #### Inherited from
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.c
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/base-model.ts#L9)
+Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/base-model.ts#L9)
 
 #### Inherited from
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.co
 
 > `protected` `readonly` **logger**: `__module`
 
-Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/base-model.ts#L11)
+Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/base-model.ts#L11)
 
 #### Inherited from
 
@@ -68,7 +68,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.c
 
 > **embed**(`text`): `Promise`\<`EmbedResult`\>
 
-Defined in: [packages/core/src/services/model/embed-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/embed-model.ts#L10)
+Defined in: [packages/core/src/services/model/embed-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/embed-model.ts#L10)
 
 #### Parameters
 
@@ -86,7 +86,7 @@ Defined in: [packages/core/src/services/model/embed-model.ts:10](https://github.
 
 > **embedMany**(`texts`): `Promise`\<`EmbedManyResult`\>
 
-Defined in: [packages/core/src/services/model/embed-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/model/embed-model.ts#L11)
+Defined in: [packages/core/src/services/model/embed-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/model/embed-model.ts#L11)
 
 #### Parameters
 

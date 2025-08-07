@@ -6,7 +6,7 @@
 
 # Interface: UserMessagePayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:335](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L335)
+Defined in: [packages/core/src/services/worldstate/types.ts:335](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L335)
 
 用户消息刺激的载荷。
 
@@ -16,6 +16,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:335](https://github.
 
 > **sid**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:337](https://github.com/YesWeAreBot/YesImBot/blob/87cfeb5f8b93039f15562b853c8990fff3f4fe23/packages/core/src/services/worldstate/types.ts#L337)
+Defined in: [packages/core/src/services/worldstate/types.ts:337](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L337)
 
 关联的对话片段 ID
