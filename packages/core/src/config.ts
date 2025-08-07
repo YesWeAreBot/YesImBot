@@ -9,26 +9,14 @@ import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
 import { ErrorReporterConfig, ErrorReporterConfigSchema } from "./shared/errors";
 
 export interface SystemConfig {
-    /** 平台服务缓存配置 */
-    cache: {
-        ttlSeconds: number;
-        maxSize: number;
-    };
     /** 全局日志配置 */
     logging: LoggingConfig;
-
     errorReporting: ErrorReporterConfig;
 }
 
 export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
-    cache: Schema.object({
-        ttlSeconds: Schema.number()
-            .default(6 * 60 * 60)
-            .description("缓存存活时间 (秒)"),
-        maxSize: Schema.number().default(1000).description("缓存最大项目数"),
-    }).description("平台服务缓存配置"),
-    logging: LoggingConfigSchema.description("日志配置"),
-    errorReporting: ErrorReporterConfigSchema.description("错误上报配置"),
+    logging: LoggingConfigSchema,
+    errorReporting: ErrorReporterConfigSchema,
 });
 
 // =================================================================
@@ -65,5 +53,5 @@ export const Config: Schema<Config> = Schema.object({
     }),
     assetService: AssetServiceConfigSchema.description("资源服务配置"),
     promptService: PromptServiceConfigSchema,
-    system: SystemConfigSchema,
+    system: SystemConfigSchema.description("系统设置"),
 });

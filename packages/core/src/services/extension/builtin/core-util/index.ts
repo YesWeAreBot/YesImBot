@@ -74,13 +74,13 @@ export default class CoreUtilExtension {
         const { session, message, target } = args;
 
         if (!session) {
-            this.logger.warn("✖ 缺少有效会话，无法发送消息。");
+            this.logger.warn("✖ 缺少有效会话，无法发送消息");
             return Failed("缺少会话对象");
         }
 
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
-            this.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容。");
+            this.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
             return Failed("消息内容为空");
         }
 
@@ -90,7 +90,7 @@ export default class CoreUtilExtension {
             if (!bot) {
                 const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
                 this.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
-                return Failed(`未找到平台 ${target} 对应的机器人实例。`);
+                return Failed(`未找到平台 ${target} 对应的机器人实例`);
             }
 
             // this.logger.info(`准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
@@ -99,7 +99,8 @@ export default class CoreUtilExtension {
 
             return Success();
         } catch (error) {
-            return Failed(`发送消息失败，可能是已被禁言。错误: ${error.message}`);
+            //this.logger.error(error);
+            return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
         }
     }
 

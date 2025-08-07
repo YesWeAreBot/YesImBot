@@ -15,7 +15,7 @@
 export function isEmpty(str: string | null | undefined): boolean {
     // 使用 str == null 同时检查 null 和 undefined
     // trim() 用于移除首尾空白，然后检查长度
-    return str == null || str.trim() === '';
+    return str == null || str.trim() === "";
 }
 
 /**
@@ -61,7 +61,7 @@ export function randomString(length: number): string {
     for (let i = 0; i < length; i++) {
         result[i] = characters.charAt(Math.floor(Math.random() * charactersLength));
     }
-    return result.join('');
+    return result.join("");
 }
 
 /**
@@ -85,11 +85,11 @@ export const truncate = (str: string, length: number = 80): string => {
  * @param fallback - 当 JSON.stringify 失败时（例如循环引用）返回的备用值。
  * @returns 转换后的字符串。
  */
-export function stringify(obj: any, fallback: string = ''): string {
-    if (typeof obj === 'string') return obj;
+export function stringify(obj: any, space?: number, fallback: string = ""): string {
+    if (typeof obj === "string") return obj;
     if (obj == null) return fallback; // 处理 null 和 undefined
     try {
-        return JSON.stringify(obj);
+        return JSON.stringify(obj, null, space);
     } catch (error) {
         console.error("Failed to stringify object:", error);
         // 对于无法序列化的对象（如含循环引用），返回备用值
@@ -152,7 +152,7 @@ export function hashString(str: string): string {
  * @returns 首字母大写的字符串。
  */
 export function capitalize(str: string): string {
-    if (!str) return '';
+    if (!str) return "";
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
@@ -162,7 +162,7 @@ export function capitalize(str: string): string {
  * @returns 驼峰命名格式的字符串。
  */
 export function toCamelCase(str: string): string {
-    if (!str) return '';
+    if (!str) return "";
     return str.replace(/[-_](\w)/g, (_, c) => c.toUpperCase());
 }
 
@@ -172,10 +172,10 @@ export function toCamelCase(str: string): string {
  * @returns 蛇形命名格式的字符串。
  */
 export function toSnakeCase(str: string): string {
-    if (!str) return '';
+    if (!str) return "";
     return str
-        .replace(/([A-Z])/g, '_$1') // 在大写字母前加下划线
-        .replace(/[-_\s]+/g, '_') // 将连字符、下划线、空格替换为单个下划线
+        .replace(/([A-Z])/g, "_$1") // 在大写字母前加下划线
+        .replace(/[-_\s]+/g, "_") // 将连字符、下划线、空格替换为单个下划线
         .toLowerCase();
 }
 
@@ -185,9 +185,9 @@ export function toSnakeCase(str: string): string {
  * @returns 烤串命名格式的字符串。
  */
 export function toKebabCase(str: string): string {
-    if (!str) return '';
+    if (!str) return "";
     return str
-        .replace(/([A-Z])/g, '-$1') // 在大写字母前加连字符
-        .replace(/[_\s]+/g, '-') // 将下划线、空格替换为单个连字符
+        .replace(/([A-Z])/g, "-$1") // 在大写字母前加连字符
+        .replace(/[_\s]+/g, "-") // 将下划线、空格替换为单个连字符
         .toLowerCase();
 }

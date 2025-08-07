@@ -1,6 +1,6 @@
 import { PromptService } from "@/services/prompt";
 import { Services } from "@/shared/constants";
-import { stringify, truncate } from "@/shared/utils";
+import { isEmpty, stringify, truncate } from "@/shared/utils";
 import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
@@ -180,7 +180,7 @@ export class ToolService extends Service<ToolServiceConfig> {
 
                 if (result.status === "success") {
                     /* prettier-ignore */
-                    return `✅ 工具 ${name} 调用成功！\n执行结果：${typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2)}`;
+                    return `✅ 工具 ${name} 调用成功！\n执行结果：${isEmpty(result.result) ? "无返回值" : stringify(result.result, 2)}`;
                 } else {
                     return `❌ 工具 ${name} 调用失败。\n原因：${stringify(result.error)}`;
                 }
