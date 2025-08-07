@@ -54,7 +54,8 @@ export class LocalStorageDriver implements StorageDriver {
             if (error.code === "ENOENT") {
                 this.logger.warn(`资源文件不存在: ${id}`);
                 // 抛出特定错误，由上层服务处理恢复逻辑
-                throw new Error(`Resource file not found: ${id}`);
+                error.message = `Resource file not found: ${id}`;
+                throw error;
             }
             this.logger.error(`读取资源失败: ${id} - ${error.message}`);
             throw error;
