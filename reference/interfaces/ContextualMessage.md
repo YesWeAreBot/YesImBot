@@ -6,7 +6,7 @@
 
 # Interface: ContextualMessage
 
-Defined in: [packages/core/src/services/worldstate/types.ts:173](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L173)
+Defined in: [packages/core/src/services/worldstate/types.ts:173](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L173)
 
 代表在特定上下文中（如一个DialogueSegment里）的一条消息
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:173](https://github.
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:176](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L176)
+Defined in: [packages/core/src/services/worldstate/types.ts:176](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L176)
 
 消息内容
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:176](https://github.
 
 > `optional` **elements**: `Element`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:177](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L177)
+Defined in: [packages/core/src/services/worldstate/types.ts:177](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L177)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:177](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L174)
+Defined in: [packages/core/src/services/worldstate/types.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L174)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:174](https://github.
 
 > `optional` **quoteId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:181](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L181)
+Defined in: [packages/core/src/services/worldstate/types.ts:181](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L181)
 
 引用另一条消息的ID
 
@@ -52,7 +52,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:181](https://github.
 
 > **sender**: [`Sender`](Sender.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:182](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L182)
+Defined in: [packages/core/src/services/worldstate/types.ts:182](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L182)
 
 ***
 
@@ -60,6 +60,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:182](https://github.
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:179](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/worldstate/types.ts#L179)
+Defined in: [packages/core/src/services/worldstate/types.ts:179](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L179)
 
 消息发送的时间戳

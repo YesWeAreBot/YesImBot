@@ -8,7 +8,7 @@
 
 > **Extension**(`metadata`): `ClassDecorator`
 
-Defined in: [packages/core/src/services/extension/decorators.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/0406fd67880597b4fffddeb19651df15b210fb4d/packages/core/src/services/extension/decorators.ts#L14)
+Defined in: [packages/core/src/services/extension/decorators.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/extension/decorators.ts#L14)
 
 ## Parameters
 
