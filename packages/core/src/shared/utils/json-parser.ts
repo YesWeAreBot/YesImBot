@@ -79,7 +79,12 @@ export class JsonParser<T> {
             processedString = content.trim();
             this.log(`从代码块提取并修整后，待处理字符串长度: ${processedString.length}`);
         } else if (codeBlockStartIndex !== -1) {
-            this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取。");
+            const lastCodeBlockIndex = processedString.lastIndexOf("```");
+            if (lastCodeBlockIndex > codeBlockStartIndex) {
+                processedString = processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex).trim();
+                this.log(`从代码块提取后，待处理字符串长度: ${processedString.length}`);
+            }
+            //this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取。");
         }
 
         // 现在，无论 `processedString` 是来自代码块还是原始输入，
