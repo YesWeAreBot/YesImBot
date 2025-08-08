@@ -6,7 +6,7 @@
 
 # Interface: Sender
 
-Defined in: [packages/core/src/services/worldstate/types.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L161)
+Defined in: [packages/core/src/services/worldstate/types.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L161)
 
 发送者信息快照
 记录了消息发送时刻用户的关键信息
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:161](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:163](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L163)
+Defined in: [packages/core/src/services/worldstate/types.ts:163](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L163)
 
 用户的平台唯一ID (pid)
 
@@ -27,7 +27,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:163](https://github.
 
 > `optional` **name**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:165](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L165)
+Defined in: [packages/core/src/services/worldstate/types.ts:165](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L165)
 
 发送消息时用户的显示名称 (昵称)
 
@@ -37,6 +37,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:165](https://github.
 
 > `optional` **roles**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:167](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L167)
+Defined in: [packages/core/src/services/worldstate/types.ts:167](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L167)
 
 发送消息时用户的角色

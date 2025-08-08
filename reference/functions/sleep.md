@@ -8,7 +8,7 @@
 
 > **sleep**(`ms`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:181](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/shared/utils/toolkit.ts#L181)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:181](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/shared/utils/toolkit.ts#L181)
 
 异步等待指定的毫秒数。
 

@@ -6,7 +6,7 @@
 
 # Interface: IChatModel
 
-Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/chat-model.ts#L51)
+Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/chat-model.ts#L51)
 
 所有模型类的基类，封装了通用属性和方法。
 
@@ -20,7 +20,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:51](https://github.c
 
 > `readonly` **config**: [`ModelConfig`](ModelConfig.md)
 
-Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/base-model.ts#L10)
+Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/base-model.ts#L10)
 
 #### Inherited from
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.c
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/base-model.ts#L12)
+Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/base-model.ts#L12)
 
 #### Inherited from
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.c
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/base-model.ts#L9)
+Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/base-model.ts#L9)
 
 #### Inherited from
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.co
 
 > `protected` `readonly` **logger**: `__module`
 
-Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/base-model.ts#L11)
+Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/base-model.ts#L11)
 
 #### Inherited from
 
@@ -68,7 +68,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.c
 
 > **chat**(`options`, `abortSignal?`): `Promise`\<`GenerateTextResult`\>
 
-Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/chat-model.ts#L52)
+Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/chat-model.ts#L52)
 
 #### Parameters
 
@@ -90,7 +90,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:52](https://github.c
 
 > **isVisionModel**(): `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/model/chat-model.ts#L53)
+Defined in: [packages/core/src/services/model/chat-model.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/model/chat-model.ts#L53)
 
 #### Returns
 

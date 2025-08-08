@@ -6,7 +6,7 @@
 
 # Interface: History
 
-Defined in: [packages/core/src/services/worldstate/types.ts:150](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L150)
+Defined in: [packages/core/src/services/worldstate/types.ts:150](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L150)
 
 频道的历史记录流
 pending: 包含新的、未处理的消息
@@ -20,7 +20,7 @@ summarized: 包含已总结的消息
 
 > `optional` **closed**: [`ClosedDialogueSegment`](ClosedDialogueSegment.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:152](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L152)
+Defined in: [packages/core/src/services/worldstate/types.ts:152](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L152)
 
 ***
 
@@ -28,7 +28,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:152](https://github.
 
 > `optional` **folded**: [`FoldedDialogueSegment`](FoldedDialogueSegment.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L153)
+Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L153)
 
 ***
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.
 
 > **pending**: [`PendingDialogueSegment`](PendingDialogueSegment.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:151](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L151)
+Defined in: [packages/core/src/services/worldstate/types.ts:151](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L151)
 
 ***
 
@@ -44,4 +44,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:151](https://github.
 
 > `optional` **summarized**: [`SummarizedDialogueSegment`](SummarizedDialogueSegment.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L154)
+Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L154)

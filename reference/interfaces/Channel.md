@@ -6,7 +6,7 @@
 
 # Interface: Channel
 
-Defined in: [packages/core/src/services/worldstate/types.ts:120](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L120)
+Defined in: [packages/core/src/services/worldstate/types.ts:120](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L120)
 
 代表一个通信频道，可以是群组中的一个子频道，也可以是私聊
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:120](https://github.
 
 > **history**: [`History`](History.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:140](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L140)
+Defined in: [packages/core/src/services/worldstate/types.ts:140](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L140)
 
 频道的历史记录流
 这是一个包含对话片段 (DialogueSegment) 的有序数组，
@@ -28,7 +28,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:140](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:122](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L122)
+Defined in: [packages/core/src/services/worldstate/types.ts:122](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L122)
 
 频道ID在私聊中，这通常是与对方用户的ID关联的标识
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:122](https://github.
 
 > `optional` **members**: [`GuildMember`](GuildMember.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L134)
+Defined in: [packages/core/src/services/worldstate/types.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L134)
 
 最近活跃的成员列表
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:134](https://github.
 
 > **meta**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:130](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L130)
+Defined in: [packages/core/src/services/worldstate/types.ts:130](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L130)
 
 扩展元信息
 
@@ -62,7 +62,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:130](https://github.
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:124](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L124)
+Defined in: [packages/core/src/services/worldstate/types.ts:124](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L124)
 
 频道名称群聊时为群名，私聊时可格式化为 "与 <用户名> 的私聊"
 
@@ -72,7 +72,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:124](https://github.
 
 > **platform**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:128](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L128)
+Defined in: [packages/core/src/services/worldstate/types.ts:128](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L128)
 
 所属平台名称 (如 'onebot', 'discord')
 
@@ -82,6 +82,6 @@ Defined in: [packages/core/src/services/worldstate/types.ts:128](https://github.
 
 > **type**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:126](https://github.com/YesWeAreBot/YesImBot/blob/a26b18d5f86d4c4e605876da40856dbd27bd5323/packages/core/src/services/worldstate/types.ts#L126)
+Defined in: [packages/core/src/services/worldstate/types.ts:126](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/types.ts#L126)
 
 频道类型：'guild' (群组频道) 或 'private' (私聊)
