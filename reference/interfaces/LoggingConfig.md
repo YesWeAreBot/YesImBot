@@ -6,7 +6,7 @@
 
 # Interface: LoggingConfig
 
-Defined in: [packages/core/src/services/logger/index.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/logger/index.ts#L19)
+Defined in: [packages/core/src/services/logger/index.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/logger/index.ts#L19)
 
 ## Properties
 
@@ -14,4 +14,4 @@ Defined in: [packages/core/src/services/logger/index.ts:19](https://github.com/Y
 
 > **level**: [`LogLevel`](../enumerations/LogLevel.md)
 
-Defined in: [packages/core/src/services/logger/index.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/logger/index.ts#L20)
+Defined in: [packages/core/src/services/logger/index.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/logger/index.ts#L20)

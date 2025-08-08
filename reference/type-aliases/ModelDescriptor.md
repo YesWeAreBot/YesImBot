@@ -8,7 +8,7 @@
 
 > **ModelDescriptor** = `object`
 
-Defined in: [packages/core/src/services/model/config.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/model/config.ts#L66)
+Defined in: [packages/core/src/services/model/config.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L66)
 
 描述一个模型在特定提供商中的位置
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/model/config.ts:66](https://github.com/Y
 
 > **modelId**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/model/config.ts#L68)
+Defined in: [packages/core/src/services/model/config.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L68)
 
 ***
 
@@ -26,4 +26,4 @@ Defined in: [packages/core/src/services/model/config.ts:68](https://github.com/Y
 
 > **providerName**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/model/config.ts#L67)
+Defined in: [packages/core/src/services/model/config.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L67)

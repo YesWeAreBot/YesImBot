@@ -8,7 +8,7 @@
 
 > **extractMetaFromSchema**(`schema`): [`Properties`](../type-aliases/Properties.md)
 
-Defined in: [packages/core/src/services/extension/helpers.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/extension/helpers.ts#L41)
+Defined in: [packages/core/src/services/extension/helpers.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/extension/helpers.ts#L41)
 
 从 Koishi Schema 中提取元信息。
 

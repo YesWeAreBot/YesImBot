@@ -8,7 +8,7 @@
 
 > **trimStart**(`text`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:105](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/shared/utils/string.ts#L105)
+Defined in: [packages/core/src/shared/utils/string.ts:105](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/shared/utils/string.ts#L105)
 
 移除字符串开头的空白字符。
 
