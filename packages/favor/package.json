@@ -1,7 +1,7 @@
 {
-  "name": "koishi-plugin-yesimbot-extension-favor",
+  "name": "@yesimbot/koishi-plugin-favor",
   "description": "Yes! I'm Bot! 好感度插件",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/HydroGest/YesImBot",
