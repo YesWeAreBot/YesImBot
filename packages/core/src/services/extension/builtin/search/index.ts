@@ -2,19 +2,8 @@ import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorat
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { isEmpty } from "@/shared";
-import { Readability } from "@mozilla/readability";
-import * as cheerio from "cheerio";
-import { JSDOM } from "jsdom";
 import { Context, Schema } from "koishi";
-
-// 声明 puppeteer 类型 - 修复为正确的 page() 方法
-declare module "koishi" {
-  interface Context {
-    puppeteer?: {
-      page: () => Promise<any>;
-    };
-  }
-}
+import {} from "koishi-plugin-puppeteer";
 
 interface SearchConfig {
     endpoint: string;
@@ -29,31 +18,15 @@ interface SearchConfig {
 }
 
 const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
-    endpoint: Schema.string()
-        .default("https://search.yesimbot.chat/search")
-        .role("link")
-        .description("搜索服务的 API Endpoint"),
+    endpoint: Schema.string().default("https://search.yesimbot.chat/search").role("link").description("搜索服务的 API Endpoint"),
     limit: Schema.number().default(5).description("默认搜索结果数量"),
-    sources: Schema.array(Schema.string())
-        .default(["baidu", "github", "bing", "presearch"])
-        .role("table")
-        .description("默认搜索源"),
+    sources: Schema.array(Schema.string()).default(["baidu", "github", "bing", "presearch"]).role("table").description("默认搜索源"),
     format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
-    customUA: Schema.string()
-        .default("YesImBot/1.0.0 (Web Fetcher Tool)")
-        .description("自定义User-Agent字符串，用于网页请求"),
-    usePuppeteer: Schema.boolean()
-        .default(false)
-        .description("是否使用无头浏览器获取动态网页(需要安装puppeteer服务)"),
-    httpTimeout: Schema.number()
-        .default(10000)
-        .description("HTTP请求超时时间(毫秒)"),
-    puppeteerTimeout: Schema.number()
-        .default(30000)
-        .description("Puppeteer无头浏览器超时时间(毫秒)"),
-    puppeteerWaitTime: Schema.number()
-        .default(2000)
-        .description("Puppeteer加载后等待时间(毫秒)")
+    customUA: Schema.string().default("YesImBot/1.0.0 (Web Fetcher Tool)").description("自定义User-Agent字符串，用于网页请求"),
+    usePuppeteer: Schema.boolean().default(false).description("是否使用无头浏览器获取动态网页(需要安装puppeteer服务)"),
+    httpTimeout: Schema.number().default(10000).description("HTTP请求超时时间(毫秒)"),
+    puppeteerTimeout: Schema.number().default(30000).description("Puppeteer无头浏览器超时时间(毫秒)"),
+    puppeteerWaitTime: Schema.number().default(2000).description("Puppeteer加载后等待时间(毫秒)"),
 });
 
 @Extension({
@@ -67,10 +40,13 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
 export default class SearchExtension {
     public static readonly Config = SearchConfigSchema;
 
-    constructor(public ctx: Context, public config: SearchConfig) {
+    constructor(
+        public ctx: Context,
+        public config: SearchConfig
+    ) {
         // 检查Puppeteer服务是否可用
         if (config.usePuppeteer && !ctx.puppeteer) {
-            ctx.logger.warn('配置要求使用Puppeteer，但Puppeteer服务未安装。请安装puppeteer插件。');
+            ctx.logger.warn("配置要求使用Puppeteer，但Puppeteer服务未安装。请安装puppeteer插件。");
         }
     }
 
@@ -84,15 +60,11 @@ export default class SearchExtension {
     fetch_webpage("https://example.com", "text")`,
         parameters: withInnerThoughts({
             url: Schema.string().required().description("要获取的网页URL"),
-            format: Schema.union(["html", "text"])
-                .default("text")
-                .description("返回格式：html(原始HTML) 或 text(纯文本)"),
+            format: Schema.union(["html", "text"]).default("text").description("返回格式：html(原始HTML) 或 text(纯文本)"),
             max_length: Schema.number().default(5000).description("返回内容的最大长度，默认5000字符"),
             include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),
             max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
-            use_dynamic: Schema.boolean()
-                .default(false)
-                .description("是否强制使用无头浏览器获取动态内容")
+            use_dynamic: Schema.boolean().default(false).description("是否强制使用无头浏览器获取动态内容"),
         }),
     })
     async fetchWebPage(
@@ -107,51 +79,33 @@ export default class SearchExtension {
     ) {
         const { url, format, max_length, include_links, max_links, use_dynamic } = args;
         if (isEmpty(url)) return Failed("url is required");
+        if (!this.ctx.puppeteer) {
+            return Failed("Puppeteer服务未安装或不可用，无法获取网页内容。");
+        }
 
         try {
             // 验证URL格式
             const urlObj = new URL(url);
-            // 修复点1: 添加条件表达式
             if (!["http:", "https:"].includes(urlObj.protocol)) {
                 return Failed("只支持HTTP和HTTPS协议");
             }
 
             this.ctx.logger.info(`Bot正在获取网页: ${url}`);
 
-            let rawContent: string;
-            let title: string;
-            let links: Array<{ url: string; text: string }> = [];
+            // 决定是否使用动态加载模式
+            const useDynamicLoading = use_dynamic || this.config.usePuppeteer;
 
-            // 决定是否使用无头浏览器
-            const usePuppeteer = (use_dynamic || this.config.usePuppeteer) && this.ctx.puppeteer;
-
-            if (usePuppeteer) {
-                // 使用无头浏览器获取动态内容
-                const result = await this._fetchWithPuppeteer(url);
-                rawContent = result.content;
-                title = result.title;
-                links = result.links;
-                this.ctx.logger.info(`使用无头浏览器成功获取动态网页内容`);
-            } else {
-                // 使用HTTP请求获取静态内容
-                rawContent = await this.ctx.http.get(url, {
-                    headers: {
-                        "User-Agent": this.config.customUA,
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    },
-                    timeout: this.config.httpTimeout,
-                    responseType: 'text'
-                });
-                title = extractTitle(rawContent);
-                links = include_links ? extractLinks(rawContent, url, max_links) : [];
-                this.ctx.logger.info(`通过HTTP获取网页成功`);
-            }
-
-            // 提取主要内容（使用Readability算法）
-            const { content, textContent } = this.extractMainContent(rawContent, url);
+            // 使用统一的Puppeteer方法获取和解析内容
+            const { title, content, textContent, links } = await this._fetchAndExtractWithPuppeteer(
+                url,
+                useDynamicLoading,
+                include_links ? max_links : 0
+            );
 
             let resultContent = format === "text" ? textContent : content;
+            if (!resultContent) {
+                return Failed("无法提取网页主要内容。");
+            }
 
             // 限制返回内容长度
             if (resultContent.length > max_length) {
@@ -170,15 +124,13 @@ export default class SearchExtension {
             }
 
             this.ctx.logger.info(`Bot成功获取网页内容，长度: ${resultContent.length}, 链接数: ${links.length}`);
-
             return Success(result);
         } catch (error: any) {
             this.ctx.logger.error(`Bot获取网页失败: ${url} - `, error.message);
-
             if (error.name === "TimeoutError" || error.message.includes("timeout")) {
-                return Failed("请求超时，网页响应时间过长");
-            } else if (error.name === "TypeError" && error.message.includes("http")) {
-                return Failed("网络连接失败，请检查URL是否正确");
+                return Failed("请求超时，网页响应时间过长或无法加载");
+            } else if (error.message.includes("net::ERR_")) {
+                return Failed(`网络连接失败: ${error.message}`);
             } else if (error.response?.status) {
                 return Failed(`HTTP错误: ${error.response.status} ${error.response.statusText}`);
             } else {
@@ -188,147 +140,110 @@ export default class SearchExtension {
     }
 
     /**
-     * 使用Puppeteer获取动态网页内容 - 修复了API调用方式
-     * @param url 网页URL
-     * @returns 包含内容、标题和链接的对象
+     * 使用 Puppeteer 获取并提取网页内容
+     * @param url 要获取的网页URL
+     * @param isDynamic 是否使用动态加载模式 (page.goto) 或静态加载模式 (http.get + page.setContent)
+     * @param maxLinks 要提取的最大链接数，为0则不提取
+     * @returns 包含标题、HTML内容、纯文本和链接的对象
      */
-    private async _fetchWithPuppeteer(url: string): Promise<{
-        content: string;
-        title: string;
-        links: Array<{ url: string; text: string }>
-    }> {
+    private async _fetchAndExtractWithPuppeteer(url: string, isDynamic: boolean, maxLinks: number) {
         if (!this.ctx.puppeteer) {
             throw new Error("Puppeteer服务不可用");
         }
 
-        // 使用正确的API获取页面实例
         const page = await this.ctx.puppeteer.page();
-
         try {
-            // 设置浏览器参数
             await page.setUserAgent(this.config.customUA);
             await page.setViewport({ width: 1280, height: 800 });
-
-            // 设置请求超时
             await page.setDefaultNavigationTimeout(this.config.puppeteerTimeout);
 
-            // 导航到页面
-            const response = await page.goto(url, {
-                waitUntil: 'networkidle2',
-                timeout: this.config.puppeteerTimeout
-            });
-
-            if (!response || !response.ok()) {
-                throw new Error(`页面加载失败: ${response?.status()}`);
+            if (isDynamic) {
+                this.ctx.logger.info(`使用动态模式加载: ${url}`);
+                const response = await page.goto(url, {
+                    waitUntil: "networkidle2",
+                    timeout: this.config.puppeteerTimeout,
+                });
+                if (!response || !response.ok()) {
+                    throw new Error(`页面加载失败: ${response?.status()} ${response?.statusText()}`);
+                }
+                if (this.config.puppeteerWaitTime > 0) {
+                    await new Promise((resolve) => setTimeout(resolve, this.config.puppeteerWaitTime));
+                }
+            } else {
+                this.ctx.logger.info(`使用静态模式加载: ${url}`);
+                const html = await this.ctx.http.get(url, {
+                    headers: { "User-Agent": this.config.customUA },
+                    timeout: this.config.httpTimeout,
+                    responseType: "text",
+                });
+                // 使用 setContent 将静态HTML加载到Puppeteer中进行解析
+                await page.setContent(html, {
+                    waitUntil: "domcontentloaded",
+                    timeout: this.config.puppeteerTimeout,
+                });
             }
 
-            // 额外等待时间，确保动态内容加载完成
-            if (this.config.puppeteerWaitTime > 0) {
-                await page.waitForTimeout(this.config.puppeteerWaitTime);
-            }
+            // 在浏览器上下文中执行所有提取操作
+            const extractedData = await page.evaluate((maxLinks) => {
+                // 1. 提取主要内容 (替代 Readability 和 Cheerio)
+                const contentSelectors = [
+                    "article",
+                    "main",
+                    ".main-content",
+                    ".post-content",
+                    ".entry-content",
+                    "#article",
+                    "#content",
+                    "#main",
+                    "#root",
+                    ".content",
+                    ".post",
+                    ".story",
+                ];
+                let mainElement: HTMLElement | null = null;
+                for (const selector of contentSelectors) {
+                    mainElement = document.querySelector(selector);
+                    if (mainElement) break;
+                }
+                // 回退到 body
+                if (!mainElement) {
+                    mainElement = document.body;
+                }
 
-            // 获取页面内容
-            const content = await page.content();
-            const title = await page.title();
+                // 移除脚本和样式，净化内容
+                mainElement.querySelectorAll("script, style, noscript, iframe, footer, header, nav").forEach((el) => el.remove());
 
-            // 提取链接
-            const links = await page.evaluate(() => {
-                const anchors = Array.from(document.querySelectorAll('a'));
-                return anchors.map(a => ({
-                    url: a.href,
-                    text: a.textContent?.trim() || ''
-                }));
-            });
+                const content = mainElement.innerHTML;
+                // 使用 innerText 获取格式化的纯文本，比正则替换更可靠
+                const textContent = mainElement.innerText.replace(/\s{2,}/g, "\n").trim();
 
-            return { content, title, links };
+                // 2. 提取链接
+                let links: Array<{ url: string; text: string }> = [];
+                if (maxLinks > 0) {
+                    const anchorElements = Array.from(document.querySelectorAll("a"));
+                    for (const a of anchorElements) {
+                        if (links.length >= maxLinks) break;
+                        const href = a.href;
+                        // 过滤无效或非HTTP链接
+                        if (href && href.startsWith("http") && !links.some((l) => l.url === href)) {
+                            links.push({
+                                url: href,
+                                text: a.textContent?.trim() || "",
+                            });
+                        }
+                    }
+                }
+
+                // 3. 提取标题
+                const title = document.title || "未找到标题";
+
+                return { title, content, textContent, links };
+            }, maxLinks); // 将 maxLinks 传递给 evaluate 函数
+
+            return extractedData;
         } finally {
-            // 确保页面被关闭
-            await page.close().catch(e =>
-                this.ctx.logger.warn(`关闭Puppeteer页面失败: ${e.message}`));
+            await page.close().catch((e) => this.ctx.logger.warn(`关闭Puppeteer页面时出错: ${e.message}`));
         }
-    }
-
-    /**
-     * 使用Readability算法提取网页主要内容
-     * @param html 网页HTML内容
-     * @param url 网页URL
-     * @returns 包含HTML内容和纯文本内容的对象
-     */
-    private extractMainContent(html: string, url: string): { content: string; textContent: string } {
-        try {
-            // 创建DOM环境
-            const dom = new JSDOM(html, { url });
-            const document = dom.window.document;
-
-            // 使用Readability提取主要内容
-            const reader = new Readability(document);
-            const article = reader.parse();
-
-            if (article) {
-                return {
-                    content: article.content,
-                    textContent: article.textContent
-                };
-            }
-        } catch (error) {
-            this.ctx.logger.warn(`使用Readability提取内容失败: ${error.message}`);
-        }
-
-        // 如果Readability失败，使用回退方法
-        return this.extractMainContentFallback(html);
-    }
-
-    /**
-     * 回退方法：使用cheerio提取主要内容
-     * @param html 网页HTML内容
-     * @returns 包含HTML内容和纯文本内容的对象
-     */
-    private extractMainContentFallback(html: string): { content: string; textContent: string } {
-        const $ = cheerio.load(html);
-
-        // 尝试提取常见的内容容器
-        const contentContainers = [
-            'article', '.article', '#article',
-            '.content', '#content', '.main', '#main',
-            '.post', '.entry-content', '.story-content'
-        ];
-
-        let contentElement = null;
-
-        for (const selector of contentContainers) {
-            contentElement = $(selector).first();
-            if (contentElement.length > 0) break;
-        }
-
-        // 如果没有找到特定容器，使用整个body
-        if (!contentElement || contentElement.length === 0) {
-            contentElement = $('body');
-        }
-
-        const content = contentElement.html() || html;
-        const textContent = this.convertHtmlToText(content);
-
-        return { content, textContent };
-    }
-
-    /**
-     * 将HTML转换为纯文本
-     * @param html HTML内容
-     * @returns 极速版纯文本内容
-     */
-    private convertHtmlToText(html: string): string {
-        return html
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-            .replace(/<[^>]+>/g, "")
-            .replace(/&nbsp;/g, " ")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&amp;/g, "&")
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/\s+/g, " ")
-            .trim();
     }
 
     @Tool({
@@ -357,12 +272,12 @@ export default class SearchExtension {
                 headers: {
                     "User-Agent": this.config.customUA,
                 },
-                responseType: 'json',
-                timeout: this.config.httpTimeout
+                responseType: "json",
+                timeout: this.config.httpTimeout,
             });
 
             // 处理响应
-            const data = typeof response === 'string' ? JSON.parse(response) : response;
+            const data = typeof response === "string" ? JSON.parse(response) : response;
 
             // 格式化搜索结果
             if (!data.results || data.results.length === 0) {
@@ -375,7 +290,7 @@ export default class SearchExtension {
             // 显示前N个结果
             const topResults = data.results.slice(0, limit);
             topResults.forEach((result: any, index: number) => {
-                resultText += `${index + 1}. **${result.title || '(无标题)'}**\n`;
+                resultText += `${index + 1}. **${result.title || "(无标题)"}**\n`;
                 resultText += `   链接: ${result.url}\n`;
 
                 if (result.content) {
@@ -394,8 +309,8 @@ export default class SearchExtension {
             this.ctx.logger.info(`返回搜索结果: ${topResults.length}项`);
 
             // 如果启用了Puppeteer，添加提示信息
-            if (this.config.usePuppeteer) {
-                resultText += `\n提示：搜索结果中的动态网页可以使用 <fetch_webpage> 工具配合 use_dynamic=true 参数获取完整内容`;
+            if (this.ctx.puppeteer) {
+                resultText += `\n提示：你可以使用 <fetch_webpage> 工具获取链接的详细内容。对于动态网页，请使用 use_dynamic=true 参数。`;
             }
 
             return Success(resultText);
@@ -404,64 +319,4 @@ export default class SearchExtension {
             return Failed(`搜索过程中发生错误: ${error.message}`);
         }
     }
-}
-
-// 辅助函数：提取网页标题
-function extractTitle(html: string): string {
-    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (titleMatch && titleMatch[1]) {
-        return titleMatch[1]
-            .replace(/\n/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-    return "未找到标题";
-}
-
-// 辅助函数：提取网页中的链接
-function extractLinks(html: string, baseUrl: string, maxLinks: number = 10): Array<{ url: string; text: string }> {
-    const links: Array<{ url: string; text: string }> = [];
-    const linkRegex = /<a\s+[^>]*href\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
-    const baseUrlObj = new URL(baseUrl);
-
-    let match;
-    while ((match = linkRegex.exec(html)) !== null && links.length < maxLinks) {
-        try {
-            let linkUrl = match[1].trim();
-            let linkText = match[2]
-                .replace(/<[^>]+>/g, "")
-                .replace(/\s+/g, " ")
-                .trim();
-
-            // 处理相对链接
-            if (linkUrl.startsWith("//")) {
-                linkUrl = baseUrlObj.protocol + linkUrl;
-            } else if (linkUrl.startsWith("/")) {
-                linkUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${linkUrl}`;
-            } else if (!linkUrl.startsWith("http")) {
-                if (linkUrl.includes(":") && !linkUrl.startsWith("http")) {
-                    continue;
-                }
-                linkUrl = new URL(linkUrl, baseUrl).href;
-            }
-
-            // 修复点2: 添加条件表达式
-            const urlObj = new URL(linkUrl);
-            if (!["http:", "https:"].includes(urlObj.protocol)) {
-                continue;
-            }
-
-            // 避免重复链接
-            if (!links.some((link) => link.url === linkUrl)) {
-                links.push({
-                    url: linkUrl,
-                    text: linkText || "(无标题)",
-                });
-            }
-        } catch (error) {
-            continue;
-        }
-    }
-
-    return links;
 }
