@@ -6,7 +6,7 @@
 
 # Interface: ConversationChunk
 
-Defined in: [packages/core/src/services/memory/types.ts:218](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/memory/types.ts#L218)
+Defined in: [packages/core/src/services/memory/types.ts:218](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/memory/types.ts#L218)
 
 对话块结构 - 用于事实提取的输入格式
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/types.ts:218](https://github.com/
 
 > **messages**: `object`[]
 
-Defined in: [packages/core/src/services/memory/types.ts:219](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/memory/types.ts#L219)
+Defined in: [packages/core/src/services/memory/types.ts:219](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/memory/types.ts#L219)
 
 #### author
 

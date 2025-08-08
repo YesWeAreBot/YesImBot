@@ -8,4 +8,4 @@
 
 > `const` **PromptServiceConfigSchema**: `Schema`\<[`PromptServiceConfig`](../interfaces/PromptServiceConfig.md)\>
 
-Defined in: [packages/core/src/services/prompt/config.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/prompt/config.ts#L19)
+Defined in: [packages/core/src/services/prompt/config.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/prompt/config.ts#L19)

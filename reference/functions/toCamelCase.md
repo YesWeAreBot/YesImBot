@@ -8,7 +8,7 @@
 
 > **toCamelCase**(`str`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:164](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/shared/utils/string.ts#L164)
+Defined in: [packages/core/src/shared/utils/string.ts:164](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/shared/utils/string.ts#L164)
 
 将字符串转换为驼峰命名（camelCase）。
 

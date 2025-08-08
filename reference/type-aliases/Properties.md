@@ -8,4 +8,4 @@
 
 > **Properties** = `Record`\<`string`, [`Param`](../interfaces/Param.md)\>
 
-Defined in: [packages/core/src/services/extension/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/extension/types.ts#L18)
+Defined in: [packages/core/src/services/extension/types.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/extension/types.ts#L18)

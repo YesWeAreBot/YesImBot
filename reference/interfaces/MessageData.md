@@ -6,7 +6,7 @@
 
 # Interface: MessageData
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L44)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L44)
 
 `worldstate.messages` 表的数据结构
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:44](https:
 
 > **channelId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L48)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L48)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:48](https:
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L55)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L55)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:55](https:
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L45)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L45)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:45](https:
 
 > **platform**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L46)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L46)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:46](https:
 
 > `optional` **quoteId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L56)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L56)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:56](https:
 
 > **sender**: `object`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L49)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L49)
 
 #### id
 
@@ -76,7 +76,7 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:49](https:
 
 > **sid**: `string`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L47)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L47)
 
 ***
 
@@ -84,4 +84,4 @@ Defined in: [packages/core/src/services/worldstate/database-models.ts:47](https:
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/database-models.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/1cc026757645693fc4276f09bfc024895000403c/packages/core/src/services/worldstate/database-models.ts#L54)
+Defined in: [packages/core/src/services/worldstate/database-models.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/7b7acd55a9bfcec9fd75f63923a86bde615e8683/packages/core/src/services/worldstate/database-models.ts#L54)
