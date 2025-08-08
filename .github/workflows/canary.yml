@@ -1,0 +1,39 @@
+name: "Canary Release"
+
+on:
+  push:
+    branches:
+      - "dev"
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  publish-canary:
+    name: Publish Canary Version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build All Packages
+        run: bun turbo run build
+
+      - name: Create Canary Version
+        run: bun changeset version --snapshot canary
+
+      - name: Publish to NPM
+        run: bun changeset publish --tag canary
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -24,7 +24,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.0
+          bun-version: latest
 
       - name: Configure Git for Changesets
         run: |
@@ -50,7 +50,7 @@ jobs:
         run: bun test
         env:
           API_KEY_SILICON: ${{ secrets.API_KEY_SILICON }}
-        continue-on-error: true  # 关键修改：即使测试失败也继续执行
+        continue-on-error: true # 关键修改：即使测试失败也继续执行
 
       - name: Version packages and create tarballs
         id: package
