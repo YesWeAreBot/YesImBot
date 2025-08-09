@@ -2,7 +2,8 @@ import { Context, Service, Session } from "koishi";
 
 import { ChatModelSwitcher, ModelService, TaskType } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
-import { AgentStimulus, WorldStateService } from "@/services/worldstate";
+import { AgentStimulus } from "@/services/worldstate";
+import { WorldStateService } from "@/services/worldstate/index";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorCodes, handleError } from "@/shared/errors";
 import { AgentBehaviorConfig } from "./config";

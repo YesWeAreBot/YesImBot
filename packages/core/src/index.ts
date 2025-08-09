@@ -44,17 +44,10 @@ export default class YesImBot extends Service<Config> {
             // 注册记忆管理层
             const memoryService = ctx.plugin(MemoryService, { ...config.capabilities.memory, system: config.system });
 
-            // 转换 allowedChannelGroups 为 Set
-            const allowedChannels: Set<string> = new Set();
-
-            for (const channel of config.agentBehavior.arousal.allowedChannels) {
-                allowedChannels.add(`${channel.platform}:${channel.id}`);
-            }
-
             // 注册 WorldState 服务
             const worldStateService = ctx.plugin(WorldStateService, {
                 ...config.capabilities.history,
-                allowedChannels,
+                allowedChannels: config.agentBehavior.arousal.allowedChannels,
                 system: config.system,
             });
 

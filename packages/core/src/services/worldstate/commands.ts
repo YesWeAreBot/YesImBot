@@ -1,21 +1,22 @@
-import { Services, TableName } from "@/shared/constants";
 import { Context, Logger, Query } from "koishi";
+
+import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
-import { DialogueSegmentData } from "./database-models";
-import { WorldStateService } from "./world-state-service";
+import { WorldStateService } from "./index";
+import { InteractionData } from "./types";
 
 // =================================================================================
 // #region HistoryCommandManager - 负责所有CLI指令
 // =================================================================================
 export class HistoryCommandManager {
-    private _logger: Logger;
+    private logger: Logger;
 
     constructor(
         private ctx: Context,
         private service: WorldStateService,
         private config: HistoryConfig
     ) {
-        this._logger = ctx[Services.Logger].getLogger("[世界状态.指令]");
+        this.logger = ctx[Services.Logger].getLogger("[世界状态.指令]");
     }
 
     public register(): void {
@@ -42,8 +43,8 @@ export class HistoryCommandManager {
 
                 if (channelId) {
                     if (!platform) {
-                        const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, ["platform"]);
-                        const platforms = [...new Set(dialogues.map((d) => d.platform))];
+                        const interactions = await this.ctx.database.get(TableName.Interactions, { channelId }, { fields: ["platform"] });
+                        const platforms = [...new Set(interactions.map((d) => d.platform))];
 
                         if (platforms.length === 0) return `🟡🟡🟡 频道 "${channelId}" 未找到任何历史记录，已跳过`;
                         if (platforms.length === 1) platform = platforms[0];
@@ -51,30 +52,19 @@ export class HistoryCommandManager {
                             /* prettier-ignore */
                             return `❌❌ 频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}请使用 -p <platform> 来指定`;
                     }
+
+                    const interactions = await this.ctx.database.get(TableName.Interactions, {
+                        platform,
+                        channelId,
+                    });
+                    const allMessages = await this.ctx.database.get(TableName.Messages, {
+                        interactionId: { $in: interactions.map((i) => i.id) },
+                    });
+
+                    /* prettier-ignore */
+                    return `在 ${platform}:${channelId} 中有 ${allMessages.length} 条消息${allMessages.length > this.config.l1_memory.maxMessages ? `，L1工作记忆中最多保留 ${this.config.l1_memory.maxMessages} 条` : ""}`;
                 }
-
-                const segments = await this.ctx.database.get(TableName.DialogueSegments, {
-                    platform,
-                    channelId,
-                    status: { $ne: "archived" },
-                });
-                const allMessages = await this.ctx.database.get(TableName.Messages, {
-                    sid: { $in: segments.map((s) => s.id) },
-                });
-
-                /* prettier-ignore */
-                return `在 ${platform}:${channelId} 中有 ${allMessages.length} 条待处理的消息${allMessages.length > this.config.maxMessages ? `，实际激活 ${this.config.maxMessages} 条` : ""}`;
             });
-
-        historyCmd.subcommand(".summarize", "手动触发当前频道的历史记录总结").action(async ({ session }) => {
-            try {
-                await this.service.summarizationManager.summarizeAndArchive(session.platform, session.channelId);
-                return "✅ 手动总结任务已触发并完成";
-            } catch (error) {
-                this._logger.error(error, `[指令] 手动总结任务失败 | 频道: ${session.cid}`);
-                return "❌❌ 总结任务失败，请检查日志";
-            }
-        });
 
         historyCmd
             .subcommand(".clear", "清除指定频道的历史记录", { authority: 3 })
@@ -105,40 +95,43 @@ export class HistoryCommandManager {
                 const results: string[] = [];
 
                 // 优化后的核心操作函数
-                const performClear = async (query: Query<Partial<DialogueSegmentData>>, description: string) => {
+                const performClear = async (query: Query<Partial<InteractionData>>, description: string) => {
                     try {
-                        const segmentCount = await this.ctx.database
-                            .get(TableName.DialogueSegments, query, { fields: ["id"] })
-                            .then((res) => res.length);
+                        const interactions = await this.ctx.database.get(TableName.Interactions, query, { fields: ["id"] });
+                        const interactionIds = interactions.map((i) => i.id);
 
-                        if (segmentCount === 0) {
+                        if (interactionIds.length === 0) {
                             results.push(`🟡 ${description} - 未找到匹配的历史记录`);
                             return;
                         }
 
                         if (isDelete) {
-                            // 使用事务确保操作的原子性
-                            await this.ctx.database.transact(async (db) => {
-                                // 1. 直接删除关联的消息
-                                const { removed: messagesRemoved } = await db.remove(TableName.Messages, query as any);
-
-                                // 2. 直接删除关联的事件 (依赖于第一步的模型修改)
-                                const { removed: eventsRemoved } = await db.remove(TableName.SystemEvents, query as any);
-
-                                // 3. 最后删除对话片段本身
-                                const { removed: segmentsRemoved } = await db.remove(TableName.DialogueSegments, query);
-
+                            await this.ctx.database.withTransaction(async (db) => {
+                                const { removed: messagesRemoved } = await db.remove(TableName.Messages, {
+                                    interactionId: { $in: interactionIds },
+                                });
+                                const { removed: eventsRemoved } = await db.remove(TableName.SystemEvents, {
+                                    interactionId: { $in: interactionIds },
+                                });
+                                const { removed: turnsRemoved } = await db.remove(TableName.AgentTurns, {
+                                    interactionId: { $in: interactionIds },
+                                });
+                                const { removed: interactionsRemoved } = await db.remove(TableName.Interactions, {
+                                    id: { $in: interactionIds },
+                                });
                                 /* prettier-ignore */
-                                results.push(`✅ ${description} - 操作成功，共${actionPastTense}了 ${segmentsRemoved} 条对话片段、${messagesRemoved} 条消息和 ${eventsRemoved} 条事件。`);
+                                results.push(`✅ ${description} - 操作成功，共${actionPastTense}了 ${interactionsRemoved} 个交互轮次及其关联的 ${messagesRemoved} 条消息, ${turnsRemoved} 个Agent回应和 ${eventsRemoved} 个系统事件。`);
                             });
                         } else {
-                            const writeResult = await this.ctx.database.set(
-                                TableName.DialogueSegments,
-                                { ...(query as any), status: { $ne: "archived" } },
-                                { status: "archived" }
+                            // "Archiving" now means ensuring the turn is 'processed' and old.
+                            // The system will naturally move it out of L1. A specific 'archived' status is not needed.
+                            const { modified } = await this.ctx.database.set(
+                                TableName.Interactions,
+                                { id: { $in: interactionIds }, status: "pending" },
+                                { status: "processed" }
                             );
                             /* prettier-ignore */
-                            results.push(`✅ ${description} - ${writeResult.modified || writeResult.matched || 0} 条对话片段已${actionPastTense}`);
+                            results.push(`✅ ${description} - ${modified} 个待处理的交互轮次已标记为完成，它们将随后被归档。`);
                         }
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
@@ -148,7 +141,7 @@ export class HistoryCommandManager {
 
                 if (options.all) {
                     if (options.all === undefined) return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
-                    let query: Query<DialogueSegmentData> = {};
+                    let query: Query<InteractionData> = {};
                     let description = "";
                     switch (options.all) {
                         case "private":
@@ -193,8 +186,12 @@ export class HistoryCommandManager {
                         if (options.platform) {
                             targetsToProcess.push({ platform: options.platform, channelId });
                         } else {
-                            const dialogues = await this.ctx.database.get(TableName.DialogueSegments, { channelId }, ["platform"]);
-                            const platforms = [...new Set(dialogues.map((d) => d.platform))];
+                            const interactions = await this.ctx.database.get(
+                                TableName.Interactions,
+                                { channelId },
+                                { fields: ["platform"] }
+                            );
+                            const platforms = [...new Set(interactions.map((d) => d.platform))];
                             if (platforms.length === 0) results.push(`🟡 频道 "${channelId}" 未找到`);
                             else if (platforms.length === 1) targetsToProcess.push({ platform: platforms[0], channelId });
                             else ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}`);

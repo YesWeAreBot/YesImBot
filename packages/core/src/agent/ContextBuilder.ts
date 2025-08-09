@@ -6,7 +6,7 @@ import { AssetService } from "@/services/assets";
 import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
-import { AgentStimulus, PromptContext, WorldState, WorldStateService } from "@/services/worldstate";
+import { AgentStimulus, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
 import { AgentBehaviorConfig } from "./config";
 
 interface ImageCandidate {
@@ -42,18 +42,31 @@ export class PromptContextBuilder {
     /**
      * 构建完整的上下文对象，用于渲染提示词模板。
      */
-    public async build(stimulus: AgentStimulus<any>, previousResponses: any[]): Promise<PromptContext> {
-        const { worldState, triggerContext } = await this.worldStateService.buildContextForStimulus(stimulus);
+    public async build(stimulus: AgentStimulus<any>) {
+        const { type, session, payload } = stimulus;
+        const worldState = await this.worldStateService.buildContext(session.platform, session.channelId);
+
+        let triggerContext: object = {};
+        switch (type) {
+            case "user_message":
+                triggerContext = { isUserMessage: true, interactionId: (payload as UserMessagePayload).interactionId };
+                break;
+            case "system_event":
+                triggerContext = {
+                    isSystemEvent: true,
+                    event: payload,
+                };
+                break;
+            // Future cases for scheduled tasks, etc.
+        }
+        worldState.triggerContext = triggerContext;
 
         return {
-            triggerContext,
             toolSchemas: this.toolService.getToolSchemas(),
             memoryBlocks: await this.memoryService.getMemoryBlocksForRendering(),
             worldState: worldState,
-            previousResponses: previousResponses,
         };
     }
-
     /**
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
@@ -87,13 +100,9 @@ export class PromptContextBuilder {
         // ... 原来的 buildMultimodalContext 的全部逻辑 ...
 
         // 1. 将所有消息扁平化并建立索引
-        const allSegments = [
-            worldState.channel.history.pending,
-            ...(worldState.channel.history.closed || []),
-            ...(worldState.channel.history.folded ? [worldState.channel.history.folded] : []),
-        ].filter(Boolean); // 过滤掉可能为null的项
+        const allTurns = [worldState.l1_working_memory.pending_turn, ...worldState.l1_working_memory.processed_turns].filter(Boolean);
 
-        const allMessages = allSegments.flatMap((s) => s.dialogue);
+        const allMessages = allTurns.flatMap((t) => t.dialogue);
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
         const imageTags = ["img", "image"];

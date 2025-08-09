@@ -208,11 +208,11 @@ export class ConfiguratorService extends Service {
 
         // 3. 核心能力
         addLine("🛠️ **核心能力**");
-        const historyEnabled = config.capabilities?.history?.summarization.enabled;
-        addLine(`历史总结: ${historyEnabled ? "✅ 开启" : "❌ 关闭"}`, 1);
-        if (historyEnabled) {
-            addLine(`触发阈值: 每 ${config.capabilities.history.summarization.triggerCount} 段对话`, 2);
-        }
+        // const historyEnabled = config.capabilities?.history?.summarization.enabled;
+        // addLine(`历史总结: ${historyEnabled ? "✅ 开启" : "❌ 关闭"}`, 1);
+        // if (historyEnabled) {
+        //     addLine(`触发阈值: 每 ${config.capabilities.history.summarization.triggerCount} 段对话`, 2);
+        // }
         addLine(`核心记忆路径: ${config.capabilities?.memory?.coreMemoryPath || "(未设置)"}`, 1);
         addLine(`图片存储路径: ${config.assetService?.storagePath || "(未设置)"}`, 1);
 

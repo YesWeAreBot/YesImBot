@@ -9,10 +9,14 @@ export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");
  * 所有数据库表的名称
  */
 export enum TableName {
+    Interactions = "worldstate.interactions",
+    AgentTurns = "worldstate.agent_turns",
     Members = "worldstate.members",
-    DialogueSegments = "worldstate.dialogue_segments",
     Messages = "worldstate.messages",
     SystemEvents = "worldstate.system_events",
+    L2Chunks = "worldstate.l2_chunks",
+    L3Diaries = "worldstate.l3_diaries",
+
     Assets = "yesimbot.assets",
     Entities = "yesimbot.entities",
     Facts = "yesimbot.facts",

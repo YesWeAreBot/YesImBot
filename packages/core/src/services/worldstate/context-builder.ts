@@ -1,385 +1,155 @@
-import { ChannelDescriptor } from "@/agent";
-import { Services, TableName } from "@/shared/constants";
-import { formatDate } from "@/shared/utils";
-import { Bot, Context, Logger } from "koishi";
-import { HistoryConfig } from "./config";
-import { DialogueSegmentData, MessageData, SystemEventData } from "./database-models";
-import {
-    ClosedDialogueSegment,
-    ContextualMessage,
-    FoldedDialogueSegment,
-    GuildMember,
-    History,
-    PendingDialogueSegment,
-    SummarizedDialogueSegment,
-    WorldState,
-} from "./types";
-import { UserRecallManager } from "./user-recall-manager";
+import { Channel, Context, Logger } from "koishi";
 
-// =================================================================================
-// #region 主类：ContextBuilder
-// =================================================================================
+import { Services, TableName } from "@/shared/constants";
+import { HistoryConfig } from "./config";
+import { SemanticMemoryManager } from "./l2-semantic-memory";
+import { ArchivalMemoryManager } from "./l3-archival-memory";
+import { DiaryEntryData, InteractionData, InteractionTurn, RetrievedMemoryChunk, WorldState } from "./types";
 
 export class ContextBuilder {
     private logger: Logger;
 
-    private dataProvider: ContextDataProvider;
-    private recallManager: UserRecallManager;
-
     constructor(
         private ctx: Context,
-        private config: HistoryConfig
+        private config: HistoryConfig,
+        private l2Manager: SemanticMemoryManager,
+        private l3Manager: ArchivalMemoryManager
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[上下文构建]");
-
-        // 初始化辅助工具
-
-        this.dataProvider = new ContextDataProvider(ctx, this.logger);
-        this.recallManager = new UserRecallManager(ctx, config, this.logger);
+        this.logger = ctx[Services.Logger].getLogger("[上下文构建器]");
     }
 
-    /**
-     * 构建私聊频道的上下文
-     */
-    public async buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
-        const { platform, id } = channel;
-        const userId = id.replace("private:", "");
-
-        // 1. 并行获取历史记录和用户信息
-        const [history, user] = await Promise.all([this.build(channel), this.dataProvider.getUserInfo(bot, userId, platform)]);
-
-        const userName = user?.name || user?.nick || userId;
-        const members: GuildMember[] = [
-            {
-                pid: bot.selfId,
-                name: bot.user.name,
-                nick: bot.user.nick || bot.user.name,
-                roles: ["assistant", "bot"],
-                isSelf: true,
-            },
-            { pid: userId, name: userName, nick: user?.nick || userName, roles: ["user"], isSelf: false },
-        ];
-
-        // 2. 根据历史记录召回相关用户画像
-        const allMessages = this.getAllMessagesFromHistory(history);
-        const userIds = await this.recallManager.recallForPrivateContext(allMessages, userId);
-        let uniqueUserIds = new Set(userIds);
-        uniqueUserIds.delete(bot.selfId);
-        const profiles = await this.recallManager.getUserProfiles(Array.from(uniqueUserIds), id);
-
-        // 3. 组装最终的世界状态
-        return {
-            users: profiles.map((p) => ({ id: p.userId, name: p.userName, description: p.content })),
-            channel: {
-                id,
-                platform,
-                name: `与 ${userName} 的私聊`,
-                type: "private",
-                meta: {},
-                members,
-                history,
-            },
+    public async build(platform: string, channelId: string): Promise<WorldState> {
+        const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
+        let channel: {
+            id: string;
+            name?: string;
+            type: number;
         };
-    }
 
-    /**
-     * 构建群聊频道的上下文
-     */
-    public async buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
-        const { platform, id } = channel;
-
-        // 1. 并行获取历史记录和频道信息
-        const [history, channelInfo] = await Promise.all([this.build(channel), this.dataProvider.getChannelInfo(bot, id, platform)]);
-
-        if (!channelInfo) {
-            return {
-                users: [],
-                channel: { id, platform, name: `Channel ${id}`, type: "guild", meta: {}, members: [], history },
+        if (!bot) {
+            this.logger.warn(`找不到平台 ${platform} 的在线机器人`);
+            channel = {
+                id: channelId,
+                name: "未知频道",
+                type: 0,
             };
+        } else {
+            channel = await bot.getChannel(channelId);
         }
 
-        // 2. 根据历史记录召回用户、获取成员和用户画像
-        const allMessages = this.getAllMessagesFromHistory(history).slice(-this.config.maxMessages);
-        const [userIds, members] = await Promise.all([
-            this.recallManager.recallForGuildContext(allMessages),
-            this.dataProvider.getMembersFromHistory(bot, history, platform, channelInfo.guildId || id),
-        ]);
-        let uniqueUserIds = new Set(userIds);
-        uniqueUserIds.delete(bot.selfId);
-        const profiles = await this.recallManager.getUserProfiles(Array.from(uniqueUserIds), id);
+        // 1. L1 - Working Memory
+        const l1_working_memory = await this.buildL1Memory(platform, channelId);
 
-        // 3. 组装最终的世界状态
-        return {
-            users: profiles.map((p) => ({ id: p.userId, name: p.userName, description: p.content })),
+        // 2. L2 - Semantic Search
+        let l2_retrieved_memories: RetrievedMemoryChunk[] = [];
+        if (this.config.l2_memory.enabled && l1_working_memory.pending_turn?.dialogue.length > 0) {
+            const lastMessage = l1_working_memory.pending_turn.dialogue.slice(-1)[0].content;
+            const retrieved = await this.l2Manager.search(lastMessage, this.config.l2_memory.retrievalK);
+            l2_retrieved_memories = retrieved.map((chunk) => ({
+                content: chunk.content,
+                relevance: 0, // Placeholder for actual relevance score
+                timestamp: chunk.startTimestamp,
+            }));
+        }
+
+        // 3. L3 - Diary
+        let l3_diary_entries: DiaryEntryData[] = [];
+        if (this.config.l3_memory.enabled) {
+            // Example: retrieve yesterday's diary
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const dateStr = yesterday.toISOString().split("T")[0];
+            const diary = await this.ctx.database.get("worldstate.l3_diaries", { channelId, date: dateStr });
+            l3_diary_entries = diary;
+        }
+
+        const worldState: WorldState = {
             channel: {
-                id,
-                platform,
-                name: channelInfo.name,
-                type: "guild",
-                meta: { ...channelInfo },
-                members,
-                history,
+                id: channel.id,
+                name: channel.name,
+                type: channel.type === 0 ? "private" : "guild",
+                platform: platform,
             },
+            current_time: new Date().toISOString(),
+            self: {
+                id: bot.selfId,
+                name: bot.user.name,
+            },
+            l1_working_memory,
+            l2_retrieved_memories,
+            l3_diary_entries,
+            users: [], // User profile can be another service
+        };
+
+        return worldState;
+    }
+
+    private async buildL1Memory(platform: string, channelId: string): Promise<WorldState["l1_working_memory"]> {
+        const pendingTurnData = await this.ctx.database.get(
+            TableName.Interactions,
+            { platform, channelId, status: "pending" },
+            { limit: 1, sort: { startTimestamp: "desc" } }
+        );
+        const processedTurnsData = await this.ctx.database.get(
+            TableName.Interactions,
+            { platform, channelId, status: "processed" },
+            { limit: 10, sort: { startTimestamp: "desc" } }
+        );
+
+        const pending_turn = pendingTurnData.length > 0 ? await this.hydrateTurn(pendingTurnData[0]) : undefined;
+        const processed_turns = await Promise.all(processedTurnsData.map((t) => this.hydrateTurn(t)));
+
+        // Apply graceful degradation
+        this.applyGracefulDegradation(processed_turns);
+
+        return {
+            pending_turn,
+            processed_turns,
         };
     }
 
-    private getAllMessagesFromHistory(history: History): ContextualMessage[] {
-        return [history.pending, ...history.closed, history.folded].filter(Boolean).flatMap((segment) => segment.dialogue);
-    }
-
-    /**
-     * 从数据库获取并构建完整的对话历史记录
-     */
-    public async build(channel: ChannelDescriptor): Promise<History> {
-        const { platform, id: channelId } = channel;
-
-        // 1. 获取各状态的对话片段
-        const [openSegments, rawClosedSegments, rawFoldedSegments, summarizedSegments] = await Promise.all([
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "open" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "closed" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "folded" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "summarized" }),
-        ]);
-
-        const pendingSegment = openSegments[0];
-        const closedSegments = rawClosedSegments
-            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
-            .slice(0, this.config.fullContextSegmentCount)
-            .reverse();
-        const foldedSegments = rawFoldedSegments
-            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
-            .slice(0, this.config.summarization.triggerCount)
-            .reverse();
-        const summarizedSegment = summarizedSegments.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0];
-
-        // 2. 批量获取所有需要内容的消息和事件
-        const segmentsNeedingContent = [...(pendingSegment ? [pendingSegment] : []), ...closedSegments, ...foldedSegments];
-        const segmentIds = segmentsNeedingContent.map((s) => s.id);
-
-        const [allMessages, allSystemEvents] =
-            segmentIds.length > 0
-                ? await Promise.all([
-                      this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
-                      this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } }),
-                  ])
-                : [[], []];
-
-        const messagesBySegment = this.groupDataBySegmentId(allMessages);
-        const eventsBySegment = this.groupDataBySegmentId(allSystemEvents);
-
-        // 3. 并行构建对话片段对象
-        const [pending, closed, folded, summarized] = await Promise.all([
-            pendingSegment ? this.buildPendingSegment(pendingSegment, messagesBySegment, eventsBySegment) : undefined,
-            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r, messagesBySegment, eventsBySegment))),
-            foldedSegments.length > 0 ? this.buildFoldedSegment(foldedSegments, messagesBySegment, eventsBySegment) : undefined,
-            summarizedSegment ? this.buildSummarizedSegment(summarizedSegment) : undefined,
-        ]);
-
-        return { pending, closed, folded, summarized };
-    }
-
-    private groupDataBySegmentId<T extends { sid: string }>(data: T[]): Map<string, T[]> {
-        const map = new Map<string, T[]>();
-        data.forEach((item) => {
-            if (!map.has(item.sid)) {
-                map.set(item.sid, []);
-            }
-            map.get(item.sid)!.push(item);
-        });
-        return map;
-    }
-
-    private buildPendingSegment(
-        segmentRecord: DialogueSegmentData,
-        messagesBySegment: Map<string, MessageData[]>,
-        eventsBySegment: Map<string, SystemEventData[]>
-    ): PendingDialogueSegment {
-        const messageRecords = messagesBySegment.get(segmentRecord.id) || [];
-        const systemEventRecords = eventsBySegment.get(segmentRecord.id) || [];
+    private async hydrateTurn(turnData: InteractionData): Promise<InteractionTurn> {
+        const messages = await this.ctx.database.get(TableName.Messages, { interactionId: turnData.id });
+        const agentTurn = await this.ctx.database.get(TableName.AgentTurns, { interactionId: turnData.id }).then((res) => res[0]);
 
         return {
-            type: "dialogue-segment",
-            id: segmentRecord.id,
-            platform: segmentRecord.platform,
-            channelId: segmentRecord.channelId,
-            guildId: segmentRecord.guildId,
-            status: "open",
-            startTimestamp: segmentRecord.startTimestamp,
-            dialogue: this.buildDialogueMessages(messageRecords),
-            systemEvents: systemEventRecords.map((record) => ({
-                id: record.id,
-                type: record.type,
-                timestamp: record.timestamp,
-                date: formatDate(record.timestamp, "MM-DD"),
-                payload: record.payload,
+            id: turnData.id,
+            status: turnData.status,
+            startTimestamp: turnData.startTimestamp,
+            endTimestamp: turnData.endTimestamp,
+            dialogue: messages.map((m) => ({
+                id: m.id,
+                sender: m.sender,
+                content: m.content,
+                elements: [], // h.parse(m.content),
+                timestamp: m.timestamp,
+                quoteId: m.quoteId,
             })),
+            systemEvents: [], // System events can be hydrated similarly
+            agentTurn: agentTurn
+                ? {
+                      thoughts: agentTurn.thoughts,
+                      actions: agentTurn.actions,
+                      observations: agentTurn.observations,
+                  }
+                : undefined,
         };
     }
 
-    private buildClosedSegment(
-        record: DialogueSegmentData,
-        messagesBySegment: Map<string, MessageData[]>,
-        eventsBySegment: Map<string, SystemEventData[]>
-    ): ClosedDialogueSegment {
-        const messageRecords = messagesBySegment.get(record.id) || [];
-        const systemEventRecords = eventsBySegment.get(record.id) || [];
+    private applyGracefulDegradation(turns: InteractionTurn[]): void {
+        const { keepFullTurnCount, keepThoughtsOnlyCount } = this.config.l1_memory.gracefulDegradation;
 
-        return {
-            type: "dialogue-segment",
-            id: record.id,
-            platform: record.platform,
-            channelId: record.channelId,
-            guildId: record.guildId,
-            status: "closed",
-            startTimestamp: record.startTimestamp,
-            endTimestamp: record.endTimestamp,
-            agentTurn: record.agentTurn,
-            dialogue: this.buildDialogueMessages(messageRecords),
-            systemEvents: systemEventRecords.map((eventRecord) => ({
-                id: eventRecord.id,
-                type: eventRecord.type,
-                timestamp: eventRecord.timestamp,
-                date: formatDate(eventRecord.timestamp, "MM-DD"),
-                payload: eventRecord.payload,
-            })),
-        };
-    }
+        for (let i = 0; i < turns.length; i++) {
+            const turn = turns[i];
+            if (!turn.agentTurn) continue;
 
-    private buildFoldedSegment(
-        foldedSegments: DialogueSegmentData[],
-        messagesBySegment: Map<string, MessageData[]>,
-        eventsBySegment: Map<string, SystemEventData[]>
-    ): FoldedDialogueSegment {
-        const allMessages = foldedSegments.flatMap((s) => messagesBySegment.get(s.id) || []);
-        const allSystemEvents = foldedSegments.flatMap((s) => eventsBySegment.get(s.id) || []);
-
-        allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-        allSystemEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-        return {
-            type: "dialogue-segment",
-            id: foldedSegments[0].id,
-            platform: foldedSegments[0].platform,
-            channelId: foldedSegments[0].channelId,
-            guildId: foldedSegments[0].guildId,
-            status: "folded",
-            dialogue: this.buildDialogueMessages(allMessages),
-            systemEvents: allSystemEvents.map((record) => ({
-                id: record.id,
-                type: record.type,
-                timestamp: record.timestamp,
-                date: formatDate(record.timestamp, "MM-DD"),
-                payload: record.payload,
-            })),
-            startTimestamp: foldedSegments[0].startTimestamp,
-            endTimestamp: foldedSegments[foldedSegments.length - 1].endTimestamp,
-        };
-    }
-
-    private buildSummarizedSegment(record: DialogueSegmentData): SummarizedDialogueSegment {
-        return {
-            type: "dialogue-segment",
-            id: record.id,
-            platform: record.platform,
-            channelId: record.channelId,
-            guildId: record.guildId,
-            status: "summarized",
-            summary: record.summary,
-            startTimestamp: record.startTimestamp,
-            endTimestamp: record.endTimestamp,
-        };
-    }
-
-    private buildDialogueMessages(messageRecords: MessageData[]): ContextualMessage[] {
-        const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
-        return messageRecords.map((record) => ({
-            id: record.id,
-            content: record.content,
-            timestamp: record.timestamp,
-            date: formatDate(record.timestamp, "MM-DD"),
-            time: formatDate(record.timestamp, "HH:mm"),
-            quoted: quotedMsgIds.has(record.id),
-            quoteId: record.quoteId,
-            sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
-        }));
-    }
-}
-
-// =================================================================================
-// #region 辅助类：ContextDataProvider (数据获取与缓存)
-// =================================================================================
-
-class ContextDataProvider {
-    constructor(
-        private ctx: Context,
-        private logger: Logger
-    ) {}
-
-    public async getUserInfo(bot: Bot, userId: string, platform: string): Promise<any> {
-        try {
-            const user = await bot.getUser(userId);
-            if (user) {
-                return user;
+            if (i >= keepFullTurnCount) {
+                turn.agentTurn.observations = undefined;
+                turn.agentTurn.actions = undefined;
             }
-        } catch (error) {
-            this.logger.warn(`获取用户信息失败，将使用基础信息 | 用户: ${platform}:${userId}`);
-        }
-        return null;
-    }
-
-    public async getChannelInfo(bot: Bot, channelId: string, platform: string): Promise<any> {
-        try {
-            const channelInfo = await bot.getChannel(channelId);
-            if (channelInfo) {
-                return channelInfo;
-            }
-        } catch (error) {
-            this.logger.warn(`获取频道信息失败，将使用基础信息 | 频道: ${platform}:${channelId}`);
-        }
-        return null;
-    }
-
-    public async getMembersFromHistory(bot: Bot, history: History, platform: string, guildId: string): Promise<GuildMember[]> {
-        const memberIds = new Set<string>();
-        [history.pending, ...history.closed, history.folded]
-            .filter(Boolean)
-            .flatMap((segment) => segment.dialogue)
-            .forEach((message) => memberIds.add(message.sender.id));
-
-        const humanMembers = await this.getMemberList(platform, guildId, Array.from(memberIds));
-
-        const botAsMember: GuildMember = {
-            pid: bot.selfId,
-            name: bot.user.name,
-            nick: bot.user.nick || bot.user.name,
-            roles: ["assistant", "bot"],
-            isSelf: true,
-        };
-
-        return [botAsMember, ...humanMembers];
-    }
-
-    private async getMemberList(platform: string, guildId: string, memberIds: string[]): Promise<GuildMember[]> {
-        if (memberIds.length === 0) return [];
-
-        const result: GuildMember[] = [];
-        const missingMemberIds: string[] = [];
-
-        for (const memberId of memberIds) {
-            missingMemberIds.push(memberId);
-        }
-
-        if (missingMemberIds.length > 0) {
-            const missingMembers = await this.ctx.database.get(TableName.Members, {
-                platform,
-                guildId,
-                pid: { $in: missingMemberIds },
-            });
-            for (const member of missingMembers) {
-                const guildMember = member as GuildMember;
-                result.push(guildMember);
+            if (i >= keepThoughtsOnlyCount) {
+                turn.agentTurn = undefined;
             }
         }
-        return result;
     }
 }

@@ -14,6 +14,7 @@ Please participate in the conversation considering the full context of both imag
 
 export type ChannelDescriptor = {
     platform: string;
+    isDirect: boolean;
     id: string;
 };
 
@@ -33,11 +34,12 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
     allowedChannels: Schema.array(
         Schema.object({
             platform: Schema.string().required().description("平台"),
+            isDirect: Schema.boolean().default(false).description("是否为私聊"),
             id: Schema.string().required().description("频道 ID"),
         })
     )
         .role("table")
-        .default([{ platform: "onebot", id: "*" }])
+        .default([{ platform: "onebot", isDirect: false, id: "*" }])
         .description("允许 Agent 响应的频道"),
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
 });

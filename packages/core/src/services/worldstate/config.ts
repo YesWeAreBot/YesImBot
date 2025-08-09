@@ -1,78 +1,77 @@
-import { readFileSync } from "fs";
 import { Schema } from "koishi";
-import path from "path";
 
+import { ChannelDescriptor } from "@/agent";
 import { SystemConfig } from "@/config";
-import { PROMPTS_DIR } from "@/shared/constants";
-
-export const DEFAULT_SUMMARY_PROMPT = readFileSync(path.resolve(PROMPTS_DIR, "summary_system.txt"), "utf-8");
 
 /**
- * 对话历史管理配置
+ * 多级缓存记忆模型管理配置
  */
 export interface HistoryConfig {
-    /* === 总结 === */
-    summarization: {
-        /** 启用对话历史总结功能 */
-        enabled: boolean;
-        /** 用于生成对话摘要的提示词模板 */
-        prompt: string;
-        /** 当待总结的片段达到此数量时，触发总结任务 */
-        triggerCount: number;
-        /** 单次最少压缩的消息数量 */
-        minTriggerMessages: number;
+    /* === L1 工作记忆 === */
+    l1_memory: {
+        /** 工作记忆中最多包含的消息数量，超出部分将被平滑裁剪 */
+        maxMessages: number;
+        /** pending 状态的轮次在多长时间内没有新消息后被强制关闭（秒） */
+        pendingTurnTimeoutSec: number;
+        /** 优雅降级的配置 */
+        gracefulDegradation: {
+            /** 保留完整 AgentTurn 的最新轮次数量 */
+            keepFullTurnCount: number;
+            /** 只保留 thoughts 的最新轮次数量 */
+            keepThoughtsOnlyCount: number;
+        };
     };
 
-    /* === 折叠 === */
-    /** 在上下文中保留的最新"完整"对话片段数量 */
-    fullContextSegmentCount: number;
-    /** 上下文中最多包含的用户消息数 */
-    maxMessages: number;
-    inactivityTimeoutSec: number;
+    /* === L2 语义索引 === */
+    l2_memory: {
+        /** 启用 L2 记忆检索 */
+        enabled: boolean;
+        /** 检索时返回的最大记忆片段数量 */
+        retrievalK: number;
+        /** 每个语义记忆片段包含的消息数量 */
+        messagesPerChunk: number;
+        /** 记忆片段之间重叠的消息数量，以保持上下文连续性 */
+        messageOverlap: number;
+    };
 
-    /* === 召回 === */
-    recall: {
-        /** 私聊场景下召回用户画像的数量 */
-        private: number;
-        /** 群组场景下召回用户画像的数量 */
-        guild: number;
-        /** 最低置信度 */
-        minConfidence: number;
+    /* === L3 长期存档 === */
+    l3_memory: {
+        /** 启用 L3 日记功能 */
+        enabled: boolean;
+        /** 每日生成日记的时间 (HH:mm) */
+        diaryGenerationTime: string;
     };
 
     /* === 清理 === */
-    /** 历史数据在被永久删除前的最大保留天数 */
     dataRetentionDays: number;
-    /** 后台清理任务的执行频率（秒） */
     cleanupIntervalSec: number;
 
-    readonly allowedChannels?: Set<string>;
+    readonly allowedChannels?: ChannelDescriptor[];
     readonly system?: SystemConfig;
 }
 
 export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
-    summarization: Schema.object({
-        enabled: Schema.boolean().default(true).description("启用对话历史总结功能"),
-        prompt: Schema.string()
-            .default(DEFAULT_SUMMARY_PROMPT)
-            .role("textarea", { rows: [2, 4] })
-            .description("用于生成对话摘要的提示词。"),
-        triggerCount: Schema.number().default(6).description("当待总结的片段达到此数量时，触发总结任务"),
-        minTriggerMessages: Schema.number().default(50).description("单次最少压缩的消息数量"),
-    }).description("对话历史总结设置"),
+    l1_memory: Schema.object({
+        maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
+        pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
+        gracefulDegradation: Schema.object({
+            keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
+            keepThoughtsOnlyCount: Schema.number().default(5).description("只保留 Agent 思考过程的最新轮次数（应大于 keepFullTurnCount）"),
+        }).description("L1 优雅降级策略，用于在保证上下文深度的同时节省Token"),
+    }).description("L1 工作记忆设置"),
 
-    fullContextSegmentCount: Schema.number().default(2).description("在上下文中保留的最新完整对话片段数量"),
-    maxSegmentLength: Schema.number().default(20).description("片段的最大长度（消息数）"),
-    maxMessages: Schema.number().default(30).description("上下文中最多包含的消息数量"),
+    l2_memory: Schema.object({
+        enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
+        retrievalK: Schema.number().default(5).description("每次从 L2 检索的最大记忆片段数量"),
+        messagesPerChunk: Schema.number().default(10).description("每个语义记忆片段包含的消息数量。"),
+        messageOverlap: Schema.number().default(2).description("记忆片段之间重叠的消息数量，以保持上下文连续性。"),
+    }).description("L2 语义索引设置"),
 
-    inactivityTimeoutSec: Schema.number().default(1800).description("片段在多长时间内没有新消息后被关闭（秒）"),
-
-    recall: Schema.object({
-        private: Schema.number().default(3).description("私聊场景下召回用户画像的数量"),
-        guild: Schema.number().default(8).description("群组场景下召回用户画像的数量"),
-        minConfidence: Schema.number().default(0.5).description("最低置信度"),
-    }).description("用户画像召回设置"),
+    l3_memory: Schema.object({
+        enabled: Schema.boolean().default(true).description("启用 L3 长期日记功能"),
+        diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式）"),
+    }).description("L3 长期存档设置"),
 
     dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
-    cleanupIntervalSec: Schema.number().default(60).description("后台清理任务的执行频率（秒）"),
+    cleanupIntervalSec: Schema.number().default(300).description("后台清理任务的执行频率（秒）"),
 });

@@ -5,9 +5,10 @@ import { Context, h, Session } from "koishi";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AgentStimulus, UserMessagePayload, WorldStateService } from "@/services/worldstate";
+import { AgentResponse, AgentStimulus, UserMessagePayload } from "@/services/worldstate";
+import { WorldStateService } from "@/services/worldstate/index";
 import { Services } from "@/shared/constants";
-import { AppError, ErrorCodes, ErrorDefinitions, handleError } from "@/shared/errors";
+import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, JsonParser } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./ContextBuilder";
@@ -41,7 +42,7 @@ export class HeartbeatProcessor {
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
-        const sid = stimulus.type === "user_message" ? (stimulus.payload as UserMessagePayload).sid : null;
+        const interactionId = stimulus.type === "user_message" ? (stimulus.payload as UserMessagePayload).interactionId : null;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
@@ -61,8 +62,13 @@ export class HeartbeatProcessor {
             }
         }
 
-        if (collectedResponses.length > 0 && sid) {
-            await this.worldStateService.recordAgentTurn(sid, collectedResponses);
+        if (collectedResponses.length > 0 && interactionId) {
+            await this.worldStateService.recordAgentTurn(interactionId, {
+                thoughts: collectedResponses[collectedResponses.length - 1].thoughts,
+                actions: collectedResponses.flatMap((r) => r.actions),
+                observations: collectedResponses.flatMap((r) => r.observations),
+                request_heartbeat: false, // Final turn always ends heartbeat
+            });
         }
 
         return success;
@@ -81,7 +87,7 @@ export class HeartbeatProcessor {
 
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/7: 构建提示词上下文...");
-        const promptContext = await this.contextBuilder.build(stimulus, previousResponses);
+        const promptContext = await this.contextBuilder.build(stimulus);
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/7: 准备模板渲染视图...");
@@ -90,7 +96,7 @@ export class HeartbeatProcessor {
             TOOL_DEFINITION: { tools: prepareDataForTemplate(promptContext.toolSchemas) },
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
-            triggerContext: promptContext.triggerContext,
+            triggerContext: promptContext.worldState.triggerContext,
             CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
             // 模板辅助函数
             _toString: function () {
