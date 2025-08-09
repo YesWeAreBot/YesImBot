@@ -1,9 +1,15 @@
 name: "Canary Release"
 
 on:
-  push:
-    branches:
-      - "dev"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The npm dist-tag for this canary release (e.g., "canary", "test")'
+        required: true
+        default: "canary"
+      reason:
+        description: "Reason for this manual release"
+        required: false
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -38,10 +44,10 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create Canary Version
-        run: bun changeset version --snapshot canary
+        run: bun changeset version --snapshot ${{ github.event.inputs.tag }}
 
       - name: Publish to NPM
-        run: bun changeset publish --tag canary
+        run: bun changeset publish --tag ${{ github.event.inputs.tag }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
