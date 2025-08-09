@@ -6,7 +6,7 @@
 
 # Interface: FactExtractionResponse
 
-Defined in: [packages/core/src/services/memory/types.ts:228](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/memory/types.ts#L228)
+Defined in: [packages/core/src/services/memory/types.ts:228](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/memory/types.ts#L228)
 
 LLM 事实提取的响应格式
 
@@ -16,7 +16,7 @@ LLM 事实提取的响应格式
 
 > **facts**: [`ExtractedFact`](ExtractedFact.md)[]
 
-Defined in: [packages/core/src/services/memory/types.ts:229](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/memory/types.ts#L229)
+Defined in: [packages/core/src/services/memory/types.ts:229](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/memory/types.ts#L229)
 
 ***
 
@@ -24,4 +24,4 @@ Defined in: [packages/core/src/services/memory/types.ts:229](https://github.com/
 
 > **insights**: [`ExtractedInsight`](ExtractedInsight.md)[]
 
-Defined in: [packages/core/src/services/memory/types.ts:230](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/memory/types.ts#L230)
+Defined in: [packages/core/src/services/memory/types.ts:230](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/memory/types.ts#L230)

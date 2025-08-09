@@ -6,7 +6,7 @@
 
 # Class: MustacheRenderer
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/prompt/renderer.ts#L33)
+Defined in: [packages/core/src/services/prompt/renderer.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/prompt/renderer.ts#L33)
 
 基于 Mustache.js 的默认渲染器实现
 支持二次渲染和循环保护
@@ -31,7 +31,7 @@ Defined in: [packages/core/src/services/prompt/renderer.ts:33](https://github.co
 
 > **render**(`templateContent`, `scope`, `partials?`, `options?`): `string`
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/prompt/renderer.ts#L34)
+Defined in: [packages/core/src/services/prompt/renderer.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/prompt/renderer.ts#L34)
 
 渲染模板
 

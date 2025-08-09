@@ -8,7 +8,7 @@
 
 > **estimateTokensByRegex**(`text`): `number`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:155](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/shared/utils/toolkit.ts#L155)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:155](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/utils/toolkit.ts#L155)
 
 使用正则表达式估算文本的 token 数量（一种不依赖第三方库的近似方法）。
 对长文本更内存友好。

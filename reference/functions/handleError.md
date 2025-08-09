@@ -8,7 +8,7 @@
 
 > **handleError**(`logger`, `error`, `contextDescription`): `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:215](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/shared/errors/index.ts#L215)
+Defined in: [packages/core/src/shared/errors/index.ts:215](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/errors/index.ts#L215)
 
 统一错误处理函数
 实现了分层日志记录和可选的错误自动上报功能

@@ -6,7 +6,7 @@
 
 # Interface: ModelConfig
 
-Defined in: [packages/core/src/services/model/config.ts:75](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L75)
+Defined in: [packages/core/src/services/model/config.ts:75](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L75)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/config.ts:75](https://github.com/Y
 
 > **abilities**: [`ModelAbility`](../enumerations/ModelAbility.md)[]
 
-Defined in: [packages/core/src/services/model/config.ts:78](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L78)
+Defined in: [packages/core/src/services/model/config.ts:78](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L78)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/model/config.ts:78](https://github.com/Y
 
 > `optional` **circuitBreakerPolicy**: [`CircuitBreakerPolicy`](CircuitBreakerPolicy.md)
 
-Defined in: [packages/core/src/services/model/config.ts:90](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L90)
+Defined in: [packages/core/src/services/model/config.ts:90](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L90)
 
 断路器策略
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/model/config.ts:90](https://github.com/Y
 
 > **modelId**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L77)
+Defined in: [packages/core/src/services/model/config.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L77)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/model/config.ts:77](https://github.com/Y
 
 > `optional` **parameters**: `object`
 
-Defined in: [packages/core/src/services/model/config.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L79)
+Defined in: [packages/core/src/services/model/config.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L79)
 
 #### custom?
 
@@ -68,7 +68,7 @@ Defined in: [packages/core/src/services/model/config.ts:79](https://github.com/Y
 
 > `optional` **providerName**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:76](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L76)
+Defined in: [packages/core/src/services/model/config.ts:76](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L76)
 
 ***
 
@@ -76,7 +76,7 @@ Defined in: [packages/core/src/services/model/config.ts:76](https://github.com/Y
 
 > `optional` **retryPolicy**: [`RetryPolicy`](RetryPolicy.md)
 
-Defined in: [packages/core/src/services/model/config.ts:88](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L88)
+Defined in: [packages/core/src/services/model/config.ts:88](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L88)
 
 重试策略
 
@@ -86,6 +86,6 @@ Defined in: [packages/core/src/services/model/config.ts:88](https://github.com/Y
 
 > `optional` **timeoutPolicy**: [`TimeoutPolicy`](TimeoutPolicy.md)
 
-Defined in: [packages/core/src/services/model/config.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/model/config.ts#L86)
+Defined in: [packages/core/src/services/model/config.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L86)
 
 超时策略

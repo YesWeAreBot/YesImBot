@@ -8,7 +8,7 @@
 
 > **MemorySearchResult** = [`Fact`](../interfaces/Fact.md) & `object` \| [`Insight`](../interfaces/Insight.md) & `object` \| [`UserProfile`](../interfaces/UserProfile.md) & `object` & `object`
 
-Defined in: [packages/core/src/services/memory/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/memory/types.ts#L8)
+Defined in: [packages/core/src/services/memory/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/memory/types.ts#L8)
 
 ## Type declaration
 

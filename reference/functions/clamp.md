@@ -8,7 +8,7 @@
 
 > **clamp**(`num`, `min`, `max`): `number`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/shared/utils/toolkit.ts#L192)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/utils/toolkit.ts#L192)
 
 将一个数字限制在指定的最小和最大值之间。
 

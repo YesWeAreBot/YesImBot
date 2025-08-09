@@ -6,7 +6,7 @@
 
 # Interface: IRenderer
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/prompt/renderer.ts#L17)
+Defined in: [packages/core/src/services/prompt/renderer.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/prompt/renderer.ts#L17)
 
 渲染器接口
 定义了将模板和作用域结合生成最终字符串的标准方法
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/services/prompt/renderer.ts:17](https://github.co
 
 > **render**(`templateContent`, `scope`, `partials?`, `options?`): `string`
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/106be9775095e46067c209d9f2c1e741908ba4b8/packages/core/src/services/prompt/renderer.ts#L26)
+Defined in: [packages/core/src/services/prompt/renderer.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/prompt/renderer.ts#L26)
 
 渲染模板
 
