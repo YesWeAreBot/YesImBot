@@ -4,12 +4,18 @@ import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 
 import { Services } from "@/shared/constants";
-import { AppError, ErrorCodes, ErrorDefinitions } from "@/shared/errors";
-import { MemoryBlockData } from "./types";
+import { AppError, ErrorDefinitions } from "@/shared/errors";
+
+export interface MemoryBlockData {
+    title: string;
+    label: string;
+    description: string;
+    content: string;
+}
 
 export class MemoryBlock {
     private _metadata: Omit<MemoryBlockData, "content">;
-    private _content: string[];
+    private _content: string;
     private lastModifiedInMemory: Date = new Date();
     private _filePath: string;
 
@@ -41,14 +47,14 @@ export class MemoryBlock {
     get description(): string {
         return this._metadata.description;
     }
-    get content(): readonly string[] {
+    get content(): string {
         return this._content;
     }
     get lastModified(): Date {
         return this.lastModifiedInMemory;
     }
     get currentSize(): number {
-        return this._content.reduce((sum, item) => sum + item.length, 0);
+        return this._content.length;
     }
     get filePath(): string {
         return this._filePath;
@@ -65,7 +71,7 @@ export class MemoryBlock {
             title: this.title,
             label: this.label,
             description: this.description,
-            content: [...this.content],
+            content: this.content,
         };
     }
 
@@ -158,7 +164,6 @@ export class MemoryBlock {
         const rawContent = await readFile(filePath, "utf-8");
         const { data, content } = matter(rawContent);
 
-        // Validate metadata
         if (!data.label) {
             throw new Error(`缺少必要的元数据字段 (label)`);
         }
@@ -167,7 +172,7 @@ export class MemoryBlock {
             title: data.title,
             label: data.label,
             description: data.description || "",
-            content: content.trim() ? content.trim().split(/\r?\n/) : [],
+            content: content.trim(),
         };
     }
 }
