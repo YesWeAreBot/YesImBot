@@ -6,17 +6,17 @@
 
 # Interface: HistoryConfig
 
-Defined in: [packages/core/src/services/worldstate/config.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L13)
+Defined in: [packages/core/src/services/worldstate/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L9)
 
-对话历史管理配置
+多级缓存记忆模型管理配置
 
 ## Properties
 
 ### allowedChannels?
 
-> `readonly` `optional` **allowedChannels**: `Set`\<`string`\>
+> `readonly` `optional` **allowedChannels**: `ChannelDescriptor`[]
 
-Defined in: [packages/core/src/services/worldstate/config.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L49)
+Defined in: [packages/core/src/services/worldstate/config.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L44)
 
 ***
 
@@ -24,9 +24,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:49](https://github.
 
 > **cleanupIntervalSec**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L47)
-
-后台清理任务的执行频率（秒）
+Defined in: [packages/core/src/services/worldstate/config.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L42)
 
 ***
 
@@ -34,95 +32,83 @@ Defined in: [packages/core/src/services/worldstate/config.ts:47](https://github.
 
 > **dataRetentionDays**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L45)
-
-历史数据在被永久删除前的最大保留天数
+Defined in: [packages/core/src/services/worldstate/config.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L41)
 
 ***
 
-### fullContextSegmentCount
+### l1\_memory
 
-> **fullContextSegmentCount**: `number`
+> **l1\_memory**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L28)
+Defined in: [packages/core/src/services/worldstate/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L11)
 
-在上下文中保留的最新"完整"对话片段数量
+#### keepFullTurnCount
 
-***
+> **keepFullTurnCount**: `number`
 
-### inactivityTimeoutSec
-
-> **inactivityTimeoutSec**: `number`
-
-Defined in: [packages/core/src/services/worldstate/config.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L31)
-
-***
-
-### maxMessages
+#### maxMessages
 
 > **maxMessages**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L30)
+工作记忆中最多包含的消息数量，超出部分将被平滑裁剪
 
-上下文中最多包含的用户消息数
+#### pendingTurnTimeoutSec
 
-***
+> **pendingTurnTimeoutSec**: `number`
 
-### recall
-
-> **recall**: `object`
-
-Defined in: [packages/core/src/services/worldstate/config.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L34)
-
-#### guild
-
-> **guild**: `number`
-
-群组场景下召回用户画像的数量
-
-#### minConfidence
-
-> **minConfidence**: `number`
-
-最低置信度
-
-#### private
-
-> **private**: `number`
-
-私聊场景下召回用户画像的数量
+pending 状态的轮次在多长时间内没有新消息后被强制关闭（秒）
 
 ***
 
-### summarization
+### l2\_memory
 
-> **summarization**: `object`
+> **l2\_memory**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L15)
+Defined in: [packages/core/src/services/worldstate/config.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L21)
 
 #### enabled
 
 > **enabled**: `boolean`
 
-启用对话历史总结功能
+启用 L2 记忆检索
 
-#### minTriggerMessages
+#### messageOverlap
 
-> **minTriggerMessages**: `number`
+> **messageOverlap**: `number`
 
-单次最少压缩的消息数量
+记忆片段之间重叠的消息数量，以保持上下文连续性
 
-#### prompt
+#### messagesPerChunk
 
-> **prompt**: `string`
+> **messagesPerChunk**: `number`
 
-用于生成对话摘要的提示词模板
+每个语义记忆片段包含的消息数量
 
-#### triggerCount
+#### retrievalK
 
-> **triggerCount**: `number`
+> **retrievalK**: `number`
 
-当待总结的片段达到此数量时，触发总结任务
+检索时返回的最大记忆片段数量
+
+***
+
+### l3\_memory
+
+> **l3\_memory**: `object`
+
+Defined in: [packages/core/src/services/worldstate/config.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L33)
+
+#### diaryGenerationTime
+
+> **diaryGenerationTime**: `string`
+
+每日生成日记的时间 (HH:mm)
+
+#### enabled
+
+> **enabled**: `boolean`
+
+启用 L3 日记功能
 
 ***
 
@@ -130,4 +116,4 @@ Defined in: [packages/core/src/services/worldstate/config.ts:15](https://github.
 
 > `readonly` `optional` **system**: `SystemConfig`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/config.ts#L50)
+Defined in: [packages/core/src/services/worldstate/config.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L45)

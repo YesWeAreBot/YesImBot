@@ -8,7 +8,7 @@
 
 > `const` **ErrorDefinitions**: `object`
 
-Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/errors/definitions.ts#L6)
+Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/shared/errors/definitions.ts#L6)
 
 ## Type declaration
 

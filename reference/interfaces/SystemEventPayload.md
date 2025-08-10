@@ -6,19 +6,17 @@
 
 # Interface: SystemEventPayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:362](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/types.ts#L362)
+Defined in: [packages/core/src/services/worldstate/types.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L194)
 
-系统事件刺激的载荷。
+系统事件刺激的载荷
 
 ## Properties
 
 ### details
 
-> **details**: `any`
+> **details**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:366](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/types.ts#L366)
-
-事件相关的详细信息
+Defined in: [packages/core/src/services/worldstate/types.ts:196](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L196)
 
 ***
 
@@ -26,16 +24,12 @@ Defined in: [packages/core/src/services/worldstate/types.ts:366](https://github.
 
 > **eventType**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:364](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/types.ts#L364)
-
-Koishi 内部事件类型，如 'guild-member-ban'
+Defined in: [packages/core/src/services/worldstate/types.ts:195](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L195)
 
 ***
 
-### message?
+### message
 
-> `optional` **message**: `string`
+> **message**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:368](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/worldstate/types.ts#L368)
-
-[新增] 由系统预渲染的、用于给LLM阅读的自然语言消息
+Defined in: [packages/core/src/services/worldstate/types.ts:197](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L197)

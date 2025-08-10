@@ -6,7 +6,7 @@
 
 # Class: ModelSwitcher\<T\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:409](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L409)
+Defined in: [packages/core/src/services/model/model-service.ts:414](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L414)
 
 ## Extended by
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:409](https://gith
 
 > **new ModelSwitcher**\<`T`\>(`ctx`, `groupConfig`, `modelGetter`): `ModelSwitcher`\<`T`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:414](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L414)
+Defined in: [packages/core/src/services/model/model-service.ts:419](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L419)
 
 #### Parameters
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:414](https://gith
 
 > `protected` `readonly` **\_logger**: `__module`
 
-Defined in: [packages/core/src/services/model/model-service.ts:410](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L410)
+Defined in: [packages/core/src/services/model/model-service.ts:415](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L415)
 
 ***
 
@@ -64,7 +64,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:410](https://gith
 
 > `protected` `readonly` **\_models**: `T`[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:411](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L411)
+Defined in: [packages/core/src/services/model/model-service.ts:416](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L416)
 
 ***
 
@@ -72,7 +72,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:411](https://gith
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/model-service.ts:415](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L415)
+Defined in: [packages/core/src/services/model/model-service.ts:420](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L420)
 
 ***
 
@@ -80,7 +80,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:415](https://gith
 
 > `protected` `readonly` **groupConfig**: `object`
 
-Defined in: [packages/core/src/services/model/model-service.ts:416](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L416)
+Defined in: [packages/core/src/services/model/model-service.ts:421](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L421)
 
 #### models
 
@@ -96,7 +96,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:416](https://gith
 
 > `protected` **getCircuitBreakers**(): `Map`\<`string`, `CircuitBreaker`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:449](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L449)
+Defined in: [packages/core/src/services/model/model-service.ts:454](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L454)
 
 #### Returns
 
@@ -108,7 +108,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:449](https://gith
 
 > **getModels**(): readonly `T`[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:445](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/model-service.ts#L445)
+Defined in: [packages/core/src/services/model/model-service.ts:450](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/model-service.ts#L450)
 
 #### Returns
 

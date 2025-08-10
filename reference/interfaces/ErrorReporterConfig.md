@@ -6,7 +6,7 @@
 
 # Interface: ErrorReporterConfig
 
-Defined in: [packages/core/src/shared/errors/index.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/errors/index.ts#L10)
+Defined in: [packages/core/src/shared/errors/index.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/shared/errors/index.ts#L10)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:10](https://github.com/Yes
 
 > **enabled**: `boolean`
 
-Defined in: [packages/core/src/shared/errors/index.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/errors/index.ts#L11)
+Defined in: [packages/core/src/shared/errors/index.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/shared/errors/index.ts#L11)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:11](https://github.com/Yes
 
 > `optional` **includeSystemInfo**: `boolean`
 
-Defined in: [packages/core/src/shared/errors/index.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/errors/index.ts#L13)
+Defined in: [packages/core/src/shared/errors/index.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/shared/errors/index.ts#L13)
 
 ***
 
@@ -30,4 +30,4 @@ Defined in: [packages/core/src/shared/errors/index.ts:13](https://github.com/Yes
 
 > `optional` **pasteServiceUrl**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/errors/index.ts#L12)
+Defined in: [packages/core/src/shared/errors/index.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/shared/errors/index.ts#L12)

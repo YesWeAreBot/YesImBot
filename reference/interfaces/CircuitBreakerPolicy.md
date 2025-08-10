@@ -6,7 +6,7 @@
 
 # Interface: CircuitBreakerPolicy
 
-Defined in: [packages/core/src/services/model/config.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L33)
+Defined in: [packages/core/src/services/model/config.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/config.ts#L33)
 
 定义断路器策略
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/config.ts:33](https://github.com/Y
 
 > **cooldownSeconds**: `number`
 
-Defined in: [packages/core/src/services/model/config.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L37)
+Defined in: [packages/core/src/services/model/config.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/config.ts#L37)
 
 断路器开启后的冷却时间 (秒)
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/model/config.ts:37](https://github.com/Y
 
 > **failureThreshold**: `number`
 
-Defined in: [packages/core/src/services/model/config.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/services/model/config.ts#L35)
+Defined in: [packages/core/src/services/model/config.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/config.ts#L35)
 
 触发断路的连续失败次数

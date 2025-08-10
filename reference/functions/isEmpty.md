@@ -8,7 +8,7 @@
 
 > **isEmpty**(`str`): `boolean`
 
-Defined in: [packages/core/src/shared/utils/string.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/e7184510eb1f89e870f5c71474eca385c4f7127e/packages/core/src/shared/utils/string.ts#L15)
+Defined in: [packages/core/src/shared/utils/string.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/shared/utils/string.ts#L15)
 
 检查字符串是否为 null、undefined、空字符串或仅包含空白字符。
 
