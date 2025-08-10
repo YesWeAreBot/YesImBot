@@ -33,7 +33,7 @@ export class EventListenerManager {
 
     public start(): void {
         this.registerEventListeners();
-        migrateSystemEvents(this.ctx).catch((error) => this.logger.error("迁移系统事件失败", error.message));
+        migrateDatabase(this.ctx).catch((error) => this.logger.error("迁移系统事件失败", error.message));
     }
 
     public stop(): void {
@@ -323,8 +323,12 @@ export class EventListenerManager {
 }
 // #endregion
 
-async function migrateSystemEvents(ctx: Context) {
-    const eventsToUpdate = await ctx.database.get(TableName.SystemEvents, { platform: { $exists: false } });
+async function migrateDatabase(ctx: Context) {
+    await ctx.database.remove(TableName.Messages, { interactionId: { $eq: "" } });
+    await ctx.database.remove(TableName.SystemEvents, { interactionId: { $eq: "" } });
+    await ctx.database.remove(TableName.AgentTurns, { interactionId: { $eq: "" } });
+
+    const eventsToUpdate = await ctx.database.get(TableName.SystemEvents, { platform: { $eq: "" } });
     for (const event of eventsToUpdate) {
         const interaction = await ctx.database
             .get(TableName.Interactions, { id: event.interactionId }, { fields: ["platform", "channelId"] })
@@ -340,4 +344,6 @@ async function migrateSystemEvents(ctx: Context) {
             );
         }
     }
+
+    ctx.logger.info("历史记录迁移完成");
 }

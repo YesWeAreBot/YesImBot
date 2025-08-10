@@ -55,6 +55,7 @@ export class WorldStateService extends Service<HistoryConfig> {
 
     constructor(ctx: Context, config: HistoryConfig) {
         super(ctx, Services.WorldState, true);
+        this.config = config;
         this.logger = this.ctx[Services.Logger].getLogger("[世界状态]");
 
         // Initialize all managers
@@ -276,6 +277,21 @@ export class WorldStateService extends Service<HistoryConfig> {
                 mentionedUserIds: "json",
             },
             { primary: "id" }
+        );
+
+        this.ctx.model.extend(
+            TableName.SystemEvents,
+            {
+                id: "string(64)",
+                interactionId: "string(64)",
+                platform: "string(255)",
+                channelId: "string(255)",
+                type: "string(255)",
+                timestamp: "timestamp",
+                payload: "json",
+                renderedMessage: "text",
+            },
+            { primary: "id", foreign: { interactionId: [TableName.Interactions, "id"] } }
         );
     }
 }
