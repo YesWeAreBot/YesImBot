@@ -326,6 +326,7 @@ class RequestExecutor {
             cause: new AggregateError(individualErrors, "所有模型均失败"),
             context: {
                 failedModels: this.accumulatedErrors.map((e) => ({ modelId: e.modelId, errorCode: (e.error as AppError).code })),
+                accumulatedErrors: this.accumulatedErrors,
             },
         });
     }
@@ -348,14 +349,18 @@ class RequestExecutor {
             const firstTokenTimeoutId = setTimeout(() => {
                 const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
                 timeoutError.name = "AbortError";
+                timeoutError["duration"] = timeoutPolicy.firstTokenTimeout;
                 controller.abort(timeoutError);
             }, timeoutPolicy.firstTokenTimeout * 1000);
 
             const timeoutId = setTimeout(() => {
                 const timeoutError = new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`);
                 timeoutError.name = "AbortError";
+                timeoutError["duration"] = timeoutPolicy.totalTimeout;
                 controller.abort(timeoutError);
             }, timeoutPolicy.totalTimeout * 1000);
+
+            options.abortSignal = controller.signal;
 
             options.onStreamStart = () => {
                 clearTimeout(firstTokenTimeoutId);
@@ -363,7 +368,7 @@ class RequestExecutor {
 
             try {
                 attemptLogger.info("发送请求...");
-                const result = await model.chat(options, controller.signal);
+                const result = await model.chat(options);
                 clearTimeout(timeoutId);
                 attemptLogger.success("请求成功");
                 return { success: true, data: result };

@@ -40,24 +40,23 @@ export class ProviderInstance {
     private _getModel<T extends BaseModel>(
         modelId: string,
         requiredAbility: ModelAbility,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         modelConstructor: new (ctx: Context, providerFn: any, config: ModelConfig, fetch: typeof globalThis.fetch) => T,
         providerCapability: unknown,
         capabilityName: string
     ): T | null {
         if (!providerCapability) {
-            //this.logger.debug(`[获取模型] 🟡 跳过 | 模型ID: ${modelId} | 原因: 提供商不支持 ${capabilityName} 能力`);
+            this.logger.debug(`[获取模型] 🟡 跳过 | 模型ID: ${modelId} | 原因: 提供商不支持 ${capabilityName} 能力`);
             return null;
         }
 
         const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
-            //this.logger.warn(`[获取模型] 🟡 未找到 | 模型ID: ${modelId}`);
+            this.logger.warn(`[获取模型] 🟡 未找到 | 模型ID: ${modelId}`);
             return null;
         }
 
         if (!modelConfig.abilities.includes(requiredAbility)) {
-            //this.logger.warn(`[获取模型] 🟡 跳过 | 模型 ${modelId} 未声明 '${requiredAbility}' 能力`);
+            this.logger.warn(`[获取模型] 🟡 跳过 | 模型 ${modelId} 未声明 '${requiredAbility}' 能力`);
             return null;
         }
 

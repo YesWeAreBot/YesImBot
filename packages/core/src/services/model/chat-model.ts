@@ -40,16 +40,17 @@ export interface ValidationOptions {
     validator?: ContentValidator;
 }
 export interface ChatRequestOptions {
-    messages: Message[];
+    abortSignal?: AbortSignal;
     onStreamStart?: () => void;
     validation?: ValidationOptions;
+    messages: Message[];
     stream?: boolean;
     temperature?: number;
     topP?: number;
     [key: string]: any;
 }
 export interface IChatModel extends BaseModel {
-    chat(options: ChatRequestOptions, abortSignal?: AbortSignal): Promise<GenerateTextResult>;
+    chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
     isVisionModel(): boolean;
 }
 
@@ -129,7 +130,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             }
         } catch (error) {
             // 将所有底层错误包装成统一的 AppError 并向上抛出
-            this._wrapAndThrow(error, chatOptions);
+            await this._wrapAndThrow(error, chatOptions);
         }
     }
 
@@ -142,10 +143,13 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 1. 模型配置中的基础参数 (temperature, topP)
         // 2. 模型配置中的自定义参数 (this.customParameters)
         // 3. 运行时传入的参数 (options)
-        const { validation, onStreamStart, ...restOptions } = options;
+        const { validation, onStreamStart, abortSignal, ...restOptions } = options;
         return {
             ...this.chatProvider(this.config.modelId),
-            fetch: this.fetch,
+            fetch: async (url: string, init: RequestInit) => {
+                init.signal = options.abortSignal;
+                return this.fetch(url, init);
+            },
 
             // 默认参数
             temperature: this.config.parameters.temperature,
@@ -245,11 +249,11 @@ export class ChatModel extends BaseModel implements IChatModel {
                     if (validationResult.valid && validationResult.earlyExit) {
                         this.logger.debug(`✅ [验证] 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
                         // @ts-ignore - 尝试调用底层库的中断方法
-                        if (stream.abort) stream.abort();
+                        if (stream.abort) stream.abort("early_exit");
                         else if (chatOptions.abortSignal && chatOptions.abortSignal.aborted === false) {
                             // 通过外部传入的 AbortController 来中断
                             const controller = (chatOptions.abortSignal as any).controller;
-                            if (controller) controller.abort();
+                            if (controller) controller.abort("early_exit");
                         }
                         if (validationResult.parsedData) {
                             finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
@@ -274,7 +278,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             await Promise.all([textProcessor(), stepProcessor()]);
         } catch (error) {
             // AbortError 是我们主动中断流时产生的预期错误，应静默处理
-            if (error.name === "AbortError") {
+            if (error.name === "AbortError" && error.message === "early_exit") {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
             } else {
                 throw error; // 重新抛出其他未预料的错误
@@ -322,7 +326,7 @@ export class ChatModel extends BaseModel implements IChatModel {
      * 捕获底层库抛出的原始错误，将其包装为包含丰富上下文的 AppError，然后重新抛出
      * 这是统一错误处理的核心
      */
-    private _wrapAndThrow(error: any, options: ChatOptions): never {
+    private async _wrapAndThrow(error: any, options: ChatOptions): Promise<never> {
         // 始终附加基础上下文信息
         const context = {
             modelId: this.id,
@@ -341,6 +345,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         if (error.name === "AbortError") {
             this.logger.error(`🛑 [错误] 请求超时 | 模型: ${this.id}`);
             throw new AppError(ErrorDefinitions.LLM.TIMEOUT, {
+                args: [error.duration],
                 cause: error,
                 context,
             });
@@ -372,7 +377,6 @@ export class ChatModel extends BaseModel implements IChatModel {
                 default:
                     definition = ErrorDefinitions.LLM.REQUEST_FAILED;
             }
-
             this.logger.error(`🛑 [错误] API 请求失败 | 状态码: ${status} | 模型: ${this.id}`);
             throw new AppError(definition, {
                 args: [`HTTP ${status}: ${error.message}`],
