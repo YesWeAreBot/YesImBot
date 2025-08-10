@@ -1,8 +1,8 @@
-import { Context, Logger, Service } from "koishi";
 import { IChatModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
+import { Context, Logger } from "koishi";
 import { HistoryConfig } from "./config";
-import { DiaryEntryData, InteractionData, MessageData } from "./types";
+import { DiaryEntryData } from "./types";
 
 export class ArchivalMemoryManager {
     private ctx: Context;
@@ -63,8 +63,11 @@ export class ArchivalMemoryManager {
 
     public async generateDiariesForAllChannels() {
         this.logger.info("开始执行每日日记生成任务...");
-        const channels = await this.ctx.database.get(TableName.Interactions, {}, { fields: ["platform", "channelId"] });
-        const uniqueChannels = [...new Set(channels.map((c) => `${c.platform}:${c.channelId}`))];
+        const messageChannels = await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] });
+        const agentTurnChannels = await this.ctx.database.get(TableName.AgentTurns, {}, { fields: ["platform", "channelId"] });
+
+        const allChannels = [...messageChannels, ...agentTurnChannels];
+        const uniqueChannels = [...new Set(allChannels.map((c) => `${c.platform}:${c.channelId}`))];
 
         for (const channel of uniqueChannels) {
             const [platform, channelId] = channel.split(":");
@@ -79,16 +82,11 @@ export class ArchivalMemoryManager {
         const endOfDay = new Date(date);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const interactions = await this.ctx.database.get(TableName.Interactions, {
+        const messages = await this.ctx.database.get(TableName.Messages, {
             platform,
             channelId,
-            startTimestamp: { $gte: startOfDay, $lt: endOfDay },
+            timestamp: { $gte: startOfDay, $lt: endOfDay },
         });
-
-        if (interactions.length === 0) return;
-
-        const interactionIds = interactions.map((i) => i.id);
-        const messages = await this.ctx.database.get(TableName.Messages, { interactionId: { $in: interactionIds } });
 
         if (messages.length < 5) return; // Don't generate diary for too few messages
 

@@ -2,7 +2,7 @@ import { Services, TableName } from "@/shared/constants";
 import { Logger, Argv, Random, Context, Session } from "koishi";
 import { AssetService } from "../assets";
 import { HistoryConfig } from "./config";
-import { SystemEventData, MessageData, AgentStimulus, UserMessagePayload, InteractionData, SystemEventPayload } from "./types";
+import { SystemEventData, MessageData, AgentStimulus, UserMessagePayload, SystemEventPayload } from "./types";
 import { WorldStateService } from "./index";
 import { truncate } from "@/shared/utils";
 
@@ -33,7 +33,6 @@ export class EventListenerManager {
 
     public start(): void {
         this.registerEventListeners();
-        migrateDatabase(this.ctx).catch((error) => this.logger.error("迁移系统事件失败", error.message));
     }
 
     public stop(): void {
@@ -71,7 +70,7 @@ export class EventListenerManager {
 
                 if (session.author?.isBot) return next();
 
-                const turn = await this.recordUserMessage(session);
+                await this.recordUserMessage(session);
                 await next();
 
                 if (!session["__commandHandled"]) {
@@ -80,7 +79,7 @@ export class EventListenerManager {
                         channelCid: session.cid,
                         session,
                         priority: 5, // Normal message priority
-                        payload: { interactionId: turn.id },
+                        payload: { messageIds: [session.messageId] },
                     };
                     this.ctx.emit("agent/stimulus", stimulus);
                 }
@@ -132,7 +131,13 @@ export class EventListenerManager {
                     },
                     renderedMessage: `系统提示：${authorId} ${action} ${targetId} ${suffix}`,
                 };
-                this.service.recordSystemEvent(session, payload);
+                this.service.recordSystemEvent({
+                    id: `sysevt_poke_${Random.id()}`,
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    timestamp: new Date(),
+                    ...payload,
+                } as SystemEventData);
 
                 break;
         }
@@ -152,7 +157,13 @@ export class EventListenerManager {
                         renderedMessage: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言。`,
                     };
                     this.service.updateMuteStatus(session.cid, Number.POSITIVE_INFINITY);
-                    this.service.recordSystemEvent(session, payload);
+                    this.service.recordSystemEvent({
+                        id: `sysevt_ban_${Random.id()}`,
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        timestamp: new Date(),
+                        ...payload,
+                    } as SystemEventData);
                     return;
                 }
 
@@ -175,7 +186,13 @@ export class EventListenerManager {
                         };
                         this.ctx.emit("agent/stimulus", stimulus);
                     }
-                    this.service.recordSystemEvent(session, payload);
+                    this.service.recordSystemEvent({
+                        id: `sysevt_unban_${Random.id()}`,
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        timestamp: new Date(),
+                        ...payload,
+                    } as SystemEventData);
                     return;
                 }
 
@@ -185,7 +202,13 @@ export class EventListenerManager {
                     renderedMessage: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms。`,
                 };
 
-                this.service.recordSystemEvent(session, payload);
+                this.service.recordSystemEvent({
+                    id: `sysevt_ban_${Random.id()}`,
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    timestamp: new Date(),
+                    ...payload,
+                } as SystemEventData);
 
                 if (isTargetingBot) {
                     const expiresAt = duration > 0 ? Date.now() + duration : 0;
@@ -206,12 +229,12 @@ export class EventListenerManager {
         if (!session) return;
 
         this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
-        const turn = await this.service.l1_manager.getOrCreatePendingTurn(session.platform, session.channelId, session.guildId);
         const commandEventId = `cmd_invoked_${session.messageId || Random.id()}`;
 
-        const eventPayload: Partial<SystemEventData> = {
+        const eventPayload: SystemEventData = {
             id: commandEventId,
-            interactionId: turn.id,
+            platform: session.platform,
+            channelId: session.channelId,
             type: "command-invoked",
             timestamp: new Date(),
             payload: {
@@ -221,7 +244,7 @@ export class EventListenerManager {
             },
         };
 
-        await this.ctx.database.create(TableName.SystemEvents, eventPayload as SystemEventData);
+        await this.service.recordSystemEvent(eventPayload);
 
         const pendingList = this.pendingCommands.get(session.channelId) || [];
         pendingList.push({
@@ -252,11 +275,10 @@ export class EventListenerManager {
         }
     }
 
-    private async recordUserMessage(session: Session): Promise<InteractionData> {
+    private async recordUserMessage(session: Session): Promise<void> {
         /* prettier-ignore */
-        this.logger.info( `用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
+        this.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
-        const turn = await this.service.l1_manager.getOrCreatePendingTurn(session.platform, session.channelId, session.guildId);
         if (session.guildId) {
             await this.updateMemberInfo(session);
         }
@@ -264,7 +286,7 @@ export class EventListenerManager {
         const content = await this.assetService.transform(session.content);
         this.logger.debug(`记录转义后的消息：${content}`);
 
-        const message: Omit<MessageData, "interactionId"> = {
+        const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
@@ -277,17 +299,15 @@ export class EventListenerManager {
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };
-        await this.service.l1_manager.recordMessage(turn.id, message);
-        return turn;
+        await this.service.recordMessage(message);
     }
 
     private async recordBotSentMessage(session: Session): Promise<void> {
         if (!session.content || !session.messageId) return;
 
         this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
-        const turn = await this.service.l1_manager.getOrCreatePendingTurn(session.platform, session.channelId, session.guildId);
 
-        const message: Omit<MessageData, "interactionId"> = {
+        const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
@@ -295,7 +315,7 @@ export class EventListenerManager {
             content: session.content,
             timestamp: new Date(),
         };
-        await this.service.l1_manager.recordMessage(turn.id, message);
+        await this.service.recordMessage(message);
     }
 
     private async updateMemberInfo(session: Session): Promise<void> {
@@ -322,28 +342,3 @@ export class EventListenerManager {
     }
 }
 // #endregion
-
-async function migrateDatabase(ctx: Context) {
-    await ctx.database.remove(TableName.Messages, { interactionId: { $eq: "" } });
-    await ctx.database.remove(TableName.SystemEvents, { interactionId: { $eq: "" } });
-    await ctx.database.remove(TableName.AgentTurns, { interactionId: { $eq: "" } });
-
-    const eventsToUpdate = await ctx.database.get(TableName.SystemEvents, { platform: { $eq: "" } });
-    for (const event of eventsToUpdate) {
-        const interaction = await ctx.database
-            .get(TableName.Interactions, { id: event.interactionId }, { fields: ["platform", "channelId"] })
-            .then((res) => res.shift());
-        if (interaction) {
-            await ctx.database.set(
-                TableName.SystemEvents,
-                { id: event.id },
-                {
-                    platform: interaction.platform,
-                    channelId: interaction.channelId,
-                }
-            );
-        }
-    }
-
-    ctx.logger.info("历史记录迁移完成");
-}

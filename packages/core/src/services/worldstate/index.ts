@@ -11,7 +11,7 @@ import {
     AgentStimulus,
     AgentTurnData,
     DiaryEntryData,
-    InteractionData,
+    L1HistoryItem,
     MemberData,
     MemoryChunkData,
     MessageData,
@@ -31,7 +31,6 @@ declare module "koishi" {
     }
     interface Tables {
         [TableName.Members]: MemberData;
-        [TableName.Interactions]: InteractionData;
         [TableName.AgentTurns]: AgentTurnData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
@@ -43,12 +42,11 @@ declare module "koishi" {
 export class WorldStateService extends Service<HistoryConfig> {
     static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
 
-    public contextBuilder: ContextBuilder;
     public l1_manager: InteractionManager;
     public l2_manager: SemanticMemoryManager;
     public l3_manager: ArchivalMemoryManager;
 
-    private maintenanceTimer: NodeJS.Timeout;
+    private contextBuilder: ContextBuilder;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
     private readonly mutedChannels = new Map<string, number>(); // Key: channelCid, Value: mute expiration timestamp
@@ -62,7 +60,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.l1_manager = new InteractionManager(ctx, config);
         this.l2_manager = new SemanticMemoryManager(ctx, config);
         this.l3_manager = new ArchivalMemoryManager(ctx, config);
-        this.contextBuilder = new ContextBuilder(ctx, config, this.l2_manager, this.l3_manager);
+        this.contextBuilder = new ContextBuilder(ctx, config, this.l1_manager, this.l2_manager, this.l3_manager);
         this.eventListenerManager = new EventListenerManager(ctx, this, config);
         this.commandManager = new HistoryCommandManager(ctx, this, config);
     }
@@ -77,10 +75,6 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.eventListenerManager.start();
         this.commandManager.register();
 
-        this.maintenanceTimer = setInterval(() => {
-            this.runMaintenanceTasks();
-        }, this.config.cleanupIntervalSec * 1000);
-
         this.logger.info("服务已启动");
     }
 
@@ -88,28 +82,58 @@ export class WorldStateService extends Service<HistoryConfig> {
         this.eventListenerManager.stop();
         this.l2_manager.stop();
         this.l3_manager.stop();
-        if (this.maintenanceTimer) {
-            clearInterval(this.maintenanceTimer);
-        }
         this.logger.info("服务已停止");
     }
 
-    public async buildContext(platform: string, channelId: string): Promise<WorldState> {
-        return this.contextBuilder.build(platform, channelId);
+    public async buildWorldState(session: Session): Promise<WorldState> {
+        const worldState = await this.contextBuilder.build(session);
+
+        // Mark new events before returning
+        const lastAgentTurnTime = worldState.l1_working_memory
+            .filter((item) => item.type === "agent_turn")
+            .map((item) => item.timestamp)
+            .reduce((latest, current) => (current > latest ? current : latest), new Date(0));
+
+        worldState.l1_working_memory.forEach((item) => {
+            item.is_new = item.timestamp > lastAgentTurnTime;
+            (item as any).is_message = item.type === "message";
+            (item as any).is_agent_turn = item.type === "agent_turn";
+            (item as any).is_system_event = item.type === "system_event";
+        });
+
+        return worldState;
     }
 
-    public async recordAgentTurn(
-        interactionId: string,
-        agentTurn: Omit<AgentTurnData, "id" | "interactionId" | "timestamp">
-    ): Promise<void> {
-        await this.l1_manager.processTurn(interactionId, agentTurn);
+    public async recordMessage(message: MessageData): Promise<void> {
+        await this.l1_manager.recordMessage(message);
+    }
 
-        // Asynchronously trigger L2 processing
+    public async recordAgentTurn(agentTurn: AgentTurnData): Promise<void> {
+        await this.l1_manager.recordAgentTurn(agentTurn);
+
         if (this.config.l2_memory.enabled) {
-            const interaction = await this.ctx.database.get(TableName.Interactions, interactionId).then((res) => res[0]);
-            if (interaction) {
-                this.l2_manager.processAndStoreTurn(interaction);
-            }
+            this.ctx.setTimeout(async () => {
+                try {
+                    const allTurns = await this.ctx.database.get(
+                        TableName.AgentTurns,
+                        { channelId: agentTurn.channelId },
+                        { sort: { timestamp: "desc" } }
+                    );
+                    const previousTurn = allTurns.find((t) => t.id !== agentTurn.id);
+                    const since = previousTurn ? previousTurn.timestamp : new Date(0);
+
+                    const messages = await this.ctx.database.get(TableName.Messages, {
+                        channelId: agentTurn.channelId,
+                        timestamp: { $gte: since, $lte: agentTurn.timestamp },
+                    });
+
+                    if (messages.length > 0) {
+                        await this.l2_manager.processConversationSlice(messages, agentTurn);
+                    }
+                } catch (error) {
+                    this.logger.error(`处理 L2 记忆失败 | AgentTurn ID: ${agentTurn.id}`, error);
+                }
+            }, 0);
         }
     }
 
@@ -122,18 +146,8 @@ export class WorldStateService extends Service<HistoryConfig> {
         });
     }
 
-    public async recordSystemEvent(session: Session, payload: Partial<SystemEventData>): Promise<void> {
-        const turn = await this.l1_manager.getOrCreatePendingTurn(session.platform, session.channelId, session.guildId);
-        await this.ctx.database.create(TableName.SystemEvents, {
-            id: `sysevt_${Random.id()}`,
-            interactionId: turn.id,
-            platform: session.platform,
-            channelId: session.channelId,
-            type: payload.type,
-            timestamp: new Date(),
-            payload: payload.payload,
-            renderedMessage: payload.renderedMessage,
-        } as SystemEventData);
+    public async recordSystemEvent(event: SystemEventData): Promise<void> {
+        await this.l1_manager.recordSystemEvent(event);
     }
 
     public isBotMuted(channelCid: string): boolean {
@@ -156,11 +170,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             this.mutedChannels.delete(cid);
             this.logger.debug(`[${cid}] | 禁言状态已解除`);
         }
-    }
-
-    private runMaintenanceTasks(): void {
-        this.l1_manager.checkAndCloseStaleTurns();
-        // Other maintenance tasks can be added here
     }
 
     private async initializeMuteStatus(): Promise<void> {
@@ -207,24 +216,9 @@ export class WorldStateService extends Service<HistoryConfig> {
         );
 
         this.ctx.model.extend(
-            TableName.Interactions,
-            {
-                id: "string(64)",
-                platform: "string(255)",
-                channelId: "string(255)",
-                guildId: "string(255)",
-                status: "string(32)",
-                startTimestamp: "timestamp",
-                endTimestamp: "timestamp",
-            },
-            { primary: "id" }
-        );
-
-        this.ctx.model.extend(
             TableName.Messages,
             {
                 id: "string(255)",
-                interactionId: "string(64)",
                 platform: "string(255)",
                 channelId: "string(255)",
                 sender: "json",
@@ -232,28 +226,28 @@ export class WorldStateService extends Service<HistoryConfig> {
                 content: "text",
                 quoteId: "string(255)",
             },
-            { foreign: { interactionId: [TableName.Interactions, "id"] } }
+            { primary: "id" }
         );
 
         this.ctx.model.extend(
             TableName.AgentTurns,
             {
                 id: "string(64)",
-                interactionId: "string(64)",
+                platform: "string(255)",
+                channelId: "string(255)",
                 timestamp: "timestamp",
                 thoughts: "json",
                 actions: "json",
                 observations: "json",
                 request_heartbeat: "boolean",
             },
-            { primary: "id", foreign: { interactionId: [TableName.Interactions, "id"] } }
+            { primary: "id" }
         );
 
         this.ctx.model.extend(
             TableName.L2Chunks,
             {
                 id: "string(64)",
-                sourceInteractionId: "string(64)",
                 platform: "string(255)",
                 channelId: "string(255)",
                 content: "text",
@@ -283,7 +277,6 @@ export class WorldStateService extends Service<HistoryConfig> {
             TableName.SystemEvents,
             {
                 id: "string(64)",
-                interactionId: "string(64)",
                 platform: "string(255)",
                 channelId: "string(255)",
                 type: "string(255)",
@@ -291,7 +284,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 payload: "json",
                 renderedMessage: "text",
             },
-            { primary: "id", foreign: { interactionId: [TableName.Interactions, "id"] } }
+            { primary: "id" }
         );
     }
 }

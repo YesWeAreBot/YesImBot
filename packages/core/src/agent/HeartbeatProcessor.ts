@@ -5,11 +5,11 @@ import { Context, h, Session } from "koishi";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AgentStimulus, UserMessagePayload } from "@/services/worldstate";
+import { AgentResponse, AgentStimulus, AgentTurnData } from "@/services/worldstate";
 import { WorldStateService } from "@/services/worldstate/index";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
-import { estimateTokensByRegex, JsonParser } from "@/shared/utils";
+import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./ContextBuilder";
 
@@ -39,16 +39,18 @@ export class HeartbeatProcessor {
      */
     public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
         const collectedResponses: AgentResponse[] = [];
+        let agentTurnTimestamp: Date | null = null;
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
-        const interactionId = stimulus.type === "user_message" ? (stimulus.payload as UserMessagePayload).interactionId : null;
-
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
             try {
                 const result = await this.performSingleHeartbeat(stimulus, collectedResponses);
                 if (result) {
+                    if (!agentTurnTimestamp) {
+                        agentTurnTimestamp = result.timestamp;
+                    }
                     collectedResponses.push(result.response);
                     shouldContinueHeartbeat = result.continue;
                     success = true; // 至少成功一次心跳
@@ -62,13 +64,19 @@ export class HeartbeatProcessor {
             }
         }
 
-        if (collectedResponses.length > 0 && interactionId) {
-            await this.worldStateService.recordAgentTurn(interactionId, {
-                thoughts: collectedResponses[collectedResponses.length - 1].thoughts,
+        if (collectedResponses.length > 0) {
+            const finalResponse = collectedResponses[collectedResponses.length - 1];
+            const agentTurn: AgentTurnData = {
+                id: `agent_${stimulus.session.messageId || stimulus.session.id}`,
+                platform: stimulus.session.platform,
+                channelId: stimulus.session.channelId,
+                timestamp: agentTurnTimestamp, // 使用从第一个心跳中捕获的时间戳
+                thoughts: finalResponse.thoughts,
                 actions: collectedResponses.flatMap((r) => r.actions),
                 observations: collectedResponses.flatMap((r) => r.observations),
                 request_heartbeat: false, // Final turn always ends heartbeat
-            });
+            };
+            await this.worldStateService.recordAgentTurn(agentTurn);
         }
 
         return success;
@@ -82,7 +90,7 @@ export class HeartbeatProcessor {
     private async performSingleHeartbeat(
         stimulus: AgentStimulus<any>,
         previousResponses: AgentResponse[]
-    ): Promise<{ response: AgentResponse; continue: boolean } | null> {
+    ): Promise<{ response: AgentResponse; continue: boolean; timestamp: Date } | null> {
         const { session } = stimulus;
 
         // 1. 构建非消息部分的上下文
@@ -119,6 +127,9 @@ export class HeartbeatProcessor {
                     return `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`;
                 }
                 return this;
+            },
+            _formatDate: function () {
+                return formatDate(this, "MM-DD HH:mm");
             },
         };
 
@@ -160,8 +171,9 @@ export class HeartbeatProcessor {
             },
         });
 
-        const responseTime = Date.now() - stime;
-        this.logger.info(`💬 LLM 响应时间: ${responseTime}ms`);
+        const llmResponseTimestamp = new Date();
+        const responseTime = llmResponseTimestamp.getTime() - stime;
+        //this.logger.info(`💬 LLM 响应时间: ${responseTime}ms`);
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
@@ -183,7 +195,7 @@ export class HeartbeatProcessor {
         const fullResponse: AgentResponse = { ...agentResponseData, observations };
 
         this.logger.success("单次心跳成功完成。");
-        return { response: fullResponse, continue: agentResponseData.request_heartbeat };
+        return { response: fullResponse, continue: agentResponseData.request_heartbeat, timestamp: llmResponseTimestamp };
     }
 
     /**

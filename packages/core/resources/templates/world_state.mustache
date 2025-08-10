@@ -33,16 +33,60 @@
 
   {{! ======================= L1 Working Memory ======================= }}
   <l1_working_memory>
-    <summary>This is the most recent and active conversation history.</summary>
-    {{#l1_working_memory.processed_turns}}
-    <turn id="{{id}}" status="{{status}}" start_time="{{startTimestamp}}" end_time="{{endTimestamp}}">
-      <dialogue>
-      {{#dialogue}}
-        <message id="{{id}}" timestamp="{{timestamp}}" sender_id="{{sender.id}}" sender_name="{{sender.name}}">{{content}}</message>
-      {{/dialogue}}
-      </dialogue>
-      {{#agentTurn}}
-      <agent_turn>
+    <summary>This is the most recent and active conversation history. It's split into two parts: events that have already been processed, and new, unseen events that triggered this turn.</summary>
+    <processed_events>
+    {{#processed_events}}
+      {{#is_message}}
+      <message>[{{id}}|{{#timestamp}}{{_formatDate}}{{/timestamp}}|{{sender.name}}({{sender.id}})] {{content}}</message>
+      {{/is_message}}
+      {{#is_agent_turn}}
+      <agent_turn timestamp="{{#timestamp}}{{_formatDate}}{{/timestamp}}">
+        {{#thoughts}}
+        <thoughts>
+          <observe>{{observe}}</observe>
+          <analyze_infer>{{analyze_infer}}</analyze_infer>
+          <plan>{{plan}}</plan>
+        </thoughts>
+        {{/thoughts}}
+        {{#actions}}
+        <actions>
+        {{#.}}
+          <action>
+            <function>{{function}}</function>
+            <params>{{_renderParams}}</params>
+          </action>
+        {{/.}}
+        </actions>
+        {{/actions}}
+        {{#observations.length}}
+        <observations>
+        {{#observations}}
+          <observation>
+            <function>{{function}}</function>
+            <status>{{status}}</status>
+            {{#result}}
+            <result>{{_toString}}</result>
+            {{/result}}
+          </observation>
+        {{/observations}}
+        </observations>
+        {{/observations.length}}
+      </agent_turn>
+      {{/is_agent_turn}}
+      {{#is_system_event}}
+      <system_event>[{{#timestamp}}{{_formatDate}}{{/timestamp}}|System] {{message}}</system_event>
+      {{/is_system_event}}
+    {{/processed_events}}
+    </processed_events>
+    <new_events>
+    <!-- The following are new events that you have not seen before. -->
+    {{#new_events}}
+    {{#.}}
+      {{#is_message}}
+      <message>[{{id}}|{{#timestamp}}{{_formatDate}}{{/timestamp}}|{{sender.name}}({{sender.id}})] {{content}}</message>
+      {{/is_message}}
+      {{#is_agent_turn}}
+      <agent_turn timestamp="{{#timestamp}}{{_formatDate}}{{/timestamp}}">
         {{#thoughts}}
         <thoughts>
           <observe>{{observe}}</observe>
@@ -72,19 +116,13 @@
         </observations>
         {{/observations}}
       </agent_turn>
-      {{/agentTurn}}
-    </turn>
-    {{/l1_working_memory.processed_turns}}
-
-    {{#l1_working_memory.pending_turn}}
-    <turn id="{{id}}" status="pending" start_time="{{startTimestamp}}">
-      <dialogue>
-      {{#dialogue}}
-        <message id="{{id}}" timestamp="{{timestamp}}" sender_id="{{sender.id}}" sender_name="{{sender.name}}">{{content}}</message>
-      {{/dialogue}}
-      </dialogue>
-    </turn>
-    {{/l1_working_memory.pending_turn}}
+      {{/is_agent_turn}}
+      {{#is_system_event}}
+      <system_event>[{{#timestamp}}{{_formatDate}}{{/timestamp}}|System] {{message}}</system_event>
+      {{/is_system_event}}
+    {{/.}}
+    {{/new_events}}
+    </new_events>
   </l1_working_memory>
 
   {{! ======================= L2 Retrieved Memories ======================= }}

@@ -1,12 +1,12 @@
 import { Services } from "@/shared/constants";
 import { ImagePart, TextPart } from "@xsai/shared-chat";
-import { Context, h, Logger } from "koishi";
+import { Context, Logger } from "koishi";
 
 import { AssetService } from "@/services/assets";
 import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
-import { AgentStimulus, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
+import { AgentStimulus, ContextualMessage, L1HistoryItem, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
 import { AgentBehaviorConfig } from "./config";
 
 interface ImageCandidate {
@@ -44,29 +44,65 @@ export class PromptContextBuilder {
      */
     public async build(stimulus: AgentStimulus<any>) {
         const { type, session, payload } = stimulus;
-        const worldState = await this.worldStateService.buildContext(session.platform, session.channelId);
 
+        // 1. 从 WorldStateService 获取已经包含 L1, L2, L3 记忆的 WorldState
+        const worldState = await this.worldStateService.buildWorldState(session);
+
+        // 2. 预处理 L1 记忆，添加用于模板渲染的字段
+        const processedL1History = this.preprocessL1History(worldState.l1_working_memory);
+
+        // 3. 将处理过的 L1 记忆分割为"已读"和"新"两部分
+        const { processed_events, new_events } = this.partitionL1History(processedL1History);
+        worldState.l1_working_memory = undefined; // 清理掉原始数据，避免混淆
+        (worldState as any).processed_events = processed_events;
+        (worldState as any).new_events = new_events;
+
+        // 4. 构建并附加触发上下文
         let triggerContext: object = {};
         switch (type) {
             case "user_message":
-                triggerContext = { isUserMessage: true, interactionId: (payload as UserMessagePayload).interactionId };
+                triggerContext = { isUserMessage: true, messageIds: (payload as UserMessagePayload).messageIds };
                 break;
             case "system_event":
-                triggerContext = {
-                    isSystemEvent: true,
-                    event: payload,
-                };
+                triggerContext = { isSystemEvent: true, event: payload };
                 break;
-            // Future cases for scheduled tasks, etc.
         }
         worldState.triggerContext = triggerContext;
 
+        // 5. 返回最终的上下文对象
         return {
             toolSchemas: this.toolService.getToolSchemas(),
             memoryBlocks: await this.memoryService.getMemoryBlocksForRendering(),
             worldState: worldState,
         };
     }
+
+    /**
+     * 为 L1 历史记录中的每个项目添加用于渲染的辅助字段。
+     */
+    private preprocessL1History(history: L1HistoryItem[]) {
+        // No longer needed to add fields here, but keeping the method for structure.
+        // The partitioning logic will handle the raw items.
+        return history;
+    }
+
+    /**
+     * 将预处理过的 L1 历史记录分割为"已处理"和"新"两部分。
+     */
+    private partitionL1History(history: L1HistoryItem[]) {
+        const processed_events: any[] = [];
+        const new_events: any[] = [];
+        const firstNewIndex = history.findIndex((item) => item.is_new);
+
+        if (firstNewIndex === -1) {
+            processed_events.push(...history);
+        } else {
+            processed_events.push(...history.slice(0, firstNewIndex));
+            new_events.push(...history.slice(firstNewIndex));
+        }
+        return { processed_events, new_events };
+    }
+
     /**
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
@@ -100,22 +136,22 @@ export class PromptContextBuilder {
         // ... 原来的 buildMultimodalContext 的全部逻辑 ...
 
         // 1. 将所有消息扁平化并建立索引
-        const allTurns = [worldState.l1_working_memory.pending_turn, ...worldState.l1_working_memory.processed_turns].filter(Boolean);
-
-        const allMessages = allTurns.flatMap((t) => t.dialogue);
+        const allMessages = (worldState.l1_working_memory || []).filter(
+            (item): item is { type: "message" } & ContextualMessage => item.type === "message"
+        );
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
         const imageTags = ["img", "image"];
 
         // 2. 收集所有潜在的图片候选者，并赋予优先级
-        const imageCandidates = allMessages.flatMap((msg) => {
-            const elements = h.parse(msg.content);
+        const imageCandidates: ImageCandidate[] = allMessages.flatMap((msg) => {
+            const elements = msg.elements;
             const imageIds = elements.filter((e) => imageTags.includes(e.type) && e.attrs.id).map((e) => e.attrs.id as string);
 
             // 检查引用，为被引用的图片赋予更高优先级
             let isQuotedImage = false;
             if (msg.quoteId && messageMap.has(msg.quoteId)) {
-                const quotedElements = h.parse(messageMap.get(msg.quoteId).content);
+                const quotedElements = messageMap.get(msg.quoteId).elements;
                 if (quotedElements.some((e) => imageTags.includes(e.type))) {
                     isQuotedImage = true;
                 }

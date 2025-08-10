@@ -1,9 +1,13 @@
 import { Services, TableName } from "@/shared/constants";
-import { randomUUID } from "crypto";
-import { Context, Logger } from "koishi";
+import { Context, h, Logger } from "koishi";
 import { HistoryConfig } from "./config";
-import { AgentTurnData, InteractionData, MessageData } from "./types";
+import { AgentTurnData, MessageData, SystemEventData, L1HistoryItem, ContextualSystemEvent } from "./types";
 
+/**
+ * L1 工作记忆管理器
+ * 负责将所有类型的事件（消息、Agent 回合、系统事件）持久化到数据库，
+ * 并提供按时间顺序检索这些事件以构建线性历史记录的方法。
+ */
 export class InteractionManager {
     private logger: Logger;
 
@@ -11,89 +15,96 @@ export class InteractionManager {
         private ctx: Context,
         private config: HistoryConfig
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[交互轮次]");
+        this.logger = ctx[Services.Logger].getLogger("[L1 记忆]");
     }
 
     /**
-     * 获取一个频道的当前待处理轮次。如果没有，则创建一个新的。
+     * 记录一条消息到数据库。
      */
-    public async getOrCreatePendingTurn(platform: string, channelId: string, guildId?: string): Promise<InteractionData> {
-        const pendingTurns = await this.ctx.database.get(
-            TableName.Interactions,
-            { platform, channelId, status: "pending" },
-            { limit: 1, sort: { startTimestamp: "desc" } }
-        );
-
-        if (pendingTurns.length > 0) {
-            return pendingTurns[0];
-        }
-
-        // 没有待处理轮次，创建新的
-        const newTurn: InteractionData = {
-            id: randomUUID(),
-            platform,
-            channelId,
-            guildId,
-            status: "pending",
-            startTimestamp: new Date(),
-        };
-        await this.ctx.database.create(TableName.Interactions, newTurn);
-        this.logger.debug(`创建新交互轮次 | ID: ${newTurn.id} | 频道: ${platform}:${channelId}`);
-        return newTurn;
-    }
-
-    /**
-     * 记录一条消息到指定的交互轮次
-     */
-    public async recordMessage(interactionId: string, message: Omit<MessageData, "interactionId">): Promise<void> {
+    public async recordMessage(message: MessageData): Promise<void> {
         try {
-            await this.ctx.database.create(TableName.Messages, { ...message, interactionId });
+            await this.ctx.database.create(TableName.Messages, message);
         } catch (error) {
-            this.logger.error(`记录消息失败 | 轮次ID: ${interactionId} | 消息ID: ${message.id}`);
+            this.logger.error(`记录消息失败 | 消息ID: ${message.id}`);
             this.logger.debug(error);
         }
     }
 
     /**
-     * 将一个交互轮次标记为“已处理”，并记录 Agent 的响应。
+     * 记录一个 Agent 响应回合到数据库。
      */
-    public async processTurn(interactionId: string, agentTurn: Omit<AgentTurnData, "id" | "interactionId" | "timestamp">): Promise<void> {
-        const now = new Date();
-        await this.ctx.database.withTransaction(async (db) => {
-            await db.set(
-                TableName.Interactions,
-                { id: interactionId },
-                {
-                    status: "processed",
-                    endTimestamp: now,
-                }
-            );
-            await db.create(TableName.AgentTurns, {
-                id: interactionId,
-                interactionId: interactionId,
-                timestamp: now,
-                ...agentTurn,
-            });
-        });
-        this.logger.debug(`交互轮次已处理 | ID: ${interactionId}`);
+    public async recordAgentTurn(agentTurn: AgentTurnData): Promise<void> {
+        try {
+            await this.ctx.database.create(TableName.AgentTurns, agentTurn);
+        } catch (error) {
+            this.logger.error(`记录 Agent 回合失败 | ID: ${agentTurn.id}`);
+            this.logger.debug(error);
+        }
     }
 
     /**
-     * 定期检查并强制关闭过时的待处理轮次。
+     * 记录一个系统事件到数据库。
      */
-    public async checkAndCloseStaleTurns(): Promise<void> {
-        const timeout = this.config.l1_memory.pendingTurnTimeoutSec * 1000;
-        const cutoffTime = new Date(Date.now() - timeout);
+    public async recordSystemEvent(event: SystemEventData): Promise<void> {
+        try {
+            await this.ctx.database.create(TableName.SystemEvents, event);
+        } catch (error) {
+            this.logger.error(`记录系统事件失败 | ID: ${event.id}`);
+            this.logger.debug(error);
+        }
+    }
 
-        const staleTurns = await this.ctx.database.get(TableName.Interactions, {
-            status: "pending",
-            startTimestamp: { $lt: cutoffTime },
-        });
+    /**
+     * 获取指定频道的 L1 线性历史记录。
+     * @param channelId 频道 ID
+     * @param limit 检索的事件数量上限
+     * @returns 按时间升序排列的事件数组
+     */
+    public async getL1History(channelId: string, limit: number): Promise<L1HistoryItem[]> {
+        const [messages, agentTurns, systemEvents] = await Promise.all([
+            this.ctx.database.get(TableName.Messages, { channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.AgentTurns, { channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.SystemEvents, { channelId }, { limit, sort: { timestamp: "desc" } }),
+        ]);
 
-        if (staleTurns.length === 0) return;
+        const combinedEvents: L1HistoryItem[] = [
+            ...messages.map(
+                (m): L1HistoryItem => ({
+                    type: "message",
+                    id: m.id,
+                    sender: m.sender,
+                    content: m.content,
+                    elements: h.parse(m.content),
+                    timestamp: m.timestamp,
+                    quoteId: m.quoteId,
+                })
+            ),
+            ...agentTurns.map(
+                (a): L1HistoryItem => ({
+                    type: "agent_turn",
+                    timestamp: a.timestamp,
+                    thoughts: a.thoughts,
+                    actions: a.actions,
+                    observations: a.observations,
+                })
+            ),
+            ...systemEvents.map(
+                (s): L1HistoryItem => ({
+                    type: "system_event",
+                    id: s.id,
+                    eventType: s.type,
+                    message: s.renderedMessage,
+                    timestamp: s.timestamp,
+                })
+            ),
+        ];
 
-        const idsToClose = staleTurns.map((turn) => turn.id);
-        await this.ctx.database.set(TableName.Interactions, { id: { $in: idsToClose } }, { status: "processed", endTimestamp: new Date() });
-        this.logger.info(`强制关闭了 ${idsToClose.length} 个过时的待处理轮次。`);
+        // 按时间戳升序排序
+        combinedEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        // 应用最终的数量限制
+        const history = combinedEvents.slice(-limit);
+
+        return history;
     }
 }

@@ -9,7 +9,7 @@
  */
 
 import { TableName } from "@/shared/constants";
-import { Element, h, Session } from "koishi";
+import { Element, Session } from "koishi";
 
 // =================================================================================
 // #region 核心数据模型 (对应数据库表结构)
@@ -31,28 +31,9 @@ export interface MemberData {
     lastActive: Date;
 }
 
-/**
- * 交互轮次的状态
- * - pending: 正在进行中，等待 Agent 响应。
- * - processed: Agent 已完成响应，此轮次已结束。
- */
-export type InteractionStatus = "pending" | "processed";
-
-/** 交互轮次 (InteractionTurn) 的数据模型，是 L1 记忆的基本单位。 */
-export interface InteractionData {
-    id: string; // 轮次唯一ID
-    platform: string;
-    channelId: string;
-    guildId?: string;
-    status: InteractionStatus;
-    startTimestamp: Date;
-    endTimestamp?: Date; // 当 status 变为 processed 时设置
-}
-
 /** 消息的数据模型 */
 export interface MessageData {
     id: string; // 消息唯一ID
-    interactionId: string; // 所属的交互轮次ID
     platform: string;
     channelId: string;
     sender: {
@@ -68,7 +49,6 @@ export interface MessageData {
 /** 系统事件的数据模型 */
 export interface SystemEventData {
     id: string; // 事件唯一ID
-    interactionId: string; // 所属的交互轮次ID
     platform: string;
     channelId: string;
     type: string; // 例如 'guild-member-ban', 'command-invoked'
@@ -79,8 +59,9 @@ export interface SystemEventData {
 
 /** Agent 响应回合的数据模型，包含完整的思考链。 */
 export interface AgentTurnData {
-    id: string; // Agent回合的唯一ID, 通常可以与 interactionId 相同
-    interactionId: string; // 所属的交互轮次ID
+    id: string; // Agent回合的唯一ID
+    platform: string;
+    channelId: string;
     timestamp: Date;
     // 思考过程 (Thought): Agent 的内心独白
     thoughts: { observe: string; analyze_infer: string; plan: string };
@@ -96,7 +77,6 @@ export type AgentResponse = Omit<AgentTurnData, "id" | "interactionId" | "timest
 /** L2 记忆片段的数据模型，存储在向量数据库中。 */
 export interface MemoryChunkData {
     id: string;
-    sourceInteractionId: string;
     platform: string;
     channelId: string;
     content: string;
@@ -130,6 +110,7 @@ export interface ContextualMessage {
     elements: Element[];
     timestamp: Date;
     quoteId?: string;
+    is_new?: boolean; // 是否是自上次 Agent 响应以来的新消息
 }
 
 /** 上下文中的系统事件对象 */
@@ -138,10 +119,13 @@ export interface ContextualSystemEvent {
     eventType: string;
     message: string; // 直接可读的事件描述
     timestamp: Date;
+    is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
 }
 
 /** Agent 响应回合在上下文中的表现形式（支持优雅降级） */
 export interface AgentTurnContext {
+    timestamp: Date;
+    is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
     /** 思考过程 (Thought): Agent 的内心独白。这是最有价值、保留最久的部分。 */
     thoughts?: { observe: string; analyze_infer: string; plan: string };
     /** 行动 (Action): Agent 决定执行的具体动作。 */
@@ -150,31 +134,11 @@ export interface AgentTurnContext {
     observations?: { function: string; status: "success" | "failed" | string; result?: any }[];
 }
 
-/** 组装后的交互轮次对象，用于填充 L1 工作记忆。 */
-export interface InteractionTurn {
-    id: string;
-    status: InteractionStatus;
-    startTimestamp: Date;
-    endTimestamp?: Date;
-
-    /**
-     * 该轮次的对话内容。
-     * 数组内容可能被从头部截断，以适应 L1 的容量限制。
-     */
-    dialogue: ContextualMessage[];
-
-    /**
-     * 该轮次的系统事件。
-     */
-    systemEvents: ContextualSystemEvent[];
-
-    /**
-     * Agent 在此轮次的响应。
-     * 其内容会根据“优雅降级”策略逐步减少。
-     * 对于被强制关闭的轮次，此字段可能不存在。
-     */
-    agentTurn?: AgentTurnContext;
-}
+/** L1 工作记忆中的单个事件条目 */
+export type L1HistoryItem =
+    | ({ type: "message" } & ContextualMessage)
+    | ({ type: "agent_turn" } & AgentTurnContext)
+    | ({ type: "system_event" } & ContextualSystemEvent);
 
 /** 从 L2 语义索引中检索出的记忆片段 */
 export interface RetrievedMemoryChunk {
@@ -198,18 +162,8 @@ export interface WorldState {
         id: string;
         name: string;
     };
-    /** L1: 工作记忆，包含一个待处理轮次和多个经历“优雅降级”的已处理轮次。 */
-    l1_working_memory: {
-        /** 等待Agent响应的当前轮次 (总是包含完整信息) */
-        pending_turn?: InteractionTurn;
-
-        /**
-         * 最近已完成的轮次历史，按时间从新到旧排列。
-         * 数组中的每个 InteractionTurn 的内容会根据其位置（新鲜度）而不同。
-         * 例如，第一个元素可能是“Fresh”，第五个可能是“Abstracted”，第十个可能是“Summarized”。
-         */
-        processed_turns: InteractionTurn[];
-    };
+    /** L1: 工作记忆，一个按时间顺序排列的线性事件流。 */
+    l1_working_memory: L1HistoryItem[];
     /** L2: 从海量历史中检索到的相关记忆片段 */
     l2_retrieved_memories?: RetrievedMemoryChunk[];
     /** L3: 相关的历史日记条目 */
@@ -233,7 +187,7 @@ export type StimulusType = "user_message" | "system_event" | "scheduled_task" | 
 
 /** 用户消息刺激的载荷 */
 export interface UserMessagePayload {
-    interactionId: string;
+    messageIds: string[];
 }
 
 /** 系统事件刺激的载荷 */
@@ -257,7 +211,6 @@ export interface AgentStimulus<T> {
 declare module "koishi" {
     interface Tables {
         [TableName.Members]: MemberData;
-        [TableName.Interactions]: InteractionData;
         [TableName.AgentTurns]: AgentTurnData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;

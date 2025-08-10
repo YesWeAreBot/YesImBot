@@ -3,7 +3,7 @@ import { Context, Logger, Query } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { WorldStateService } from "./index";
-import { InteractionData } from "./types";
+import { MessageData } from "./types";
 
 // =================================================================================
 // #region HistoryCommandManager - 负责所有CLI指令
@@ -43,8 +43,8 @@ export class HistoryCommandManager {
 
                 if (channelId) {
                     if (!platform) {
-                        const interactions = await this.ctx.database.get(TableName.Interactions, { channelId }, { fields: ["platform"] });
-                        const platforms = [...new Set(interactions.map((d) => d.platform))];
+                        const messages = await this.ctx.database.get(TableName.Messages, { channelId }, { fields: ["platform"] });
+                        const platforms = [...new Set(messages.map((d) => d.platform))];
 
                         if (platforms.length === 0) return `🟡🟡🟡 频道 "${channelId}" 未找到任何历史记录，已跳过`;
                         if (platforms.length === 1) platform = platforms[0];
@@ -53,16 +53,11 @@ export class HistoryCommandManager {
                             return `❌❌ 频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}请使用 -p <platform> 来指定`;
                     }
 
-                    const interactions = await this.ctx.database.get(TableName.Interactions, {
-                        platform,
-                        channelId,
-                    });
-                    const allMessages = await this.ctx.database.get(TableName.Messages, {
-                        interactionId: { $in: interactions.map((i) => i.id) },
-                    });
+                    // const messageCount = await this.ctx.database.eval(TableName.Messages, { platform, channelId }, (row) => row.count());
+                    const messageCount = await this.ctx.database.get(TableName.Messages, { platform, channelId }, { fields: ["id"] });
 
                     /* prettier-ignore */
-                    return `在 ${platform}:${channelId} 中有 ${allMessages.length} 条消息${allMessages.length > this.config.l1_memory.maxMessages ? `，L1工作记忆中最多保留 ${this.config.l1_memory.maxMessages} 条` : ""}`;
+                    return `在 ${platform}:${channelId} 中有 ${messageCount.length} 条消息，L1工作记忆中最多保留 ${this.config.l1_memory.maxMessages} 条`;
                 }
             });
 
@@ -72,11 +67,9 @@ export class HistoryCommandManager {
             .option("platform", "-p <platform:string> 指定平台")
             .option("channel", "-c <channel:string> 指定频道ID (多个用逗号分隔)")
             .option("target", "-t <target:string> 指定目标 'platform:channelId' (多个用逗号分隔)")
-            .option("delete", "--delete 永久删除记录(包括关联消息)，而非归档", { type: "boolean" })
             .usage(
                 `清除历史记录上下文
-默认操作是将消息标记为"已归档"，数据仍保留在数据库中
-使用 --delete 选项会从数据库中永久移除相关对话、消息和系统事件，此操作不可恢复
+从数据库中永久移除相关对话、消息和系统事件，此操作不可恢复
 
 当单独使用 -c 指定的频道ID存在于多个平台时，指令会要求您使用 -p 或 -t 来明确指定平台`
             )
@@ -85,63 +78,30 @@ export class HistoryCommandManager {
                     "",
                     "history.clear                      # 清除当前频道的历史记录",
                     "history.clear -c 12345678          # 清除频道 12345678 的历史记录",
-                    "history.clear -a private           # 归档所有私聊频道的历史记录",
-                    "history.clear -a guild --delete    # 永久删除所有群聊对话及关联消息",
+                    "history.clear -a private           # 清除所有私聊频道的历史记录",
                 ].join("\n")
             )
             .action(async ({ session, options }) => {
-                const isDelete = !!options.delete;
-                const actionPastTense = isDelete ? "永久删除" : "归档";
                 const results: string[] = [];
 
                 // 优化后的核心操作函数
-                const performClear = async (query: Query<Partial<InteractionData>>, description: string) => {
+                const performClear = async (query: Query.Expr<MessageData>, description: string) => {
                     try {
-                        const interactions = await this.ctx.database.get(TableName.Interactions, query, { fields: ["id"] });
-                        const interactionIds = interactions.map((i) => i.id);
-
-                        if (interactionIds.length === 0) {
-                            results.push(`🟡 ${description} - 未找到匹配的历史记录`);
-                            return;
-                        }
-
-                        if (isDelete) {
-                            await this.ctx.database.withTransaction(async (db) => {
-                                const { removed: messagesRemoved } = await db.remove(TableName.Messages, {
-                                    interactionId: { $in: interactionIds },
-                                });
-                                const { removed: eventsRemoved } = await db.remove(TableName.SystemEvents, {
-                                    interactionId: { $in: interactionIds },
-                                });
-                                const { removed: turnsRemoved } = await db.remove(TableName.AgentTurns, {
-                                    interactionId: { $in: interactionIds },
-                                });
-                                const { removed: interactionsRemoved } = await db.remove(TableName.Interactions, {
-                                    id: { $in: interactionIds },
-                                });
-                                /* prettier-ignore */
-                                results.push(`✅ ${description} - 操作成功，共${actionPastTense}了 ${interactionsRemoved} 个交互轮次及其关联的 ${messagesRemoved} 条消息, ${turnsRemoved} 个Agent回应和 ${eventsRemoved} 个系统事件。`);
-                            });
-                        } else {
-                            // "Archiving" now means ensuring the turn is 'processed' and old.
-                            // The system will naturally move it out of L1. A specific 'archived' status is not needed.
-                            const { modified } = await this.ctx.database.set(
-                                TableName.Interactions,
-                                { id: { $in: interactionIds }, status: "pending" },
-                                { status: "processed" }
-                            );
-                            /* prettier-ignore */
-                            results.push(`✅ ${description} - ${modified} 个待处理的交互轮次已标记为完成，它们将随后被归档。`);
-                        }
+                        const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
+                        const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
+                        const { removed: turnsRemoved } = await this.ctx.database.remove(TableName.AgentTurns, query);
+                        results.push(
+                            `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${turnsRemoved} 个Agent回应和 ${eventsRemoved} 个系统事件。`
+                        );
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
-                        results.push(`❌ ${description} - 操作失败，数据库更改已回滚`);
+                        results.push(`❌ ${description} - 操作失败`);
                     }
                 };
 
                 if (options.all) {
                     if (options.all === undefined) return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
-                    let query: Query<InteractionData> = {};
+                    let query: Query.Expr<MessageData> = {};
                     let description = "";
                     switch (options.all) {
                         case "private":
@@ -186,12 +146,8 @@ export class HistoryCommandManager {
                         if (options.platform) {
                             targetsToProcess.push({ platform: options.platform, channelId });
                         } else {
-                            const interactions = await this.ctx.database.get(
-                                TableName.Interactions,
-                                { channelId },
-                                { fields: ["platform"] }
-                            );
-                            const platforms = [...new Set(interactions.map((d) => d.platform))];
+                            const messages = await this.ctx.database.get(TableName.Messages, { channelId }, { fields: ["platform"] });
+                            const platforms = [...new Set(messages.map((d) => d.platform))];
                             if (platforms.length === 0) results.push(`🟡 频道 "${channelId}" 未找到`);
                             else if (platforms.length === 1) targetsToProcess.push({ platform: platforms[0], channelId });
                             else ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}`);
@@ -216,7 +172,7 @@ export class HistoryCommandManager {
                     );
                 }
 
-                return `--- 清理报告 ---\n操作类型：${actionPastTense}\n${results.join("\n")}`;
+                return `--- 清理报告 ---\n${results.join("\n")}`;
             });
     }
 }

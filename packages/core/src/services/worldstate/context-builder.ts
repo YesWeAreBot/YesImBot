@@ -1,10 +1,11 @@
-import { Channel, Context, Logger } from "koishi";
+import { Bot, Channel, Context, Logger, Session } from "koishi";
 
 import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
-import { DiaryEntryData, InteractionData, InteractionTurn, RetrievedMemoryChunk, WorldState } from "./types";
+import { InteractionManager } from "./interaction-manager";
+import { ContextualMessage, DiaryEntryData, L1HistoryItem, RetrievedMemoryChunk, WorldState } from "./types";
 
 export class ContextBuilder {
     private logger: Logger;
@@ -12,69 +13,39 @@ export class ContextBuilder {
     constructor(
         private ctx: Context,
         private config: HistoryConfig,
+        private interactionManager: InteractionManager,
         private l2Manager: SemanticMemoryManager,
         private l3Manager: ArchivalMemoryManager
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[上下文构建器]");
+        this.logger = ctx[Services.Logger].getLogger("[数据上下文构建器]");
     }
 
-    public async build(platform: string, channelId: string): Promise<WorldState> {
-        const bot = this.ctx.bots.find((b) => b.platform === platform && b.isActive);
-        let channel: {
-            id: string;
-            name?: string;
-            type: number;
-        };
-
-        if (!bot) {
-            this.logger.warn(`找不到平台 ${platform} 的在线机器人`);
-            channel = {
-                id: channelId,
-                name: "未知频道",
-                type: 0,
-            };
-        } else {
-            channel = await bot.getChannel(channelId);
-        }
+    public async build(session: Session): Promise<WorldState> {
+        const { platform, channelId, selfId, bot } = session;
 
         // 1. L1 - Working Memory
-        const l1_working_memory = await this.buildL1Memory(platform, channelId);
+        let l1_working_memory = await this.interactionManager.getL1History(channelId, this.config.l1_memory.maxMessages);
+        l1_working_memory = this.applyGracefulDegradation(l1_working_memory);
 
         // 2. L2 - Semantic Search
-        let l2_retrieved_memories: RetrievedMemoryChunk[] = [];
-        if (this.config.l2_memory.enabled && l1_working_memory.pending_turn?.dialogue.length > 0) {
-            const lastMessage = l1_working_memory.pending_turn.dialogue.slice(-1)[0].content;
-            const retrieved = await this.l2Manager.search(lastMessage, this.config.l2_memory.retrievalK);
-            l2_retrieved_memories = retrieved.map((chunk) => ({
-                content: chunk.content,
-                relevance: 0, // Placeholder for actual relevance score
-                timestamp: chunk.startTimestamp,
-            }));
-        }
+        const l2_retrieved_memories = await this.retrieveL2Memories(l1_working_memory);
 
         // 3. L3 - Diary
-        let l3_diary_entries: DiaryEntryData[] = [];
-        if (this.config.l3_memory.enabled) {
-            // Example: retrieve yesterday's diary
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const dateStr = yesterday.toISOString().split("T")[0];
-            const diary = await this.ctx.database.get("worldstate.l3_diaries", { channelId, date: dateStr });
-            l3_diary_entries = diary;
-        }
+        const l3_diary_entries = await this.retrieveL3Memories(channelId);
+
+        // 4. Base Info
+        const channelInfo = await this.getChannelInfo(bot, channelId);
+        const selfInfo = await this.getSelfInfo(session, selfId);
 
         const worldState: WorldState = {
             channel: {
-                id: channel.id,
-                name: channel.name,
-                type: channel.type === 0 ? "private" : "guild",
+                id: channelId,
+                name: channelInfo.name,
+                type: session.isDirect ? "private" : "guild",
                 platform: platform,
             },
             current_time: new Date().toISOString(),
-            self: {
-                id: bot.selfId,
-                name: bot.user.name,
-            },
+            self: selfInfo,
             l1_working_memory,
             l2_retrieved_memories,
             l3_diary_entries,
@@ -84,72 +55,72 @@ export class ContextBuilder {
         return worldState;
     }
 
-    private async buildL1Memory(platform: string, channelId: string): Promise<WorldState["l1_working_memory"]> {
-        const pendingTurnData = await this.ctx.database.get(
-            TableName.Interactions,
-            { platform, channelId, status: "pending" },
-            { limit: 1, sort: { startTimestamp: "desc" } }
-        );
-        const processedTurnsData = await this.ctx.database.get(
-            TableName.Interactions,
-            { platform, channelId, status: "processed" },
-            { limit: 10, sort: { startTimestamp: "desc" } }
-        );
-
-        const pending_turn = pendingTurnData.length > 0 ? await this.hydrateTurn(pendingTurnData[0]) : undefined;
-        const processed_turns = await Promise.all(processedTurnsData.map((t) => this.hydrateTurn(t)));
-
-        // Apply graceful degradation
-        this.applyGracefulDegradation(processed_turns);
-
-        return {
-            pending_turn,
-            processed_turns,
-        };
-    }
-
-    private async hydrateTurn(turnData: InteractionData): Promise<InteractionTurn> {
-        const messages = await this.ctx.database.get(TableName.Messages, { interactionId: turnData.id });
-        const agentTurn = await this.ctx.database.get(TableName.AgentTurns, { interactionId: turnData.id }).then((res) => res[0]);
-
-        return {
-            id: turnData.id,
-            status: turnData.status,
-            startTimestamp: turnData.startTimestamp,
-            endTimestamp: turnData.endTimestamp,
-            dialogue: messages.map((m) => ({
-                id: m.id,
-                sender: m.sender,
-                content: m.content,
-                elements: [], // h.parse(m.content),
-                timestamp: m.timestamp,
-                quoteId: m.quoteId,
-            })),
-            systemEvents: [], // System events can be hydrated similarly
-            agentTurn: agentTurn
-                ? {
-                      thoughts: agentTurn.thoughts,
-                      actions: agentTurn.actions,
-                      observations: agentTurn.observations,
-                  }
-                : undefined,
-        };
-    }
-
-    private applyGracefulDegradation(turns: InteractionTurn[]): void {
+    private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
         const { keepFullTurnCount, keepThoughtsOnlyCount } = this.config.l1_memory.gracefulDegradation;
+        let agentTurnCount = 0;
 
-        for (let i = 0; i < turns.length; i++) {
-            const turn = turns[i];
-            if (!turn.agentTurn) continue;
+        // 从后往前遍历，这样我们能先遇到最新的 agent_turn
+        for (let i = history.length - 1; i >= 0; i--) {
+            const item = history[i];
+            if (item.type === "agent_turn") {
+                agentTurnCount++;
 
-            if (i >= keepFullTurnCount) {
-                turn.agentTurn.observations = undefined;
-                turn.agentTurn.actions = undefined;
+                if (agentTurnCount > keepThoughtsOnlyCount) {
+                    // 超过只保留 thoughts 的阈值，理论上这个 turn 应该已经被裁剪，但作为安全措施
+                    item.actions = [];
+                    item.observations = [];
+                } else if (agentTurnCount > keepFullTurnCount) {
+                    // 超过保留完整 turn 的阈值，但仍在只保留 thoughts 的阈值内
+                    item.observations = []; // 移除 observations
+                }
+                // 在 keepFullTurnCount 阈值内的 turn 保持不变
             }
-            if (i >= keepThoughtsOnlyCount) {
-                turn.agentTurn = undefined;
-            }
+        }
+        return history;
+    }
+
+    private async retrieveL2Memories(history: L1HistoryItem[]): Promise<RetrievedMemoryChunk[]> {
+        if (!this.config.l2_memory.enabled) return [];
+
+        const lastUserMessage = history.filter((item) => item.type === "message" && item.sender.id !== this.ctx.bots[0]?.selfId).pop() as {
+            type: "message";
+        } & ContextualMessage;
+
+        if (!lastUserMessage) return [];
+
+        const retrieved = await this.l2Manager.search(lastUserMessage.content, this.config.l2_memory.retrievalK);
+        return retrieved.map((chunk) => ({
+            content: chunk.content,
+            relevance: chunk.similarity,
+            timestamp: chunk.startTimestamp,
+        }));
+    }
+
+    private async retrieveL3Memories(channelId: string): Promise<DiaryEntryData[]> {
+        if (!this.config.l3_memory.enabled) return [];
+        // Example: retrieve yesterday's diary
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const dateStr = yesterday.toISOString().split("T")[0];
+        return this.ctx.database.get("worldstate.l3_diaries", { channelId, date: dateStr });
+    }
+
+    private async getChannelInfo(bot: Bot, channelId: string) {
+        try {
+            return await bot.getChannel(channelId);
+        } catch (error) {
+            this.logger.warn(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
+            return { id: channelId, name: "未知频道" };
+        }
+    }
+
+    private async getSelfInfo(session: Session, selfId: string) {
+        try {
+            const user = await session.bot.getUser(selfId);
+            return { id: selfId, name: user.name };
+        } catch (error) {
+            this.logger.warn(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
+            return { id: selfId, name: session.bot.user.name || "Self" };
         }
     }
 }
