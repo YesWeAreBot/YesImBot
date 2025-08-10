@@ -56,7 +56,6 @@ export class ContextBuilder {
     }
 
     private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
-        const { keepFullTurnCount, keepThoughtsOnlyCount } = this.config.l1_memory.gracefulDegradation;
         let agentTurnCount = 0;
 
         // 从后往前遍历，这样我们能先遇到最新的 agent_turn
@@ -65,13 +64,9 @@ export class ContextBuilder {
             if (item.type === "agent_turn") {
                 agentTurnCount++;
 
-                if (agentTurnCount > keepThoughtsOnlyCount) {
-                    // 超过只保留 thoughts 的阈值，理论上这个 turn 应该已经被裁剪，但作为安全措施
-                    item.actions = [];
-                    item.observations = [];
-                } else if (agentTurnCount > keepFullTurnCount) {
-                    // 超过保留完整 turn 的阈值，但仍在只保留 thoughts 的阈值内
-                    item.observations = []; // 移除 observations
+                if (agentTurnCount > this.config.l1_memory.keepFullTurnCount) {
+                    // 从 history 中移除整个 turn
+                    history.splice(i, 1);
                 }
                 // 在 keepFullTurnCount 阈值内的 turn 保持不变
             }
@@ -109,7 +104,7 @@ export class ContextBuilder {
         try {
             return await bot.getChannel(channelId);
         } catch (error) {
-            this.logger.warn(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
+            this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
             return { id: channelId, name: "未知频道" };
         }
     }
@@ -119,7 +114,7 @@ export class ContextBuilder {
             const user = await session.bot.getUser(selfId);
             return { id: selfId, name: user.name };
         } catch (error) {
-            this.logger.warn(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
+            this.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
             return { id: selfId, name: session.bot.user.name || "Self" };
         }
     }

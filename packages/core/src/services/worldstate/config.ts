@@ -13,13 +13,8 @@ export interface HistoryConfig {
         maxMessages: number;
         /** pending 状态的轮次在多长时间内没有新消息后被强制关闭（秒） */
         pendingTurnTimeoutSec: number;
-        /** 优雅降级的配置 */
-        gracefulDegradation: {
-            /** 保留完整 AgentTurn 的最新轮次数量 */
-            keepFullTurnCount: number;
-            /** 只保留 thoughts 的最新轮次数量 */
-            keepThoughtsOnlyCount: number;
-        };
+
+        keepFullTurnCount: number;
     };
 
     /* === L2 语义索引 === */
@@ -54,10 +49,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
     l1_memory: Schema.object({
         maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
         pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
-        gracefulDegradation: Schema.object({
-            keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
-            keepThoughtsOnlyCount: Schema.number().default(5).description("只保留 Agent 思考过程的最新轮次数（应大于 keepFullTurnCount）"),
-        }).description("L1 优雅降级策略，用于在保证上下文深度的同时节省Token"),
+        keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
     }).description("L1 工作记忆设置"),
 
     l2_memory: Schema.object({

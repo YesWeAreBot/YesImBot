@@ -94,8 +94,11 @@ export class WorldStateService extends Service<HistoryConfig> {
             .map((item) => item.timestamp)
             .reduce((latest, current) => (current > latest ? current : latest), new Date(0));
 
+        // 基于时间戳判断是否是新的
+        // 如果 item 是一个消息，则它需要发送者不是机器人自身才算“新”
+        // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
         worldState.l1_working_memory.forEach((item) => {
-            item.is_new = item.timestamp > lastAgentTurnTime;
+            item.is_new = item.timestamp > lastAgentTurnTime && (item.type === "message" ? item.sender.id !== session.bot.selfId : true);
             (item as any).is_message = item.type === "message";
             (item as any).is_agent_turn = item.type === "agent_turn";
             (item as any).is_system_event = item.type === "system_event";

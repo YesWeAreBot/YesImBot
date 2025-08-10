@@ -267,15 +267,14 @@ export default class CoreUtilExtension {
             // --- 处理图片元素 ---
             const content = await this.assetService.encode(msg);
 
-            this.logger.debug(`发送消息 | 延迟: ${delay}ms`);
+            this.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
             await sleep(delay);
 
             // --- 发送消息 ---
             const messageIds = await bot.sendMessage(channelId, content);
 
-            // --- 发送后处理（例如发射事件）---
-            // 使用 then 回调不是最佳实践，async/await 更清晰
+            // --- 发送后处理 ---
             if (messageIds && messageIds.length > 0) {
                 this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
             }
