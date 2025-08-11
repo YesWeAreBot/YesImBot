@@ -6,7 +6,7 @@
 
 # Interface: MemberData
 
-Defined in: [packages/core/src/services/worldstate/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L22)
+Defined in: [packages/core/src/services/worldstate/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L22)
 
 `worldstate.members` 表的数据结构
 存储用户在一个特定服务器 (Guild) 内的身份信息
@@ -17,7 +17,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:22](https://github.c
 
 > `optional` **avatar**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L29)
+Defined in: [packages/core/src/services/worldstate/types.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L29)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:29](https://github.c
 
 > **guildId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L25)
+Defined in: [packages/core/src/services/worldstate/types.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L25)
 
 ***
 
@@ -33,7 +33,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:25](https://github.c
 
 > `optional` **joinedAt**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L30)
+Defined in: [packages/core/src/services/worldstate/types.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L30)
 
 ***
 
@@ -41,7 +41,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:30](https://github.c
 
 > **lastActive**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L31)
+Defined in: [packages/core/src/services/worldstate/types.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L31)
 
 ***
 
@@ -49,7 +49,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:31](https://github.c
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L27)
+Defined in: [packages/core/src/services/worldstate/types.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L27)
 
 ***
 
@@ -57,7 +57,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:27](https://github.c
 
 > **pid**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L23)
+Defined in: [packages/core/src/services/worldstate/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L23)
 
 ***
 
@@ -65,7 +65,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:23](https://github.c
 
 > **platform**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L24)
+Defined in: [packages/core/src/services/worldstate/types.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L24)
 
 ***
 
@@ -73,4 +73,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:24](https://github.c
 
 > `optional` **roles**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L28)
+Defined in: [packages/core/src/services/worldstate/types.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L28)

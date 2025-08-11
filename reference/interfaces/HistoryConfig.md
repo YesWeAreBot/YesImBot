@@ -6,7 +6,7 @@
 
 # Interface: HistoryConfig
 
-Defined in: [packages/core/src/services/worldstate/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L9)
+Defined in: [packages/core/src/services/worldstate/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L9)
 
 多级缓存记忆模型管理配置
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:9](https://github.c
 
 > `readonly` `optional` **allowedChannels**: `ChannelDescriptor`[]
 
-Defined in: [packages/core/src/services/worldstate/config.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L44)
+Defined in: [packages/core/src/services/worldstate/config.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L46)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:44](https://github.
 
 > **cleanupIntervalSec**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L42)
+Defined in: [packages/core/src/services/worldstate/config.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L44)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:42](https://github.
 
 > **dataRetentionDays**: `number`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L41)
+Defined in: [packages/core/src/services/worldstate/config.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L43)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/config.ts:41](https://github.
 
 > **l1\_memory**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L11)
+Defined in: [packages/core/src/services/worldstate/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L11)
 
 #### keepFullTurnCount
 
@@ -64,7 +64,7 @@ pending 状态的轮次在多长时间内没有新消息后被强制关闭（秒
 
 > **l2\_memory**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L21)
+Defined in: [packages/core/src/services/worldstate/config.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L21)
 
 #### enabled
 
@@ -90,13 +90,19 @@ Defined in: [packages/core/src/services/worldstate/config.ts:21](https://github.
 
 检索时返回的最大记忆片段数量
 
+#### retrievalMinSimilarity
+
+> **retrievalMinSimilarity**: `number`
+
+向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤
+
 ***
 
 ### l3\_memory
 
 > **l3\_memory**: `object`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L33)
+Defined in: [packages/core/src/services/worldstate/config.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L35)
 
 #### diaryGenerationTime
 
@@ -116,4 +122,4 @@ Defined in: [packages/core/src/services/worldstate/config.ts:33](https://github.
 
 > `readonly` `optional` **system**: `SystemConfig`
 
-Defined in: [packages/core/src/services/worldstate/config.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/config.ts#L45)
+Defined in: [packages/core/src/services/worldstate/config.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/config.ts#L47)

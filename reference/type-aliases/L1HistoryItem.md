@@ -6,8 +6,8 @@
 
 # Type Alias: L1HistoryItem
 
-> **L1HistoryItem** = `object` & [`ContextualMessage`](../interfaces/ContextualMessage.md) \| `object` & [`AgentTurnContext`](../interfaces/AgentTurnContext.md) \| `object` & [`ContextualSystemEvent`](../interfaces/ContextualSystemEvent.md)
+> **L1HistoryItem** = `object` & [`ContextualMessage`](../interfaces/ContextualMessage.md) \| [`ContextualAgentThought`](../interfaces/ContextualAgentThought.md) \| [`ContextualAgentAction`](../interfaces/ContextualAgentAction.md) \| [`ContextualAgentObservation`](../interfaces/ContextualAgentObservation.md) \| `object` & [`ContextualSystemEvent`](../interfaces/ContextualSystemEvent.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:138](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L138)
+Defined in: [packages/core/src/services/worldstate/types.ts:213](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L213)
 
 L1 工作记忆中的单个事件条目

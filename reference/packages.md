@@ -38,15 +38,20 @@
 
 ## Interfaces
 
+- [AgentActionLog](interfaces/AgentActionLog.md)
+- [AgentObservationLog](interfaces/AgentObservationLog.md)
+- [AgentResponse](interfaces/AgentResponse.md)
 - [AgentStimulus](interfaces/AgentStimulus.md)
-- [AgentTurnContext](interfaces/AgentTurnContext.md)
-- [AgentTurnData](interfaces/AgentTurnData.md)
+- [AgentThoughtLog](interfaces/AgentThoughtLog.md)
 - [AssetData](interfaces/AssetData.md)
 - [AssetInfo](interfaces/AssetInfo.md)
 - [AssetMetadata](interfaces/AssetMetadata.md)
 - [AssetServiceConfig](interfaces/AssetServiceConfig.md)
 - [ChatRequestOptions](interfaces/ChatRequestOptions.md)
 - [CircuitBreakerPolicy](interfaces/CircuitBreakerPolicy.md)
+- [ContextualAgentAction](interfaces/ContextualAgentAction.md)
+- [ContextualAgentObservation](interfaces/ContextualAgentObservation.md)
+- [ContextualAgentThought](interfaces/ContextualAgentThought.md)
 - [ContextualMessage](interfaces/ContextualMessage.md)
 - [ContextualSystemEvent](interfaces/ContextualSystemEvent.md)
 - [DiaryEntryData](interfaces/DiaryEntryData.md)
@@ -67,6 +72,7 @@
 - [MemoryChunkData](interfaces/MemoryChunkData.md)
 - [MemoryConfig](interfaces/MemoryConfig.md)
 - [MessageData](interfaces/MessageData.md)
+- [MessageLog](interfaces/MessageLog.md)
 - [ModelConfig](interfaces/ModelConfig.md)
 - [ModelServiceConfig](interfaces/ModelServiceConfig.md)
 - [Param](interfaces/Param.md)
@@ -81,6 +87,7 @@
 - [RetryPolicy](interfaces/RetryPolicy.md)
 - [StorageDriver](interfaces/StorageDriver.md)
 - [SystemEventData](interfaces/SystemEventData.md)
+- [SystemEventLog](interfaces/SystemEventLog.md)
 - [SystemEventPayload](interfaces/SystemEventPayload.md)
 - [TimeoutPolicy](interfaces/TimeoutPolicy.md)
 - [ToolCallResult](interfaces/ToolCallResult.md)
@@ -96,10 +103,11 @@
 
 ## Type Aliases
 
-- [AgentResponse](type-aliases/AgentResponse.md)
+- [AgentLogEntry](type-aliases/AgentLogEntry.md)
 - [ContentValidator](type-aliases/ContentValidator.md)
 - [ErrorDefinitionValue](type-aliases/ErrorDefinitionValue.md)
 - [Infer](type-aliases/Infer.md)
+- [InteractionLogEntry](type-aliases/InteractionLogEntry.md)
 - [L1HistoryItem](type-aliases/L1HistoryItem.md)
 - [ModelDescriptor](type-aliases/ModelDescriptor.md)
 - [Properties](type-aliases/Properties.md)

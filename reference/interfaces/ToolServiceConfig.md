@@ -6,7 +6,7 @@
 
 # Interface: ToolServiceConfig
 
-Defined in: [packages/core/src/services/extension/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/extension/config.ts#L4)
+Defined in: [packages/core/src/services/extension/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/extension/config.ts#L4)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/extension/config.ts:4](https://github.co
 
 > `optional` **advanced**: `object`
 
-Defined in: [packages/core/src/services/extension/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/extension/config.ts#L7)
+Defined in: [packages/core/src/services/extension/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/extension/config.ts#L7)
 
 高级选项
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/extension/config.ts:7](https://github.co
 
 > `optional` **extra**: `Record`\<`string`, \{\[`key`: `string`\]: `any`; `enabled?`: `boolean`; \}\>
 
-Defined in: [packages/core/src/services/extension/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/extension/config.ts#L5)
+Defined in: [packages/core/src/services/extension/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/extension/config.ts#L5)
 
 ***
 
@@ -44,4 +44,4 @@ Defined in: [packages/core/src/services/extension/config.ts:5](https://github.co
 
 > `readonly` `optional` **system**: `SystemConfig`
 
-Defined in: [packages/core/src/services/extension/config.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/extension/config.ts#L12)
+Defined in: [packages/core/src/services/extension/config.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/extension/config.ts#L12)

@@ -6,7 +6,7 @@
 
 # Interface: WorldState
 
-Defined in: [packages/core/src/services/worldstate/types.ts:151](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L151)
+Defined in: [packages/core/src/services/worldstate/types.ts:228](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L228)
 
 Agent 感知到的世界状态快照，作为最终输入给 LLM 的上下文。
 
@@ -16,7 +16,7 @@ Agent 感知到的世界状态快照，作为最终输入给 LLM 的上下文。
 
 > **channel**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L154)
+Defined in: [packages/core/src/services/worldstate/types.ts:231](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L231)
 
 #### id
 
@@ -40,17 +40,25 @@ Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.
 
 > **current\_time**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:160](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L160)
+Defined in: [packages/core/src/services/worldstate/types.ts:237](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L237)
 
 ***
 
 ### l1\_working\_memory
 
-> **l1\_working\_memory**: [`L1HistoryItem`](../type-aliases/L1HistoryItem.md)[]
+> **l1\_working\_memory**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:166](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L166)
+Defined in: [packages/core/src/services/worldstate/types.ts:243](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L243)
 
 L1: 工作记忆，一个按时间顺序排列的线性事件流。
+
+#### new\_events
+
+> **new\_events**: [`L1HistoryItem`](../type-aliases/L1HistoryItem.md)[]
+
+#### processed\_events
+
+> **processed\_events**: [`L1HistoryItem`](../type-aliases/L1HistoryItem.md)[]
 
 ***
 
@@ -58,7 +66,7 @@ L1: 工作记忆，一个按时间顺序排列的线性事件流。
 
 > `optional` **l2\_retrieved\_memories**: [`RetrievedMemoryChunk`](RetrievedMemoryChunk.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:168](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L168)
+Defined in: [packages/core/src/services/worldstate/types.ts:248](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L248)
 
 L2: 从海量历史中检索到的相关记忆片段
 
@@ -68,7 +76,7 @@ L2: 从海量历史中检索到的相关记忆片段
 
 > `optional` **l3\_diary\_entries**: [`DiaryEntryData`](DiaryEntryData.md)[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:170](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L170)
+Defined in: [packages/core/src/services/worldstate/types.ts:250](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L250)
 
 L3: 相关的历史日记条目
 
@@ -78,7 +86,7 @@ L3: 相关的历史日记条目
 
 > **self**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:161](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L161)
+Defined in: [packages/core/src/services/worldstate/types.ts:238](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L238)
 
 #### id
 
@@ -94,7 +102,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:161](https://github.
 
 > `optional` **triggerContext**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L153)
+Defined in: [packages/core/src/services/worldstate/types.ts:230](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L230)
 
 触发本次心跳的直接原因
 
@@ -104,7 +112,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.
 
 > `optional` **users**: `object`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:172](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L172)
+Defined in: [packages/core/src/services/worldstate/types.ts:252](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L252)
 
 #### description
 
@@ -117,3 +125,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:172](https://github.
 #### name
 
 > **name**: `string`
+
+#### roles?
+
+> `optional` **roles**: `string`[]

@@ -6,7 +6,7 @@
 
 # Interface: AgentStimulus\<T\>
 
-Defined in: [packages/core/src/services/worldstate/types.ts:201](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L201)
+Defined in: [packages/core/src/services/worldstate/types.ts:282](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L282)
 
 Agent 接收到的外部刺激，是驱动其行为的入口。
 
@@ -22,7 +22,7 @@ Agent 接收到的外部刺激，是驱动其行为的入口。
 
 > **channelCid**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L203)
+Defined in: [packages/core/src/services/worldstate/types.ts:284](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L284)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:203](https://github.
 
 > **payload**: `T`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:206](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L206)
+Defined in: [packages/core/src/services/worldstate/types.ts:287](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L287)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:206](https://github.
 
 > **priority**: `number`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:205](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L205)
+Defined in: [packages/core/src/services/worldstate/types.ts:286](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L286)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:205](https://github.
 
 > **session**: `Session`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:204](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L204)
+Defined in: [packages/core/src/services/worldstate/types.ts:285](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L285)
 
 ***
 
@@ -54,4 +54,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:204](https://github.
 
 > **type**: [`StimulusType`](../type-aliases/StimulusType.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/worldstate/types.ts#L202)
+Defined in: [packages/core/src/services/worldstate/types.ts:283](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/worldstate/types.ts#L283)

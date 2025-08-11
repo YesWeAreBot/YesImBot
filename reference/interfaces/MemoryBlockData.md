@@ -6,7 +6,7 @@
 
 # Interface: MemoryBlockData
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/memory/MemoryBlock.ts#L9)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/memory/MemoryBlock.ts#L9)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:9](https://github.
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/memory/MemoryBlock.ts#L13)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/memory/MemoryBlock.ts#L13)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:13](https://github
 
 > **description**: `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/memory/MemoryBlock.ts#L12)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/memory/MemoryBlock.ts#L12)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:12](https://github
 
 > **label**: `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/memory/MemoryBlock.ts#L11)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/memory/MemoryBlock.ts#L11)
 
 ***
 
@@ -38,4 +38,4 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:11](https://github
 
 > **title**: `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/memory/MemoryBlock.ts#L10)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/memory/MemoryBlock.ts#L10)

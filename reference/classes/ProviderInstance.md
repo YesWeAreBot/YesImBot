@@ -6,7 +6,7 @@
 
 # Class: ProviderInstance
 
-Defined in: [packages/core/src/services/model/provider-instance.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/provider-instance.ts#L11)
+Defined in: [packages/core/src/services/model/provider-instance.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/model/provider-instance.ts#L11)
 
 ## Constructors
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/provider-instance.ts:11](https://g
 
 > **new ProviderInstance**(`ctx`, `config`, `client`): `ProviderInstance`
 
-Defined in: [packages/core/src/services/model/provider-instance.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/provider-instance.ts#L16)
+Defined in: [packages/core/src/services/model/provider-instance.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/model/provider-instance.ts#L16)
 
 #### Parameters
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/model/provider-instance.ts:16](https://g
 
 > `readonly` **config**: [`ProviderConfig`](../interfaces/ProviderConfig.md)
 
-Defined in: [packages/core/src/services/model/provider-instance.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/provider-instance.ts#L18)
+Defined in: [packages/core/src/services/model/provider-instance.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/model/provider-instance.ts#L18)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/model/provider-instance.ts:18](https://g
 
 > `readonly` **name**: `string`
 
-Defined in: [packages/core/src/services/model/provider-instance.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/provider-instance.ts#L12)
+Defined in: [packages/core/src/services/model/provider-instance.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/model/provider-instance.ts#L12)
 
 ## Methods
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/model/provider-instance.ts:12](https://g
 
 > **getChatModel**(`modelId`): [`IChatModel`](../interfaces/IChatModel.md)
 
-Defined in: [packages/core/src/services/model/provider-instance.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/provider-instance.ts#L69)
+Defined in: [packages/core/src/services/model/provider-instance.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/model/provider-instance.ts#L69)
 
 #### Parameters
 
@@ -74,7 +74,7 @@ Defined in: [packages/core/src/services/model/provider-instance.ts:69](https://g
 
 > **getEmbedModel**(`modelId`): [`IEmbedModel`](../interfaces/IEmbedModel.md)
 
-Defined in: [packages/core/src/services/model/provider-instance.ts:73](https://github.com/YesWeAreBot/YesImBot/blob/2c0b849e1b01cb678f12859500d1a620208078e8/packages/core/src/services/model/provider-instance.ts#L73)
+Defined in: [packages/core/src/services/model/provider-instance.ts:73](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/services/model/provider-instance.ts#L73)
 
 #### Parameters
 
