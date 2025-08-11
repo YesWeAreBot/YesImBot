@@ -81,7 +81,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
             this.modelSwitcher,
             ctx[Services.Prompt],
             ctx[Services.Tool],
-            this.worldState,
+            this.worldState.l1_manager,
             this.contextBuilder
         );
 
@@ -179,7 +179,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.promptService.registerTemplate("agent.partial.memory_block", loadTemplate("memory/block"));
         this.promptService.registerTemplate("agent.partial.tool_definition", loadTemplate("tool_definition"));
         this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
-        this.promptService.registerTemplate("agent.partial.current_turn_history", loadTemplate("current_turn_history"));
+        // this.promptService.registerTemplate("agent.partial.current_turn_history", loadTemplate("current_turn_history"));
 
         // 注册主模板
         // 注意：现在模板文件本身需要包含对 partials 的引用

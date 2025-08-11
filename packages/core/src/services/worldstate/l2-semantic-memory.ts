@@ -1,16 +1,18 @@
+import { Context, Logger } from "koishi";
+
 import { IEmbedModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
 import { cosineSimilarity } from "@/shared/utils";
-import { Context, Logger } from "koishi";
+import { v4 as uuidv4 } from "uuid";
 import { HistoryConfig } from "./config";
-import { AgentTurnData, MemoryChunkData, MessageData } from "./types";
+import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
 
 export class SemanticMemoryManager {
     private ctx: Context;
     private config: HistoryConfig;
-
     private logger: Logger;
     private embedModel: IEmbedModel;
+    private messageBuffer: Map<string, MessageData[]> = new Map();
 
     constructor(ctx: Context, config: HistoryConfig) {
         this.ctx = ctx;
@@ -27,35 +29,74 @@ export class SemanticMemoryManager {
         if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，L2 记忆功能将受限");
     }
 
-    public stop() {}
+    public stop() {
+        this.flushAllBuffers();
+    }
+
+    public async addMessageToBuffer(message: MessageData): Promise<void> {
+        if (!this.config.l2_memory.enabled) return;
+
+        const { channelId } = message;
+        if (!this.messageBuffer.has(channelId)) {
+            this.messageBuffer.set(channelId, []);
+        }
+
+        const buffer = this.messageBuffer.get(channelId);
+        buffer.push(message);
+
+        if (buffer.length >= this.config.l2_memory.messagesPerChunk) {
+            const chunkToProcess = buffer.splice(0, this.config.l2_memory.messagesPerChunk);
+            await this.processMessageBatch(chunkToProcess);
+        }
+    }
+
+    public async flushBuffer(channelId: string): Promise<void> {
+        if (this.messageBuffer.has(channelId)) {
+            const buffer = this.messageBuffer.get(channelId);
+            if (buffer.length > 0) {
+                await this.processMessageBatch(buffer);
+                this.messageBuffer.set(channelId, []);
+            }
+        }
+    }
+
+    private async flushAllBuffers(): Promise<void> {
+        for (const channelId of this.messageBuffer.keys()) {
+            await this.flushBuffer(channelId);
+        }
+    }
 
     /**
-     * 将一个已处理的交互轮次转化为 L2 记忆片段并存储。
-     * @param interaction - The interaction data from L1.
+     * 将一批消息处理为单个 L2 记忆片段并存储。
+     * @param messages - The batch of messages to process.
      */
-    public async processConversationSlice(messages: MessageData[], agentTurn: AgentTurnData): Promise<void> {
+    private async processMessageBatch(messages: MessageData[]): Promise<void> {
         if (!this.embedModel || messages.length === 0) return;
 
-        const { platform, channelId } = agentTurn;
+        const firstEvent = messages[0];
+        const lastEvent = messages[messages.length - 1];
+        const { platform, channelId } = firstEvent;
+
         const participantIds = [...new Set(messages.map((m) => m.sender.id))];
-        const conversationText = this.compileMessagesToText(messages, agentTurn);
+
+        const conversationText = this.compileEventsToText(messages);
 
         try {
             const embedding = await this.embedModel.embed(conversationText);
             const memoryChunk: MemoryChunkData = {
-                id: `mem_${agentTurn.id}`,
+                id: uuidv4(),
                 platform,
                 channelId,
                 content: conversationText,
                 embedding: embedding.embedding,
                 participantIds,
-                startTimestamp: messages[0].timestamp,
-                endTimestamp: agentTurn.timestamp,
+                startTimestamp: firstEvent.timestamp,
+                endTimestamp: lastEvent.timestamp,
             };
             await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
-            this.logger.debug(`对话切片已处理并存入 L2 记忆 | AgentTurn ID: ${agentTurn.id}`);
+            this.logger.debug(`消息批次已处理并存入 L2 记忆 | 包含 ${messages.length} 条消息`);
         } catch (error) {
-            this.logger.error(`创建记忆片段失败 | AgentTurn ID: ${agentTurn.id}`, error);
+            this.logger.error(`创建记忆片段失败`, error);
         }
     }
 
@@ -79,15 +120,19 @@ export class SemanticMemoryManager {
 
         resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
 
-        return resultsWithSimilarity.slice(0, k);
+        const minSimilarity = this.config.l2_memory.retrievalMinSimilarity;
+
+        const filteredResults = resultsWithSimilarity.filter((result) => result.similarity >= minSimilarity);
+
+        return filteredResults.slice(0, k);
     }
 
-    private compileMessagesToText(messages: MessageData[], agentTurn?: AgentTurnData): string {
-        let text = messages.map((m) => `${m.sender.name || m.sender.id}: ${m.content}`).join("\n");
-        // Optionally, append the agent's turn summary to the last chunk of an interaction
-        if (agentTurn) {
-            text += `\n[AGENT]\nThoughts: ${agentTurn.thoughts.plan}`;
-        }
-        return text;
+    public compileEventsToText(messages: (MessageData | ContextualMessage)[]): string {
+        return messages.map((m) => `${m.sender.name || m.sender.id}: ${m.content}`).join("\n");
+    }
+
+    public async getLatestMemoryTimestamp(channelId: string): Promise<Date> {
+        const latestChunks = await this.ctx.database.get(TableName.L2Chunks, { channelId }, { limit: 1, sort: { endTimestamp: "desc" } });
+        return latestChunks.length > 0 ? latestChunks[0].endTimestamp : new Date(0);
     }
 }

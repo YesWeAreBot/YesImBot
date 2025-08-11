@@ -57,22 +57,76 @@ export interface SystemEventData {
     renderedMessage?: string; // 预渲染的自然语言消息
 }
 
-/** Agent 响应回合的数据模型，包含完整的思考链。 */
-export interface AgentTurnData {
-    id: string; // Agent回合的唯一ID
-    platform: string;
-    channelId: string;
-    timestamp: Date;
-    // 思考过程 (Thought): Agent 的内心独白
+/**
+ * @description 从LLM响应中解析出的、尚未持久化的数据结构。
+ * 这是 `HeartbeatProcessor` 内部流转的核心对象。
+ */
+export interface AgentResponse {
     thoughts: { observe: string; analyze_infer: string; plan: string };
-    // 行动 (Action): Agent 决定执行的一个或多个具体动作
     actions: { function: string; params: Record<string, unknown> }[];
-    // 观察 (Observation): 执行动作后从环境中获得的结果
-    observations: { function: string; status: "success" | "failed" | string; result?: any; error?: any }[];
+    observations?: { function: string; status: "success" | "failed" | string; result?: any; error?: any }[];
     request_heartbeat: boolean;
 }
 
-export type AgentResponse = Omit<AgentTurnData, "id" | "interactionId" | "timestamp">;
+// =================================================================================
+// #region 交互日志条目 (用于文件存储)
+// =================================================================================
+
+/** 交互日志中 Agent 思考事件的结构 */
+export interface AgentThoughtLog {
+    type: "agent_thought";
+    id: string; // 思考事件的唯一ID
+    turnId: string; // 关联的 Agent 回合ID
+    timestamp: string; // ISO 8601 格式
+    thoughts: { observe: string; analyze_infer: string; plan: string };
+}
+
+/** 交互日志中 Agent 动作事件的结构 */
+export interface AgentActionLog {
+    type: "agent_action";
+    id: string; // 动作的唯一ID
+    turnId: string; // 关联的 Agent 回合ID
+    timestamp: string; // ISO 8601 格式
+    function: string;
+    params: Record<string, unknown>;
+}
+
+/** 交互日志中 Agent 观察事件的结构 */
+export interface AgentObservationLog {
+    type: "agent_observation";
+    id: string; // 观察结果的唯一ID
+    turnId: string; // 关联的 Agent 回合ID
+    actionId: string; // 关联的动作ID
+    timestamp: string; // ISO 8601 格式
+    function: string;
+    status: "success" | "failed" | string;
+    result?: any;
+    error?: any;
+}
+
+export type AgentLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog;
+
+/** 交互日志中消息事件的结构 */
+export interface MessageLog {
+    type: "message";
+    id: string;
+    timestamp: string; // ISO 8601 格式
+    sender: MessageData["sender"];
+    content: string;
+    quoteId?: string;
+}
+
+/** 交互日志中系统事件的结构 */
+export interface SystemEventLog {
+    type: "system_event";
+    id: string;
+    timestamp: string; // ISO 8601 格式
+    eventType: string;
+    message: string;
+}
+
+/** 写入日志文件的统一事件条目类型 */
+export type InteractionLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | MessageLog | SystemEventLog;
 
 /** L2 记忆片段的数据模型，存储在向量数据库中。 */
 export interface MemoryChunkData {
@@ -123,21 +177,44 @@ export interface ContextualSystemEvent {
 }
 
 /** Agent 响应回合在上下文中的表现形式（支持优雅降级） */
-export interface AgentTurnContext {
+/** 上下文中的 Agent 思考对象 */
+export interface ContextualAgentThought {
+    type: "agent_thought";
+    turnId: string;
     timestamp: Date;
-    is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
-    /** 思考过程 (Thought): Agent 的内心独白。这是最有价值、保留最久的部分。 */
-    thoughts?: { observe: string; analyze_infer: string; plan: string };
-    /** 行动 (Action): Agent 决定执行的具体动作。 */
-    actions?: { function: string; params: Record<string, unknown> }[];
-    /** 观察 (Observation): 执行动作后获得的结果。这是最先被移除的部分。 */
-    observations?: { function: string; status: "success" | "failed" | string; result?: any }[];
+    observe: string;
+    analyze_infer: string;
+    plan: string;
+    is_new?: boolean;
+}
+
+/** 上下文中的 Agent 动作对象 */
+export interface ContextualAgentAction {
+    type: "agent_action";
+    turnId: string;
+    timestamp: Date;
+    function: string;
+    params: Record<string, unknown>;
+    is_new?: boolean;
+}
+
+/** 上下文中的 Agent 观察对象 */
+export interface ContextualAgentObservation {
+    type: "agent_observation";
+    turnId: string;
+    timestamp: Date;
+    function: string;
+    status: "success" | "failed" | string;
+    result?: any;
+    is_new?: boolean;
 }
 
 /** L1 工作记忆中的单个事件条目 */
 export type L1HistoryItem =
     | ({ type: "message" } & ContextualMessage)
-    | ({ type: "agent_turn" } & AgentTurnContext)
+    | ContextualAgentThought
+    | ContextualAgentAction
+    | ContextualAgentObservation
     | ({ type: "system_event" } & ContextualSystemEvent);
 
 /** 从 L2 语义索引中检索出的记忆片段 */
@@ -163,7 +240,10 @@ export interface WorldState {
         name: string;
     };
     /** L1: 工作记忆，一个按时间顺序排列的线性事件流。 */
-    l1_working_memory: L1HistoryItem[];
+    l1_working_memory: {
+        processed_events: L1HistoryItem[];
+        new_events: L1HistoryItem[];
+    };
     /** L2: 从海量历史中检索到的相关记忆片段 */
     l2_retrieved_memories?: RetrievedMemoryChunk[];
     /** L3: 相关的历史日记条目 */
@@ -172,6 +252,7 @@ export interface WorldState {
     users?: {
         id: string;
         name: string;
+        roles?: string[];
         description: string;
     }[];
 }
@@ -211,7 +292,8 @@ export interface AgentStimulus<T> {
 declare module "koishi" {
     interface Tables {
         [TableName.Members]: MemberData;
-        [TableName.AgentTurns]: AgentTurnData;
+        // AgentTurns is no longer a table, it's stored in files.
+        // [TableName.AgentTurns]: AgentTurnData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
         "worldstate.l2_chunks": MemoryChunkData;

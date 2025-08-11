@@ -1,58 +1,154 @@
-import { Services, TableName } from "@/shared/constants";
 import { Context, h, Logger } from "koishi";
+import fs from "fs/promises";
+import path from "path";
+import { v4 as uuidv4 } from "uuid";
+
+import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
-import { AgentTurnData, MessageData, SystemEventData, L1HistoryItem, ContextualSystemEvent } from "./types";
+import {
+    AgentActionLog,
+    AgentLogEntry,
+    AgentObservationLog,
+    AgentThoughtLog,
+    ContextualAgentAction,
+    ContextualAgentObservation,
+    ContextualAgentThought,
+    InteractionLogEntry,
+    L1HistoryItem,
+    MessageData,
+    SystemEventData,
+} from "./types";
 
 /**
- * L1 工作记忆管理器
- * 负责将所有类型的事件（消息、Agent 回合、系统事件）持久化到数据库，
- * 并提供按时间顺序检索这些事件以构建线性历史记录的方法。
+ * L1 工作记忆管理器 (混合模式)
+ * 负责将核心事件（消息、系统事件）持久化到数据库，
+ * 将高频的 Agent 内部事件（思考、动作、观察）记录到本地文件系统，
+ * 并提供统一的方法来检索和组合这些来源的数据，以构建线性的历史记录。
  */
 export class InteractionManager {
     private logger: Logger;
+    private basePath: string;
 
     constructor(
         private ctx: Context,
         private config: HistoryConfig
     ) {
         this.logger = ctx[Services.Logger].getLogger("[L1 记忆]");
+        this.basePath = path.join(ctx.baseDir, "data", "yesimbot", "interactions");
+        this.ensureDirExists(this.basePath);
     }
 
-    /**
-     * 记录一条消息到数据库。
-     */
+    // --- 文件日志系统 ---
+
+    private getLogFilePath(platform: string, channelId: string): string {
+        // 移除特殊字符
+        function clear(str: string) {
+            return str.replace(/[:/\\]/g, "_");
+        }
+        return path.join(this.basePath, clear(platform), `${clear(channelId)}.agent.jsonl`);
+    }
+
+    private async ensureDirExists(dirPath: string): Promise<void> {
+        try {
+            await fs.mkdir(dirPath, { recursive: true });
+        } catch (error) {
+            this.logger.error(`创建日志目录失败: ${dirPath}`, error);
+        }
+    }
+
+    private async appendToLog(platform: string, channelId: string, entry: AgentLogEntry): Promise<void> {
+        const filePath = this.getLogFilePath(platform, channelId);
+        await this.ensureDirExists(path.dirname(filePath));
+        const line = JSON.stringify(entry) + "\n";
+        try {
+            await fs.appendFile(filePath, line);
+        } catch (error) {
+            this.logger.error(`写入Agent日志失败 | 文件: ${filePath} | ID: ${entry.id}`);
+            this.logger.debug(error);
+        }
+    }
+
+    public async recordThought(turnId: string, platform: string, channelId: string, thoughts: AgentThoughtLog["thoughts"]): Promise<void> {
+        const logEntry: AgentThoughtLog = {
+            type: "agent_thought",
+            id: uuidv4(),
+            turnId,
+            timestamp: new Date().toISOString(),
+            thoughts,
+        };
+        await this.appendToLog(platform, channelId, logEntry);
+    }
+
+    public async recordAction(
+        turnId: string,
+        platform: string,
+        channelId: string,
+        action: { function: string; params: Record<string, unknown> }
+    ): Promise<string> {
+        const actionId = uuidv4();
+        const logEntry: AgentActionLog = {
+            type: "agent_action",
+            id: actionId,
+            turnId,
+            timestamp: new Date().toISOString(),
+            function: action.function,
+            params: action.params,
+        };
+        await this.appendToLog(platform, channelId, logEntry);
+        return actionId;
+    }
+
+    public async recordObservation(
+        actionId: string,
+        platform: string,
+        channelId: string,
+        observation: Omit<AgentObservationLog, "id" | "type" | "actionId" | "timestamp">
+    ): Promise<void> {
+        const logEntry: AgentObservationLog = {
+            type: "agent_observation",
+            id: uuidv4(),
+            actionId,
+            timestamp: new Date().toISOString(),
+            ...observation,
+        };
+        await this.appendToLog(platform, channelId, logEntry);
+    }
+
+    private async getAgentHistoryFromFile(platform: string, channelId: string, limit: number): Promise<L1HistoryItem[]> {
+        const filePath = this.getLogFilePath(platform, channelId);
+        try {
+            const content = await fs.readFile(filePath, "utf-8");
+            const lines = content.trim().split("\n");
+            const recentLines = lines.slice(-limit);
+            return recentLines.map((line) => this.logEntryToHistoryItem(JSON.parse(line)));
+        } catch (error) {
+            if (error.code === "ENOENT") return [];
+            this.logger.error(`读取Agent日志失败: ${filePath}`, error);
+            return [];
+        }
+    }
+
+    // --- 数据库系统 ---
+
     public async recordMessage(message: MessageData): Promise<void> {
         try {
             await this.ctx.database.create(TableName.Messages, message);
         } catch (error) {
-            this.logger.error(`记录消息失败 | 消息ID: ${message.id}`);
+            this.logger.error(`记录消息到数据库失败 | 消息ID: ${message.id}`);
             this.logger.debug(error);
         }
     }
 
-    /**
-     * 记录一个 Agent 响应回合到数据库。
-     */
-    public async recordAgentTurn(agentTurn: AgentTurnData): Promise<void> {
-        try {
-            await this.ctx.database.create(TableName.AgentTurns, agentTurn);
-        } catch (error) {
-            this.logger.error(`记录 Agent 回合失败 | ID: ${agentTurn.id}`);
-            this.logger.debug(error);
-        }
-    }
-
-    /**
-     * 记录一个系统事件到数据库。
-     */
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
         try {
             await this.ctx.database.create(TableName.SystemEvents, event);
         } catch (error) {
-            this.logger.error(`记录系统事件失败 | ID: ${event.id}`);
+            this.logger.error(`记录系统事件到数据库失败 | ID: ${event.id}`);
             this.logger.debug(error);
         }
     }
+
+    // --- 统一历史记录检索 ---
 
     /**
      * 获取指定频道的 L1 线性历史记录。
@@ -60,11 +156,11 @@ export class InteractionManager {
      * @param limit 检索的事件数量上限
      * @returns 按时间升序排列的事件数组
      */
-    public async getL1History(channelId: string, limit: number): Promise<L1HistoryItem[]> {
-        const [messages, agentTurns, systemEvents] = await Promise.all([
+    public async getL1History(platform: string, channelId: string, limit: number): Promise<L1HistoryItem[]> {
+        const [messages, systemEvents, agentEvents] = await Promise.all([
             this.ctx.database.get(TableName.Messages, { channelId }, { limit, sort: { timestamp: "desc" } }),
-            this.ctx.database.get(TableName.AgentTurns, { channelId }, { limit, sort: { timestamp: "desc" } }),
             this.ctx.database.get(TableName.SystemEvents, { channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.getAgentHistoryFromFile(platform, channelId, limit),
         ]);
 
         const combinedEvents: L1HistoryItem[] = [
@@ -79,15 +175,6 @@ export class InteractionManager {
                     quoteId: m.quoteId,
                 })
             ),
-            ...agentTurns.map(
-                (a): L1HistoryItem => ({
-                    type: "agent_turn",
-                    timestamp: a.timestamp,
-                    thoughts: a.thoughts,
-                    actions: a.actions,
-                    observations: a.observations,
-                })
-            ),
             ...systemEvents.map(
                 (s): L1HistoryItem => ({
                     type: "system_event",
@@ -97,14 +184,90 @@ export class InteractionManager {
                     timestamp: s.timestamp,
                 })
             ),
+            ...agentEvents,
         ];
 
-        // 按时间戳升序排序
         combinedEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-        // 应用最终的数量限制
-        const history = combinedEvents.slice(-limit);
+        return combinedEvents.slice(-limit);
+    }
 
-        return history;
+    private logEntryToHistoryItem(entry: InteractionLogEntry): L1HistoryItem {
+        const timestamp = new Date(entry.timestamp);
+        switch (entry.type) {
+            case "agent_thought":
+                return {
+                    type: "agent_thought",
+                    turnId: entry.turnId,
+                    timestamp,
+                    observe: entry.thoughts.observe,
+                    analyze_infer: entry.thoughts.analyze_infer,
+                    plan: entry.thoughts.plan,
+                };
+            case "agent_action":
+                return {
+                    type: "agent_action",
+                    turnId: entry.turnId,
+                    timestamp,
+                    function: entry.function,
+                    params: entry.params,
+                };
+            case "agent_observation":
+                return {
+                    type: "agent_observation",
+                    turnId: entry.turnId,
+                    timestamp,
+                    function: entry.function,
+                    status: entry.status,
+                    result: entry.result,
+                };
+            // 下面的 case 理论上不会被这个私有方法调用，因为消息和系统事件直接从数据库转换
+            case "message":
+            case "system_event":
+                // This path should not be taken in the new flow
+                return null;
+        }
+    }
+
+    public async clearAgentHistory(platform: string, channelId: string): Promise<void> {
+        const filePath = this.getLogFilePath(platform, channelId);
+        try {
+            await fs.unlink(filePath);
+            this.logger.info(`已删除Agent日志文件: ${filePath}`);
+        } catch (error) {
+            if (error.code === "ENOENT") {
+                // 文件不存在，说明已经清理过了，不是错误
+            } else {
+                this.logger.error(`删除Agent日志文件失败: ${filePath}`, error);
+                throw error; // 重新抛出错误，让调用者知道操作失败
+            }
+        }
+    }
+
+    public async getAgentHistoryForDateRange(
+        platform: string,
+        channelId: string,
+        startDate: Date,
+        endDate: Date
+    ): Promise<AgentLogEntry[]> {
+        const filePath = this.getLogFilePath(platform, channelId);
+        try {
+            const content = await fs.readFile(filePath, "utf-8");
+            const lines = content.trim().split("\n");
+            const entries: AgentLogEntry[] = [];
+            for (const line of lines) {
+                if (!line) continue;
+                const entry = JSON.parse(line) as AgentLogEntry;
+                const entryDate = new Date(entry.timestamp);
+                if (entryDate >= startDate && entryDate < endDate) {
+                    entries.push(entry);
+                }
+            }
+            return entries;
+        } catch (error) {
+            if (error.code === "ENOENT") return [];
+            this.logger.error(`读取Agent日志失败: ${filePath}`, error);
+            return [];
+        }
     }
 }

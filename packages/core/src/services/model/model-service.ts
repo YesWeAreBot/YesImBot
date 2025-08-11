@@ -367,10 +367,10 @@ class RequestExecutor {
             };
 
             try {
-                attemptLogger.info("发送请求...");
+                //attemptLogger.info("发送请求...");
                 const result = await model.chat(options);
                 clearTimeout(timeoutId);
-                attemptLogger.success("请求成功");
+                //attemptLogger.success("请求成功");
                 return { success: true, data: result };
             } catch (error) {
                 clearTimeout(timeoutId);

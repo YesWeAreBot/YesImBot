@@ -23,6 +23,8 @@ export interface HistoryConfig {
         enabled: boolean;
         /** 检索时返回的最大记忆片段数量 */
         retrievalK: number;
+        /** 向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤 */
+        retrievalMinSimilarity: number;
         /** 每个语义记忆片段包含的消息数量 */
         messagesPerChunk: number;
         /** 记忆片段之间重叠的消息数量，以保持上下文连续性 */
@@ -55,6 +57,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
     l2_memory: Schema.object({
         enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
         retrievalK: Schema.number().default(5).description("每次从 L2 检索的最大记忆片段数量"),
+        retrievalMinSimilarity: Schema.number().default(0.7).description("向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤"),
         messagesPerChunk: Schema.number().default(10).description("每个语义记忆片段包含的消息数量。"),
         messageOverlap: Schema.number().default(2).description("记忆片段之间重叠的消息数量，以保持上下文连续性。"),
     }).description("L2 语义索引设置"),

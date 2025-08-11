@@ -6,7 +6,7 @@ import { AssetService } from "@/services/assets";
 import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
-import { AgentStimulus, ContextualMessage, L1HistoryItem, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
+import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
 import { AgentBehaviorConfig } from "./config";
 
 interface ImageCandidate {
@@ -45,19 +45,8 @@ export class PromptContextBuilder {
     public async build(stimulus: AgentStimulus<any>) {
         const { type, session, payload } = stimulus;
 
-        // 1. 从 WorldStateService 获取已经包含 L1, L2, L3 记忆的 WorldState
         const worldState = await this.worldStateService.buildWorldState(session);
 
-        // 2. 预处理 L1 记忆，添加用于模板渲染的字段
-        const processedL1History = this.preprocessL1History(worldState.l1_working_memory);
-
-        // 3. 将处理过的 L1 记忆分割为"已读"和"新"两部分
-        const { processed_events, new_events } = this.partitionL1History(processedL1History);
-        worldState.l1_working_memory = undefined; // 清理掉原始数据，避免混淆
-        (worldState as any).processed_events = processed_events;
-        (worldState as any).new_events = new_events;
-
-        // 4. 构建并附加触发上下文
         let triggerContext: object = {};
         switch (type) {
             case "user_message":
@@ -72,35 +61,9 @@ export class PromptContextBuilder {
         // 5. 返回最终的上下文对象
         return {
             toolSchemas: this.toolService.getToolSchemas(),
-            memoryBlocks: await this.memoryService.getMemoryBlocksForRendering(),
+            memoryBlocks: this.memoryService.getMemoryBlocksForRendering(),
             worldState: worldState,
         };
-    }
-
-    /**
-     * 为 L1 历史记录中的每个项目添加用于渲染的辅助字段。
-     */
-    private preprocessL1History(history: L1HistoryItem[]) {
-        // No longer needed to add fields here, but keeping the method for structure.
-        // The partitioning logic will handle the raw items.
-        return history;
-    }
-
-    /**
-     * 将预处理过的 L1 历史记录分割为"已处理"和"新"两部分。
-     */
-    private partitionL1History(history: L1HistoryItem[]) {
-        const processed_events: any[] = [];
-        const new_events: any[] = [];
-        const firstNewIndex = history.findIndex((item) => item.is_new);
-
-        if (firstNewIndex === -1) {
-            processed_events.push(...history);
-        } else {
-            processed_events.push(...history.slice(0, firstNewIndex));
-            new_events.push(...history.slice(firstNewIndex));
-        }
-        return { processed_events, new_events };
     }
 
     /**
@@ -136,7 +99,7 @@ export class PromptContextBuilder {
         // ... 原来的 buildMultimodalContext 的全部逻辑 ...
 
         // 1. 将所有消息扁平化并建立索引
-        const allMessages = (worldState.l1_working_memory || []).filter(
+        const allMessages = [...((worldState as any).processed_events || []), ...((worldState as any).new_events || [])].filter(
             (item): item is { type: "message" } & ContextualMessage => item.type === "message"
         );
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));

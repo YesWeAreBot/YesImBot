@@ -1,20 +1,23 @@
+import { Context, Logger } from "koishi";
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { IChatModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
-import { Context, Logger } from "koishi";
 import { HistoryConfig } from "./config";
-import { DiaryEntryData } from "./types";
+import { InteractionManager } from "./interaction-manager";
+import { AgentLogEntry, DiaryEntryData } from "./types";
 
 export class ArchivalMemoryManager {
-    private ctx: Context;
-    private config: HistoryConfig;
-
     private logger: Logger;
     private chatModel: IChatModel;
     private dailyTaskTimer: NodeJS.Timeout;
 
-    constructor(ctx: Context, config: HistoryConfig) {
-        this.ctx = ctx;
-        this.config = config;
+    constructor(
+        private ctx: Context,
+        private config: HistoryConfig,
+        private interactionManager: InteractionManager
+    ) {
         this.logger = ctx[Services.Logger].getLogger("[L3-长期记忆]");
     }
 
@@ -64,13 +67,31 @@ export class ArchivalMemoryManager {
     public async generateDiariesForAllChannels() {
         this.logger.info("开始执行每日日记生成任务...");
         const messageChannels = await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] });
-        const agentTurnChannels = await this.ctx.database.get(TableName.AgentTurns, {}, { fields: ["platform", "channelId"] });
 
-        const allChannels = [...messageChannels, ...agentTurnChannels];
+        // Agent 日志现在存储在文件中，我们需要读取目录来找到所有有活动的频道
+        const agentLogDirs = await fs.readdir(path.join(this.ctx.baseDir, "data", "yesimbot", "interactions"), {
+            withFileTypes: true,
+        });
+        const agentChannels = (
+            await Promise.all(
+                agentLogDirs
+                    .filter((dirent) => dirent.isDirectory())
+                    .map(async (platformDir) => {
+                        const files = await fs.readdir(path.join(this.ctx.baseDir, "data", "yesimbot", "interactions", platformDir.name));
+                        return files.map((file) => ({
+                            platform: platformDir.name,
+                            channelId: path.basename(file, ".agent.jsonl"),
+                        }));
+                    })
+            )
+        ).flat();
+
+        const allChannels = [...messageChannels, ...agentChannels];
         const uniqueChannels = [...new Set(allChannels.map((c) => `${c.platform}:${c.channelId}`))];
 
         for (const channel of uniqueChannels) {
-            const [platform, channelId] = channel.split(":");
+            const [platform, ...channelIdParts] = channel.split(":");
+            const channelId = channelIdParts.join(":");
             await this.generateDiaryForChannel(platform, channelId, new Date());
         }
         this.logger.info("每日日记生成任务完成。");
@@ -82,15 +103,18 @@ export class ArchivalMemoryManager {
         const endOfDay = new Date(date);
         endOfDay.setHours(23, 59, 59, 999);
 
-        const messages = await this.ctx.database.get(TableName.Messages, {
-            platform,
-            channelId,
-            timestamp: { $gte: startOfDay, $lt: endOfDay },
-        });
+        const [messages, agentLogs] = await Promise.all([
+            this.ctx.database.get(TableName.Messages, {
+                platform,
+                channelId,
+                timestamp: { $gte: startOfDay, $lt: endOfDay },
+            }),
+            this.interactionManager.getAgentHistoryForDateRange(platform, channelId, startOfDay, endOfDay),
+        ]);
 
-        if (messages.length < 5) return; // Don't generate diary for too few messages
+        if (messages.length + agentLogs.length < 5) return; // Don't generate diary for too few interactions
 
-        const conversationText = messages.map((m) => `${m.sender.name || m.sender.id}: ${m.content}`).join("\n");
+        const conversationText = this.formatInteractionsForPrompt(messages, agentLogs);
         const prompt = this.buildDiaryPrompt(conversationText);
 
         try {
@@ -129,5 +153,32 @@ ${conversation}
 
 My Diary Entry for Today:
         `.trim();
+    }
+
+    private formatInteractionsForPrompt(messages: any[], agentLogs: AgentLogEntry[]): string {
+        const combined = [
+            ...messages.map((m) => ({ ...m, type: "message", timestamp: new Date(m.timestamp) })),
+            ...agentLogs.map((l) => ({ ...l, timestamp: new Date(l.timestamp) })),
+        ];
+
+        combined.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        return combined
+            .map((item) => {
+                switch (item.type) {
+                    case "message":
+                        return `[${item.sender.name || "Unknown"}]: ${item.content}`;
+                    case "agent_thought":
+                        return `(Self, thoughts): Observe: ${item.thoughts.observe}, Analyze: ${item.thoughts.analyze_infer}, Plan: ${item.thoughts.plan}`;
+                    case "agent_action":
+                        return `(Self, action): Execute ${item.function} with params ${JSON.stringify(item.params)}`;
+                    case "agent_observation":
+                        return `(Self, observation): Result of ${item.function} was ${item.status}`;
+                    default:
+                        return "";
+                }
+            })
+            .filter(Boolean)
+            .join("\n");
     }
 }

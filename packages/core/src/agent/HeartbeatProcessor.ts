@@ -1,12 +1,13 @@
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Message } from "@xsai/shared-chat";
 import { Context, h, Session } from "koishi";
+import { v4 as uuidv4 } from "uuid";
 
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AgentStimulus, AgentTurnData } from "@/services/worldstate";
-import { WorldStateService } from "@/services/worldstate/index";
+import { AgentResponse, AgentStimulus } from "@/services/worldstate";
+import { InteractionManager } from "@/services/worldstate/interaction-manager";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
@@ -27,7 +28,7 @@ export class HeartbeatProcessor {
         private readonly modelSwitcher: ChatModelSwitcher,
         private readonly promptService: PromptService,
         private readonly toolService: ToolService,
-        private readonly worldStateService: WorldStateService,
+        private readonly interactionManager: InteractionManager,
         private readonly contextBuilder: PromptContextBuilder
     ) {
         this.logger = ctx[Services.Logger].getLogger("[心跳处理器]");
@@ -38,20 +39,18 @@ export class HeartbeatProcessor {
      * @returns 返回 true 如果至少有一次心跳成功。
      */
     public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
-        const collectedResponses: AgentResponse[] = [];
-        let agentTurnTimestamp: Date | null = null;
+        const turnId = uuidv4(); // 为整个思考-行动循环创建一个唯一ID
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
+        const previousResponses: AgentResponse[] = []; // 用于在心跳之间传递历史
+
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
             try {
-                const result = await this.performSingleHeartbeat(stimulus, collectedResponses);
+                const result = await this.performSingleHeartbeat(turnId, stimulus, previousResponses);
                 if (result) {
-                    if (!agentTurnTimestamp) {
-                        agentTurnTimestamp = result.timestamp;
-                    }
-                    collectedResponses.push(result.response);
+                    previousResponses.push(result.response);
                     shouldContinueHeartbeat = result.continue;
                     success = true; // 至少成功一次心跳
                 } else {
@@ -60,23 +59,9 @@ export class HeartbeatProcessor {
             } catch (error) {
                 handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
                 shouldContinueHeartbeat = false;
-                success = false;
+                // 即使失败，也要确保循环终止
+                success = success || false;
             }
-        }
-
-        if (collectedResponses.length > 0) {
-            const finalResponse = collectedResponses[collectedResponses.length - 1];
-            const agentTurn: AgentTurnData = {
-                id: `agent_${stimulus.session.messageId || stimulus.session.id}`,
-                platform: stimulus.session.platform,
-                channelId: stimulus.session.channelId,
-                timestamp: agentTurnTimestamp, // 使用从第一个心跳中捕获的时间戳
-                thoughts: finalResponse.thoughts,
-                actions: collectedResponses.flatMap((r) => r.actions),
-                observations: collectedResponses.flatMap((r) => r.observations),
-                request_heartbeat: false, // Final turn always ends heartbeat
-            };
-            await this.worldStateService.recordAgentTurn(agentTurn);
         }
 
         return success;
@@ -88,10 +73,12 @@ export class HeartbeatProcessor {
      * @returns 返回包含响应和是否继续的标志，或在失败时返回 null。
      */
     private async performSingleHeartbeat(
+        turnId: string,
         stimulus: AgentStimulus<any>,
         previousResponses: AgentResponse[]
-    ): Promise<{ response: AgentResponse; continue: boolean; timestamp: Date } | null> {
+    ): Promise<{ response: AgentResponse; continue: boolean } | null> {
         const { session } = stimulus;
+        const { platform, channelId } = session;
 
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/7: 构建提示词上下文...");
@@ -105,7 +92,7 @@ export class HeartbeatProcessor {
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
             triggerContext: promptContext.worldState.triggerContext,
-            CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
+            //CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
             // 模板辅助函数
             _toString: function () {
                 return _toString(this);
@@ -189,13 +176,17 @@ export class HeartbeatProcessor {
 
         this.displayThoughts(agentResponseData.thoughts);
 
-        // 7. 执行动作并收集观察结果
+        // 记录思考过程
+        await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts);
+
+        // 7. 执行动作并记录观察结果
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-        const observations = await this.executeActions(session, agentResponseData.actions);
-        const fullResponse: AgentResponse = { ...agentResponseData, observations };
+        await this.executeActions(turnId, session, agentResponseData.actions);
 
         this.logger.success("单次心跳成功完成。");
-        return { response: fullResponse, continue: agentResponseData.request_heartbeat, timestamp: llmResponseTimestamp };
+        // 注意：这里的 response 只用于在心跳之间传递历史，不再包含 observation
+        const responseForHistory: AgentResponse = { ...agentResponseData, observations: [] };
+        return { response: responseForHistory, continue: agentResponseData.request_heartbeat };
     }
 
     /**
@@ -263,27 +254,32 @@ export class HeartbeatProcessor {
   - 计划: ${plan}`);
     }
 
-    private async executeActions(session: Session, actions: AgentResponse["actions"]): Promise<AgentResponse["observations"]> {
+    private async executeActions(turnId: string, session: Session, actions: AgentResponse["actions"]): Promise<void> {
         if (actions.length === 0) {
             this.logger.info("无动作需要执行。");
-            return [];
+            return;
         }
 
-        const observations: AgentResponse["observations"] = [];
+        const { platform, channelId } = session;
+
         for await (const action of actions) {
+            const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
+
             //this.logger.info(`[🛠️ 执行动作] -> ${action.function}(${JSON.stringify(action.params)})`);
             const result = await this.toolService.invoke(action.function, action.params, session);
-            observations.push({
+
+            await this.interactionManager.recordObservation(actionId, platform, channelId, {
+                turnId,
                 function: action.function,
                 status: result.status,
                 result: result.result,
                 error: result.error,
             });
+
             // if (result.status === "error") {
             //     this.logger.warn(`[💥 动作失败] -> ${action.function} | 错误: ${result.error}`);
             // }
         }
-        return observations;
     }
 }
 
@@ -291,7 +287,7 @@ export class HeartbeatProcessor {
 
 function _toString(obj) {
     if (typeof obj === "string") return obj;
-    return JSON.stringify(obj, null, 2); // 美化JSON输出
+    return JSON.stringify(obj);
 }
 
 /**

@@ -1,10 +1,11 @@
+import { Argv, Context, Logger, Random, Session } from "koishi";
+
 import { Services, TableName } from "@/shared/constants";
-import { Logger, Argv, Random, Context, Session } from "koishi";
+import { truncate } from "@/shared/utils";
 import { AssetService } from "../assets";
 import { HistoryConfig } from "./config";
-import { SystemEventData, MessageData, AgentStimulus, UserMessagePayload, SystemEventPayload } from "./types";
 import { WorldStateService } from "./index";
-import { truncate } from "@/shared/utils";
+import { AgentStimulus, MessageData, SystemEventData, SystemEventPayload, UserMessagePayload } from "./types";
 
 interface PendingCommand {
     commandEventId: string;

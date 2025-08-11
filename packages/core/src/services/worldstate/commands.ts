@@ -85,13 +85,30 @@ export class HistoryCommandManager {
                 const results: string[] = [];
 
                 // 优化后的核心操作函数
-                const performClear = async (query: Query.Expr<MessageData>, description: string) => {
+                const performClear = async (
+                    query: Query.Expr<MessageData>,
+                    description: string,
+                    target?: { platform: string; channelId: string }
+                ) => {
                     try {
                         const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
                         const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
-                        const { removed: turnsRemoved } = await this.ctx.database.remove(TableName.AgentTurns, query);
+                        const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
+
+                        let agentLogRemoved = false;
+                        if (target) {
+                            try {
+                                await this.service.l1_manager.clearAgentHistory(target.platform, target.channelId);
+                                agentLogRemoved = true;
+                            } catch (e) {
+                                // ignore if file not found
+                            }
+                        }
+
                         results.push(
-                            `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${turnsRemoved} 个Agent回应和 ${eventsRemoved} 个系统事件。`
+                            `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段。${
+                                agentLogRemoved ? "Agent日志文件已删除。" : ""
+                            }`
                         );
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
@@ -168,7 +185,8 @@ export class HistoryCommandManager {
                 for (const target of targetsToProcess) {
                     await performClear(
                         { platform: target.platform, channelId: target.channelId },
-                        `目标 "${target.platform}:${target.channelId}"`
+                        `目标 "${target.platform}:${target.channelId}"`,
+                        target
                     );
                 }
 

@@ -1,23 +1,14 @@
-import { Context, Logger, Random, Service, Session } from "koishi";
+import { Context, Service, Session } from "koishi";
+
 import { Services, TableName } from "@/shared/constants";
+import { HistoryCommandManager } from "./commands";
 import { HistoryConfig } from "./config";
 import { ContextBuilder } from "./context-builder";
+import { EventListenerManager } from "./event-listener";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
-import { EventListenerManager } from "./event-listener";
-import { HistoryCommandManager } from "./commands";
-import {
-    AgentStimulus,
-    AgentTurnData,
-    DiaryEntryData,
-    L1HistoryItem,
-    MemberData,
-    MemoryChunkData,
-    MessageData,
-    SystemEventData,
-    WorldState,
-} from "./types";
+import { AgentStimulus, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
 
 export * from "./config";
 export * from "./types";
@@ -31,7 +22,6 @@ declare module "koishi" {
     }
     interface Tables {
         [TableName.Members]: MemberData;
-        [TableName.AgentTurns]: AgentTurnData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
         [TableName.L2Chunks]: MemoryChunkData;
@@ -59,7 +49,7 @@ export class WorldStateService extends Service<HistoryConfig> {
         // Initialize all managers
         this.l1_manager = new InteractionManager(ctx, config);
         this.l2_manager = new SemanticMemoryManager(ctx, config);
-        this.l3_manager = new ArchivalMemoryManager(ctx, config);
+        this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager);
         this.contextBuilder = new ContextBuilder(ctx, config, this.l1_manager, this.l2_manager, this.l3_manager);
         this.eventListenerManager = new EventListenerManager(ctx, this, config);
         this.commandManager = new HistoryCommandManager(ctx, this, config);
@@ -86,57 +76,13 @@ export class WorldStateService extends Service<HistoryConfig> {
     }
 
     public async buildWorldState(session: Session): Promise<WorldState> {
-        const worldState = await this.contextBuilder.build(session);
-
-        // Mark new events before returning
-        const lastAgentTurnTime = worldState.l1_working_memory
-            .filter((item) => item.type === "agent_turn")
-            .map((item) => item.timestamp)
-            .reduce((latest, current) => (current > latest ? current : latest), new Date(0));
-
-        // 基于时间戳判断是否是新的
-        // 如果 item 是一个消息，则它需要发送者不是机器人自身才算“新”
-        // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
-        worldState.l1_working_memory.forEach((item) => {
-            item.is_new = item.timestamp > lastAgentTurnTime && (item.type === "message" ? item.sender.id !== session.bot.selfId : true);
-            (item as any).is_message = item.type === "message";
-            (item as any).is_agent_turn = item.type === "agent_turn";
-            (item as any).is_system_event = item.type === "system_event";
-        });
-
-        return worldState;
+        return await this.contextBuilder.build(session);
     }
 
     public async recordMessage(message: MessageData): Promise<void> {
         await this.l1_manager.recordMessage(message);
-    }
-
-    public async recordAgentTurn(agentTurn: AgentTurnData): Promise<void> {
-        await this.l1_manager.recordAgentTurn(agentTurn);
-
         if (this.config.l2_memory.enabled) {
-            this.ctx.setTimeout(async () => {
-                try {
-                    const allTurns = await this.ctx.database.get(
-                        TableName.AgentTurns,
-                        { channelId: agentTurn.channelId },
-                        { sort: { timestamp: "desc" } }
-                    );
-                    const previousTurn = allTurns.find((t) => t.id !== agentTurn.id);
-                    const since = previousTurn ? previousTurn.timestamp : new Date(0);
-
-                    const messages = await this.ctx.database.get(TableName.Messages, {
-                        channelId: agentTurn.channelId,
-                        timestamp: { $gte: since, $lte: agentTurn.timestamp },
-                    });
-
-                    if (messages.length > 0) {
-                        await this.l2_manager.processConversationSlice(messages, agentTurn);
-                    }
-                } catch (error) {
-                    this.logger.error(`处理 L2 记忆失败 | AgentTurn ID: ${agentTurn.id}`, error);
-                }
-            }, 0);
+            this.l2_manager.addMessageToBuffer(message);
         }
     }
 
@@ -228,21 +174,6 @@ export class WorldStateService extends Service<HistoryConfig> {
                 timestamp: "timestamp",
                 content: "text",
                 quoteId: "string(255)",
-            },
-            { primary: "id" }
-        );
-
-        this.ctx.model.extend(
-            TableName.AgentTurns,
-            {
-                id: "string(64)",
-                platform: "string(255)",
-                channelId: "string(255)",
-                timestamp: "timestamp",
-                thoughts: "json",
-                actions: "json",
-                observations: "json",
-                request_heartbeat: "boolean",
             },
             { primary: "id" }
         );
