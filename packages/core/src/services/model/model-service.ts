@@ -360,15 +360,17 @@ class RequestExecutor {
                 controller.abort(timeoutError);
             }, timeoutPolicy.totalTimeout * 1000);
 
-            options.abortSignal = controller.signal;
+            const options_copy = { ...options };
 
-            options.onStreamStart = () => {
+            options_copy.abortSignal = controller.signal;
+
+            options_copy.onStreamStart = () => {
                 clearTimeout(firstTokenTimeoutId);
             };
 
             try {
                 //attemptLogger.info("发送请求...");
-                const result = await model.chat(options);
+                const result = await model.chat(options_copy);
                 clearTimeout(timeoutId);
                 //attemptLogger.success("请求成功");
                 return { success: true, data: result };
@@ -378,15 +380,49 @@ class RequestExecutor {
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
                     if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
-                        attemptLogger.warn("内容无效，修正 Prompt 并重试...");
-                        options.messages = [
-                            ...originalMessages,
-                            {
-                                role: "user",
-                                content: "Note: Your previous response was invalid. Please strictly adhere to the required format.",
-                            },
-                        ];
-                        continue; // 进入下一次重试循环
+                        const rawResponse = error.context.rawResponse;
+
+                        // 简单判断是否是有效内容
+                        if (rawResponse) {
+                            const keywords = ["thoughts", "observe", "analyze_infer", "plan", "actions", "function", "params"];
+                            const isValid = keywords.every((keyword) => rawResponse.includes(keyword));
+                            if (isValid) {
+                                attemptLogger.warn("内容无效，尝试使用LLM进行修复");
+                                const systemPrompt = `You are a JSON formatter. Your task is to fix the formatting of the given JSON string. The output must be a valid JSON string. Do not add any extra text or commentary.
+### 1. Format Rules
+- Your entire output MUST be a single, raw \`\`\`json ... \`\`\` code block.
+- No text, spaces, or newlines before \` \`\`\`json \` or after \` \`\`\` \`.
+
+### 2. JSON Structure
+\`\`\`json
+{
+  "thoughts": {
+    "observe": "...",
+    "analyze_infer": "...",
+    "plan": "..."
+  },
+  "actions": [
+    {
+      "function": "function_name",
+      "params": {
+        "inner_thoughts": "Your commentary on this specific action.",
+        "...": "..."
+      }
+    }
+  ],
+  "request_heartbeat": false
+}
+\`\`\`
+                                `;
+                                // 使用LLM修正JSON
+                                // 直接修改原始消息，下一次循环时会发送到模型
+                                options.messages = [
+                                    { role: "system", content: systemPrompt },
+                                    { role: "user", content: rawResponse },
+                                ];
+                                continue;
+                            }
+                        }
                     } else {
                         attemptLogger.error(`内容无效，放弃重试 | 错误: ${error.message}`);
                         return { success: false, error }; // 放弃当前模型

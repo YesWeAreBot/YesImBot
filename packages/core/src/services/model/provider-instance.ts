@@ -23,7 +23,7 @@ export class ProviderInstance {
 
         if (isNotEmpty(this.config.proxy)) {
             this.fetch = (async (input, init) => {
-                this.logger.debug(`[网络] 🌐 使用代理 | 地址: ${this.config.proxy}`);
+                this.logger.debug(`🌐 使用代理 | 地址: ${this.config.proxy}`);
                 init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
                 return ufetch(input, init);
             }) as unknown as typeof globalThis.fetch;

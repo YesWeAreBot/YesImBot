@@ -247,7 +247,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                 if (validator) {
                     const validationResult = validator(buffer.join(""));
                     if (validationResult.valid && validationResult.earlyExit) {
-                        this.logger.debug(`✅ [验证] 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
+                        this.logger.debug(`✅ 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
                         // @ts-ignore - 尝试调用底层库的中断方法
                         if (stream.abort) stream.abort("early_exit");
                         else if (chatOptions.abortSignal && chatOptions.abortSignal.aborted === false) {
@@ -293,8 +293,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         if (validator) {
             const finalValidation = validator(finalText);
             if (!finalValidation.valid) {
-                const errorMsg = finalValidation.error || "格式不匹配";
-                this.logger.warn(`⚠️ [验证] 最终内容验证失败 | 错误: ${errorMsg}`);
+                const errorMsg = finalValidation.error || "格式不匹配或模型未输出有效内容";
+                this.logger.warn(`⚠️ 最终内容验证失败 | 错误: ${errorMsg}`);
                 throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
                     context: { rawResponse: finalText, details: errorMsg },
                 });

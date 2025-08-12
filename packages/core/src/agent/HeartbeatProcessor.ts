@@ -153,7 +153,7 @@ export class HeartbeatProcessor {
                     ) {
                         return { valid: true, earlyExit: true, parsedData: result.data };
                     }
-                    return { valid: false, earlyExit: false };
+                    return { valid: false, earlyExit: false, error: result.error };
                 },
             },
         });
