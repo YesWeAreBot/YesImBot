@@ -6,6 +6,6 @@
 
 # Variable: PROVIDER\_TYPES
 
-> `const` **PROVIDER\_TYPES**: readonly \[`"OpenAI"`, `"Anthropic"`, `"Google Gemini"`, `"Ollama"`, `"OpenAI Compatible"`, `"Fireworks"`, `"DeepSeek"`, `"LM Studio"`, `"Workers AI"`, `"Zhipu"`, `"Silicon Flow"`, `"Qwen"`\]
+> `const` **PROVIDER\_TYPES**: (`"OpenAI"` \| `"OpenAI Compatible"` \| `"Anthropic"` \| `"Fireworks"` \| `"DeepSeek"` \| `"Google Gemini"` \| `"LM Studio"` \| `"Workers AI"` \| `"Zhipu"` \| `"Silicon Flow"` \| `"Qwen"` \| `"Ollama"` \| `"Cerebras"` \| `"DeepInfra"` \| `"Fatherless AI"` \| `"Groq"` \| `"Minimax"` \| `"Minimax (International)"` \| `"Mistral"` \| `"Moonshot"` \| `"Novita"` \| `"OpenRouter"` \| `"Perplexity"` \| `"Stepfun"` \| `"Tencent Hunyuan"` \| `"Together AI"` \| `"XAI (Grok)"`)[]
 
-Defined in: [packages/core/src/services/model/config.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L146)
+Defined in: [packages/core/src/services/model/config.ts:183](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L183)

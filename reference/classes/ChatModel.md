@@ -6,7 +6,7 @@
 
 # Class: ChatModel
 
-Defined in: [packages/core/src/services/model/chat-model.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/chat-model.ts#L61)
+Defined in: [packages/core/src/services/model/chat-model.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/chat-model.ts#L61)
 
 ChatModel 类提供了与大语言模型进行聊天交互的核心功能
 它封装了流式与非流式请求、参数合并、内容验证以及统一的错误处理逻辑
@@ -25,7 +25,7 @@ ChatModel 类提供了与大语言模型进行聊天交互的核心功能
 
 > **new ChatModel**(`ctx`, `chatProvider`, `modelConfig`, `fetch`): `ChatModel`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/chat-model.ts#L64)
+Defined in: [packages/core/src/services/model/chat-model.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/chat-model.ts#L64)
 
 #### Parameters
 
@@ -59,7 +59,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:64](https://github.c
 
 > `readonly` **config**: [`ModelConfig`](../interfaces/ModelConfig.md)
 
-Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/base-model.ts#L10)
+Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/base-model.ts#L10)
 
 #### Implementation of
 
@@ -75,7 +75,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:10](https://github.c
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/base-model.ts#L12)
+Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/base-model.ts#L12)
 
 #### Implementation of
 
@@ -91,7 +91,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:12](https://github.c
 
 > `readonly` **id**: `string`
 
-Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/base-model.ts#L9)
+Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/base-model.ts#L9)
 
 #### Implementation of
 
@@ -107,7 +107,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:9](https://github.co
 
 > `protected` `readonly` **logger**: `__module`
 
-Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/base-model.ts#L11)
+Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/base-model.ts#L11)
 
 #### Implementation of
 
@@ -123,7 +123,7 @@ Defined in: [packages/core/src/services/model/base-model.ts:11](https://github.c
 
 > **chat**(`options`): `Promise`\<`GenerateTextResult`\>
 
-Defined in: [packages/core/src/services/model/chat-model.ts:118](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/chat-model.ts#L118)
+Defined in: [packages/core/src/services/model/chat-model.ts:118](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/chat-model.ts#L118)
 
 发起聊天请求的核心方法
 根据配置和运行时参数，自动选择流式或非流式处理
@@ -148,7 +148,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:118](https://github.
 
 > **isVisionModel**(): `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:74](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/chat-model.ts#L74)
+Defined in: [packages/core/src/services/model/chat-model.ts:74](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/chat-model.ts#L74)
 
 #### Returns
 

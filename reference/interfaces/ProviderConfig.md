@@ -6,7 +6,7 @@
 
 # Interface: ProviderConfig
 
-Defined in: [packages/core/src/services/model/config.ts:163](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L163)
+Defined in: [packages/core/src/services/model/config.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L187)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/config.ts:163](https://github.com/
 
 > **apiKey**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:168](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L168)
+Defined in: [packages/core/src/services/model/config.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L192)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/model/config.ts:168](https://github.com/
 
 > `optional` **baseURL**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:167](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L167)
+Defined in: [packages/core/src/services/model/config.ts:191](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L191)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/model/config.ts:167](https://github.com/
 
 > `optional` **enabled**: `boolean`
 
-Defined in: [packages/core/src/services/model/config.ts:165](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L165)
+Defined in: [packages/core/src/services/model/config.ts:189](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L189)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/model/config.ts:165](https://github.com/
 
 > **models**: [`ModelConfig`](ModelConfig.md)[]
 
-Defined in: [packages/core/src/services/model/config.ts:170](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L170)
+Defined in: [packages/core/src/services/model/config.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L194)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/model/config.ts:170](https://github.com/
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:164](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L164)
+Defined in: [packages/core/src/services/model/config.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L188)
 
 ***
 
@@ -54,12 +54,12 @@ Defined in: [packages/core/src/services/model/config.ts:164](https://github.com/
 
 > `optional` **proxy**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:169](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L169)
+Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L193)
 
 ***
 
 ### type
 
-> **type**: `"OpenAI"` \| `"Anthropic"` \| `"Google Gemini"` \| `"Ollama"` \| `"OpenAI Compatible"` \| `"Fireworks"` \| `"DeepSeek"` \| `"LM Studio"` \| `"Workers AI"` \| `"Zhipu"` \| `"Silicon Flow"` \| `"Qwen"`
+> **type**: `"OpenAI"` \| `"OpenAI Compatible"` \| `"Anthropic"` \| `"Fireworks"` \| `"DeepSeek"` \| `"Google Gemini"` \| `"LM Studio"` \| `"Workers AI"` \| `"Zhipu"` \| `"Silicon Flow"` \| `"Qwen"` \| `"Ollama"` \| `"Cerebras"` \| `"DeepInfra"` \| `"Fatherless AI"` \| `"Groq"` \| `"Minimax"` \| `"Minimax (International)"` \| `"Mistral"` \| `"Moonshot"` \| `"Novita"` \| `"OpenRouter"` \| `"Perplexity"` \| `"Stepfun"` \| `"Tencent Hunyuan"` \| `"Together AI"` \| `"XAI (Grok)"`
 
-Defined in: [packages/core/src/services/model/config.ts:166](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/model/config.ts#L166)
+Defined in: [packages/core/src/services/model/config.ts:190](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L190)

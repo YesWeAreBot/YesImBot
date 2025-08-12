@@ -8,7 +8,7 @@
 
 > **isNotEmpty**(`str`): `boolean`
 
-Defined in: [packages/core/src/shared/utils/string.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/shared/utils/string.ts#L27)
+Defined in: [packages/core/src/shared/utils/string.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/shared/utils/string.ts#L27)
 
 检查字符串是否非空（包含至少一个非空白字符）。
 这是 `isEmpty` 的反函数。

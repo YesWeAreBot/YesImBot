@@ -8,7 +8,7 @@
 
 > **initializeErrorReporter**(`config`, `logger`): `void`
 
-Defined in: [packages/core/src/shared/errors/index.ts:152](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/shared/errors/index.ts#L152)
+Defined in: [packages/core/src/shared/errors/index.ts:152](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/shared/errors/index.ts#L152)
 
 ## Parameters
 
