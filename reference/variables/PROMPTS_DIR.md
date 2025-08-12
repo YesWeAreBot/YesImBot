@@ -8,4 +8,4 @@
 
 > `const` **PROMPTS\_DIR**: `string`
 
-Defined in: [packages/core/src/shared/constants.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/shared/constants.ts#L5)
+Defined in: [packages/core/src/shared/constants.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/shared/constants.ts#L5)

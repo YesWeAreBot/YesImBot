@@ -6,7 +6,7 @@
 
 # Interface: ToolDefinition\<TParams\>
 
-Defined in: [packages/core/src/services/extension/types.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/services/extension/types.ts#L51)
+Defined in: [packages/core/src/services/extension/types.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/extension/types.ts#L51)
 
 完整的工具定义，包含了元数据和可执行函数。
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/extension/types.ts:51](https://github.co
 
 > **description**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/services/extension/types.ts#L53)
+Defined in: [packages/core/src/services/extension/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/extension/types.ts#L53)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/extension/types.ts:53](https://github.co
 
 > **execute**: (`args`) => `Promise`\<`any`\>
 
-Defined in: [packages/core/src/services/extension/types.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/services/extension/types.ts#L56)
+Defined in: [packages/core/src/services/extension/types.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/extension/types.ts#L56)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/extension/types.ts:56](https://github.co
 
 > `optional` **isSupported**: (`session`) => `boolean`
 
-Defined in: [packages/core/src/services/extension/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/services/extension/types.ts#L55)
+Defined in: [packages/core/src/services/extension/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/extension/types.ts#L55)
 
 #### Parameters
 
@@ -66,7 +66,7 @@ Defined in: [packages/core/src/services/extension/types.ts:55](https://github.co
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/services/extension/types.ts#L52)
+Defined in: [packages/core/src/services/extension/types.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/extension/types.ts#L52)
 
 ***
 
@@ -74,4 +74,4 @@ Defined in: [packages/core/src/services/extension/types.ts:52](https://github.co
 
 > **parameters**: `Schema`\<`TParams`\>
 
-Defined in: [packages/core/src/services/extension/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/services/extension/types.ts#L54)
+Defined in: [packages/core/src/services/extension/types.ts:54](https://github.com/YesWeAreBot/YesImBot/blob/84883fd2fc21bbfee3432860def8f1c66ac2ea76/packages/core/src/services/extension/types.ts#L54)
