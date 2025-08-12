@@ -27,8 +27,7 @@ export class ContextBuilder {
         const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
 
         // Determine if L1 is overloaded before degradation
-        const agentThoughtCount = raw_l1_history.filter((item) => item.type === "agent_thought").length;
-        const isL1Overloaded = agentThoughtCount > this.config.l1_memory.keepFullTurnCount;
+        const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
 
         const l1_history = this.applyGracefulDegradation(raw_l1_history);
 
@@ -36,7 +35,20 @@ export class ContextBuilder {
         const { processed_events, new_events } = this.partitionL1History(session.selfId, l1_history);
 
         // 3. L2 - Semantic Search (only if L1 is overloaded)
-        const l2_retrieved_memories = isL1Overloaded ? await this.retrieveL2Memories(new_events) : [];
+
+        const earliestMessageTimestamp = raw_l1_history
+            .filter((e): e is { type: "message" } & ContextualMessage => e.type === "message")
+            .map((e) => e.timestamp)
+            .reduce((earliest, current) => (current < earliest ? current : earliest));
+
+        const l2_retrieved_memories = isL1Overloaded
+            ? await this.retrieveL2Memories(new_events, {
+                  platform,
+                  channelId,
+                  k: this.config.l2_memory.retrievalK,
+                  earliestMessageTimestamp,
+              })
+            : [];
 
         // 4. L3 - Diary
         const l3_diary_entries = await this.retrieveL3Memories(channelId);
@@ -141,7 +153,10 @@ export class ContextBuilder {
         });
     }
 
-    private async retrieveL2Memories(new_events: L1HistoryItem[]): Promise<RetrievedMemoryChunk[]> {
+    private async retrieveL2Memories(
+        new_events: L1HistoryItem[],
+        filter?: { platform?: string; channelId?: string; k?: number; earliestMessageTimestamp?: Date }
+    ): Promise<RetrievedMemoryChunk[]> {
         if (!this.config.l2_memory.enabled || new_events.length === 0) return [];
 
         const queryMessages = new_events.filter((e): e is { type: "message" } & ContextualMessage => e.type === "message");
@@ -152,7 +167,12 @@ export class ContextBuilder {
 
         if (!queryText) return [];
 
-        const retrieved = await this.l2Manager.search(queryText, this.config.l2_memory.retrievalK);
+        const retrieved = await this.l2Manager.search(queryText, {
+            platform: filter?.platform,
+            channelId: filter?.channelId,
+            k: this.config.l2_memory.retrievalK,
+            earliestMessageTimestamp: filter?.earliestMessageTimestamp,
+        });
         return retrieved.map((chunk) => ({
             content: chunk.content,
             relevance: chunk.similarity,

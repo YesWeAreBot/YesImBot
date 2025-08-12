@@ -101,30 +101,132 @@ export class SemanticMemoryManager {
     }
 
     /**
-     * 根据查询文本检索相关的记忆片段。
+     * 根据查询文本检索相关的记忆片段（Top-K+近邻扩展）
      * @param queryText - The text to search for.
      * @param k - The number of chunks to retrieve.
      * @returns A list of relevant memory chunks.
      */
-    public async search(queryText: string, k: number): Promise<(MemoryChunkData & { similarity: number })[]> {
+
+    public async search(
+        queryText: string,
+        options?: { platform?: string; channelId?: string; k?: number; earliestMessageTimestamp?: Date }
+    ): Promise<(MemoryChunkData & { similarity: number })[]> {
         if (!this.embedModel) return [];
 
         const queryEmbedding = await this.embedModel.embed(queryText);
 
-        const results = await this.ctx.database.get(TableName.L2Chunks, {});
+        // 取出所有记忆片段
+        const results = await this.ctx.database.get(TableName.L2Chunks, {
+            platform: options?.platform || {},
+            channelId: options?.channelId || {},
+            endTimestamp: { $lte: options?.earliestMessageTimestamp || new Date() },
+        });
 
+        // 计算相似度
         const resultsWithSimilarity = results.map((chunk) => ({
             ...chunk,
             similarity: cosineSimilarity(queryEmbedding.embedding, chunk.embedding),
         }));
 
+        // 按相似度降序
         resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
 
-        const minSimilarity = this.config.l2_memory.retrievalMinSimilarity;
+        // 先拿Top-K（候选池）
+        const candidateChunks = resultsWithSimilarity.slice(0, options?.k || 5);
 
-        const filteredResults = resultsWithSimilarity.filter((result) => result.similarity >= minSimilarity);
+        // 设置最低阈值，过滤极端不相关的
+        const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
+        const filteredResults = candidateChunks.filter((c) => c.similarity >= minAllowedSim);
 
-        return filteredResults.slice(0, k);
+        // ===== 新增：相邻chunk扩展 =====
+        const expandedResults: (MemoryChunkData & { similarity: number })[] = [];
+        const seenIds = new Set<string>();
+
+        for (const chunk of filteredResults) {
+            if (!seenIds.has(chunk.id)) {
+                expandedResults.push(chunk);
+                seenIds.add(chunk.id);
+            }
+
+            // 查找前后相邻chunk（时间上），保证上下文完整
+            const neighbors = await this.ctx.database.get(
+                TableName.L2Chunks,
+                {
+                    platform: chunk.platform,
+                    channelId: chunk.channelId,
+                    startTimestamp: { $lt: chunk.startTimestamp },
+                },
+                { sort: { startTimestamp: "desc" }, limit: 1 }
+            );
+
+            const nextNeighbors = await this.ctx.database.get(
+                TableName.L2Chunks,
+                {
+                    channelId: chunk.channelId,
+                    startTimestamp: { $gt: chunk.startTimestamp },
+                },
+                { sort: { startTimestamp: "asc" }, limit: 1 }
+            );
+
+            // 合并相邻块进结果
+            [...neighbors, ...nextNeighbors].forEach((nb) => {
+                if (!seenIds.has(nb.id)) {
+                    expandedResults.push({ ...nb, similarity: chunk.similarity * 0.95 /* 附加块打点分 */ });
+                    seenIds.add(nb.id);
+                }
+            });
+        }
+
+        // 最后按相似度降序返回（相邻chunk会稍微降分）
+        // expandedResults.sort((a, b) => b.similarity - a.similarity);
+
+        // 最后按时间戳升序返回，以保持上下文连续
+        // expandedResults.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime());
+
+        const mergedResults = this.mergeAdjacentChunks(expandedResults, 5);
+
+        return mergedResults;
+    }
+
+    /**
+     * 把时间连续且间隔小、并且来自邻居扩展的 chunk 合并成一个大块
+     * @param chunks
+     * @param timeGapLimitSec
+     * @returns
+     */
+    private mergeAdjacentChunks(
+        chunks: (MemoryChunkData & { similarity: number })[],
+        timeGapLimitSec = 120
+    ): (MemoryChunkData & { similarity: number })[] {
+        if (chunks.length === 0) return [];
+
+        // 按时间升序
+        chunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
+
+        const merged: (MemoryChunkData & { similarity: number })[] = [];
+        let buffer = { ...chunks[0] };
+
+        for (let i = 1; i < chunks.length; i++) {
+            const curr = chunks[i];
+            const prev = buffer;
+
+            const gapSec = (new Date(curr.startTimestamp).getTime() - new Date(prev.endTimestamp).getTime()) / 1000;
+
+            // 如果是同一个channel，且间隔小于阈值，则认为是连续的对话
+            if (curr.channelId === prev.channelId && gapSec <= timeGapLimitSec) {
+                buffer.content += "\n" + curr.content;
+                // endTimestamp 更新为当前块的
+                buffer.endTimestamp = curr.endTimestamp;
+                // 相似度可以取较高值或平均
+                buffer.similarity = Math.max(buffer.similarity, curr.similarity);
+            } else {
+                merged.push(buffer);
+                buffer = { ...curr };
+            }
+        }
+        merged.push(buffer);
+
+        return merged;
     }
 
     public compileEventsToText(messages: (MessageData | ContextualMessage)[]): string {
