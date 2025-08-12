@@ -13,7 +13,7 @@ export interface HistoryConfig {
         maxMessages: number;
         /** pending 状态的轮次在多长时间内没有新消息后被强制关闭（秒） */
         pendingTurnTimeoutSec: number;
-
+        /** 保留完整 Agent 响应（思考、行动、观察）的最新轮次数 */
         keepFullTurnCount: number;
     };
 
@@ -27,8 +27,6 @@ export interface HistoryConfig {
         retrievalMinSimilarity: number;
         /** 每个语义记忆片段包含的消息数量 */
         messagesPerChunk: number;
-        /** 记忆片段之间重叠的消息数量，以保持上下文连续性 */
-        messageOverlap: number;
         /** 是否扩展相邻chunk */
         includeNeighborChunks: boolean;
     };
@@ -54,21 +52,22 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
         maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
         pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
         keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
-    }).description("L1 工作记忆设置"),
+    }).description("工作记忆设置"),
 
     l2_memory: Schema.object({
         enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
         retrievalK: Schema.number().default(8).description("每次从 L2 检索的最大记忆片段数量"),
         retrievalMinSimilarity: Schema.number().default(0.55).description("向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤"),
         messagesPerChunk: Schema.number().default(4).description("每个语义记忆片段包含的消息数量"),
-        messageOverlap: Schema.number().default(2).description("记忆片段之间重叠的消息数量，以保持上下文连续性"),
         includeNeighborChunks: Schema.boolean().default(true).description("是否扩展前后相邻的记忆片段"),
-    }).description("L2 语义索引设置"),
+    }).description("语义索引设置"),
 
     l3_memory: Schema.object({
-        enabled: Schema.boolean().default(true).description("启用 L3 长期日记功能"),
+        enabled: Schema.boolean().default(false).description("启用 L3 长期日记功能"),
         diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式）"),
-    }).description("L3 长期存档设置"),
+    })
+        .hidden()
+        .description("长期存档设置"),
 
     dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
     cleanupIntervalSec: Schema.number().default(300).description("后台清理任务的执行频率（秒）"),

@@ -213,9 +213,13 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         .role("table")
         .description("**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值"),
     task: Schema.object({
-        [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型**组**"),
-        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("生成文本嵌入(Embedding)时使用的模型**组**"),
-        [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").description("对话历史总结时使用的模型**组**"),
-        [TaskType.Memory]: Schema.dynamic("modelService.availableGroups").description("记忆管理时使用的模型**组**"),
+        [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description(
+            "主要聊天功能使用的模型**组**<br/>如 `gpt-4` `claude-3` `gemini-2.5` 等对话模型"
+        ),
+        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description(
+            "生成文本嵌入(Embedding)时使用的模型**组**<br/>如 `bge-m3` `text-embedding-3-small` 等嵌入模型"
+        ),
+        [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").hidden().description("对话历史总结时使用的模型**组**"),
+        [TaskType.Memory]: Schema.dynamic("modelService.availableGroups").hidden().description("记忆管理时使用的模型**组**"),
     }).description("为不同核心任务分配一个模型组"),
 });

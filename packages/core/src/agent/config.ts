@@ -239,7 +239,6 @@ export interface AgentBehaviorConfig {
     arousal: ArousalConfig;
     willingness: WillingnessConfig;
     heartbeat: number;
-    timeout: number;
     prompt: {
         systemTemplate: string;
         userTemplate: string;
@@ -267,7 +266,6 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
     arousal: ArousalConfigSchema.description("唤醒条件"),
     willingness: WillingnessForm,
     heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
-    timeout: Schema.number().min(10).max(120).default(60).role("slider").step(1).description("每轮对话最大超时时间 (秒)"),
     prompt: Schema.object({
         systemTemplate: Schema.string()
             .default(SystemBaseTemplate)
