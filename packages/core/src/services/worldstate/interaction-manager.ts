@@ -142,6 +142,7 @@ export class InteractionManager {
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
         try {
             await this.ctx.database.create(TableName.SystemEvents, event);
+            this.logger.debug(`记录系统事件 | ${event.type} | ${event.message}`);
         } catch (error) {
             this.logger.error(`记录系统事件到数据库失败 | ID: ${event.id}`);
             this.logger.debug(error);
@@ -180,7 +181,7 @@ export class InteractionManager {
                     type: "system_event",
                     id: s.id,
                     eventType: s.type,
-                    message: s.renderedMessage,
+                    message: s.message,
                     timestamp: s.timestamp,
                 })
             ),

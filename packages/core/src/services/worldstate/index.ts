@@ -136,12 +136,21 @@ export class WorldStateService extends Service<HistoryConfig> {
         const now = Date.now();
         for (const event of relevantEvents) {
             const payload = event.payload as any;
-            const duration = payload.details?.duration;
+            const duration = payload.details?.duration as number;
             if (duration > 0) {
                 const expiresAt = event.timestamp.getTime() + duration;
                 if (expiresAt > now) {
-                    const channelCid = `${event.platform}:${event.channelId}`;
-                    this.updateMuteStatus(channelCid, expiresAt);
+                    // 如果在禁言时间段内没有被解封的话
+                    const unbanEvents = await this.ctx.database.get(TableName.SystemEvents, {
+                        platform: event.platform,
+                        channelId: event.channelId,
+                        type: "guild-member-unban",
+                        timestamp: { $gte: event.timestamp, $lte: new Date(expiresAt) },
+                    });
+                    if (unbanEvents.length === 0) {
+                        const channelCid = `${event.platform}:${event.channelId}`;
+                        this.updateMuteStatus(channelCid, expiresAt);
+                    }
                 }
             }
         }
@@ -216,7 +225,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 type: "string(255)",
                 timestamp: "timestamp",
                 payload: "json",
-                renderedMessage: "text",
+                message: "text",
             },
             { primary: "id" }
         );

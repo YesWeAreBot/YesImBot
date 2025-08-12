@@ -26,7 +26,7 @@ export class SemanticMemoryManager {
         } catch {
             this.embedModel = null;
         }
-        if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，L2 记忆功能将受限");
+        if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，记忆功能将受限");
     }
 
     public stop() {

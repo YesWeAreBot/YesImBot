@@ -54,7 +54,7 @@ export interface SystemEventData {
     type: string; // 例如 'guild-member-ban', 'command-invoked'
     timestamp: Date;
     payload: object; // 事件具体内容
-    renderedMessage?: string; // 预渲染的自然语言消息
+    message?: string; // 预渲染的自然语言消息
 }
 
 /**
@@ -159,7 +159,7 @@ export interface DiaryEntryData {
 /** 上下文中的消息对象 */
 export interface ContextualMessage {
     id: string;
-    sender: { id: string; name?: string };
+    sender: { id: string; name?: string; roles?: string[] };
     content: string;
     elements: Element[];
     timestamp: Date;

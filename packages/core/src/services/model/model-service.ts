@@ -462,7 +462,7 @@ export class ModelSwitcher<T extends BaseModel> {
         this._models = groupConfig.models
             .map((desc) => modelGetter(desc.providerName, desc.modelId))
             .filter((model): model is T => {
-                if (!model) this._logger.warn(`模型加载失败，将从组中移除`);
+                //if (!model) this._logger.warn(`模型加载失败，将从组中移除`);
                 return model !== null;
             });
 

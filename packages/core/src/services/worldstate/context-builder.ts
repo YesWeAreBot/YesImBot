@@ -35,20 +35,22 @@ export class ContextBuilder {
         const { processed_events, new_events } = this.partitionL1History(session.selfId, l1_history);
 
         // 3. L2 - Semantic Search (only if L1 is overloaded)
+        let l2_retrieved_memories = [];
+        if (isL1Overloaded) {
+            const earliestMessageTimestamp = raw_l1_history
+                .filter((e) => e.type === "message")
+                .map((e) => e.timestamp)
+                .reduce((earliest, current) => (current < earliest ? current : earliest), new Date());
 
-        const earliestMessageTimestamp = raw_l1_history
-            .filter((e): e is { type: "message" } & ContextualMessage => e.type === "message")
-            .map((e) => e.timestamp)
-            .reduce((earliest, current) => (current < earliest ? current : earliest));
-
-        const l2_retrieved_memories = isL1Overloaded
-            ? await this.retrieveL2Memories(new_events, {
-                  platform,
-                  channelId,
-                  k: this.config.l2_memory.retrievalK,
-                  earliestMessageTimestamp,
-              })
-            : [];
+            l2_retrieved_memories = await this.retrieveL2Memories(new_events, {
+                platform,
+                channelId,
+                k: this.config.l2_memory.retrievalK,
+                earliestMessageTimestamp,
+            });
+        } else {
+            l2_retrieved_memories = [];
+        }
 
         // 4. L3 - Diary
         const l3_diary_entries = await this.retrieveL3Memories(channelId);
@@ -63,21 +65,13 @@ export class ContextBuilder {
             users.push({
                 id: session.userId,
                 name: session.author.name,
-                description: "",
             });
             users.push({
                 id: session.selfId,
                 name: selfInfo.name,
                 roles: ["self"],
-                description: "",
             });
         } else {
-            users.push({
-                id: session.userId,
-                name: session.author.name,
-                roles: session.author.roles,
-                description: "",
-            });
             let selfInGuild: Awaited<ReturnType<Bot["getGuildMember"]>>;
             try {
                 selfInGuild = await session.bot.getGuildMember(channelId, session.selfId);
@@ -90,6 +84,18 @@ export class ContextBuilder {
                 name: selfInGuild?.nick || selfInGuild?.name || selfInfo.name,
                 roles: ["self", ...selfInGuild?.roles],
                 description: "",
+            });
+
+            l1_history.forEach((item) => {
+                if (item.type === "message") {
+                    if (!users.find((u) => u.id === item.sender.id)) {
+                        users.push({
+                            id: item.sender.id,
+                            name: item.sender.name,
+                            roles: item.sender.roles,
+                        });
+                    }
+                }
             });
         }
 

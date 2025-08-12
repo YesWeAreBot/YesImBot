@@ -130,7 +130,7 @@ export class EventListenerManager {
                     payload: {
                         details: { authorId, targetId, action, suffix },
                     },
-                    renderedMessage: `系统提示：${authorId} ${action} ${targetId} ${suffix}`,
+                    message: `系统提示：${authorId} ${action} ${targetId} ${suffix}`,
                 };
                 this.service.recordSystemEvent({
                     id: `sysevt_poke_${Random.id()}`,
@@ -155,7 +155,7 @@ export class EventListenerManager {
                     const payload: Partial<SystemEventData> = {
                         type: "guild-all-member-ban",
                         payload: { details: { operator: session.event.operator, duration } },
-                        renderedMessage: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言。`,
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言`,
                     };
                     this.service.updateMuteStatus(session.cid, Number.POSITIVE_INFINITY);
                     this.service.recordSystemEvent({
@@ -173,7 +173,7 @@ export class EventListenerManager {
                     const payload: Partial<SystemEventData> = {
                         type: "guild-member-unban",
                         payload: { details: { user: session.event.user, operator: session.event.operator } },
-                        renderedMessage: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言。`,
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言`,
                     };
 
                     if (isTargetingBot) {
@@ -200,7 +200,7 @@ export class EventListenerManager {
                 const payload: Partial<SystemEventData> = {
                     type: "guild-member-ban",
                     payload: { details: { user: session.event.user, operator: session.event.operator, duration } },
-                    renderedMessage: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms。`,
+                    message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms`,
                 };
 
                 this.service.recordSystemEvent({
@@ -243,6 +243,7 @@ export class EventListenerManager {
                 source,
                 invoker: { pid: session.userId, name: session.author.nick || session.author.name },
             },
+            message: `系统提示：用户 "${session.author.name || session.userId}" 调用了指令 "${command.name}"`,
         };
 
         await this.service.recordSystemEvent(eventPayload);
