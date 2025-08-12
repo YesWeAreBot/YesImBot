@@ -102,11 +102,13 @@ export class SemanticMemoryManager {
 
     /**
      * 根据查询文本检索相关的记忆片段（Top-K+近邻扩展）
-     * @param queryText - The text to search for.
-     * @param k - The number of chunks to retrieve.
-     * @returns A list of relevant memory chunks.
+     * 查询结果按时间戳升序排列，以保持上下文连续
+     * 若启用了`includeNeighborChunks`，则会扩展前后相邻的记忆片段
+     * 返回结果可能大于k
+     * @param queryText - 查询文本
+     * @param k - 默认为5
+     * @returns
      */
-
     public async search(
         queryText: string,
         options?: { platform?: string; channelId?: string; k?: number; earliestMessageTimestamp?: Date }
