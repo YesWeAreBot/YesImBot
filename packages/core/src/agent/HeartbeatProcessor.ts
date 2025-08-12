@@ -141,19 +141,32 @@ export class HeartbeatProcessor {
             messages,
             validation: {
                 format: "json",
-                // 这是一个优化：如果模型支持，可以在流式输出中提前判断JSON完整性
-                validator: (text) => {
+                // 如果模型支持，可以在流式输出中提前判断JSON完整性
+                validator: (text, final) => {
                     const parser = new JsonParser<any>();
                     const result = parser.parse(text);
-                    if (
-                        !result.error &&
-                        result.data.thoughts &&
-                        Array.isArray(result.data.actions) &&
-                        typeof result.data.request_heartbeat === "boolean"
-                    ) {
-                        return { valid: true, earlyExit: true, parsedData: result.data };
+
+                    if (!result.error && result.data) {
+                        // JSON结构有效，此时可以直接返回
+                        // 为了避免输出被截断，验证几个必要字段
+                        if (
+                            result.data.thoughts &&
+                            Array.isArray(result.data.actions) &&
+                            (typeof result.data.request_heartbeat === "boolean" ||
+                                typeof result.data.thoughts?.request_heartbeat === "boolean" ||
+                                final)
+                        ) {
+                            result.data.request_heartbeat = result.data.request_heartbeat || result.data.thoughts.request_heartbeat;
+                            // 内容完整，可以提前退出
+                            return { valid: true, earlyExit: true, parsedData: result.data };
+                        } else {
+                            // 内容不完整，继续接收
+                            return { valid: false, earlyExit: false };
+                        }
+                    } else {
+                        // JSON结构无效，继续接收
+                        return { valid: false, earlyExit: false, error: result.error };
                     }
-                    return { valid: false, earlyExit: false, error: result.error };
                 },
             },
         });

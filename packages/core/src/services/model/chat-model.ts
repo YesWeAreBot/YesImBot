@@ -28,7 +28,7 @@ export interface ValidationResult {
  * @param chunk - 当前收到的所有文本内容
  * @returns ValidationResult
  */
-export type ContentValidator = (chunk: string) => ValidationResult;
+export type ContentValidator = (chunk: string, final?: boolean) => ValidationResult;
 
 /**
  * 传递给 chat 方法的验证选项
@@ -291,7 +291,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         // --- 4. 对最终拼接的完整内容进行验证 ---
         const finalText = finalContentParts.join("");
         if (validator) {
-            const finalValidation = validator(finalText);
+            const finalValidation = validator(finalText, true);
             if (!finalValidation.valid) {
                 const errorMsg = finalValidation.error || "格式不匹配或模型未输出有效内容";
                 this.logger.warn(`⚠️ 最终内容验证失败 | 错误: ${errorMsg}`);
