@@ -5,13 +5,13 @@ import { loadTemplate, PromptService } from "@/services/prompt";
 import { AgentStimulus } from "@/services/worldstate";
 import { WorldStateService } from "@/services/worldstate/index";
 import { Services } from "@/shared/constants";
-import { AppError, ErrorCodes, handleError } from "@/shared/errors";
+import { AppError, handleError } from "@/shared/errors";
+import { ErrorDefinitions } from "@/shared/errors/definitions";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./ContextBuilder";
 import { HeartbeatProcessor } from "./HeartbeatProcessor";
 import { StimulusScheduler } from "./StimulusScheduler";
 import { WillingnessManager } from "./willing";
-import { ErrorDefinitions } from "@/shared/errors/definitions";
 
 declare module "koishi" {
     interface Events {
@@ -174,26 +174,16 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private _registerPromptTemplates(): void {
         // this.logger.info("正在注册提示词模板");
 
-        // 注册所有可重用的局部模板 (Partials)
-        // 使用 Mustache 的 {{> partialName }} 语法来引用它们
-        this.promptService.registerTemplate("agent.partial.memory_block", loadTemplate("memory/block"));
+        // 注册所有可重用的局部模板
         this.promptService.registerTemplate("agent.partial.tool_definition", loadTemplate("tool_definition"));
         this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
-        // this.promptService.registerTemplate("agent.partial.current_turn_history", loadTemplate("current_turn_history"));
+        this.promptService.registerTemplate("agent.partial.l1_history_item", loadTemplate("l1_history_item"));
 
         // 注册主模板
-        // 注意：现在模板文件本身需要包含对 partials 的引用
         this.promptService.registerTemplate("agent.system", this.config.prompt.systemTemplate);
         this.promptService.registerTemplate("agent.user", this.config.prompt.userTemplate);
 
-        // 注册动态片段 (Snippets) - 如果有的话
-        // 示例：注册一个提供当前时间的片段
+        // 注册动态片段
         this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
-
-        // 注意：像 toolSchemas, memory, worldState 这些数据，因为每次调用都会重新生成，
-        // 所以更适合作为 render 方法的 initialScope 传入，而不是注册为全局 Snippet。
-        // 这使得每次渲染的上下文都是隔离和最新的。
-
-        // this.logger.info("✅ 提示词模板注册完成。");
     }
 }

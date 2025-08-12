@@ -64,7 +64,13 @@ Your response generation MUST follow this four-step process within your `thought
 
 <CORE_MEMORY>
 {{#MEMORY_BLOCKS}}
-{{> agent.partial.memory_block }}
+<{{label}} label="{{label}}" limit="{{limit}}">
+{{#title}}<title>{{.}}</title>{{/title}}
+{{#description}}<description>{{.}}</description>{{/description}}
+  {{#content}}
+  {{.}}
+  {{/content}}
+</{{label}}>
 {{/MEMORY_BLOCKS}}
 </CORE_MEMORY>
 
