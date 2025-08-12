@@ -8,7 +8,7 @@
 
 > **randomString**(`length`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/490e1993f165e4f32fc7f2bb413189cd6041de5c/packages/core/src/shared/utils/string.ts#L56)
+Defined in: [packages/core/src/shared/utils/string.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/adb35f67476926d999e6b7708fa073b812c7537a/packages/core/src/shared/utils/string.ts#L56)
 
 生成指定长度的随机字符串（仅包含大小写字母和数字）。
 
