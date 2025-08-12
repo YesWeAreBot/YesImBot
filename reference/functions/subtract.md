@@ -8,7 +8,7 @@
 
 > **subtract**(`vecA`, `vecB`): `number`[]
 
-Defined in: [packages/core/src/shared/utils/vector.ts:103](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/shared/utils/vector.ts#L103)
+Defined in: [packages/core/src/shared/utils/vector.ts:103](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/shared/utils/vector.ts#L103)
 
 向量减法。
 

@@ -6,7 +6,7 @@
 
 # Interface: RetrievedMemoryChunk
 
-Defined in: [packages/core/src/services/worldstate/types.ts:221](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/worldstate/types.ts#L221)
+Defined in: [packages/core/src/services/worldstate/types.ts:221](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/worldstate/types.ts#L221)
 
 从 L2 语义索引中检索出的记忆片段
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:221](https://github.
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:222](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/worldstate/types.ts#L222)
+Defined in: [packages/core/src/services/worldstate/types.ts:222](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/worldstate/types.ts#L222)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:222](https://github.
 
 > **relevance**: `number`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:223](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/worldstate/types.ts#L223)
+Defined in: [packages/core/src/services/worldstate/types.ts:223](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/worldstate/types.ts#L223)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:223](https://github.
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:224](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/worldstate/types.ts#L224)
+Defined in: [packages/core/src/services/worldstate/types.ts:224](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/worldstate/types.ts#L224)

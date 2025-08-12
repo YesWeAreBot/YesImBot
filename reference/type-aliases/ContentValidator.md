@@ -6,9 +6,9 @@
 
 # Type Alias: ContentValidator()
 
-> **ContentValidator** = (`chunk`) => [`ValidationResult`](../interfaces/ValidationResult.md)
+> **ContentValidator** = (`chunk`, `final?`) => [`ValidationResult`](../interfaces/ValidationResult.md)
 
-Defined in: [packages/core/src/services/model/chat-model.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/chat-model.ts#L31)
+Defined in: [packages/core/src/services/model/chat-model.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/model/chat-model.ts#L31)
 
 自定义验证函数
 
@@ -19,6 +19,10 @@ Defined in: [packages/core/src/services/model/chat-model.ts:31](https://github.c
 `string`
 
 当前收到的所有文本内容
+
+### final?
+
+`boolean`
 
 ## Returns
 

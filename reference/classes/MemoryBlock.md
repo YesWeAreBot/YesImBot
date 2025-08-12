@@ -6,7 +6,7 @@
 
 # Class: MemoryBlock
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L16)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L16)
 
 ## Accessors
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:16](https://github
 
 > **get** **content**(): `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L50)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L50)
 
 ##### Returns
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:50](https://github
 
 > **get** **currentSize**(): `number`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L56)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L56)
 
 ##### Returns
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:56](https://github
 
 > **get** **description**(): `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L47)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L47)
 
 ##### Returns
 
@@ -58,7 +58,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:47](https://github
 
 > **get** **filePath**(): `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:59](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L59)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:59](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L59)
 
 ##### Returns
 
@@ -72,7 +72,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:59](https://github
 
 > **get** **label**(): `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L44)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L44)
 
 ##### Returns
 
@@ -86,7 +86,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:44](https://github
 
 > **get** **lastModified**(): `Date`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L53)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L53)
 
 ##### Returns
 
@@ -100,7 +100,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:53](https://github
 
 > **get** **title**(): `string`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L41)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:41](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L41)
 
 ##### Returns
 
@@ -112,7 +112,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:41](https://github
 
 > **dispose**(): `void`
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L65)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L65)
 
 #### Returns
 
@@ -124,7 +124,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:65](https://github
 
 > **startWatching**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:97](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L97)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:97](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L97)
 
 #### Returns
 
@@ -136,7 +136,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:97](https://github
 
 > **toData**(): [`MemoryBlockData`](../interfaces/MemoryBlockData.md)
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L69)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:69](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L69)
 
 #### Returns
 
@@ -148,7 +148,7 @@ Defined in: [packages/core/src/services/memory/MemoryBlock.ts:69](https://github
 
 > `static` **createFromFile**(`ctx`, `filePath`): `Promise`\<`MemoryBlock`\>
 
-Defined in: [packages/core/src/services/memory/MemoryBlock.ts:140](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/memory/MemoryBlock.ts#L140)
+Defined in: [packages/core/src/services/memory/MemoryBlock.ts:140](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/memory/MemoryBlock.ts#L140)
 
 #### Parameters
 

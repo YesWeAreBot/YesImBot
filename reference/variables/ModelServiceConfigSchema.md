@@ -8,4 +8,4 @@
 
 > `const` **ModelServiceConfigSchema**: `Schema`\<[`ModelServiceConfig`](../interfaces/ModelServiceConfig.md)\>
 
-Defined in: [packages/core/src/services/model/config.ts:231](https://github.com/YesWeAreBot/YesImBot/blob/4c0d3adb88935dfe27979a46469bd396ba873121/packages/core/src/services/model/config.ts#L231)
+Defined in: [packages/core/src/services/model/config.ts:231](https://github.com/YesWeAreBot/YesImBot/blob/cbfe250eb0d39492ea93b906d0ea601b2c3d6da6/packages/core/src/services/model/config.ts#L231)
