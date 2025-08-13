@@ -136,43 +136,72 @@ export class HeartbeatProcessor {
 
         // 5. 调用LLM
         this.logger.info("步骤 5/7: 调用大语言模型...");
-        const stime = Date.now();
+        //const stime = Date.now();
+        const parser = new JsonParser<any>();
         const llmRawResponse = await this.modelSwitcher.chat({
             messages,
             validation: {
                 format: "json",
                 // 如果模型支持，可以在流式输出中提前判断JSON完整性
                 validator: (text, final) => {
-                    const parser = new JsonParser<any>();
-                    const result = parser.parse(text);
+                    const { data, error } = parser.parse(text);
 
-                    if (!result.error && result.data) {
-                        // JSON结构有效，此时可以直接返回
-                        // 为了避免输出被截断，验证几个必要字段
-                        if (
-                            result.data.thoughts &&
-                            Array.isArray(result.data.actions) &&
-                            (typeof result.data.request_heartbeat === "boolean" ||
-                                typeof result.data.thoughts?.request_heartbeat === "boolean" ||
-                                final)
-                        ) {
-                            result.data.request_heartbeat = result.data.request_heartbeat || result.data.thoughts.request_heartbeat;
-                            // 内容完整，可以提前退出
-                            return { valid: true, earlyExit: true, parsedData: result.data };
-                        } else {
-                            // 内容不完整，继续接收
-                            return { valid: false, earlyExit: false };
+                    // --- 1. 处理解析失败的情况 ---
+                    // 如果解析器返回错误（例如，JSON语法无效）
+                    if (error) {
+                        // 如果这是流的末尾，那么这个错误是最终的，需要报告。
+                        // 否则，我们假设这只是一个不完整的JSON，可以继续接收数据。
+                        if (final) {
+                            return { valid: false, earlyExit: false, error: error };
                         }
+                        // 流尚未结束，继续等待
+                        return { valid: false, earlyExit: false };
+                    }
+
+                    // --- 2. 处理解析成功但数据为空的情况 ---
+                    // 发生在文本为空或仅有空白字符时
+                    if (!data) {
+                        // 如果流结束了但没有数据，可以认为结果是有效的空（或返回错误，取决于业务需求）
+                        if (final) {
+                            return { valid: true, earlyExit: false, parsedData: null };
+                        }
+                        // 否则继续等待
+                        return { valid: false, earlyExit: false };
+                    }
+
+                    // --- 3. 归一化处理（兼容 request_heartbeat 在 thoughts 内的情况） ---
+                    // 无论是否提前退出，只要解析出 thoughts，就进行归一化，确保后续逻辑统一。
+                    // 使用 `??` (空值合并操作符) 代替 `||`，避免当 `request_heartbeat` 为 `false` 时被错误地覆盖。
+                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
+                        data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+                    }
+
+                    // --- 4. 处理流结束的情况 (`final` = true) ---
+                    // 根据需求：“final表示输出完毕，此时无论内容是否完整都返回解析结果”
+                    if (final) {
+                        // 解析成功，流已结束，直接返回已归一化的数据
+                        return { valid: true, earlyExit: false, parsedData: data };
+                    }
+
+                    // --- 5. 流式处理：检查是否满足提前退出条件 (`final` = false) ---
+                    // 检查所有关键字段是否都已存在并且类型正确
+                    const isThoughtsComplete = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
+                    const isActionsComplete = Array.isArray(data.actions);
+                    const isHeartbeatComplete = typeof data.request_heartbeat === "boolean";
+
+                    if (isThoughtsComplete && isActionsComplete && isHeartbeatComplete) {
+                        // 所有条件满足，可以提前退出
+                        return { valid: true, earlyExit: true, parsedData: data };
                     } else {
-                        // JSON结构无效，继续接收
-                        return { valid: false, earlyExit: false, error: result.error };
+                        // JSON结构有效，但语义内容不完整，继续接收
+                        return { valid: false, earlyExit: false };
                     }
                 },
             },
         });
 
-        const llmResponseTimestamp = new Date();
-        const responseTime = llmResponseTimestamp.getTime() - stime;
+        //const llmResponseTimestamp = new Date();
+        //const responseTime = llmResponseTimestamp.getTime() - stime;
         //this.logger.info(`💬 LLM 响应时间: ${responseTime}ms`);
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
         const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
