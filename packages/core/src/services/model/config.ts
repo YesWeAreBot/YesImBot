@@ -131,7 +131,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             Schema.const(ContentFailureAction.FailoverToNext).description("立即切换"),
             Schema.const(ContentFailureAction.AugmentAndRetry).description("修正Prompt并重试"),
         ])
-            .default(ContentFailureAction.FailoverToNext)
+            .default(ContentFailureAction.AugmentAndRetry)
             .description("响应内容无效时的处理方式"),
     }).description("重试策略"),
 

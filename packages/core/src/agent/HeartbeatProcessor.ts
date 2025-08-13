@@ -88,7 +88,7 @@ export class HeartbeatProcessor {
         this.logger.debug("步骤 2/7: 准备模板渲染视图...");
         const view = {
             session,
-            TOOL_DEFINITION: { tools: prepareDataForTemplate(promptContext.toolSchemas) },
+            TOOL_DEFINITION: prepareDataForTemplate(promptContext.toolSchemas),
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
             triggerContext: promptContext.worldState.triggerContext,
@@ -172,7 +172,7 @@ export class HeartbeatProcessor {
                     // --- 3. 归一化处理（兼容 request_heartbeat 在 thoughts 内的情况） ---
                     // 无论是否提前退出，只要解析出 thoughts，就进行归一化，确保后续逻辑统一。
                     // 使用 `??` (空值合并操作符) 代替 `||`，避免当 `request_heartbeat` 为 `false` 时被错误地覆盖。
-                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
+                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean" && final) {
                         data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
                     }
 
@@ -203,8 +203,8 @@ export class HeartbeatProcessor {
         //const llmResponseTimestamp = new Date();
         //const responseTime = llmResponseTimestamp.getTime() - stime;
         //this.logger.info(`💬 LLM 响应时间: ${responseTime}ms`);
-        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || estimateTokensByRegex(systemPrompt + userPromptText);
-        const completion_tokens = llmRawResponse.usage?.completion_tokens || estimateTokensByRegex(llmRawResponse.text);
+        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(systemPrompt + userPromptText)}`;
+        const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
 
         // 6. 解析和验证响应

@@ -1,4 +1,4 @@
-import { jsonrepair } from "jsonrepair";
+import { jsonrepair, JSONRepairError } from "jsonrepair";
 import { Logger } from "koishi";
 
 export interface ParserOptions {
@@ -33,7 +33,7 @@ export class JsonParser<T> {
         if (this.options.debug) {
             this.options.logger.info(message);
         }
-        this.logs.push(`[日志] ${message}`);
+        this.logs.push(message);
     }
 
     public parse(rawOutput: string): ParseResult<T> {
@@ -137,8 +137,14 @@ export class JsonParser<T> {
         }
 
         try {
-            const repaired = jsonrepair(processedString);
-            const data = JSON.parse(repaired) as T;
+            let data: T;
+            try {
+                data = JSON.parse(processedString) as T;
+            } catch (e: any) {
+                this.log(`直接解析失败: ${e.message}`);
+                const repaired = jsonrepair(processedString);
+                data = JSON.parse(repaired) as T;
+            }
 
             // 如果修复后只是一个字符串或数字，但原始输入明显不是一个独立的JSON字符串/数字，则判定为失败。
             // 这是一个启发式规则，用于避免将"some text { ... }"中的"some text"误解析为成功。
@@ -152,6 +158,14 @@ export class JsonParser<T> {
             return { data, error: null, logs: this.logs };
         } catch (e: any) {
             this.log(`最终解析失败: ${e.message}`);
+            if (e instanceof JSONRepairError) {
+                const line = (e as any).line;
+                const column = (e as any).column;
+                // 在源文本中标出错误位置
+                const pointer = " ".repeat(column - 1) + "^";
+                this.log(`${processedString.split("\n")[line - 1]}`);
+                this.log(`${pointer}`);
+            }
             return { data: null, error: e.message, logs: this.logs };
         }
     }

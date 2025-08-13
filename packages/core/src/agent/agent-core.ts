@@ -175,7 +175,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         // this.logger.info("正在注册提示词模板");
 
         // 注册所有可重用的局部模板
-        this.promptService.registerTemplate("agent.partial.tool_definition", loadTemplate("tool_definition"));
         this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
         this.promptService.registerTemplate("agent.partial.l1_history_item", loadTemplate("l1_history_item"));
 

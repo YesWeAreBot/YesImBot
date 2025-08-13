@@ -16,10 +16,12 @@
   {{/triggerContext}}
 </trigger_context>
 {{/triggerContext.length}}
+
 <world_state>
   <channel id="{{channel.id}}" type="{{channel.type}}" platform="{{channel.platform}}">
     <name>{{channel.name}}</name>
   </channel>
+
   <users>
   {{#users}}
     <user id="{{id}}">
@@ -36,31 +38,49 @@
     <system_note>No user profiles available in the current context.</system_note>
   {{/users}}
   </users>
+
   {{! ======================= L1 Working Memory ======================= }}
   <working_memory>
-    <summary>This is the most recent and active conversation history. It's split into two parts: events that have already been processed, and new, unseen events that triggered this turn.</summary>
+    <summary>
+      This section is your most recent and active conversation memory.
+      It is split into:
+      1) processed_events = past history you have already handled,
+      2) new_events = NEW stimuli that triggered this turn.
+    </summary>
+
     <processed_events>
     {{#l1_working_memory.processed_events}}
       {{> agent.partial.l1_history_item }}
     {{/l1_working_memory.processed_events}}
     {{^l1_working_memory.processed_events}}
-    <system_note>There are no processed events in the current context.</system_note>
+      <system_note>There are no processed events in the current context.</system_note>
     {{/l1_working_memory.processed_events}}
     </processed_events>
+
     <new_events>
-    <!-- The following are new events that you have not seen before. -->
+      <!-- The following are new events you have NOT seen before.
+           They include:
+            - (A) Observation results from your LAST ACTION
+            - (B) New user/system messages.
+           ALWAYS check for observations FIRST.
+           If present, treat them as the single-use heartbeat result.
+           If it's error/empty, adjust plan immediately — DO NOT keep waiting. -->
     {{#l1_working_memory.new_events}}
       {{> agent.partial.l1_history_item }}
     {{/l1_working_memory.new_events}}
     {{^l1_working_memory.new_events}}
-    <system_note>There are no new events since the last time you responded.</system_note>
+      <system_note>There are no new events since the last time you responded.</system_note>
     {{/l1_working_memory.new_events}}
     </new_events>
+
   </working_memory>
   {{! ======================= L2 Retrieved Memories ======================= }}
   {{#l2_retrieved_memories.length}}
   <retrieved_memories>
-    <summary>These are relevant snippets from past conversations, retrieved based on semantic similarity to the current topic.</summary>
+    <summary>
+      Relevant snippets from past conversations, retrieved for their similarity to the current topic.
+      These are passive memory injections — use them BEFORE consulting external tools.
+    </summary>
     {{#l2_retrieved_memories}}
     <memory_chunk timestamp="{{timestamp}}">
 {{content}}
@@ -71,7 +91,7 @@
   {{! ======================= L3 Diary Entries ======================= }}
   {{#l3_diary_entries}}
   <diary_entries>
-    <summary>These are my long-term memories, written in the form of diary entries, reflecting on past events.</summary>
+    <summary>Long-term memory reflections on past events.</summary>
     {{#.}}
     <diary_entry date="{{date}}">
       <keywords>

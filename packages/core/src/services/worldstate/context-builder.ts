@@ -123,23 +123,18 @@ export class ContextBuilder {
      * @returns
      */
     private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
-        let agentThoughtCount = 0;
+        const turnIdsToKeep = new Set<string>();
         const turnIdsToDrop = new Set<string>();
 
         // 从后往前遍历，找到超出保留数量的思考事件，并记录它们的 turnId
         for (let i = history.length - 1; i >= 0; i--) {
             const item = history[i];
-            if (item.type === "agent_thought") {
-                agentThoughtCount++;
-                if (agentThoughtCount > this.config.l1_memory.keepFullTurnCount) {
-                    // 在旧实现中，我们直接删除了 agent_turn。
-                    // 在新实现中，一个 "turn" 由共享相同 turnId 的多个事件组成。
-                    // 我们将删除与此 "thought" 相关的所有事件（action, observation）。
-                    // 注意：这里我们只标记要删除的 turnId，在第二次遍历时执行删除。
-                    // (item as any) 是为了访问我们在 InteractionManager 中添加的 turnId
-                    const turnId = (item as any).turnId;
-                    if (turnId) {
-                        turnIdsToDrop.add(turnId);
+            if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
+                if (turnIdsToKeep.size < this.config.l1_memory.keepFullTurnCount) {
+                    turnIdsToKeep.add(item.turnId);
+                } else {
+                    if (!turnIdsToKeep.has(item.turnId)) {
+                        turnIdsToDrop.add(item.turnId);
                     }
                 }
             }
@@ -152,7 +147,7 @@ export class ContextBuilder {
         // 返回一个新数组，其中不包含属于要删除的 turnId 的所有事件
         return history.filter((item) => {
             if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
-                const turnId = (item as any).turnId;
+                const turnId = item.turnId;
                 return !turnIdsToDrop.has(turnId);
             }
             return true; // 保留所有非 agent 事件
