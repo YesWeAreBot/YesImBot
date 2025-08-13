@@ -101,13 +101,13 @@ export class SemanticMemoryManager {
     }
 
     /**
-     * 根据查询文本检索相关的记忆片段（Top-K+近邻扩展）
-     * 查询结果按时间戳升序排列，以保持上下文连续
-     * 若启用了`includeNeighborChunks`，则会扩展前后相邻的记忆片段
-     * 返回结果可能大于k
+     * 根据查询文本检索相关的记忆片段。
+     * 1. 高效获取候选池：一次性加载所有相关chunks，在内存中计算相似度，避免全表扫描和N+1查询。
+     * 2. 精确近邻扩展：对Top-K候选块，在内存时间线中查找前后邻居。
+     * 3. 智能合并：将所有相关（候选+邻居）且时间连续的块分组，并按“头取半、尾取半、中间全取”的规则合并，确保上下文完整且无冗余。
      * @param queryText - 查询文本
-     * @param k - 默认为5
-     * @returns
+     * @param options - 查询选项
+     * @returns 按时间顺序排列的、经过合并优化的记忆块列表。
      */
     public async search(
         queryText: string,
@@ -115,120 +115,161 @@ export class SemanticMemoryManager {
     ): Promise<(MemoryChunkData & { similarity: number })[]> {
         if (!this.embedModel) return [];
 
+        const k = options?.k || 5;
+        const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
+
+        // --- 步骤 1: 一次性加载数据并建立内存索引 ---
         const queryEmbedding = await this.embedModel.embed(queryText);
 
-        // 取出所有记忆片段
-        const results = await this.ctx.database.get(TableName.L2Chunks, {
+        // 一次性加载所有可能相关的chunks。这是本流程中唯一的一次数据库批量读取。
+        const allChunks = await this.ctx.database.get(TableName.L2Chunks, {
             platform: options?.platform || {},
             channelId: options?.channelId || {},
             endTimestamp: { $lte: options?.earliestMessageTimestamp || new Date() },
         });
 
-        // 计算相似度
-        const resultsWithSimilarity = results.map((chunk) => ({
+        if (allChunks.length === 0) return [];
+
+        // 按时间升序排序，构建完整的时间线
+        allChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
+
+        // 创建ID到索引和ID到块的映射，用于O(1)查找
+        const chunkIndexMap = new Map<string, number>();
+        const chunkMap = new Map<string, MemoryChunkData>();
+        allChunks.forEach((chunk, index) => {
+            chunkIndexMap.set(chunk.id, index);
+            chunkMap.set(chunk.id, chunk);
+        });
+
+        // --- 步骤 2: 计算相似度并获取Top-K候选池 ---
+        const resultsWithSimilarity = allChunks.map((chunk) => ({
             ...chunk,
             similarity: cosineSimilarity(queryEmbedding.embedding, chunk.embedding),
         }));
 
-        // 按相似度降序
         resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
 
-        // 先拿Top-K（候选池）
-        const candidateChunks = resultsWithSimilarity.slice(0, options?.k || 5);
+        const candidateChunks = resultsWithSimilarity.slice(0, k).filter((c) => c.similarity >= minAllowedSim);
 
-        // 设置最低阈值，过滤极端不相关的
-        const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
-        const filteredResults = candidateChunks.filter((c) => c.similarity >= minAllowedSim);
+        // --- 步骤 3: 近邻扩展 ---
+        const finalChunkIds = new Set<string>();
 
-        // ===== 新增：相邻chunk扩展 =====
-        const expandedResults: (MemoryChunkData & { similarity: number })[] = [];
-        const seenIds = new Set<string>();
+        for (const chunk of candidateChunks) {
+            finalChunkIds.add(chunk.id);
+            const currentIndex = chunkIndexMap.get(chunk.id);
 
-        for (const chunk of filteredResults) {
-            if (!seenIds.has(chunk.id)) {
-                expandedResults.push(chunk);
-                seenIds.add(chunk.id);
+            if (currentIndex === undefined) continue;
+
+            // 扩展前一个块
+            if (currentIndex > 0) {
+                const prevChunk = allChunks[currentIndex - 1];
+                finalChunkIds.add(prevChunk.id);
             }
-
-            // 查找前后相邻chunk（时间上），保证上下文完整
-            const neighbors = await this.ctx.database.get(
-                TableName.L2Chunks,
-                {
-                    platform: chunk.platform,
-                    channelId: chunk.channelId,
-                    startTimestamp: { $lt: chunk.startTimestamp },
-                },
-                { sort: { startTimestamp: "desc" }, limit: 1 }
-            );
-
-            const nextNeighbors = await this.ctx.database.get(
-                TableName.L2Chunks,
-                {
-                    channelId: chunk.channelId,
-                    startTimestamp: { $gt: chunk.startTimestamp },
-                },
-                { sort: { startTimestamp: "asc" }, limit: 1 }
-            );
-
-            // 合并相邻块进结果
-            [...neighbors, ...nextNeighbors].forEach((nb) => {
-                if (!seenIds.has(nb.id)) {
-                    expandedResults.push({ ...nb, similarity: chunk.similarity * 0.95 /* 附加块打点分 */ });
-                    seenIds.add(nb.id);
-                }
-            });
+            // 扩展后一个块
+            if (currentIndex < allChunks.length - 1) {
+                const nextChunk = allChunks[currentIndex + 1];
+                finalChunkIds.add(nextChunk.id);
+            }
         }
 
-        // 最后按相似度降序返回（相邻chunk会稍微降分）
-        // expandedResults.sort((a, b) => b.similarity - a.similarity);
+        // --- 步骤 4: 分组与合并 ---
+        const finalChunks = Array.from(finalChunkIds)
+            .map((id) => resultsWithSimilarity.find((c) => c.id === id)) // 从带相似度的结果中找回块
+            .filter(Boolean) as (MemoryChunkData & { similarity: number })[];
 
-        // 最后按时间戳升序返回，以保持上下文连续
-        // expandedResults.sort((a, b) => a.startTimestamp.getTime() - b.startTimestamp.getTime());
+        // 再次按时间排序，为合并做准备
+        finalChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
-        const mergedResults = this.mergeAdjacentChunks(expandedResults, 5);
-
-        return mergedResults;
+        return this.groupAndMergeChunks(finalChunks, chunkIndexMap);
     }
 
     /**
-     * 把时间连续且间隔小、并且来自邻居扩展的 chunk 合并成一个大块
-     * @param chunks
-     * @param timeGapLimitSec
-     * @returns
+     * 将一组按时间排序的记忆块进行分组和合并。
+     * 只有在全局时间线上连续的块才会被分到同一组并合并。
+     * @param chunks - 待处理的、已按时间排序的记忆块（候选块+邻居）
+     * @param chunkIndexMap - 全局块ID到其在时间线上索引的映射
+     * @returns 合并后的记忆块列表
      */
-    private mergeAdjacentChunks(
+    private groupAndMergeChunks(
         chunks: (MemoryChunkData & { similarity: number })[],
-        timeGapLimitSec = 120
+        chunkIndexMap: Map<string, number>
     ): (MemoryChunkData & { similarity: number })[] {
         if (chunks.length === 0) return [];
 
-        // 按时间升序
-        chunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
+        const groups: (MemoryChunkData & { similarity: number })[][] = [];
+        let currentGroup: (MemoryChunkData & { similarity: number })[] = [];
 
-        const merged: (MemoryChunkData & { similarity: number })[] = [];
-        let buffer = { ...chunks[0] };
-
-        for (let i = 1; i < chunks.length; i++) {
-            const curr = chunks[i];
-            const prev = buffer;
-
-            const gapSec = (new Date(curr.startTimestamp).getTime() - new Date(prev.endTimestamp).getTime()) / 1000;
-
-            // 如果是同一个channel，且间隔小于阈值，则认为是连续的对话
-            if (curr.channelId === prev.channelId && gapSec <= timeGapLimitSec) {
-                buffer.content += "\n" + curr.content;
-                // endTimestamp 更新为当前块的
-                buffer.endTimestamp = curr.endTimestamp;
-                // 相似度可以取较高值或平均
-                buffer.similarity = Math.max(buffer.similarity, curr.similarity);
+        for (const chunk of chunks) {
+            if (currentGroup.length === 0) {
+                currentGroup.push(chunk);
             } else {
-                merged.push(buffer);
-                buffer = { ...curr };
+                const lastChunkInGroup = currentGroup[currentGroup.length - 1];
+                const lastChunkIndex = chunkIndexMap.get(lastChunkInGroup.id)!;
+                const currentChunkIndex = chunkIndexMap.get(chunk.id)!;
+
+                // 检查当前块是否是上一块在全局时间线上的直接后继
+                if (currentChunkIndex === lastChunkIndex + 1) {
+                    currentGroup.push(chunk);
+                } else {
+                    // 不连续，开启新分组
+                    groups.push(currentGroup);
+                    currentGroup = [chunk];
+                }
             }
         }
-        merged.push(buffer);
+        // 推入最后一个分组
+        if (currentGroup.length > 0) {
+            groups.push(currentGroup);
+        }
 
-        return merged;
+        const mergedResults: (MemoryChunkData & { similarity: number })[] = [];
+
+        for (const group of groups) {
+            // 如果分组只有一个块，或者说它是一个孤立的上下文片段，则不进行内容裁切，直接保留
+            if (group.length <= 1) {
+                mergedResults.push(...group);
+                continue;
+            }
+
+            // 对包含多个连续块的分组进行合并
+            const firstChunk = group[0];
+            const lastChunk = group[group.length - 1];
+            const middleChunks = group.slice(1, -1);
+
+            // 定义内容分割函数
+            const splitContent = (content: string, takeFirstHalf: boolean): string => {
+                const lines = content.split("\n").filter((line) => line.trim() !== "");
+                if (lines.length <= 1) return content; // 内容太少不分割
+                const midPoint = Math.ceil(lines.length / 2);
+                return takeFirstHalf ? lines.slice(0, midPoint).join("\n") : lines.slice(midPoint).join("\n");
+            };
+
+            const mergedContentParts: string[] = [];
+
+            // 第一个块：取后半部分
+            mergedContentParts.push(splitContent(firstChunk.content, false));
+            // 中间块：取全部内容
+            middleChunks.forEach((chunk) => mergedContentParts.push(chunk.content));
+            // 最后一个块：取前半部分
+            mergedContentParts.push(splitContent(lastChunk.content, true));
+
+            const mergedContent = mergedContentParts.join("\n");
+
+            // 合并块的相似度可以取组内最高的
+            const maxSimilarity = Math.max(...group.map((chunk) => chunk.similarity));
+
+            mergedResults.push({
+                ...firstChunk, // 基础元数据来自第一个块
+                id: `merged-${firstChunk.id}-${lastChunk.id}`, // 创建一个唯一的合并ID
+                endTimestamp: lastChunk.endTimestamp,
+                content: mergedContent,
+                similarity: maxSimilarity,
+                // 注意：embedding 此时会与 content 不匹配，如果需要后续处理，应重新生成或置空
+                embedding: firstChunk.embedding, // 暂时保留第一个的，或设为null
+            });
+        }
+
+        return mergedResults;
     }
 
     public compileEventsToText(messages: (MessageData | ContextualMessage)[]): string {
