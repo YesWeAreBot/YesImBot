@@ -312,12 +312,12 @@ export class ChatModel extends BaseModel implements IChatModel {
             finishReason: finalFinishReason,
         };
 
-        if (finalResult.toolCalls?.length) {
-            const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
-            // this.logger.success(`✅ [请求成功] [流式] 工具调用: "${toolNames}" | 耗时: ${duration}ms`);
-        } else {
-            // this.logger.success(`✅ [请求成功] [流式] 文本长度: ${finalResult.text.length} | 原因: ${finalResult.finishReason} | 耗时: ${duration}ms`);
-        }
+        // if (finalResult.toolCalls?.length) {
+        //     const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
+        //     this.logger.success(`✅ [请求成功] [流式] 工具调用: "${toolNames}" | 耗时: ${duration}ms`);
+        // } else {
+        //     this.logger.success(`✅ [请求成功] [流式] 文本长度: ${finalResult.text.length} | 原因: ${finalResult.finishReason} | 耗时: ${duration}ms`);
+        // }
 
         return finalResult;
     }
