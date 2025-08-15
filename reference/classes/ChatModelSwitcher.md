@@ -6,7 +6,7 @@
 
 # Class: ChatModelSwitcher
 
-Defined in: [packages/core/src/services/model/model-service.ts:497](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L497)
+Defined in: [packages/core/src/services/model/model-service.ts:497](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L497)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:497](https://gith
 
 > **new ChatModelSwitcher**(`ctx`, `groupConfig`, `modelGetter`): `ChatModelSwitcher`
 
-Defined in: [packages/core/src/services/model/model-service.ts:501](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L501)
+Defined in: [packages/core/src/services/model/model-service.ts:501](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L501)
 
 #### Parameters
 
@@ -54,7 +54,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:501](https://gith
 
 > `protected` `readonly` **\_logger**: `__module`
 
-Defined in: [packages/core/src/services/model/model-service.ts:451](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L451)
+Defined in: [packages/core/src/services/model/model-service.ts:451](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L451)
 
 #### Inherited from
 
@@ -66,7 +66,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:451](https://gith
 
 > `protected` `readonly` **\_models**: [`IChatModel`](../interfaces/IChatModel.md)[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:452](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L452)
+Defined in: [packages/core/src/services/model/model-service.ts:452](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L452)
 
 #### Inherited from
 
@@ -78,7 +78,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:452](https://gith
 
 > `protected` `readonly` **ctx**: `Context`
 
-Defined in: [packages/core/src/services/model/model-service.ts:456](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L456)
+Defined in: [packages/core/src/services/model/model-service.ts:456](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L456)
 
 #### Inherited from
 
@@ -90,7 +90,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:456](https://gith
 
 > `protected` `readonly` **groupConfig**: `object`
 
-Defined in: [packages/core/src/services/model/model-service.ts:457](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L457)
+Defined in: [packages/core/src/services/model/model-service.ts:457](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L457)
 
 #### models
 
@@ -110,7 +110,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:457](https://gith
 
 > **chat**(`options`): `Promise`\<`GenerateTextResult`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:518](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L518)
+Defined in: [packages/core/src/services/model/model-service.ts:518](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L518)
 
 #### Parameters
 
@@ -128,7 +128,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:518](https://gith
 
 > `protected` **getCircuitBreakers**(): `Map`\<`string`, `CircuitBreaker`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:490](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L490)
+Defined in: [packages/core/src/services/model/model-service.ts:490](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L490)
 
 #### Returns
 
@@ -144,7 +144,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:490](https://gith
 
 > **getModels**(): readonly [`IChatModel`](../interfaces/IChatModel.md)[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:486](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L486)
+Defined in: [packages/core/src/services/model/model-service.ts:486](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L486)
 
 #### Returns
 
@@ -160,7 +160,7 @@ readonly [`IChatModel`](../interfaces/IChatModel.md)[]
 
 > **hasVisionCapability**(): `boolean`
 
-Defined in: [packages/core/src/services/model/model-service.ts:514](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/model-service.ts#L514)
+Defined in: [packages/core/src/services/model/model-service.ts:514](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/model-service.ts#L514)
 
 #### Returns
 

@@ -6,7 +6,7 @@
 
 # Interface: ValidationResult
 
-Defined in: [packages/core/src/services/model/chat-model.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/chat-model.ts#L15)
+Defined in: [packages/core/src/services/model/chat-model.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/chat-model.ts#L15)
 
 验证器函数的返回值
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:15](https://github.c
 
 > **earlyExit**: `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/chat-model.ts#L19)
+Defined in: [packages/core/src/services/model/chat-model.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/chat-model.ts#L19)
 
 是否可以提前结束流并返回
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:19](https://github.c
 
 > `optional` **error**: `string`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/chat-model.ts#L23)
+Defined in: [packages/core/src/services/model/chat-model.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/chat-model.ts#L23)
 
 错误信息 (可选)
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:23](https://github.c
 
 > `optional` **parsedData**: `any`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/chat-model.ts#L21)
+Defined in: [packages/core/src/services/model/chat-model.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/chat-model.ts#L21)
 
 解析后的数据 (可选)
 
@@ -46,6 +46,6 @@ Defined in: [packages/core/src/services/model/chat-model.ts:21](https://github.c
 
 > **valid**: `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/model/chat-model.ts#L17)
+Defined in: [packages/core/src/services/model/chat-model.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/model/chat-model.ts#L17)
 
 内容是否有效

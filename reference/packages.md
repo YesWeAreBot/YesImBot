@@ -32,6 +32,7 @@
 - [MustacheRenderer](classes/MustacheRenderer.md)
 - [PromptService](classes/PromptService.md)
 - [ProviderInstance](classes/ProviderInstance.md)
+- [StreamParser](classes/StreamParser.md)
 - [ToolService](classes/ToolService.md)
 - [WorldStateService](classes/WorldStateService.md)
 - [YesImBot](classes/YesImBot.md)

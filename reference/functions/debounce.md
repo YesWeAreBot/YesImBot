@@ -8,7 +8,7 @@
 
 > **debounce**\<`T`\>(`func`, `wait`): (...`args`) => `void`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/shared/utils/toolkit.ts#L203)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/shared/utils/toolkit.ts#L203)
 
 创建一个防抖函数，该函数会从上一次被调用后，延迟 `wait` 毫秒后调用 `func` 方法。
 

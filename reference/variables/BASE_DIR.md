@@ -8,4 +8,4 @@
 
 > `const` **BASE\_DIR**: `string`
 
-Defined in: [packages/core/src/shared/constants.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/shared/constants.ts#L3)
+Defined in: [packages/core/src/shared/constants.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/shared/constants.ts#L3)

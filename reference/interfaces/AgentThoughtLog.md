@@ -6,7 +6,7 @@
 
 # Interface: AgentThoughtLog
 
-Defined in: [packages/core/src/services/worldstate/types.ts:76](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/worldstate/types.ts#L76)
+Defined in: [packages/core/src/services/worldstate/types.ts:76](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L76)
 
 交互日志中 Agent 思考事件的结构
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:76](https://github.c
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:78](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/worldstate/types.ts#L78)
+Defined in: [packages/core/src/services/worldstate/types.ts:78](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L78)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:78](https://github.c
 
 > **thoughts**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:81](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/worldstate/types.ts#L81)
+Defined in: [packages/core/src/services/worldstate/types.ts:81](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L81)
 
 #### analyze\_infer
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:81](https://github.c
 
 > **timestamp**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:80](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/worldstate/types.ts#L80)
+Defined in: [packages/core/src/services/worldstate/types.ts:80](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L80)
 
 ***
 
@@ -52,7 +52,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:80](https://github.c
 
 > **turnId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/worldstate/types.ts#L79)
+Defined in: [packages/core/src/services/worldstate/types.ts:79](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L79)
 
 ***
 
@@ -60,4 +60,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:79](https://github.c
 
 > **type**: `"agent_thought"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/689543d3087a5e3abc4196ce8c6d95813f518274/packages/core/src/services/worldstate/types.ts#L77)
+Defined in: [packages/core/src/services/worldstate/types.ts:77](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L77)
