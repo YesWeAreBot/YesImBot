@@ -118,7 +118,6 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
             let decision = false;
 
-            // [日志添加] 意愿计算与决策日志
             if (type === "user_message") {
                 try {
                     const willingnessBefore = this.willing.getCurrentWillingness(channelCid);

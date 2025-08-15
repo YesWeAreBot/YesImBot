@@ -5,7 +5,7 @@ import { Context } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
-import { JsonParser, toBoolean } from "@/shared/utils";
+import { isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 
@@ -80,7 +80,6 @@ export class ChatModel extends BaseModel implements IChatModel {
      */
     private parseCustomParameters(): void {
         if (!this.config.parameters.custom) return;
-
         for (const [key, param] of Object.entries(this.config.parameters.custom)) {
             try {
                 let parsedValue: any;
@@ -102,7 +101,6 @@ export class ChatModel extends BaseModel implements IChatModel {
                 }
                 this.customParameters[key] = parsedValue;
             } catch (error) {
-                // 使用更清晰的警告日志
                 this.logger.warn(`解析自定义参数失败 | 键: "${key}" | 值: "${param.value}" | 错误: ${error.message}`);
             }
         }
@@ -123,13 +121,10 @@ export class ChatModel extends BaseModel implements IChatModel {
         this.logger.info(`🚀 [请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
 
         try {
-            if (useStream) {
-                return await this._executeStream(chatOptions, options.onStreamStart, options.validation);
-            } else {
-                return await this._executeNonStream(chatOptions);
-            }
+            return useStream
+                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation)
+                : await this._executeNonStream(chatOptions);
         } catch (error) {
-            // 将所有底层错误包装成统一的 AppError 并向上抛出
             await this._wrapAndThrow(error, chatOptions);
         }
     }
@@ -165,17 +160,14 @@ export class ChatModel extends BaseModel implements IChatModel {
      * 执行非流式请求
      */
     private async _executeNonStream(chatOptions: ChatOptions): Promise<GenerateTextResult> {
-        //this.logger.debug(`➡️ [非流式] 发送请求...`);
         const stime = Date.now();
         const result = await generateText(chatOptions);
         const duration = Date.now() - stime;
 
-        if (result.toolCalls && result.toolCalls.length > 0) {
-            const toolNames = result.toolCalls.map((tc) => tc.toolName).join(", ");
-            this.logger.success(`✅ [请求成功] [非流式] 工具调用: "${toolNames}" | 耗时: ${duration}ms`);
-        } else {
-            this.logger.success(`✅ [请求成功] [非流式] 文本长度: ${result.text.length} | 耗时: ${duration}ms`);
-        }
+        const logMessage = result.toolCalls?.length
+            ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
+            : `文本长度: ${result.text.length}`;
+        this.logger.success(`✅ [请求成功] [非流式] ${logMessage} | 耗时: ${duration}ms`);
         return result;
     }
 
@@ -187,50 +179,10 @@ export class ChatModel extends BaseModel implements IChatModel {
         onStreamStart?: () => void,
         validation?: ValidationOptions
     ): Promise<GenerateTextResult> {
-        //this.logger.debug(`➡️ [流式] 发送请求...`);
-        let streamStarted = false;
-
-        // --- 1. 选择或创建验证器 ---
-        const getValidator = (): ContentValidator | null => {
-            if (validation?.validator) return validation.validator;
-            if (validation?.format === "json") {
-                const jsonParser = new JsonParser();
-                return (text: string) => {
-                    const trimmedText = text.trim();
-                    if (
-                        (trimmedText.startsWith("{") && trimmedText.endsWith("}")) ||
-                        (trimmedText.startsWith("[") && trimmedText.endsWith("]"))
-                    ) {
-                        const result = jsonParser.parse(trimmedText);
-                        return {
-                            valid: !result.error,
-                            earlyExit: !result.error,
-                            parsedData: result.data,
-                            error: result.error,
-                        };
-                    }
-                    return { valid: false, earlyExit: false };
-                };
-            }
-            return null;
-        };
-        const validator = getValidator();
-
-        // --- 2. 准备并启动流式处理 ---
         const stime = Date.now();
-        const stream = await streamText({
-            ...chatOptions,
-            streamOptions: { includeUsage: true },
-            onEvent: (event) => {
-                if (event.type === "text-delta" && !streamStarted) {
-                    onStreamStart?.();
-                    streamStarted = true;
-                    this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
-                }
-            },
-        });
+        let streamStarted = false;
+        const validator = this._getValidator(validation);
 
-        // --- 3. 并发处理文本流和元数据流 ---
         const finalContentParts: string[] = [];
         let finalSteps: CompletionStep[] = [];
         let finalToolCalls: CompletionToolCall[] = [];
@@ -238,46 +190,58 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalUsage: GenerateTextResult["usage"];
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
-        const textProcessor = async () => {
-            const buffer: string[] = [];
-            for await (const textPart of stream.textStream) {
-                buffer.push(textPart);
-                finalContentParts.push(textPart);
-
-                if (validator) {
-                    const validationResult = validator(buffer.join(""));
-                    if (validationResult.valid && validationResult.earlyExit) {
-                        this.logger.debug(`✅ 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
-                        // @ts-ignore - 尝试调用底层库的中断方法
-                        if (stream.abort) stream.abort("early_exit");
-                        else if (chatOptions.abortSignal && chatOptions.abortSignal.aborted === false) {
-                            // 通过外部传入的 AbortController 来中断
-                            const controller = (chatOptions.abortSignal as any).controller;
-                            if (controller) controller.abort("early_exit");
-                        }
-                        if (validationResult.parsedData) {
-                            finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
-                        }
-                        return; // 提前退出循环
-                    }
-                }
-            }
-        };
-
-        const stepProcessor = async () => {
-            for await (const step of await stream.steps) {
-                finalSteps.push(step);
-                if (step.toolCalls?.length) finalToolCalls.push(...step.toolCalls);
-                if (step.toolResults?.length) finalToolResults.push(...step.toolResults);
-                if (step.usage) finalUsage = step.usage;
-                if (step.finishReason) finalFinishReason = step.finishReason;
-            }
-        };
+        let streamFinished = false;
 
         try {
-            await Promise.all([textProcessor(), stepProcessor()]);
+            const buffer: string[] = [];
+            const stream = await streamText({
+                ...chatOptions,
+                streamOptions: { includeUsage: true },
+                onEvent: (event) => {
+                    if (event.type !== "text-delta" || streamFinished) return;
+
+                    const textDelta = event.text || "";
+                    if (!streamStarted && isNotEmpty(textDelta)) {
+                        onStreamStart?.();
+                        streamStarted = true;
+                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
+                    }
+
+                    if (textDelta === "") return;
+
+                    buffer.push(textDelta);
+                    finalContentParts.push(textDelta);
+
+                    if (validator) {
+                        const validationResult = validator(buffer.join(""));
+                        if (validationResult.valid && validationResult.earlyExit) {
+                            this.logger.debug(`✅ 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
+                            streamFinished = true;
+                            // 使用解析后的干净数据替换部分流式文本
+                            if (validationResult.parsedData) {
+                                finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
+                            }
+                            // 触发 AbortController 来中断HTTP连接
+                            const controller = (chatOptions.abortSignal as any)?.controller;
+                            if (controller) controller.abort("early_exit");
+                        }
+                    }
+                },
+            });
+
+            // 仅等待元数据（如 usage, finishReason）处理完成
+            // 文本部分已在 onEvent 中实时处理
+            await (async () => {
+                for await (const step of await stream.steps) {
+                    finalSteps.push(step);
+                    if (step.toolCalls?.length) finalToolCalls.push(...step.toolCalls);
+                    if (step.toolResults?.length) finalToolResults.push(...step.toolResults);
+                    if (step.usage) finalUsage = step.usage;
+                    if (step.finishReason) finalFinishReason = step.finishReason;
+                }
+            })();
         } catch (error) {
-            // AbortError 是我们主动中断流时产生的预期错误，应静默处理
+            // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
             if (error.name === "AbortError" && error.message === "early_exit") {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
             } else {
@@ -286,10 +250,13 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
 
         const duration = Date.now() - stime;
-        this.logger.debug(`🏁 [流式] 传输完成 | 总耗时: ${duration}ms`);
-
-        // --- 4. 对最终拼接的完整内容进行验证 ---
         const finalText = finalContentParts.join("");
+
+        this.logger.debug(
+            `🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`
+        );
+
+        // 对最终拼接的完整内容进行最后一次验证
         if (validator) {
             const finalValidation = validator(finalText, true);
             if (!finalValidation.valid) {
@@ -301,8 +268,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             }
         }
 
-        // --- 5. 组装并返回最终结果 ---
-        const finalResult: GenerateTextResult = {
+        return {
             steps: finalSteps as CompletionStep<true>[],
             messages: [],
             text: finalText,
@@ -311,21 +277,30 @@ export class ChatModel extends BaseModel implements IChatModel {
             usage: finalUsage,
             finishReason: finalFinishReason,
         };
-
-        // if (finalResult.toolCalls?.length) {
-        //     const toolNames = finalResult.toolCalls.map((tc) => tc.toolName).join(", ");
-        //     this.logger.success(`✅ [请求成功] [流式] 工具调用: "${toolNames}" | 耗时: ${duration}ms`);
-        // } else {
-        //     this.logger.success(`✅ [请求成功] [流式] 文本长度: ${finalResult.text.length} | 原因: ${finalResult.finishReason} | 耗时: ${duration}ms`);
-        // }
-
-        return finalResult;
     }
 
-    /**
-     * 捕获底层库抛出的原始错误，将其包装为包含丰富上下文的 AppError，然后重新抛出
-     * 这是统一错误处理的核心
-     */
+    private _getValidator(validation?: ValidationOptions): ContentValidator | null {
+        if (validation?.validator) return validation.validator;
+        if (validation?.format === "json") {
+            const jsonParser = new JsonParser();
+            return (text: string, final?: boolean) => {
+                const trimmedText = text.trim();
+                // 简单的完整性检查
+                if (
+                    (trimmedText.startsWith("{") && trimmedText.endsWith("}")) ||
+                    (trimmedText.startsWith("[") && trimmedText.endsWith("]"))
+                ) {
+                    const result = jsonParser.parse(trimmedText);
+                    return { valid: !result.error, earlyExit: !result.error, parsedData: result.data, error: result.error as string };
+                }
+                // 如果是流的最后，但格式仍不完整，则判定为无效
+                if (final) return { valid: false, earlyExit: false, error: "Incomplete JSON" };
+                return { valid: false, earlyExit: false };
+            };
+        }
+        return null;
+    }
+
     private async _wrapAndThrow(error: any, options: ChatOptions): Promise<never> {
         // 始终附加基础上下文信息
         const context = {
@@ -342,72 +317,33 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
 
         // 2. 处理 AbortError，通常由超时引起
-        if (error.name === "AbortError") {
-            this.logger.error(`🛑 [错误] 请求超时 | 模型: ${this.id}`);
-            throw new AppError(ErrorDefinitions.LLM.TIMEOUT, {
-                args: [error.duration],
-                cause: error,
-                context,
-            });
+        if (error.name === "AbortError" || error.message === "timeout") {
+            const duration = error.duration ? ` (${error.duration}s)` : "";
+            this.logger.error(`🛑 [错误] 请求超时${duration} | 模型: ${this.id}`);
+            throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { cause: error, context });
         }
 
-        // 3. 处理来自 @xsai 库的特定错误 (XSAIError)
         if (error.name === "XSAIError" && error.response) {
-            const status = error.response.status;
-            context["url"] = error.response.url;
+            const { status, url } = error.response;
+            context["url"] = url;
             context["httpStatus"] = status;
 
             let definition;
-            switch (status) {
-                case 400:
-                    definition = ErrorDefinitions.LLM.BAD_REQUEST;
-                    break;
-                case 401:
-                    definition = ErrorDefinitions.LLM.INVALID_API_KEY;
-                    break;
-                case 429:
-                    definition = ErrorDefinitions.LLM.RATE_LIMIT_EXCEEDED;
-                    break;
-                case 500:
-                case 502:
-                case 503:
-                case 504:
-                    definition = ErrorDefinitions.LLM.PROVIDER_ERROR;
-                    break;
-                default:
-                    definition = ErrorDefinitions.LLM.REQUEST_FAILED;
-            }
-            this.logger.error(`🛑 [错误] API 请求失败 | 状态码: ${status} | 模型: ${this.id}`);
-            throw new AppError(definition, {
-                args: [`HTTP ${status}: ${error.message}`],
-                cause: error,
-                context,
-            });
-        }
+            if (status === 401) definition = ErrorDefinitions.LLM.INVALID_API_KEY;
+            else if (status === 429) definition = ErrorDefinitions.LLM.RATE_LIMIT_EXCEEDED;
+            else if (status >= 500) definition = ErrorDefinitions.LLM.PROVIDER_ERROR;
+            else definition = ErrorDefinitions.LLM.REQUEST_FAILED;
 
-        // 4. 处理其他包含 HTTP 状态码的通用错误
-        if (typeof error.status === "number") {
-            this.logger.error(`🛑 [错误] HTTP 请求失败 | 状态码: ${error.status} | 模型: ${this.id}`);
-            throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
-                args: [`API 返回状态 ${error.status}: ${error.message}`],
-                cause: error,
-                context: { ...context, httpStatus: error.status },
-            });
+            this.logger.error(`🛑 [错误] API 请求失败 | 状态码: ${status} | 模型: ${this.id}`);
+            throw new AppError(definition, { args: [`HTTP ${status}: ${error.message}`], cause: error, context });
         }
 
         if (error.message === "fetch failed") {
-            this.logger.error(`🛑 [错误] 网络请求失败 | 模型: ${this.id}`);
-            throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, {
-                cause: error,
-                context,
-            });
+            this.logger.error(`🛑 [错误] 网络请求失败 (fetch failed) | 模型: ${this.id}`);
+            throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
         }
 
-        // 5. 最后的通用回退，通常是网络问题或未知错误
         this.logger.error(`🛑 [错误] 未知或网络错误 | ${error.message}`);
-        throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, {
-            cause: error,
-            context,
-        });
+        throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
     }
 }

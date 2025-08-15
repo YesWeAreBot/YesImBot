@@ -139,6 +139,13 @@ export class ErrorReporter {
                 `**Message:** \`${causeError.message}\`\n`,
                 "```\n" + (causeError.stack || "No stack available.") + "\n```"
             );
+            if (causeError instanceof AggregateError) {
+                dumpSections.push(`### 🌿 聚合错误包含的内部错误:\n`);
+                causeError.errors.forEach((e, index) => {
+                    dumpSections.push(`#### 内部错误 ${index + 1}:\n`, "```\n" + e.stack + "\n```");
+                });
+                dumpSections.push(`---`);
+            }
         }
 
         return dumpSections.join("\n");

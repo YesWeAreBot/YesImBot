@@ -27,6 +27,12 @@ export class StreamParser {
         this.schemaKeys = Object.keys(schema);
     }
 
+    public reset(): void {
+        this.textBuffer = "";
+        this.lastParsed = {};
+        this.streamStates.clear();
+    }
+
     /**
      * 为指定的顶层键创建一个可读流
      * @param key 必须是 schema 中定义的顶层键之一

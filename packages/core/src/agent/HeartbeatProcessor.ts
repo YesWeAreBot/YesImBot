@@ -10,7 +10,7 @@ import { AgentResponse, AgentStimulus } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
-import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
+import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./ContextBuilder";
 
@@ -20,7 +20,6 @@ import { PromptContextBuilder } from "./ContextBuilder";
  */
 export class HeartbeatProcessor {
     private readonly logger;
-    private readonly parser = new JsonParser<AgentResponse>();
 
     constructor(
         private readonly ctx: Context,
@@ -43,14 +42,15 @@ export class HeartbeatProcessor {
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
-        const previousResponses: AgentResponse[] = []; // 用于在心跳之间传递历史
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
             try {
-                const result = await this.performSingleHeartbeat(turnId, stimulus, previousResponses);
+                const result = this.config.streamAction
+                    ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus)
+                    : await this.performSingleHeartbeat(turnId, stimulus);
+
                 if (result) {
-                    previousResponses.push(result.response);
                     shouldContinueHeartbeat = result.continue;
                     success = true; // 至少成功一次心跳
                 } else {
@@ -59,40 +59,27 @@ export class HeartbeatProcessor {
             } catch (error) {
                 handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
                 shouldContinueHeartbeat = false;
-                // 即使失败，也要确保循环终止
-                success = success || false;
             }
         }
-
         return success;
     }
 
     /**
-     * 执行单次心跳的完整逻辑。
-     * 从构建上下文到调用LLM，再到执行动作。
-     * @returns 返回包含响应和是否继续的标志，或在失败时返回 null。
+     * 准备LLM请求所需的消息负载
      */
-    private async performSingleHeartbeat(
-        turnId: string,
-        stimulus: AgentStimulus<any>,
-        previousResponses: AgentResponse[]
-    ): Promise<{ response: AgentResponse; continue: boolean } | null> {
-        const { session } = stimulus;
-        const { platform, channelId } = session;
-
+    private async _prepareLlmRequest(stimulus: AgentStimulus<any>): Promise<{ messages: Message[] }> {
         // 1. 构建非消息部分的上下文
-        this.logger.debug("步骤 1/7: 构建提示词上下文...");
+        this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
 
         // 2. 准备模板渲染所需的数据视图 (View)
-        this.logger.debug("步骤 2/7: 准备模板渲染视图...");
+        this.logger.debug("步骤 2/4: 准备模板渲染视图...");
         const view = {
-            session,
+            session: stimulus.session,
             TOOL_DEFINITION: prepareDataForTemplate(promptContext.toolSchemas),
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
             triggerContext: promptContext.worldState.triggerContext,
-            //CURRENT_CONVERSATION: previousResponses.length > 0 ? { history: previousResponses } : null,
             // 模板辅助函数
             _toString: function () {
                 return _toString(this);
@@ -110,10 +97,9 @@ export class HeartbeatProcessor {
                     .parse(this)
                     .filter((e) => e.type === "text")
                     .join("");
-                if (text.length > length) {
-                    return `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`;
-                }
-                return this;
+                return text.length > length
+                    ? `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`
+                    : this.toString();
             },
             _formatDate: function () {
                 return formatDate(this, "MM-DD HH:mm");
@@ -121,12 +107,12 @@ export class HeartbeatProcessor {
         };
 
         // 3. 渲染核心提示词文本
-        this.logger.debug("步骤 3/7: 渲染提示词模板...");
+        this.logger.debug("步骤 3/4: 渲染提示词模板...");
         const systemPrompt = await this.promptService.render("agent.system", view);
         const userPromptText = await this.promptService.render("agent.user", view);
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
-        this.logger.debug("步骤 4/7: 构建最终消息...");
+        this.logger.debug("步骤 4/4: 构建最终消息...");
         const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(userPromptText, promptContext.worldState);
 
         const messages: Message[] = [
@@ -134,171 +120,209 @@ export class HeartbeatProcessor {
             { role: "user", content: userMessageContent },
         ];
 
-        // 5. 调用LLM
-        this.logger.info("步骤 5/7: 调用大语言模型...");
-        //const stime = Date.now();
-        const parser = new JsonParser<any>();
+        return { messages };
+    }
+
+    /**
+     * 执行单次心跳的完整逻辑（非流式）
+     */
+    private async performSingleHeartbeat(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
+        const { session } = stimulus;
+        const { platform, channelId } = session;
+        const parser = new JsonParser<AgentResponse>();
+
+        // 步骤 1-4: 准备请求
+        const { messages } = await this._prepareLlmRequest(stimulus);
+
+        // 步骤 5: 调用LLM
+        this.logger.info("步骤 5/7: 调用大语言模型 (非流式)...");
         const llmRawResponse = await this.modelSwitcher.chat({
             messages,
             validation: {
                 format: "json",
-                // 如果模型支持，可以在流式输出中提前判断JSON完整性
                 validator: (text, final) => {
+                    if (!final) return { valid: false, earlyExit: false }; // 非流式，只在最后验证
+
                     const { data, error } = parser.parse(text);
+                    if (error) return { valid: false, earlyExit: false, error };
+                    if (!data) return { valid: true, earlyExit: false, parsedData: null };
 
-                    // --- 1. 处理解析失败的情况 ---
-                    // 如果解析器返回错误（例如，JSON语法无效）
-                    if (error) {
-                        // 如果这是流的末尾，那么这个错误是最终的，需要报告。
-                        // 否则，我们假设这只是一个不完整的JSON，可以继续接收数据。
-                        if (final) {
-                            return { valid: false, earlyExit: false, error: error };
-                        }
-                        // 流尚未结束，继续等待
-                        return { valid: false, earlyExit: false };
-                    }
-
-                    // --- 2. 处理解析成功但数据为空的情况 ---
-                    // 发生在文本为空或仅有空白字符时
-                    if (!data) {
-                        // 如果流结束了但没有数据，可以认为结果是有效的空（或返回错误，取决于业务需求）
-                        if (final) {
-                            return { valid: true, earlyExit: false, parsedData: null };
-                        }
-                        // 否则继续等待
-                        return { valid: false, earlyExit: false };
-                    }
-
-                    // --- 3. 归一化处理（兼容 request_heartbeat 在 thoughts 内的情况） ---
-                    // 无论是否提前退出，只要解析出 thoughts，就进行归一化，确保后续逻辑统一。
-                    // 使用 `??` (空值合并操作符) 代替 `||`，避免当 `request_heartbeat` 为 `false` 时被错误地覆盖。
-                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean" && final) {
+                    // 归一化处理
+                    //@ts-ignore
+                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
+                        //@ts-ignore
                         data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
                     }
 
-                    // --- 4. 处理流结束的情况 (`final` = true) ---
-                    // 根据需求：“final表示输出完毕，此时无论内容是否完整都返回解析结果”
-                    if (final) {
-                        // 解析成功，流已结束，直接返回已归一化的数据
+                    // 结构验证
+                    const isThoughtsValid = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
+                    const isActionsValid = Array.isArray(data.actions);
+
+                    if (isThoughtsValid && isActionsValid) {
                         return { valid: true, earlyExit: false, parsedData: data };
                     }
-
-                    // --- 5. 流式处理：检查是否满足提前退出条件 (`final` = false) ---
-                    // 检查所有关键字段是否都已存在并且类型正确
-                    const isThoughtsComplete = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
-                    const isActionsComplete = Array.isArray(data.actions);
-                    const isHeartbeatComplete = typeof data.request_heartbeat === "boolean";
-
-                    if (isThoughtsComplete && isActionsComplete && isHeartbeatComplete) {
-                        // 所有条件满足，可以提前退出
-                        return { valid: true, earlyExit: true, parsedData: data };
-                    } else {
-                        // JSON结构有效，但语义内容不完整，继续接收
-                        return { valid: false, earlyExit: false };
-                    }
+                    return { valid: false, earlyExit: false, error: "Missing 'thoughts' or 'actions' field." };
                 },
             },
         });
 
-        //const llmResponseTimestamp = new Date();
-        //const responseTime = llmResponseTimestamp.getTime() - stime;
-        //this.logger.info(`💬 LLM 响应时间: ${responseTime}ms`);
-        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(systemPrompt + userPromptText)}`;
+        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
         const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
 
-        // 6. 解析和验证响应
+        // 步骤 6: 解析和验证响应
         this.logger.debug("步骤 6/7: 解析并验证LLM响应...");
         const agentResponseData = this.parseAndValidateResponse(llmRawResponse, session.cid);
-
         if (!agentResponseData) {
-            this.logger.error("LLM响应解析或验证失败，终止本次心跳。");
+            this.logger.error("LLM响应解析或验证失败，终止本次心跳");
             return null;
         }
 
         this.displayThoughts(agentResponseData.thoughts);
-
-        // 记录思考过程
         await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts);
 
-        // 7. 执行动作并记录观察结果
+        // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
         await this.executeActions(turnId, session, agentResponseData.actions);
 
-        this.logger.success("单次心跳成功完成。");
-        // 注意：这里的 response 只用于在心跳之间传递历史，不再包含 observation
-        const responseForHistory: AgentResponse = { ...agentResponseData, observations: [] };
-        return { response: responseForHistory, continue: agentResponseData.request_heartbeat };
+        this.logger.success("单次心跳成功完成");
+        return { continue: agentResponseData.request_heartbeat };
     }
 
     /**
-     * 解析并验证来自LLM的响应。
-     * @param llmRawResponse - 从模型切换器收到的原始响应。
-     * @param channelId - 用于日志记录的频道ID。
-     * @returns 如果成功，则返回格式正确的 AgentResponse 数据；否则返回 null。
+     * 执行单次心跳的完整逻辑（流式）
      */
-    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, channelId: string): Omit<AgentResponse, "observations"> | null {
+    private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
+        const { session } = stimulus;
+        const { platform, channelId } = session;
+        const parser = new JsonParser<any>();
+
+        // 步骤 1-4: 准备请求
+        const { messages } = await this._prepareLlmRequest(stimulus);
+
+        // 步骤 5: 调用LLM（流式）
+        this.logger.info("步骤 5/7: 调用大语言模型 (流式)...");
+        const stime = Date.now();
+
+        let streamParser = new StreamParser({
+            thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
+            actions: [{ function: "string", params: "any" }],
+            request_heartbeat: "boolean",
+        });
+
+        const llmPromise = this.modelSwitcher.chat({
+            messages,
+            stream: true,
+            validation: {
+                format: "json",
+                validator: (text, final) => {
+                    try {
+                        streamParser.processText(text, final);
+                    } catch (e) {
+                        if (!e.message.includes("Cannot read properties of null")) {
+                            this.logger.warn(`流式解析器错误: ${e.message}`);
+                        }
+                    }
+
+                    const { data, error } = parser.parse(text);
+                    if (error) return { valid: final ? false : true, earlyExit: false, error: final ? error : undefined };
+                    if (!data) return { valid: final, earlyExit: false, parsedData: null };
+
+                    // 归一化处理
+                    if (final && data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
+                        data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+                    }
+
+                    if (final) return { valid: true, earlyExit: false, parsedData: data };
+
+                    // 检查提前退出条件
+                    const isComplete = data.thoughts && Array.isArray(data.actions) && typeof data.request_heartbeat === "boolean";
+                    if (isComplete) {
+                        streamParser.processText(text, true); // 确保最后的数据被处理
+                        return { valid: true, earlyExit: true, parsedData: data };
+                    }
+                    return { valid: false, earlyExit: false };
+                },
+            },
+        });
+
+        // 并发消费流式解析器的各个部分
+        let thoughts = { observe: "", analyze_infer: "", plan: "" };
+        const thoughtsPromise = (async () => {
+            for await (const chunk of streamParser.stream<any>("thoughts")) {
+                const [key, value] = Object.entries(chunk)[0];
+                thoughts = { ...thoughts, [key]: value };
+                this.logger.debug(`[流式思考] 🤔 ${key}: ${value}`);
+            }
+            //this.displayThoughts(thoughts);
+            await this.interactionManager.recordThought(turnId, platform, channelId, thoughts);
+        })();
+
+        const actionsPromise = (async () => {
+            let count = 1;
+            for await (const action of streamParser.stream<any>("actions")) {
+                this.logger.info(`[流式执行] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
+                await this.executeActions(turnId, session, [action]);
+            }
+        })();
+
+        let request_heartbeat = false;
+        const heartbeatPromise = (async () => {
+            for await (const chunk of streamParser.stream<boolean>("request_heartbeat")) {
+                request_heartbeat = Boolean(chunk);
+                this.logger.debug(`[流式心跳] ❤️ request_heartbeat: ${request_heartbeat}`);
+            }
+        })();
+
+        // 等待所有流处理完成
+        await Promise.all([llmPromise, thoughtsPromise, actionsPromise, heartbeatPromise]);
+
+        this.logger.success("单次心跳成功完成");
+        return { continue: request_heartbeat };
+    }
+
+    /**
+     * 解析并验证来自LLM的响应
+     */
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, cid: string): Omit<AgentResponse, "observations"> | null {
         const errorContext = {
             rawResponse: llmRawResponse.text,
-            channelId: channelId,
+            cid,
             promptTokens: llmRawResponse.usage?.prompt_tokens,
             completionTokens: llmRawResponse.usage?.completion_tokens,
         };
+        const parser = new JsonParser<AgentResponse>();
 
-        const llmParsedResponse = this.parser.parse(llmRawResponse.text);
-        if (llmParsedResponse.error || !llmParsedResponse.data) {
-            // 使用新的错误定义，并传入完整的上下文
-            const parseError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
-                cause: llmParsedResponse.error as any,
-                context: errorContext,
-            });
-            // handleError 会处理日志、建议和上报
-            handleError(this.logger, parseError, `解析LLM响应时 (Channel: ${channelId})`);
+        const { data, error } = parser.parse(llmRawResponse.text);
+        if (error || !data) {
+            const parseError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { cause: error as any, context: errorContext });
+            handleError(this.logger, parseError, `解析LLM响应时 (CID: ${cid})`);
             return null;
         }
 
-        const agentResponseData = llmParsedResponse.data;
-
-        // D. 验证JSON对象结构
-        if (!agentResponseData.thoughts || typeof agentResponseData.thoughts !== "object") {
-            const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
-                context: { ...errorContext, checkedField: "thoughts" },
-            });
-            handleError(this.logger, formatError, `验证LLM响应格式时 (Channel: ${channelId})`);
+        if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
+            const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: errorContext });
+            handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
             return null;
         }
 
-        if (!Array.isArray(agentResponseData.actions)) {
-            const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
-                context: { ...errorContext, checkedField: "actions" },
-            });
-            handleError(this.logger, formatError, `验证LLM响应格式时 (Channel: ${channelId})`);
-            return null;
-        }
+        data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
 
-        // E. (可选) 对 request_heartbeat 进行默认值处理
-        if (typeof agentResponseData.request_heartbeat !== "boolean") {
-            //this.logger.warn(`'request_heartbeat' 字段缺失或类型错误，将默认为 false。`);
-            agentResponseData.request_heartbeat = false;
-        }
-
-        return agentResponseData as Omit<AgentResponse, "observations">;
+        return data as Omit<AgentResponse, "observations">;
     }
-
-    // --- 辅助方法 ---
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
         if (!thoughts) return;
         const { observe, analyze_infer, plan } = thoughts;
         this.logger.info(`[思考过程]
-  - 观察: ${observe}
-  - 分析: ${analyze_infer}
-  - 计划: ${plan}`);
+  - 观察: ${observe || "N/A"}
+  - 分析: ${analyze_infer || "N/A"}
+  - 计划: ${plan || "N/A"}`);
     }
 
     private async executeActions(turnId: string, session: Session, actions: AgentResponse["actions"]): Promise<void> {
         if (actions.length === 0) {
-            this.logger.info("无动作需要执行。");
+            this.logger.info("无动作需要执行");
             return;
         }
 
@@ -306,10 +330,7 @@ export class HeartbeatProcessor {
 
         for await (const action of actions) {
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
-
-            //this.logger.info(`[🛠️ 执行动作] -> ${action.function}(${JSON.stringify(action.params)})`);
             const result = await this.toolService.invoke(action.function, action.params, session);
-
             await this.interactionManager.recordObservation(actionId, platform, channelId, {
                 turnId,
                 function: action.function,
@@ -317,61 +338,35 @@ export class HeartbeatProcessor {
                 result: result.result,
                 error: result.error,
             });
-
-            // if (result.status === "error") {
-            //     this.logger.warn(`[💥 动作失败] -> ${action.function} | 错误: ${result.error}`);
-            // }
         }
     }
 }
-
-// --- 模板工具函数 ---
 
 function _toString(obj) {
     if (typeof obj === "string") return obj;
     return JSON.stringify(obj);
 }
 
-/**
- * @description 为 Mustache 模板准备工具数据。
- * 这个函数将扁平的工具定义转换为模板引擎易于遍历的嵌套结构。
- * 它通过递归为参数添加缩进，并处理嵌套对象和数组。
- */
 function prepareDataForTemplate(tools: ToolSchema[]) {
-    // 递归函数，处理参数并添加缩进
     const processParams = (params: Properties, indent = ""): any[] => {
         return Object.entries(params).map(([key, param]) => {
-            const processedParam: any = {
-                ...param,
-                key: key,
-                indent: indent,
-            };
-
-            // 如果是对象，递归处理其属性
+            const processedParam: any = { ...param, key, indent };
             if (param.properties) {
                 processedParam.properties = processParams(param.properties, indent + "    ");
             }
-
-            // 如果是数组且数组成员是复杂对象，递归处理
-            if (param.items) {
-                // 将单个 item 包装成数组，以便局部模板可以统一处理
+            if (param.items?.properties) {
                 processedParam.items = [
                     {
                         ...param.items,
-                        key: "item", // 为数组项提供一个通用名称
+                        key: "item",
                         indent: indent + "    ",
-                        // 递归处理数组项的属性（如果它是一个对象）
-                        ...(param.items.properties && {
-                            properties: processParams(param.items.properties, indent + "        "),
-                        }),
+                        properties: processParams(param.items.properties, indent + "        "),
                     },
                 ];
             }
             return processedParam;
         });
     };
-
-    // 转换每个工具的参数
     return tools.map((tool) => ({
         ...tool,
         parameters: tool.parameters ? processParams(tool.parameters) : [],
