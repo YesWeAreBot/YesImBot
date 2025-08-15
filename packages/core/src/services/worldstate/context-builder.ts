@@ -46,7 +46,7 @@ export class ContextBuilder {
                 platform,
                 channelId,
                 k: this.config.l2_memory.retrievalK,
-                earliestMessageTimestamp,
+                endTimestamp: earliestMessageTimestamp,
             });
         } else {
             l2_retrieved_memories = [];
@@ -156,7 +156,7 @@ export class ContextBuilder {
 
     private async retrieveL2Memories(
         new_events: L1HistoryItem[],
-        filter?: { platform?: string; channelId?: string; k?: number; earliestMessageTimestamp?: Date }
+        filter?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date }
     ): Promise<RetrievedMemoryChunk[]> {
         if (!this.config.l2_memory.enabled || new_events.length === 0) return [];
 
@@ -172,7 +172,8 @@ export class ContextBuilder {
             platform: filter?.platform,
             channelId: filter?.channelId,
             k: this.config.l2_memory.retrievalK,
-            earliestMessageTimestamp: filter?.earliestMessageTimestamp,
+            startTimestamp: filter?.startTimestamp,
+            endTimestamp: filter?.endTimestamp,
         });
         return retrieved.map((chunk) => ({
             content: chunk.content,

@@ -111,7 +111,7 @@ export class SemanticMemoryManager {
      */
     public async search(
         queryText: string,
-        options?: { platform?: string; channelId?: string; k?: number; earliestMessageTimestamp?: Date }
+        options?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date }
     ): Promise<(MemoryChunkData & { similarity: number })[]> {
         if (!this.embedModel) return [];
 
@@ -125,7 +125,8 @@ export class SemanticMemoryManager {
         const allChunks = await this.ctx.database.get(TableName.L2Chunks, {
             platform: options?.platform || {},
             channelId: options?.channelId || {},
-            endTimestamp: { $lte: options?.earliestMessageTimestamp || new Date() },
+            startTimestamp: { $gte: options?.startTimestamp || new Date(0) },
+            endTimestamp: { $lte: options?.endTimestamp || new Date() },
         });
 
         if (allChunks.length === 0) return [];
