@@ -8,7 +8,7 @@
 
 > **formatSize**(`bytes`, `decimals`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/shared/utils/string.ts#L37)
+Defined in: [packages/core/src/shared/utils/string.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/shared/utils/string.ts#L37)
 
 将文件大小（字节）格式化为更易读的字符串。
 

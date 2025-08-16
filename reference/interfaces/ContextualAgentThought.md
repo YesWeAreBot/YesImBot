@@ -6,7 +6,7 @@
 
 # Interface: ContextualAgentThought
 
-Defined in: [packages/core/src/services/worldstate/types.ts:181](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L181)
+Defined in: [packages/core/src/services/worldstate/types.ts:181](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L181)
 
 上下文中的 Agent 思考对象
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:181](https://github.
 
 > **analyze\_infer**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:186](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L186)
+Defined in: [packages/core/src/services/worldstate/types.ts:186](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L186)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:186](https://github.
 
 > `optional` **is\_new**: `boolean`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L188)
+Defined in: [packages/core/src/services/worldstate/types.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L188)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:188](https://github.
 
 > **observe**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:185](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L185)
+Defined in: [packages/core/src/services/worldstate/types.ts:185](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L185)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:185](https://github.
 
 > **plan**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L187)
+Defined in: [packages/core/src/services/worldstate/types.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L187)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:187](https://github.
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:184](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L184)
+Defined in: [packages/core/src/services/worldstate/types.ts:184](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L184)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:184](https://github.
 
 > **turnId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:183](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L183)
+Defined in: [packages/core/src/services/worldstate/types.ts:183](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L183)
 
 ***
 
@@ -64,4 +64,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:183](https://github.
 
 > **type**: `"agent_thought"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:182](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/worldstate/types.ts#L182)
+Defined in: [packages/core/src/services/worldstate/types.ts:182](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/worldstate/types.ts#L182)

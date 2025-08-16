@@ -6,7 +6,7 @@
 
 # Interface: ImageProcessingOptions
 
-Defined in: [packages/core/src/services/assets/types.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/assets/types.ts#L43)
+Defined in: [packages/core/src/services/assets/types.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/assets/types.ts#L43)
 
 图片处理选项
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:43](https://github.com/Y
 
 > `optional` **format**: `"webp"` \| `"jpeg"`
 
-Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/assets/types.ts#L47)
+Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/assets/types.ts#L47)
 
 目标格式，如 'webp' 或 'jpeg'
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/Y
 
 > `optional` **process**: `boolean`
 
-Defined in: [packages/core/src/services/assets/types.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/assets/types.ts#L45)
+Defined in: [packages/core/src/services/assets/types.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/assets/types.ts#L45)
 
 是否对图片进行处理

@@ -6,7 +6,7 @@
 
 # Interface: ToolSchema
 
-Defined in: [packages/core/src/services/extension/types.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/extension/types.ts#L20)
+Defined in: [packages/core/src/services/extension/types.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/extension/types.ts#L20)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/extension/types.ts:20](https://github.co
 
 > **description**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/extension/types.ts#L22)
+Defined in: [packages/core/src/services/extension/types.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/extension/types.ts#L22)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/extension/types.ts:22](https://github.co
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/extension/types.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/extension/types.ts#L21)
+Defined in: [packages/core/src/services/extension/types.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/extension/types.ts#L21)
 
 ***
 
@@ -30,4 +30,4 @@ Defined in: [packages/core/src/services/extension/types.ts:21](https://github.co
 
 > **parameters**: [`Properties`](../type-aliases/Properties.md)
 
-Defined in: [packages/core/src/services/extension/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/extension/types.ts#L23)
+Defined in: [packages/core/src/services/extension/types.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/extension/types.ts#L23)

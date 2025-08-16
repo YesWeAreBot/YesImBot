@@ -8,7 +8,7 @@
 
 > **getChannelType**(`channelId`): `"private"` \| `"guild"` \| `"sandbox"`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:75](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/shared/utils/toolkit.ts#L75)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:75](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/shared/utils/toolkit.ts#L75)
 
 根据频道 ID 的格式判断其类型。
 

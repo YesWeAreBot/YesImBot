@@ -8,7 +8,7 @@
 
 > **hashString**(`str`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:136](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/shared/utils/string.ts#L136)
+Defined in: [packages/core/src/shared/utils/string.ts:136](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/shared/utils/string.ts#L136)
 
 生成字符串的简单哈希值（32位整数的 base-36 表示）。
 

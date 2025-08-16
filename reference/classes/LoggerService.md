@@ -6,7 +6,7 @@
 
 # Class: LoggerService
 
-Defined in: [packages/core/src/services/logger/index.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/logger/index.ts#L86)
+Defined in: [packages/core/src/services/logger/index.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/logger/index.ts#L86)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/logger/index.ts:86](https://github.com/Y
 
 > **new LoggerService**(`ctx`, `config`): `LoggerService`
 
-Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/logger/index.ts#L89)
+Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/logger/index.ts#L89)
 
 #### Parameters
 
@@ -44,7 +44,7 @@ Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/Y
 
 > **\_logger**: `__module`
 
-Defined in: [packages/core/src/services/logger/index.ts:87](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/logger/index.ts#L87)
+Defined in: [packages/core/src/services/logger/index.ts:87](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/logger/index.ts#L87)
 
 ***
 
@@ -274,7 +274,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getLogger**(`name?`): `__module`
 
-Defined in: [packages/core/src/services/logger/index.ts:104](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/logger/index.ts#L104)
+Defined in: [packages/core/src/services/logger/index.ts:104](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/logger/index.ts#L104)
 
 #### Parameters
 
@@ -292,7 +292,7 @@ Defined in: [packages/core/src/services/logger/index.ts:104](https://github.com/
 
 > `protected` **start**(): `void`
 
-Defined in: [packages/core/src/services/logger/index.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/logger/index.ts#L96)
+Defined in: [packages/core/src/services/logger/index.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/logger/index.ts#L96)
 
 #### Returns
 
@@ -308,7 +308,7 @@ Defined in: [packages/core/src/services/logger/index.ts:96](https://github.com/Y
 
 > `protected` **stop**(): `void`
 
-Defined in: [packages/core/src/services/logger/index.ts:100](https://github.com/YesWeAreBot/YesImBot/blob/696f0a9ff7f5d8690e0a072a6a9bbc76d565d6ae/packages/core/src/services/logger/index.ts#L100)
+Defined in: [packages/core/src/services/logger/index.ts:100](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/services/logger/index.ts#L100)
 
 #### Returns
 
