@@ -135,7 +135,7 @@ export class HeartbeatProcessor {
         const { messages } = await this._prepareLlmRequest(stimulus);
 
         // 步骤 5: 调用LLM
-        this.logger.info("步骤 5/7: 调用大语言模型 (非流式)...");
+        this.logger.info("步骤 5/7: 调用大语言模型...");
         const llmRawResponse = await this.modelSwitcher.chat({
             messages,
             validation: {
@@ -201,7 +201,7 @@ export class HeartbeatProcessor {
         const { messages } = await this._prepareLlmRequest(stimulus);
 
         // 步骤 5: 调用LLM（流式）
-        this.logger.info("步骤 5/7: 调用大语言模型 (流式)...");
+        this.logger.info("步骤 5/7: 调用大语言模型...");
         const stime = Date.now();
 
         let streamParser = new StreamParser({

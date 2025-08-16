@@ -52,7 +52,7 @@ export class JsonParser<T> {
         // 仅当检测到代码块，并且整个字符串的开头不是有效的JSON字符时，
         // 才认为代码块是需要提取的主体。
         if (codeBlockStartIndex !== -1 && !isLikelyStartOfJson) {
-            this.log("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。");
+            this.log("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容");
             const lastCodeBlockIndex = processedString.lastIndexOf("```");
 
             // 关键修复：
@@ -84,7 +84,7 @@ export class JsonParser<T> {
                 processedString = processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex).trim();
                 this.log(`从代码块提取后，待处理字符串长度: ${processedString.length}`);
             }
-            //this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取。");
+            //this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取");
         }
 
         // 现在，无论 `processedString` 是来自代码块还是原始输入，
@@ -103,10 +103,10 @@ export class JsonParser<T> {
         }
 
         if (startIndex === -1) {
-            this.log("未找到 JSON 起始符号，将尝试直接修复整个字符串。");
+            this.log("未找到 JSON 起始符号，将尝试直接修复整个字符串");
         } else {
             if (startIndex > 0) {
-                this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的 ${startIndex} 个字符。`);
+                this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的 ${startIndex} 个字符`);
                 processedString = processedString.substring(startIndex);
             }
         }
@@ -124,16 +124,16 @@ export class JsonParser<T> {
             const endIndex = Math.max(lastBrace, lastBracket);
 
             if (endIndex > -1 && endIndex < processedString.length - 1) {
-                this.log(`JSON 结构平衡，裁剪了结束符号之后的多余文本。`);
+                this.log(`JSON 结构平衡，裁剪了结束符号之后的多余文本`);
                 processedString = processedString.substring(0, endIndex + 1);
             }
         } else {
             /* prettier-ignore */
-            this.log(`JSON 结构不平衡 (括号: ${openBrackets}/${closeBrackets}, 大括号: ${openBraces}/${closeBraces})，跳过后缀裁剪以保留可能被截断的数据。`);
+            this.log(`JSON 结构不平衡 (括号: ${openBrackets}/${closeBrackets}, 大括号: ${openBraces}/${closeBraces})，跳过后缀裁剪以保留可能被截断的数据`);
         }
 
         if (processedString.length === 0) {
-            return { data: null, error: "无法找到有效的 JSON 内容。", logs: this.logs };
+            return { data: null, error: "无法找到有效的 JSON 内容", logs: this.logs };
         }
 
         try {
@@ -150,11 +150,11 @@ export class JsonParser<T> {
             // 这是一个启发式规则，用于避免将"some text { ... }"中的"some text"误解析为成功。
             // `startIndex === -1` 表示我们没有找到明确的 `{` 或 `[`，整个字符串都被拿来解析。
             if (typeof data !== "object" && startIndex === -1) {
-                this.log(`解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败。`);
-                return { data: null, error: "无法解析为有效的 JSON 对象或数组。", logs: this.logs };
+                this.log(`解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败`);
+                return { data: null, error: "无法解析为有效的 JSON 对象或数组", logs: this.logs };
             }
 
-            this.log("解析流程成功完成。");
+            this.log("解析流程成功完成");
             return { data, error: null, logs: this.logs };
         } catch (e: any) {
             this.log(`最终解析失败: ${e.message}`);

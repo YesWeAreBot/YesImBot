@@ -82,8 +82,7 @@ export class ContextBuilder {
             users.push({
                 id: session.selfId,
                 name: selfInGuild?.nick || selfInGuild?.name || selfInfo.name,
-                roles: ["self", ...selfInGuild?.roles],
-                description: "",
+                roles: ["self", ...(selfInGuild?.roles || [])],
             });
 
             l1_history.forEach((item) => {

@@ -5,7 +5,7 @@ import { Context } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
-import { isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
+import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 
@@ -251,6 +251,13 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
+
+        if (isEmpty(finalText)) {
+            this.logger.warn(`💬 [流式] 模型未输出有效内容`);
+            throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
+                context: { rawResponse: finalText, details: "模型未输出有效内容" },
+            });
+        }
 
         this.logger.debug(
             `🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`

@@ -100,7 +100,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
                 // 捕获激励前的意愿值
                 const willingnessBeforeReply = this.willing.getCurrentWillingness(channelCid);
                 // 执行激励
-                this.willing.handlePostReply(channelCid);
+                this.willing.handlePostReply(stimulus.session, channelCid);
                 // 捕获激励后的意愿值
                 const willingnessAfterReply = this.willing.getCurrentWillingness(channelCid);
 

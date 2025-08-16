@@ -1,6 +1,5 @@
 import { Context, Service, Session, Time, clone } from "koishi";
 
-import { PersonalityPresets } from "@/agent";
 import { Config } from "@/config";
 import { PROVIDER_TYPES, TaskType } from "@/services/model";
 
@@ -186,11 +185,11 @@ export class ConfiguratorService extends Service {
         previewLines.push(""); // Spacer
 
         // 2. 智能体行为
-        addLine("🎭 **智能体行为**");
-        const personalityKey = config.agentBehavior?.willingness?.personality || "default";
-        // 确保 PersonalityPresets 在此作用域内可用
-        const personalityName = PersonalityPresets[personalityKey]?.name || "未知";
-        addLine(`性格预设: ${personalityName} (\`${personalityKey}\`)`, 1);
+        // addLine("🎭 **智能体行为**");
+        // const personalityKey = config.agentBehavior?.willingness?.personality || "default";
+        // // 确保 PersonalityPresets 在此作用域内可用
+        // const personalityName = PersonalityPresets[personalityKey]?.name || "未知";
+        // addLine(`性格预设: ${personalityName} (\`${personalityKey}\`)`, 1);
 
         const visionEnabled = config.agentBehavior?.vision?.enabled;
         addLine(`视觉能力: ${visionEnabled ? "✅ 开启" : "❌ 关闭"}`, 1);
@@ -289,18 +288,18 @@ class SetupSessionState {
             },
 
             // --- 模块二: 智能体行为 (性格与响应) ---
-            {
-                key: "agentBehavior.willingness.personality",
-                title: "🎭 选择AI性格",
-                description: "你想让我成为什么样的AI呢？选择一个预设的性格，这会决定我的发言频率和风格哦！",
-                handler: this.createChoiceHandler({
-                    getChoices: () =>
-                        Object.entries(PersonalityPresets).map(([key, preset]) => ({
-                            value: key,
-                            description: preset.name,
-                        })),
-                }),
-            },
+            // {
+            //     key: "agentBehavior.willingness.personality",
+            //     title: "🎭 选择AI性格",
+            //     description: "你想让我成为什么样的AI呢？选择一个预设的性格，这会决定我的发言频率和风格哦！",
+            //     handler: this.createChoiceHandler({
+            //         getChoices: () =>
+            //             Object.entries(PersonalityPresets).map(([key, preset]) => ({
+            //                 value: key,
+            //                 description: preset.name,
+            //             })),
+            //     }),
+            // },
             {
                 key: "agentBehavior.arousal.allowedChannelGroups",
                 title: "📡 响应频道设置",

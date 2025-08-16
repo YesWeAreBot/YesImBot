@@ -255,7 +255,13 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
         logger.warn(`   - 调试上下文: ${JSON.stringify(devContext)}`);
     }
     // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
-    logger.debug(`   - 堆栈追踪:\n${stack}`);
+    // logger.debug(`   - 堆栈追踪:\n${stack}`);
+    if (appError.cause) {
+        //@ts-ignore
+        logger.debug(`   - 根本原因: ${appError.cause.message}\n${appError.cause.stack}`);
+    } else {
+        logger.debug(`   - 堆栈追踪:\n${stack}`);
+    }
 
     // 步骤 3: 触发全局错误上报 (例如上报到 Sentry 等监控服务)
     if (globalErrorReporter) {
