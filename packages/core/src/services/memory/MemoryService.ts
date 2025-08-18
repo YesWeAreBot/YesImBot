@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import { Context, Service } from "koishi";
 import path from "path";
 
-import { Services } from "@/shared/constants";
+import { RESOURCES_DIR, Services } from "@/shared/constants";
 import { MemoryConfig } from "./config";
 import { MemoryBlock, MemoryBlockData } from "./MemoryBlock";
 
@@ -42,7 +42,18 @@ export class MemoryService extends Service<MemoryConfig> {
             const memoryFiles = files.filter((file) => file.endsWith(".md") || file.endsWith(".txt"));
 
             if (memoryFiles.length === 0) {
-                this.logger.warn(`核心记忆目录 '${memoryPath}' 为空，未加载任何记忆块`);
+                this.logger.warn(`核心记忆目录 '${memoryPath}' 为空，将应用默认设定`);
+                try {
+                    const defaultMemoryFiles = await fs.readdir(path.join(RESOURCES_DIR, "memory_block"));
+
+                    for (const file of defaultMemoryFiles) {
+                        await fs.copyFile(path.join(RESOURCES_DIR, "memory_block", file), path.join(memoryPath, file));
+                    }
+
+                    this.loadCoreMemoryBlocks();
+                } catch (error) {
+                    this.logger.error(`复制默认记忆块失败: ${error.message}`);
+                }
                 return;
             }
 
