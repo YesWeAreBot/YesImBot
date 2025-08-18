@@ -8,7 +8,7 @@
 
 > **toSnakeCase**(`str`): `string`
 
-Defined in: [packages/core/src/shared/utils/string.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/8c6be70681e68749107dde97ee37faccaf078b77/packages/core/src/shared/utils/string.ts#L174)
+Defined in: [packages/core/src/shared/utils/string.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/shared/utils/string.ts#L174)
 
 将字符串转换为蛇形命名（snake_case）。
 
