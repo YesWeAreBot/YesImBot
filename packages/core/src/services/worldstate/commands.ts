@@ -96,9 +96,9 @@ export class HistoryCommandManager {
                         const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
 
                         let agentLogRemoved = false;
-                        if (target) {
+                        if (target || options.all) {
                             try {
-                                await this.service.l1_manager.clearAgentHistory(target.platform, target.channelId);
+                                await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId);
                                 agentLogRemoved = true;
                             } catch (e) {
                                 // ignore if file not found

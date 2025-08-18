@@ -234,18 +234,29 @@ export class InteractionManager {
         }
     }
 
-    public async clearAgentHistory(platform: string, channelId: string): Promise<void> {
-        const filePath = this.getLogFilePath(platform, channelId);
+    public async clearAgentHistory(platform?: string, channelId?: string): Promise<void> {
+        let targetPath: string;
+        let targetType: "file" | "dir" = "dir";
+        if (!platform && !channelId) {
+            // 删除所有记录
+            targetPath = this.basePath;
+        } else if (platform && !channelId) {
+            // 删除整个平台的记录
+            targetPath = path.join(this.basePath, platform);
+        } else if (platform && channelId) {
+            // 删除具体频道的记录文件
+            targetPath = this.getLogFilePath(platform, channelId);
+            targetType = "file";
+        } else {
+            throw new Error("必须同时指定 platform 和 channelId");
+        }
         try {
-            await fs.unlink(filePath);
-            this.logger.info(`已删除Agent日志文件: ${filePath}`);
-        } catch (error) {
-            if (error.code === "ENOENT") {
-                // 文件不存在，说明已经清理过了，不是错误
-            } else {
-                this.logger.error(`删除Agent日志文件失败: ${filePath}`, error);
-                throw error; // 重新抛出错误，让调用者知道操作失败
-            }
+            await fs.rm(targetPath, { recursive: true, force: true });
+            this.logger.info(`已删除Agent日志${targetType === "dir" ? "目录" : "文件"}: ${targetPath}`);
+        } catch (error: any) {
+            // force: true 已经避免 ENOENT 报错，这里主要处理其他异常
+            this.logger.error(`删除Agent日志${targetType === "dir" ? "目录" : "文件"}失败: ${targetPath}`, error);
+            throw error;
         }
     }
 

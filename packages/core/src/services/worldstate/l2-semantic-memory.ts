@@ -94,9 +94,10 @@ export class SemanticMemoryManager {
                 endTimestamp: lastEvent.timestamp,
             };
             await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
-            this.logger.debug(`消息批次已处理并存入 L2 记忆 | 包含 ${messages.length} 条消息`);
+            // this.logger.debug(`消息批次已处理并存入 L2 记忆 | 包含 ${messages.length} 条消息`);
+            this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
         } catch (error) {
-            this.logger.error(`创建记忆片段失败 | ${error.message}`);
+            this.logger.error(`消息索引创建失败 | ${error.message}`);
             this.logger.debug(error);
         }
     }
