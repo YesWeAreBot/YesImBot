@@ -96,7 +96,8 @@ export class SemanticMemoryManager {
             await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
             this.logger.debug(`消息批次已处理并存入 L2 记忆 | 包含 ${messages.length} 条消息`);
         } catch (error) {
-            this.logger.error(`创建记忆片段失败`, error);
+            this.logger.error(`创建记忆片段失败 | ${error.message}`);
+            this.logger.debug(error);
         }
     }
 
@@ -277,8 +278,17 @@ export class SemanticMemoryManager {
         return messages.map((m) => `${m.sender.name || m.sender.id}: ${m.content}`).join("\n");
     }
 
-    public async getLatestMemoryTimestamp(channelId: string): Promise<Date> {
-        const latestChunks = await this.ctx.database.get(TableName.L2Chunks, { channelId }, { limit: 1, sort: { endTimestamp: "desc" } });
-        return latestChunks.length > 0 ? latestChunks[0].endTimestamp : new Date(0);
+    public async rebuildIndex() {
+        this.logger.info("正在重建 L2 记忆索引...");
+
+        const allChunks = await this.ctx.database.get(TableName.L2Chunks, {});
+
+        for (const chunk of allChunks) {
+            try {
+                const result = await this.embedModel.embed(chunk.content);
+                chunk.embedding = result.embedding;
+                await this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: chunk.embedding });
+            } catch (error) {}
+        }
     }
 }

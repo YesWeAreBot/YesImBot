@@ -9,12 +9,13 @@ import { PROMPTS_DIR } from "@/shared/constants";
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
 export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'.
-In the subsequent conversation text, placeholders in the format <image id="[ID]" onetime-code="{{ ONETIME_CODE }}"/> will be used to refer to these images.
-Please participate in the conversation considering the full context of both images and text.`;
+In the subsequent conversation text, placeholders in the format <img id="[ID]" /> will be used to refer to these images.
+Please participate in the conversation considering the full context of both images and text.
+If image data is not provided, use \`get_image_description\` to describe the image.`;
 
 export type ChannelDescriptor = {
     platform: string;
-    isDirect: boolean;
+    type: "private" | "guild";
     id: string;
 };
 
@@ -33,12 +34,14 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
     allowedChannels: Schema.array(
         Schema.object({
             platform: Schema.string().required().description("平台"),
-            isDirect: Schema.boolean().default(false).description("是否为私聊"),
+            type: Schema.union([Schema.const("private").description("私聊"), Schema.const("guild").description("群组")])
+                .default("guild")
+                .description("频道类型"),
             id: Schema.string().required().description("频道 ID"),
         })
     )
         .role("table")
-        .default([{ platform: "onebot", isDirect: false, id: "*" }])
+        .default([{ platform: "onebot", type: "guild", id: "*" }])
         .description("允许 Agent 响应的频道。使用 * 作为通配符"),
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
 });

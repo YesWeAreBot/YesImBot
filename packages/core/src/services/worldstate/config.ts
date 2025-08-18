@@ -38,6 +38,7 @@ export interface HistoryConfig {
         /** 每日生成日记的时间 (HH:mm) */
         diaryGenerationTime: string;
     };
+    ignoreSelfMessage: boolean;
 
     /* === 清理 === */
     dataRetentionDays: number;
@@ -52,7 +53,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
         maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
         pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
         keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
-    }).description("工作记忆设置"),
+    }),
 
     l2_memory: Schema.object({
         enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
@@ -69,6 +70,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
         .hidden()
         .description("长期存档设置"),
 
+    ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
     dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
     cleanupIntervalSec: Schema.number().default(300).description("后台清理任务的执行频率（秒）"),
 });

@@ -47,6 +47,7 @@ export default class CoreUtilExtension {
 
     private readonly logger: Logger;
     private readonly assetService: AssetService;
+    private disposed: boolean;
 
     constructor(
         public ctx: Context,
@@ -54,6 +55,10 @@ export default class CoreUtilExtension {
     ) {
         this.logger = ctx[Services.Logger].getLogger("[核心工具]");
         this.assetService = ctx[Services.Asset];
+
+        ctx.on("dispose", () => {
+            this.disposed = true;
+        });
     }
 
     @Tool({
@@ -270,6 +275,8 @@ export default class CoreUtilExtension {
             this.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
             await sleep(delay);
+
+            if (this.disposed) return;
 
             // --- 发送消息 ---
             const messageIds = await bot.sendMessage(channelId, content);

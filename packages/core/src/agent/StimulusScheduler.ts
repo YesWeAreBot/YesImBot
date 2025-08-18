@@ -1,4 +1,4 @@
-import { Context } from "koishi";
+import { Context, Logger } from "koishi";
 
 import { AgentStimulus } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
@@ -13,7 +13,7 @@ type WithDispose<T> = T & { dispose: () => void };
  * 它管理并发、防抖以及在频道繁忙时根据策略处理新消息。
  */
 export class StimulusScheduler {
-    private readonly logger;
+    private readonly logger: Logger;
     private readonly runningTasks = new Set<string>();
     private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AgentStimulus<any>) => void>>();
     private readonly skippedStimulus = new Map<string, AgentStimulus<any>>();

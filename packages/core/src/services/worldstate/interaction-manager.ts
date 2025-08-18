@@ -134,7 +134,11 @@ export class InteractionManager {
         try {
             await this.ctx.database.create(TableName.Messages, message);
         } catch (error) {
-            this.logger.error(`记录消息到数据库失败 | 消息ID: ${message.id}`);
+            if (error?.message === "UNIQUE constraint failed: worldstate.messages.id") {
+                this.logger.warn(`存在重复的消息记录: ${message.id} | 若此问题持续发生，考虑开启忽略自身消息`);
+                return;
+            }
+            this.logger.error(`记录消息到数据库失败 | 消息ID: ${message.id} | Error: ${error.message}`);
             this.logger.debug(error);
         }
     }

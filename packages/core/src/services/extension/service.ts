@@ -57,6 +57,7 @@ export class ToolService extends Service<ToolServiceConfig> {
             //     this._logger.info(`跳过内置扩展: ${name}`);
             //     continue;
             // }
+            //@ts-ignore
             loadedExtensions.set(name, this.ctx.plugin(Ext, config));
         }
         this._registerPromptTemplates();

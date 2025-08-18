@@ -101,6 +101,7 @@ export class EventListenerManager {
             this.ctx.on("message", (session) => {
                 if (!this.service.isChannelAllowed(session)) return;
                 if (session.userId === session.bot.selfId && !session.scope) {
+                    if (this.config.ignoreSelfMessage) return;
                     this.handleOperatorMessage(session);
                 }
             })

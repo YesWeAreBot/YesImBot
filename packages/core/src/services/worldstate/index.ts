@@ -90,7 +90,9 @@ export class WorldStateService extends Service<HistoryConfig> {
         const { platform, channelId, guildId, isDirect } = session;
         return this.config.allowedChannels.some((c) => {
             return (
-                c.platform === platform && c.isDirect === isDirect && (c.id === "*" || c.id === channelId || (guildId && c.id === guildId))
+                c.platform === platform &&
+                (c.type === "private" ? isDirect : true) &&
+                (c.id === "*" || c.id === channelId || (guildId && c.id === guildId))
             );
         });
     }
@@ -184,7 +186,7 @@ export class WorldStateService extends Service<HistoryConfig> {
                 content: "text",
                 quoteId: "string(255)",
             },
-            { primary: "id" }
+            { primary: ["id", "platform"] }
         );
 
         this.ctx.model.extend(
