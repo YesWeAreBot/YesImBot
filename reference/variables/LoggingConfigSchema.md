@@ -8,4 +8,4 @@
 
 > `const` **LoggingConfigSchema**: `Schema`\<[`LoggingConfig`](../interfaces/LoggingConfig.md)\>
 
-Defined in: [packages/core/src/services/logger/index.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/logger/index.ts#L23)
+Defined in: [packages/core/src/services/logger/index.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/logger/index.ts#L23)

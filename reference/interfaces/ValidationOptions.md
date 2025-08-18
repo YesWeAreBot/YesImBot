@@ -6,7 +6,7 @@
 
 # Interface: ValidationOptions
 
-Defined in: [packages/core/src/services/model/chat-model.ts:36](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/model/chat-model.ts#L36)
+Defined in: [packages/core/src/services/model/chat-model.ts:36](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/chat-model.ts#L36)
 
 传递给 chat 方法的验证选项
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:36](https://github.c
 
 > `optional` **format**: `"json"`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/model/chat-model.ts#L38)
+Defined in: [packages/core/src/services/model/chat-model.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/chat-model.ts#L38)
 
 预期的响应格式，用于选择内置验证器
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/model/chat-model.ts:38](https://github.c
 
 > `optional` **validator**: [`ContentValidator`](../type-aliases/ContentValidator.md)
 
-Defined in: [packages/core/src/services/model/chat-model.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/model/chat-model.ts#L40)
+Defined in: [packages/core/src/services/model/chat-model.ts:40](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/chat-model.ts#L40)
 
 自定义验证函数，优先级高于 format

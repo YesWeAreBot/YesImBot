@@ -6,7 +6,7 @@
 
 # Interface: PromptServiceConfig
 
-Defined in: [packages/core/src/services/prompt/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/prompt/config.ts#L6)
+Defined in: [packages/core/src/services/prompt/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/prompt/config.ts#L6)
 
 PromptService 配置接口
 
@@ -16,7 +16,7 @@ PromptService 配置接口
 
 > `optional` **injectionPlaceholder**: `string`
 
-Defined in: [packages/core/src/services/prompt/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/prompt/config.ts#L11)
+Defined in: [packages/core/src/services/prompt/config.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/prompt/config.ts#L11)
 
 在模板中用于注入所有扩展片段的占位符名称。
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/prompt/config.ts:11](https://github.com/
 
 > `optional` **maxRenderDepth**: `number`
 
-Defined in: [packages/core/src/services/prompt/config.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/fb14bed7712a478f5f9f5f32b360615cb2070423/packages/core/src/services/prompt/config.ts#L16)
+Defined in: [packages/core/src/services/prompt/config.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/prompt/config.ts#L16)
 
 模板渲染的最大深度，用于支持片段的二次渲染，同时防止无限循环。
 
