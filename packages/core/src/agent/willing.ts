@@ -5,8 +5,8 @@ import { WillingnessConfig } from "./config";
 export interface MessageContext {
     chatId: string;
     content: string;
-    isImage: boolean;
-    isEmoji: boolean;
+    //isImage: boolean;
+    //isEmoji: boolean;
     isMentioned: boolean;
     isQuote: boolean;
     isDirect: boolean;
@@ -81,8 +81,8 @@ export class WillingnessManager {
         const resolved: Omit<ResolvedWillingnessConfig, "system"> = {
             base: {
                 text: session.resolve(config.base.text),
-                image: session.resolve(config.base.image),
-                emoji: session.resolve(config.base.emoji),
+                //image: session.resolve(config.base.image),
+                //emoji: session.resolve(config.base.emoji),
             },
             attribute: {
                 atMention: session.resolve(config.attribute.atMention),
@@ -100,7 +100,7 @@ export class WillingnessManager {
                 probabilityThreshold: session.resolve(config.lifecycle.probabilityThreshold),
                 probabilityAmplifier: session.resolve(config.lifecycle.probabilityAmplifier),
                 replyCost: session.resolve(config.lifecycle.replyCost),
-                refractoryPeriodMs: session.resolve(config.lifecycle.refractoryPeriodMs),
+                //refractoryPeriodMs: session.resolve(config.lifecycle.refractoryPeriodMs),
             },
         };
 
@@ -170,10 +170,7 @@ export class WillingnessManager {
         const { base, attribute, interest } = config;
 
         // 1. 确定基础分
-        let score = 0;
-        if (context.isImage) score = base.image;
-        else if (context.isEmoji) score = base.emoji;
-        else score = base.text;
+        let score = base.text;
 
         // 2. 叠加属性加成
         if (context.isMentioned) score += attribute.atMention;
@@ -291,8 +288,6 @@ export class WillingnessManager {
         const context: MessageContext = {
             chatId: session.cid,
             content: session.content,
-            isImage: session.elements.some((e) => e.type === "image"),
-            isEmoji: session.elements.some((e) => e.type === "face"),
             isMentioned: session.stripped.atSelf || session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
             isQuote: session.quote && session.quote?.user.id === session.bot.selfId,
             isDirect: session.isDirect,

@@ -55,9 +55,9 @@ export interface WillingnessConfig {
         /** 收到普通文本消息的基础分。这是对话的基石 */
         text: Computed<number>;
         /** 收到图片消息的基础分。可以设为负数让AI不爱理睬图片 */
-        image: Computed<number>;
+        //image: Computed<number>;
         /** 收到表情/贴纸的基础分。通常较低 */
-        emoji: Computed<number>;
+        //emoji: Computed<number>;
     };
 
     // --- B. 属性加成 (Attribute Bonuses) ---
@@ -98,7 +98,7 @@ export interface WillingnessConfig {
          * 回复后的一段“不应期”（毫秒），在此期间不会再次响应。
          *  这可以有效防止 AI 连续回复，显得更自然。
          */
-        refractoryPeriodMs: Computed<number>;
+        //refractoryPeriodMs: Computed<number>;
     };
 
     readonly system?: SystemConfig;
@@ -106,39 +106,46 @@ export interface WillingnessConfig {
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
     base: Schema.object({
-        text: Schema.computed<Schema<number>>(Schema.number()).default(10).description("收到普通文本消息的基础分"),
-        image: Schema.computed<Schema<number>>(Schema.number()).default(2).description("收到图片消息的基础分"),
-        emoji: Schema.computed<Schema<number>>(Schema.number()).default(1).description("收到表情的基础分"),
+        text: Schema.computed<Schema<number>>(Schema.number().default(10)).default(10).description("收到普通文本消息的基础分"),
+        //image: Schema.computed<Schema<number>>(Schema.number()).default(2).description("收到图片消息的基础分"),
+        //emoji: Schema.computed<Schema<number>>(Schema.number()).default(1).description("收到表情的基础分"),
     }),
     attribute: Schema.object({
-        atMention: Schema.computed<Schema<number>>(Schema.number()).default(100).description("被@时的额外加成"),
-        isQuote: Schema.computed<Schema<number>>(Schema.number()).default(15).description("作为回复/引用时的额外加成"),
-        isDirectMessage: Schema.computed<Schema<number>>(Schema.number()).default(40).description("在私聊场景下的额外加成"),
+        atMention: Schema.computed<Schema<number>>(Schema.number().default(100)).default(100).description("被@时的额外加成"),
+        isQuote: Schema.computed<Schema<number>>(Schema.number().default(15)).default(15).description("作为回复/引用时的额外加成"),
+        isDirectMessage: Schema.computed<Schema<number>>(Schema.number().default(40)).default(40).description("在私聊场景下的额外加成"),
     }),
     interest: Schema.object({
-        keywords: Schema.computed<Schema<string[]>>(Schema.array(Schema.string()))
+        keywords: Schema.computed<Schema<string[]>>(Schema.array(Schema.string()).default([]))
             .role("table")
             .default([])
             .description("触发高兴趣的关键词"),
-        keywordMultiplier: Schema.computed<Schema<number>>(Schema.number()).default(1.2).description("包含关键词时的乘数"),
-        defaultMultiplier: Schema.computed<Schema<number>>(Schema.number()).default(1).description("默认乘数"),
+        keywordMultiplier: Schema.computed<Schema<number>>(Schema.number().default(1.2)).default(1.2).description("包含关键词时的乘数"),
+        defaultMultiplier: Schema.computed<Schema<number>>(Schema.number().default(1)).default(1).description("默认乘数"),
     }),
     lifecycle: Schema.object({
-        maxWillingness: Schema.computed<Schema<number>>(Schema.number()).min(10).default(100).description("意愿值的最大上限"),
-        decayHalfLifeSeconds: Schema.computed<Schema<number>>(Schema.number())
+        maxWillingness: Schema.computed<Schema<number>>(Schema.number().default(100)).min(10).default(100).description("意愿值的最大上限"),
+        decayHalfLifeSeconds: Schema.computed<Schema<number>>(Schema.number().default(90))
             .min(5)
             .default(90)
             .description("意愿值衰减到一半所需的时间（秒）"),
-        probabilityThreshold: Schema.computed<Schema<number>>(Schema.number())
+        probabilityThreshold: Schema.computed<Schema<number>>(Schema.number().default(60))
             .min(0)
             .default(60)
             .description("将意愿值转换为回复概率的激活门槛"),
-        probabilityAmplifier: Schema.computed<Schema<number>>(Schema.number()).min(0.01).max(1).default(0.05).description("概率放大系数"),
-        replyCost: Schema.computed<Schema<number>>(Schema.number()).min(0).default(30).description('决定回复后，扣除的"发言精力惩罚"'),
-        refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
+        probabilityAmplifier: Schema.computed<Schema<number>>(Schema.number().default(0.05))
+            .min(0.01)
+            .max(1)
+            .default(0.05)
+            .description("概率放大系数"),
+        replyCost: Schema.computed<Schema<number>>(Schema.number().default(30))
             .min(0)
-            .default(3000)
-            .description("回复后的“不应期”（毫秒），防止AI连续发言"),
+            .default(30)
+            .description('决定回复后，扣除的"发言精力惩罚"'),
+        // refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
+        //     .min(0)
+        //     .default(3000)
+        //     .description("回复后的“不应期”（毫秒），防止AI连续发言"),
     }),
 });
 
