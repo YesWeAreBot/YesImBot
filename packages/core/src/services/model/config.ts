@@ -80,7 +80,7 @@ export interface ModelConfig {
         temperature?: number;
         topP?: number;
         stream?: boolean;
-        custom?: { [key: string]: { type: "string" | "number" | "boolean" | "object"; value: any } };
+        custom?: Array<{ key: string; type: "string" | "number" | "boolean" | "object"; value: string }>;
     };
     /** 超时策略 */
     timeoutPolicy?: TimeoutPolicy;
@@ -110,10 +110,11 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         temperature: Schema.number().default(0.85),
         topP: Schema.number().default(0.95),
         stream: Schema.boolean().default(true).description("流式传输"),
-        custom: Schema.dict(
+        custom: Schema.array(
             Schema.object({
-                type: Schema.union(["string", "number", "boolean", "object"]).required(),
-                value: Schema.any().required(),
+                key: Schema.string().required(),
+                type: Schema.union(["string", "number", "boolean", "object"]).default("string"),
+                value: Schema.string().required(),
             })
         )
             .role("table")
@@ -223,7 +224,6 @@ export interface ModelServiceConfig {
     task: {
         [TaskType.Chat]: string;
         [TaskType.Embedding]: string;
-        [TaskType.Summarization]: string;
     };
     readonly system?: SystemConfig;
 }
@@ -254,7 +254,5 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description(
             "生成文本嵌入(Embedding)时使用的模型**组**<br/>如 `bge-m3` `text-embedding-3-small` 等嵌入模型"
         ),
-        [TaskType.Summarization]: Schema.dynamic("modelService.availableGroups").hidden().description("对话历史总结时使用的模型**组**"),
-        [TaskType.Memory]: Schema.dynamic("modelService.availableGroups").hidden().description("记忆管理时使用的模型**组**"),
     }).description("为不同核心任务分配一个模型组"),
 });

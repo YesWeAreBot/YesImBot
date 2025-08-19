@@ -80,28 +80,28 @@ export class ChatModel extends BaseModel implements IChatModel {
      */
     private parseCustomParameters(): void {
         if (!this.config.parameters.custom) return;
-        for (const [key, param] of Object.entries(this.config.parameters.custom)) {
+        for (const item of this.config.parameters.custom) {
             try {
                 let parsedValue: any;
-                switch (param.type) {
+                switch (item.type) {
                     case "string":
-                        parsedValue = String(param.value);
+                        parsedValue = String(item.value);
                         break;
                     case "number":
-                        parsedValue = Number(param.value);
+                        parsedValue = Number(item.value);
                         break;
                     case "boolean":
-                        parsedValue = toBoolean(param.value);
+                        parsedValue = toBoolean(item.value);
                         break;
                     case "object":
-                        parsedValue = JSON.parse(param.value);
+                        parsedValue = JSON.parse(item.value);
                         break;
                     default:
-                        parsedValue = param.value;
+                        parsedValue = item.value;
                 }
-                this.customParameters[key] = parsedValue;
+                this.customParameters[item.key] = parsedValue;
             } catch (error) {
-                this.logger.warn(`解析自定义参数失败 | 键: "${key}" | 值: "${param.value}" | 错误: ${error.message}`);
+                this.logger.warn(`解析自定义参数失败 | 键: "${item.key}" | 值: "${item.value}" | 错误: ${error.message}`);
             }
         }
         if (Object.keys(this.customParameters).length > 0) {
