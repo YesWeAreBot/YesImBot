@@ -187,7 +187,6 @@ export type ProviderType = keyof typeof PROVIDERS;
 
 export interface ProviderConfig {
     name: string;
-    enabled?: boolean;
     type: ProviderType;
     baseURL?: string;
     apiKey: string;
@@ -198,7 +197,6 @@ export interface ProviderConfig {
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
     Schema.object({
         name: Schema.string().required().description("提供商名称"),
-        enabled: Schema.boolean().default(true).description("是否启用"),
         type: Schema.union(PROVIDER_TYPES).default("OpenAI").description("提供商类型"),
     }),
     Schema.union(

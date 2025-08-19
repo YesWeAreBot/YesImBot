@@ -108,10 +108,6 @@ export class ModelService extends Service<ModelServiceConfig> {
         this._logger.info("--- 开始初始化模型提供商 ---");
         for (const providerConfig of this.config.providers) {
             const providerId = `${providerConfig.name} (${providerConfig.type})`;
-            if (!providerConfig.enabled) {
-                this._logger.info(`⚪ 跳过 (已禁用) | 提供商: ${providerId}`);
-                continue;
-            }
 
             const factory = ProviderFactoryRegistry.get(providerConfig.type);
             if (!factory) {

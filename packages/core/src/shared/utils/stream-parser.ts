@@ -30,7 +30,11 @@ export class StreamParser {
     public reset(): void {
         this.textBuffer = "";
         this.lastParsed = {};
-        this.streamStates.clear();
+        // 重置至初始状态，但不销毁
+        this.streamStates.forEach((state) => {
+            state.status = "pending";
+            state.progress = 0;
+        });
     }
 
     /**

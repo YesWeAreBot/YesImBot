@@ -254,14 +254,13 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         if (isEmpty(finalText)) {
             this.logger.warn(`💬 [流式] 模型未输出有效内容`);
-            throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
+            throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
                 context: { rawResponse: finalText, details: "模型未输出有效内容" },
             });
         }
 
-        this.logger.debug(
-            `🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`
-        );
+        /* prettier-ignore */
+        this.logger.debug(`🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`);
 
         // 对最终拼接的完整内容进行最后一次验证
         if (validator) {
