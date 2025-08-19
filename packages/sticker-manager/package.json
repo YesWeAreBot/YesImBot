@@ -38,7 +38,7 @@
     }
   },
   "dependencies": {
-    "sharp": "^0.34.3"
+    "@img/sharp-wasm32": "^0.34.3"
   },
   "keywords": [
     "koishi",
