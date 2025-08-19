@@ -104,7 +104,16 @@ export interface AgentObservationLog {
     error?: any;
 }
 
-export type AgentLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog;
+export interface AgentHeartbeatLog {
+    type: "agent_heartbeat";
+    id: string;
+    turnId: string;
+    timestamp: string;
+    current: number;
+    max: number;
+}
+
+export type AgentLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog;
 
 /** 交互日志中消息事件的结构 */
 export interface MessageLog {
@@ -126,7 +135,7 @@ export interface SystemEventLog {
 }
 
 /** 写入日志文件的统一事件条目类型 */
-export type InteractionLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | MessageLog | SystemEventLog;
+export type InteractionLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog | MessageLog | SystemEventLog;
 
 /** L2 记忆片段的数据模型，存储在向量数据库中。 */
 export interface MemoryChunkData {
@@ -209,12 +218,22 @@ export interface ContextualAgentObservation {
     is_new?: boolean;
 }
 
+export interface AgentHeartbeat {
+    type: "agent_heartbeat";
+    turnId: string;
+    timestamp: Date;
+    current: number;
+    max: number;
+    is_new?: boolean;
+}
+
 /** L1 工作记忆中的单个事件条目 */
 export type L1HistoryItem =
     | ({ type: "message" } & ContextualMessage)
     | ContextualAgentThought
     | ContextualAgentAction
     | ContextualAgentObservation
+    | AgentHeartbeat
     | ({ type: "system_event" } & ContextualSystemEvent);
 
 /** 从 L2 语义索引中检索出的记忆片段 */

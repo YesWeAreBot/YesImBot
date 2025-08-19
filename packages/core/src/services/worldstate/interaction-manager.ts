@@ -7,12 +7,10 @@ import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import {
     AgentActionLog,
+    AgentHeartbeatLog,
     AgentLogEntry,
     AgentObservationLog,
     AgentThoughtLog,
-    ContextualAgentAction,
-    ContextualAgentObservation,
-    ContextualAgentThought,
     InteractionLogEntry,
     L1HistoryItem,
     MessageData,
@@ -110,6 +108,18 @@ export class InteractionManager {
             actionId,
             timestamp: new Date().toISOString(),
             ...observation,
+        };
+        await this.appendToLog(platform, channelId, logEntry);
+    }
+
+    public async recordHeartbeat(turnId: string, platform: string, channelId: string, current: number, max: number) {
+        const logEntry: AgentHeartbeatLog = {
+            type: "agent_heartbeat",
+            id: uuidv4(),
+            turnId,
+            timestamp: new Date().toISOString(),
+            current,
+            max,
         };
         await this.appendToLog(platform, channelId, logEntry);
     }
@@ -225,6 +235,14 @@ export class InteractionManager {
                     function: entry.function,
                     status: entry.status,
                     result: entry.result,
+                };
+            case "agent_heartbeat":
+                return {
+                    type: "agent_heartbeat",
+                    turnId: entry.turnId,
+                    timestamp,
+                    current: entry.current,
+                    max: entry.max,
                 };
             // 下面的 case 理论上不会被这个私有方法调用，因为消息和系统事件直接从数据库转换
             case "message":

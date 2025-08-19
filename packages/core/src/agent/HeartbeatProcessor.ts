@@ -1,6 +1,6 @@
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Message } from "@xsai/shared-chat";
-import { Context, h, Session } from "koishi";
+import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
@@ -15,11 +15,11 @@ import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./ContextBuilder";
 
 /**
- * @description 负责执行 Agent 的核心“心跳”循环。
- * 它协调上下文构建、LLM调用、响应解析和动作执行。
+ * @description 负责执行 Agent 的核心“心跳”循环
+ * 它协调上下文构建、LLM调用、响应解析和动作执行
  */
 export class HeartbeatProcessor {
-    private readonly logger;
+    private readonly logger: Logger;
 
     constructor(
         private readonly ctx: Context,
@@ -34,11 +34,11 @@ export class HeartbeatProcessor {
     }
 
     /**
-     * 运行完整的 Agent 思考-行动周期。
-     * @returns 返回 true 如果至少有一次心跳成功。
+     * 运行完整的 Agent 思考-行动周期
+     * @returns 返回 true 如果至少有一次心跳成功
      */
     public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
-        const turnId = uuidv4(); // 为整个思考-行动循环创建一个唯一ID
+        const turnId = uuidv4();
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
@@ -46,6 +46,7 @@ export class HeartbeatProcessor {
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
             try {
+                this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
                 const result = this.config.streamAction
                     ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus)
                     : await this.performSingleHeartbeat(turnId, stimulus);
@@ -55,6 +56,15 @@ export class HeartbeatProcessor {
                     success = true; // 至少成功一次心跳
                 } else {
                     shouldContinueHeartbeat = false;
+                }
+                if (shouldContinueHeartbeat) {
+                    await this.interactionManager.recordHeartbeat(
+                        turnId,
+                        stimulus.session.platform,
+                        stimulus.session.channelId,
+                        heartbeatCount,
+                        this.config.heartbeat
+                    );
                 }
             } catch (error) {
                 handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
@@ -218,6 +228,7 @@ export class HeartbeatProcessor {
                 validator: (text, final) => {
                     try {
                         streamParser.processText(text, final);
+                        if (final) streamParser.reset();
                     } catch (e) {
                         if (!e.message.includes("Cannot read properties of null")) {
                             this.logger.warn(`流式解析器错误: ${e.message}`);

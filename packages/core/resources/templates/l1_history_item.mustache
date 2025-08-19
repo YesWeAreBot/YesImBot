@@ -26,6 +26,9 @@
   {{/error}}
 </observation>
 {{/is_agent_observation}}
+{{#is_agent_heartbeat}}
+<heartbeat current={{current}} max={{max}}/>
+{{/is_agent_heartbeat}}
 {{#is_system_event}}
 <system_event>[{{#timestamp}}{{_formatDate}}{{/timestamp}}|System] {{message}}</system_event>
 {{/is_system_event}}

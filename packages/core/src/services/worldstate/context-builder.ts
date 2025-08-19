@@ -247,6 +247,7 @@ export class ContextBuilder {
             (item as any).is_agent_thought = item.type === "agent_thought";
             (item as any).is_agent_action = item.type === "agent_action";
             (item as any).is_agent_observation = item.type === "agent_observation";
+            (item as any).is_agent_heartbeat = item.type === "agent_heartbeat";
             (item as any).is_system_event = item.type === "system_event";
         });
 
