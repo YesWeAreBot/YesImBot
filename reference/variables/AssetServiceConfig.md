@@ -8,4 +8,4 @@
 
 > **AssetServiceConfig**: `Schema`\<[`AssetServiceConfig`](../interfaces/AssetServiceConfig.md)\>
 
-Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/assets/config.ts#L3)
+Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/assets/config.ts#L3)

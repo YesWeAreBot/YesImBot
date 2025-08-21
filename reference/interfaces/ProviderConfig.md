@@ -6,7 +6,7 @@
 
 # Interface: ProviderConfig
 
-Defined in: [packages/core/src/services/model/config.ts:187](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L187)
+Defined in: [packages/core/src/services/model/config.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L188)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/config.ts:187](https://github.com/
 
 > **apiKey**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L192)
+Defined in: [packages/core/src/services/model/config.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L192)
 
 ***
 
@@ -22,15 +22,7 @@ Defined in: [packages/core/src/services/model/config.ts:192](https://github.com/
 
 > `optional` **baseURL**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:191](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L191)
-
-***
-
-### enabled?
-
-> `optional` **enabled**: `boolean`
-
-Defined in: [packages/core/src/services/model/config.ts:189](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L189)
+Defined in: [packages/core/src/services/model/config.ts:191](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L191)
 
 ***
 
@@ -38,7 +30,7 @@ Defined in: [packages/core/src/services/model/config.ts:189](https://github.com/
 
 > **models**: [`ModelConfig`](ModelConfig.md)[]
 
-Defined in: [packages/core/src/services/model/config.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L194)
+Defined in: [packages/core/src/services/model/config.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L194)
 
 ***
 
@@ -46,7 +38,7 @@ Defined in: [packages/core/src/services/model/config.ts:194](https://github.com/
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:188](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L188)
+Defined in: [packages/core/src/services/model/config.ts:189](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L189)
 
 ***
 
@@ -54,7 +46,7 @@ Defined in: [packages/core/src/services/model/config.ts:188](https://github.com/
 
 > `optional` **proxy**: `string`
 
-Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L193)
+Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L193)
 
 ***
 
@@ -62,4 +54,4 @@ Defined in: [packages/core/src/services/model/config.ts:193](https://github.com/
 
 > **type**: `"OpenAI"` \| `"OpenAI Compatible"` \| `"Anthropic"` \| `"Fireworks"` \| `"DeepSeek"` \| `"Google Gemini"` \| `"LM Studio"` \| `"Workers AI"` \| `"Zhipu"` \| `"Silicon Flow"` \| `"Qwen"` \| `"Ollama"` \| `"Cerebras"` \| `"DeepInfra"` \| `"Fatherless AI"` \| `"Groq"` \| `"Minimax"` \| `"Minimax (International)"` \| `"Mistral"` \| `"Moonshot"` \| `"Novita"` \| `"OpenRouter"` \| `"Perplexity"` \| `"Stepfun"` \| `"Tencent Hunyuan"` \| `"Together AI"` \| `"XAI (Grok)"`
 
-Defined in: [packages/core/src/services/model/config.ts:190](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L190)
+Defined in: [packages/core/src/services/model/config.ts:190](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L190)

@@ -8,7 +8,7 @@
 
 > `const` **ErrorDefinitions**: `object`
 
-Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/shared/errors/definitions.ts#L6)
+Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/shared/errors/definitions.ts#L6)
 
 ## Type declaration
 
@@ -159,6 +159,22 @@ Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.co
 #### LLM.INVALID\_API\_KEY.suggestion
 
 > `readonly` **suggestion**: `"请仔细检查您的 API 密钥，确保其在插件配置中已正确设置。如果您使用的是云服务，请确保您有权访问指定的模型"` = `"请仔细检查您的 API 密钥，确保其在插件配置中已正确设置。如果您使用的是云服务，请确保您有权访问指定的模型"`
+
+#### LLM.OUTPUT\_EMPTY\_CONTENT
+
+> `readonly` **OUTPUT\_EMPTY\_CONTENT**: `object`
+
+#### LLM.OUTPUT\_EMPTY\_CONTENT.code
+
+> `readonly` **code**: `"LLM.OUTPUT_EMPTY_CONTENT"` = `"LLM.OUTPUT_EMPTY_CONTENT"`
+
+#### LLM.OUTPUT\_EMPTY\_CONTENT.message
+
+> `readonly` **message**: `"LLM 响应为空"` = `"LLM 响应为空"`
+
+#### LLM.OUTPUT\_EMPTY\_CONTENT.suggestion
+
+> `readonly` **suggestion**: `"这可能是上游API故障导致，建议联系API提供商检查服务状态"` = `"这可能是上游API故障导致，建议联系API提供商检查服务状态"`
 
 #### LLM.OUTPUT\_PARSING\_FAILED
 

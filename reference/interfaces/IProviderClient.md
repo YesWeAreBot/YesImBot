@@ -6,7 +6,7 @@
 
 # Interface: IProviderClient
 
-Defined in: [packages/core/src/services/model/factories.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L42)
+Defined in: [packages/core/src/services/model/factories.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L42)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/model/factories.ts:42](https://github.co
 
 > `optional` **chat**: (`model`) => `CommonRequestOptions`
 
-Defined in: [packages/core/src/services/model/factories.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L43)
+Defined in: [packages/core/src/services/model/factories.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L43)
 
 #### Parameters
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/model/factories.ts:43](https://github.co
 
 > `optional` **embed**: (`model`) => `CommonRequestOptions`
 
-Defined in: [packages/core/src/services/model/factories.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L44)
+Defined in: [packages/core/src/services/model/factories.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L44)
 
 #### Parameters
 
@@ -50,7 +50,7 @@ Defined in: [packages/core/src/services/model/factories.ts:44](https://github.co
 
 > `optional` **image**: (`model`) => `CommonRequestOptions`
 
-Defined in: [packages/core/src/services/model/factories.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L45)
+Defined in: [packages/core/src/services/model/factories.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L45)
 
 #### Parameters
 
@@ -68,7 +68,7 @@ Defined in: [packages/core/src/services/model/factories.ts:45](https://github.co
 
 > `optional` **model**: () => `Omit`\<`CommonRequestOptions`, `"model"`\>
 
-Defined in: [packages/core/src/services/model/factories.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L48)
+Defined in: [packages/core/src/services/model/factories.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L48)
 
 #### Returns
 
@@ -80,7 +80,7 @@ Defined in: [packages/core/src/services/model/factories.ts:48](https://github.co
 
 > `optional` **speech**: (`model`) => `CommonRequestOptions`
 
-Defined in: [packages/core/src/services/model/factories.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L46)
+Defined in: [packages/core/src/services/model/factories.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L46)
 
 #### Parameters
 
@@ -98,7 +98,7 @@ Defined in: [packages/core/src/services/model/factories.ts:46](https://github.co
 
 > `optional` **transcript**: (`model`) => `CommonRequestOptions`
 
-Defined in: [packages/core/src/services/model/factories.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/factories.ts#L47)
+Defined in: [packages/core/src/services/model/factories.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/factories.ts#L47)
 
 #### Parameters
 

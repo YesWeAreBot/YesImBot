@@ -40,6 +40,8 @@
 ## Interfaces
 
 - [AgentActionLog](interfaces/AgentActionLog.md)
+- [AgentHeartbeat](interfaces/AgentHeartbeat.md)
+- [AgentHeartbeatLog](interfaces/AgentHeartbeatLog.md)
 - [AgentObservationLog](interfaces/AgentObservationLog.md)
 - [AgentResponse](interfaces/AgentResponse.md)
 - [AgentStimulus](interfaces/AgentStimulus.md)

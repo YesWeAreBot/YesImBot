@@ -6,7 +6,7 @@
 
 # Interface: ReadAssetOptions
 
-Defined in: [packages/core/src/services/assets/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/assets/types.ts#L53)
+Defined in: [packages/core/src/services/assets/types.ts:53](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/assets/types.ts#L53)
 
 读取资源时的选项
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:53](https://github.com/Y
 
 > `optional` **format**: `"base64"` \| `"buffer"` \| `"data-url"`
 
-Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/assets/types.ts#L55)
+Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/assets/types.ts#L55)
 
 输出格式
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/assets/types.ts:55](https://github.com/Y
 
 > `optional` **image**: [`ImageProcessingOptions`](ImageProcessingOptions.md)
 
-Defined in: [packages/core/src/services/assets/types.ts:57](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/assets/types.ts#L57)
+Defined in: [packages/core/src/services/assets/types.ts:57](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/assets/types.ts#L57)
 
 针对图片资源的特定处理选项

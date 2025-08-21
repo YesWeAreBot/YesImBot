@@ -6,7 +6,7 @@
 
 # Interface: ContextualAgentAction
 
-Defined in: [packages/core/src/services/worldstate/types.ts:192](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L192)
+Defined in: [packages/core/src/services/worldstate/types.ts:201](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L201)
 
 上下文中的 Agent 动作对象
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:192](https://github.
 
 > **function**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:196](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L196)
+Defined in: [packages/core/src/services/worldstate/types.ts:205](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L205)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:196](https://github.
 
 > `optional` **is\_new**: `boolean`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:198](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L198)
+Defined in: [packages/core/src/services/worldstate/types.ts:207](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L207)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:198](https://github.
 
 > **params**: `Record`\<`string`, `unknown`\>
 
-Defined in: [packages/core/src/services/worldstate/types.ts:197](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L197)
+Defined in: [packages/core/src/services/worldstate/types.ts:206](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L206)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:197](https://github.
 
 > **timestamp**: `Date`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:195](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L195)
+Defined in: [packages/core/src/services/worldstate/types.ts:204](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L204)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:195](https://github.
 
 > **turnId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:194](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L194)
+Defined in: [packages/core/src/services/worldstate/types.ts:203](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L203)
 
 ***
 
@@ -56,4 +56,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:194](https://github.
 
 > **type**: `"agent_action"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:193](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L193)
+Defined in: [packages/core/src/services/worldstate/types.ts:202](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L202)

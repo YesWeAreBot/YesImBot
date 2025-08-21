@@ -6,7 +6,7 @@
 
 # Interface: UserMessagePayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:270](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L270)
+Defined in: [packages/core/src/services/worldstate/types.ts:289](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L289)
 
 用户消息刺激的载荷
 
@@ -16,4 +16,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:270](https://github.
 
 > **messageIds**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:271](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/worldstate/types.ts#L271)
+Defined in: [packages/core/src/services/worldstate/types.ts:290](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L290)

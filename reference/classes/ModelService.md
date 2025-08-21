@@ -6,7 +6,7 @@
 
 # Class: ModelService
 
-Defined in: [packages/core/src/services/model/model-service.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L86)
+Defined in: [packages/core/src/services/model/model-service.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L86)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:86](https://githu
 
 > **new ModelService**(`ctx`, `config`): `ModelService`
 
-Defined in: [packages/core/src/services/model/model-service.ts:91](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L91)
+Defined in: [packages/core/src/services/model/model-service.ts:91](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L91)
 
 #### Parameters
 
@@ -132,7 +132,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: [`Services`](../enumerations/Services.md)[]
 
-Defined in: [packages/core/src/services/model/model-service.ts:87](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L87)
+Defined in: [packages/core/src/services/model/model-service.ts:87](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L87)
 
 ***
 
@@ -274,7 +274,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getChatModel**(`providerName`, `modelId`): [`IChatModel`](../interfaces/IChatModel.md)
 
-Defined in: [packages/core/src/services/model/model-service.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L134)
+Defined in: [packages/core/src/services/model/model-service.ts:130](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L130)
 
 #### Parameters
 
@@ -296,7 +296,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:134](https://gith
 
 > **getEmbedModel**(`providerName`, `modelId`): [`IEmbedModel`](../interfaces/IEmbedModel.md)
 
-Defined in: [packages/core/src/services/model/model-service.ts:139](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L139)
+Defined in: [packages/core/src/services/model/model-service.ts:135](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L135)
 
 #### Parameters
 
@@ -318,7 +318,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:139](https://gith
 
 > `protected` **start**(): `void` \| `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:251](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L251)
+Defined in: [packages/core/src/services/model/model-service.ts:247](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L247)
 
 #### Returns
 
@@ -350,7 +350,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:10
 
 > **useChatGroup**(`name`): [`ChatModelSwitcher`](ChatModelSwitcher.md)
 
-Defined in: [packages/core/src/services/model/model-service.ts:144](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L144)
+Defined in: [packages/core/src/services/model/model-service.ts:140](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L140)
 
 #### Parameters
 
@@ -368,7 +368,7 @@ Defined in: [packages/core/src/services/model/model-service.ts:144](https://gith
 
 > **useEmbeddingGroup**(`name`): [`ModelSwitcher`](ModelSwitcher.md)\<[`IEmbedModel`](../interfaces/IEmbedModel.md)\>
 
-Defined in: [packages/core/src/services/model/model-service.ts:253](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/model-service.ts#L253)
+Defined in: [packages/core/src/services/model/model-service.ts:249](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/model-service.ts#L249)
 
 #### Parameters
 

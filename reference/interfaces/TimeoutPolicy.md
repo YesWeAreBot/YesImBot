@@ -6,7 +6,7 @@
 
 # Interface: TimeoutPolicy
 
-Defined in: [packages/core/src/services/model/config.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L17)
+Defined in: [packages/core/src/services/model/config.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L17)
 
 定义超时策略
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/config.ts:17](https://github.com/Y
 
 > `optional` **firstTokenTimeout**: `number`
 
-Defined in: [packages/core/src/services/model/config.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L19)
+Defined in: [packages/core/src/services/model/config.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L19)
 
 首次响应超时 (秒)
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/model/config.ts:19](https://github.com/Y
 
 > **totalTimeout**: `number`
 
-Defined in: [packages/core/src/services/model/config.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/c58e5d7dbfcd35236ce8121d18475f7c24321d07/packages/core/src/services/model/config.ts#L21)
+Defined in: [packages/core/src/services/model/config.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/model/config.ts#L21)
 
 总请求超时 (秒)
