@@ -6,7 +6,7 @@
 
 # Interface: SystemEventLog
 
-Defined in: [packages/core/src/services/worldstate/types.ts:129](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L129)
+Defined in: [packages/core/src/services/worldstate/types.ts:129](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L129)
 
 交互日志中系统事件的结构
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:129](https://github.
 
 > **eventType**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:133](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L133)
+Defined in: [packages/core/src/services/worldstate/types.ts:133](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L133)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:133](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:131](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L131)
+Defined in: [packages/core/src/services/worldstate/types.ts:131](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L131)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:131](https://github.
 
 > **message**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L134)
+Defined in: [packages/core/src/services/worldstate/types.ts:134](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L134)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:134](https://github.
 
 > **timestamp**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:132](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L132)
+Defined in: [packages/core/src/services/worldstate/types.ts:132](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L132)
 
 ***
 
@@ -48,4 +48,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:132](https://github.
 
 > **type**: `"system_event"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:130](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/services/worldstate/types.ts#L130)
+Defined in: [packages/core/src/services/worldstate/types.ts:130](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L130)

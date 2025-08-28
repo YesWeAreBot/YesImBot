@@ -8,9 +8,9 @@
 
 > `const` **ErrorDefinitions**: `object`
 
-Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/shared/errors/definitions.ts#L6)
+Defined in: [packages/core/src/shared/errors/definitions.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/errors/definitions.ts#L6)
 
-## Type declaration
+## Type Declaration
 
 ### CONFIG
 

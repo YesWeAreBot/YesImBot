@@ -8,13 +8,13 @@
 
 > `const` **ErrorCodes**: `object`
 
-Defined in: [packages/core/src/shared/errors/definitions.ts:166](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/shared/errors/definitions.ts#L166)
+Defined in: [packages/core/src/shared/errors/definitions.ts:166](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/errors/definitions.ts#L166)
 
 应用程序的统一错误码。
 使用常量对象而非枚举，以获得更好的灵活性和 Tree-shaking 效果。
 格式: 领域.类别或详情
 
-## Type declaration
+## Type Declaration
 
 ### AUTH
 

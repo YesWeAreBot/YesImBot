@@ -8,7 +8,7 @@
 
 > **containsFilter**(`content`, `filterList`): `boolean`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/f812fe748c45734fc4145f4d7c773df313d9885a/packages/core/src/shared/utils/toolkit.ts#L23)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/toolkit.ts#L23)
 
 检查消息内容是否包含过滤词列表中的任意一个词（不区分大小写）。
 
