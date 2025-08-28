@@ -96,12 +96,11 @@ export class PromptContextBuilder {
      * @returns 包含筛选后的图片内容的对象
      */
     private async buildMultimodalImages(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
-        // ... 原来的 buildMultimodalContext 的全部逻辑 ...
-
         // 1. 将所有消息扁平化并建立索引
         const allMessages = [...((worldState as any).processed_events || []), ...((worldState as any).new_events || [])].filter(
             (item): item is { type: "message" } & ContextualMessage => item.type === "message"
         );
+
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
         const imageTags = ["img", "image"];
