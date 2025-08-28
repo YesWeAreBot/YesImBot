@@ -6,7 +6,7 @@
 
 # Interface: AgentResponse
 
-Defined in: [packages/core/src/services/worldstate/types.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L64)
+Defined in: [packages/core/src/services/worldstate/types.ts:64](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L64)
 
 ## Description
 
@@ -19,7 +19,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:64](https://github.c
 
 > **actions**: `object`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L66)
+Defined in: [packages/core/src/services/worldstate/types.ts:66](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L66)
 
 #### function
 
@@ -35,7 +35,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:66](https://github.c
 
 > `optional` **observations**: `object`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L67)
+Defined in: [packages/core/src/services/worldstate/types.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L67)
 
 #### error?
 
@@ -59,7 +59,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:67](https://github.c
 
 > **request\_heartbeat**: `boolean`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L68)
+Defined in: [packages/core/src/services/worldstate/types.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L68)
 
 ***
 
@@ -67,7 +67,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:68](https://github.c
 
 > **thoughts**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/worldstate/types.ts#L65)
+Defined in: [packages/core/src/services/worldstate/types.ts:65](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L65)
 
 #### analyze\_infer
 

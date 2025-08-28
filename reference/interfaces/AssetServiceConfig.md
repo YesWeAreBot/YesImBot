@@ -6,7 +6,7 @@
 
 # Interface: AssetServiceConfig
 
-Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L3)
+Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L3)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/assets/config.ts:3](https://github.com/Y
 
 > **autoClear**: `object`
 
-Defined in: [packages/core/src/services/assets/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L9)
+Defined in: [packages/core/src/services/assets/config.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L9)
 
 #### enabled
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/assets/config.ts:9](https://github.com/Y
 
 > **downloadTimeout**: `number`
 
-Defined in: [packages/core/src/services/assets/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L8)
+Defined in: [packages/core/src/services/assets/config.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L8)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [packages/core/src/services/assets/config.ts:8](https://github.com/Y
 
 > **driver**: `"local"`
 
-Defined in: [packages/core/src/services/assets/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L5)
+Defined in: [packages/core/src/services/assets/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L5)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [packages/core/src/services/assets/config.ts:5](https://github.com/Y
 
 > `optional` **endpoint**: `string`
 
-Defined in: [packages/core/src/services/assets/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L6)
+Defined in: [packages/core/src/services/assets/config.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L6)
 
 ***
 
@@ -58,7 +58,7 @@ Defined in: [packages/core/src/services/assets/config.ts:6](https://github.com/Y
 
 > **image**: `object`
 
-Defined in: [packages/core/src/services/assets/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L14)
+Defined in: [packages/core/src/services/assets/config.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L14)
 
 #### gifFramesToExtract
 
@@ -86,7 +86,7 @@ Defined in: [packages/core/src/services/assets/config.ts:14](https://github.com/
 
 > **maxFileSize**: `number`
 
-Defined in: [packages/core/src/services/assets/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L7)
+Defined in: [packages/core/src/services/assets/config.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L7)
 
 ***
 
@@ -94,7 +94,7 @@ Defined in: [packages/core/src/services/assets/config.ts:7](https://github.com/Y
 
 > **recoveryEnabled**: `boolean`
 
-Defined in: [packages/core/src/services/assets/config.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L22)
+Defined in: [packages/core/src/services/assets/config.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L22)
 
 ***
 
@@ -102,4 +102,4 @@ Defined in: [packages/core/src/services/assets/config.ts:22](https://github.com/
 
 > **storagePath**: `string`
 
-Defined in: [packages/core/src/services/assets/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/assets/config.ts#L4)
+Defined in: [packages/core/src/services/assets/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/assets/config.ts#L4)

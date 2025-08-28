@@ -6,7 +6,7 @@
 
 # Class: StreamParser
 
-Defined in: [packages/core/src/shared/utils/stream-parser.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/stream-parser.ts#L15)
+Defined in: [packages/core/src/shared/utils/stream-parser.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/shared/utils/stream-parser.ts#L15)
 
 通用流式解析器
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/shared/utils/stream-parser.ts:15](https://github.
 
 > **new StreamParser**(`schema`): `StreamParser`
 
-Defined in: [packages/core/src/shared/utils/stream-parser.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/stream-parser.ts#L25)
+Defined in: [packages/core/src/shared/utils/stream-parser.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/shared/utils/stream-parser.ts#L25)
 
 #### Parameters
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/shared/utils/stream-parser.ts:25](https://github.
 
 > **process**(`stream`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/shared/utils/stream-parser.ts:72](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/stream-parser.ts#L72)
+Defined in: [packages/core/src/shared/utils/stream-parser.ts:72](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/shared/utils/stream-parser.ts#L72)
 
 处理输入的字符串流，并根据 schema 将数据推送到对应的子流中
 
@@ -54,7 +54,7 @@ Defined in: [packages/core/src/shared/utils/stream-parser.ts:72](https://github.
 
 > **processText**(`text`, `final`): `void`
 
-Defined in: [packages/core/src/shared/utils/stream-parser.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/stream-parser.ts#L56)
+Defined in: [packages/core/src/shared/utils/stream-parser.ts:56](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/shared/utils/stream-parser.ts#L56)
 
 #### Parameters
 
@@ -76,7 +76,7 @@ Defined in: [packages/core/src/shared/utils/stream-parser.ts:56](https://github.
 
 > **stream**\<`T`\>(`key`): `ReadableStream`\<`T`\>
 
-Defined in: [packages/core/src/shared/utils/stream-parser.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/stream-parser.ts#L34)
+Defined in: [packages/core/src/shared/utils/stream-parser.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/shared/utils/stream-parser.ts#L34)
 
 为指定的顶层键创建一个可读流
 

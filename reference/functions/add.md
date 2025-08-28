@@ -8,7 +8,7 @@
 
 > **add**(`vecA`, `vecB`): `number`[]
 
-Defined in: [packages/core/src/shared/utils/vector.ts:89](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/shared/utils/vector.ts#L89)
+Defined in: [packages/core/src/shared/utils/vector.ts:89](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/shared/utils/vector.ts#L89)
 
 向量加法。
 

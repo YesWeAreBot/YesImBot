@@ -6,7 +6,7 @@
 
 # Class: MemoryService
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/memory/MemoryService.ts#L15)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/memory/MemoryService.ts#L15)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:15](https://gith
 
 > **new MemoryService**(`ctx`, `config`): `MemoryService`
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/memory/MemoryService.ts#L20)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/memory/MemoryService.ts#L20)
 
 #### Parameters
 
@@ -132,7 +132,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: [`Services`](../enumerations/Services.md)[]
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/memory/MemoryService.ts#L16)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/memory/MemoryService.ts#L16)
 
 ***
 
@@ -274,7 +274,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getMemoryBlocksForRendering**(): [`MemoryBlockData`](../interfaces/MemoryBlockData.md)[]
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/memory/MemoryService.ts#L30)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/memory/MemoryService.ts#L30)
 
 #### Returns
 
@@ -286,7 +286,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:30](https://gith
 
 > **loadCoreMemoryBlocks**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/memory/MemoryService.ts#L37)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/memory/MemoryService.ts#L37)
 
 扫描核心记忆目录，加载所有可用的记忆块
 
@@ -300,7 +300,7 @@ Defined in: [packages/core/src/services/memory/MemoryService.ts:37](https://gith
 
 > `protected` **start**(): `void`
 
-Defined in: [packages/core/src/services/memory/MemoryService.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/91c73ac8adc99fd9fe5ac1678a22415c1645dc09/packages/core/src/services/memory/MemoryService.ts#L26)
+Defined in: [packages/core/src/services/memory/MemoryService.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/memory/MemoryService.ts#L26)
 
 #### Returns
 
