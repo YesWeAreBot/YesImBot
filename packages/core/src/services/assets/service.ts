@@ -1,9 +1,8 @@
+import sharp from "@yesimbot/sharp";
 import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
 import { promises as fs } from "fs";
 import { Context, Element, Service, h } from "koishi";
-import "@yesimbot/koishi-plugin-sharp";
-import type sharp from "sharp";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 
@@ -58,18 +57,11 @@ export class AssetService extends Service<AssetServiceConfig> {
     private storage: StorageDriver;
     private cacheStorage: StorageDriver;
 
-    private sharp: typeof sharp;
-
     constructor(ctx: Context, config: AssetServiceConfig) {
         super(ctx, Services.Asset, true);
         this.config = config;
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节
         this.logger = ctx[Services.Logger].getLogger("[资源服务]");
-
-        this.sharp = ctx.sharp.sharpInstance;
-        if (!this.sharp) {
-            throw new Error("Sharp 插件未安装或配置错误");
-        }
     }
 
     protected async start() {
@@ -163,7 +155,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         // 如果是图片，尝试获取尺寸信息
         if (mime.startsWith("image/")) {
             try {
-                const imageMeta = await this.sharp(buffer).metadata();
+                const imageMeta = await sharp(buffer).metadata();
                 metadata.width = imageMeta.width;
                 metadata.height = imageMeta.height;
             } catch (e) {
@@ -412,7 +404,7 @@ export class AssetService extends Service<AssetServiceConfig> {
             }
             if (this.config.image.gifProcessingStrategy === "firstFrame") {
                 // 处理GIF第一帧
-                const firstFrameBuffer = await this.sharp(buffer, { page: 0 }).toBuffer();
+                const firstFrameBuffer = await sharp(buffer, { page: 0 }).toBuffer();
                 return this._compressAndResizeImage(firstFrameBuffer);
             }
             // `gifProcessingStrategy` 为 'none' 或其他值，不处理
@@ -423,7 +415,7 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private async _compressAndResizeImage(buffer: Buffer): Promise<Buffer> {
-        const sharpInstance = this.sharp(buffer);
+        const sharpInstance = sharp(buffer);
         const meta = await sharpInstance.metadata();
         const { targetSize } = this.config.image;
 
@@ -458,7 +450,7 @@ export class AssetService extends Service<AssetServiceConfig> {
      */
     private async _processGifStitch(buffer: Buffer): Promise<Buffer> {
         const { gifFramesToExtract } = this.config.image;
-        const meta = await this.sharp(buffer, { animated: true }).metadata();
+        const meta = await sharp(buffer, { animated: true }).metadata();
         const pageCount = meta.pages || 1;
 
         // 计算要抽取的帧的索引
@@ -466,10 +458,8 @@ export class AssetService extends Service<AssetServiceConfig> {
             Math.floor(i * (pageCount / Math.min(gifFramesToExtract, pageCount)))
         );
 
-        const frames = await Promise.all(
-            frameIndices.map((index) => this.sharp(buffer, { page: index }).resize({ width: 384 }).toBuffer())
-        );
-        const frameMetas = await Promise.all(frames.map((f) => this.sharp(f).metadata()));
+        const frames = await Promise.all(frameIndices.map((index) => sharp(buffer, { page: index }).resize({ width: 384 }).toBuffer()));
+        const frameMetas = await Promise.all(frames.map((f) => sharp(f).metadata()));
 
         // 计算拼接后画布的尺寸
         const cols = Math.ceil(Math.sqrt(frames.length));
@@ -484,7 +474,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         }));
 
         // 创建透明背景并拼接图片
-        return this.sharp({ create: { width: finalWidth, height: finalHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+        return sharp({ create: { width: finalWidth, height: finalHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
             .composite(compositeOps)
             .jpeg({ quality: 85 })
             .toBuffer();
