@@ -66,10 +66,14 @@ export default class YesImBot extends Service<Config> {
 
             initializeErrorReporter(config.system.errorReporting, this.ctx.logger("[错误报告]"));
 
-            waitForServices(services).then(() => {
-                this.ctx.logger.info("所有服务已就绪");
-                this.ctx.logger.info(`Version: ${require("../package.json").version}`);
-            });
+            waitForServices(services)
+                .then(() => {
+                    this.ctx.logger.info("所有服务已就绪");
+                    this.ctx.logger.info(`Version: ${require("../package.json").version}`);
+                })
+                .catch((err) => {
+                    this.ctx.logger.error(err.stack);
+                });
         } catch (error) {
             // this.ctx.logger.error("初始化时发生错误:", error.message);
             // this.ctx.logger.error(error.stack);
@@ -83,9 +87,23 @@ export default class YesImBot extends Service<Config> {
 
 async function waitForServices(services: ForkScope[]) {
     await sleep(1000);
-    return new Promise<void>((resolve) => {
+
+    // 未就绪服务
+    const notReadyServices = new Set(services.map((service) => service.ctx.name));
+
+    return new Promise<void>((resolve, reject) => {
+        setTimeout(() => {
+            if (!services.every((service) => service.ready)) {
+                reject(new Error(`服务初始化超时: ${Array.from(notReadyServices).join(", ")}`));
+            }
+        }, 10000);
         const check = () => {
-            if (services.every((service) => service.ready)) {
+            for (const service of services) {
+                if (service.ready && notReadyServices.has(service.ctx.name)) {
+                    notReadyServices.delete(service.ctx.name);
+                }
+            }
+            if (notReadyServices.size === 0) {
                 resolve();
             } else {
                 setTimeout(check, 100);
