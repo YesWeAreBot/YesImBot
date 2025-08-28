@@ -44,7 +44,7 @@ function shortenCanaryVersion(version) {
 }
 
 /**
- * 更新package.json中的版本号
+ * 更新package.json中的版本号（包括主版本和所有依赖）
  * @param {string} packagePath - 包路径
  */
 function updatePackageJson(packagePath) {
@@ -57,15 +57,66 @@ function updatePackageJson(packagePath) {
 
     try {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+        let hasChanges = false;
+        const changes = [];
+
+        // 更新主版本号
         const originalVersion = packageJson.version;
         const newVersion = shortenCanaryVersion(originalVersion);
-
         if (originalVersion !== newVersion) {
             packageJson.version = newVersion;
+            hasChanges = true;
+            changes.push(`主版本: ${originalVersion} → ${newVersion}`);
+        }
+
+        // 更新dependencies中的版本号
+        if (packageJson.dependencies) {
+            for (const [depName, version] of Object.entries(packageJson.dependencies)) {
+                if (typeof version === "string" && version.includes("-canary.")) {
+                    const newDepVersion = shortenCanaryVersion(version);
+                    if (version !== newDepVersion) {
+                        packageJson.dependencies[depName] = newDepVersion;
+                        hasChanges = true;
+                        changes.push(`依赖 ${depName}: ${version} → ${newDepVersion}`);
+                    }
+                }
+            }
+        }
+
+        // 更新devDependencies中的版本号
+        if (packageJson.devDependencies) {
+            for (const [depName, version] of Object.entries(packageJson.devDependencies)) {
+                if (typeof version === "string" && version.includes("-canary.")) {
+                    const newDepVersion = shortenCanaryVersion(version);
+                    if (version !== newDepVersion) {
+                        packageJson.devDependencies[depName] = newDepVersion;
+                        hasChanges = true;
+                        changes.push(`开发依赖 ${depName}: ${version} → ${newDepVersion}`);
+                    }
+                }
+            }
+        }
+
+        // 更新peerDependencies中的版本号
+        if (packageJson.peerDependencies) {
+            for (const [depName, version] of Object.entries(packageJson.peerDependencies)) {
+                if (typeof version === "string" && version.includes("-canary.")) {
+                    const newDepVersion = shortenCanaryVersion(version);
+                    if (version !== newDepVersion) {
+                        packageJson.peerDependencies[depName] = newDepVersion;
+                        hasChanges = true;
+                        changes.push(`对等依赖 ${depName}: ${version} → ${newDepVersion}`);
+                    }
+                }
+            }
+        }
+
+        if (hasChanges) {
             fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n");
-            console.log(`✅ 已更新 ${path.basename(packagePath)}/package.json: ${originalVersion} → ${newVersion}`);
+            console.log(`✅ 已更新 ${path.basename(packagePath)}/package.json:`);
+            changes.forEach((change) => console.log(`   - ${change}`));
         } else {
-            console.log(`ℹ️  ${path.basename(packagePath)}/package.json 无需更新: ${originalVersion}`);
+            console.log(`ℹ️  ${path.basename(packagePath)}/package.json 无需更新`);
         }
     } catch (error) {
         console.error(`❌ 更新 ${packageJsonPath} 失败:`, error.message);
