@@ -6,7 +6,7 @@
 
 # Interface: ChatRequestOptions
 
-Defined in: [packages/core/src/services/model/chat-model.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L42)
+Defined in: [packages/core/src/services/model/chat-model.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L42)
 
 ## Indexable
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:42](https://github.c
 
 > `optional` **abortSignal**: `AbortSignal`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L43)
+Defined in: [packages/core/src/services/model/chat-model.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L43)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:43](https://github.c
 
 > **messages**: `Message`[]
 
-Defined in: [packages/core/src/services/model/chat-model.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L46)
+Defined in: [packages/core/src/services/model/chat-model.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L46)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:46](https://github.c
 
 > `optional` **onStreamStart**: () => `void`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L44)
+Defined in: [packages/core/src/services/model/chat-model.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L44)
 
 #### Returns
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:44](https://github.c
 
 > `optional` **stream**: `boolean`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L47)
+Defined in: [packages/core/src/services/model/chat-model.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L47)
 
 ***
 
@@ -54,7 +54,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:47](https://github.c
 
 > `optional` **temperature**: `number`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L48)
+Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L48)
 
 ***
 
@@ -62,7 +62,7 @@ Defined in: [packages/core/src/services/model/chat-model.ts:48](https://github.c
 
 > `optional` **topP**: `number`
 
-Defined in: [packages/core/src/services/model/chat-model.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L49)
+Defined in: [packages/core/src/services/model/chat-model.ts:49](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L49)
 
 ***
 
@@ -70,4 +70,4 @@ Defined in: [packages/core/src/services/model/chat-model.ts:49](https://github.c
 
 > `optional` **validation**: [`ValidationOptions`](ValidationOptions.md)
 
-Defined in: [packages/core/src/services/model/chat-model.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/model/chat-model.ts#L45)
+Defined in: [packages/core/src/services/model/chat-model.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/model/chat-model.ts#L45)

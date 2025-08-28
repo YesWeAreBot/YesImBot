@@ -8,7 +8,7 @@
 
 > **Success**\<`T`\>(`result?`, `metadata?`): [`ToolCallResult`](../interfaces/ToolCallResult.md)\<`T`\>
 
-Defined in: [packages/core/src/services/extension/helpers.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/extension/helpers.ts#L7)
+Defined in: [packages/core/src/services/extension/helpers.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/extension/helpers.ts#L7)
 
 成功结果辅助函数
 

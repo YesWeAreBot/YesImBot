@@ -6,7 +6,7 @@
 
 # Interface: DiaryEntryData
 
-Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L153)
+Defined in: [packages/core/src/services/worldstate/types.ts:153](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L153)
 
 L3 日记条目的数据模型
 
@@ -16,7 +16,7 @@ L3 日记条目的数据模型
 
 > **channelId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:157](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L157)
+Defined in: [packages/core/src/services/worldstate/types.ts:157](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L157)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:157](https://github.
 
 > **content**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:158](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L158)
+Defined in: [packages/core/src/services/worldstate/types.ts:158](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L158)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:158](https://github.
 
 > **date**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:155](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L155)
+Defined in: [packages/core/src/services/worldstate/types.ts:155](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L155)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:155](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L154)
+Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L154)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:154](https://github.
 
 > **keywords**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:159](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L159)
+Defined in: [packages/core/src/services/worldstate/types.ts:159](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L159)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:159](https://github.
 
 > **mentionedUserIds**: `string`[]
 
-Defined in: [packages/core/src/services/worldstate/types.ts:160](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L160)
+Defined in: [packages/core/src/services/worldstate/types.ts:160](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L160)
 
 ***
 
@@ -64,4 +64,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:160](https://github.
 
 > **platform**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:156](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L156)
+Defined in: [packages/core/src/services/worldstate/types.ts:156](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L156)
