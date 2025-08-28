@@ -205,7 +205,6 @@ export class HeartbeatProcessor {
     private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
         const { session } = stimulus;
         const { platform, channelId } = session;
-        const parser = new JsonParser<any>();
 
         // 步骤 1-4: 准备请求
         const { messages } = await this._prepareLlmRequest(stimulus);
@@ -214,11 +213,63 @@ export class HeartbeatProcessor {
         this.logger.info("步骤 5/7: 调用大语言模型...");
         const stime = Date.now();
 
+        // 将 StreamParser 和消费者的 Promise 声明为 let，以便在重试时可以替换它们
         let streamParser = new StreamParser({
             thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
             actions: [{ function: "string", params: "any" }],
             request_heartbeat: "boolean",
         });
+
+        // 用于收集最终结果的变量
+        let thoughts = { observe: "", analyze_infer: "", plan: "" };
+        let request_heartbeat = false;
+
+        let consumerPromises: Promise<any>[];
+
+        /**
+         * 启动所有流消费者
+         * 这个函数会在开始时和每次重试时被调用
+         */
+        const startConsumers = () => {
+            // 重置结果收集器
+            thoughts = { observe: "", analyze_infer: "", plan: "" };
+            request_heartbeat = false;
+
+            const thoughtsPromise = (async () => {
+                // 确保从当前最新的 streamParser 实例获取流
+                for await (const chunk of streamParser.stream<any>("thoughts")) {
+                    const [key, value] = Object.entries(chunk)[0];
+                    thoughts = { ...thoughts, [key]: value };
+                    this.logger.debug(`[流式思考] 🤔 ${key}: ${value}`);
+                }
+                // 思考流结束后，立即记录
+                await this.interactionManager.recordThought(turnId, platform, channelId, thoughts);
+            })();
+
+            const actionsPromise = (async () => {
+                let count = 1;
+                for await (const action of streamParser.stream<any>("actions")) {
+                    this.logger.info(`[流式执行] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
+                    await this.executeActions(turnId, session, [action]);
+                }
+            })();
+
+            const heartbeatPromise = (async () => {
+                for await (const chunk of streamParser.stream<boolean>("request_heartbeat")) {
+                    request_heartbeat = Boolean(chunk);
+                    this.logger.debug(`[流式心跳] ❤️ request_heartbeat: ${request_heartbeat}`);
+                }
+            })();
+
+            // 将所有消费者的 Promise 放入数组中，以便 Promise.all 等待
+            consumerPromises = [thoughtsPromise, actionsPromise, heartbeatPromise];
+        };
+
+        // 首次启动消费者
+        startConsumers();
+
+        // 这个解析器只用于在 validator 中做最终校验，不影响流式解析
+        const finalValidatorParser = new JsonParser<any>();
 
         const llmPromise = this.modelSwitcher.chat({
             messages,
@@ -226,67 +277,63 @@ export class HeartbeatProcessor {
             validation: {
                 format: "json",
                 validator: (text, final) => {
-                    try {
-                        streamParser.processText(text, final);
-                        if (final) streamParser.reset();
-                    } catch (e) {
-                        if (!e.message.includes("Cannot read properties of null")) {
-                            this.logger.warn(`流式解析器错误: ${e.message}`);
+                    if (!final) {
+                        // 在流式传输过程中，持续将数据送入当前的 streamParser
+                        try {
+                            streamParser.processText(text, false);
+                        } catch (e) {
+                            if (!e.message.includes("Cannot read properties of null")) {
+                                this.logger.warn(`流式解析器错误: ${e.message}`);
+                            }
                         }
+                        // 在非 final 状态下，我们总是假设它是有效的，让流继续
+                        return { valid: true, earlyExit: false };
                     }
 
-                    const { data, error } = parser.parse(text);
-                    if (error) return { valid: final ? false : true, earlyExit: false, error: final ? error : undefined };
-                    if (!data) return { valid: final, earlyExit: false, parsedData: null };
+                    // --- final: true ---
+                    // 这是最后一块数据，需要做出最终判断
 
-                    // 归一化处理
-                    if (final && data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
-                        data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+                    const { data, error } = finalValidatorParser.parse(text);
+
+                    if (error) {
+                        this.logger.warn("最终JSON解析失败，即将触发重试...");
+                        // 关键：创建一个全新的解析器和全新的消费者，为重试做准备
+                        streamParser = new StreamParser({
+                            thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
+                            actions: [{ function: "string", params: "any" }],
+                            request_heartbeat: "boolean",
+                        });
+                        startConsumers(); // 用新解析器启动新消费者
+
+                        // 告诉 modelSwitcher 验证失败，让它内部处理重试
+                        return { valid: false, earlyExit: false, error };
                     }
 
-                    if (final) return { valid: true, earlyExit: false, parsedData: data };
+                    // 解析成功，处理最后的数据并完成所有流
+                    try {
+                        streamParser.processText(text, true);
+                    } catch (e) {
+                        /* 忽略在完成阶段可能出现的错误 */
+                    }
 
-                    // 检查提前退出条件
-                    const isComplete = data.thoughts && Array.isArray(data.actions) && typeof data.request_heartbeat === "boolean";
+                    let finalData = data;
+                    if (finalData.thoughts && typeof finalData.thoughts.request_heartbeat === "boolean") {
+                        finalData.request_heartbeat = finalData.request_heartbeat ?? finalData.thoughts.request_heartbeat;
+                    }
+
+                    const isComplete =
+                        finalData.thoughts && Array.isArray(finalData.actions) && typeof finalData.request_heartbeat === "boolean";
                     if (isComplete) {
-                        streamParser.processText(text, true); // 确保最后的数据被处理
-                        return { valid: true, earlyExit: true, parsedData: data };
+                        return { valid: true, earlyExit: true, parsedData: finalData };
                     }
-                    return { valid: false, earlyExit: false };
+
+                    return { valid: true, earlyExit: false, parsedData: finalData };
                 },
             },
         });
 
-        // 并发消费流式解析器的各个部分
-        let thoughts = { observe: "", analyze_infer: "", plan: "" };
-        const thoughtsPromise = (async () => {
-            for await (const chunk of streamParser.stream<any>("thoughts")) {
-                const [key, value] = Object.entries(chunk)[0];
-                thoughts = { ...thoughts, [key]: value };
-                this.logger.debug(`[流式思考] 🤔 ${key}: ${value}`);
-            }
-            //this.displayThoughts(thoughts);
-            await this.interactionManager.recordThought(turnId, platform, channelId, thoughts);
-        })();
-
-        const actionsPromise = (async () => {
-            let count = 1;
-            for await (const action of streamParser.stream<any>("actions")) {
-                this.logger.info(`[流式执行] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
-                await this.executeActions(turnId, session, [action]);
-            }
-        })();
-
-        let request_heartbeat = false;
-        const heartbeatPromise = (async () => {
-            for await (const chunk of streamParser.stream<boolean>("request_heartbeat")) {
-                request_heartbeat = Boolean(chunk);
-                this.logger.debug(`[流式心跳] ❤️ request_heartbeat: ${request_heartbeat}`);
-            }
-        })();
-
-        // 等待所有流处理完成
-        await Promise.all([llmPromise, thoughtsPromise, actionsPromise, heartbeatPromise]);
+        // 等待LLM调用完成和最后一个（或唯一一个）消费者集合完成
+        await Promise.all([llmPromise, ...consumerPromises]);
 
         this.logger.success("单次心跳成功完成");
         return { continue: request_heartbeat };

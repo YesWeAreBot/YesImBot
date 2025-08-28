@@ -66,7 +66,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节
         this.logger = ctx[Services.Logger].getLogger("[资源服务]");
 
-        this.sharp = ctx.sharp;
+        this.sharp = ctx.sharp.sharpInstance;
         if (!this.sharp) {
             throw new Error("Sharp 插件未安装或配置错误");
         }

@@ -27,16 +27,6 @@ export class StreamParser {
         this.schemaKeys = Object.keys(schema);
     }
 
-    public reset(): void {
-        this.textBuffer = "";
-        this.lastParsed = {};
-        // 重置至初始状态，但不销毁
-        this.streamStates.forEach((state) => {
-            state.status = "pending";
-            state.progress = 0;
-        });
-    }
-
     /**
      * 为指定的顶层键创建一个可读流
      * @param key 必须是 schema 中定义的顶层键之一
