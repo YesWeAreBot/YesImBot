@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
 import { Context, h, Logger, Session } from "koishi";
-import { AssetData, PromptService } from "koishi-plugin-yesimbot/services";
+import { PromptService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { pathToFileURL } from "url";

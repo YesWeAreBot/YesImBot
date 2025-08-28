@@ -37,9 +37,6 @@
       ]
     }
   },
-  "dependencies": {
-    "sharp": "^0.34.3"
-  },
   "keywords": [
     "koishi",
     "plugin",
