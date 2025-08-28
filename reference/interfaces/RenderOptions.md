@@ -6,7 +6,7 @@
 
 # Interface: RenderOptions
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/prompt/renderer.ts#L6)
+Defined in: [packages/core/src/services/prompt/renderer.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/prompt/renderer.ts#L6)
 
 渲染器接口的渲染选项
 
@@ -16,6 +16,6 @@ Defined in: [packages/core/src/services/prompt/renderer.ts:6](https://github.com
 
 > `optional` **maxDepth**: `number`
 
-Defined in: [packages/core/src/services/prompt/renderer.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/prompt/renderer.ts#L10)
+Defined in: [packages/core/src/services/prompt/renderer.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/prompt/renderer.ts#L10)
 
 最大渲染深度，用于防止无限循环

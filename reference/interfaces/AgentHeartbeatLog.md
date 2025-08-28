@@ -6,7 +6,7 @@
 
 # Interface: AgentHeartbeatLog
 
-Defined in: [packages/core/src/services/worldstate/types.ts:107](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L107)
+Defined in: [packages/core/src/services/worldstate/types.ts:107](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L107)
 
 ## Properties
 
@@ -14,7 +14,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:107](https://github.
 
 > **current**: `number`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L112)
+Defined in: [packages/core/src/services/worldstate/types.ts:112](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L112)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:112](https://github.
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:109](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L109)
+Defined in: [packages/core/src/services/worldstate/types.ts:109](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L109)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:109](https://github.
 
 > **max**: `number`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:113](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L113)
+Defined in: [packages/core/src/services/worldstate/types.ts:113](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L113)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:113](https://github.
 
 > **timestamp**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:111](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L111)
+Defined in: [packages/core/src/services/worldstate/types.ts:111](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L111)
 
 ***
 
@@ -46,7 +46,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:111](https://github.
 
 > **turnId**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:110](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L110)
+Defined in: [packages/core/src/services/worldstate/types.ts:110](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L110)
 
 ***
 
@@ -54,4 +54,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:110](https://github.
 
 > **type**: `"agent_heartbeat"`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:108](https://github.com/YesWeAreBot/YesImBot/blob/3710100a530c2f8760188c4d2983966d4a0de073/packages/core/src/services/worldstate/types.ts#L108)
+Defined in: [packages/core/src/services/worldstate/types.ts:108](https://github.com/YesWeAreBot/YesImBot/blob/c3bc04184671d60e6195ab1c5425ad7460753ffe/packages/core/src/services/worldstate/types.ts#L108)
