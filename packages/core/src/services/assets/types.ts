@@ -28,6 +28,15 @@ export interface AssetMetadata {
 export interface AssetInfo extends Omit<AssetData, "hash"> {}
 
 /**
+ * 文件统计信息
+ */
+export interface FileStats {
+    size: number;
+    modifiedAt: Date;
+    createdAt: Date;
+}
+
+/**
  * 存储驱动接口
  */
 export interface StorageDriver {
@@ -35,6 +44,8 @@ export interface StorageDriver {
     read(id: string): Promise<Buffer>;
     delete(id: string): Promise<void>;
     exists(id: string): Promise<boolean>;
+    getStats?(id: string): Promise<FileStats | null>;
+    listFiles?(): Promise<string[]>;
 }
 
 /**

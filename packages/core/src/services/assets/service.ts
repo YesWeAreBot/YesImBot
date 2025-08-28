@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
 import { promises as fs } from "fs";
 import { Context, Element, Service, h } from "koishi";
+import path from "path";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 
@@ -107,7 +108,7 @@ export class AssetService extends Service<AssetServiceConfig> {
             this.registerHttpEndpoint();
         }
 
-        this.logger.success("资源服务已启动。");
+        this.logger.success("资源服务已启动");
     }
 
     /**
@@ -250,7 +251,7 @@ export class AssetService extends Service<AssetServiceConfig> {
      */
     async getPublicUrl(id: string): Promise<string> {
         if (!this.config.endpoint) {
-            this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL。`);
+            this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL`);
             return (await this.read(id, { format: "data-url" })) as string;
         }
 
@@ -272,7 +273,7 @@ export class AssetService extends Service<AssetServiceConfig> {
 
             const info = await this.getInfo(element.attrs.id);
             if (!info) {
-                this.logger.warn(`编码时找不到资源: ${element.attrs.id}，将返回原始元素。`);
+                this.logger.warn(`编码时找不到资源: ${element.attrs.id}，将返回原始元素`);
                 return element;
             }
 
@@ -371,7 +372,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         } catch (error) {
             // 如果预检失败（如服务器不支持HEAD），下载时仍会受限于 maxBodySize。
             if (error.message.includes("超出限制")) throw error;
-            //this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载。`);
+            //this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载`);
         }
 
         // 2. 下载文件
@@ -393,7 +394,7 @@ export class AssetService extends Service<AssetServiceConfig> {
                 try {
                     const buffer = await this._getSourceBuffer(asset.metadata.src);
                     await this.storage.write(id, buffer); // 恢复文件
-                    this.logger.success(`资源 ${id} 已成功恢复。`);
+                    this.logger.success(`资源 ${id} 已成功恢复`);
                     return buffer;
                 } catch (recoveryError) {
                     this.logger.error(`资源 ${id} 恢复失败: ${recoveryError.message}`);
@@ -446,7 +447,7 @@ export class AssetService extends Service<AssetServiceConfig> {
             this.logger.debug(`压缩后大小为 ${formatSize(compressedBuffer.length)}，超出限制，降低质量至 ${quality} 重试...`);
         }
 
-        this.logger.warn(`无法将图片压缩到 ${this.config.image.maxSizeMB}MB 以下，将使用最后一次压缩结果。`);
+        this.logger.warn(`无法将图片压缩到 ${this.config.image.maxSizeMB}MB 以下，将使用最后一次压缩结果`);
         return compressedBuffer;
     }
 
@@ -527,15 +528,28 @@ export class AssetService extends Service<AssetServiceConfig> {
 
     private async runAutoClear() {
         this.logger.info("开始执行过期资源自动清理任务...");
+
+        // 1. 基于数据库记录的清理
+        await this._clearExpiredByDatabase();
+
+        // 2. 基于文件时间的清理
+        //await this._clearExpiredByFileTime();
+
+        // 3. 清理孤立文件
+        await this._clearOrphanedFiles();
+
+        this.logger.success("过期资源自动清理任务完成");
+    }
+
+    private async _clearExpiredByDatabase() {
         const cutoffDate = new Date(Date.now() - this.config.autoClear.maxAgeDays * 24 * 3600 * 1000);
         const expiredAssets = await this.ctx.database.get(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
 
         if (!expiredAssets.length) {
-            this.logger.info("没有需要清理的过期资源。");
+            this.logger.info("没有需要清理的基于数据库记录的过期资源");
             return;
         }
 
-        this.logger.info(`发现 ${expiredAssets.length} 个待清理的过期资源...`);
         let deletedFileCount = 0;
         for (const asset of expiredAssets) {
             try {
@@ -550,10 +564,55 @@ export class AssetService extends Service<AssetServiceConfig> {
                 }
             }
         }
-        this.logger.info(`已成功清理 ${deletedFileCount} 个资源的物理文件。`);
 
-        const idsToDelete = expiredAssets.map((a) => a.id);
-        const { removed } = await this.ctx.database.remove(TableName.Assets, { id: { $in: idsToDelete } });
-        this.logger.success(`成功从数据库中清理了 ${removed} 条资源记录。任务完成。`);
+        const { removed } = await this.ctx.database.remove(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
+        this.logger.success(`成功从数据库中清理了 ${removed} 条资源记录`);
+    }
+
+    private async _clearOrphanedFiles() {
+        if (!this.storage.listFiles || !this.storage.getStats) {
+            this.logger.warn("当前存储驱动不支持文件列表或文件统计信息，跳过孤立文件清理");
+            return;
+        }
+
+        const allFiles = await this.storage.listFiles();
+        const orphanedFiles: string[] = [];
+
+        // 获取所有数据库中的资源ID
+        const allAssets = await this.ctx.database.get(TableName.Assets, {});
+        const existingIds = new Set(allAssets.map((asset) => asset.id));
+
+        let deletedOrphanedCount = 0;
+
+        for (const fileName of allFiles.filter(
+            (file) =>
+                path.join(this.ctx.baseDir, this.config.storagePath, file) !==
+                path.join(this.ctx.baseDir, this.config.image.processedCachePath)
+        )) {
+            // 跳过处理后的缓存文件
+            if (fileName.endsWith(AssetService.PROCESSED_IMAGE_CACHE_SUFFIX)) {
+                continue;
+            }
+
+            const fileId = fileName;
+
+            // 如果文件在数据库中没有对应记录，则为孤立文件
+            if (!existingIds.has(fileId)) {
+                orphanedFiles.push(fileId);
+
+                try {
+                    await this.storage.delete(fileId);
+
+                    // 删除可能存在的处理后缓存
+                    await this.cacheStorage.delete(fileId + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
+
+                    deletedOrphanedCount++;
+                } catch (error) {
+                    if (error.code !== "ENOENT") {
+                        this.logger.error(`删除孤立文件 ${fileId} 失败: ${error.message}`);
+                    }
+                }
+            }
+        }
     }
 }
