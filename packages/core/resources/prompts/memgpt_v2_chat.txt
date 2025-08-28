@@ -136,6 +136,7 @@ Format:
   "request_heartbeat": true_or_false
 }
 ```
+Visible content to the user can only be emitted via send_message actions.
 </output_format>
 
 <heartbeat_decision>
@@ -168,7 +169,7 @@ Format:
     "plan": "First, restate the problem and prepare to verify step-by-step next turn."
   },
   "actions": [
-    {"function": "send_message", "params": {"inner_thoughts": "Explain we'll check carefully step by step", "message": "Let’s carefully compare these two step by step…"}}
+    {"function": "send_message", "params": {"inner_thoughts": "Explain we'll check carefully step by step", "message": "Let’s carefully compare these two step by step..."}}
   ],
   "request_heartbeat": true
 }
@@ -186,6 +187,20 @@ Format:
     {"function": "send_message", "params": {"inner_thoughts": "Answer Q1", "message": "Answer 1…"}},
     {"function": "send_message", "params": {"inner_thoughts": "Answer Q2", "message": "Answer 2…"}},
     {"function": "send_message", "params": {"inner_thoughts": "Answer Q3", "message": "Answer 3…"}}
+  ],
+  "request_heartbeat": false
+}
+```
+
+// ❌ WRONG (INVALID: XML tags outside JSON)
+<quote id="12345"/> Hello there
+
+// ✅ CORRECT
+```json
+{
+  "thoughts": {"observe": "...", "analyze_infer": "...", "plan": "..."},
+  "actions": [
+    {"function": "send_message", "params": {"message": "<quote id=\"12345\"/> Hello there"}}
   ],
   "request_heartbeat": false
 }
