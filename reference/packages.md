@@ -60,6 +60,7 @@
 - [DiaryEntryData](interfaces/DiaryEntryData.md)
 - [ErrorReporterConfig](interfaces/ErrorReporterConfig.md)
 - [ExtensionMetadata](interfaces/ExtensionMetadata.md)
+- [FileStats](interfaces/FileStats.md)
 - [HistoryConfig](interfaces/HistoryConfig.md)
 - [IChatModel](interfaces/IChatModel.md)
 - [IEmbedModel](interfaces/IEmbedModel.md)

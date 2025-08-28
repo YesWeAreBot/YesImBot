@@ -6,7 +6,7 @@
 
 # Class: AssetService
 
-Defined in: [packages/core/src/services/assets/service.ts:50](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L50)
+Defined in: [packages/core/src/services/assets/service.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L51)
 
 资源管理服务 (AssetService)
 负责资源的持久化存储、去重、读取、处理和生命周期管理
@@ -21,7 +21,7 @@ Defined in: [packages/core/src/services/assets/service.ts:50](https://github.com
 
 > **new AssetService**(`ctx`, `config`): `AssetService`
 
-Defined in: [packages/core/src/services/assets/service.ts:60](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L60)
+Defined in: [packages/core/src/services/assets/service.ts:61](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L61)
 
 #### Parameters
 
@@ -135,7 +135,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: `string`[]
 
-Defined in: [packages/core/src/services/assets/service.ts:51](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L51)
+Defined in: [packages/core/src/services/assets/service.ts:52](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L52)
 
 ***
 
@@ -251,7 +251,7 @@ Defined in: node\_modules/@koishijs/core/lib/index.d.ts:768
 
 > **create**(`source`, `metadata`, `options`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:146](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L146)
+Defined in: [packages/core/src/services/assets/service.ts:147](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L147)
 
 创建一个新资源。
 
@@ -289,7 +289,7 @@ Defined in: [packages/core/src/services/assets/service.ts:146](https://github.co
 
 > **encode**(`source`): `Promise`\<`Element`[]\>
 
-Defined in: [packages/core/src/services/assets/service.ts:267](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L267)
+Defined in: [packages/core/src/services/assets/service.ts:268](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L268)
 
 将包含内部资源ID的消息元素编码为平台可发送的URL或元素
 
@@ -339,7 +339,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getInfo**(`id`): `Promise`\<[`AssetInfo`](../interfaces/AssetInfo.md)\>
 
-Defined in: [packages/core/src/services/assets/service.ts:239](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L239)
+Defined in: [packages/core/src/services/assets/service.ts:240](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L240)
 
 根据 ID 获取资源的元信息
 
@@ -363,7 +363,7 @@ Defined in: [packages/core/src/services/assets/service.ts:239](https://github.co
 
 > **getPublicUrl**(`id`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:251](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L251)
+Defined in: [packages/core/src/services/assets/service.ts:252](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L252)
 
 获取资源的公开访问链接
 
@@ -387,7 +387,7 @@ Defined in: [packages/core/src/services/assets/service.ts:251](https://github.co
 
 > **read**(`id`, `options`): `Promise`\<`string` \| `Buffer`\<`ArrayBufferLike`\>\>
 
-Defined in: [packages/core/src/services/assets/service.ts:198](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L198)
+Defined in: [packages/core/src/services/assets/service.ts:199](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L199)
 
 根据ID读取资源
 支持按需进行图片处理和缓存
@@ -418,7 +418,7 @@ Defined in: [packages/core/src/services/assets/service.ts:198](https://github.co
 
 > `protected` **start**(): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:67](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L67)
+Defined in: [packages/core/src/services/assets/service.ts:68](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L68)
 
 #### Returns
 
@@ -450,7 +450,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:10
 
 > **transform**(`source`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:119](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L119)
+Defined in: [packages/core/src/services/assets/service.ts:120](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L120)
 
 同步转换消息内容，将外部资源链接持久化并替换为内部ID
 此方法会等待所有资源持久化完成
@@ -475,7 +475,7 @@ Defined in: [packages/core/src/services/assets/service.ts:119](https://github.co
 
 > **transformAsync**(`source`): `Promise`\<`string`\>
 
-Defined in: [packages/core/src/services/assets/service.ts:132](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/assets/service.ts#L132)
+Defined in: [packages/core/src/services/assets/service.ts:133](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/service.ts#L133)
 
 异步转换消息内容，立即返回带占位符ID的消息，并在后台进行资源持久化
 适用于不要求立即使用资源的场景，可以提高响应速度

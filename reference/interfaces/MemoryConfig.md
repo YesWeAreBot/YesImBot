@@ -6,7 +6,7 @@
 
 # Interface: MemoryConfig
 
-Defined in: [packages/core/src/services/memory/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/memory/config.ts#L4)
+Defined in: [packages/core/src/services/memory/config.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/memory/config.ts#L4)
 
 记忆服务配置
 
@@ -16,4 +16,4 @@ Defined in: [packages/core/src/services/memory/config.ts:4](https://github.com/Y
 
 > **coreMemoryPath**: `string`
 
-Defined in: [packages/core/src/services/memory/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/memory/config.ts#L5)
+Defined in: [packages/core/src/services/memory/config.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/memory/config.ts#L5)

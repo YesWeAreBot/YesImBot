@@ -6,7 +6,7 @@
 
 # Interface: SystemEventPayload
 
-Defined in: [packages/core/src/services/worldstate/types.ts:294](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L294)
+Defined in: [packages/core/src/services/worldstate/types.ts:294](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/worldstate/types.ts#L294)
 
 系统事件刺激的载荷
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:294](https://github.
 
 > **details**: `object`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:296](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L296)
+Defined in: [packages/core/src/services/worldstate/types.ts:296](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/worldstate/types.ts#L296)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/worldstate/types.ts:296](https://github.
 
 > **eventType**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:295](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L295)
+Defined in: [packages/core/src/services/worldstate/types.ts:295](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/worldstate/types.ts#L295)
 
 ***
 
@@ -32,4 +32,4 @@ Defined in: [packages/core/src/services/worldstate/types.ts:295](https://github.
 
 > **message**: `string`
 
-Defined in: [packages/core/src/services/worldstate/types.ts:297](https://github.com/YesWeAreBot/YesImBot/blob/f4d5754821350f350a6c532c9d602254fd31f385/packages/core/src/services/worldstate/types.ts#L297)
+Defined in: [packages/core/src/services/worldstate/types.ts:297](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/worldstate/types.ts#L297)
