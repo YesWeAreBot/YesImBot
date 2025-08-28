@@ -37,7 +37,7 @@ export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
     autoClear: Schema.object({
         enabled: Schema.boolean().default(true).description("是否启用自动清理过期资源"),
         intervalHours: Schema.number().min(1).default(24).description("自动清理周期（小时）"),
-        maxAgeDays: Schema.number().min(1).default(30).description("资源最长保留天数"),
+        maxAgeDays: Schema.number().min(1).default(7).description("资源最长保留天数"),
     }).description("自动清理配置"),
 
     image: Schema.object({

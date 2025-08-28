@@ -48,7 +48,7 @@ declare module "koishi" {
  * 负责资源的持久化存储、去重、读取、处理和生命周期管理
  */
 export class AssetService extends Service<AssetServiceConfig> {
-    static readonly inject = ["database", "server", "http", Services.Logger, "sharp"];
+    static readonly inject = ["database", "server", "http", Services.Logger];
 
     // 缓存和常量
     private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
@@ -93,6 +93,13 @@ export class AssetService extends Service<AssetServiceConfig> {
             this.logger.info(
                 `已启用资源自动清理，周期: ${this.config.autoClear.intervalHours} 小时，保留天数: ${this.config.autoClear.maxAgeDays}`
             );
+            try {
+                // 首次运行立即执行清理
+                await this.runAutoClear();
+            } catch (error) {
+                this.logger.error("资源自动清理任务失败:", error.message);
+                this.logger.debug(error.stack);
+            }
         }
 
         // 注册 HTTP 访问端点
