@@ -28,6 +28,8 @@
     "create-packages": "changeset version && turbo run pack",
     "collect-packages": "bun scripts/collect-packages.js",
     "optimize-canary-version": "node scripts/optimize-canary-version.js",
+    "sync-npmmirror": "node scripts/sync-npmmirror.js",
+    "sync-npmmirror:test": "node scripts/sync-npmmirror.js --dry-run",
     "commit": "cz"
   },
   "devDependencies": {
