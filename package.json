@@ -27,6 +27,7 @@
     "release": "bun run build && changeset publish",
     "create-packages": "changeset version && turbo run pack",
     "collect-packages": "bun scripts/collect-packages.js",
+    "optimize-canary-version": "node scripts/optimize-canary-version.js",
     "commit": "cz"
   },
   "devDependencies": {
