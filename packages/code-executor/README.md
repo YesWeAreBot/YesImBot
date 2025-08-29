@@ -1,9 +1,9 @@
-# YesImBot 扩展插件：代码解释器 (Code Interpreter)
+# YesImBot 扩展插件：代码执行器 (Code Executor)
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-yesimbot-extension-code-interpreter.svg)](https://www.npmjs.com/package/koishi-plugin-yesimbot-extension-code-interpreter)
-[![license](https://img.shields.io/npm/l/koishi-plugin-yesimbot-extension-code-interpreter.svg)](https://www.npmjs.com/package/koishi-plugin-yesimbot-extension-code-interpreter)
+[![npm](https://img.shields.io/npm/v/@yesimbot/koishi-plugin-code-executor.svg)](https://www.npmjs.com/package/@yesimbot/koishi-plugin-code-executor)
+[![license](https://img.shields.io/npm/l/@yesimbot/koishi-plugin-code-executor.svg)](https://www.npmjs.com/package/@yesimbot/koishi-plugin-code-executor)
 
-为 [YesImBot](https://github.com/HydroGest/YesImBot) 提供一个**安全、隔离、功能强大**的 JavaScript 代码执行环境。
+为 [YesImBot](https://github.com/YesWeAreBot/YesImBot) 提供一个**安全、隔离、功能强大**的 JavaScript 代码执行环境。
 
 这个插件允许 AI 智能体编写并执行代码来完成复杂的任务，例如：
 
@@ -27,18 +27,18 @@
 ## 💿 安装与集成
 
 1.  **安装插件**:
-    - 从 Koishi 插件市场搜索并安装 `yesimbot-extension-code-interpreter`。
+    - 从 Koishi 插件市场搜索并安装 `@yesimbot/extension-code-executor`。
     - 或在您的 Koishi 项目根目录下，通过命令行安装：
 
         ```bash
         # 使用 npm
-        npm install koishi-plugin-yesimbot-extension-code-interpreter
+        npm install @yesimbot/extension-code-executor
 
         # 使用 yarn
-        yarn add koishi-plugin-yesimbot-extension-code-interpreter
+        yarn add @yesimbot/extension-code-executor
 
         # 使用 pnpm
-        pnpm add koishi-plugin-yesimbot-extension-code-interpreter
+        pnpm add @yesimbot/extension-code-executor
         ```
 
 2.  **自动集成**:
