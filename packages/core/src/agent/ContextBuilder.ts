@@ -97,9 +97,10 @@ export class PromptContextBuilder {
      */
     private async buildMultimodalImages(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
         // 1. 将所有消息扁平化并建立索引
-        const allMessages = [...((worldState as any).processed_events || []), ...((worldState as any).new_events || [])].filter(
-            (item): item is { type: "message" } & ContextualMessage => item.type === "message"
-        );
+        const allMessages = [
+            ...(worldState.l1_working_memory.processed_events || []),
+            ...(worldState.l1_working_memory.new_events || []),
+        ].filter((item): item is { type: "message" } & ContextualMessage => item.type === "message");
 
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 

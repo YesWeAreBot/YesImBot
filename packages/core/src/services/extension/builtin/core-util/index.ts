@@ -76,9 +76,8 @@ export default class CoreUtilExtension {
         * You MUST only include them inside the \`message\` field of a \`send_message\` action.
         * NEVER output them at the top-level of your reply or inside "thoughts".
         * Do not wrap them in Markdown.`),
-            target: Schema.string().description(
-                "Optional. Specifies where to send the message, using `platform:id` format.\n        Defaults to the current channel. E.g., `onebot:123456789` (group), `discord:private:987654321` (private chat)"
-            ),
+            target: Schema.string().description(`Optional. Specifies where to send the message, using \`platform:id\` format.
+      Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
     })
     async sendMessage(args: Infer<{ message: string; target?: string }>) {
