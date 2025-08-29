@@ -6,7 +6,7 @@
 
 # Class: AppError
 
-Defined in: [packages/core/src/shared/errors/index.ts:169](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L169)
+Defined in: [packages/core/src/shared/errors/index.ts:169](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L169)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:169](https://github.com/Ye
 
 > **new AppError**(`definition`, `options?`): `AppError`
 
-Defined in: [packages/core/src/shared/errors/index.ts:176](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L176)
+Defined in: [packages/core/src/shared/errors/index.ts:176](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L176)
 
 #### Parameters
 
@@ -66,7 +66,7 @@ Defined in: node\_modules/typescript/lib/lib.es2022.error.d.ts:26
 
 > `readonly` **code**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:170](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L170)
+Defined in: [packages/core/src/shared/errors/index.ts:170](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L170)
 
 ***
 
@@ -74,7 +74,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:170](https://github.com/Ye
 
 > `optional` **context**: `Record`\<`string`, `any`\>
 
-Defined in: [packages/core/src/shared/errors/index.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L174)
+Defined in: [packages/core/src/shared/errors/index.ts:174](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L174)
 
 ***
 
@@ -82,7 +82,7 @@ Defined in: [packages/core/src/shared/errors/index.ts:174](https://github.com/Ye
 
 > `readonly` **errorId**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:172](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L172)
+Defined in: [packages/core/src/shared/errors/index.ts:172](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L172)
 
 ***
 
@@ -126,7 +126,7 @@ Defined in: node\_modules/typescript/lib/lib.es5.d.ts:1078
 
 > `readonly` **suggestion**: `string`
 
-Defined in: [packages/core/src/shared/errors/index.ts:171](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L171)
+Defined in: [packages/core/src/shared/errors/index.ts:171](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L171)
 
 ***
 
@@ -156,7 +156,7 @@ not capture any frames.
 
 > **addContext**(`context`): `void`
 
-Defined in: [packages/core/src/shared/errors/index.ts:210](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/shared/errors/index.ts#L210)
+Defined in: [packages/core/src/shared/errors/index.ts:210](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/errors/index.ts#L210)
 
 #### Parameters
 

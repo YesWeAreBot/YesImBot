@@ -6,7 +6,7 @@
 
 # Interface: AssetData
 
-Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L4)
+Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L4)
 
 数据库中存储的资源元数据模型
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:4](https://github.com/Ye
 
 > **createdAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L9)
+Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L9)
 
 ***
 
@@ -24,7 +24,7 @@ Defined in: [packages/core/src/services/assets/types.ts:9](https://github.com/Ye
 
 > **hash**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L7)
+Defined in: [packages/core/src/services/assets/types.ts:7](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L7)
 
 ***
 
@@ -32,7 +32,7 @@ Defined in: [packages/core/src/services/assets/types.ts:7](https://github.com/Ye
 
 > **id**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L5)
+Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L5)
 
 ***
 
@@ -40,7 +40,7 @@ Defined in: [packages/core/src/services/assets/types.ts:5](https://github.com/Ye
 
 > **lastUsedAt**: `Date`
 
-Defined in: [packages/core/src/services/assets/types.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L10)
+Defined in: [packages/core/src/services/assets/types.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L10)
 
 ***
 
@@ -48,7 +48,7 @@ Defined in: [packages/core/src/services/assets/types.ts:10](https://github.com/Y
 
 > **metadata**: [`AssetMetadata`](AssetMetadata.md)
 
-Defined in: [packages/core/src/services/assets/types.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L11)
+Defined in: [packages/core/src/services/assets/types.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L11)
 
 ***
 
@@ -56,7 +56,7 @@ Defined in: [packages/core/src/services/assets/types.ts:11](https://github.com/Y
 
 > **mime**: `string`
 
-Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L6)
+Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L6)
 
 ***
 
@@ -64,4 +64,4 @@ Defined in: [packages/core/src/services/assets/types.ts:6](https://github.com/Ye
 
 > **size**: `number`
 
-Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L8)
+Defined in: [packages/core/src/services/assets/types.ts:8](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/assets/types.ts#L8)
