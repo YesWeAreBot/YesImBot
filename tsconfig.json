@@ -3,12 +3,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "koishi-plugin-yesimbot": [
-        "packages/core/src"
-      ],
-      "koishi-plugin-yesimbot-*": [
-        "packages/*/src"
-      ]
+      "koishi-plugin-yesimbot": ["packages/core/src"],
+      "@yesimbot/*": ["packages/*/src"]
     }
   }
 }
