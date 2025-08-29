@@ -1,6 +1,4 @@
 import fs from "fs/promises";
-import { Writable } from "stream"; // 用于类型定义
-import { Readable } from "stream";
 
 import { isEmpty } from "./string";
 
@@ -11,7 +9,7 @@ import { isEmpty } from "./string";
  */
 function escapeRegExp(str: string): string {
     // $& 表示整个被匹配的字符串
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -21,19 +19,18 @@ function escapeRegExp(str: string): string {
  * @returns 如果包含任意一个过滤词，则返回 true，否则返回 false。
  */
 export function containsFilter(content: string, filterList: string[]): boolean {
-    const validFilters = filterList.filter(f => !isEmpty(f));
+    const validFilters = filterList.filter((f) => !isEmpty(f));
     if (validFilters.length === 0) {
         return false;
     }
 
     // 将所有过滤词转义并用 | 连接，编译成一个正则表达式。
     // 这比在循环中为每个词创建新 RegExp 对象要高效得多。
-    const pattern = validFilters.map(escapeRegExp).join('|');
+    const pattern = validFilters.map(escapeRegExp).join("|");
     const regex = new RegExp(pattern, "i"); // 使用 'i' 标志进行不区分大小写的匹配
 
     return regex.test(content);
 }
-
 
 /**
  * 格式化日期对象或时间戳为指定格式的字符串。
@@ -43,8 +40,8 @@ export function containsFilter(content: string, filterList: string[]): boolean {
  * @returns 格式化后的日期字符串。
  */
 export function formatDate(date: Date | number, format: string = "YYYY-MM-DD HH:mm:ss"): string {
-    const d = typeof date === 'number' ? new Date(date) : date;
-    const pad = (num: number) => String(num).padStart(2, '0');
+    const d = typeof date === "number" ? new Date(date) : date;
+    const pad = (num: number) => String(num).padStart(2, "0");
 
     const replacements: { [key: string]: string } = {
         YYYY: String(d.getFullYear()),
@@ -65,7 +62,6 @@ export function formatDate(date: Date | number, format: string = "YYYY-MM-DD HH:
     const regex = /YYYY|YY|MM|M|DD|D|HH|H|mm|m|ss|s/g;
     return format.replace(regex, (match) => replacements[match] || match);
 }
-
 
 /**
  * 根据频道 ID 的格式判断其类型。
@@ -97,7 +93,7 @@ export async function downloadFile(url: string, filePath: string, overwrite: boo
         }
     } catch (error: any) {
         // 如果错误不是 "文件不存在"，则重新抛出
-        if (error.code !== 'ENOENT') {
+        if (error.code !== "ENOENT") {
             throw error;
         }
         // 文件不存在，可以继续下载，忽略此错误
@@ -119,7 +115,6 @@ export async function downloadFile(url: string, filePath: string, overwrite: boo
     await fs.writeFile(filePath, response.body);
 }
 
-
 /**
  * 将各种类型的值转换为布尔值。
  * 规则：
@@ -136,8 +131,8 @@ export function toBoolean(value: any): boolean {
     }
     if (typeof value === "string") {
         const lowerValue = value.toLowerCase().trim();
-        if (lowerValue === "true" || lowerValue === '1') return true;
-        if (lowerValue === "false" || lowerValue === '0') return false;
+        if (lowerValue === "true" || lowerValue === "1") return true;
+        if (lowerValue === "false" || lowerValue === "0") return false;
     }
     if (typeof value === "number") {
         if (value === 1) return true;
@@ -179,7 +174,7 @@ export function estimateTokensByRegex(text: string): number {
  * @returns 一个在指定时间后 resolve 的 Promise。
  */
 export function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -193,7 +188,6 @@ export function clamp(num: number, min: number, max: number): number {
     return Math.min(Math.max(num, min), max);
 }
 
-
 /**
  * 创建一个防抖函数，该函数会从上一次被调用后，延迟 `wait` 毫秒后调用 `func` 方法。
  * @param func - 要防抖的函数。
@@ -202,7 +196,7 @@ export function clamp(num: number, min: number, max: number): number {
  */
 export function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
     let timeout: NodeJS.Timeout | null;
-    return function(this: ThisParameterType<T>, ...args: Parameters<T>): void {
+    return function (this: ThisParameterType<T>, ...args: Parameters<T>): void {
         const context = this;
         if (timeout) {
             clearTimeout(timeout);
@@ -212,4 +206,138 @@ export function debounce<T extends (...args: any[]) => any>(func: T, wait: numbe
             func.apply(context, args);
         }, wait);
     };
+}
+
+interface MimeTypeSignature {
+    mime: string;
+    validate: (buffer: Uint8Array) => boolean;
+}
+
+function check(buffer: Uint8Array, signature: number[], offset: number = 0): boolean {
+    if (offset + signature.length > buffer.length) {
+        return false;
+    }
+
+    for (let i = 0; i < signature.length; i++) {
+        if (buffer[offset + i] !== signature[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 定义已知文件类型的签名列表
+const knownMimeTypes: MimeTypeSignature[] = [
+    // 图片类型
+    {
+        mime: "image/jpeg",
+        validate: (buf) => check(buf, [0xff, 0xd8, 0xff]),
+    },
+    {
+        mime: "image/png",
+        validate: (buf) => check(buf, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    },
+    {
+        mime: "image/gif",
+        // GIF87a 和 GIF89a
+        validate: (buf) => check(buf, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || check(buf, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
+    },
+    {
+        mime: "image/webp",
+        // 检查 RIFF 头部和 WEBP 标识
+        validate: (buf) => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x57, 0x45, 0x42, 0x50], 8),
+    },
+    {
+        mime: "image/bmp",
+        validate: (buf) => check(buf, [0x42, 0x4d]),
+    },
+    {
+        mime: "image/tiff",
+        // 两种字节序
+        validate: (buf) => check(buf, [0x49, 0x49, 0x2a, 0x00]) || check(buf, [0x4d, 0x4d, 0x00, 0x2a]),
+    },
+    {
+        mime: "image/avif",
+        validate: (buf) => check(buf, [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], 4),
+    },
+
+    // 文档类型
+    {
+        mime: "application/pdf",
+        validate: (buf) => check(buf, [0x25, 0x50, 0x44, 0x46]),
+    },
+
+    // 压缩包/复合文档类型
+    {
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) && check(buf, [0x77, 0x6f, 0x72, 0x64, 0x2f]), // PK.. 和 'word/'
+    },
+    {
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) && check(buf, [0x78, 0x6c, 0x2f]), // PK.. 和 'xl/'
+    },
+    {
+        mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) && check(buf, [0x70, 0x70, 0x74, 0x2f]), // PK.. 和 'ppt/'
+    },
+    {
+        mime: "application/zip",
+        validate: (buf) =>
+            check(buf, [0x50, 0x4b, 0x03, 0x04]) || check(buf, [0x50, 0x4b, 0x05, 0x06]) || check(buf, [0x50, 0x4b, 0x07, 0x08]),
+    },
+    {
+        mime: "application/x-rar-compressed",
+        validate: (buf) => check(buf, [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07]),
+    },
+    {
+        mime: "application/x-7z-compressed",
+        validate: (buf) => check(buf, [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]),
+    },
+
+    // 音视频类型
+    {
+        mime: "video/mp4",
+        validate: (buf) => check(buf, [0x66, 0x74, 0x79, 0x70], 4), // 'ftyp' at offset 4
+    },
+    {
+        mime: "video/x-msvideo", // avi
+        validate: (buf) => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x41, 0x56, 0x49, 0x20], 8), // RIFF and AVI
+    },
+    {
+        mime: "video/quicktime", // .mov
+        validate: (buf) => check(buf, [0x66, 0x74, 0x79, 0x70, 0x71, 0x74, 0x20, 0x20], 4), // 'ftypqt'
+    },
+    {
+        mime: "audio/mpeg", // mp3
+        validate: (buf) => check(buf, [0x49, 0x44, 0x33]) || check(buf, [0xff, 0xfb]), // ID3 tag or frame sync
+    },
+    {
+        mime: "audio/wav",
+        validate: (buf) => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x57, 0x41, 0x56, 0x45], 8), // RIFF and WAVE
+    },
+];
+
+/**
+ * 根据文件 Buffer 数据判断文件的 MIME 类型
+ * @param data 文件的 Buffer 数据。在 Node.js 中是 Buffer，在浏览器中可以是 Uint8Array。
+ * @returns 文件的 MIME 类型字符串。如果无法识别，则返回 'application/octet-stream'。
+ */
+export function getMimeType(data: Buffer | Uint8Array): string {
+    // 处理空或无效的输入
+    if (!data || data.length === 0) {
+        return "application/octet-stream";
+    }
+
+    // Node.js 的 Buffer 是 Uint8Array 的一个子类，所以可以直接使用
+    const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
+
+    // 遍历已知的签名进行匹配
+    for (const type of knownMimeTypes) {
+        if (type.validate(buffer)) {
+            return type.mime;
+        }
+    }
+
+    // 如果没有匹配到任何已知的类型，返回通用的二进制流类型
+    return "application/octet-stream";
 }

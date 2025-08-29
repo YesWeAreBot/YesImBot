@@ -67,3 +67,9 @@ export interface ReadAssetOptions {
     /** 针对图片资源的特定处理选项 */
     image?: ImageProcessingOptions;
 }
+
+export interface FileResponse {
+    type: string;
+    data: Buffer;
+    filename?: string;
+}

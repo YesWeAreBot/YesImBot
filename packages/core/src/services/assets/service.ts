@@ -1,7 +1,6 @@
 import { GifUtil } from "@miaowfish/gifwrap";
 import { createHash } from "crypto";
-import { fromBuffer } from "file-type";
-import { promises as fs } from "fs";
+import { readFileSync } from "fs";
 import { Jimp } from "jimp";
 import { Context, Element, Service, h } from "koishi";
 import path from "path";
@@ -9,10 +8,10 @@ import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 
 import { Services, TableName } from "@/shared/constants";
-import { formatSize, truncate } from "@/shared/utils";
+import { formatSize, getMimeType, truncate } from "@/shared/utils";
 import { AssetServiceConfig } from "./config";
 import { LocalStorageDriver } from "./drivers/local";
-import { AssetData, AssetInfo, AssetMetadata, ReadAssetOptions, StorageDriver } from "./types";
+import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
 const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
 
@@ -92,9 +91,6 @@ export class AssetService extends Service<AssetServiceConfig> {
         if (this.config.autoClear.enabled) {
             const interval = this.config.autoClear.intervalHours * 3600 * 1000;
             this.ctx.setInterval(() => this.runAutoClear(), interval);
-            this.logger.info(
-                `已启用资源自动清理，周期: ${this.config.autoClear.intervalHours} 小时，保留天数: ${this.config.autoClear.maxAgeDays}`
-            );
             try {
                 // 首次运行立即执行清理
                 await this.runAutoClear();
@@ -121,7 +117,6 @@ export class AssetService extends Service<AssetServiceConfig> {
     async transform(source: string | Element[]): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
         const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, false));
-        // return h.render(transformedElements);
         return transformedElements.join("");
     }
 
@@ -134,7 +129,6 @@ export class AssetService extends Service<AssetServiceConfig> {
     async transformAsync(source: string | Element[]): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
         const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, true));
-        // return h.render(transformedElements);
         return transformedElements.join("");
     }
 
@@ -146,25 +140,21 @@ export class AssetService extends Service<AssetServiceConfig> {
      * @returns 资源的唯一 ID
      */
     async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string } = {}): Promise<string> {
-        const buffer = await this._getSourceBuffer(source);
-        if (!buffer || buffer.length === 0) throw new Error("资源内容为空");
+        const { data, type } = await this._getSourceBuffer(source);
+        if (!data || data.length === 0) throw new Error("资源内容为空");
 
-        const hash = createHash("sha256").update(buffer).digest("hex");
+        const hash = createHash("sha256").update(data).digest("hex");
         const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
 
         if (existing) {
-            //this.logger.debug(`资源哈希命中 (源: ${truncate(String(source), 50)})，复用ID: ${existing.id}`);
             await this._updateLastUsed(existing.id);
             return existing.id;
         }
 
-        const fileType = await fromBuffer(buffer);
-        const mime = fileType?.mime || "application/octet-stream";
-
         // 如果是图片，尝试获取尺寸信息
-        if (mime.startsWith("image/")) {
+        if (type.startsWith("image/")) {
             try {
-                const jimp = await Jimp.read(buffer);
+                const jimp = await Jimp.read(data);
                 metadata.width = jimp.width;
                 metadata.height = jimp.height;
             } catch (e) {
@@ -173,20 +163,20 @@ export class AssetService extends Service<AssetServiceConfig> {
         }
 
         const id = options.id || uuidv4();
-        await this.storage.write(id, buffer);
+        await this.storage.write(id, data);
 
         const assetData: AssetData = {
             id,
-            mime,
+            mime: type,
             hash,
-            size: buffer.length,
+            size: data.length,
             createdAt: new Date(),
             lastUsedAt: new Date(),
             metadata,
         };
 
         await this.ctx.database.upsert(TableName.Assets, [assetData]);
-        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${mime} | 大小: ${formatSize(buffer.length)}`);
+        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${type} | 大小: ${formatSize(data.length)}`);
         return id;
     }
 
@@ -348,22 +338,37 @@ export class AssetService extends Service<AssetServiceConfig> {
         }
     }
 
-    private async _getSourceBuffer(source: string | Buffer): Promise<Buffer> {
-        if (Buffer.isBuffer(source)) return source;
+    private async _getSourceBuffer(source: string | Buffer): Promise<FileResponse> {
+        if (Buffer.isBuffer(source)) {
+            const mime = getMimeType(source);
+            return {
+                type: mime,
+                data: source,
+            };
+        }
         if (source.startsWith("data:")) {
             const match = source.match(/^data:.+;base64,(.*)$/);
             if (!match) throw new Error("无效的 data: URL 格式");
-            return Buffer.from(match[1], "base64");
+            return {
+                type: match[0].split("/")[1].split(";")[0],
+                data: Buffer.from(match[1], "base64"),
+            };
         }
-        if (source.startsWith("file://")) return fs.readFile(fileURLToPath(source));
+        if (source.startsWith("file://")) {
+            const filepath = fileURLToPath(source);
+            const data = readFileSync(filepath);
+            return {
+                type: getMimeType(data),
+                data: data,
+            };
+        }
         if (source.startsWith("http")) {
             return this._downloadResource(source);
         }
         throw new Error(`不支持的资源来源: "${truncate(source, 50)}"`);
     }
 
-    private async _downloadResource(url: string): Promise<Buffer> {
-        // 1. 预检文件大小
+    private async _downloadResource(url: string): Promise<FileResponse> {
         try {
             const head = await this.ctx.http.head(url, { timeout: this.config.downloadTimeout / 2 });
             const contentLength = head.get("content-length");
@@ -371,18 +376,16 @@ export class AssetService extends Service<AssetServiceConfig> {
                 throw new Error(`文件大小 (${formatSize(Number(contentLength))}) 超出限制 (${formatSize(this.config.maxFileSize)})`);
             }
         } catch (error) {
-            // 如果预检失败（如服务器不支持HEAD），下载时仍会受限于 maxBodySize。
             if (error.message.includes("超出限制")) throw error;
-            //this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载`);
         }
 
-        // 2. 下载文件
-        const response = await this.ctx.http.get(url, {
-            responseType: "arraybuffer",
-            timeout: this.config.downloadTimeout,
-            // maxBodySize: this.config.maxFileSize,
-        });
-        return Buffer.from(response);
+        const response = await this.ctx.http.file(url, { timeout: this.config.downloadTimeout });
+
+        return {
+            type: response.type,
+            data: Buffer.from(response.data),
+            filename: response.filename,
+        };
     }
 
     private async _readOriginalWithRecovery(id: string, asset: AssetData): Promise<Buffer> {
@@ -393,10 +396,10 @@ export class AssetService extends Service<AssetServiceConfig> {
             if (error.code === "ENOENT" && this.config.recoveryEnabled && asset.metadata.src) {
                 this.logger.warn(`本地文件 ${id} 丢失，尝试从 ${asset.metadata.src} 恢复...`);
                 try {
-                    const buffer = await this._getSourceBuffer(asset.metadata.src);
-                    await this.storage.write(id, buffer); // 恢复文件
+                    const { data } = await this._getSourceBuffer(asset.metadata.src);
+                    await this.storage.write(id, data); // 恢复文件
                     this.logger.success(`资源 ${id} 已成功恢复`);
-                    return buffer;
+                    return data;
                 } catch (recoveryError) {
                     this.logger.error(`资源 ${id} 恢复失败: ${recoveryError.message}`);
                     throw recoveryError; // 抛出恢复失败的错误
