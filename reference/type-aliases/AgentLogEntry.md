@@ -8,4 +8,4 @@
 
 > **AgentLogEntry** = [`AgentThoughtLog`](../interfaces/AgentThoughtLog.md) \| [`AgentActionLog`](../interfaces/AgentActionLog.md) \| [`AgentObservationLog`](../interfaces/AgentObservationLog.md) \| [`AgentHeartbeatLog`](../interfaces/AgentHeartbeatLog.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:116](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/worldstate/types.ts#L116)
+Defined in: [packages/core/src/services/worldstate/types.ts:116](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/worldstate/types.ts#L116)

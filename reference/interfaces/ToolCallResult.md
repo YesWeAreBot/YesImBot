@@ -6,7 +6,7 @@
 
 # Interface: ToolCallResult\<TResult, TError\>
 
-Defined in: [packages/core/src/services/extension/types.ts:74](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/extension/types.ts#L74)
+Defined in: [packages/core/src/services/extension/types.ts:74](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/extension/types.ts#L74)
 
 标准化的工具调用结果
 
@@ -26,7 +26,7 @@ Defined in: [packages/core/src/services/extension/types.ts:74](https://github.co
 
 > `optional` **error**: `TError`
 
-Defined in: [packages/core/src/services/extension/types.ts:84](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/extension/types.ts#L84)
+Defined in: [packages/core/src/services/extension/types.ts:84](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/extension/types.ts#L84)
 
 失败时的结构化错误信息
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/extension/types.ts:84](https://github.co
 
 > `optional` **metadata**: `object`
 
-Defined in: [packages/core/src/services/extension/types.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/extension/types.ts#L86)
+Defined in: [packages/core/src/services/extension/types.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/extension/types.ts#L86)
 
 附加元数据，如执行时间(ms)、Token消耗等
 
@@ -54,7 +54,7 @@ Defined in: [packages/core/src/services/extension/types.ts:86](https://github.co
 
 > `optional` **result**: `TResult`
 
-Defined in: [packages/core/src/services/extension/types.ts:82](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/extension/types.ts#L82)
+Defined in: [packages/core/src/services/extension/types.ts:82](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/extension/types.ts#L82)
 
 成功时的返回结果
 
@@ -64,7 +64,7 @@ Defined in: [packages/core/src/services/extension/types.ts:82](https://github.co
 
 > **status**: `"success"` \| `"error"`
 
-Defined in: [packages/core/src/services/extension/types.ts:80](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/extension/types.ts#L80)
+Defined in: [packages/core/src/services/extension/types.ts:80](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/extension/types.ts#L80)
 
 调用状态:
 - 'success': 成功

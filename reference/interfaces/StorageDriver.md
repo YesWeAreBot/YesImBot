@@ -6,7 +6,7 @@
 
 # Interface: StorageDriver
 
-Defined in: [packages/core/src/services/assets/types.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L42)
+Defined in: [packages/core/src/services/assets/types.ts:42](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L42)
 
 存储驱动接口
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/assets/types.ts:42](https://github.com/Y
 
 > **delete**(`id`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L45)
+Defined in: [packages/core/src/services/assets/types.ts:45](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L45)
 
 #### Parameters
 
@@ -34,7 +34,7 @@ Defined in: [packages/core/src/services/assets/types.ts:45](https://github.com/Y
 
 > **exists**(`id`): `Promise`\<`boolean`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L46)
+Defined in: [packages/core/src/services/assets/types.ts:46](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L46)
 
 #### Parameters
 
@@ -52,7 +52,7 @@ Defined in: [packages/core/src/services/assets/types.ts:46](https://github.com/Y
 
 > `optional` **getStats**(`id`): `Promise`\<[`FileStats`](FileStats.md)\>
 
-Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L47)
+Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L47)
 
 #### Parameters
 
@@ -70,7 +70,7 @@ Defined in: [packages/core/src/services/assets/types.ts:47](https://github.com/Y
 
 > `optional` **listFiles**(): `Promise`\<`string`[]\>
 
-Defined in: [packages/core/src/services/assets/types.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L48)
+Defined in: [packages/core/src/services/assets/types.ts:48](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L48)
 
 #### Returns
 
@@ -82,7 +82,7 @@ Defined in: [packages/core/src/services/assets/types.ts:48](https://github.com/Y
 
 > **read**(`id`): `Promise`\<`Buffer`\<`ArrayBufferLike`\>\>
 
-Defined in: [packages/core/src/services/assets/types.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L44)
+Defined in: [packages/core/src/services/assets/types.ts:44](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L44)
 
 #### Parameters
 
@@ -100,7 +100,7 @@ Defined in: [packages/core/src/services/assets/types.ts:44](https://github.com/Y
 
 > **write**(`id`, `buffer`): `Promise`\<`void`\>
 
-Defined in: [packages/core/src/services/assets/types.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/55a8abc008dec0156f9206604fa4b847d22615e1/packages/core/src/services/assets/types.ts#L43)
+Defined in: [packages/core/src/services/assets/types.ts:43](https://github.com/YesWeAreBot/YesImBot/blob/16ac3f6266cfeb3e99fd673931aa5eb481c6c199/packages/core/src/services/assets/types.ts#L43)
 
 #### Parameters
 
