@@ -1,7 +1,8 @@
-import sharp from "@yesimbot/sharp";
+import { GifUtil } from "@miaowfish/gifwrap";
 import { createHash } from "crypto";
 import { fromBuffer } from "file-type";
 import { promises as fs } from "fs";
+import { Jimp } from "jimp";
 import { Context, Element, Service, h } from "koishi";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -163,9 +164,9 @@ export class AssetService extends Service<AssetServiceConfig> {
         // 如果是图片，尝试获取尺寸信息
         if (mime.startsWith("image/")) {
             try {
-                const imageMeta = await sharp(buffer).metadata();
-                metadata.width = imageMeta.width;
-                metadata.height = imageMeta.height;
+                const jimp = await Jimp.read(buffer);
+                metadata.width = jimp.width;
+                metadata.height = jimp.height;
             } catch (e) {
                 this.logger.warn(`无法解析图片元数据: ${e.message}`);
             }
@@ -406,30 +407,46 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private async _processImage(buffer: Buffer, mime: string): Promise<Buffer> {
-        if (mime === "image/gif") {
-            if (this.config.image.gifProcessingStrategy === "stitch") {
-                return this._processGifStitch(buffer);
+        try {
+            if (mime === "image/gif") {
+                try {
+                    // 验证是否为有效的GIF
+                    const gif = await GifUtil.read(buffer);
+
+                    if (this.config.image.gifProcessingStrategy === "stitch") {
+                        return await this._processGifStitch(buffer);
+                    }
+                    if (this.config.image.gifProcessingStrategy === "firstFrame") {
+                        return await this._processGifFirstFrame(gif);
+                    }
+                } catch (gifError) {
+                    this.logger.warn(`GIF处理失败，将按静态图片处理: ${gifError.message}`);
+                    // 如果GIF处理失败，按普通图片处理
+                    return await this._compressAndResizeImage(buffer);
+                }
+                // `gifProcessingStrategy` 为 'none' 或其他值，不处理
+                return buffer;
             }
-            if (this.config.image.gifProcessingStrategy === "firstFrame") {
-                // 处理GIF第一帧
-                const firstFrameBuffer = await sharp(buffer, { page: 0 }).toBuffer();
-                return this._compressAndResizeImage(firstFrameBuffer);
-            }
-            // `gifProcessingStrategy` 为 'none' 或其他值，不处理
+
+            return await this._compressAndResizeImage(buffer);
+        } catch (error) {
+            this.logger.error(`图片处理失败: ${error.message}`);
+            // 如果处理失败，返回原始buffer
             return buffer;
         }
-
-        return this._compressAndResizeImage(buffer);
     }
 
     private async _compressAndResizeImage(buffer: Buffer): Promise<Buffer> {
-        const sharpInstance = sharp(buffer);
-        const meta = await sharpInstance.metadata();
+        const jimpInstance = await Jimp.read(buffer);
         const { targetSize } = this.config.image;
 
         // 调整尺寸
-        if (meta.width > targetSize || meta.height > targetSize) {
-            sharpInstance.resize({ width: targetSize, height: targetSize, fit: "inside", withoutEnlargement: true });
+        if (jimpInstance.width > targetSize || jimpInstance.height > targetSize) {
+            // 保持宽高比缩放
+            const ratio = Math.min(targetSize / jimpInstance.width, targetSize / jimpInstance.height);
+            const newWidth = Math.round(jimpInstance.width * ratio);
+            const newHeight = Math.round(jimpInstance.height * ratio);
+            jimpInstance.resize({ w: newWidth, h: newHeight });
         }
 
         // 动态调整质量进行压缩
@@ -438,7 +455,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         let compressedBuffer: Buffer;
 
         for (let i = 0; i < AssetService.MAX_COMPRESSION_ATTEMPTS; i++) {
-            compressedBuffer = await sharpInstance.jpeg({ quality, progressive: true, mozjpeg: true }).toBuffer();
+            compressedBuffer = await jimpInstance.getBuffer("image/jpeg", { quality });
             if (compressedBuffer.length <= maxSizeBytes) {
                 this.logger.debug(`图片压缩成功，质量: ${quality}, 大小: ${formatSize(compressedBuffer.length)}`);
                 return compressedBuffer;
@@ -452,40 +469,138 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     /**
+     * 处理GIF第一帧提取
+     * @param gif - gifwrap读取的GIF对象
+     * @returns 处理后的图片buffer
+     */
+    private async _processGifFirstFrame(gif: any): Promise<Buffer> {
+        const firstFrame = gif.frames[0];
+        const { targetSize } = this.config.image;
+
+        // 创建新的Jimp实例从第一帧数据
+        const jimpFrame = new Jimp({
+            width: firstFrame.bitmap.width,
+            height: firstFrame.bitmap.height,
+            color: 0x00000000,
+        });
+
+        // 复制像素数据
+        jimpFrame.bitmap.data = Buffer.from(firstFrame.bitmap.data);
+
+        // 调整尺寸
+        if (jimpFrame.width > targetSize || jimpFrame.height > targetSize) {
+            const ratio = Math.min(targetSize / jimpFrame.width, targetSize / jimpFrame.height);
+            const newWidth = Math.round(jimpFrame.width * ratio);
+            const newHeight = Math.round(jimpFrame.height * ratio);
+            jimpFrame.resize({ w: newWidth, h: newHeight });
+        }
+
+        // 压缩并返回JPEG格式
+        return jimpFrame.getBuffer("image/jpeg", { quality: 85 });
+    }
+
+    /**
      * 处理GIF动图，提取关键帧并拼接成静态图
      * @param buffer
      * @returns
      */
     private async _processGifStitch(buffer: Buffer): Promise<Buffer> {
-        const { gifFramesToExtract } = this.config.image;
-        const meta = await sharp(buffer, { animated: true }).metadata();
-        const pageCount = meta.pages || 1;
+        const { gifFramesToExtract, targetSize } = this.config.image;
 
-        // 计算要抽取的帧的索引
-        const frameIndices = Array.from({ length: Math.min(gifFramesToExtract, pageCount) }, (_, i) =>
-            Math.floor(i * (pageCount / Math.min(gifFramesToExtract, pageCount)))
-        );
+        // 使用gifwrap读取GIF
+        const gif = await GifUtil.read(buffer);
+        const totalFrames = gif.frames.length;
 
-        const frames = await Promise.all(frameIndices.map((index) => sharp(buffer, { page: index }).resize({ width: 384 }).toBuffer()));
-        const frameMetas = await Promise.all(frames.map((f) => sharp(f).metadata()));
+        if (totalFrames <= 1) {
+            // 如果是静态GIF，按普通图片处理
+            return this._compressAndResizeImage(buffer);
+        }
 
-        // 计算拼接后画布的尺寸
+        // 限制最大帧数，防止内存溢出
+        const maxFrames = Math.min(gifFramesToExtract, totalFrames, 9); // 最多9帧
+        const frameIndices = Array.from({ length: maxFrames }, (_, i) => Math.floor(i * (totalFrames / maxFrames)));
+
+        // 预设缩略图尺寸
+        const thumbSize = Math.min(320, targetSize);
+
+        // 创建帧缩略图
+        const frames = [];
+        for (const index of frameIndices) {
+            const frame = gif.frames[index];
+
+            // 计算缩放比例
+            const ratio = Math.min(
+                thumbSize / frame.bitmap.width,
+                thumbSize / frame.bitmap.height,
+                1.0 // 不放大
+            );
+
+            const newWidth = Math.round(frame.bitmap.width * ratio);
+            const newHeight = Math.round(frame.bitmap.height * ratio);
+
+            // 创建缩略图
+            const thumb = new Jimp({
+                width: newWidth,
+                height: newHeight,
+                color: 0x00000000,
+            });
+
+            // 如果尺寸变化，先缩放原始帧
+            if (ratio < 1) {
+                const tempJimp = new Jimp({
+                    width: frame.bitmap.width,
+                    height: frame.bitmap.height,
+                    color: 0x00000000,
+                });
+                tempJimp.bitmap.data = Buffer.from(frame.bitmap.data);
+                tempJimp.resize({ w: newWidth, h: newHeight });
+                thumb.bitmap.data = Buffer.from(tempJimp.bitmap.data);
+            } else {
+                thumb.bitmap.data = Buffer.from(frame.bitmap.data);
+            }
+
+            frames.push(thumb);
+        }
+
+        // 计算拼接布局（紧凑排列）
         const cols = Math.ceil(Math.sqrt(frames.length));
-        const maxFrameHeight = Math.max(...frameMetas.map((m) => m.height));
-        const finalWidth = cols * 384;
-        const finalHeight = Math.ceil(frames.length / cols) * maxFrameHeight;
+        const rows = Math.ceil(frames.length / cols);
 
-        const compositeOps = frames.map((frame, i) => ({
-            input: frame,
-            top: Math.floor(i / cols) * maxFrameHeight,
-            left: (i % cols) * 384,
-        }));
+        // 计算画布尺寸（紧凑排列，无多余空间）
+        const frameWidth = frames[0].width;
+        const frameHeight = frames[0].height;
+        const finalWidth = cols * frameWidth;
+        const finalHeight = rows * frameHeight;
 
-        // 创建透明背景并拼接图片
-        return sharp({ create: { width: finalWidth, height: finalHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-            .composite(compositeOps)
-            .jpeg({ quality: 85 })
-            .toBuffer();
+        // 创建拼接画布
+        const canvas = new Jimp({
+            width: finalWidth,
+            height: finalHeight,
+            color: 0xffffffff, // 白色背景
+        });
+
+        // 将帧拼接到画布上
+        for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            const row = Math.floor(i / cols);
+            const col = i % cols;
+            const x = col * frameWidth;
+            const y = row * frameHeight;
+
+            canvas.composite(frame, x, y);
+        }
+
+        // 如果整体尺寸过大，进行最终缩放
+        const maxTotalSize = targetSize;
+        if (canvas.width > maxTotalSize || canvas.height > maxTotalSize) {
+            const ratio = Math.min(maxTotalSize / canvas.width, maxTotalSize / canvas.height);
+            const newWidth = Math.round(canvas.width * ratio);
+            const newHeight = Math.round(canvas.height * ratio);
+            canvas.resize({ w: newWidth, h: newHeight });
+        }
+
+        // 压缩并返回JPEG格式
+        return canvas.getBuffer("image/jpeg", { quality: 80 });
     }
 
     private async _getAssetWithUpdate(id: string): Promise<AssetData | null> {

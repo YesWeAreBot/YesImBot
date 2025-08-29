@@ -50,8 +50,9 @@
     }
   },
   "dependencies": {
-    "@yesimbot/sharp": "^0.0.5",
+    "@miaowfish/gifwrap": "^0.10.1",
     "gray-matter": "^4.0.3",
+    "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
     "mustache": "^4.2.0",
     "uuid": "^11.1.0"
