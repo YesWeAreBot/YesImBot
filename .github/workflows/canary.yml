@@ -46,8 +46,8 @@ jobs:
       - name: Create Canary Version
         run: bun changeset version --snapshot ${{ github.event.inputs.tag }}
 
-      - name: Optimize Canary Version Format
-        run: bun run optimize-canary-version
+      # - name: Optimize Canary Version Format
+      #   run: bun run optimize-canary-version
 
       - name: Publish to NPM
         run: bun changeset publish --tag ${{ github.event.inputs.tag }}
