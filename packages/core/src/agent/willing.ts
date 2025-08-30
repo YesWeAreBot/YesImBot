@@ -48,10 +48,8 @@ export class WillingnessManager {
     // --- 状态存储 ---
     private willingnessScores: Map<string, number> = new Map();
     private lastMessageTimestamps: Map<string, number> = new Map(); // 记录每个对话的最后消息时间，用于计算热度
-    private lastReplyTimestamps: Map<string, number> = new Map(); // 记录AI的最后回复时间，用于不应期
     private sessions = new Map<string, Session>();
 
-    private resolvedConfigCache: Map<string, ResolvedWillingnessConfig> = new Map();
     private decayInterval: NodeJS.Timeout | null = null;
 
     constructor(ctx: Context, config: WillingnessConfig) {
@@ -68,13 +66,6 @@ export class WillingnessManager {
      * 获取并缓存解析后的配置
      */
     private _getResolvedConfig(session: Session): ResolvedWillingnessConfig {
-        const chatId = session.cid;
-        if (this.resolvedConfigCache.has(chatId)) {
-            return this.resolvedConfigCache.get(chatId)!;
-        }
-
-        // 深拷贝基础配置，防止后续修改污染
-        // let config: Partial<WillingnessConfig> = JSON.parse(JSON.stringify(this.baseConfig));
         const config = this.baseConfig;
 
         // 解析所有 Computed 字段
@@ -104,7 +95,6 @@ export class WillingnessManager {
             },
         };
 
-        this.resolvedConfigCache.set(chatId, resolved);
         return resolved;
     }
 
