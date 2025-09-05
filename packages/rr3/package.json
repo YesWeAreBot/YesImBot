@@ -1,7 +1,7 @@
 {
   "name": "@yesimbot/koishi-plugin-rr3",
   "description": "Yes! I'm Bot! 图片生成 (RR3) 扩展插件",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/YesWeAreBot/YesImBot",
@@ -34,11 +34,11 @@
   },
   "devDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0-rc.1"
+    "koishi-plugin-yesimbot": "^3.0.0"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0-rc.1"
+    "koishi-plugin-yesimbot": "^3.0.0"
   },
   "koishi": {
     "description": {
