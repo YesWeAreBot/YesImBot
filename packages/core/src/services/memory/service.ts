@@ -4,7 +4,7 @@ import path from "path";
 
 import { RESOURCES_DIR, Services } from "@/shared/constants";
 import { MemoryConfig } from "./config";
-import { MemoryBlock, MemoryBlockData } from "./MemoryBlock";
+import { MemoryBlock, MemoryBlockData } from "./memory-block";
 
 declare module "koishi" {
     interface Context {

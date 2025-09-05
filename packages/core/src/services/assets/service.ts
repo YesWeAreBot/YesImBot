@@ -66,8 +66,6 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     protected async start() {
-        this.logger.info("资源服务正在启动...");
-
         // 初始化存储驱动
         this.storage = new LocalStorageDriver(this.ctx, this.config.storagePath);
         this.cacheStorage = new LocalStorageDriver(this.ctx, this.config.image.processedCachePath);
@@ -104,8 +102,6 @@ export class AssetService extends Service<AssetServiceConfig> {
         if (this.config.endpoint) {
             this.registerHttpEndpoint();
         }
-
-        this.logger.success("资源服务已启动");
     }
 
     /**
@@ -565,11 +561,11 @@ export class AssetService extends Service<AssetServiceConfig> {
             frames.push(thumb);
         }
 
-        // 计算拼接布局（紧凑排列）
+        // 计算拼接布局
         const cols = Math.ceil(Math.sqrt(frames.length));
         const rows = Math.ceil(frames.length / cols);
 
-        // 计算画布尺寸（紧凑排列，无多余空间）
+        // 计算画布尺寸
         const frameWidth = frames[0].width;
         const frameHeight = frames[0].height;
         const finalWidth = cols * frameWidth;
@@ -624,7 +620,6 @@ export class AssetService extends Service<AssetServiceConfig> {
         this.ctx.server.get(finalRoute, async (ctx) => {
             const { id } = ctx.params;
             try {
-                // getInfo 内部会更新 lastUsedAt，但这里我们主要获取元数据
                 const info = await this.getInfo(id);
                 if (!info) throw new Error("Asset not found in database");
 
@@ -645,18 +640,8 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private async runAutoClear() {
-        this.logger.info("开始执行过期资源自动清理任务...");
-
-        // 1. 基于数据库记录的清理
         await this._clearExpiredByDatabase();
-
-        // 2. 基于文件时间的清理
-        //await this._clearExpiredByFileTime();
-
-        // 3. 清理孤立文件
         await this._clearOrphanedFiles();
-
-        this.logger.success("过期资源自动清理任务完成");
     }
 
     private async _clearExpiredByDatabase() {
@@ -664,7 +649,6 @@ export class AssetService extends Service<AssetServiceConfig> {
         const expiredAssets = await this.ctx.database.get(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
 
         if (!expiredAssets.length) {
-            this.logger.info("没有需要清理的基于数据库记录的过期资源");
             return;
         }
 
@@ -684,12 +668,10 @@ export class AssetService extends Service<AssetServiceConfig> {
         }
 
         const { removed } = await this.ctx.database.remove(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
-        this.logger.success(`成功从数据库中清理了 ${removed} 条资源记录`);
     }
 
     private async _clearOrphanedFiles() {
         if (!this.storage.listFiles || !this.storage.getStats) {
-            this.logger.warn("当前存储驱动不支持文件列表或文件统计信息，跳过孤立文件清理");
             return;
         }
 

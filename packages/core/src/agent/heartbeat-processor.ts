@@ -12,7 +12,7 @@ import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
-import { PromptContextBuilder } from "./ContextBuilder";
+import { PromptContextBuilder } from "./context-builder";
 
 /**
  * @description 负责执行 Agent 的核心“心跳”循环

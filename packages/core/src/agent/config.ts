@@ -5,7 +5,6 @@ import path from "path";
 import { SystemConfig } from "@/config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
-// 默认的系统和用户模板文件路径
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
 export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'.
@@ -21,10 +20,7 @@ export type ChannelDescriptor = {
 
 /** Agent 的唤醒条件配置 */
 export interface ArousalConfig {
-    /**
-     * 允许 Agent 响应的频道。
-     * 这是一个 "OR" 关系的列表。
-     */
+    /** 允许 Agent 响应的频道 */
     allowedChannels: ChannelDescriptor[];
     /** 消息防抖时间 (毫秒)，防止短时间内对相同模式的重复响应 */
     debounceMs: number;
@@ -46,21 +42,12 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
 });
 
-/** Agent 的响应意愿配置 (决定是否响应) */
 export interface WillingnessConfig {
-    // --- A. 基础分数 (Base Scores) ---
-    // 定义不同消息类型的"基础反应分"。它们通常是互斥的。
-
     base: {
         /** 收到普通文本消息的基础分。这是对话的基石 */
         text: Computed<number>;
-        /** 收到图片消息的基础分。可以设为负数让AI不爱理睬图片 */
-        //image: Computed<number>;
-        /** 收到表情/贴纸的基础分。通常较低 */
-        //emoji: Computed<number>;
     };
 
-    // --- B. 属性加成 (Attribute Bonuses) ---
     // 如果消息满足以下属性，在基础分之上额外增加的分数。可以叠加。
     attribute: {
         /** 被 @ 提及时的额外加成。这是最高优先级的信号 */
@@ -71,7 +58,6 @@ export interface WillingnessConfig {
         isDirectMessage: Computed<number>;
     };
 
-    // --- C. 兴趣度模型 (Interest Model) ---
     // 基于内容计算一个乘数，影响最终得分。
     interest: {
         /** 触发"高兴趣"的关键词列表 */
@@ -82,7 +68,6 @@ export interface WillingnessConfig {
         defaultMultiplier: Computed<number>;
     };
 
-    // --- D. 意愿转换与生命周期 (Lifecycle & Conversion) ---
     lifecycle: {
         /** 意愿值的最大上限 */
         maxWillingness: Computed<number>;
@@ -94,11 +79,6 @@ export interface WillingnessConfig {
         probabilityAmplifier: Computed<number>;
         /** 决定回复后，扣除的"发言精力惩罚"基础值 */
         replyCost: Computed<number>;
-        /**
-         * 回复后的一段“不应期”（毫秒），在此期间不会再次响应。
-         *  这可以有效防止 AI 连续回复，显得更自然。
-         */
-        //refractoryPeriodMs: Computed<number>;
     };
 
     readonly system?: SystemConfig;
@@ -107,8 +87,6 @@ export interface WillingnessConfig {
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
     base: Schema.object({
         text: Schema.computed<Schema<number>>(Schema.number().default(10)).default(10).description("收到普通文本消息的基础分"),
-        //image: Schema.computed<Schema<number>>(Schema.number()).default(2).description("收到图片消息的基础分"),
-        //emoji: Schema.computed<Schema<number>>(Schema.number()).default(1).description("收到表情的基础分"),
     }),
     attribute: Schema.object({
         atMention: Schema.computed<Schema<number>>(Schema.number().default(100)).default(100).description("被@时的额外加成"),
@@ -231,7 +209,5 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
     ])
         .default("skip")
         .description("处理新消息的策略"),
-    deferredProcessingTime: Schema.number()
-        .default(10000) // 默认10秒
-        .description("延迟处理策略的安静期时间（毫秒）"),
+    deferredProcessingTime: Schema.number().default(10000).description("延迟处理策略的安静期时间（毫秒）"),
 });

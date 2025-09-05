@@ -69,7 +69,6 @@ export class PromptService extends Service<PromptServiceConfig> {
         this.snippets.set(key, snippetFn);
     }
 
-    // [!code ++]
     /**
      * (供插件使用) 注入一个将自动添加到主提示词的片段。
      * @param name - 注入的唯一名称，用于标识和调试。
@@ -113,7 +112,6 @@ export class PromptService extends Service<PromptServiceConfig> {
         const scope = await this.buildScope(initialScope);
         const partials = Object.fromEntries(this.templates);
 
-        // [!code hl] 传递渲染深度配置
         return this.renderer.render(templateContent, scope, partials, { maxDepth: this.config.maxRenderDepth });
     }
 
@@ -122,7 +120,6 @@ export class PromptService extends Service<PromptServiceConfig> {
      */
     public async renderRaw(templateContent: string, initialScope: Record<string, any> = {}): Promise<string> {
         const scope = await this.buildScope(initialScope);
-        // [!code hl] 传递渲染深度配置
         return this.renderer.render(templateContent, scope, undefined, { maxDepth: this.config.maxRenderDepth });
     }
 
@@ -156,7 +153,6 @@ export class PromptService extends Service<PromptServiceConfig> {
         });
     }
 
-    // [!code ++]
     private registerDefaultInjections(): void {
         // 注册一个特殊的片段，它的作用是处理所有通过 inject() 注册的内容
         this.registerSnippet(this.config.injectionPlaceholder, async (scope) => {
