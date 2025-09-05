@@ -23,18 +23,14 @@ export class ContextBuilder {
     public async build(session: Session): Promise<WorldState> {
         const { platform, channelId, isDirect } = session;
 
-        // 1. L1 - Working Memory
         const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
 
-        // Determine if L1 is overloaded before degradation
         const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
 
         const l1_history = this.applyGracefulDegradation(raw_l1_history);
 
-        // 2. Partition L1 History
         const { processed_events, new_events } = this.partitionL1History(session.selfId, l1_history);
 
-        // 3. L2 - Semantic Search (only if L1 is overloaded)
         let l2_retrieved_memories = [];
         if (isL1Overloaded) {
             const earliestMessageTimestamp = raw_l1_history
@@ -42,20 +38,23 @@ export class ContextBuilder {
                 .map((e) => e.timestamp)
                 .reduce((earliest, current) => (current < earliest ? current : earliest), new Date());
 
-            l2_retrieved_memories = await this.retrieveL2Memories(new_events, {
-                platform,
-                channelId,
-                k: this.config.l2_memory.retrievalK,
-                endTimestamp: earliestMessageTimestamp,
-            });
+            try {
+                l2_retrieved_memories = await this.retrieveL2Memories(new_events, {
+                    platform,
+                    channelId,
+                    k: this.config.l2_memory.retrievalK,
+                    endTimestamp: earliestMessageTimestamp,
+                });
+                this.logger.info(`成功检索 ${l2_retrieved_memories.length} 条召回记忆`);
+            } catch (error) {
+                this.logger.error(`L2 语义检索失败: ${error.message}`);
+            }
         } else {
             l2_retrieved_memories = [];
         }
 
-        // 4. L3 - Diary
         const l3_diary_entries = await this.retrieveL3Memories(channelId);
 
-        // 4. Base Info
         const channelInfo = await this.getChannelInfo(session);
         const selfInfo = await this.getSelfInfo(session);
 
@@ -167,18 +166,20 @@ export class ContextBuilder {
 
         if (!queryText) return [];
 
-        const retrieved = await this.l2Manager.search(queryText, {
-            platform: filter?.platform,
-            channelId: filter?.channelId,
-            k: this.config.l2_memory.retrievalK,
-            startTimestamp: filter?.startTimestamp,
-            endTimestamp: filter?.endTimestamp,
-        });
-        return retrieved.map((chunk) => ({
-            content: chunk.content,
-            relevance: chunk.similarity,
-            timestamp: chunk.startTimestamp,
-        }));
+        try {
+            const retrieved = await this.l2Manager.search(queryText, {
+                platform: filter?.platform,
+                channelId: filter?.channelId,
+                k: this.config.l2_memory.retrievalK,
+                startTimestamp: filter?.startTimestamp,
+                endTimestamp: filter?.endTimestamp,
+            });
+            return retrieved.map((chunk) => ({
+                content: chunk.content,
+                relevance: chunk.similarity,
+                timestamp: chunk.startTimestamp,
+            }));
+        } catch (error) {}
     }
 
     private async retrieveL3Memories(channelId: string): Promise<DiaryEntryData[]> {

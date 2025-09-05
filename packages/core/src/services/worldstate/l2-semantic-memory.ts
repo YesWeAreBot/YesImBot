@@ -13,6 +13,7 @@ export class SemanticMemoryManager {
     private logger: Logger;
     private embedModel: IEmbedModel;
     private messageBuffer: Map<string, MessageData[]> = new Map();
+    private isRebuilding: boolean = false;
 
     constructor(ctx: Context, config: HistoryConfig) {
         this.ctx = ctx;
@@ -66,10 +67,6 @@ export class SemanticMemoryManager {
         }
     }
 
-    /**
-     * 将一批消息处理为单个 L2 记忆片段并存储。
-     * @param messages - The batch of messages to process.
-     */
     private async processMessageBatch(messages: MessageData[]): Promise<void> {
         if (!this.embedModel || messages.length === 0) return;
 
@@ -94,7 +91,6 @@ export class SemanticMemoryManager {
                 endTimestamp: lastEvent.timestamp,
             };
             await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
-            // this.logger.debug(`消息批次已处理并存入 L2 记忆 | 包含 ${messages.length} 条消息`);
             this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
         } catch (error) {
             this.logger.error(`消息索引创建失败 | ${error.message}`);
@@ -107,6 +103,7 @@ export class SemanticMemoryManager {
      * 1. 高效获取候选池：一次性加载所有相关chunks，在内存中计算相似度，避免全表扫描和N+1查询。
      * 2. 精确近邻扩展：对Top-K候选块，在内存时间线中查找前后邻居。
      * 3. 智能合并：将所有相关（候选+邻居）且时间连续的块分组，并按“头取半、尾取半、中间全取”的规则合并，确保上下文完整且无冗余。
+     * 4. 向量兼容性处理：自动检测并处理因更换模型导致的向量维度不一致问题，通过后台任务重建索引。
      * @param queryText - 查询文本
      * @param options - 查询选项
      * @returns 按时间顺序排列的、经过合并优化的记忆块列表。
@@ -120,10 +117,9 @@ export class SemanticMemoryManager {
         const k = options?.k || 5;
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
 
-        // --- 步骤 1: 一次性加载数据并建立内存索引 ---
         const queryEmbedding = await this.embedModel.embed(queryText);
+        const expectedDim = queryEmbedding.embedding.length;
 
-        // 一次性加载所有可能相关的chunks。这是本流程中唯一的一次数据库批量读取。
         const allChunks = await this.ctx.database.get(TableName.L2Chunks, {
             platform: options?.platform || {},
             channelId: options?.channelId || {},
@@ -133,10 +129,16 @@ export class SemanticMemoryManager {
 
         if (allChunks.length === 0) return [];
 
+        const validChunks = allChunks.filter((c) => c.embedding?.length === expectedDim);
+        if (validChunks.length < allChunks.length) {
+            this.rebuildIndex();
+        }
+
+        if (validChunks.length === 0) return [];
+
         // 按时间升序排序，构建完整的时间线
         allChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
-        // 创建ID到索引和ID到块的映射，用于O(1)查找
         const chunkIndexMap = new Map<string, number>();
         const chunkMap = new Map<string, MemoryChunkData>();
         allChunks.forEach((chunk, index) => {
@@ -144,8 +146,7 @@ export class SemanticMemoryManager {
             chunkMap.set(chunk.id, chunk);
         });
 
-        // --- 步骤 2: 计算相似度并获取Top-K候选池 ---
-        const resultsWithSimilarity = allChunks.map((chunk) => ({
+        const resultsWithSimilarity = validChunks.map((chunk) => ({
             ...chunk,
             similarity: cosineSimilarity(queryEmbedding.embedding, chunk.embedding),
         }));
@@ -154,33 +155,30 @@ export class SemanticMemoryManager {
 
         const candidateChunks = resultsWithSimilarity.slice(0, k).filter((c) => c.similarity >= minAllowedSim);
 
-        // --- 步骤 3: 近邻扩展 ---
         const finalChunkIds = new Set<string>();
-
         for (const chunk of candidateChunks) {
             finalChunkIds.add(chunk.id);
             const currentIndex = chunkIndexMap.get(chunk.id);
 
             if (currentIndex === undefined) continue;
 
-            // 扩展前一个块
-            if (currentIndex > 0) {
-                const prevChunk = allChunks[currentIndex - 1];
-                finalChunkIds.add(prevChunk.id);
-            }
-            // 扩展后一个块
-            if (currentIndex < allChunks.length - 1) {
-                const nextChunk = allChunks[currentIndex + 1];
-                finalChunkIds.add(nextChunk.id);
-            }
+            if (currentIndex > 0) finalChunkIds.add(allChunks[currentIndex - 1].id);
+            if (currentIndex < allChunks.length - 1) finalChunkIds.add(allChunks[currentIndex + 1].id);
         }
 
-        // --- 步骤 4: 分组与合并 ---
+        // 从包含相似度的结果中找回块，若邻居块是无效块，则其没有相似度
+        const similarityMap = new Map(resultsWithSimilarity.map((c) => [c.id, c.similarity]));
         const finalChunks = Array.from(finalChunkIds)
-            .map((id) => resultsWithSimilarity.find((c) => c.id === id)) // 从带相似度的结果中找回块
+            .map((id) => {
+                const chunk = chunkMap.get(id);
+                if (!chunk) return null;
+                return {
+                    ...chunk,
+                    similarity: similarityMap.get(id) || 0, // 无效块或非候选块的邻居相似度为0
+                };
+            })
             .filter(Boolean) as (MemoryChunkData & { similarity: number })[];
 
-        // 再次按时间排序，为合并做准备
         finalChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
         return this.groupAndMergeChunks(finalChunks, chunkIndexMap);
@@ -242,33 +240,26 @@ export class SemanticMemoryManager {
             // 定义内容分割函数
             const splitContent = (content: string, takeFirstHalf: boolean): string => {
                 const lines = content.split("\n").filter((line) => line.trim() !== "");
-                if (lines.length <= 1) return content; // 内容太少不分割
+                if (lines.length <= 1) return content;
                 const midPoint = Math.ceil(lines.length / 2);
                 return takeFirstHalf ? lines.slice(0, midPoint).join("\n") : lines.slice(midPoint).join("\n");
             };
 
             const mergedContentParts: string[] = [];
-
-            // 第一个块：取后半部分
             mergedContentParts.push(splitContent(firstChunk.content, false));
-            // 中间块：取全部内容
             middleChunks.forEach((chunk) => mergedContentParts.push(chunk.content));
-            // 最后一个块：取前半部分
             mergedContentParts.push(splitContent(lastChunk.content, true));
 
             const mergedContent = mergedContentParts.join("\n");
-
-            // 合并块的相似度可以取组内最高的
             const maxSimilarity = Math.max(...group.map((chunk) => chunk.similarity));
 
             mergedResults.push({
-                ...firstChunk, // 基础元数据来自第一个块
-                id: `merged-${firstChunk.id}-${lastChunk.id}`, // 创建一个唯一的合并ID
+                ...firstChunk,
+                id: `merged-${firstChunk.id}-${lastChunk.id}`,
                 endTimestamp: lastChunk.endTimestamp,
                 content: mergedContent,
                 similarity: maxSimilarity,
-                // 注意：embedding 此时会与 content 不匹配，如果需要后续处理，应重新生成或置空
-                embedding: firstChunk.embedding, // 暂时保留第一个的，或设为null
+                embedding: firstChunk.embedding,
             });
         }
 
@@ -279,17 +270,43 @@ export class SemanticMemoryManager {
         return messages.map((m) => `${m.sender.name || m.sender.id}: ${m.content}`).join("\n");
     }
 
+    /**
+     * 重建所有 L2 记忆片段的向量索引。
+     * 增加状态锁，防止多个重建任务同时运行。
+     */
     public async rebuildIndex() {
-        this.logger.info("正在重建 L2 记忆索引...");
+        if (this.isRebuilding) {
+            this.logger.info("索引重建任务已在后台运行，本次请求被跳过");
+            return;
+        }
+        if (!this.embedModel) {
+            this.logger.warn("无可用嵌入模型，无法重建索引");
+            return;
+        }
 
-        const allChunks = await this.ctx.database.get(TableName.L2Chunks, {});
+        this.isRebuilding = true;
+        this.logger.info("开始重建 L2 记忆索引...");
 
-        for (const chunk of allChunks) {
-            try {
-                const result = await this.embedModel.embed(chunk.content);
-                chunk.embedding = result.embedding;
-                await this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: chunk.embedding });
-            } catch (error) {}
+        try {
+            const allChunks = await this.ctx.database.get(TableName.L2Chunks, {});
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const chunk of allChunks) {
+                try {
+                    const result = await this.embedModel.embed(chunk.content);
+                    await this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding });
+                    successCount++;
+                } catch (error) {
+                    failCount++;
+                    this.logger.error(`重建块 ${chunk.id} 的索引失败 | ${error.message}`);
+                }
+            }
+            this.logger.info(`L2 记忆索引重建完成。成功: ${successCount}，失败: ${failCount}。`);
+        } catch (error) {
+            this.logger.error(`索引重建过程中发生严重错误: ${error.message}`);
+        } finally {
+            this.isRebuilding = false; // 确保在任务结束或失败时解锁
         }
     }
 }
