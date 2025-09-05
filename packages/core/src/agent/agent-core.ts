@@ -49,7 +49,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
     private modelSwitcher: ChatModelSwitcher;
 
     constructor(ctx: Context, config: AgentBehaviorConfig) {
-        super(ctx, "agent", true);
+        super(ctx, Services.Agent, true);
         this.config = config;
         this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
 
