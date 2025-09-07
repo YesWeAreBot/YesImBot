@@ -2,10 +2,10 @@ import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service, sleep } from "koishi";
 
 import { AgentCore } from "./agent";
-import { Config } from "./config";
+import * as ConfigCommand from "./commands/config";
+import { Config, CONFIG_VERSION, migrateConfig } from "./config";
 import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
 import { handleError, initializeErrorReporter } from "./shared/errors";
-import * as ConfigCommand from "./commands/config";
 
 declare module "koishi" {
     interface Context {
@@ -27,8 +27,25 @@ export default class YesImBot extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
+        if (config.version !== CONFIG_VERSION) {
+            try {
+                if (Object.hasOwn(config, "modelService")) {
+                    //@ts-ignore
+                    config.version = 1;
+                }
+                const newConfig = migrateConfig(config);
+                // 验证配置
+                const validatedConfig = new Config(newConfig, { autofix: true });
+                config = validatedConfig;
+                ctx.scope.update(config, false);
+            } catch (error) {
+                ctx.logger.error("配置迁移失败:", error.message);
+                ctx.logger.debug(error);
+            }
+        }
+
         try {
-            ctx.plugin(ConfigCommand);
+            ctx.plugin(ConfigCommand, config);
 
             // 注册日志服务
             const loggerService = ctx.plugin(LoggerService, config);
@@ -64,7 +81,7 @@ export default class YesImBot extends Service<Config> {
                 agentCore,
             ];
 
-            initializeErrorReporter(config.system.errorReporting, this.ctx.logger("[错误报告]"));
+            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"));
 
             waitForServices(services)
                 .then(() => {

@@ -151,37 +151,6 @@ export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
     detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
 });
 
-/**
- * 智能体行为总体配置
- */
-// export interface AgentBehaviorConfig {
-//     arousal: ArousalConfig;
-//     willingness: WillingnessConfig;
-//     streamAction: boolean;
-//     heartbeat: number;
-//     prompt: {
-//         systemTemplate: string;
-//         userTemplate: string;
-//         multiModalSystemTemplate: string;
-//     };
-//     vision: VisionConfig;
-//     readonly system?: SystemConfig;
-
-//     /**
-//      * 当处理消息过程中收到新消息时的处理策略
-//      * - skip: 跳过此消息（默认行为）
-//      * - immediate: 处理完当前消息后立即处理新消息
-//      * - deferred: 等待安静期后处理被跳过的话题
-//      */
-//     newMessageStrategy: "skip" | "immediate" | "deferred";
-
-//     /**
-//      * 延迟处理策略的安静期时间（毫秒）
-//      * 当一段时间内没有新消息时才处理被跳过的话题
-//      */
-//     deferredProcessingTime?: number;
-// }
-
 export type AgentBehaviorConfig = ArousalConfig &
     WillingnessConfig &
     VisionConfig & {

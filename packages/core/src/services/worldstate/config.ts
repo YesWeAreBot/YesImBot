@@ -1,8 +1,5 @@
 import { Schema } from "koishi";
 
-import { ChannelDescriptor } from "@/agent";
-import { SystemConfig } from "@/config";
-
 /**
  * 多级缓存记忆模型管理配置
  */

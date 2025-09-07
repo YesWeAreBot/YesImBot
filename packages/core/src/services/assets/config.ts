@@ -3,7 +3,7 @@ import { Schema } from "koishi";
 export interface AssetServiceConfig {
     storagePath: string;
     driver: "local";
-    endpoint?: string;
+    assetEndpoint?: string;
     maxFileSize: number;
     downloadTimeout: number;
     autoClear: {
@@ -22,14 +22,14 @@ export interface AssetServiceConfig {
     recoveryEnabled: boolean;
 }
 
-export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
+export const AssetServiceConfigSchema: Schema<AssetServiceConfig> = Schema.object({
     storagePath: Schema.path({ allowCreate: true, filters: ["directory"] })
         .default("data/assets")
         .description("资源本地存储路径"),
 
     driver: Schema.union(["local"]).default("local").description("存储驱动类型"),
 
-    endpoint: Schema.string().role("link").description("公开访问端点 URL (可选)"),
+    assetEndpoint: Schema.string().role("link").description("公开访问端点 URL (可选)"),
 
     maxFileSize: Schema.number().min(1).default(100).description("允许存储的单个文件的最大大小（MB）"),
     downloadTimeout: Schema.number().min(1000).default(30000).description("下载外部资源的超时时间（毫秒）"),

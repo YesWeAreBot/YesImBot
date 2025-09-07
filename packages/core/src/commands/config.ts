@@ -53,7 +53,7 @@ export function apply(ctx: Context, config: Config) {
 
                 // 调用更新后的 set 函数
                 const data = set(mutableConfig, parsedKeyChain, value);
-                ctx.scope.update(data, Boolean(options.force));
+                ctx.scope.parent.scope.update(data, Boolean(options.force));
                 config = data; // 更新全局 config 变量
                 return "设置成功";
             } catch (e) {

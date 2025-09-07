@@ -1,5 +1,4 @@
 import { Schema } from "koishi";
-import { SystemConfig } from "../../config";
 
 /** 模型切换策略 */
 export enum ModelSwitchingStrategy {
@@ -223,7 +222,6 @@ export interface ModelServiceConfig {
         [TaskType.Chat]: string;
         [TaskType.Embedding]: string;
     };
-    readonly system?: SystemConfig;
 }
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({

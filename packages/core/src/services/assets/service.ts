@@ -58,11 +58,14 @@ export class AssetService extends Service<Config> {
     private storage: StorageDriver;
     private cacheStorage: StorageDriver;
 
+    private assetEndpoint: string;
+
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Asset, true);
         this.config = config;
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节
         this.logger = ctx[Services.Logger].getLogger("[资源服务]");
+        this.assetEndpoint = this.config.assetEndpoint;
     }
 
     protected async start() {
@@ -99,7 +102,7 @@ export class AssetService extends Service<Config> {
         }
 
         // 注册 HTTP 访问端点
-        if (this.config.endpoint) {
+        if (this.assetEndpoint) {
             this.registerHttpEndpoint();
         }
     }
@@ -237,13 +240,13 @@ export class AssetService extends Service<Config> {
      * @returns 资源的公开链接，若未配置 endpoint 则回退到 data URL
      */
     async getPublicUrl(id: string): Promise<string> {
-        if (!this.config.endpoint) {
+        if (!this.assetEndpoint) {
             this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL`);
             return (await this.read(id, { format: "data-url" })) as string;
         }
 
         await this._updateLastUsed(id); // 确保访问时更新使用时间
-        const endpoint = this.config.endpoint.endsWith("/") ? this.config.endpoint : `${this.config.endpoint}/`;
+        const endpoint = this.assetEndpoint.endsWith("/") ? this.assetEndpoint : `${this.assetEndpoint}/`;
         return `${endpoint}${id}`;
     }
 
@@ -614,7 +617,7 @@ export class AssetService extends Service<Config> {
     }
 
     private registerHttpEndpoint() {
-        const routePath = this.config.endpoint.startsWith("/") ? this.config.endpoint : new URL(this.config.endpoint).pathname;
+        const routePath = this.assetEndpoint.startsWith("/") ? this.assetEndpoint : new URL(this.assetEndpoint).pathname;
         const finalRoute = `${routePath.replace(/\/$/, "")}/:id`; // 确保路径格式正确
 
         this.ctx.server.get(finalRoute, async (ctx) => {

@@ -1,12 +1,16 @@
 import { Schema } from "koishi";
-import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "./agent";
-import { LoggingConfig, LoggingConfigSchema, PromptServiceConfig, PromptServiceConfigSchema } from "./services";
-import { AssetServiceConfig, AssetServiceConfig as AssetServiceConfigSchema } from "./services/assets";
-import { ToolServiceConfig, ToolServiceConfigSchema } from "./services/extension";
-import { MemoryConfig, MemoryConfigSchema } from "./services/memory";
-import { ModelServiceConfig, ModelServiceConfigSchema } from "./services/model";
-import { HistoryConfig, HistoryConfigSchema } from "./services/worldstate";
-import { ErrorReporterConfig, ErrorReporterConfigSchema } from "./shared/errors";
+
+import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "@/agent";
+import { AssetServiceConfig, AssetServiceConfigSchema } from "@/services/assets";
+import { ToolServiceConfig, ToolServiceConfigSchema } from "@/services/extension";
+import { LoggingConfig, LoggingConfigSchema } from "@/services/logger";
+import { MemoryConfig, MemoryConfigSchema } from "@/services/memory";
+import { ModelServiceConfig, ModelServiceConfigSchema } from "@/services/model";
+import { PromptServiceConfig, PromptServiceConfigSchema } from "@/services/prompt";
+import { HistoryConfig, HistoryConfigSchema } from "@/services/worldstate";
+import { ErrorReporterConfig, ErrorReporterConfigSchema } from "@/shared/errors";
+
+export const CONFIG_VERSION = 2;
 
 export interface SystemConfig {
     logging: LoggingConfig;
@@ -25,9 +29,15 @@ export type Config = ModelServiceConfig &
     ToolServiceConfig &
     AssetServiceConfig &
     PromptServiceConfig &
-    SystemConfig;
+    SystemConfig & {
+        readonly version: number;
+    };
 
 export const Config: Schema<Config> = Schema.intersect([
+    Schema.object({
+        version: Schema.number().hidden(),
+    }),
+
     ModelServiceConfigSchema.description("AI 模型、API密钥和模型组配置"),
     AgentBehaviorConfigSchema,
 
