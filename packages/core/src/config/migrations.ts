@@ -4,7 +4,7 @@ import { ConfigV1 } from "./versions";
 function migrateV1ToV2(configV1: ConfigV1): Config {
     const { modelService, agentBehavior, capabilities, assetService, promptService, system } = configV1;
 
-    const { arousal, willingness, vision, prompt } = agentBehavior;
+    const { arousal, willingness, vision, prompt } = agentBehavior || {};
 
     return {
         version: 2,
@@ -18,15 +18,15 @@ function migrateV1ToV2(configV1: ConfigV1): Config {
         ...vision,
         enableVision: vision?.enabled,
         ...prompt,
-        streamAction: agentBehavior.streamAction,
-        heartbeat: agentBehavior.heartbeat,
-        newMessageStrategy: agentBehavior.newMessageStrategy,
-        deferredProcessingTime: agentBehavior.deferredProcessingTime,
+        streamAction: agentBehavior?.streamAction,
+        heartbeat: agentBehavior?.heartbeat,
+        newMessageStrategy: agentBehavior?.newMessageStrategy,
+        deferredProcessingTime: agentBehavior?.deferredProcessingTime,
 
         // 从 capabilities 扁平化迁移
-        ...capabilities.history,
-        ...capabilities.memory,
-        ...capabilities.tools,
+        ...capabilities?.history,
+        ...capabilities?.memory,
+        ...capabilities?.tools,
 
         // 顶层服务直接迁移
         ...assetService,
