@@ -130,7 +130,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
 /** 视觉与多模态相关配置 */
 export interface VisionConfig {
     /** 是否启用视觉功能 */
-    enabled: boolean;
+    enableVision: boolean;
     /** 允许的图片类型 */
     allowedImageTypes: string[];
     /** 允许在上下文中包含的最大图片数量 */
@@ -144,7 +144,7 @@ export interface VisionConfig {
 }
 
 export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
-    enabled: Schema.boolean().default(false).description("是否启用视觉功能"),
+    enableVision: Schema.boolean().default(false).description("是否启用视觉功能"),
     allowedImageTypes: Schema.array(Schema.string()).default(["image/jpeg", "image/png"]).description("允许的图片类型"),
     maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量"),
     imageLifecycleCount: Schema.number().default(2).description("图片的上下文生命周期（出现次数）。超过此次数的图片将被忽略，除非被引用"),
@@ -154,40 +154,53 @@ export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
 /**
  * 智能体行为总体配置
  */
-export interface AgentBehaviorConfig {
-    arousal: ArousalConfig;
-    willingness: WillingnessConfig;
-    streamAction: boolean;
-    heartbeat: number;
-    prompt: {
+// export interface AgentBehaviorConfig {
+//     arousal: ArousalConfig;
+//     willingness: WillingnessConfig;
+//     streamAction: boolean;
+//     heartbeat: number;
+//     prompt: {
+//         systemTemplate: string;
+//         userTemplate: string;
+//         multiModalSystemTemplate: string;
+//     };
+//     vision: VisionConfig;
+//     readonly system?: SystemConfig;
+
+//     /**
+//      * 当处理消息过程中收到新消息时的处理策略
+//      * - skip: 跳过此消息（默认行为）
+//      * - immediate: 处理完当前消息后立即处理新消息
+//      * - deferred: 等待安静期后处理被跳过的话题
+//      */
+//     newMessageStrategy: "skip" | "immediate" | "deferred";
+
+//     /**
+//      * 延迟处理策略的安静期时间（毫秒）
+//      * 当一段时间内没有新消息时才处理被跳过的话题
+//      */
+//     deferredProcessingTime?: number;
+// }
+
+export type AgentBehaviorConfig = ArousalConfig &
+    WillingnessConfig &
+    VisionConfig & {
         systemTemplate: string;
         userTemplate: string;
         multiModalSystemTemplate: string;
+    } & {
+        streamAction: boolean;
+        heartbeat: number;
+
+        newMessageStrategy: "skip" | "immediate" | "deferred";
+        deferredProcessingTime?: number;
     };
-    vision: VisionConfig;
-    readonly system?: SystemConfig;
 
-    /**
-     * 当处理消息过程中收到新消息时的处理策略
-     * - skip: 跳过此消息（默认行为）
-     * - immediate: 处理完当前消息后立即处理新消息
-     * - deferred: 等待安静期后处理被跳过的话题
-     */
-    newMessageStrategy: "skip" | "immediate" | "deferred";
-
-    /**
-     * 延迟处理策略的安静期时间（毫秒）
-     * 当一段时间内没有新消息时才处理被跳过的话题
-     */
-    deferredProcessingTime?: number;
-}
-
-export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.object({
-    arousal: ArousalConfigSchema.description("唤醒条件"),
-    willingness: WillingnessConfigSchema.description("响应意愿"),
-    streamAction: Schema.boolean().default(false).experimental(),
-    heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
-    prompt: Schema.object({
+export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.intersect([
+    ArousalConfigSchema.description("唤醒条件"),
+    WillingnessConfigSchema.description("响应意愿"),
+    VisionConfigSchema.description("视觉配置"),
+    Schema.object({
         systemTemplate: Schema.string()
             .default(SystemBaseTemplate)
             .role("textarea", { rows: [2, 4] })
@@ -201,13 +214,17 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.obj
             .role("textarea", { rows: [2, 4] })
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
-    vision: VisionConfigSchema.description("视觉与多模态配置"),
-    newMessageStrategy: Schema.union([
-        Schema.const("skip").description("跳过新消息（默认）"),
-        Schema.const("immediate").description("立即处理新消息"),
-        Schema.const("deferred").description("延迟处理被跳过话题"),
-    ])
-        .default("skip")
-        .description("处理新消息的策略"),
-    deferredProcessingTime: Schema.number().default(10000).description("延迟处理策略的安静期时间（毫秒）"),
-});
+    Schema.object({
+        streamAction: Schema.boolean().default(false).experimental(),
+        heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
+
+        newMessageStrategy: Schema.union([
+            Schema.const("skip").description("跳过新消息（默认）"),
+            Schema.const("immediate").description("立即处理新消息"),
+            Schema.const("deferred").description("延迟处理被跳过话题"),
+        ])
+            .default("skip")
+            .description("处理新消息的策略"),
+        deferredProcessingTime: Schema.number().default(10000).description("延迟处理策略的安静期时间（毫秒）"),
+    }),
+]);

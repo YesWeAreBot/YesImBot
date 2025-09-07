@@ -1,5 +1,6 @@
 import { Context, Service, Session } from "koishi";
 
+import { Config } from "@/config";
 import { ChatModelSwitcher, ModelService, TaskType } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
 import { AgentStimulus } from "@/services/worldstate";
@@ -7,7 +8,6 @@ import { WorldStateService } from "@/services/worldstate/index";
 import { Services } from "@/shared/constants";
 import { AppError, handleError } from "@/shared/errors";
 import { ErrorDefinitions } from "@/shared/errors/definitions";
-import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { StimulusScheduler } from "./scheduler";
@@ -19,7 +19,7 @@ declare module "koishi" {
     }
 }
 
-export class AgentCore extends Service<AgentBehaviorConfig> {
+export class AgentCore extends Service<Config> {
     static readonly inject = [
         Services.Asset,
         Services.Logger,
@@ -43,7 +43,7 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
     private modelSwitcher: ChatModelSwitcher;
 
-    constructor(ctx: Context, config: AgentBehaviorConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Agent, true);
         this.config = config;
         this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
@@ -54,14 +54,13 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
 
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
         if (!this.modelSwitcher) {
-            const error = new AppError(ErrorDefinitions.CONFIG.MISSING_MODEL_GROUP, {
-                context: { service: "AgentCore", component: "modelSwitcher" },
+            const notifier = ctx.notifier.create({
+                type: "danger",
+                content: `未给 '聊天 (Chat)' 任务类型配置任何模型组，请前往“模型服务”设置，并为 '聊天' 任务类型至少配置一个模型`,
             });
-            handleError(this.logger, error, "AgentCore startup check");
-            throw error;
         }
 
-        this.willing = new WillingnessManager(ctx, config.willingness);
+        this.willing = new WillingnessManager(ctx, config);
 
         this.contextBuilder = new PromptContextBuilder(ctx, config, this.modelSwitcher);
         this.processor = new HeartbeatProcessor(
@@ -151,8 +150,8 @@ export class AgentCore extends Service<AgentBehaviorConfig> {
         this.promptService.registerTemplate("agent.partial.l1_history_item", loadTemplate("l1_history_item"));
 
         // 注册主模板
-        this.promptService.registerTemplate("agent.system", this.config.prompt.systemTemplate);
-        this.promptService.registerTemplate("agent.user", this.config.prompt.userTemplate);
+        this.promptService.registerTemplate("agent.system", this.config.systemTemplate);
+        this.promptService.registerTemplate("agent.user", this.config.userTemplate);
 
         // 注册动态片段
         this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());

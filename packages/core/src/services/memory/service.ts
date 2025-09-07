@@ -2,8 +2,8 @@ import fs from "fs/promises";
 import { Context, Service } from "koishi";
 import path from "path";
 
+import { Config } from "@/config";
 import { RESOURCES_DIR, Services } from "@/shared/constants";
-import { MemoryConfig } from "./config";
 import { MemoryBlock, MemoryBlockData } from "./memory-block";
 
 declare module "koishi" {
@@ -12,12 +12,12 @@ declare module "koishi" {
     }
 }
 
-export class MemoryService extends Service<MemoryConfig> {
+export class MemoryService extends Service<Config> {
     static readonly inject = [Services.Logger];
 
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
 
-    constructor(ctx: Context, config: MemoryConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Memory, true);
         this.config = config;
         this.logger = ctx[Services.Logger].getLogger("[核心记忆]");

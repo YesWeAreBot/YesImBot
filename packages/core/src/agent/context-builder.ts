@@ -7,7 +7,7 @@ import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
-import { AgentBehaviorConfig } from "./config";
+import { Config } from "@/config";
 
 interface ImageCandidate {
     id: string;
@@ -29,7 +29,7 @@ export class PromptContextBuilder {
 
     constructor(
         private readonly ctx: Context,
-        private readonly config: AgentBehaviorConfig,
+        private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher
     ) {
         this.logger = ctx[Services.Logger].getLogger("[上下文构建器]");
@@ -71,7 +71,7 @@ export class PromptContextBuilder {
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
      */
     public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | (ImagePart | TextPart)[]> {
-        const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.vision.enabled;
+        const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config;
         if (!canUseVision) {
             return userPromptText;
         }
@@ -80,7 +80,7 @@ export class PromptContextBuilder {
         if (multiModalData.images.length > 0) {
             this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
             return [
-                { type: "text", text: this.config.prompt.multiModalSystemTemplate },
+                { type: "text", text: this.config.multiModalSystemTemplate },
                 ...multiModalData.images,
                 { type: "text", text: userPromptText },
             ];
@@ -144,10 +144,10 @@ export class PromptContextBuilder {
         // 4. 根据生命周期和数量上限选择最终图片
         const finalImageIds = new Set<string>();
         for (const candidate of sortedUniqueCandidates) {
-            if (finalImageIds.size >= this.config.vision.maxImagesInContext) break;
+            if (finalImageIds.size >= this.config.maxImagesInContext) break;
 
             const usageCount = this.imageLifecycleTracker.get(candidate.id) || 0;
-            if (usageCount < this.config.vision.imageLifecycleCount) {
+            if (usageCount < this.config.imageLifecycleCount) {
                 finalImageIds.add(candidate.id);
                 this.imageLifecycleTracker.set(candidate.id, usageCount + 1);
             }
@@ -161,7 +161,7 @@ export class PromptContextBuilder {
         const imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
 
         const finalImages: (ImagePart | TextPart)[] = [];
-        const allowedImageTypes = new Set(this.config.vision.allowedImageTypes);
+        const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
         for (const result of imageDataResults) {
             if (result && allowedImageTypes.has(result.mime)) {
@@ -173,7 +173,7 @@ export class PromptContextBuilder {
                 finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
                 finalImages.push({
                     type: "image_url",
-                    image_url: { url: imageBuffer as string, detail: this.config.vision.detail },
+                    image_url: { url: imageBuffer as string, detail: this.config.detail },
                 });
             }
         }

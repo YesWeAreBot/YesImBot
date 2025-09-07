@@ -1,17 +1,16 @@
+import { Awaitable, Context, Logger, Schema, Service } from "koishi";
+
+import { Config } from "@/config";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isNotEmpty } from "@/shared/utils";
 import { GenerateTextResult } from "@xsai/generate-text";
-import { Awaitable, Context, Logger, Schema, Service } from "koishi";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { CircuitBreakerPolicy, ContentFailureAction, ModelDescriptor, ModelServiceConfig, ModelSwitchingStrategy } from "./config";
+import { CircuitBreakerPolicy, ContentFailureAction, ModelDescriptor, ModelSwitchingStrategy } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
-
-// --- 断路器 (CircuitBreaker) ---
-// 职责：跟踪单个模型的故障，在故障过多时暂时禁用它。
 
 enum CircuitBreakerState {
     CLOSED, // 允许请求
@@ -73,45 +72,39 @@ class CircuitBreaker {
     }
 }
 
-// --- 服务声明 ---
 declare module "koishi" {
     interface Context {
         [Services.Model]: ModelService;
     }
 }
 
-// --- 模型服务 (ModelService) ---
-// 职责：管理和初始化所有模型提供商 (Provider)。
-
-export class ModelService extends Service<ModelServiceConfig> {
+export class ModelService extends Service<Config> {
     static readonly inject = [Services.Logger];
     private readonly providerInstances = new Map<string, ProviderInstance>();
-    private readonly _logger: Logger;
 
-    constructor(ctx: Context, config: ModelServiceConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Model, true);
         this.config = config;
-        this._logger = ctx[Services.Logger].getLogger("[模型服务]");
+        this.logger = ctx[Services.Logger].getLogger("[模型服务]");
 
         try {
             this.validateConfig();
             this.initializeProviders();
             this.registerSchemas();
         } catch (error) {
-            this._logger.error(`初始化失败，请检查配置: ${error.message}`);
-            // 配置错误是致命的，应该阻止服务启动
-            throw error;
+            this.logger.error(`模型服务初始化失败 | ${error.message}`);
+            ctx.notifier.create({ type: "danger", content: `模型服务初始化失败 | ${error.message}` });
         }
     }
 
     private initializeProviders(): void {
-        this._logger.info("--- 开始初始化模型提供商 ---");
+        this.logger.info("--- 开始初始化模型提供商 ---");
         for (const providerConfig of this.config.providers) {
             const providerId = `${providerConfig.name} (${providerConfig.type})`;
 
             const factory = ProviderFactoryRegistry.get(providerConfig.type);
             if (!factory) {
-                this._logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
+                this.logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
                 continue;
             }
 
@@ -119,12 +112,12 @@ export class ModelService extends Service<ModelServiceConfig> {
                 const client = factory.createClient(providerConfig);
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this._logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
+                this.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
             } catch (error) {
-                this._logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
+                this.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
             }
         }
-        this._logger.info("--- 模型提供商初始化完成 ---");
+        this.logger.info("--- 模型提供商初始化完成 ---");
     }
 
     public getChatModel(providerName: string, modelId: string): IChatModel | null {
@@ -143,13 +136,13 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
-            this._logger.warn(`[模型组] 查找失败，组名不存在: ${groupName}`);
+            this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
         }
         try {
             return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this));
         } catch (error) {
-            this._logger.error(`[模型组] "${groupName}" 创建失败: ${error.message}`);
+            this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;
         }
     }
@@ -163,7 +156,7 @@ export class ModelService extends Service<ModelServiceConfig> {
      */
     private validateConfig(): void {
         let modified = false;
-        // this._logger.debug("开始验证服务配置");
+        // this.logger.debug("开始验证服务配置");
         if (!this.config.providers || this.config.providers.length === 0) {
             throw new AppError(ErrorDefinitions.CONFIG.INVALID, {
                 args: ["至少需要配置一个提供商"],
@@ -198,16 +191,14 @@ export class ModelService extends Service<ModelServiceConfig> {
             const groupName = this.config.task[task];
             if (!this.config.modelGroups.some((group) => group.name === groupName)) {
                 this.config.task[task] = defaultGroup.name;
-                //throw new Error(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在`);
-                this._logger.warn(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在，已自动更正为默认组 ${defaultGroup.name}`);
+                this.logger.warn(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在，已自动更正为默认组 ${defaultGroup.name}`);
                 modified = true;
             }
         }
         if (modified) {
-            //this._logger.warn("配置已自动更正，请检查并保存更改");
             this.ctx.scope.update(this.config);
         } else {
-            //this._logger.debug("配置验证通过");
+            //this.logger.debug("配置验证通过");
         }
     }
 
@@ -252,14 +243,14 @@ export class ModelService extends Service<ModelServiceConfig> {
 
         const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
-            this._logger.warn(`[模型组] 查找失败，组名不存在: ${groupName}`);
+            this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
         }
         try {
             // 直接创建 ModelSwitcher<IEmbedModel> 实例
             return new ModelSwitcher<IEmbedModel>(this.ctx, group, this.getEmbedModel.bind(this));
         } catch (error) {
-            this._logger.error(`[模型组] "${groupName}" 创建失败: ${error.message}`);
+            this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;
         }
     }
@@ -269,7 +260,7 @@ export class ModelService extends Service<ModelServiceConfig> {
             return this.config.task[name];
         }
 
-        this._logger.warn(`[切换器] ⚠ 无效的任务名称 | 任务: ${String(name)}`);
+        this.logger.warn(`[切换器] ⚠ 无效的任务名称 | 任务: ${String(name)}`);
         return undefined;
     }
 }
@@ -444,7 +435,7 @@ class RequestExecutor {
 // --- 简化的模型切换器 (ModelSwitcher) ---
 // 职责：管理一个模型组中的模型列表，并根据上下文（如是否包含图片）提供合适的模型。
 export class ModelSwitcher<T extends BaseModel> {
-    protected readonly _logger: Logger;
+    protected readonly logger: Logger;
     protected readonly _models: T[];
     private readonly circuitBreakers = new Map<string, CircuitBreaker>();
 
@@ -453,18 +444,18 @@ export class ModelSwitcher<T extends BaseModel> {
         protected readonly groupConfig: { name: string; models: ModelDescriptor[] },
         modelGetter: (providerName: string, modelId: string) => T | null
     ) {
-        this._logger = ctx[Services.Logger].getLogger(`[模型组][${groupConfig.name}]`);
+        this.logger = ctx[Services.Logger].getLogger(`[模型组][${groupConfig.name}]`);
 
         this._models = groupConfig.models
             .map((desc) => modelGetter(desc.providerName, desc.modelId))
             .filter((model): model is T => {
-                //if (!model) this._logger.warn(`模型加载失败，将从组中移除`);
+                //if (!model) this.logger.warn(`模型加载失败，将从组中移除`);
                 return model !== null;
             });
 
         if (this._models.length === 0) {
             const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
-            this._logger.error(`❌ 加载失败 | ${errorMsg}`);
+            this.logger.error(`❌ 加载失败 | ${errorMsg}`);
 
             throw new AppError(ErrorDefinitions.MODEL.GROUP_INIT_FAILED, { args: [groupConfig.name] });
         }
@@ -472,11 +463,11 @@ export class ModelSwitcher<T extends BaseModel> {
         // 初始化断路器
         this._models.forEach((model) => {
             if (model.config.circuitBreakerPolicy) {
-                this.circuitBreakers.set(model.id, new CircuitBreaker(model.config.circuitBreakerPolicy, this._logger, model.id));
+                this.circuitBreakers.set(model.id, new CircuitBreaker(model.config.circuitBreakerPolicy, this.logger, model.id));
             }
         });
 
-        //this._logger.debug(`✅ 加载成功 | 可用模型数: ${this._models.length}`);
+        //this.logger.debug(`✅ 加载成功 | 可用模型数: ${this._models.length}`);
     }
 
     public getModels(): readonly T[] {
@@ -504,7 +495,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         // 根据能力对模型进行分类
         this.visionModels = this._models.filter((m) => m.isVisionModel?.());
         this.nonVisionModels = this._models.filter((m) => !m.isVisionModel?.());
-        //this._logger.debug(`模型能力分类 | 视觉: ${this.visionModels.length} | 非视觉: ${this.nonVisionModels.length}`);
+        //this.logger.debug(`模型能力分类 | 视觉: ${this.visionModels.length} | 非视觉: ${this.nonVisionModels.length}`);
     }
 
     public hasVisionCapability(): boolean {
@@ -520,10 +511,10 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
 
         if (hasImages) {
             if (this.visionModels.length > 0) {
-                this._logger.info("检测到图片内容，将使用视觉模型");
+                this.logger.info("检测到图片内容，将使用视觉模型");
                 candidateModels = this.visionModels;
             } else {
-                this._logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理");
+                this.logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理");
                 candidateModels = this.nonVisionModels;
             }
         } else {

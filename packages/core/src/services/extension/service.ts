@@ -1,14 +1,15 @@
+import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
+
+import { Config } from "@/config";
 import { PromptService } from "@/services/prompt";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
-import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
 import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
-import { ToolServiceConfig } from "./config";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
 
@@ -22,7 +23,7 @@ declare module "koishi" {
  * ToolService
  * 负责注册、管理和提供所有扩展和工具。
  */
-export class ToolService extends Service<ToolServiceConfig> {
+export class ToolService extends Service<Config> {
     static readonly inject = [Services.Logger, Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
@@ -30,7 +31,7 @@ export class ToolService extends Service<ToolServiceConfig> {
     private _logger: Logger;
     private promptService: PromptService;
 
-    constructor(ctx: Context, config: ToolServiceConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Tool, true);
         this.config = config;
         this._logger = ctx[Services.Logger].getLogger("[工具管理器]");

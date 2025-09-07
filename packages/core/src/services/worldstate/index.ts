@@ -1,8 +1,8 @@
 import { Context, Service, Session } from "koishi";
 
+import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
 import { HistoryCommandManager } from "./commands";
-import { HistoryConfig } from "./config";
 import { ContextBuilder } from "./context-builder";
 import { EventListenerManager } from "./event-listener";
 import { InteractionManager } from "./interaction-manager";
@@ -29,7 +29,7 @@ declare module "koishi" {
     }
 }
 
-export class WorldStateService extends Service<HistoryConfig> {
+export class WorldStateService extends Service<Config> {
     static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
 
     public l1_manager: InteractionManager;
@@ -39,9 +39,9 @@ export class WorldStateService extends Service<HistoryConfig> {
     private contextBuilder: ContextBuilder;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
-    private readonly mutedChannels = new Map<string, number>(); // Key: channelCid, Value: mute expiration timestamp
+    private readonly mutedChannels = new Map<string, number>();
 
-    constructor(ctx: Context, config: HistoryConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.WorldState, true);
         this.config = config;
         this.logger = this.ctx[Services.Logger].getLogger("[世界状态]");

@@ -227,7 +227,7 @@ export interface ModelServiceConfig {
 }
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
-    providers: Schema.array(ProviderConfigSchema).required().role("table").description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
+    providers: Schema.array(ProviderConfigSchema).role("table").description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
     modelGroups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组名称"),

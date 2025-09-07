@@ -68,7 +68,7 @@ export class StimulusScheduler {
                     this.logger.debug(`[${channelKey}] 频道锁已释放`);
                     this.handleSkippedMessagesAfterReply(channelKey);
                 }
-            }, this.config.arousal.debounceMs);
+            }, this.config.debounceMs);
             this.debouncedReplyTasks.set(channelKey, debouncedTask);
         }
         return debouncedTask;

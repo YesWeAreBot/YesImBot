@@ -1,6 +1,7 @@
 import { Services } from "@/shared/constants";
 import { Context, Eval, Logger, Session, merge } from "koishi";
 import { WillingnessConfig } from "./config";
+import { Config } from "@/config";
 
 export interface MessageContext {
     chatId: string;
@@ -42,7 +43,7 @@ export interface ReplyDecision {
 
 export class WillingnessManager {
     private readonly ctx: Context;
-    private readonly baseConfig: WillingnessConfig;
+    private readonly baseConfig: Config;
     private logger: Logger;
 
     // --- 状态存储 ---
@@ -52,7 +53,7 @@ export class WillingnessManager {
 
     private decayInterval: NodeJS.Timeout | null = null;
 
-    constructor(ctx: Context, config: WillingnessConfig) {
+    constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.baseConfig = config;
         this.logger = ctx[Services.Logger].getLogger("[意愿管理器]");

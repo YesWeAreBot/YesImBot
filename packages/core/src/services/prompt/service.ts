@@ -1,23 +1,12 @@
-// --- START OF FILE service.ts ---
-
 import { Context, Logger, Service, Session } from "koishi";
 
+import { Config } from "@/config";
 import { Services } from "@/shared/constants";
 import { formatDate, isEmpty } from "@/shared/utils";
 import { IRenderer, MustacheRenderer } from "./renderer";
-import { PromptServiceConfig } from "./config"; // [!code ++]
 
-/**
- * 片段 (Snippet) 是一个函数，用于在运行时动态生成内容。
- * @param currentScope - 当前正在构建的作用域对象，允许片段之间存在依赖关系。
- * @returns 返回将要注入到作用域中的数据，可以是任何类型。
- */
 export type Snippet = (currentScope: Record<string, any>) => any | Promise<any>;
 
-// [!code ++]
-/**
- * 描述一个注入到提示词中的片段。
- */
 export interface Injection {
     /** 注入片段的唯一名称，用于调试和覆盖 (e.g., "my-plugin.tools") */
     name: string;
@@ -27,18 +16,15 @@ export interface Injection {
     renderFn: Snippet;
 }
 
-/**
- * 通用提示词构建服务
- */
-export class PromptService extends Service<PromptServiceConfig> {
+export class PromptService extends Service<Config> {
     static readonly inject = [Services.Logger];
     private readonly renderer: IRenderer;
     private readonly templates: Map<string, string> = new Map();
     private readonly snippets: Map<string, Snippet> = new Map();
-    private readonly injections: Injection[] = []; // [!code ++]
+    private readonly injections: Injection[] = [];
     private _logger: Logger;
 
-    constructor(ctx: Context, config: PromptServiceConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Prompt, true);
         this.ctx = ctx;
         this.config = config;
@@ -48,10 +34,14 @@ export class PromptService extends Service<PromptServiceConfig> {
 
     protected async start() {
         this.registerDefaultSnippets();
-        this.registerDefaultInjections(); // [!code ++]
+        this.registerDefaultInjections();
     }
 
-    protected async stop() {}
+    protected async stop() {
+        this.snippets.clear();
+        this.templates.clear();
+        this.injections.length = 0;
+    }
 
     /**
      * 注册一个核心动态片段 (Snippet)
@@ -70,7 +60,7 @@ export class PromptService extends Service<PromptServiceConfig> {
     }
 
     /**
-     * (供插件使用) 注入一个将自动添加到主提示词的片段。
+     * 注入一个将自动添加到主提示词的片段。
      * @param name - 注入的唯一名称，用于标识和调试。
      * @param priority - 优先级，数字越小越靠前。
      * @param renderFn - 渲染函数，返回一个字符串。其返回值可以包含其他占位符，将进行二次渲染。
@@ -124,7 +114,6 @@ export class PromptService extends Service<PromptServiceConfig> {
     }
 
     private registerDefaultSnippets(): void {
-        // 这些是基础的、可被其他片段依赖的数据片段
         this.registerSnippet("time.now", () => formatDate(new Date(), "HH:mm:ss"));
         this.registerSnippet("time.unix", () => Math.floor(Date.now() / 1000));
         this.registerSnippet("date.today", () => formatDate(new Date(), "YYYY-MM-DD"));

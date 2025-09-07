@@ -43,9 +43,6 @@ export interface HistoryConfig {
     /* === 清理 === */
     dataRetentionDays: number;
     cleanupIntervalSec: number;
-
-    readonly allowedChannels?: ChannelDescriptor[];
-    readonly system?: SystemConfig;
 }
 
 export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({

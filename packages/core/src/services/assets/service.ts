@@ -7,9 +7,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 
+import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
 import { formatSize, getMimeType, truncate } from "@/shared/utils";
-import { AssetServiceConfig } from "./config";
 import { LocalStorageDriver } from "./drivers/local";
 import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
@@ -48,7 +48,7 @@ declare module "koishi" {
  * 资源管理服务 (AssetService)
  * 负责资源的持久化存储、去重、读取、处理和生命周期管理
  */
-export class AssetService extends Service<AssetServiceConfig> {
+export class AssetService extends Service<Config> {
     static readonly inject = ["database", "server", "http", Services.Logger];
 
     // 缓存和常量
@@ -58,7 +58,7 @@ export class AssetService extends Service<AssetServiceConfig> {
     private storage: StorageDriver;
     private cacheStorage: StorageDriver;
 
-    constructor(ctx: Context, config: AssetServiceConfig) {
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Asset, true);
         this.config = config;
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节

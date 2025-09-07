@@ -1,8 +1,11 @@
+import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service, sleep } from "koishi";
+
 import { AgentCore } from "./agent";
 import { Config } from "./config";
 import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
 import { handleError, initializeErrorReporter } from "./shared/errors";
+import * as ConfigCommand from "./commands/config";
 
 declare module "koishi" {
     interface Context {
@@ -13,7 +16,7 @@ declare module "koishi" {
 export default class YesImBot extends Service<Config> {
     static readonly Config = Config;
     static readonly inject = {
-        required: ["console", "database"],
+        required: ["console", "database", "notifier"],
         optional: ["puppeteer"],
     };
     static readonly name = "yesimbot";
@@ -25,32 +28,30 @@ export default class YesImBot extends Service<Config> {
         super(ctx, "yesimbot", true);
 
         try {
+            ctx.plugin(ConfigCommand);
+
             // 注册日志服务
-            const loggerService = ctx.plugin(LoggerService, config.system.logging);
+            const loggerService = ctx.plugin(LoggerService, config);
 
             // 注册资源中心服务
-            const assetService = ctx.plugin(AssetService, config.assetService);
+            const assetService = ctx.plugin(AssetService, config);
 
             // 注册提示词管理器
-            const promptService = ctx.plugin(PromptService, config.promptService);
+            const promptService = ctx.plugin(PromptService, config);
 
             // 注册工具管理器
-            const toolService = ctx.plugin(ToolService, { ...config.capabilities.tools, system: config.system });
+            const toolService = ctx.plugin(ToolService, config);
 
             // 注册模型服务
-            const modelService = ctx.plugin(ModelService, { ...config.modelService, system: config.system });
+            const modelService = ctx.plugin(ModelService, config);
 
             // 注册记忆管理层
-            const memoryService = ctx.plugin(MemoryService, config.capabilities.memory);
+            const memoryService = ctx.plugin(MemoryService, config);
 
             // 注册 WorldState 服务
-            const worldStateService = ctx.plugin(WorldStateService, {
-                ...config.capabilities.history,
-                allowedChannels: config.agentBehavior.arousal.allowedChannels,
-                system: config.system,
-            });
+            const worldStateService = ctx.plugin(WorldStateService, config);
 
-            const agentCore = ctx.plugin(AgentCore, { ...config.agentBehavior, system: config.system });
+            const agentCore = ctx.plugin(AgentCore, config);
 
             const services = [
                 loggerService,
@@ -71,12 +72,20 @@ export default class YesImBot extends Service<Config> {
                     this.ctx.logger.info(`Version: ${require("../package.json").version}`);
                 })
                 .catch((err) => {
-                    this.ctx.logger.error(err.stack);
+                    this.ctx.logger.error(err.message);
+                    ctx.notifier.create("初始化时发生错误");
+                    // services.forEach((service) => {
+                    //     try {
+                    //         service.dispose();
+                    //     } catch (error) {
+                    //     }
+                    // });
                 });
         } catch (error) {
+            ctx.notifier.create("初始化时发生错误");
             // this.ctx.logger.error("初始化时发生错误:", error.message);
             // this.ctx.logger.error(error.stack);
-            handleError(this.ctx.logger("[YesImBot]"), error, "初始化时发生错误");
+            handleError(this.ctx.logger("yesimbot"), error, "初始化时发生错误");
             this.ctx.stop();
         }
     }

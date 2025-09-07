@@ -61,6 +61,7 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@koishijs/plugin-notifier": "^1.2.1",
     "@xsai-ext/providers-cloud": "^0.3.2",
     "@xsai-ext/providers-local": "^0.3.2",
     "@xsai-ext/shared-providers": "^0.3.2",
