@@ -1,5 +1,13 @@
 # @yesimbot/koishi-plugin-mcp
 
+## 1.1.1
+
+### Patch Changes
+
+- e6fd019: 删除冗余字段
+- Updated dependencies [e6fd019]
+    - koishi-plugin-yesimbot@3.0.1
+
 ## 1.1.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # koishi-plugin-yesimbot
 
+## 3.0.1
+
+### Patch Changes
+
+- e6fd019: 修复配置迁移脚本
+
 ## 3.0.0
 
 ### Patch Changes
