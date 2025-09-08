@@ -7,7 +7,7 @@ import { LoggingConfig, LoggingConfigSchema } from "@/services/logger";
 import { MemoryConfig, MemoryConfigSchema } from "@/services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "@/services/model";
 import { PromptServiceConfig, PromptServiceConfigSchema } from "@/services/prompt";
-import { TelemetryConfig, TelemetryConfigSchema } from "@/services/telemetry";
+//import { TelemetryConfig, TelemetryConfigSchema } from "@/services/telemetry";
 import { HistoryConfig, HistoryConfigSchema } from "@/services/worldstate";
 import { ErrorReporterConfig, ErrorReporterConfigSchema } from "@/shared/errors";
 
@@ -30,7 +30,7 @@ export type Config = ModelServiceConfig &
     ToolServiceConfig &
     AssetServiceConfig &
     PromptServiceConfig &
-    TelemetryConfig &
+    //TelemetryConfig &
     SystemConfig & {
         readonly version: string | number;
     };
@@ -49,6 +49,6 @@ export const Config: Schema<Config> = Schema.intersect([
 
     AssetServiceConfigSchema.description("资源服务配置"),
     PromptServiceConfigSchema,
-    TelemetryConfigSchema,
+    //TelemetryConfigSchema,
     SystemConfigSchema.description("系统设置"),
 ]);
