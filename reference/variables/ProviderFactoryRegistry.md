@@ -8,7 +8,7 @@
 
 > `const` **ProviderFactoryRegistry**: `FactoryRegistry`
 
-Defined in: [packages/core/src/services/model/factories.ts:377](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/model/factories.ts#L377)
+Defined in: [packages/core/src/services/model/factories.ts:377](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/model/factories.ts#L377)
 
 全局唯一的提供商工厂注册实例。
 新增 Provider 类型时，只需在此处调用 `ProviderFactoryRegistry.register(...)` 即可。

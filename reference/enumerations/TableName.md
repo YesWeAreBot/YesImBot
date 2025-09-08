@@ -6,57 +6,17 @@
 
 # Enumeration: TableName
 
-Defined in: [packages/core/src/shared/constants.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L11)
+Defined in: [packages/core/src/shared/constants.ts:11](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L11)
 
 所有数据库表的名称
 
 ## Enumeration Members
 
-### AgentTurns
-
-> **AgentTurns**: `"worldstate.agent_turns"`
-
-Defined in: [packages/core/src/shared/constants.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L13)
-
-***
-
 ### Assets
 
 > **Assets**: `"yesimbot.assets"`
 
-Defined in: [packages/core/src/shared/constants.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L20)
-
-***
-
-### Entities
-
-> **Entities**: `"yesimbot.entities"`
-
-Defined in: [packages/core/src/shared/constants.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L21)
-
-***
-
-### Facts
-
-> **Facts**: `"yesimbot.facts"`
-
-Defined in: [packages/core/src/shared/constants.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L22)
-
-***
-
-### Insights
-
-> **Insights**: `"yesimbot.insights"`
-
-Defined in: [packages/core/src/shared/constants.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L23)
-
-***
-
-### Interactions
-
-> **Interactions**: `"worldstate.interactions"`
-
-Defined in: [packages/core/src/shared/constants.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L12)
+Defined in: [packages/core/src/shared/constants.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L18)
 
 ***
 
@@ -64,7 +24,7 @@ Defined in: [packages/core/src/shared/constants.ts:12](https://github.com/YesWeA
 
 > **L2Chunks**: `"worldstate.l2_chunks"`
 
-Defined in: [packages/core/src/shared/constants.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L17)
+Defined in: [packages/core/src/shared/constants.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L15)
 
 ***
 
@@ -72,7 +32,7 @@ Defined in: [packages/core/src/shared/constants.ts:17](https://github.com/YesWeA
 
 > **L3Diaries**: `"worldstate.l3_diaries"`
 
-Defined in: [packages/core/src/shared/constants.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L18)
+Defined in: [packages/core/src/shared/constants.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L16)
 
 ***
 
@@ -80,7 +40,7 @@ Defined in: [packages/core/src/shared/constants.ts:18](https://github.com/YesWeA
 
 > **Members**: `"worldstate.members"`
 
-Defined in: [packages/core/src/shared/constants.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L14)
+Defined in: [packages/core/src/shared/constants.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L12)
 
 ***
 
@@ -88,7 +48,7 @@ Defined in: [packages/core/src/shared/constants.ts:14](https://github.com/YesWeA
 
 > **Messages**: `"worldstate.messages"`
 
-Defined in: [packages/core/src/shared/constants.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L15)
+Defined in: [packages/core/src/shared/constants.ts:13](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L13)
 
 ***
 
@@ -96,7 +56,7 @@ Defined in: [packages/core/src/shared/constants.ts:15](https://github.com/YesWeA
 
 > **Stickers**: `"yesimbot.stickers"`
 
-Defined in: [packages/core/src/shared/constants.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L25)
+Defined in: [packages/core/src/shared/constants.ts:19](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L19)
 
 ***
 
@@ -104,12 +64,4 @@ Defined in: [packages/core/src/shared/constants.ts:25](https://github.com/YesWeA
 
 > **SystemEvents**: `"worldstate.system_events"`
 
-Defined in: [packages/core/src/shared/constants.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L16)
-
-***
-
-### UserProfiles
-
-> **UserProfiles**: `"yesimbot.user_profiles"`
-
-Defined in: [packages/core/src/shared/constants.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L24)
+Defined in: [packages/core/src/shared/constants.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L14)

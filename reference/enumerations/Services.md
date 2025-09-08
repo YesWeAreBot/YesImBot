@@ -6,17 +6,33 @@
 
 # Enumeration: Services
 
-Defined in: [packages/core/src/shared/constants.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L31)
+Defined in: [packages/core/src/shared/constants.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L25)
 
 提供的服务
 
 ## Enumeration Members
 
+### Agent
+
+> **Agent**: `"yesimbot.agent"`
+
+Defined in: [packages/core/src/shared/constants.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L26)
+
+***
+
 ### Asset
 
 > **Asset**: `"yesimbot.asset"`
 
-Defined in: [packages/core/src/shared/constants.ts:36](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L36)
+Defined in: [packages/core/src/shared/constants.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L27)
+
+***
+
+### Config
+
+> **Config**: `"yesimbot.config"`
+
+Defined in: [packages/core/src/shared/constants.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L28)
 
 ***
 
@@ -24,7 +40,7 @@ Defined in: [packages/core/src/shared/constants.ts:36](https://github.com/YesWeA
 
 > **Logger**: `"yesimbot.logger"`
 
-Defined in: [packages/core/src/shared/constants.ts:37](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L37)
+Defined in: [packages/core/src/shared/constants.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L29)
 
 ***
 
@@ -32,7 +48,7 @@ Defined in: [packages/core/src/shared/constants.ts:37](https://github.com/YesWeA
 
 > **Memory**: `"yesimbot.memory"`
 
-Defined in: [packages/core/src/shared/constants.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L33)
+Defined in: [packages/core/src/shared/constants.ts:30](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L30)
 
 ***
 
@@ -40,7 +56,7 @@ Defined in: [packages/core/src/shared/constants.ts:33](https://github.com/YesWeA
 
 > **Model**: `"yesimbot.model"`
 
-Defined in: [packages/core/src/shared/constants.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L32)
+Defined in: [packages/core/src/shared/constants.ts:31](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L31)
 
 ***
 
@@ -48,7 +64,7 @@ Defined in: [packages/core/src/shared/constants.ts:32](https://github.com/YesWeA
 
 > **Prompt**: `"yesimbot.prompt"`
 
-Defined in: [packages/core/src/shared/constants.ts:38](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L38)
+Defined in: [packages/core/src/shared/constants.ts:32](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L32)
 
 ***
 
@@ -56,7 +72,7 @@ Defined in: [packages/core/src/shared/constants.ts:38](https://github.com/YesWeA
 
 > **Tool**: `"yesimbot.tool"`
 
-Defined in: [packages/core/src/shared/constants.ts:35](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L35)
+Defined in: [packages/core/src/shared/constants.ts:33](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L33)
 
 ***
 
@@ -64,4 +80,4 @@ Defined in: [packages/core/src/shared/constants.ts:35](https://github.com/YesWeA
 
 > **WorldState**: `"yesimbot.world-state"`
 
-Defined in: [packages/core/src/shared/constants.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/constants.ts#L34)
+Defined in: [packages/core/src/shared/constants.ts:34](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/constants.ts#L34)

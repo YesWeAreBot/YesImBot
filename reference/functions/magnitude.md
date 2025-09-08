@@ -8,7 +8,7 @@
 
 > **magnitude**(`vec`): `number`
 
-Defined in: [packages/core/src/shared/utils/vector.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/utils/vector.ts#L28)
+Defined in: [packages/core/src/shared/utils/vector.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/utils/vector.ts#L28)
 
 计算向量的模（Magnitude/L2 Norm）。
 

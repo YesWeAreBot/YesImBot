@@ -6,11 +6,11 @@
 
 # Class: LoggerService
 
-Defined in: [packages/core/src/services/logger/index.ts:86](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/logger/index.ts#L86)
+Defined in: [packages/core/src/services/logger/index.ts:88](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/logger/index.ts#L88)
 
 ## Extends
 
-- `Service`\<[`LoggingConfig`](../interfaces/LoggingConfig.md)\>
+- `Service`\<`Config`\>
 
 ## Constructors
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/services/logger/index.ts:86](https://github.com/Y
 
 > **new LoggerService**(`ctx`, `config`): `LoggerService`
 
-Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/logger/index.ts#L89)
+Defined in: [packages/core/src/services/logger/index.ts:91](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/logger/index.ts#L91)
 
 #### Parameters
 
@@ -28,7 +28,7 @@ Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/Y
 
 ##### config
 
-[`LoggingConfig`](../interfaces/LoggingConfig.md)
+`Config`
 
 #### Returns
 
@@ -36,7 +36,7 @@ Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/Y
 
 #### Overrides
 
-`Service<LoggingConfig>.constructor`
+`Service<Config>.constructor`
 
 ## Properties
 
@@ -44,13 +44,13 @@ Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/Y
 
 > **\_logger**: `__module`
 
-Defined in: [packages/core/src/services/logger/index.ts:87](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/logger/index.ts#L87)
+Defined in: [packages/core/src/services/logger/index.ts:89](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/logger/index.ts#L89)
 
 ***
 
 ### config
 
-> **config**: [`LoggingConfig`](../interfaces/LoggingConfig.md)
+> **config**: `Config`
 
 Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:14
 
@@ -274,7 +274,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:11
 
 > **getLogger**(`name?`): `__module`
 
-Defined in: [packages/core/src/services/logger/index.ts:104](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/logger/index.ts#L104)
+Defined in: [packages/core/src/services/logger/index.ts:106](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/logger/index.ts#L106)
 
 #### Parameters
 
@@ -292,7 +292,7 @@ Defined in: [packages/core/src/services/logger/index.ts:104](https://github.com/
 
 > `protected` **start**(): `void`
 
-Defined in: [packages/core/src/services/logger/index.ts:96](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/logger/index.ts#L96)
+Defined in: [packages/core/src/services/logger/index.ts:98](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/logger/index.ts#L98)
 
 #### Returns
 
@@ -308,7 +308,7 @@ Defined in: [packages/core/src/services/logger/index.ts:96](https://github.com/Y
 
 > `protected` **stop**(): `void`
 
-Defined in: [packages/core/src/services/logger/index.ts:100](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/logger/index.ts#L100)
+Defined in: [packages/core/src/services/logger/index.ts:102](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/logger/index.ts#L102)
 
 #### Returns
 

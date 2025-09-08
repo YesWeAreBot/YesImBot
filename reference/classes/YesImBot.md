@@ -6,7 +6,7 @@
 
 # Class: YesImBot
 
-Defined in: [packages/core/src/index.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/index.ts#L14)
+Defined in: [packages/core/src/index.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/index.ts#L16)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [packages/core/src/index.ts:14](https://github.com/YesWeAreBot/YesIm
 
 > **new YesImBot**(`ctx`, `config`): `YesImBot`
 
-Defined in: [packages/core/src/index.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/index.ts#L25)
+Defined in: [packages/core/src/index.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/index.ts#L27)
 
 #### Parameters
 
@@ -108,7 +108,7 @@ Defined in: node\_modules/cordis/lib/index.d.ts:20
 
 > `readonly` `static` **Config**: `Schema`\<`Config`\>
 
-Defined in: [packages/core/src/index.ts:15](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/index.ts#L15)
+Defined in: [packages/core/src/index.ts:17](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/index.ts#L17)
 
 ***
 
@@ -140,7 +140,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:8
 
 > `readonly` `static` **inject**: `object`
 
-Defined in: [packages/core/src/index.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/index.ts#L16)
+Defined in: [packages/core/src/index.ts:18](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/index.ts#L18)
 
 #### optional
 
@@ -168,7 +168,7 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:4
 
 > `readonly` `static` **name**: `"yesimbot"` = `"yesimbot"`
 
-Defined in: [packages/core/src/index.ts:20](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/index.ts#L20)
+Defined in: [packages/core/src/index.ts:22](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/index.ts#L22)
 
 Returns the name of the function. Function names are read-only and can not be changed.
 
@@ -212,9 +212,9 @@ Defined in: node\_modules/@cordisjs/core/lib/index.d.ts:6
 
 ### usage
 
-> `readonly` `static` **usage**: "\"Yes! I'm Bot!\" 是一个能让你的机器人激活灵魂的插件。\n\n使用请阅读 \[文档\](https://docs.yesimbot.chat/) ，推荐使用 \[GPTGOD\](https://gptgod.online/#/register?invite\_code=envrd6lsla9nydtipzrbvid2r) 提供的 \`deepseek-v3\` 模型以获得最高性价比。目前已知效果最佳模型：\`gemini-2.5-pro-preview-06-05\n\`\n\n官方交流群：\[857518324\](http://qm.qq.com/cgi-bin/qm/qr?\_wv=1027&k=k3O5\_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group\_code=857518324)\n"
+> `readonly` `static` **usage**: "\"Yes! I'm Bot!\" 是一个能让你的机器人激活灵魂的插件。\n\n使用请阅读 \[文档\](https://docs.yesimbot.chat/) ，推荐使用 \[GPTGOD\](https://gptgod.online/#/register?invite\_code=envrd6lsla9nydtipzrbvid2r) 提供的 \`deepseek-v3\` 模型以获得最高性价比。目前已知效果最佳模型：\`gemini-2.5-pro-preview-06-05\`\n\n\n官方交流群：\[857518324\](http://qm.qq.com/cgi-bin/qm/qr?\_wv=1027&k=k3O5\_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group\_code=857518324)\n"
 
-Defined in: [packages/core/src/index.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/index.ts#L21)
+Defined in: [packages/core/src/index.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/index.ts#L23)
 
 ## Methods
 

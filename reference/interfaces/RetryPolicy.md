@@ -6,7 +6,7 @@
 
 # Interface: RetryPolicy
 
-Defined in: [packages/core/src/services/model/config.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/model/config.ts#L25)
+Defined in: [packages/core/src/services/model/config.ts:24](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/model/config.ts#L24)
 
 定义重试策略
 
@@ -16,7 +16,7 @@ Defined in: [packages/core/src/services/model/config.ts:25](https://github.com/Y
 
 > **maxRetries**: `number`
 
-Defined in: [packages/core/src/services/model/config.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/model/config.ts#L27)
+Defined in: [packages/core/src/services/model/config.ts:26](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/model/config.ts#L26)
 
 最大重试次数 (在同一模型上)
 
@@ -26,6 +26,6 @@ Defined in: [packages/core/src/services/model/config.ts:27](https://github.com/Y
 
 > **onContentFailure**: [`ContentFailureAction`](../enumerations/ContentFailureAction.md)
 
-Defined in: [packages/core/src/services/model/config.ts:29](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/model/config.ts#L29)
+Defined in: [packages/core/src/services/model/config.ts:28](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/model/config.ts#L28)
 
 内容验证失败时的动作

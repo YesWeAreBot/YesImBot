@@ -8,6 +8,6 @@
 
 > **InteractionLogEntry** = [`AgentThoughtLog`](../interfaces/AgentThoughtLog.md) \| [`AgentActionLog`](../interfaces/AgentActionLog.md) \| [`AgentObservationLog`](../interfaces/AgentObservationLog.md) \| [`AgentHeartbeatLog`](../interfaces/AgentHeartbeatLog.md) \| [`MessageLog`](../interfaces/MessageLog.md) \| [`SystemEventLog`](../interfaces/SystemEventLog.md)
 
-Defined in: [packages/core/src/services/worldstate/types.ts:138](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/worldstate/types.ts#L138)
+Defined in: [packages/core/src/services/worldstate/types.ts:138](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/worldstate/types.ts#L138)
 
 写入日志文件的统一事件条目类型

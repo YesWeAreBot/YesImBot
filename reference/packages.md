@@ -60,6 +60,7 @@
 - [DiaryEntryData](interfaces/DiaryEntryData.md)
 - [ErrorReporterConfig](interfaces/ErrorReporterConfig.md)
 - [ExtensionMetadata](interfaces/ExtensionMetadata.md)
+- [FileResponse](interfaces/FileResponse.md)
 - [FileStats](interfaces/FileStats.md)
 - [HistoryConfig](interfaces/HistoryConfig.md)
 - [IChatModel](interfaces/IChatModel.md)
@@ -121,7 +122,7 @@
 
 ## Variables
 
-- [AssetServiceConfig](variables/AssetServiceConfig.md)
+- [AssetServiceConfigSchema](variables/AssetServiceConfigSchema.md)
 - [BASE\_DIR](variables/BASE_DIR.md)
 - [ErrorCodes](variables/ErrorCodes.md)
 - [ErrorDefinitions](variables/ErrorDefinitions.md)
@@ -159,6 +160,7 @@
 - [formatDate](functions/formatDate.md)
 - [formatSize](functions/formatSize.md)
 - [getChannelType](functions/getChannelType.md)
+- [getMimeType](functions/getMimeType.md)
 - [handleError](functions/handleError.md)
 - [hashString](functions/hashString.md)
 - [initializeErrorReporter](functions/initializeErrorReporter.md)

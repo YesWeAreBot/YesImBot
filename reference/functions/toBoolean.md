@@ -8,7 +8,7 @@
 
 > **toBoolean**(`value`): `boolean`
 
-Defined in: [packages/core/src/shared/utils/toolkit.ts:133](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/shared/utils/toolkit.ts#L133)
+Defined in: [packages/core/src/shared/utils/toolkit.ts:128](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/shared/utils/toolkit.ts#L128)
 
 将各种类型的值转换为布尔值。
 规则：

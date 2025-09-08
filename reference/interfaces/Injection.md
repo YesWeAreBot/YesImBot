@@ -6,9 +6,7 @@
 
 # Interface: Injection
 
-Defined in: [packages/core/src/services/prompt/service.ts:21](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/prompt/service.ts#L21)
-
-描述一个注入到提示词中的片段。
+Defined in: [packages/core/src/services/prompt/service.ts:10](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/prompt/service.ts#L10)
 
 ## Properties
 
@@ -16,7 +14,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:21](https://github.com
 
 > **name**: `string`
 
-Defined in: [packages/core/src/services/prompt/service.ts:23](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/prompt/service.ts#L23)
+Defined in: [packages/core/src/services/prompt/service.ts:12](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/prompt/service.ts#L12)
 
 注入片段的唯一名称，用于调试和覆盖 (e.g., "my-plugin.tools")
 
@@ -26,7 +24,7 @@ Defined in: [packages/core/src/services/prompt/service.ts:23](https://github.com
 
 > **priority**: `number`
 
-Defined in: [packages/core/src/services/prompt/service.ts:25](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/prompt/service.ts#L25)
+Defined in: [packages/core/src/services/prompt/service.ts:14](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/prompt/service.ts#L14)
 
 渲染优先级，数字越小，越先被渲染和展示
 
@@ -36,6 +34,6 @@ Defined in: [packages/core/src/services/prompt/service.ts:25](https://github.com
 
 > **renderFn**: [`Snippet`](../type-aliases/Snippet.md)
 
-Defined in: [packages/core/src/services/prompt/service.ts:27](https://github.com/YesWeAreBot/YesImBot/blob/89fa0ef148d2b85a54c30fb720197559d83768ff/packages/core/src/services/prompt/service.ts#L27)
+Defined in: [packages/core/src/services/prompt/service.ts:16](https://github.com/YesWeAreBot/YesImBot/blob/925c94951232bc99112ff68ee359aa63b78c4911/packages/core/src/services/prompt/service.ts#L16)
 
 渲染函数，返回一个字符串或可以被渲染为字符串的内容
