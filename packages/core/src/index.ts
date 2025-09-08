@@ -27,21 +27,36 @@ export default class YesImBot extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
-        if (config.version !== CONFIG_VERSION) {
+        let version = config.version;
+        const hasLegacyV1Field = Object.hasOwn(config, "modelService");
+
+        if (!version) {
+            if (hasLegacyV1Field) {
+                ctx.logger.info("检测到 v1 版本配置，将尝试迁移");
+                version = "1.0.0";
+            } else {
+                ctx.logger.info("未找到版本号，将视为最新版本配置");
+                version = CONFIG_VERSION;
+                // 写入配置版本号
+                ctx.scope.update({ ...config, version }, false);
+            }
+        }
+
+        if (version !== CONFIG_VERSION) {
             try {
-                if (Object.hasOwn(config, "modelService")) {
-                    //@ts-ignore
-                    config.version = 1;
-                }
+                // @ts-ignore
+                config.version = version;
                 const newConfig = migrateConfig(config);
-                // 验证配置
-                const validatedConfig = new Config(newConfig, { autofix: true });
-                config = validatedConfig;
-                ctx.scope.update(config, false);
+
+                const validatedConfig = Config(newConfig, { autofix: true });
+                ctx.scope.update(validatedConfig, false);
+                this.config = validatedConfig;
+                ctx.logger.success("配置迁移成功");
             } catch (error) {
                 ctx.logger.error("配置迁移失败:", error.message);
                 ctx.logger.debug(error);
             }
+        } else {
         }
 
         try {
