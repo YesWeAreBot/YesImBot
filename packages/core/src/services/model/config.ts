@@ -250,5 +250,5 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description(
             "生成文本嵌入(Embedding)时使用的模型**组**<br/>如 `bge-m3` `text-embedding-3-small` 等嵌入模型"
         ),
-    }).description("为不同核心任务分配一个模型组"),
+    }).description("模型组配置"),
 });
