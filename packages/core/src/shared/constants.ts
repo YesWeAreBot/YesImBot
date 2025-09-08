@@ -10,14 +10,12 @@ export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");
  */
 export enum TableName {
     Members = "worldstate.members",
-    DialogueSegments = "worldstate.dialogue_segments",
     Messages = "worldstate.messages",
     SystemEvents = "worldstate.system_events",
+    L2Chunks = "worldstate.l2_chunks",
+    L3Diaries = "worldstate.l3_diaries",
+
     Assets = "yesimbot.assets",
-    Entities = "yesimbot.entities",
-    Facts = "yesimbot.facts",
-    Insights = "yesimbot.insights",
-    UserProfiles = "yesimbot.user_profiles",
     Stickers = "yesimbot.stickers",
 }
 
@@ -25,11 +23,13 @@ export enum TableName {
  * 提供的服务
  */
 export enum Services {
-    Model = "yesimbot.model",
-    Memory = "yesimbot.memory",
-    WorldState = "yesimbot.world-state",
-    Tool = "yesimbot.tool",
+    Agent = "yesimbot.agent",
     Asset = "yesimbot.asset",
+    Config = "yesimbot.config",
     Logger = "yesimbot.logger",
+    Memory = "yesimbot.memory",
+    Model = "yesimbot.model",
     Prompt = "yesimbot.prompt",
+    Tool = "yesimbot.tool",
+    WorldState = "yesimbot.world-state",
 }

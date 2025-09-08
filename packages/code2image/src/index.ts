@@ -54,7 +54,10 @@ export default class CodeToImage {
     private highlighter: HighlighterCore;
     private localFonts: Map<string, string> = new Map();
 
-    constructor(public ctx: Context, public config: CodeToImageConfig) {
+    constructor(
+        public ctx: Context,
+        public config: CodeToImageConfig
+    ) {
         // 在构造函数中直接监听 ready 事件
         ctx.on("ready", async () => {
             try {
@@ -79,11 +82,7 @@ export default class CodeToImage {
         logger.info("正在初始化 Shiki 高亮器...");
         this.highlighter = await createHighlighterCore({
             themes: [githubLight, materialThemeOcean],
-            langs: [
-                import("@shikijs/langs/typescript"),
-                import("@shikijs/langs/javascript"),
-                import("@shikijs/langs/css"),
-            ],
+            langs: [import("@shikijs/langs/typescript"), import("@shikijs/langs/javascript"), import("@shikijs/langs/css")],
             engine: createOnigurumaEngine(import("shiki/wasm")),
         });
         logger.info("Shiki 高亮器初始化完成");
@@ -270,15 +269,13 @@ export default class CodeToImage {
         fontSize?: number;
         padding?: number;
     }>) {
-        await session.send("收到渲染指令，正在生成图片...");
+        //await session.send("收到渲染指令，正在生成图片...");
 
         const result = await this.generateImage(options);
 
         if (Buffer.isBuffer(result)) {
             const messageId = await session.send(h.image(result, "image/png"));
-            return messageId.length > 0
-                ? Success("图片已成功发送")
-                : Failed("图片生成成功，但发送失败，可能是网络问题或平台限制");
+            return messageId.length > 0 ? Success("图片已成功发送") : Failed("图片生成成功，但发送失败，可能是网络问题或平台限制");
         } else {
             return Failed(`图片生成失败: ${result}`);
         }

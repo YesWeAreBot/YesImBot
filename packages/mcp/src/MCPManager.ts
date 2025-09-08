@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
-import { Failed, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot/services";
+import { Failed, Infer, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
@@ -20,13 +20,7 @@ export class MCPManager {
     private registeredTools: string[] = []; // 已注册工具
     private availableTools: string[] = []; // 所有可用工具
 
-    constructor(
-        ctx: Context,
-        logger: Logger,
-        commandResolver: CommandResolver,
-        toolService: ToolService,
-        config: Config
-    ) {
+    constructor(ctx: Context, logger: Logger, commandResolver: CommandResolver, toolService: ToolService, config: Config) {
         this.ctx = ctx;
         this.logger = logger;
         this.commandResolver = commandResolver;
@@ -89,8 +83,7 @@ export class MCPManager {
                 this.logger.debug(`连接 URL 服务器: ${serverName}`);
             } else if (server.command) {
                 this.logger.debug(`启动命令服务器: ${serverName}`);
-                const enableTransform =
-                    server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
+                const enableTransform = server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
 
                 const [command, args, env] = await this.commandResolver.resolveCommand(
                     server.command,
@@ -153,8 +146,9 @@ export class MCPManager {
                     description: tool.description,
 
                     parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
-                    execute: async (args: any) => {
-                        return await this.executeTool(client, tool.name, args);
+                    execute: async (args: Infer<any>) => {
+                        const { session, ...cleanArgs } = args;
+                        return await this.executeTool(client, tool.name, cleanArgs);
                     },
                 });
 

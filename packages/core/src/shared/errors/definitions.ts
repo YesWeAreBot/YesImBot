@@ -35,11 +35,19 @@ export const ErrorDefinitions = {
             message: (details: string) => `LLM API 请求失败：${details}`,
             suggestion: "请检查您的网络、API 密钥以及模型提供商的状态页面。这可能是由于频率限制、密钥无效或暂时的服务中断所致",
         },
+
         OUTPUT_PARSING_FAILED: {
             code: "LLM.OUTPUT_PARSING_FAILED",
             message: "解析 LLM 响应失败，输出不是有效的 JSON 格式",
             suggestion: "这通常是暂时的模型问题，请重试。如果问题持续存在，可能是模型不稳定或系统提示词需要调整以确保生成有效的 JSON",
         },
+
+        OUTPUT_EMPTY_CONTENT: {
+            code: "LLM.OUTPUT_EMPTY_CONTENT",
+            message: "LLM 响应为空",
+            suggestion: "这可能是上游API故障导致，建议联系API提供商检查服务状态",
+        },
+
         TIMEOUT: {
             code: "LLM.TIMEOUT",
             message: (duration: number) => `对 LLM 的请求在 ${duration} 秒后超时`,

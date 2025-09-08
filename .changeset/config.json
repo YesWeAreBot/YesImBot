@@ -1,15 +1,15 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": "@changesets/cli/changelog",
-  "commit": false,
-  "fixed": [["koishi-plugin-yesimbot", "@yesimbot/koishi-plugin-code-executor"]],
+  "commit": true,
+  "fixed": [],
   "linked": [],
   "access": "public",
-  "baseBranch": "main",
+  "baseBranch": "v3",
   "updateInternalDependencies": "patch",
   "ignore": [],
   "snapshot": {
     "useCalculatedVersion": true,
-    "prereleaseTemplate": "{tag}.{datetime}"
+    "prereleaseTemplate": "{tag}.{timestamp}"
   }
 }

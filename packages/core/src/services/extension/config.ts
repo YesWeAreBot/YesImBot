@@ -1,4 +1,3 @@
-import { SystemConfig } from "@/config";
 import { Schema } from "koishi";
 
 export interface ToolServiceConfig {
@@ -9,7 +8,6 @@ export interface ToolServiceConfig {
         retryDelay?: number;
         timeout?: number;
     };
-    readonly system?: SystemConfig;
 }
 
 export const ToolServiceConfigSchema = Schema.object({

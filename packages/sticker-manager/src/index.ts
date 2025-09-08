@@ -2,7 +2,6 @@ import { readFile } from "fs/promises";
 import { Context, Schema, Session, h } from "koishi";
 import { AssetService, Extension, Failed, Infer, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import { pathToFileURL } from "url";
 import { StickerService } from "./service";
 export interface StickerConfig {
     storagePath: string;
@@ -234,40 +233,40 @@ export default class StickerTools {
             .option("all", "-a 发送该分类下所有表情包")
             .option("delay", "-d [delay:posint] 发送所有表情包时的延时 (毫秒), 默认为 500 毫秒")
             .action(async ({ session, options }, category, index) => {
-            if (!category) return "请提供分类名称";
+                if (!category) return "请提供分类名称";
 
-            // 获取分类下所有表情包
-            const stickers = await this.stickerService.getStickersByCategory(category);
-            if (!stickers.length) return `分类 "${category}" 中没有表情包`;
+                // 获取分类下所有表情包
+                const stickers = await this.stickerService.getStickersByCategory(category);
+                if (!stickers.length) return `分类 "${category}" 中没有表情包`;
 
-            // 处理索引或随机选择
-            let targetSticker;
-            if (options.all) {
-                // 发送所有表情包
-                const delay = options.delay || 500; // 默认延时 500 毫秒
-                for (const sticker of stickers) {
-                    const ext = sticker.filePath.split(".").pop();
-                    const b64 = await readFile(sticker.filePath, "base64");
-                    const base64Data = `data:image/${ext};base64,${b64}`;
-                    await session.sendQueued(h.image(base64Data));
-                    await new Promise((resolve) => setTimeout(resolve, delay)); // 延时
+                // 处理索引或随机选择
+                let targetSticker;
+                if (options.all) {
+                    // 发送所有表情包
+                    const delay = options.delay || 500; // 默认延时 500 毫秒
+                    for (const sticker of stickers) {
+                        const ext = sticker.filePath.split(".").pop();
+                        const b64 = await readFile(sticker.filePath, "base64");
+                        const base64Data = `data:image/${ext};base64,${b64}`;
+                        await session.sendQueued(h.image(base64Data));
+                        await new Promise((resolve) => setTimeout(resolve, delay)); // 延时
+                    }
+                    return `✅ 已发送分类 "${category}" 下所有 ${stickers.length} 个表情包。`;
+                } else if (index) {
+                    targetSticker = stickers[index - 1];
+                    if (!targetSticker) return `无效序号，该分类共有 ${stickers.length} 个表情包`;
+                } else {
+                    targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
                 }
-                return `✅ 已发送分类 "${category}" 下所有 ${stickers.length} 个表情包。`;
-            } else if (index) {
-                targetSticker = stickers[index - 1];
-                if (!targetSticker) return `无效序号，该分类共有 ${stickers.length} 个表情包`;
-            } else {
-                targetSticker = stickers[Math.floor(Math.random() * stickers.length)];
-            }
 
-            // 发送表情包
-            const ext = targetSticker.filePath.split(".").pop();
-            const b64 = await readFile(targetSticker.filePath, "base64");
-            const base64Data = `data:image/${ext};base64,${b64}`;
+                // 发送表情包
+                const ext = targetSticker.filePath.split(".").pop();
+                const b64 = await readFile(targetSticker.filePath, "base64");
+                const base64Data = `data:image/${ext};base64,${b64}`;
 
-            await session.sendQueued(h.image(base64Data));
-            return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
-        });
+                await session.sendQueued(h.image(base64Data));
+                return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
+            });
 
         ctx.command("sticker.info <category>", "查看分类详情", { authority: 3 }).action(async ({ session }, category) => {
             const stickers = await this.stickerService.getStickersByCategory(category);

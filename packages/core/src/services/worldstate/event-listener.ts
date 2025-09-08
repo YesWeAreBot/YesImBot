@@ -1,10 +1,11 @@
+import { Argv, Context, Logger, Random, Session } from "koishi";
+
 import { Services, TableName } from "@/shared/constants";
-import { Logger, Argv, Random, Context, Session } from "koishi";
+import { truncate } from "@/shared/utils";
 import { AssetService } from "../assets";
 import { HistoryConfig } from "./config";
-import { AgentStimulus, UserMessagePayload, SystemEventPayload, CommandInvocationPayload } from "./types";
-import { WorldStateService } from "./world-state-service";
-import { truncate } from "@/shared/utils";
+import { WorldStateService } from "./index";
+import { AgentStimulus, MessageData, SystemEventData, SystemEventPayload, UserMessagePayload } from "./types";
 
 interface PendingCommand {
     commandEventId: string;
@@ -33,7 +34,6 @@ export class EventListenerManager {
 
     public start(): void {
         this.registerEventListeners();
-        migrateSystemEvents(this.ctx).catch((error) => this.logger.error("迁移系统事件失败", error.message));
     }
 
     public stop(): void {
@@ -69,20 +69,20 @@ export class EventListenerManager {
                     return next();
                 }
 
+                if (session.author?.isBot) return next();
+
                 await this.recordUserMessage(session);
                 await next();
 
                 if (!session["__commandHandled"]) {
-                    const segmentRecord = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
                     const stimulus: AgentStimulus<UserMessagePayload> = {
                         type: "user_message",
                         channelCid: session.cid,
                         session,
-                        priority: 5, // 普通消息优先级为中等
-                        payload: { sid: segmentRecord.id },
+                        priority: 5, // Normal message priority
+                        payload: { messageIds: [session.messageId] },
                     };
                     this.ctx.emit("agent/stimulus", stimulus);
-                    return;
                 }
             })
         );
@@ -101,6 +101,7 @@ export class EventListenerManager {
             this.ctx.on("message", (session) => {
                 if (!this.service.isChannelAllowed(session)) return;
                 if (session.userId === session.bot.selfId && !session.scope) {
+                    if (this.config.ignoreSelfMessage) return;
                     this.handleOperatorMessage(session);
                 }
             })
@@ -125,18 +126,20 @@ export class EventListenerManager {
                 const action = session.event._data.action;
                 const suffix = session.event._data.suffix;
 
-                const payload: SystemEventPayload = {
-                    eventType: "notice",
-                    details: {
-                        authorId,
-                        targetId,
-                        action,
-                        suffix,
+                const payload: Partial<SystemEventData> = {
+                    type: "notice-poke",
+                    payload: {
+                        details: { authorId, targetId, action, suffix },
                     },
                     message: `系统提示：${authorId} ${action} ${targetId} ${suffix}`,
                 };
-
-                this.service.recordSystemEvent(session, payload);
+                this.service.recordSystemEvent({
+                    id: `sysevt_poke_${Random.id()}`,
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    timestamp: new Date(),
+                    ...payload,
+                } as SystemEventData);
 
                 break;
         }
@@ -150,30 +153,28 @@ export class EventListenerManager {
 
                 if (duration < 0) {
                     // 全体禁言
-                    const payload: SystemEventPayload = {
-                        eventType: "guild-all-member-ban",
-                        details: {
-                            operator: session.event.operator,
-                            duration: duration,
-                        },
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言。`,
+                    const payload: Partial<SystemEventData> = {
+                        type: "guild-all-member-ban",
+                        payload: { details: { operator: session.event.operator, duration } },
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言`,
                     };
-
                     this.service.updateMuteStatus(session.cid, Number.POSITIVE_INFINITY);
-
-                    this.service.recordSystemEvent(session, payload);
+                    this.service.recordSystemEvent({
+                        id: `sysevt_ban_${Random.id()}`,
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        timestamp: new Date(),
+                        ...payload,
+                    } as SystemEventData);
                     return;
                 }
 
                 if (duration === 0) {
                     // 解除禁言
-                    const payload: SystemEventPayload = {
-                        eventType: "guild-member-unban",
-                        details: {
-                            user: session.event.user,
-                            operator: session.event.operator,
-                        },
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言。`,
+                    const payload: Partial<SystemEventData> = {
+                        type: "guild-member-unban",
+                        payload: { details: { user: session.event.user, operator: session.event.operator } },
+                        message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言`,
                     };
 
                     if (isTargetingBot) {
@@ -183,26 +184,33 @@ export class EventListenerManager {
                             channelCid: session.cid,
                             session,
                             priority: 8,
-                            payload: payload,
+                            payload: payload as SystemEventPayload,
                         };
                         this.ctx.emit("agent/stimulus", stimulus);
                     }
-
-                    this.service.recordSystemEvent(session, payload);
+                    this.service.recordSystemEvent({
+                        id: `sysevt_unban_${Random.id()}`,
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        timestamp: new Date(),
+                        ...payload,
+                    } as SystemEventData);
                     return;
                 }
 
-                const payload: SystemEventPayload = {
-                    eventType: "guild-member-ban",
-                    details: {
-                        user: session.event.user,
-                        operator: session.event.operator,
-                        duration: duration,
-                    },
-                    message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms。`,
+                const payload: Partial<SystemEventData> = {
+                    type: "guild-member-ban",
+                    payload: { details: { user: session.event.user, operator: session.event.operator, duration } },
+                    message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms`,
                 };
 
-                this.service.recordSystemEvent(session, payload);
+                this.service.recordSystemEvent({
+                    id: `sysevt_ban_${Random.id()}`,
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    timestamp: new Date(),
+                    ...payload,
+                } as SystemEventData);
 
                 if (isTargetingBot) {
                     const expiresAt = duration > 0 ? Date.now() + duration : 0;
@@ -214,11 +222,8 @@ export class EventListenerManager {
     }
 
     private async handleOperatorMessage(session: Session): Promise<void> {
-        if (!this.service.isChannelAllowed(session)) return;
-
         this.logger.debug(`记录手动发送的消息 | 频道: ${session.cid}`);
-        const segment = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
-        await this.recordBotSentMessage(session, segment.id);
+        await this.recordBotSentMessage(session);
     }
 
     private async handleCommandInvocation(argv: Argv): Promise<void> {
@@ -226,23 +231,23 @@ export class EventListenerManager {
         if (!session) return;
 
         this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
-
-        const segmentRecord = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
         const commandEventId = `cmd_invoked_${session.messageId || Random.id()}`;
 
-        const eventPayload: CommandInvocationPayload = {
-            name: command.name,
-            source,
-            invoker: { pid: session.userId, name: session.author.nick || session.author.name },
-        };
-
-        await this.ctx.database.create(TableName.SystemEvents, {
+        const eventPayload: SystemEventData = {
             id: commandEventId,
-            sid: segmentRecord.id,
+            platform: session.platform,
+            channelId: session.channelId,
             type: "command-invoked",
             timestamp: new Date(),
-            payload: eventPayload,
-        });
+            payload: {
+                name: command.name,
+                source,
+                invoker: { pid: session.userId, name: session.author.nick || session.author.name },
+            },
+            message: `系统提示：用户 "${session.author.name || session.userId}" 调用了指令 "${command.name}"`,
+        };
+
+        await this.service.recordSystemEvent(eventPayload);
 
         const pendingList = this.pendingCommands.get(session.channelId) || [];
         pendingList.push({
@@ -275,16 +280,16 @@ export class EventListenerManager {
 
     private async recordUserMessage(session: Session): Promise<void> {
         /* prettier-ignore */
-        this.logger.info( `用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
+        this.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
-        const segment = await this.service.getOpenSegment(session.platform, session.channelId, session.guildId);
         if (session.guildId) {
             await this.updateMemberInfo(session);
         }
 
         const content = await this.assetService.transform(session.content);
         this.logger.debug(`记录转义后的消息：${content}`);
-        await this.service.recordMessage(segment.id, {
+
+        const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
@@ -296,24 +301,24 @@ export class EventListenerManager {
             content,
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
-        });
+        };
+        await this.service.recordMessage(message);
     }
 
-    private async recordBotSentMessage(session: Session, segmentId?: string): Promise<void> {
-        if (!this.service.isChannelAllowed(session)) return;
+    private async recordBotSentMessage(session: Session): Promise<void> {
         if (!session.content || !session.messageId) return;
 
         this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
-        const sid = segmentId || (await this.service.getOpenSegment(session.platform, session.channelId, session.guildId)).id;
 
-        await this.service.recordMessage(sid, {
+        const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
             sender: { id: session.bot.selfId, name: session.bot.user.nick || session.bot.user.name },
             content: session.content,
             timestamp: new Date(),
-        });
+        };
+        await this.service.recordMessage(message);
     }
 
     private async updateMemberInfo(session: Session): Promise<void> {
@@ -340,22 +345,3 @@ export class EventListenerManager {
     }
 }
 // #endregion
-
-async function migrateSystemEvents(ctx: Context) {
-    const eventsToUpdate = await ctx.database.get(TableName.SystemEvents, { platform: { $exists: false } });
-    for (const event of eventsToUpdate) {
-        const segment = await ctx.database
-            .get(TableName.DialogueSegments, { id: event.sid }, ["platform", "channelId"])
-            .then((res) => res.shift());
-        if (segment) {
-            await ctx.database.set(
-                TableName.SystemEvents,
-                { id: event.id },
-                {
-                    platform: segment.platform,
-                    channelId: segment.channelId,
-                }
-            );
-        }
-    }
-}

@@ -1,7 +1,7 @@
 {
   "name": "@yesimbot/koishi-plugin-code-executor",
   "description": "Yes! I'm Bot! 代码执行器扩展插件",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/YesWeAreBot/YesImBot",
@@ -34,17 +34,20 @@
     "url": "git+https://github.com/YesWeAreBot/YesImBot.git",
     "directory": "packages/code-executor"
   },
+  "bugs": {
+    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
+  },
   "dependencies": {
-    "isolated-vm": "^5.0.4",
-    "pyodide": "^0.28.1"
+    "isolated-vm": "5.0.4",
+    "pyodide": "0.28.2"
   },
   "devDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "3.0.0-beta.4"
+    "koishi-plugin-yesimbot": "^3.0.0"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "3.0.0-beta.4"
+    "koishi-plugin-yesimbot": "^3.0.0"
   },
   "publishConfig": {
     "access": "public"

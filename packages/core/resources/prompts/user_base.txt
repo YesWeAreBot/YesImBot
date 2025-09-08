@@ -2,6 +2,3 @@
 {{#WORLD_STATE}}
 {{> agent.partial.world_state }}
 {{/WORLD_STATE}}
-{{#CURRENT_CONVERSATION}}
-{{> agent.partial.current_turn_history }}
-{{/CURRENT_CONVERSATION}}

@@ -47,6 +47,7 @@ export default class CoreUtilExtension {
 
     private readonly logger: Logger;
     private readonly assetService: AssetService;
+    private disposed: boolean;
 
     constructor(
         public ctx: Context,
@@ -54,20 +55,29 @@ export default class CoreUtilExtension {
     ) {
         this.logger = ctx[Services.Logger].getLogger("[核心工具]");
         this.assetService = ctx[Services.Asset];
+
+        ctx.on("dispose", () => {
+            this.disposed = true;
+        });
     }
 
     @Tool({
         name: "send_message",
         description: "发送消息",
         parameters: withInnerThoughts({
-            message: Schema.string()
-                .required()
-                .description(
-                    "The message content to send. Use `<sep/>` to split a long response into multiple, shorter messages, which will be sent with natural delays. E.g., 'Hello there<sep/>How are you?'"
-                ),
-            target: Schema.string().description(
-                "Optional. Specifies where to send the message, using `platform:id` format. Defaults to the current channel. E.g., `onebot:123456789` for a group, or `discord:private:987654321` for a private chat."
-            ),
+            message: Schema.string().required().description(`**Visible message content to the user.**
+      You may embed the platform's XML-style formatting tags **only inside this field**, never outside the JSON.
+      - \`<at id="USER_ID"/>\` : Mention a user. E.g., \`<at id="12345"/> 在吗？\`
+      - \`<quote id="MESSAGE_ID"/>\` : Quote a specific message. Must be the FIRST element in the message. E.g., \`<quote id="abc-def"/>你刚刚说的那个是啥意思\`
+      - \`<img id="INTERNAL_ID"/>\` : Send an image with known ID. E.g., \`<img id="pixiv-12345"/>\`
+      - \`<sep/>\` : Split a long message into multiple parts (natural delays). E.g., \`这个啊<sep/>我看一下...\`
+      Rules:
+        * These tags are part of the message formatting capabilities of this platform.
+        * You MUST only include them inside the \`message\` field of a \`send_message\` action.
+        * NEVER output them at the top-level of your reply or inside "thoughts".
+        * Do not wrap them in Markdown.`),
+            target: Schema.string().description(`Optional. Specifies where to send the message, using \`platform:id\` format.
+      Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
     })
     async sendMessage(args: Infer<{ message: string; target?: string }>) {
@@ -267,15 +277,16 @@ export default class CoreUtilExtension {
             // --- 处理图片元素 ---
             const content = await this.assetService.encode(msg);
 
-            this.logger.debug(`发送消息 | 延迟: ${delay}ms`);
+            this.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
             await sleep(delay);
+
+            if (this.disposed) return;
 
             // --- 发送消息 ---
             const messageIds = await bot.sendMessage(channelId, content);
 
-            // --- 发送后处理（例如发射事件）---
-            // 使用 then 回调不是最佳实践，async/await 更清晰
+            // --- 发送后处理 ---
             if (messageIds && messageIds.length > 0) {
                 this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
             }

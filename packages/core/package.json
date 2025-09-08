@@ -1,10 +1,10 @@
 {
   "name": "koishi-plugin-yesimbot",
   "description": "Yes! I'm Bot! 机械壳，人类心",
-  "version": "3.0.0-beta.4",
+  "version": "3.0.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
-  "homepage": "https://github.com/HydroGest/YesImBot",
+  "homepage": "https://github.com/YesWeAreBot/YesImBot",
   "files": [
     "lib",
     "dist",
@@ -32,8 +32,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "url": "git+https://github.com/YesWeAreBot/YesImBot.git",
     "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
   },
   "exports": {
     ".": "./lib/index.js",
@@ -50,17 +53,17 @@
     }
   },
   "dependencies": {
+    "@miaowfish/gifwrap": "^0.10.1",
     "gray-matter": "^4.0.3",
+    "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
-    "lru-cache": "^11.1.0",
     "mustache": "^4.2.0",
-    "reflect-metadata": "^0.2.2",
-    "sharp": "^0.34.3",
-    "undici": "^7.12.0",
+    "semver": "^7.7.2",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@types/sharp": "^0.32.0",
+    "@koishijs/plugin-notifier": "^1.2.1",
+    "@types/semver": "^7",
     "@xsai-ext/providers-cloud": "^0.3.2",
     "@xsai-ext/providers-local": "^0.3.2",
     "@xsai-ext/shared-providers": "^0.3.2",

@@ -1,39 +1,11 @@
-{{#date.now}}Current Date: {{.}}{{/date.now}}
-{{! ======================================================= }}
-{{!              最优先的触发上下文                         }}
-{{! ======================================================= }}
+{{#triggerContext.length}}
 <trigger_context>
   {{#triggerContext}}
-  {{#isScheduledTask}}
-  <system_alert priority="high">
-    <reason>SCHEDULED TASK</reason>
-    <instructions>
-      现在是预定时间，你需要处理以下任务。请忽略最近的聊天内容，优先完成此任务并作出回应。
-    </instructions>
-    <task_details>
-      <name>{{task.taskName}}</name>
-      <content>{{task.taskContent}}</content>
-    </task_details>
-  </system_alert>
-  {{/isScheduledTask}}
-  {{#isTaskCompletion}}
-  <system_alert priority="high">
-    <reason>BACKGROUND TASK COMPLETED</reason>
-    <instructions>
-      你之前启动的一个后台任务已经完成。请根据任务结果，向用户进行汇报或继续下一步计划。
-    </instructions>
-    <task_result>
-      <original_task>{{taskResult.originalTask}}</original_task>
-      <status>{{taskResult.status}}</status>
-      <result>{{#taskResult.result}}{{_toString}}{{/taskResult.result}}</result>
-    </task_result>
-  </system_alert>
-  {{/isTaskCompletion}}
   {{#isSystemEvent}}
   <system_alert priority="medium">
     <reason>SYSTEM EVENT DETECTED</reason>
     <instructions>
-      群组中发生了一个系统事件，你可以酌情对此作出回应。
+      A system event occurred in the group, you can respond to it as appropriate.
     </instructions>
     <event_details>
       <type>{{event.eventType}}</type>
@@ -43,122 +15,95 @@
   {{/isSystemEvent}}
   {{/triggerContext}}
 </trigger_context>
-{{! ======================================================= }}
-{{!              原有的世界状态（历史记录等）               }}
-{{! ======================================================= }}
+{{/triggerContext.length}}
+
 <world_state>
-  # 我所知道的群成员信息
-  {{#users}}
-  ## 关于 {{id}}({{name}})
-  - 核心印象: {{description}}
-  {{/users}}
-  {{^users.length}}
-  ## 我还没有记住任何群成员的信息
-  {{/users.length}}
-  {{#channel}}
-  <channel id="{{id}}" type="{{type}}" platform="{{platform}}">
-    <name>{{name}}</name>
-    {{#meta.description}}
-    <description>{{.}}</description>
-    {{/meta.description}}
-    {{#members.length}}
-    <members>
-      {{#members}}
-      <user id="{{pid}}"{{#nick}} nick="{{.}}"{{/nick}}{{#roles}} roles="{{_toString}}"{{/roles}}{{#isSelf}} self="true"{{/isSelf}}>{{name}}</user>
-      {{/members}}
-    </members>
-    {{/members.length}}
-    <history>
-      {{#history.summarized}}
-      <segment status="summarized" start="{{startTimestamp}}" end="{{endTimestamp}}">
-        <summary>{{summary}}</summary>
-      </segment>
-      {{/history.summarized}}
-      {{#history.folded}}
-      <segment status="folded" start="{{startTimestamp}}" end="{{endTimestamp}}">
-        {{#dialogue.length}}
-        <dialogue>
-        {{#dialogue}}
-          [{{id}}|{{date}} {{time}}|{{sender.name}}({{sender.id}})]{{#quoteId}} <quote id="{{.}}"/>{{/quoteId}} {{#content}}{{_truncate}}{{/content}}
-        {{/dialogue}}
-        </dialogue>
-        {{/dialogue.length}}
-      </segment>
-      {{/history.folded}}
-      {{#history.closed}}
-      <segment status="closed" start="{{startTimestamp}}">
-        {{#dialogue.length}}
-        <dialogue>
-        {{#dialogue}}
-          [{{id}}|{{date}} {{time}}|{{sender.name}}({{sender.id}})]{{#quoteId}} <quote id="{{.}}"/>{{/quoteId}} {{#content}}{{_truncate}}{{/content}}
-        {{/dialogue}}
-        </dialogue>
-        {{/dialogue.length}}
-        {{#systemEvents.length}}
-        <system_events>
-        {{#systemEvents}}
-          <event type="{{type}}" timestamp="{{date}}">{{#payload.message}}{{_toString}}{{/payload.message}}</event>
-        {{/systemEvents}}
-        </system_events>
-        {{/systemEvents.length}}
-        {{#agentTurn.responses.length}}
-        {{#agentTurn}}
-        <agent_turn timestamp="{{timestamp}}">
-          {{#responses}}
-          <response>
-            <thoughts>
-              <observe>{{thoughts.observe}}</observe>
-              <analyze_infer>{{thoughts.analyze_infer}}</analyze_infer>
-              <plan>{{thoughts.plan}}</plan>
-            </thoughts>
-            <actions>
-              {{#actions}}
-              <action>
-                <function>{{function}}</function>
-                <params>{{_renderParams}}</params>
-              </action>
-              {{/actions}}
-            </actions>
-            <observations>
-              {{#observations}}
-              <observation>
-                <function>{{function}}</function>
-                <status>{{status}}</status>
-                {{#result}}
-                <result>{{_toString}}</result>
-                {{/result}}
-                {{#error}}
-                <error>{{_toString}}</error>
-                {{/error}}
-              </observation>
-              {{/observations}}
-            </observations>
-          </response>
-          {{/responses}}
-        </agent_turn>
-        {{/agentTurn}}
-        {{/agentTurn.responses.length}}
-      </segment>
-      {{/history.closed}}
-      {{#history.pending}}
-      <segment status="open" start="{{startTimestamp}}"{{#is_current}} is_current="true"{{/is_current}}>
-        {{#systemEvents.length}}
-        <system_events>
-        {{#systemEvents}}
-          <event type="{{type}}" timestamp="{{date}}">{{#payload.message}}{{_toString}}{{/payload.message}}</event>
-        {{/systemEvents}}
-        </system_events>
-        {{/systemEvents.length}}
-        {{#dialogue.length}}
-        <dialogue>
-        {{#dialogue}}
-          [{{id}}|{{date}} {{time}}|{{sender.name}}({{sender.id}})]{{#quoteId}} <quote id="{{.}}"/>{{/quoteId}} {{#content}}{{_truncate}}{{/content}}
-        {{/dialogue}}
-        </dialogue>
-        {{/dialogue.length}}
-      </segment>
-      {{/history.pending}}
-    </history>
+  <channel id="{{channel.id}}" type="{{channel.type}}" platform="{{channel.platform}}">
+    <name>{{channel.name}}</name>
   </channel>
-  {{/channel}}
+
+  <users>
+  {{#users}}
+    <user id="{{id}}">
+      <name>{{name}}</name>
+      {{#description}}
+      <description>{{.}}</description>
+      {{/description}}
+      {{#roles}}
+      <role>{{#.}}{{_toString}}{{/.}}</role>
+      {{/roles}}
+    </user>
+  {{/users}}
+  {{^users}}
+    <system_note>No user profiles available in the current context.</system_note>
+  {{/users}}
+  </users>
+
+  {{! ======================= L1 Working Memory ======================= }}
+  <working_memory>
+    <summary>
+      This section is your most recent and active conversation memory.
+      It is split into:
+      1) processed_events = past history you have already handled,
+      2) new_events = NEW stimuli that triggered this turn.
+    </summary>
+
+    <processed_events>
+    {{#l1_working_memory.processed_events}}
+      {{> agent.partial.l1_history_item }}
+    {{/l1_working_memory.processed_events}}
+    {{^l1_working_memory.processed_events}}
+      <system_note>There are no processed events in the current context.</system_note>
+    {{/l1_working_memory.processed_events}}
+    </processed_events>
+
+    <new_events>
+      <!-- The following are new events you have NOT seen before.
+           They include:
+            - (A) Observation results from your LAST ACTION
+            - (B) New user/system messages.
+           ALWAYS check for observations FIRST.
+           If present, treat them as the single-use heartbeat result.
+           If it's error/empty, adjust plan immediately — DO NOT keep waiting. -->
+    {{#l1_working_memory.new_events}}
+      {{> agent.partial.l1_history_item }}
+    {{/l1_working_memory.new_events}}
+    {{^l1_working_memory.new_events}}
+      <system_note>There are no new events since the last time you responded.</system_note>
+    {{/l1_working_memory.new_events}}
+    </new_events>
+
+  </working_memory>
+  {{! ======================= L2 Retrieved Memories ======================= }}
+  {{#l2_retrieved_memories.length}}
+  <retrieved_memories>
+    <summary>
+      Relevant snippets from past conversations, retrieved for their similarity to the current topic.
+      These are passive memory injections — use them BEFORE consulting external tools.
+    </summary>
+    {{#l2_retrieved_memories}}
+    <memory_chunk timestamp="{{timestamp}}">
+{{content}}
+    </memory_chunk>
+    {{/l2_retrieved_memories}}
+  </retrieved_memories>
+  {{/l2_retrieved_memories.length}}
+  {{! ======================= L3 Diary Entries ======================= }}
+  {{#l3_diary_entries}}
+  <diary_entries>
+    <summary>Long-term memory reflections on past events.</summary>
+    {{#.}}
+    <diary_entry date="{{date}}">
+      <keywords>
+      {{#keywords}}
+        <keyword>{{.}}</keyword>
+      {{/keywords}}
+      </keywords>
+      <content>
+        {{content}}
+      </content>
+    </diary_entry>
+    {{/.}}
+  </diary_entries>
+  {{/l3_diary_entries}}
 </world_state>

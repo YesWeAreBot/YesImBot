@@ -39,6 +39,10 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
 })
 export default class SearchExtension {
     public static readonly Config = SearchConfigSchema;
+    static readonly inject = {
+        required: ["http"],
+        optional: ["puppeteer"],
+    };
 
     constructor(
         public ctx: Context,
@@ -66,6 +70,10 @@ export default class SearchExtension {
             max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
             use_dynamic: Schema.boolean().default(false).description("是否强制使用无头浏览器获取动态内容"),
         }),
+        isSupported: (session) => {
+            const ctx = session.app;
+            return !!ctx.puppeteer;
+        },
     })
     async fetchWebPage(
         args: Infer<{
@@ -315,6 +323,9 @@ export default class SearchExtension {
 
             return Success(resultText);
         } catch (error: any) {
+            if (error.message.includes("timeout")) {
+                return Failed("搜索请求超时", { retryable: true });
+            }
             this.ctx.logger.error(`网络搜索失败: `, error);
             return Failed(`搜索过程中发生错误: ${error.message}`);
         }

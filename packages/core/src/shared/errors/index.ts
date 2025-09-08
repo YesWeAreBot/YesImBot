@@ -14,7 +14,7 @@ export interface ErrorReporterConfig {
 }
 
 export const ErrorReporterConfigSchema = Schema.object({
-    enabled: Schema.boolean().default(false).description("是否启用错误上报"),
+    enabled: Schema.boolean().default(true).description("是否启用错误上报"),
     pasteServiceUrl: Schema.string().role("link").default("https://dump.yesimbot.chat/").description("错误上报服务的 URL"),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
@@ -49,19 +49,20 @@ export class ErrorReporter {
      * 格式化并上报错误
      * @param context 包含错误和附加上下文的对象
      */
-    public async report(context: ReportContext): Promise<void> {
+    public async report(context: ReportContext): Promise<string> {
         if (!this.config.enabled || !this.config.pasteServiceUrl) {
-            return;
+            return null;
         }
 
         try {
             const dump = this.formatErrorDump(context);
             const url = await this.uploadToPaste(dump);
             if (url) {
-                this.logger.info(`[错误报告] [ID: ${context.errorId}] 成功上传到: ${url}`);
+                this.logger.info(`此错误已上报，可通过 ${url} 查看详细信息`);
             }
+            return url;
         } catch (uploadError) {
-            this.logger.error(`[错误报告] [ID: ${context.errorId}] 上报失败: ${(uploadError as Error).message}`);
+            this.logger.error(`上报失败: ${(uploadError as Error).message}`);
         }
     }
 
@@ -77,14 +78,14 @@ export class ErrorReporter {
             });
 
             if (!response.ok) {
-                this.logger.error(`[错误报告] 上传服务返回错误: ${response.status} - ${response.statusText}`);
+                this.logger.error(`上传服务返回错误: ${response.status} - ${response.statusText}`);
                 return null;
             }
 
             const data = await response.json();
             return data?.url || null;
         } catch (error) {
-            this.logger.error(`[错误报告] 连接上报服务失败: ${(error as Error).message}`);
+            this.logger.error(`连接上报服务失败: ${(error as Error).message}`);
             return null;
         }
     }
@@ -138,6 +139,13 @@ export class ErrorReporter {
                 `**Message:** \`${causeError.message}\`\n`,
                 "```\n" + (causeError.stack || "No stack available.") + "\n```"
             );
+            if (causeError instanceof AggregateError) {
+                dumpSections.push(`### 🌿 聚合错误包含的内部错误:\n`);
+                causeError.errors.forEach((e, index) => {
+                    dumpSections.push(`#### 内部错误 ${index + 1}:\n`, "```\n" + e.stack + "\n```");
+                });
+                dumpSections.push(`---`);
+            }
         }
 
         return dumpSections.join("\n");
@@ -247,7 +255,13 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
         logger.warn(`   - 调试上下文: ${JSON.stringify(devContext)}`);
     }
     // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
-    logger.debug(`   - 堆栈追踪:\n${stack}`);
+    // logger.debug(`   - 堆栈追踪:\n${stack}`);
+    if (appError.cause) {
+        //@ts-ignore
+        logger.debug(`   - 根本原因: ${appError.cause.message}\n${appError.cause.stack}`);
+    } else {
+        logger.debug(`   - 堆栈追踪:\n${stack}`);
+    }
 
     // 步骤 3: 触发全局错误上报 (例如上报到 Sentry 等监控服务)
     if (globalErrorReporter) {
@@ -255,7 +269,8 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
             errorId,
             error: appError,
         });
-        logger.info(`   - 追踪: 此错误已上报，可凭错误 ID [${errorId}] 查询详情。`);
+    } else {
+        logger.warn(`   - 追踪: 此错误未上报，如需查看更多信息，请打开 DEBUG 日志查看堆栈信息`);
     }
 
     return errorId;

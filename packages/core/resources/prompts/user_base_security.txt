@@ -19,9 +19,6 @@
 {{#WORLD_STATE}}
 {{> agent.partial.world_state }}
 {{/WORLD_STATE}}
-{{#CURRENT_CONVERSATION}}
-{{> agent.partial.current_turn_history }}
-{{/CURRENT_CONVERSATION}}
 
 ### 你的任务 (YOUR TASK) ###
 你的唯一任务是根据上方**[对话上下文]**，对标记为 `is_current="true"` 的最新用户消息做出回应。你的输出是一个格式正确的JSON对象。

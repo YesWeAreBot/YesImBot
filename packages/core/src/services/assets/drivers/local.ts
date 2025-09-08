@@ -1,9 +1,9 @@
 // src/services/asset/drivers/local.ts
 
-import { promises as fs } from "fs";
+import { promises as fs, Stats } from "fs";
 import { Context, Logger } from "koishi";
-import { resolve } from "path";
-import { StorageDriver } from "../types";
+import path, { resolve } from "path";
+import { StorageDriver, FileStats } from "../types";
 
 /**
  * 本地文件系统存储驱动
@@ -83,6 +83,37 @@ export class LocalStorageDriver implements StorageDriver {
             return true;
         } catch {
             return false;
+        }
+    }
+
+    async getStats(id: string): Promise<FileStats | null> {
+        try {
+            const filePath = this.getPath(id);
+            const stats: Stats = await fs.stat(filePath);
+            return {
+                size: stats.size,
+                modifiedAt: stats.mtime,
+                createdAt: stats.birthtime || stats.mtime,
+            };
+        } catch (error) {
+            if (error.code === "ENOENT") {
+                return null;
+            }
+            this.logger.error(`获取文件统计信息失败: ${id} - ${error.message}`);
+            throw error;
+        }
+    }
+
+    async listFiles(): Promise<string[]> {
+        try {
+            const files = await fs.readdir(this.baseDir);
+            return files.filter((file) => !file.startsWith("."));
+        } catch (error) {
+            if (error.code === "ENOENT") {
+                return [];
+            }
+            this.logger.error(`列出文件失败: ${error.message}`);
+            throw error;
         }
     }
 }

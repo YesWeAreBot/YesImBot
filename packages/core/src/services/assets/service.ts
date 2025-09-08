@@ -1,15 +1,17 @@
-import { Services, TableName } from "@/shared/constants";
-import { formatSize, truncate } from "@/shared/utils";
+import { GifUtil } from "@miaowfish/gifwrap";
 import { createHash } from "crypto";
-import { fromBuffer } from "file-type";
-import { promises as fs } from "fs";
+import { readFileSync } from "fs";
+import { Jimp } from "jimp";
 import { Context, Element, Service, h } from "koishi";
-import sharp from "sharp";
+import path from "path";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
-import { AssetServiceConfig } from "./config";
+
+import { Config } from "@/config";
+import { Services, TableName } from "@/shared/constants";
+import { formatSize, getMimeType, truncate } from "@/shared/utils";
 import { LocalStorageDriver } from "./drivers/local";
-import { AssetData, AssetInfo, AssetMetadata, ReadAssetOptions, StorageDriver } from "./types";
+import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
 const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
 
@@ -46,7 +48,7 @@ declare module "koishi" {
  * 资源管理服务 (AssetService)
  * 负责资源的持久化存储、去重、读取、处理和生命周期管理
  */
-export class AssetService extends Service<AssetServiceConfig> {
+export class AssetService extends Service<Config> {
     static readonly inject = ["database", "server", "http", Services.Logger];
 
     // 缓存和常量
@@ -56,16 +58,17 @@ export class AssetService extends Service<AssetServiceConfig> {
     private storage: StorageDriver;
     private cacheStorage: StorageDriver;
 
-    constructor(ctx: Context, config: AssetServiceConfig) {
+    private assetEndpoint: string;
+
+    constructor(ctx: Context, config: Config) {
         super(ctx, Services.Asset, true);
         this.config = config;
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节
         this.logger = ctx[Services.Logger].getLogger("[资源服务]");
+        this.assetEndpoint = this.config.assetEndpoint;
     }
 
     protected async start() {
-        this.logger.info("资源服务正在启动...");
-
         // 初始化存储驱动
         this.storage = new LocalStorageDriver(this.ctx, this.config.storagePath);
         this.cacheStorage = new LocalStorageDriver(this.ctx, this.config.image.processedCachePath);
@@ -89,17 +92,19 @@ export class AssetService extends Service<AssetServiceConfig> {
         if (this.config.autoClear.enabled) {
             const interval = this.config.autoClear.intervalHours * 3600 * 1000;
             this.ctx.setInterval(() => this.runAutoClear(), interval);
-            this.logger.info(
-                `已启用资源自动清理，周期: ${this.config.autoClear.intervalHours} 小时，保留天数: ${this.config.autoClear.maxAgeDays}`
-            );
+            try {
+                // 首次运行立即执行清理
+                await this.runAutoClear();
+            } catch (error) {
+                this.logger.error("资源自动清理任务失败:", error.message);
+                this.logger.debug(error.stack);
+            }
         }
 
         // 注册 HTTP 访问端点
-        if (this.config.endpoint) {
+        if (this.assetEndpoint) {
             this.registerHttpEndpoint();
         }
-
-        this.logger.success("资源服务已启动。");
     }
 
     /**
@@ -111,7 +116,6 @@ export class AssetService extends Service<AssetServiceConfig> {
     async transform(source: string | Element[]): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
         const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, false));
-        // return h.render(transformedElements);
         return transformedElements.join("");
     }
 
@@ -124,7 +128,6 @@ export class AssetService extends Service<AssetServiceConfig> {
     async transformAsync(source: string | Element[]): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
         const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, true));
-        // return h.render(transformedElements);
         return transformedElements.join("");
     }
 
@@ -136,47 +139,43 @@ export class AssetService extends Service<AssetServiceConfig> {
      * @returns 资源的唯一 ID
      */
     async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string } = {}): Promise<string> {
-        const buffer = await this._getSourceBuffer(source);
-        if (!buffer || buffer.length === 0) throw new Error("资源内容为空");
+        const { data, type } = await this._getSourceBuffer(source);
+        if (!data || data.length === 0) throw new Error("资源内容为空");
 
-        const hash = createHash("sha256").update(buffer).digest("hex");
+        const hash = createHash("sha256").update(data).digest("hex");
         const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
 
         if (existing) {
-            //this.logger.debug(`资源哈希命中 (源: ${truncate(String(source), 50)})，复用ID: ${existing.id}`);
             await this._updateLastUsed(existing.id);
             return existing.id;
         }
 
-        const fileType = await fromBuffer(buffer);
-        const mime = fileType?.mime || "application/octet-stream";
-
         // 如果是图片，尝试获取尺寸信息
-        if (mime.startsWith("image/")) {
+        if (type.startsWith("image/")) {
             try {
-                const imageMeta = await sharp(buffer).metadata();
-                metadata.width = imageMeta.width;
-                metadata.height = imageMeta.height;
+                const jimp = await Jimp.read(data);
+                metadata.width = jimp.width;
+                metadata.height = jimp.height;
             } catch (e) {
                 this.logger.warn(`无法解析图片元数据: ${e.message}`);
             }
         }
 
         const id = options.id || uuidv4();
-        await this.storage.write(id, buffer);
+        await this.storage.write(id, data);
 
         const assetData: AssetData = {
             id,
-            mime,
+            mime: type,
             hash,
-            size: buffer.length,
+            size: data.length,
             createdAt: new Date(),
             lastUsedAt: new Date(),
             metadata,
         };
 
         await this.ctx.database.upsert(TableName.Assets, [assetData]);
-        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${mime} | 大小: ${formatSize(buffer.length)}`);
+        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${type} | 大小: ${formatSize(data.length)}`);
         return id;
     }
 
@@ -241,13 +240,13 @@ export class AssetService extends Service<AssetServiceConfig> {
      * @returns 资源的公开链接，若未配置 endpoint 则回退到 data URL
      */
     async getPublicUrl(id: string): Promise<string> {
-        if (!this.config.endpoint) {
-            this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL。`);
+        if (!this.assetEndpoint) {
+            this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL`);
             return (await this.read(id, { format: "data-url" })) as string;
         }
 
         await this._updateLastUsed(id); // 确保访问时更新使用时间
-        const endpoint = this.config.endpoint.endsWith("/") ? this.config.endpoint : `${this.config.endpoint}/`;
+        const endpoint = this.assetEndpoint.endsWith("/") ? this.assetEndpoint : `${this.assetEndpoint}/`;
         return `${endpoint}${id}`;
     }
 
@@ -264,7 +263,7 @@ export class AssetService extends Service<AssetServiceConfig> {
 
             const info = await this.getInfo(element.attrs.id);
             if (!info) {
-                this.logger.warn(`编码时找不到资源: ${element.attrs.id}，将返回原始元素。`);
+                this.logger.warn(`编码时找不到资源: ${element.attrs.id}，将返回原始元素`);
                 return element;
             }
 
@@ -338,22 +337,37 @@ export class AssetService extends Service<AssetServiceConfig> {
         }
     }
 
-    private async _getSourceBuffer(source: string | Buffer): Promise<Buffer> {
-        if (Buffer.isBuffer(source)) return source;
+    private async _getSourceBuffer(source: string | Buffer): Promise<FileResponse> {
+        if (Buffer.isBuffer(source)) {
+            const mime = getMimeType(source);
+            return {
+                type: mime,
+                data: source,
+            };
+        }
         if (source.startsWith("data:")) {
             const match = source.match(/^data:.+;base64,(.*)$/);
             if (!match) throw new Error("无效的 data: URL 格式");
-            return Buffer.from(match[1], "base64");
+            return {
+                type: match[0].split("/")[1].split(";")[0],
+                data: Buffer.from(match[1], "base64"),
+            };
         }
-        if (source.startsWith("file://")) return fs.readFile(fileURLToPath(source));
+        if (source.startsWith("file://")) {
+            const filepath = fileURLToPath(source);
+            const data = readFileSync(filepath);
+            return {
+                type: getMimeType(data),
+                data: data,
+            };
+        }
         if (source.startsWith("http")) {
             return this._downloadResource(source);
         }
         throw new Error(`不支持的资源来源: "${truncate(source, 50)}"`);
     }
 
-    private async _downloadResource(url: string): Promise<Buffer> {
-        // 1. 预检文件大小
+    private async _downloadResource(url: string): Promise<FileResponse> {
         try {
             const head = await this.ctx.http.head(url, { timeout: this.config.downloadTimeout / 2 });
             const contentLength = head.get("content-length");
@@ -361,18 +375,16 @@ export class AssetService extends Service<AssetServiceConfig> {
                 throw new Error(`文件大小 (${formatSize(Number(contentLength))}) 超出限制 (${formatSize(this.config.maxFileSize)})`);
             }
         } catch (error) {
-            // 如果预检失败（如服务器不支持HEAD），下载时仍会受限于 maxBodySize。
             if (error.message.includes("超出限制")) throw error;
-            //this.logger.warn(`无法预检文件大小 (URL: ${url}): ${error.message}，将继续尝试下载。`);
         }
 
-        // 2. 下载文件
-        const response = await this.ctx.http.get(url, {
-            responseType: "arraybuffer",
-            timeout: this.config.downloadTimeout,
-            // maxBodySize: this.config.maxFileSize,
-        });
-        return Buffer.from(response);
+        const response = await this.ctx.http.file(url, { timeout: this.config.downloadTimeout });
+
+        return {
+            type: response.type,
+            data: Buffer.from(response.data),
+            filename: response.filename,
+        };
     }
 
     private async _readOriginalWithRecovery(id: string, asset: AssetData): Promise<Buffer> {
@@ -383,10 +395,10 @@ export class AssetService extends Service<AssetServiceConfig> {
             if (error.code === "ENOENT" && this.config.recoveryEnabled && asset.metadata.src) {
                 this.logger.warn(`本地文件 ${id} 丢失，尝试从 ${asset.metadata.src} 恢复...`);
                 try {
-                    const buffer = await this._getSourceBuffer(asset.metadata.src);
-                    await this.storage.write(id, buffer); // 恢复文件
-                    this.logger.success(`资源 ${id} 已成功恢复。`);
-                    return buffer;
+                    const { data } = await this._getSourceBuffer(asset.metadata.src);
+                    await this.storage.write(id, data); // 恢复文件
+                    this.logger.success(`资源 ${id} 已成功恢复`);
+                    return data;
                 } catch (recoveryError) {
                     this.logger.error(`资源 ${id} 恢复失败: ${recoveryError.message}`);
                     throw recoveryError; // 抛出恢复失败的错误
@@ -397,30 +409,46 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private async _processImage(buffer: Buffer, mime: string): Promise<Buffer> {
-        if (mime === "image/gif") {
-            if (this.config.image.gifProcessingStrategy === "stitch") {
-                return this._processGifStitch(buffer);
+        try {
+            if (mime === "image/gif") {
+                try {
+                    // 验证是否为有效的GIF
+                    const gif = await GifUtil.read(buffer);
+
+                    if (this.config.image.gifProcessingStrategy === "stitch") {
+                        return await this._processGifStitch(buffer);
+                    }
+                    if (this.config.image.gifProcessingStrategy === "firstFrame") {
+                        return await this._processGifFirstFrame(gif);
+                    }
+                } catch (gifError) {
+                    this.logger.warn(`GIF处理失败，将按静态图片处理: ${gifError.message}`);
+                    // 如果GIF处理失败，按普通图片处理
+                    return await this._compressAndResizeImage(buffer);
+                }
+                // `gifProcessingStrategy` 为 'none' 或其他值，不处理
+                return buffer;
             }
-            if (this.config.image.gifProcessingStrategy === "firstFrame") {
-                // 处理GIF第一帧
-                const firstFrameBuffer = await sharp(buffer, { page: 0 }).toBuffer();
-                return this._compressAndResizeImage(firstFrameBuffer);
-            }
-            // `gifProcessingStrategy` 为 'none' 或其他值，不处理
+
+            return await this._compressAndResizeImage(buffer);
+        } catch (error) {
+            this.logger.error(`图片处理失败: ${error.message}`);
+            // 如果处理失败，返回原始buffer
             return buffer;
         }
-
-        return this._compressAndResizeImage(buffer);
     }
 
     private async _compressAndResizeImage(buffer: Buffer): Promise<Buffer> {
-        const sharpInstance = sharp(buffer);
-        const meta = await sharpInstance.metadata();
+        const jimpInstance = await Jimp.read(buffer);
         const { targetSize } = this.config.image;
 
         // 调整尺寸
-        if (meta.width > targetSize || meta.height > targetSize) {
-            sharpInstance.resize({ width: targetSize, height: targetSize, fit: "inside", withoutEnlargement: true });
+        if (jimpInstance.width > targetSize || jimpInstance.height > targetSize) {
+            // 保持宽高比缩放
+            const ratio = Math.min(targetSize / jimpInstance.width, targetSize / jimpInstance.height);
+            const newWidth = Math.round(jimpInstance.width * ratio);
+            const newHeight = Math.round(jimpInstance.height * ratio);
+            jimpInstance.resize({ w: newWidth, h: newHeight });
         }
 
         // 动态调整质量进行压缩
@@ -429,7 +457,7 @@ export class AssetService extends Service<AssetServiceConfig> {
         let compressedBuffer: Buffer;
 
         for (let i = 0; i < AssetService.MAX_COMPRESSION_ATTEMPTS; i++) {
-            compressedBuffer = await sharpInstance.jpeg({ quality, progressive: true, mozjpeg: true }).toBuffer();
+            compressedBuffer = await jimpInstance.getBuffer("image/jpeg", { quality });
             if (compressedBuffer.length <= maxSizeBytes) {
                 this.logger.debug(`图片压缩成功，质量: ${quality}, 大小: ${formatSize(compressedBuffer.length)}`);
                 return compressedBuffer;
@@ -438,8 +466,39 @@ export class AssetService extends Service<AssetServiceConfig> {
             this.logger.debug(`压缩后大小为 ${formatSize(compressedBuffer.length)}，超出限制，降低质量至 ${quality} 重试...`);
         }
 
-        this.logger.warn(`无法将图片压缩到 ${this.config.image.maxSizeMB}MB 以下，将使用最后一次压缩结果。`);
+        this.logger.warn(`无法将图片压缩到 ${this.config.image.maxSizeMB}MB 以下，将使用最后一次压缩结果`);
         return compressedBuffer;
+    }
+
+    /**
+     * 处理GIF第一帧提取
+     * @param gif - gifwrap读取的GIF对象
+     * @returns 处理后的图片buffer
+     */
+    private async _processGifFirstFrame(gif: any): Promise<Buffer> {
+        const firstFrame = gif.frames[0];
+        const { targetSize } = this.config.image;
+
+        // 创建新的Jimp实例从第一帧数据
+        const jimpFrame = new Jimp({
+            width: firstFrame.bitmap.width,
+            height: firstFrame.bitmap.height,
+            color: 0x00000000,
+        });
+
+        // 复制像素数据
+        jimpFrame.bitmap.data = Buffer.from(firstFrame.bitmap.data);
+
+        // 调整尺寸
+        if (jimpFrame.width > targetSize || jimpFrame.height > targetSize) {
+            const ratio = Math.min(targetSize / jimpFrame.width, targetSize / jimpFrame.height);
+            const newWidth = Math.round(jimpFrame.width * ratio);
+            const newHeight = Math.round(jimpFrame.height * ratio);
+            jimpFrame.resize({ w: newWidth, h: newHeight });
+        }
+
+        // 压缩并返回JPEG格式
+        return jimpFrame.getBuffer("image/jpeg", { quality: 85 });
     }
 
     /**
@@ -448,35 +507,102 @@ export class AssetService extends Service<AssetServiceConfig> {
      * @returns
      */
     private async _processGifStitch(buffer: Buffer): Promise<Buffer> {
-        const { gifFramesToExtract } = this.config.image;
-        const meta = await sharp(buffer, { animated: true }).metadata();
-        const pageCount = meta.pages || 1;
+        const { gifFramesToExtract, targetSize } = this.config.image;
 
-        // 计算要抽取的帧的索引
-        const frameIndices = Array.from({ length: Math.min(gifFramesToExtract, pageCount) }, (_, i) =>
-            Math.floor(i * (pageCount / Math.min(gifFramesToExtract, pageCount)))
-        );
+        // 使用gifwrap读取GIF
+        const gif = await GifUtil.read(buffer);
+        const totalFrames = gif.frames.length;
 
-        const frames = await Promise.all(frameIndices.map((index) => sharp(buffer, { page: index }).resize({ width: 384 }).toBuffer()));
-        const frameMetas = await Promise.all(frames.map((f) => sharp(f).metadata()));
+        if (totalFrames <= 1) {
+            // 如果是静态GIF，按普通图片处理
+            return this._compressAndResizeImage(buffer);
+        }
 
-        // 计算拼接后画布的尺寸
+        // 限制最大帧数，防止内存溢出
+        const maxFrames = Math.min(gifFramesToExtract, totalFrames, 9); // 最多9帧
+        const frameIndices = Array.from({ length: maxFrames }, (_, i) => Math.floor(i * (totalFrames / maxFrames)));
+
+        // 预设缩略图尺寸
+        const thumbSize = Math.min(320, targetSize);
+
+        // 创建帧缩略图
+        const frames = [];
+        for (const index of frameIndices) {
+            const frame = gif.frames[index];
+
+            // 计算缩放比例
+            const ratio = Math.min(
+                thumbSize / frame.bitmap.width,
+                thumbSize / frame.bitmap.height,
+                1.0 // 不放大
+            );
+
+            const newWidth = Math.round(frame.bitmap.width * ratio);
+            const newHeight = Math.round(frame.bitmap.height * ratio);
+
+            // 创建缩略图
+            const thumb = new Jimp({
+                width: newWidth,
+                height: newHeight,
+                color: 0x00000000,
+            });
+
+            // 如果尺寸变化，先缩放原始帧
+            if (ratio < 1) {
+                const tempJimp = new Jimp({
+                    width: frame.bitmap.width,
+                    height: frame.bitmap.height,
+                    color: 0x00000000,
+                });
+                tempJimp.bitmap.data = Buffer.from(frame.bitmap.data);
+                tempJimp.resize({ w: newWidth, h: newHeight });
+                thumb.bitmap.data = Buffer.from(tempJimp.bitmap.data);
+            } else {
+                thumb.bitmap.data = Buffer.from(frame.bitmap.data);
+            }
+
+            frames.push(thumb);
+        }
+
+        // 计算拼接布局
         const cols = Math.ceil(Math.sqrt(frames.length));
-        const maxFrameHeight = Math.max(...frameMetas.map((m) => m.height));
-        const finalWidth = cols * 384;
-        const finalHeight = Math.ceil(frames.length / cols) * maxFrameHeight;
+        const rows = Math.ceil(frames.length / cols);
 
-        const compositeOps = frames.map((frame, i) => ({
-            input: frame,
-            top: Math.floor(i / cols) * maxFrameHeight,
-            left: (i % cols) * 384,
-        }));
+        // 计算画布尺寸
+        const frameWidth = frames[0].width;
+        const frameHeight = frames[0].height;
+        const finalWidth = cols * frameWidth;
+        const finalHeight = rows * frameHeight;
 
-        // 创建透明背景并拼接图片
-        return sharp({ create: { width: finalWidth, height: finalHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-            .composite(compositeOps)
-            .jpeg({ quality: 85 })
-            .toBuffer();
+        // 创建拼接画布
+        const canvas = new Jimp({
+            width: finalWidth,
+            height: finalHeight,
+            color: 0xffffffff, // 白色背景
+        });
+
+        // 将帧拼接到画布上
+        for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            const row = Math.floor(i / cols);
+            const col = i % cols;
+            const x = col * frameWidth;
+            const y = row * frameHeight;
+
+            canvas.composite(frame, x, y);
+        }
+
+        // 如果整体尺寸过大，进行最终缩放
+        const maxTotalSize = targetSize;
+        if (canvas.width > maxTotalSize || canvas.height > maxTotalSize) {
+            const ratio = Math.min(maxTotalSize / canvas.width, maxTotalSize / canvas.height);
+            const newWidth = Math.round(canvas.width * ratio);
+            const newHeight = Math.round(canvas.height * ratio);
+            canvas.resize({ w: newWidth, h: newHeight });
+        }
+
+        // 压缩并返回JPEG格式
+        return canvas.getBuffer("image/jpeg", { quality: 80 });
     }
 
     private async _getAssetWithUpdate(id: string): Promise<AssetData | null> {
@@ -491,13 +617,12 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private registerHttpEndpoint() {
-        const routePath = this.config.endpoint.startsWith("/") ? this.config.endpoint : new URL(this.config.endpoint).pathname;
+        const routePath = this.assetEndpoint.startsWith("/") ? this.assetEndpoint : new URL(this.assetEndpoint).pathname;
         const finalRoute = `${routePath.replace(/\/$/, "")}/:id`; // 确保路径格式正确
 
         this.ctx.server.get(finalRoute, async (ctx) => {
             const { id } = ctx.params;
             try {
-                // getInfo 内部会更新 lastUsedAt，但这里我们主要获取元数据
                 const info = await this.getInfo(id);
                 if (!info) throw new Error("Asset not found in database");
 
@@ -518,16 +643,18 @@ export class AssetService extends Service<AssetServiceConfig> {
     }
 
     private async runAutoClear() {
-        this.logger.info("开始执行过期资源自动清理任务...");
+        await this._clearExpiredByDatabase();
+        await this._clearOrphanedFiles();
+    }
+
+    private async _clearExpiredByDatabase() {
         const cutoffDate = new Date(Date.now() - this.config.autoClear.maxAgeDays * 24 * 3600 * 1000);
         const expiredAssets = await this.ctx.database.get(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
 
         if (!expiredAssets.length) {
-            this.logger.info("没有需要清理的过期资源。");
             return;
         }
 
-        this.logger.info(`发现 ${expiredAssets.length} 个待清理的过期资源...`);
         let deletedFileCount = 0;
         for (const asset of expiredAssets) {
             try {
@@ -542,10 +669,53 @@ export class AssetService extends Service<AssetServiceConfig> {
                 }
             }
         }
-        this.logger.info(`已成功清理 ${deletedFileCount} 个资源的物理文件。`);
 
-        const idsToDelete = expiredAssets.map((a) => a.id);
-        const { removed } = await this.ctx.database.remove(TableName.Assets, { id: { $in: idsToDelete } });
-        this.logger.success(`成功从数据库中清理了 ${removed} 条资源记录。任务完成。`);
+        const { removed } = await this.ctx.database.remove(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
+    }
+
+    private async _clearOrphanedFiles() {
+        if (!this.storage.listFiles || !this.storage.getStats) {
+            return;
+        }
+
+        const allFiles = await this.storage.listFiles();
+        const orphanedFiles: string[] = [];
+
+        // 获取所有数据库中的资源ID
+        const allAssets = await this.ctx.database.get(TableName.Assets, {});
+        const existingIds = new Set(allAssets.map((asset) => asset.id));
+
+        let deletedOrphanedCount = 0;
+
+        for (const fileName of allFiles.filter(
+            (file) =>
+                path.join(this.ctx.baseDir, this.config.storagePath, file) !==
+                path.join(this.ctx.baseDir, this.config.image.processedCachePath)
+        )) {
+            // 跳过处理后的缓存文件
+            if (fileName.endsWith(AssetService.PROCESSED_IMAGE_CACHE_SUFFIX)) {
+                continue;
+            }
+
+            const fileId = fileName;
+
+            // 如果文件在数据库中没有对应记录，则为孤立文件
+            if (!existingIds.has(fileId)) {
+                orphanedFiles.push(fileId);
+
+                try {
+                    await this.storage.delete(fileId);
+
+                    // 删除可能存在的处理后缓存
+                    await this.cacheStorage.delete(fileId + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
+
+                    deletedOrphanedCount++;
+                } catch (error) {
+                    if (error.code !== "ENOENT") {
+                        this.logger.error(`删除孤立文件 ${fileId} 失败: ${error.message}`);
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,385 +1,265 @@
-import { ChannelDescriptor } from "@/agent";
-import { Services, TableName } from "@/shared/constants";
-import { formatDate } from "@/shared/utils";
-import { Bot, Context, Logger } from "koishi";
-import { HistoryConfig } from "./config";
-import { DialogueSegmentData, MessageData, SystemEventData } from "./database-models";
-import {
-    ClosedDialogueSegment,
-    ContextualMessage,
-    FoldedDialogueSegment,
-    GuildMember,
-    History,
-    PendingDialogueSegment,
-    SummarizedDialogueSegment,
-    WorldState,
-} from "./types";
-import { UserRecallManager } from "./user-recall-manager";
+import { Bot, Context, is, Logger, Session } from "koishi";
 
-// =================================================================================
-// #region 主类：ContextBuilder
-// =================================================================================
+import { Services } from "@/shared/constants";
+import { HistoryConfig } from "./config";
+import { InteractionManager } from "./interaction-manager";
+import { SemanticMemoryManager } from "./l2-semantic-memory";
+import { ArchivalMemoryManager } from "./l3-archival-memory";
+import { ContextualMessage, DiaryEntryData, L1HistoryItem, RetrievedMemoryChunk, WorldState } from "./types";
 
 export class ContextBuilder {
     private logger: Logger;
 
-    private dataProvider: ContextDataProvider;
-    private recallManager: UserRecallManager;
-
     constructor(
         private ctx: Context,
-        private config: HistoryConfig
+        private config: HistoryConfig,
+        private interactionManager: InteractionManager,
+        private l2Manager: SemanticMemoryManager,
+        private l3Manager: ArchivalMemoryManager
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[上下文构建]");
-
-        // 初始化辅助工具
-
-        this.dataProvider = new ContextDataProvider(ctx, this.logger);
-        this.recallManager = new UserRecallManager(ctx, config, this.logger);
+        this.logger = ctx[Services.Logger].getLogger("[数据上下文构建器]");
     }
 
-    /**
-     * 构建私聊频道的上下文
-     */
-    public async buildPrivateChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
-        const { platform, id } = channel;
-        const userId = id.replace("private:", "");
+    public async build(session: Session): Promise<WorldState> {
+        const { platform, channelId, isDirect } = session;
 
-        // 1. 并行获取历史记录和用户信息
-        const [history, user] = await Promise.all([this.build(channel), this.dataProvider.getUserInfo(bot, userId, platform)]);
+        const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
 
-        const userName = user?.name || user?.nick || userId;
-        const members: GuildMember[] = [
-            {
-                pid: bot.selfId,
-                name: bot.user.name,
-                nick: bot.user.nick || bot.user.name,
-                roles: ["assistant", "bot"],
-                isSelf: true,
-            },
-            { pid: userId, name: userName, nick: user?.nick || userName, roles: ["user"], isSelf: false },
-        ];
+        const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
 
-        // 2. 根据历史记录召回相关用户画像
-        const allMessages = this.getAllMessagesFromHistory(history);
-        const userIds = await this.recallManager.recallForPrivateContext(allMessages, userId);
-        let uniqueUserIds = new Set(userIds);
-        uniqueUserIds.delete(bot.selfId);
-        const profiles = await this.recallManager.getUserProfiles(Array.from(uniqueUserIds), id);
+        const l1_history = this.applyGracefulDegradation(raw_l1_history);
 
-        // 3. 组装最终的世界状态
-        return {
-            users: profiles.map((p) => ({ id: p.userId, name: p.userName, description: p.content })),
-            channel: {
-                id,
-                platform,
-                name: `与 ${userName} 的私聊`,
-                type: "private",
-                meta: {},
-                members,
-                history,
-            },
-        };
-    }
+        const { processed_events, new_events } = this.partitionL1History(session.selfId, l1_history);
 
-    /**
-     * 构建群聊频道的上下文
-     */
-    public async buildGuildChannelContext(bot: Bot, channel: ChannelDescriptor): Promise<WorldState> {
-        const { platform, id } = channel;
+        let l2_retrieved_memories = [];
+        if (isL1Overloaded) {
+            const earliestMessageTimestamp = raw_l1_history
+                .filter((e) => e.type === "message")
+                .map((e) => e.timestamp)
+                .reduce((earliest, current) => (current < earliest ? current : earliest), new Date());
 
-        // 1. 并行获取历史记录和频道信息
-        const [history, channelInfo] = await Promise.all([this.build(channel), this.dataProvider.getChannelInfo(bot, id, platform)]);
-
-        if (!channelInfo) {
-            return {
-                users: [],
-                channel: { id, platform, name: `Channel ${id}`, type: "guild", meta: {}, members: [], history },
-            };
-        }
-
-        // 2. 根据历史记录召回用户、获取成员和用户画像
-        const allMessages = this.getAllMessagesFromHistory(history).slice(-this.config.maxMessages);
-        const [userIds, members] = await Promise.all([
-            this.recallManager.recallForGuildContext(allMessages),
-            this.dataProvider.getMembersFromHistory(bot, history, platform, channelInfo.guildId || id),
-        ]);
-        let uniqueUserIds = new Set(userIds);
-        uniqueUserIds.delete(bot.selfId);
-        const profiles = await this.recallManager.getUserProfiles(Array.from(uniqueUserIds), id);
-
-        // 3. 组装最终的世界状态
-        return {
-            users: profiles.map((p) => ({ id: p.userId, name: p.userName, description: p.content })),
-            channel: {
-                id,
-                platform,
-                name: channelInfo.name,
-                type: "guild",
-                meta: { ...channelInfo },
-                members,
-                history,
-            },
-        };
-    }
-
-    private getAllMessagesFromHistory(history: History): ContextualMessage[] {
-        return [history.pending, ...history.closed, history.folded].filter(Boolean).flatMap((segment) => segment.dialogue);
-    }
-
-    /**
-     * 从数据库获取并构建完整的对话历史记录
-     */
-    public async build(channel: ChannelDescriptor): Promise<History> {
-        const { platform, id: channelId } = channel;
-
-        // 1. 获取各状态的对话片段
-        const [openSegments, rawClosedSegments, rawFoldedSegments, summarizedSegments] = await Promise.all([
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "open" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "closed" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "folded" }),
-            this.ctx.database.get(TableName.DialogueSegments, { platform, channelId, status: "summarized" }),
-        ]);
-
-        const pendingSegment = openSegments[0];
-        const closedSegments = rawClosedSegments
-            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
-            .slice(0, this.config.fullContextSegmentCount)
-            .reverse();
-        const foldedSegments = rawFoldedSegments
-            .sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())
-            .slice(0, this.config.summarization.triggerCount)
-            .reverse();
-        const summarizedSegment = summarizedSegments.sort((a, b) => b.startTimestamp.getTime() - a.startTimestamp.getTime())[0];
-
-        // 2. 批量获取所有需要内容的消息和事件
-        const segmentsNeedingContent = [...(pendingSegment ? [pendingSegment] : []), ...closedSegments, ...foldedSegments];
-        const segmentIds = segmentsNeedingContent.map((s) => s.id);
-
-        const [allMessages, allSystemEvents] =
-            segmentIds.length > 0
-                ? await Promise.all([
-                      this.ctx.database.get(TableName.Messages, { sid: { $in: segmentIds } }),
-                      this.ctx.database.get(TableName.SystemEvents, { sid: { $in: segmentIds } }),
-                  ])
-                : [[], []];
-
-        const messagesBySegment = this.groupDataBySegmentId(allMessages);
-        const eventsBySegment = this.groupDataBySegmentId(allSystemEvents);
-
-        // 3. 并行构建对话片段对象
-        const [pending, closed, folded, summarized] = await Promise.all([
-            pendingSegment ? this.buildPendingSegment(pendingSegment, messagesBySegment, eventsBySegment) : undefined,
-            Promise.all(closedSegments.map((r) => this.buildClosedSegment(r, messagesBySegment, eventsBySegment))),
-            foldedSegments.length > 0 ? this.buildFoldedSegment(foldedSegments, messagesBySegment, eventsBySegment) : undefined,
-            summarizedSegment ? this.buildSummarizedSegment(summarizedSegment) : undefined,
-        ]);
-
-        return { pending, closed, folded, summarized };
-    }
-
-    private groupDataBySegmentId<T extends { sid: string }>(data: T[]): Map<string, T[]> {
-        const map = new Map<string, T[]>();
-        data.forEach((item) => {
-            if (!map.has(item.sid)) {
-                map.set(item.sid, []);
+            try {
+                l2_retrieved_memories = await this.retrieveL2Memories(new_events, {
+                    platform,
+                    channelId,
+                    k: this.config.l2_memory.retrievalK,
+                    endTimestamp: earliestMessageTimestamp,
+                });
+                this.logger.info(`成功检索 ${l2_retrieved_memories.length} 条召回记忆`);
+            } catch (error) {
+                this.logger.error(`L2 语义检索失败: ${error.message}`);
             }
-            map.get(item.sid)!.push(item);
-        });
-        return map;
-    }
-
-    private buildPendingSegment(
-        segmentRecord: DialogueSegmentData,
-        messagesBySegment: Map<string, MessageData[]>,
-        eventsBySegment: Map<string, SystemEventData[]>
-    ): PendingDialogueSegment {
-        const messageRecords = messagesBySegment.get(segmentRecord.id) || [];
-        const systemEventRecords = eventsBySegment.get(segmentRecord.id) || [];
-
-        return {
-            type: "dialogue-segment",
-            id: segmentRecord.id,
-            platform: segmentRecord.platform,
-            channelId: segmentRecord.channelId,
-            guildId: segmentRecord.guildId,
-            status: "open",
-            startTimestamp: segmentRecord.startTimestamp,
-            dialogue: this.buildDialogueMessages(messageRecords),
-            systemEvents: systemEventRecords.map((record) => ({
-                id: record.id,
-                type: record.type,
-                timestamp: record.timestamp,
-                date: formatDate(record.timestamp, "MM-DD"),
-                payload: record.payload,
-            })),
-        };
-    }
-
-    private buildClosedSegment(
-        record: DialogueSegmentData,
-        messagesBySegment: Map<string, MessageData[]>,
-        eventsBySegment: Map<string, SystemEventData[]>
-    ): ClosedDialogueSegment {
-        const messageRecords = messagesBySegment.get(record.id) || [];
-        const systemEventRecords = eventsBySegment.get(record.id) || [];
-
-        return {
-            type: "dialogue-segment",
-            id: record.id,
-            platform: record.platform,
-            channelId: record.channelId,
-            guildId: record.guildId,
-            status: "closed",
-            startTimestamp: record.startTimestamp,
-            endTimestamp: record.endTimestamp,
-            agentTurn: record.agentTurn,
-            dialogue: this.buildDialogueMessages(messageRecords),
-            systemEvents: systemEventRecords.map((eventRecord) => ({
-                id: eventRecord.id,
-                type: eventRecord.type,
-                timestamp: eventRecord.timestamp,
-                date: formatDate(eventRecord.timestamp, "MM-DD"),
-                payload: eventRecord.payload,
-            })),
-        };
-    }
-
-    private buildFoldedSegment(
-        foldedSegments: DialogueSegmentData[],
-        messagesBySegment: Map<string, MessageData[]>,
-        eventsBySegment: Map<string, SystemEventData[]>
-    ): FoldedDialogueSegment {
-        const allMessages = foldedSegments.flatMap((s) => messagesBySegment.get(s.id) || []);
-        const allSystemEvents = foldedSegments.flatMap((s) => eventsBySegment.get(s.id) || []);
-
-        allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-        allSystemEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-        return {
-            type: "dialogue-segment",
-            id: foldedSegments[0].id,
-            platform: foldedSegments[0].platform,
-            channelId: foldedSegments[0].channelId,
-            guildId: foldedSegments[0].guildId,
-            status: "folded",
-            dialogue: this.buildDialogueMessages(allMessages),
-            systemEvents: allSystemEvents.map((record) => ({
-                id: record.id,
-                type: record.type,
-                timestamp: record.timestamp,
-                date: formatDate(record.timestamp, "MM-DD"),
-                payload: record.payload,
-            })),
-            startTimestamp: foldedSegments[0].startTimestamp,
-            endTimestamp: foldedSegments[foldedSegments.length - 1].endTimestamp,
-        };
-    }
-
-    private buildSummarizedSegment(record: DialogueSegmentData): SummarizedDialogueSegment {
-        return {
-            type: "dialogue-segment",
-            id: record.id,
-            platform: record.platform,
-            channelId: record.channelId,
-            guildId: record.guildId,
-            status: "summarized",
-            summary: record.summary,
-            startTimestamp: record.startTimestamp,
-            endTimestamp: record.endTimestamp,
-        };
-    }
-
-    private buildDialogueMessages(messageRecords: MessageData[]): ContextualMessage[] {
-        const quotedMsgIds = new Set(messageRecords.filter((m) => m.quoteId).map((m) => m.quoteId));
-        return messageRecords.map((record) => ({
-            id: record.id,
-            content: record.content,
-            timestamp: record.timestamp,
-            date: formatDate(record.timestamp, "MM-DD"),
-            time: formatDate(record.timestamp, "HH:mm"),
-            quoted: quotedMsgIds.has(record.id),
-            quoteId: record.quoteId,
-            sender: { id: record.sender.id, name: record.sender.name, roles: record.sender.roles },
-        }));
-    }
-}
-
-// =================================================================================
-// #region 辅助类：ContextDataProvider (数据获取与缓存)
-// =================================================================================
-
-class ContextDataProvider {
-    constructor(
-        private ctx: Context,
-        private logger: Logger
-    ) {}
-
-    public async getUserInfo(bot: Bot, userId: string, platform: string): Promise<any> {
-        try {
-            const user = await bot.getUser(userId);
-            if (user) {
-                return user;
-            }
-        } catch (error) {
-            this.logger.warn(`获取用户信息失败，将使用基础信息 | 用户: ${platform}:${userId}`);
-        }
-        return null;
-    }
-
-    public async getChannelInfo(bot: Bot, channelId: string, platform: string): Promise<any> {
-        try {
-            const channelInfo = await bot.getChannel(channelId);
-            if (channelInfo) {
-                return channelInfo;
-            }
-        } catch (error) {
-            this.logger.warn(`获取频道信息失败，将使用基础信息 | 频道: ${platform}:${channelId}`);
-        }
-        return null;
-    }
-
-    public async getMembersFromHistory(bot: Bot, history: History, platform: string, guildId: string): Promise<GuildMember[]> {
-        const memberIds = new Set<string>();
-        [history.pending, ...history.closed, history.folded]
-            .filter(Boolean)
-            .flatMap((segment) => segment.dialogue)
-            .forEach((message) => memberIds.add(message.sender.id));
-
-        const humanMembers = await this.getMemberList(platform, guildId, Array.from(memberIds));
-
-        const botAsMember: GuildMember = {
-            pid: bot.selfId,
-            name: bot.user.name,
-            nick: bot.user.nick || bot.user.name,
-            roles: ["assistant", "bot"],
-            isSelf: true,
-        };
-
-        return [botAsMember, ...humanMembers];
-    }
-
-    private async getMemberList(platform: string, guildId: string, memberIds: string[]): Promise<GuildMember[]> {
-        if (memberIds.length === 0) return [];
-
-        const result: GuildMember[] = [];
-        const missingMemberIds: string[] = [];
-
-        for (const memberId of memberIds) {
-            missingMemberIds.push(memberId);
+        } else {
+            l2_retrieved_memories = [];
         }
 
-        if (missingMemberIds.length > 0) {
-            const missingMembers = await this.ctx.database.get(TableName.Members, {
-                platform,
-                guildId,
-                pid: { $in: missingMemberIds },
+        const l3_diary_entries = await this.retrieveL3Memories(channelId);
+
+        const channelInfo = await this.getChannelInfo(session);
+        const selfInfo = await this.getSelfInfo(session);
+
+        const users = [];
+
+        if (isDirect) {
+            users.push({
+                id: session.userId,
+                name: session.author.name,
             });
-            for (const member of missingMembers) {
-                const guildMember = member as GuildMember;
-                result.push(guildMember);
+            users.push({
+                id: session.selfId,
+                name: selfInfo.name,
+                roles: ["self"],
+            });
+        } else {
+            let selfInGuild: Awaited<ReturnType<Bot["getGuildMember"]>>;
+            try {
+                selfInGuild = await session.bot.getGuildMember(channelId, session.selfId);
+            } catch (error) {
+                this.logger.error(`获取机器人自身信息失败 for id ${session.selfId}: ${error.message}`);
+            }
+
+            users.push({
+                id: session.selfId,
+                name: selfInGuild?.nick || selfInGuild?.name || selfInfo.name,
+                roles: ["self", ...(selfInGuild?.roles || [])],
+            });
+
+            l1_history.forEach((item) => {
+                if (item.type === "message") {
+                    if (!users.find((u) => u.id === item.sender.id)) {
+                        users.push({
+                            id: item.sender.id,
+                            name: item.sender.name,
+                            roles: item.sender.roles,
+                        });
+                    }
+                }
+            });
+        }
+
+        const worldState: WorldState = {
+            channel: {
+                id: channelId,
+                name: channelInfo.name,
+                type: session.isDirect ? "private" : "guild",
+                platform: platform,
+            },
+            current_time: new Date().toISOString(),
+            self: selfInfo,
+            l1_working_memory: { processed_events, new_events },
+            l2_retrieved_memories,
+            l3_diary_entries,
+            users: users, // User profile can be another service
+        };
+
+        return worldState;
+    }
+
+    /**
+     * 裁剪过期的智能体响应
+     * @param history
+     * @returns
+     */
+    private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
+        const turnIdsToKeep = new Set<string>();
+        const turnIdsToDrop = new Set<string>();
+
+        // 从后往前遍历，找到超出保留数量的思考事件，并记录它们的 turnId
+        for (let i = history.length - 1; i >= 0; i--) {
+            const item = history[i];
+            if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
+                if (turnIdsToKeep.size < this.config.l1_memory.keepFullTurnCount) {
+                    turnIdsToKeep.add(item.turnId);
+                } else {
+                    if (!turnIdsToKeep.has(item.turnId)) {
+                        turnIdsToDrop.add(item.turnId);
+                    }
+                }
             }
         }
-        return result;
+
+        if (turnIdsToDrop.size === 0) {
+            return history;
+        }
+
+        // 返回一个新数组，其中不包含属于要删除的 turnId 的所有事件
+        return history.filter((item) => {
+            if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
+                const turnId = item.turnId;
+                return !turnIdsToDrop.has(turnId);
+            }
+            return true; // 保留所有非 agent 事件
+        });
+    }
+
+    private async retrieveL2Memories(
+        new_events: L1HistoryItem[],
+        filter?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date }
+    ): Promise<RetrievedMemoryChunk[]> {
+        if (!this.config.l2_memory.enabled || new_events.length === 0) return [];
+
+        const queryMessages = new_events.filter((e): e is { type: "message" } & ContextualMessage => e.type === "message");
+
+        if (queryMessages.length === 0) return [];
+
+        const queryText = this.l2Manager.compileEventsToText(queryMessages);
+
+        if (!queryText) return [];
+
+        try {
+            const retrieved = await this.l2Manager.search(queryText, {
+                platform: filter?.platform,
+                channelId: filter?.channelId,
+                k: this.config.l2_memory.retrievalK,
+                startTimestamp: filter?.startTimestamp,
+                endTimestamp: filter?.endTimestamp,
+            });
+            return retrieved.map((chunk) => ({
+                content: chunk.content,
+                relevance: chunk.similarity,
+                timestamp: chunk.startTimestamp,
+            }));
+        } catch (error) {}
+    }
+
+    private async retrieveL3Memories(channelId: string): Promise<DiaryEntryData[]> {
+        if (!this.config.l3_memory.enabled) return [];
+        // Example: retrieve yesterday's diary
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const dateStr = yesterday.toISOString().split("T")[0];
+        return this.ctx.database.get("worldstate.l3_diaries", { channelId, date: dateStr });
+    }
+
+    private async getChannelInfo(session: Session) {
+        const { isDirect, channelId } = session;
+        let channelInfo: Awaited<ReturnType<Bot["getChannel"]>>;
+        let channelName = "";
+
+        if (isDirect) {
+            let userInfo: Awaited<ReturnType<Bot["getUser"]>>;
+            try {
+                userInfo = await session.bot.getUser(session.userId);
+            } catch (error) {
+                this.logger.debug(`获取用户信息失败 for user ${session.userId}: ${error.message}`);
+            }
+
+            channelName = `与 ${userInfo?.name || session.userId} 的私聊`;
+        } else {
+            try {
+                channelInfo = await session.bot.getChannel(channelId);
+                channelName = channelInfo.name;
+            } catch (error) {
+                this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
+            }
+            channelName = channelInfo?.name || "未知群组";
+        }
+
+        return { id: channelId, name: channelName };
+    }
+
+    private async getSelfInfo(session: Session) {
+        const { selfId } = session;
+        try {
+            const user = await session.bot.getUser(selfId);
+            return { id: selfId, name: user.name };
+        } catch (error) {
+            this.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
+            return { id: selfId, name: session.bot.user.name || "Self" };
+        }
+    }
+
+    private partitionL1History(selfId: string, history: L1HistoryItem[]) {
+        const processed_events: L1HistoryItem[] = [];
+        const new_events: L1HistoryItem[] = [];
+
+        const lastAgentTurnTime = history
+            .filter((item) => item.type === "agent_thought" || item.type === "agent_action")
+            .map((item) => item.timestamp)
+            .reduce((latest, current) => (current > latest ? current : latest), new Date(0));
+
+        history.forEach((item) => {
+            // 基于时间戳判断是否是新的
+            // 如果 item 是一个消息，则它需要发送者不是机器人自身才算“新”
+            // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
+            item.is_new = item.timestamp > lastAgentTurnTime && (item.type === "message" ? item.sender.id !== selfId : true);
+
+            (item as any).is_message = item.type === "message";
+            (item as any).is_agent_thought = item.type === "agent_thought";
+            (item as any).is_agent_action = item.type === "agent_action";
+            (item as any).is_agent_observation = item.type === "agent_observation";
+            (item as any).is_agent_heartbeat = item.type === "agent_heartbeat";
+            (item as any).is_system_event = item.type === "system_event";
+        });
+
+        const firstNewIndex = history.findIndex((item) => item.is_new);
+
+        if (firstNewIndex === -1) {
+            processed_events.push(...history);
+        } else {
+            processed_events.push(...history.slice(0, firstNewIndex));
+            new_events.push(...history.slice(firstNewIndex));
+        }
+        return { processed_events, new_events };
     }
 }

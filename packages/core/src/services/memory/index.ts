@@ -1,4 +1,3 @@
-export * from "./MemoryService";
-export * from "./MemoryBlock";
-export * from "./types";
 export * from "./config";
+export * from "./memory-block";
+export * from "./service";

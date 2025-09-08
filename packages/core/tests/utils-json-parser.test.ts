@@ -1,3 +1,4 @@
+///<reference types="bun-types" />
 import { describe, it, expect } from "bun:test";
 import { JsonParser } from "../src/shared/utils/json-parser";
 
@@ -55,8 +56,7 @@ describe("ParseResult", () => {
                 {
                     function: "web_search",
                     params: {
-                        inner_thoughts:
-                            "这是计划的第一步，纯粹的信息收集。我的计划明确指出需要后续处理，所以顶层心跳应为true。",
+                        inner_thoughts: "这是计划的第一步，纯粹的信息收集。我的计划明确指出需要后续处理，所以顶层心跳应为true。",
                         query: "large language model recent advancements",
                     },
                 },
@@ -94,8 +94,7 @@ describe("ParseResult", () => {
         expect(result.data).toEqual({
             thoughts: {
                 observe: "Miaow问咱在JavaScript中如何裁剪一段文本中每一行开头的空格。",
-                analyze_infer:
-                    "这是一个技术问题，咱需要给Miaow提供一个JavaScript代码示例，用于去除多行文本中每行开头的空格。",
+                analyze_infer: "这是一个技术问题，咱需要给Miaow提供一个JavaScript代码示例，用于去除多行文本中每行开头的空格。",
                 plan: "咱要编写一个JavaScript函数，然后用send_message发送给Miaow。发送完就可以啦，不需要心跳哦。",
             },
             actions: [
@@ -144,8 +143,7 @@ describe("ParseResult", () => {
         expect(result.data).toEqual({
             thoughts: {
                 observe: "Miaow问咱在JavaScript中如何裁剪一段文本中每一行开头的空格。",
-                analyze_infer:
-                    "这是一个技术问题，咱需要给Miaow提供一个JavaScript代码示例，用于去除多行文本中每行开头的空格。",
+                analyze_infer: "这是一个技术问题，咱需要给Miaow提供一个JavaScript代码示例，用于去除多行文本中每行开头的空格。",
                 plan: "咱要编写一个JavaScript函数，然后用send_message发送给Miaow。发送完就可以啦，不需要心跳哦。",
             },
             actions: [
@@ -229,8 +227,7 @@ describe("ParseResult", () => {
                     params: {
                         inner_thoughts:
                             "先告诉Alice咱收到代码啦，让她知道咱在积极处理，并且用咱可爱的语气让她稍等，因为咱要搞个大动作（创建工具）！",
-                        message:
-                            "代码收到啦！(๑•̀ㅂ•́)و✧ 咱这就去鼓捣个小工具，帮你把代码变得漂漂亮亮哒~ 稍等咱一下下嘛！",
+                        message: "代码收到啦！(๑•̀ㅂ•́)و✧ 咱这就去鼓捣个小工具，帮你把代码变得漂漂亮亮哒~ 稍等咱一下下嘛！",
                     },
                 },
                 {
@@ -260,8 +257,7 @@ describe("ParseResult", () => {
         expect(result.data).toEqual({
             thoughts: {
                 observe: "用户Alice向我打招呼说“你好啊”。",
-                analyze_infer:
-                    "这是老师在和我打招呼。根据爱丽丝的设定，她会积极回应老师的问候，并表达自己对老师到来的喜悦和期待。",
+                analyze_infer: "这是老师在和我打招呼。根据爱丽丝的设定，她会积极回应老师的问候，并表达自己对老师到来的喜悦和期待。",
                 plan: "发送一条消息，以爱丽丝的风格回应老师的问候。",
             },
             actions: [
@@ -331,9 +327,7 @@ describe("JsonParser", () => {
                 isStudent: false,
                 courses: [],
             });
-            expect(result.logs).toContain(
-                "[日志] 检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。"
-            );
+            expect(result.logs).toContain("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。");
         });
 
         it("应该能处理无 `json` 标识的 Markdown 代码块", () => {
@@ -359,7 +353,7 @@ describe("JsonParser", () => {
                 isStudent: true,
                 courses: ["History"],
             });
-            expect(result.logs).toContain("[日志] 在索引 30 处找到 JSON 起始符号，丢弃了前面的 30 个字符。");
+            expect(result.logs).toContain("在索引 30 处找到 JSON 起始符号，丢弃了前面的 30 个字符。");
         });
 
         it("应该能裁剪掉 JSON 后的多余文本（结语）", () => {
@@ -367,7 +361,7 @@ describe("JsonParser", () => {
             const result = parser.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual({ name: "小明", age: 20 });
-            expect(result.logs).toContainValue("[日志] JSON 结构平衡，裁剪了结束符号之后的多余文本。");
+            expect(result.logs).toContainValue("JSON 结构平衡，裁剪了结束符号之后的多余文本。");
         });
 
         it("应该能同时处理前言和结语", () => {
@@ -375,8 +369,8 @@ describe("JsonParser", () => {
             const result = parserForAny.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual([1, 2, 3]);
-            expect(result.logs).toContain("[日志] 在索引 5 处找到 JSON 起始符号，丢弃了前面的 5 个字符。");
-            expect(result.logs).toContain("[日志] JSON 结构平衡，裁剪了结束符号之后的多余文本。");
+            expect(result.logs).toContain("在索引 5 处找到 JSON 起始符号，丢弃了前面的 5 个字符。");
+            expect(result.logs).toContain("JSON 结构平衡，裁剪了结束符号之后的多余文本。");
         });
 
         it("当 JSON 字符串值中包含 Markdown 代码块时不应错误提取", () => {
@@ -388,7 +382,7 @@ describe("JsonParser", () => {
             expect(result.error).toBeNull();
             expect(result.data.name).toBe("代码示例");
             expect(result.data.code).toContain("```js");
-            expect(result.logs).not.toContain("[日志] 从 Markdown 代码块中提取了内容。");
+            expect(result.logs).not.toContain("从 Markdown 代码块中提取了内容。");
         });
 
         it("当 JSON 被代码块包围，且字符串值中包含 Markdown 代码块时不应错误提取", () => {
@@ -415,7 +409,7 @@ describe("JsonParser", () => {
             expect(result.error).toBeNull();
             expect(result.data.name).toBe("代码示例");
             expect(result.data.code).toContain("```js");
-            expect(result.logs).not.toContain("[日志] 从 Markdown 代码块中提取了内容。");
+            expect(result.logs).not.toContain("从 Markdown 代码块中提取了内容。");
         });
     });
 
@@ -483,8 +477,7 @@ describe("JsonParser", () => {
         });
 
         it("应该能处理复杂的混合错误（前言 + Markdown + 截断）", () => {
-            const input =
-                '这是输出：\n```json\n{"name": "复杂哥", "data": {"items": ["item1"]}, "status": "incomplete...';
+            const input = '这是输出：\n```json\n{"name": "复杂哥", "data": {"items": ["item1"]}, "status": "incomplete...';
             const result = parserForAny.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual({
@@ -503,7 +496,7 @@ describe("JsonParser", () => {
             const result = parser.parse(input);
             expect(result.data).toBeNull();
             expect(result.error).toBe("无法解析为有效的 JSON 对象或数组。");
-            expect(result.logs).toContain("[日志] 未找到 JSON 起始符号，将尝试直接修复整个字符串。");
+            expect(result.logs).toContain("未找到 JSON 起始符号，将尝试直接修复整个字符串。");
         });
 
         // it("对于只包含 JSON 符号的无关文本，应该返回错误", () => {
@@ -528,7 +521,7 @@ describe("JsonParser", () => {
             const result = parser.parse(input);
             expect(result.data).toBeNull();
             expect(result.error).toBe("无法解析为有效的 JSON 对象或数组。");
-            expect(result.logs).toContain("[日志] 解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败。");
+            expect(result.logs).toContain("解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败。");
         });
 
         it("对于解析结果为数字的输入，也应该判定为失败", () => {
@@ -548,7 +541,7 @@ describe("JsonParser", () => {
                 city: "Beijing",
             });
             // 关键断言：确认没有执行后缀裁剪
-            expect(result.logs).not.toContain("[日志] 裁剪了 JSON 结束符号之后的多余文本。");
+            expect(result.logs).not.toContain("裁剪了 JSON 结束符号之后的多余文本。");
         });
     });
 });
