@@ -1,6 +1,6 @@
-import { Bot, Context, is, Logger, Session } from "koishi";
+import { Bot, Context, Logger, Session } from "koishi";
 
-import { Services } from "@/shared/constants";
+import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
@@ -188,7 +188,7 @@ export class ContextBuilder {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const dateStr = yesterday.toISOString().split("T")[0];
-        return this.ctx.database.get("worldstate.l3_diaries", { channelId, date: dateStr });
+        return this.ctx.database.get(TableName.L3Diaries, { channelId, date: dateStr });
     }
 
     private async getChannelInfo(session: Session) {

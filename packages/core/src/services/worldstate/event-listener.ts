@@ -4,7 +4,7 @@ import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
 import { AssetService } from "../assets";
 import { HistoryConfig } from "./config";
-import { WorldStateService } from "./index";
+import { WorldStateService } from "./service";
 import { AgentStimulus, MessageData, SystemEventData, SystemEventPayload, UserMessagePayload } from "./types";
 
 interface PendingCommand {
@@ -14,9 +14,6 @@ interface PendingCommand {
     timestamp: number;
 }
 
-// =================================================================================
-// #region EventListenerManager - 负责所有事件监听与处理
-// =================================================================================
 export class EventListenerManager {
     private readonly disposers: (() => boolean)[] = [];
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
@@ -111,9 +108,9 @@ export class EventListenerManager {
             this.ctx.on("internal/session", (session) => {
                 if (!this.service.isChannelAllowed(session)) return;
 
-                if (session.type == "notice" && session.platform == "onebot") return this.handleNotice(session);
-                /* prettier-ignore */
+                if (session.type === "notice" && session.platform == "onebot") return this.handleNotice(session);
                 if (session.type === "guild-member" && session.platform == "onebot") return this.handleGuildMember(session);
+                if (session.type === "message-deleted") return this.handleMessageDeleted(session);
             })
         );
     }
@@ -219,6 +216,12 @@ export class EventListenerManager {
 
                 break;
         }
+    }
+
+    private async handleMessageDeleted(session: Session): Promise<void> {
+        const channelId = session.channelId;
+        const messageId = session.messageId;
+        const operator = session.operatorId;
     }
 
     private async handleOperatorMessage(session: Session): Promise<void> {

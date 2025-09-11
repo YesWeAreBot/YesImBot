@@ -48,6 +48,9 @@
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.0"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "koishi": {
     "description": {
       "zh": "为 YesImBot 提供TTS(文本转语音)功能",
