@@ -90,12 +90,12 @@ export class WorldStateService extends Service<Config> {
     }
 
     public isChannelAllowed(session: Session): boolean {
-        const { platform, channelId, guildId, isDirect } = session;
+        const { platform, channelId, guildId, isDirect, userId } = session;
         return this.config.allowedChannels.some((c) => {
             return (
                 c.platform === platform &&
                 (c.type === "private" ? isDirect : true) &&
-                (c.id === "*" || c.id === channelId || (guildId && c.id === guildId))
+                (c.id === "*" || c.id === channelId || (guildId && c.id === guildId) || (c.type === "private" && c.id === userId))
             );
         });
     }

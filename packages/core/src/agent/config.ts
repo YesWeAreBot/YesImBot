@@ -33,7 +33,7 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
             type: Schema.union([Schema.const("private").description("私聊"), Schema.const("guild").description("群组")])
                 .default("guild")
                 .description("频道类型"),
-            id: Schema.string().required().description("频道 ID"),
+            id: Schema.string().required().description("频道或用户 ID"),
         })
     )
         .role("table")
