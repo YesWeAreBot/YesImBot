@@ -1,20 +1,22 @@
 export interface ServerTTSRequest {
     text: string;
-    chunk_length?: number;
-    format?: "wav" | "mp3" | "pcm";
-    references?: ServerReferenceAudio[];
-    reference_id?: string | null;
-    seed?: number | null;
-    use_memory_cache?: "on" | "off";
-    normalize?: boolean;
-    streaming?: boolean;
-    max_new_tokens?: number;
-    top_p?: number;
-    repetition_penalty?: number;
     temperature?: number;
+    top_p?: number;
+    references?: ReferenceAudio[];
+    reference_id?: string | null;
+    prosody?: {
+        speed: number;
+        volume: number;
+    };
+    chunk_length?: number;
+    normalize?: boolean;
+    format?: "wav" | "mp3" | "pcm" | "opus";
+    sample_rate?: number;
+    opus_bitrate?: -1000 | 24 | 32 | 48 | 64;
+    latency?: "normal" | "balanced";
 }
 
-export interface ServerReferenceAudio {
+export interface ReferenceAudio {
     audio: Buffer;
     text: string;
 }

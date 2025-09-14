@@ -1,22 +1,20 @@
-import { Context, Schema, h } from "koishi";
+import { Context, Random, Schema, h } from "koishi";
 import { Failed, Infer, Success, ToolDefinition } from "koishi-plugin-yesimbot/services";
 
 import { TTSAdapter } from "./adapters/base";
 import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";
 import { FishAudioAdapter, FishAudioConfig } from "./adapters/fish-audio";
 import { IndexTTS2Adapter, IndexTTS2Config } from "./adapters/index-tts2";
+import { OpenAudioAdapter, OpenAudioConfig } from "./adapters/open-audio";
 import { BaseTTSParams } from "./types";
-
-// export const Config = Schema.object({
-//     provider: Schema.union(["cosyvoice", "index-tts2", "fish-audio"]).default("cosyvoice").description("选择要使用的 TTS 服务提供商。"),
-//     cosyvoice: CosyVoiceConfig,
-//     "index-tts2": IndexTTS2Config,
-//     "fish-audio": FishAudioConfig,
-// });
+import { writeFileSync } from "fs";
+import path from "path";
 
 export const Config = Schema.intersect([
     Schema.object({
-        provider: Schema.union(["cosyvoice", "index-tts2", "fish-audio"]).default("cosyvoice").description("选择要使用的 TTS 服务提供商"),
+        provider: Schema.union(["cosyvoice", "index-tts2", "fish-audio", "open-audio"])
+            .default("cosyvoice")
+            .description("选择要使用的 TTS 服务提供商"),
     }),
     Schema.union([
         Schema.object({
@@ -31,14 +29,19 @@ export const Config = Schema.intersect([
             provider: Schema.const("fish-audio"),
             "fish-audio": FishAudioConfig,
         }),
+        Schema.object({
+            provider: Schema.const("open-audio"),
+            "open-audio": OpenAudioConfig,
+        }),
     ]),
 ]);
 
 export type Config = {
-    provider: "cosyvoice" | "index-tts2" | "fish-audio";
+    provider: "cosyvoice" | "index-tts2" | "fish-audio" | "open-audio";
     cosyvoice: CosyVoiceConfig;
     "index-tts2": IndexTTS2Config;
     "fish-audio": FishAudioConfig;
+    "open-audio": OpenAudioConfig;
 };
 
 export class TTSService {
@@ -66,6 +69,8 @@ export class TTSService {
                 return new IndexTTS2Adapter(this.ctx, providerConfig as IndexTTS2Config);
             case "fish-audio":
                 return new FishAudioAdapter(this.ctx, providerConfig as FishAudioConfig);
+            case "open-audio":
+                return new OpenAudioAdapter(this.ctx, providerConfig as OpenAudioConfig);
             default:
                 throw new Error(`Unknown TTS provider: ${provider}`);
         }
@@ -93,6 +98,9 @@ export class TTSService {
 
         try {
             const result = await this.adapter.synthesize(args);
+            // if (result && result.audio) {
+            //     writeFileSync(path.join(this.ctx.baseDir, "cache", `${Random.id(6)}.wav`), result.audio);
+            // }
             await session.send(h.audio(result.audio, result.mimeType));
             return Success();
         } catch (err) {

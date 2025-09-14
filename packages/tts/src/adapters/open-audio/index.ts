@@ -1,34 +1,46 @@
-import { encode } from "@msgpack/msgpack";
-import { readFileSync } from "fs";
 import { Context, Schema } from "koishi";
-import path from "path";
-import { ProxyAgent, fetch } from "undici";
+import { encode } from "@msgpack/msgpack";
 
 import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../../types";
 import { TTSAdapter } from "../base";
-import { ReferenceAudio, ServerTTSRequest } from "./types";
+import { ServerTTSRequest, ServerReferenceAudio } from "./types";
+import { readFileSync } from "fs";
+import path from "path";
 
-export interface FishAudioConfig extends BaseTTSConfig, Omit<ServerTTSRequest, "text" | "references"> {
+export interface OpenAudioConfig extends BaseTTSConfig, Omit<ServerTTSRequest, "text" | "references" | "reference_id"> {
     baseURL: string;
     apiKey?: string;
-    model: "speech-1.5" | "speech-1.6" | "s1";
-    proxy?: string;
 
     references?: { audio: string; text: string }[];
 
     toolDesc: string;
 }
 
-export const FishAudioConfig: Schema<FishAudioConfig> = Schema.object({
-    baseURL: Schema.string().default("https://api.fish.audio").description("FishAudio API 的基础地址"),
-    apiKey: Schema.string().role("secret").required().description("在线服务的 API Key"),
-    model: Schema.union(["speech-1.5", "speech-1.6", "s1"]).default("s1").description("使用的模型"),
-    proxy: Schema.string().role("link").description("代理地址"),
-    chunk_length: Schema.number().default(200).min(100).max(300).description("音频分块长度，控制生成音频的片段大小"),
-    format: Schema.union(["wav", "mp3", "pcm", "opus"]).default("wav").description("输出音频格式"),
-    normalize: Schema.boolean().description("是否对输入进行标准化处理").default(true),
-    top_p: Schema.number().default(0.7).min(0.1).max(1.0).description("采样概率阈值，用于控制生成的多样性"),
-    temperature: Schema.number().default(0.7).min(0.1).max(1).description("温度参数，控制生成的随机性"),
+export const OpenAudioConfig: Schema<OpenAudioConfig> = Schema.object({
+    baseURL: Schema.string().default("http://127.0.0.1:8080").description("OpenAudio API 的基础地址"),
+
+    apiKey: Schema.string().role("secret").default("").description("在线服务的 API Key，本地部署可留空"),
+
+    chunk_length: Schema.number().default(200).min(100).max(1000).description("音频分块长度，控制生成音频的片段大小"),
+
+    format: Schema.union(["wav", "mp3", "pcm"]).default("wav").description("输出音频格式"),
+
+    seed: Schema.number().default(0).description("随机种子，用于保证生成结果的可重复性，设为0使用随机值"),
+
+    use_memory_cache: Schema.union(["on", "off"]).default("off").description("是否使用内存缓存加速生成"),
+
+    normalize: Schema.boolean().description("是否对音频进行标准化处理").default(true),
+
+    streaming: Schema.boolean().default(false).description("是否启用流式输出").disabled(),
+
+    max_new_tokens: Schema.number().default(1024).min(256).max(4096).description("最大生成 token 数量"),
+
+    top_p: Schema.number().default(0.8).min(0.1).max(1.0).description("采样概率阈值，用于控制生成的多样性"),
+
+    repetition_penalty: Schema.number().default(1.1).min(0.9).max(2.0).description("重复惩罚系数，降低重复内容的生成概率"),
+
+    temperature: Schema.number().default(0.8).min(0.1).max(1).description("温度参数，控制生成的随机性"),
+
     references: Schema.array(
         Schema.object({
             audio: Schema.path({ filters: ["file"] })
@@ -42,7 +54,7 @@ export const FishAudioConfig: Schema<FishAudioConfig> = Schema.object({
     )
         .description("参考音频列表")
         .default([]),
-    reference_id: Schema.string().description("参考音频ID").default(null),
+
     toolDesc: Schema.string()
         .role("textarea", { rows: [3, 6] })
         .default(
@@ -94,17 +106,17 @@ export const FishAudioConfig: Schema<FishAudioConfig> = Schema.object({
         .description("工具描述文本，用于指导AI使用情感控制标签生成高质量的文本"),
 }).description("Fish Audio 配置");
 
-export interface FishAudioTTSParams extends BaseTTSParams {}
+export interface OpenAudioTTSParams extends BaseTTSParams {}
 
-export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSParams> {
+export class OpenAudioAdapter extends TTSAdapter<OpenAudioConfig, OpenAudioTTSParams> {
     public readonly name = "fish-audio";
-    private references: ReferenceAudio[] = [];
+    private references: ServerReferenceAudio[] = [];
     private baseURL: string;
 
-    constructor(ctx: Context, config: FishAudioConfig) {
+    constructor(ctx: Context, config: OpenAudioConfig) {
         super(ctx, config);
 
-        this.baseURL = config.baseURL.endsWith("/v1/tts") ? config.baseURL.replace("/v1/tts", "") : config.baseURL;
+        this.baseURL = config.baseURL;
 
         for (let refer of config.references) {
             try {
@@ -119,31 +131,25 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
         }
     }
 
-    async synthesize(params: FishAudioTTSParams): Promise<SynthesisResult> {
+    async synthesize(params: OpenAudioTTSParams): Promise<SynthesisResult> {
         const request: ServerTTSRequest = {
             text: params.text,
             chunk_length: this.config.chunk_length,
             format: this.config.format,
             references: this.references,
-            reference_id: this.config.reference_id,
+            seed: this.config.seed,
+            use_memory_cache: this.config.use_memory_cache,
             normalize: this.config.normalize,
+            max_new_tokens: this.config.max_new_tokens,
             top_p: this.config.top_p,
+            repetition_penalty: this.config.repetition_penalty,
             temperature: this.config.temperature,
         };
 
-        let dispatcher;
-        if (this.config.proxy) {
-            try {
-                dispatcher = new ProxyAgent({ uri: this.config.proxy });
-                this.ctx.logger.info(`using proxy: ${this.config.proxy}`);
-            } catch (err) {}
-        }
-
         const response = await fetch(`${this.baseURL}/v1/tts`, {
             method: "POST",
-            headers: { "Content-Type": "application/msgpack", authorization: `Bearer ${this.config.apiKey}`, model: this.config.model },
-            body: encode(request),
-            dispatcher,
+            headers: { "Content-Type": "application/msgpack" },
+            body: encode(request) as BodyInit,
         });
 
         if (response.ok) {
@@ -155,8 +161,6 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
                 audio: Buffer.from(result),
                 mimeType: response.headers.get("content-type") || "audio/wav",
             };
-        } else {
-            throw new Error(`${response.status} ${response.statusText}`);
         }
     }
 
