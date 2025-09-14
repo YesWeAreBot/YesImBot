@@ -9,5 +9,5 @@ build({
   format: 'cjs',                  // 输出格式 (CommonJS, 适合 Node)
   minify: false,
   sourcemap: true,
-  external: ["koishi-plugin-yesimbot", "koishi", "ws", "@msgpack/msgpack"]
+  external: ["koishi-plugin-yesimbot", "koishi", "ws", "@msgpack/msgpack", "undici", "uuid"]
 }).catch(() => process.exit(1));

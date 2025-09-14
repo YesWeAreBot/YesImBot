@@ -71,7 +71,7 @@ export class PromptContextBuilder {
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
      */
     public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | (ImagePart | TextPart)[]> {
-        const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config;
+        const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.enableVision;
         if (!canUseVision) {
             return userPromptText;
         }

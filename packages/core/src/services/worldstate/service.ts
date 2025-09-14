@@ -38,6 +38,8 @@ export class WorldStateService extends Service<Config> {
     private commandManager: HistoryCommandManager;
     private readonly mutedChannels = new Map<string, number>();
 
+    private clearTimer: ReturnType<Context["setInterval"]> | null = null;
+
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.WorldState, true);
         this.config = config;
@@ -55,6 +57,7 @@ export class WorldStateService extends Service<Config> {
     protected async start(): Promise<void> {
         this.registerModels();
         await this.initializeMuteStatus();
+        this.scheduleClearTask();
 
         // Start sub-services
         this.l2_manager.start();
@@ -69,6 +72,9 @@ export class WorldStateService extends Service<Config> {
         this.eventListenerManager.stop();
         this.l2_manager.stop();
         this.l3_manager.stop();
+        if (this.clearTimer) {
+            this.clearTimer();
+        }
         this.logger.info("服务已停止");
     }
 
@@ -228,5 +234,32 @@ export class WorldStateService extends Service<Config> {
             },
             { primary: "id" }
         );
+    }
+
+    private scheduleClearTask() {
+        if (this.clearTimer) return; // 已经有定时任务在运行
+
+        this.clearTimer = this.ctx.setInterval(() => {
+            this.clear();
+        }, this.config.cleanupIntervalSec * 1000);
+
+        this.logger.info(`数据清理任务已启动，间隔 ${this.config.cleanupIntervalSec} 秒`);
+    }
+
+    private async clear() {
+        try {
+            const expiresAt = Date.now() - this.config.dataRetentionDays * 24 * 60 * 60 * 1000;
+
+            await this.ctx.database.transact(async (db) => {
+                await db.remove(TableName.Messages, { timestamp: { $lt: new Date(expiresAt) } });
+                await db.remove(TableName.SystemEvents, { timestamp: { $lt: new Date(expiresAt) } });
+                await db.remove(TableName.L2Chunks, { endTimestamp: { $lt: new Date(expiresAt) } });
+            });
+
+            await this.l1_manager.pruneOldData();
+            this.logger.info("历史数据清理完成");
+        } catch (err) {
+            this.logger.error("历史数据清理失败", err);
+        }
     }
 }
