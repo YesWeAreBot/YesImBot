@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc && node esbuild.config.mjs",
     "dev": "tsc -w --preserveWatchOutput",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo *.tgz",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "pack": "bun pm pack",
     "lint": "eslint . --ext .ts",
     "install-core": "bun add koishi-plugin-yesimbot@file:/home/tqcc/.ybe-build/*/YesImBot-dev/packages/core --dev --force"
