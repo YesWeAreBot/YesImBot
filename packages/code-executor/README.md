@@ -27,18 +27,18 @@
 ## 💿 安装与集成
 
 1.  **安装插件**:
-    - 从 Koishi 插件市场搜索并安装 `@yesimbot/extension-code-executor`。
+    - 从 Koishi 插件市场搜索并安装 `@yesimbot/code-executor`。
     - 或在您的 Koishi 项目根目录下，通过命令行安装：
 
         ```bash
         # 使用 npm
-        npm install @yesimbot/extension-code-executor
+        npm install @yesimbot/code-executor
 
         # 使用 yarn
-        yarn add @yesimbot/extension-code-executor
+        yarn add @yesimbot/code-executor
 
         # 使用 pnpm
-        pnpm add @yesimbot/extension-code-executor
+        pnpm add @yesimbot/code-executor
         ```
 
 2.  **自动集成**:

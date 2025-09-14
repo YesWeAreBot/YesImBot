@@ -1,5 +1,11 @@
 # @yesimbot/koishi-plugin-code-executor
 
+## 1.2.0
+
+### Minor Changes
+
+- 移除 JavaScript
+
 ## 1.1.0
 
 ### Minor Changes

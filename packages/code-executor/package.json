@@ -1,7 +1,7 @@
 {
   "name": "@yesimbot/koishi-plugin-code-executor",
   "description": "Yes! I'm Bot! 代码执行器扩展插件",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "homepage": "https://github.com/YesWeAreBot/YesImBot",
@@ -14,7 +14,7 @@
     "build": "tsc && node esbuild.config.mjs",
     "dev": "tsc -w --preserveWatchOutput",
     "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo *.tgz",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "pack": "bun pm pack"
   },
   "license": "MIT",
@@ -38,7 +38,6 @@
     "url": "https://github.com/YesWeAreBot/YesImBot/issues"
   },
   "dependencies": {
-    "isolated-vm": "5.0.4",
     "pyodide": "0.28.2"
   },
   "devDependencies": {
@@ -54,8 +53,8 @@
   },
   "koishi": {
     "description": {
-      "zh": "为 YesImBot 提供一个安全、隔离的 JavaScript 代码执行器",
-      "en": "Provides a secure and isolated JavaScript code interpreter for the YesImBot"
+      "zh": "为 YesImBot 提供一个安全、隔离的代码执行器",
+      "en": "Provides a secure and isolated code interpreter for the YesImBot"
     },
     "service": {
       "required": [

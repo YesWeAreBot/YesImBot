@@ -31,8 +31,7 @@ export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
             poolSize: Schema.number().default(2).min(1).max(10).description("Pyodide 引擎池的大小，用于并发执行"),
             pyodideVersion: Schema.string()
                 .pattern(/^\d+\.\d+\.\d+$/)
-                .default("0.28.1")
-                .disabled()
+                .default("0.28.2")
                 .description("Pyodide 的版本"),
             cdnBaseUrl: Schema.union([
                 "https://cdn.jsdelivr.net",
