@@ -1,6 +1,7 @@
 import { Context } from "koishi";
 import fs from "fs/promises";
 import path from "path";
+import { Services } from "koishi-plugin-yesimbot/shared";
 
 import { BinaryInstaller } from "./BinaryInstaller";
 import { CommandResolver } from "./CommandResolver";
@@ -14,7 +15,7 @@ import { SystemUtils } from "./SystemUtils";
 export const name = "yesimbot-extension-mcp";
 
 export const inject = {
-    required: ["yesimbot", "yesimbot.tool", "http"],
+    required: ["http", Services.Tool],
 };
 
 export { Config } from "./Config";
@@ -54,10 +55,7 @@ export async function apply(ctx: Context, config: Config) {
         // 安装二进制文件
         if (config.uvSettings?.autoDownload) {
             logger.info("开始安装 UV...");
-            installedUVPath = await binaryInstaller.installUV(
-                config.uvSettings.uvVersion || "latest",
-                config.globalSettings?.githubMirror
-            );
+            installedUVPath = await binaryInstaller.installUV(config.uvSettings.uvVersion || "latest", config.globalSettings?.githubMirror);
         }
 
         if (config.bunSettings?.autoDownload) {

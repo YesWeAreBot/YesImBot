@@ -38,6 +38,7 @@ export interface HistoryConfig {
     ignoreSelfMessage: boolean;
 
     /* === 清理 === */
+    logLengthLimit?: number;
     dataRetentionDays: number;
     cleanupIntervalSec: number;
 }
@@ -65,6 +66,8 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
         .description("长期存档设置"),
 
     ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
+
+    logLengthLimit: Schema.number().default(100).description("Agent 内部日志的最大长度"),
     dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
-    cleanupIntervalSec: Schema.number().default(300).description("后台清理任务的执行频率（秒）"),
+    cleanupIntervalSec: Schema.number().default(1800).description("后台清理任务的执行频率（秒）"),
 });

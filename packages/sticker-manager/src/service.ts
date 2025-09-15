@@ -5,7 +5,7 @@ import { PromptService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { pathToFileURL } from "url";
-import { StickerConfig } from "./index";
+import { StickerConfig } from "./config";
 
 // 添加表情包表结构
 interface StickerRecord {
@@ -30,8 +30,6 @@ declare module "koishi" {
 }
 
 export class StickerService {
-    public logger: Logger;
-
     private static tablesRegistered = false;
     public isReady: boolean = false;
 
@@ -39,7 +37,6 @@ export class StickerService {
         private ctx: Context,
         private config: StickerConfig
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[表情管理]");
         this.start();
     }
 
@@ -53,7 +50,7 @@ export class StickerService {
 
         // 标记服务已就绪
         this.isReady = true;
-        this.logger.debug("表情包服务已就绪");
+        this.ctx.logger.debug("表情包服务已就绪");
     }
 
     public whenReady() {
@@ -76,7 +73,7 @@ export class StickerService {
     private registerPromptSnippet() {
         const promptService: PromptService = this.ctx[Services.Prompt];
         if (!promptService) {
-            this.logger.warn("提示词服务未找到，无法注册分类列表");
+            this.ctx.logger.warn("提示词服务未找到，无法注册分类列表");
             return;
         }
 
@@ -86,12 +83,12 @@ export class StickerService {
             return categories.join(", ");
         });
 
-        this.logger.debug("表情包分类列表已注册到提示词系统");
+        this.ctx.logger.debug("表情包分类列表已注册到提示词系统");
     }
 
     private async initStorage() {
         await mkdir(this.config.storagePath, { recursive: true });
-        this.logger.info(`表情存储目录已初始化: ${this.config.storagePath}`);
+        this.ctx.logger.info(`表情存储目录已初始化: ${this.config.storagePath}`);
     }
 
     private async registerModels() {
@@ -113,9 +110,9 @@ export class StickerService {
                 { primary: "id" }
             );
 
-            this.logger.debug("表情包表已创建");
+            this.ctx.logger.debug("表情包表已创建");
         } catch (error) {
-            this.logger.error("创建表情包表失败", error);
+            this.ctx.logger.error("创建表情包表失败", error);
             throw error;
         }
     }
@@ -167,7 +164,7 @@ export class StickerService {
         };
 
         await this.ctx.database.create(TableName, record);
-        this.logger.debug(`已保存表情: ${category} - ${stickerId}`);
+        this.ctx.logger.debug(`已保存表情: ${category} - ${stickerId}`);
         return record;
     }
 
@@ -182,7 +179,7 @@ export class StickerService {
         const model = this.ctx[Services.Model].getChatModel(this.config.classifiModel.providerName, this.config.classifiModel.modelId);
 
         if (!model || !model.isVisionModel()) {
-            this.logger.error(`当前模型组中没有支持多模态的模型。`);
+            this.ctx.logger.error(`当前模型组中没有支持多模态的模型。`);
             throw Error();
         }
 
@@ -206,7 +203,7 @@ export class StickerService {
 
             return response.text.trim();
         } catch (error) {
-            this.logger.error("表情分类失败", error);
+            this.ctx.logger.error("表情分类失败", error);
             return "分类失败";
         }
     }
@@ -260,7 +257,7 @@ export class StickerService {
                     } catch (error) {
                         stats.failed++;
                         stats.failedFiles.push(file);
-                        this.logger.warn(`导入失败: ${file} - ${error.message}`);
+                        this.ctx.logger.warn(`导入失败: ${file} - ${error.message}`);
                     }
                 }
             }
@@ -411,7 +408,7 @@ export class StickerService {
             // 准备临时下载目录
             const tempDir = path.join(this.config.storagePath, "temp");
             await mkdir(tempDir, { recursive: true });
-            this.logger.debug(`创建临时目录: ${tempDir}`);
+            this.ctx.logger.debug(`创建临时目录: ${tempDir}`);
 
             // 处理每个 URL
             for (const [index, rawUrl] of urls.entries()) {
@@ -444,7 +441,7 @@ export class StickerService {
                     // 将图片数据写入文件
                     const buffer = await response.arrayBuffer();
                     await writeFile(tempFilePath, Buffer.from(buffer));
-                    this.logger.debug(`已下载图片: ${tempFilePath}`);
+                    this.ctx.logger.debug(`已下载图片: ${tempFilePath}`);
 
                     // 使用 importSingleSticker 方法导入
                     const result = await this.importSingleSticker(tempFilePath, category, session);
@@ -458,13 +455,13 @@ export class StickerService {
                         try {
                             await unlink(tempFilePath);
                         } catch (cleanupError) {
-                            this.logger.warn(`清理临时文件失败: ${tempFilePath}`, cleanupError);
+                            this.ctx.logger.warn(`清理临时文件失败: ${tempFilePath}`, cleanupError);
                         }
                     }
                 } catch (error) {
                     stats.failed++;
                     stats.failedUrls.push({ url: rawUrl, error: error.message });
-                    this.logger.warn(`导入失败: ${rawUrl} - ${error.message}`);
+                    this.ctx.logger.warn(`导入失败: ${rawUrl} - ${error.message}`);
                 }
             }
         } finally {
@@ -531,9 +528,9 @@ export class StickerService {
                 await unlink(filePath);
             }
             await rmdir(tempDir);
-            this.logger.debug(`已清理临时目录: ${tempDir}`);
+            this.ctx.logger.debug(`已清理临时目录: ${tempDir}`);
         } catch (error) {
-            this.logger.warn(`清理临时目录失败: ${error.message}`);
+            this.ctx.logger.warn(`清理临时目录失败: ${error.message}`);
         }
     }
 
@@ -577,7 +574,7 @@ export class StickerService {
         };
 
         await this.ctx.database.create(TableName, record);
-        this.logger.info(`已导入表情: ${category}/${fileHash}${extension}`);
+        this.ctx.logger.info(`已导入表情: ${category}/${fileHash}${extension}`);
 
         return "success";
     }
@@ -597,7 +594,7 @@ export class StickerService {
     public async renameCategory(oldName: string, newName: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { category: oldName }, { category: newName });
         const modified = result.matched;
-        this.logger.info(`已将分类 "${oldName}" 重命名为 "${newName}"，更新了 ${modified} 个表情包`);
+        this.ctx.logger.info(`已将分类 "${oldName}" 重命名为 "${newName}"，更新了 ${modified} 个表情包`);
         return modified;
     }
 
@@ -614,13 +611,13 @@ export class StickerService {
         for (const sticker of stickers) {
             try {
                 await unlink(sticker.filePath);
-                this.logger.debug(`已删除表情包文件: ${sticker.filePath}`);
+                this.ctx.logger.debug(`已删除表情包文件: ${sticker.filePath}`);
             } catch (error) {
-                this.logger.warn(`删除文件失败: ${sticker.filePath}`, error);
+                this.ctx.logger.warn(`删除文件失败: ${sticker.filePath}`, error);
             }
         }
 
-        this.logger.info(`已删除分类 "${category}"，共移除 ${result.removed} 个表情包`);
+        this.ctx.logger.info(`已删除分类 "${category}"，共移除 ${result.removed} 个表情包`);
         return result.removed;
     }
 
@@ -630,7 +627,7 @@ export class StickerService {
     public async mergeCategories(sourceCategory: string, targetCategory: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { category: sourceCategory }, { category: targetCategory });
 
-        this.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.modified} 个表情包`);
+        this.ctx.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.modified} 个表情包`);
         return result.modified;
     }
 
@@ -644,7 +641,7 @@ export class StickerService {
             throw new Error("未找到该表情包");
         }
 
-        this.logger.info(`已将表情包 ${stickerId} 移动到分类 "${newCategory}"`);
+        this.ctx.logger.info(`已将表情包 ${stickerId} 移动到分类 "${newCategory}"`);
         return result.modified;
     }
 
@@ -679,10 +676,10 @@ export class StickerService {
             if (!dbFiles.has(file)) {
                 try {
                     await unlink(path.join(this.config.storagePath, file));
-                    this.logger.debug(`清理未引用表情: ${file}`);
+                    this.ctx.logger.debug(`清理未引用表情: ${file}`);
                     deletedCount++;
                 } catch (error) {
-                    this.logger.warn(`清理失败: ${file}`, error);
+                    this.ctx.logger.warn(`清理失败: ${file}`, error);
                 }
             }
         }

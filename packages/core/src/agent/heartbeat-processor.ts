@@ -92,27 +92,47 @@ export class HeartbeatProcessor {
             triggerContext: promptContext.worldState.triggerContext,
             // 模板辅助函数
             _toString: function () {
-                return _toString(this);
+                try {
+                    return _toString(this);
+                } catch (err) {
+                    // FIXME: use external this context
+                    return "";
+                }
             },
             _renderParams: function () {
-                const content = [];
-                for (let param of Object.keys(this.params)) {
-                    content.push(`<${param}>${_toString(this.params[param])}</${param}>`);
+                try {
+                    const content = [];
+                    for (let param of Object.keys(this.params)) {
+                        content.push(`<${param}>${_toString(this.params[param])}</${param}>`);
+                    }
+                    return content.join("");
+                } catch (err) {
+                    // FIXME: use external this context
+                    return "";
                 }
-                return content.join("");
             },
             _truncate: function () {
-                const length = 100; // TODO: 从配置读取
-                const text = h
-                    .parse(this)
-                    .filter((e) => e.type === "text")
-                    .join("");
-                return text.length > length
-                    ? `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`
-                    : this.toString();
+                try {
+                    const length = 100; // TODO: 从配置读取
+                    const text = h
+                        .parse(this)
+                        .filter((e) => e.type === "text")
+                        .join("");
+                    return text.length > length
+                        ? `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`
+                        : this.toString();
+                } catch (err) {
+                    // FIXME: use external this context
+                    return "";
+                }
             },
             _formatDate: function () {
-                return formatDate(this, "MM-DD HH:mm");
+                try {
+                    return formatDate(this, "MM-DD HH:mm");
+                } catch (err) {
+                    // FIXME: use external this context
+                    return "";
+                }
             },
         };
 
@@ -408,6 +428,7 @@ export class HeartbeatProcessor {
         const { platform, channelId } = session;
 
         for await (const action of actions) {
+            if (!action.function || action.params) continue; // FIXME: params is nullable
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
             const result = await this.toolService.invoke(action.function, action.params, session);
             await this.interactionManager.recordObservation(actionId, platform, channelId, {

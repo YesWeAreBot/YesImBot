@@ -131,7 +131,7 @@ export class ArchivalMemoryManager {
                 keywords: [], // Keyword extraction can be a separate step
                 mentionedUserIds: [...new Set(messages.map((m) => m.sender.id))],
             };
-            await this.ctx.database.create("worldstate.l3_diaries", diaryEntry);
+            await this.ctx.database.create(TableName.L3Diaries, diaryEntry);
             this.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${date.toISOString().split("T")[0]} 的日记`);
         } catch (error) {
             this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);

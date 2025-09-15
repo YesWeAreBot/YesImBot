@@ -14,7 +14,7 @@
     "build": "tsc && node esbuild.config.mjs",
     "dev": "tsc -w --preserveWatchOutput",
     "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo *.tgz",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "pack": "bun pm pack"
   },
   "license": "MIT",

@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
 
-import { JavaScriptConfig, JavaScriptConfigSchema } from "./executors/javascript";
+// import { JavaScriptConfig, JavaScriptConfigSchema } from "./executors/javascript";
 import { PythonConfig, PythonConfigSchema } from "./executors/python";
 
 export interface SharedConfig {
@@ -13,7 +13,7 @@ export interface SharedConfig {
 export interface Config {
     shared: SharedConfig;
     engines: {
-        javascript: JavaScriptConfig;
+        // javascript: JavaScriptConfig;
         python: PythonConfig;
     };
 }
@@ -33,7 +33,7 @@ export const SharedConfig: Schema<SharedConfig> = Schema.object({
 export const Config = Schema.object({
     shared: SharedConfig.description("全局共享配置"),
     engines: Schema.object({
-        javascript: JavaScriptConfigSchema,
+        // javascript: JavaScriptConfigSchema,
         python: PythonConfigSchema,
     }).description("执行引擎配置"),
 });

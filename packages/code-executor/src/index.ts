@@ -1,9 +1,10 @@
 import { Context, Logger } from "koishi";
 import { Extension, ToolService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
+
 import { Config } from "./config";
-import { JavaScriptExecutor, PythonExecutor } from "./executors";
 import { CodeExecutor } from "./executors/base";
+import { PythonExecutor } from "./executors/python";
 
 @Extension({
     name: "code-executor",
@@ -40,10 +41,9 @@ export default class MultiEngineCodeExecutor {
         this.logger.info("Initializing code execution engines...");
         const engineConfigs = this.config.engines;
 
-        // 1. JavaScript Engine
-        if (engineConfigs.javascript.enabled) {
-            this.registerExecutor(new JavaScriptExecutor(this.ctx, engineConfigs.javascript, this.config.shared));
-        }
+        // if (engineConfigs.javascript.enabled) {
+        //     this.registerExecutor(new JavaScriptExecutor(this.ctx, engineConfigs.javascript, this.config.shared));
+        // }
 
         // 2. Python Engine
         if (engineConfigs.python.enabled) {

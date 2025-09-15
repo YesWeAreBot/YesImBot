@@ -1,9 +1,9 @@
 import { Context, Logger } from "koishi";
+import { v4 as uuidv4 } from "uuid";
 
 import { IEmbedModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
 import { cosineSimilarity } from "@/shared/utils";
-import { v4 as uuidv4 } from "uuid";
 import { HistoryConfig } from "./config";
 import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
 

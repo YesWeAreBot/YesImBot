@@ -128,7 +128,7 @@ export class InteractionManager {
         const filePath = this.getLogFilePath(platform, channelId);
         try {
             const content = await fs.readFile(filePath, "utf-8");
-            const lines = content.trim().split("\n");
+            const lines = content.trim().split("\n").filter(Boolean);
             const recentLines = lines.slice(-limit);
             return recentLines.map((line) => this.logEntryToHistoryItem(JSON.parse(line)));
         } catch (error) {
@@ -249,6 +249,27 @@ export class InteractionManager {
             case "system_event":
                 // This path should not be taken in the new flow
                 return null;
+        }
+    }
+
+    public async pruneOldData(): Promise<void> {
+        for (const dir of await fs.readdir(this.basePath)) {
+            const dirPath = path.join(this.basePath, dir);
+            const stat = await fs.stat(dirPath);
+            if (!stat.isDirectory()) continue;
+
+            for (const file of await fs.readdir(dirPath)) {
+                const filePath = path.join(dirPath, file);
+                try {
+                    const content = await fs.readFile(filePath, "utf-8");
+                    const lines = content.trim().split("\n").filter(Boolean);
+                    const linesToKeep = this.config.logLengthLimit ? lines.slice(-this.config.logLengthLimit) : lines;
+
+                    await fs.writeFile(filePath, linesToKeep.join("\n") + "\n");
+                } catch (error) {
+                    this.logger.error(`清理日志文件失败: ${filePath}`, error);
+                }
+            }
         }
     }
 

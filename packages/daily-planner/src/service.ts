@@ -26,7 +26,6 @@ declare module "koishi" {
 export class DailyPlannerService {
     private readonly memoryService: MemoryService;
     private readonly chatModel: IChatModel;
-    private readonly logger: Logger;
 
     constructor(
         private ctx: Context,
@@ -34,10 +33,9 @@ export class DailyPlannerService {
     ) {
         this.memoryService = ctx[Services.Memory];
         this.chatModel = ctx[Services.Model].getChatModel(this.config.model.providerName, config.model.modelId);
-        this.logger = ctx[Services.Logger].getLogger("[日程规划]");
         this.registerDatabaseModel();
         this.registerPromptSnippet();
-        this.logger.info("日程服务已初始化");
+        this.ctx.logger.info("日程服务已初始化");
     }
 
     private registerDatabaseModel() {
@@ -109,7 +107,7 @@ export class DailyPlannerService {
         const schedule = await this.ctx.database.get("yesimbot.daily_schedules", { date: today });
 
         if (!schedule.length) {
-            this.logger.info("今日日程未生成，正在创建...");
+            this.ctx.logger.info("今日日程未生成，正在创建...");
             return this.generateDailySchedule();
         }
         return schedule[0];
@@ -132,7 +130,7 @@ export class DailyPlannerService {
             }
             return null;
         } catch (error) {
-            this.logger.error("获取当前时间段失败", error);
+            this.ctx.logger.error("获取当前时间段失败", error);
             return null;
         }
     }
@@ -220,12 +218,12 @@ export class DailyPlannerService {
         prompt += `]\n\n`;
         prompt += "注意：时间段之间不应有重叠，每个时间段的活动描述应清晰具体，避免模糊描述。";
 
-        this.logger.debug("生成的提示词:", prompt);
+        this.ctx.logger.debug("生成的提示词:", prompt);
         return prompt;
     }
 
     private parseScheduleOutput(text: string): TimeSegment[] {
-        this.logger.debug("解析日程文本:", text);
+        this.ctx.logger.debug("解析日程文本:", text);
 
         try {
             // 尝试提取JSON部分
@@ -236,7 +234,7 @@ export class DailyPlannerService {
             }
 
             const jsonStr = text.slice(jsonStart, jsonEnd + 1);
-            this.logger.debug("提取的JSON字符串:", jsonStr);
+            this.ctx.logger.debug("提取的JSON字符串:", jsonStr);
 
             const parsed = JSON.parse(jsonStr);
             if (!Array.isArray(parsed)) {
@@ -274,13 +272,13 @@ export class DailyPlannerService {
 
             return segments;
         } catch (error) {
-            this.logger.error("JSON解析失败:", error.message);
+            this.ctx.logger.error("JSON解析失败:", error.message);
             return this.fallbackParse(text);
         }
     }
 
     private fallbackParse(text: string): TimeSegment[] {
-        this.logger.warn("使用备用解析方法");
+        this.ctx.logger.warn("使用备用解析方法");
         const segments: TimeSegment[] = [];
 
         // 尝试匹配时间模式：HH:mm-HH:mm 内容
@@ -340,7 +338,7 @@ export class DailyPlannerService {
 
         // 如果仍然无法解析，使用默认分配
         if (segments.length === 0) {
-            this.logger.warn("无法解析日程，使用默认值");
+            this.ctx.logger.warn("无法解析日程，使用默认值");
             return [
                 { start: "08:00", end: "12:00", content: "处理用户请求和系统任务" },
                 { start: "12:00", end: "13:00", content: "午餐与休息" },
@@ -388,7 +386,7 @@ export class DailyPlannerService {
                     temperature: 0.3,
                 });
 
-                this.logger.debug("模型原始响应:", response.text);
+                this.ctx.logger.debug("模型原始响应:", response.text);
 
                 // 验证响应是否为JSON数组格式
                 try {
@@ -402,12 +400,12 @@ export class DailyPlannerService {
                     JSON.parse(jsonStr); // 验证是否能解析
                     return response.text;
                 } catch (error) {
-                    this.logger.warn("响应不是有效的JSON数组，将重试");
+                    this.ctx.logger.warn("响应不是有效的JSON数组，将重试");
                     retryCount++;
                     continue;
                 }
             } catch (error) {
-                this.logger.error("模型调用失败:", error);
+                this.ctx.logger.error("模型调用失败:", error);
                 retryCount++;
             }
         }

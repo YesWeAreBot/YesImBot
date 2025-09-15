@@ -300,7 +300,7 @@ export interface SystemEventPayload {
 /** Agent 接收到的外部刺激，是驱动其行为的入口。 */
 export interface AgentStimulus<T> {
     type: StimulusType;
-    channelCid: string; // 'platform:channelId'
+    channelCid: string;
     session: Session;
     priority: number;
     payload: T;
@@ -311,11 +311,9 @@ export interface AgentStimulus<T> {
 declare module "koishi" {
     interface Tables {
         [TableName.Members]: MemberData;
-        // AgentTurns is no longer a table, it's stored in files.
-        // [TableName.AgentTurns]: AgentTurnData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
-        "worldstate.l2_chunks": MemoryChunkData;
-        "worldstate.l3_diaries": DiaryEntryData;
+        [TableName.L2Chunks]: MemoryChunkData;
+        [TableName.L3Diaries]: DiaryEntryData;
     }
 }

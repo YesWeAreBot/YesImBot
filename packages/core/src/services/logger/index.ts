@@ -103,6 +103,7 @@ export class LoggerService extends Service<Config> {
         //this._logger.info("服务已停止");
     }
 
+    /** @deprecated */
     public getLogger(name?: string): Logger {
         const originalLogger = this.ctx?.logger(name) || new Logger(name, {});
         return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level);

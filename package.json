@@ -19,7 +19,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "clean": "turbo run clean",
+    "clean": "turbo run clean && rm -rf .turbo",
     "pack": "turbo run pack",
     "prepare": "husky install",
     "add-changeset": "changeset add",
