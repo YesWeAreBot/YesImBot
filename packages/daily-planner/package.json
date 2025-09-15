@@ -13,8 +13,7 @@
     "dev": "tsc -w --preserveWatchOutput",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "pack": "bun pm pack",
-    "lint": "eslint . --ext .ts",
-    "install-core": "bun add koishi-plugin-yesimbot@file:/home/tqcc/.ybe-build/*/YesImBot-dev/packages/core --dev --force"
+    "lint": "eslint . --ext .ts"
   },
   "license": "MIT",
   "keywords": [
@@ -30,10 +29,12 @@
   },
   "devDependencies": {
     "koishi": "^4.18.7",
+    "koishi-plugin-cron": "^3.1.0",
     "koishi-plugin-yesimbot": "^3.0.0"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
+    "koishi-plugin-cron": "^3.1.0",
     "koishi-plugin-yesimbot": "^3.0.0"
   },
   "koishi": {
@@ -46,8 +47,5 @@
         "yesimbot"
       ]
     }
-  },
-  "dependencies": {
-    "koishi-plugin-cron": "^3.1.0"
   }
 }
