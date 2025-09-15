@@ -428,7 +428,7 @@ export class HeartbeatProcessor {
         const { platform, channelId } = session;
 
         for await (const action of actions) {
-            if (!action.function || action.params) continue; // FIXME: params is nullable
+            if (!action.function) continue; // FIXME: params is nullable
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
             const result = await this.toolService.invoke(action.function, action.params, session);
             await this.interactionManager.recordObservation(actionId, platform, channelId, {
