@@ -86,7 +86,9 @@ export interface WillingnessConfig {
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
     base: Schema.object({
-        text: Schema.computed<Schema<number>>(Schema.number().default(10)).default(10).description("收到普通文本消息的基础分"),
+        text: Schema.computed<Schema<number>>(Schema.number().default(12))
+            .default(12)
+            .description("收到普通文本消息的基础分<br/>这部分参数都可以通过 `添加分支` 进行更加精细化的配置"),
     }),
     attribute: Schema.object({
         atMention: Schema.computed<Schema<number>>(Schema.number().default(100)).default(100).description("被@时的额外加成"),
@@ -103,22 +105,22 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
     }),
     lifecycle: Schema.object({
         maxWillingness: Schema.computed<Schema<number>>(Schema.number().default(100)).min(10).default(100).description("意愿值的最大上限"),
-        decayHalfLifeSeconds: Schema.computed<Schema<number>>(Schema.number().default(90))
+        decayHalfLifeSeconds: Schema.computed<Schema<number>>(Schema.number().default(600))
             .min(5)
-            .default(90)
+            .default(600)
             .description("意愿值衰减到一半所需的时间（秒）"),
-        probabilityThreshold: Schema.computed<Schema<number>>(Schema.number().default(60))
+        probabilityThreshold: Schema.computed<Schema<number>>(Schema.number().default(55))
             .min(0)
-            .default(60)
+            .default(55)
             .description("将意愿值转换为回复概率的激活门槛"),
-        probabilityAmplifier: Schema.computed<Schema<number>>(Schema.number().default(0.05))
+        probabilityAmplifier: Schema.computed<Schema<number>>(Schema.number().default(0.04))
             .min(0.01)
             .max(1)
-            .default(0.05)
+            .default(0.04)
             .description("概率放大系数"),
-        replyCost: Schema.computed<Schema<number>>(Schema.number().default(30))
+        replyCost: Schema.computed<Schema<number>>(Schema.number().default(35))
             .min(0)
-            .default(30)
+            .default(35)
             .description('决定回复后，扣除的"发言精力惩罚"'),
         // refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
         //     .min(0)

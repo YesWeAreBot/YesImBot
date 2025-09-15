@@ -1,4 +1,4 @@
-import { Context, ForkScope, Logger, resolveConfig, Schema, Service, Session } from "koishi";
+import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 
 import { Config } from "@/config";
 import { PromptService } from "@/services/prompt";
@@ -100,7 +100,7 @@ export class ToolService extends Service<Config> {
 
                 // 3. 处理没有结果的情况
                 if (totalCount === 0) {
-                    return options.filter ? `没有找到与 "${options.filter}" 匹配的工具。` : "当前没有可用的工具。";
+                    return options.filter ? `没有找到与 "${options.filter}" 匹配的工具。` : "当前没有可用的工具";
                 }
 
                 // 4. 计算分页参数
@@ -126,10 +126,10 @@ export class ToolService extends Service<Config> {
 
         this.ctx
             .command("tool.info <name:string>", "显示工具的详细信息", { authority: 3 })
-            .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等。")
+            .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等")
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
-                if (!name) return "未指定要查询的工具名称。";
+                if (!name) return "未指定要查询的工具名称";
 
                 const renderResult = await this.promptService.render("tool.info", { toolName: name, session: session });
 
@@ -137,21 +137,21 @@ export class ToolService extends Service<Config> {
                     return `未找到名为 "${name}" 的工具或渲染失败。`;
                 }
 
-                return renderResult;
+                return h.escape(renderResult);
             });
 
         this.ctx
             .command("tool.invoke <name:string> [...params:string]", "调用工具", { authority: 3 })
             .usage(
                 [
-                    "调用指定的工具并传递参数。",
+                    "调用指定的工具并传递参数",
                     '参数格式为 "key=value"，多个参数用空格分隔。',
                     '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
                 ].join("\n")
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
             .action(async ({ session }, name, ...params) => {
-                if (!name) return "错误：未指定要调用的工具名称。";
+                if (!name) return "错误：未指定要调用的工具名称";
 
                 const parsedParams: Record<string, any> = {};
                 try {
@@ -190,22 +190,22 @@ export class ToolService extends Service<Config> {
 
         this.ctx
             .command("tool.delete <name:string>", "删除一个已注册的工具", { authority: 3 })
-            .usage("根据工具名称，从工具服务中卸载一个工具。此操作是临时的，服务重启后可能会被重新加载。")
+            .usage("根据工具名称，从工具服务中卸载一个工具。此操作是临时的，服务重启后可能会被重新加载")
             .example("tool.delete web_search")
             .action(async ({ session }, name) => {
-                if (!name) return "未指定要删除的工具名称。";
+                if (!name) return "未指定要删除的工具名称";
                 const result = this.unregisterTool(name);
                 return result ? `工具 "${name}" 已成功删除。` : `删除失败：未找到名为 "${name}" 的工具。`;
             });
 
         this.ctx
             .command("extension.list", "列出所有已加载的扩展", { authority: 3 })
-            .usage("查询并展示当前所有已成功加载的扩展及其描述。")
+            .usage("查询并展示当前所有已成功加载的扩展及其描述")
             .example("extension.list")
             .action(async ({ session }) => {
                 const extensions = this.extensions;
                 if (extensions.size === 0) {
-                    return "当前没有已加载的扩展。";
+                    return "当前没有已加载的扩展";
                 }
                 const extList = Array.from(extensions.values())
                     .map((e) => `- ${e.metadata.name}: ${e.metadata.description}`)
@@ -359,7 +359,7 @@ export class ToolService extends Service<Config> {
 
         try {
             if (!extensionInstance.metadata || !extensionInstance.metadata.name) {
-                this._logger.warn("一个扩展在注册时缺少元数据或名称，已跳过。");
+                this._logger.warn("一个扩展在注册时缺少元数据或名称，已跳过");
                 return;
             }
 
@@ -370,11 +370,18 @@ export class ToolService extends Service<Config> {
                     "toolService.availableExtensions",
                     availableExtensions.set(
                         extensionInstance.metadata.name,
-                        Schema.object({
-                            enabled: Schema.boolean().default(true).description("是否启用此扩展"),
-                            //config: validate && enabled ? validate.default(validatedConfig) : Schema.object({}),
-                            ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
-                        }).description(`${metadata.display || metadata.name} - ${metadata.description}`)
+                        Schema.intersect([
+                            Schema.object({
+                                enabled: Schema.boolean().default(true).description("是否启用此扩展"),
+                            }).description(`${metadata.display || metadata.name} - ${metadata.description}`),
+                            Schema.union([
+                                Schema.object({
+                                    enabled: Schema.const(true),
+                                    ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
+                                }),
+                                Schema.object({}),
+                            ]),
+                        ])
                     )
                 );
             }
