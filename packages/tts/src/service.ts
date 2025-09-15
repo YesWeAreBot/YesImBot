@@ -1,4 +1,4 @@
-import { Context, Random, Schema, h } from "koishi";
+import { Context, Schema, h } from "koishi";
 import { Failed, Infer, Success, ToolDefinition } from "koishi-plugin-yesimbot/services";
 
 import { TTSAdapter } from "./adapters/base";
@@ -7,8 +7,6 @@ import { FishAudioAdapter, FishAudioConfig } from "./adapters/fish-audio";
 import { IndexTTS2Adapter, IndexTTS2Config } from "./adapters/index-tts2";
 import { OpenAudioAdapter, OpenAudioConfig } from "./adapters/open-audio";
 import { BaseTTSParams } from "./types";
-import { writeFileSync } from "fs";
-import path from "path";
 
 export const Config = Schema.intersect([
     Schema.object({
@@ -52,6 +50,14 @@ export class TTSService {
         private config: Config
     ) {
         this.adapter = this.createAdapter();
+
+        ctx.on("dispose", async () => {
+            try {
+                this.adapter?.stop();
+            } catch (error) {
+                ctx.logger.error(error);
+            }
+        });
     }
 
     private createAdapter(): TTSAdapter {

@@ -1,5 +1,5 @@
 import fs from "fs";
-import { Context, Schema } from "koishi";
+import { Awaitable, Context, Schema } from "koishi";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import WebSocket from "ws";
@@ -53,8 +53,22 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
 
     constructor(ctx: Context, config: CosyVoiceConfig) {
         super(ctx, config);
-        this.tempDir = fs.mkdtempSync(path.join(ctx.baseDir, "cache", "koishi-tts-"));
+
+        try {
+            fs.mkdirSync(path.join(ctx.baseDir, "cache"));
+            this.tempDir = fs.mkdtempSync(path.join(ctx.baseDir, "cache", "koishi-tts-"));
+        } catch (error) {
+            this.tempDir = path.join(ctx.baseDir, "data", "tts");
+            fs.mkdirSync(this.tempDir, { recursive: true });
+        }
+
         this.connect();
+    }
+
+    async stop() {
+        try {
+            fs.unlinkSync(this.tempDir);
+        } catch (error) {}
     }
 
     private connect() {
