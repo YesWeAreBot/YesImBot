@@ -1,5 +1,14 @@
 # koishi-plugin-yesimbot-extension-sticker-manager
 
+## 1.2.1
+
+### Patch Changes
+
+- 018350c: refactor(logger): 更新日志记录方式，移除对 Logger 服务的直接依赖
+- Updated dependencies [018350c]
+- Updated dependencies [018350c]
+    - koishi-plugin-yesimbot@3.0.2
+
 ## 1.2.0
 
 ### Minor Changes
