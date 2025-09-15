@@ -49,7 +49,7 @@ export default class FavorExtension {
     });
 
     // --- 依赖注入 ---
-    static readonly inject = [Services.Prompt, "database"];
+    static readonly inject = ["database", Services.Prompt];
 
     private logger: ReturnType<Context["logger"]>;
 

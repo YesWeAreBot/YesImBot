@@ -20,7 +20,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                 const ctx: Context = args[0];
                 const config: any = args[1] || {};
 
-                const logger = ctx[Services.Logger].getLogger(`[工具管理器]`);
+                const logger = ctx.logger("[Extension]");
 
                 // 默认启用，因此配置中明确禁用才跳过加载
                 const enabled = !Object.hasOwn(config, "enabled") || config.enabled;
@@ -89,12 +89,12 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
 
         if (Array.isArray(originalInjects)) {
             Object.defineProperty(WrappedAsAny, "inject", {
-                value: [...new Set([Services.Tool, Services.Logger, ...originalInjects])],
+                value: [...new Set([...originalInjects, Services.Tool, Services.Logger])], // deprecated Services.Logger
                 writable: false,
             });
         } else {
             const required = originalInjects["required"] || [];
-            originalInjects["required"] = [...new Set([...required, Services.Tool, Services.Logger])];
+            originalInjects["required"] = [...new Set([...required, Services.Tool, Services.Logger])]; // deprecated Services.Logger
             Object.defineProperty(WrappedAsAny, "inject", {
                 value: originalInjects,
                 writable: false,
@@ -111,11 +111,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
  * @param metadata 工具的元数据
  */
 export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
-    return function (
-        target: any,
-        propertyKey: string,
-        descriptor: TypedPropertyDescriptor<(args: Infer<TParams>) => Promise<any>>
-    ) {
+    return function (target: any, propertyKey: string, descriptor: TypedPropertyDescriptor<(args: Infer<TParams>) => Promise<any>>) {
         if (!descriptor.value) {
             return;
         }

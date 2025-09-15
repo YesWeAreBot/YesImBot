@@ -96,9 +96,8 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     version: "1.2.0",
 })
 export default class RR3 {
-    static readonly inject = [Services.Logger, Services.Asset];
+    static readonly inject = [Services.Asset];
     static readonly Config = ConfigSchema;
-    private logger: Logger;
     private assetService: AssetService;
 
     // 预设尺寸，便于LLM选择
@@ -112,10 +111,9 @@ export default class RR3 {
         public ctx: Context,
         public config: Config
     ) {
-        this.logger = ctx[Services.Logger].getLogger("txt2img-rr3");
         this.assetService = ctx[Services.Asset];
         this.ctx.on("ready", () => {
-            this.logger.info("插件已成功启动");
+            this.ctx.logger.info("插件已成功启动");
         });
     }
 
@@ -141,12 +139,12 @@ export default class RR3 {
     })
     async generateImage(args: Infer<{ prompt: string; orientation: string }>) {
         const totalTimer = new Timer();
-        this.logger.info(`开始执行 generateImage 任务, 提示词: "${args.prompt}"`);
+        this.ctx.logger.info(`开始执行 generateImage 任务, 提示词: "${args.prompt}"`);
 
         try {
             // 根据 LLM 选择的 orientation 获取具体尺寸
             const dimensions = this.orientationPresets[args.orientation];
-            this.logger.info(`选择构图: ${args.orientation} (${dimensions.width}x${dimensions.height})`);
+            this.ctx.logger.info(`选择构图: ${args.orientation} (${dimensions.width}x${dimensions.height})`);
 
             const prompt = this.config.usePreset ? `${this.config.preset},${args.prompt}` : args.prompt;
 
@@ -156,7 +154,7 @@ export default class RR3 {
                 ...dimensions,
                 prompt,
             };
-            this.logger.debug("完整生成参数: %o", options);
+            this.ctx.logger.debug("完整生成参数: %o", options);
 
             // --- 同步执行流程 ---
             const secret = await this.getSecret(this.config.token);
@@ -166,7 +164,7 @@ export default class RR3 {
                 throw new Error("任务提交失败，API 未返回 task_id");
             }
 
-            this.logger.info(`任务提交成功 (Task ID: ${submission.task_id})，正在等待同步返回结果...`);
+            this.ctx.logger.info(`任务提交成功 (Task ID: ${submission.task_id})，正在等待同步返回结果...`);
 
             // 直接调用 getTask 并等待其完成，因为 API 是同步阻塞的
             const finalTask = await this.getTaskResult(submission.task_id);
@@ -176,13 +174,13 @@ export default class RR3 {
                 if (!finalTask.image) {
                     return Failed("任务成功，但 API 未返回有效的图片数据");
                 }
-                this.logger.info("任务成功，正在保存图片资源...");
+                this.ctx.logger.info("任务成功，正在保存图片资源...");
                 if (finalTask.censor?.is_nsfw) {
-                    this.logger.warn("任务结果被标记为 NSFW");
+                    this.ctx.logger.warn("任务结果被标记为 NSFW");
                 }
                 const imageBuffer = Buffer.from(finalTask.image, "base64");
                 const assetId = await this.assetService.create(imageBuffer, { filename: `rr3-${submission.task_id}.png` });
-                this.logger.info(`图片资源创建成功, Asset ID: ${assetId}`);
+                this.ctx.logger.info(`图片资源创建成功, Asset ID: ${assetId}`);
                 return Success(assetId);
             } else {
                 // 处理 API 返回的失败状态
@@ -190,22 +188,22 @@ export default class RR3 {
             }
         } catch (error) {
             if (error instanceof ApiError) {
-                this.logger.error(`API 请求失败 (Status: ${error.status}): ${error.message}. 响应体: %o`, error.body);
+                this.ctx.logger.error(`API 请求失败 (Status: ${error.status}): ${error.message}. 响应体: %o`, error.body);
                 return Failed(`API 请求失败: ${error.message}`);
             } else if (error instanceof Error) {
-                this.logger.error(`任务执行出错: ${error.message}\n%s`, error.stack);
+                this.ctx.logger.error(`任务执行出错: ${error.message}\n%s`, error.stack);
                 return Failed(`任务执行失败: ${error.message}`);
             } else {
-                this.logger.error("发生未知错误: %o", error);
+                this.ctx.logger.error("发生未知错误: %o", error);
                 return Failed("发生未知错误，请检查控制台日志");
             }
         } finally {
-            this.logger.info(`--- 任务流程结束, 总耗时: ${totalTimer.stop()} ---`);
+            this.ctx.logger.info(`--- 任务流程结束, 总耗时: ${totalTimer.stop()} ---`);
         }
     }
 
     private async fetchWithHandling(url: string, options: RequestInit = {}): Promise<Response> {
-        this.logger.debug(`发起请求: ${options.method || "GET"} ${url}`);
+        this.ctx.logger.debug(`发起请求: ${options.method || "GET"} ${url}`);
         const response = await fetch(url, options);
 
         if (!response.ok) {
@@ -221,7 +219,7 @@ export default class RR3 {
     }
 
     private async getPublicKey(): Promise<string> {
-        this.logger.debug("获取公钥...");
+        this.ctx.logger.debug("获取公钥...");
         const response = await this.fetchWithHandling(`${this.config.endpoint}/v1/access/pub`);
         const data = await response.json();
         return Buffer.from(data.pub, "base64").toString("utf8");
@@ -233,7 +231,7 @@ export default class RR3 {
                 .publicEncrypt({ key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING }, Buffer.from(plaintext, "utf8"))
                 .toString("base64");
         } catch (error) {
-            this.logger.error("使用公钥加密失败: %o", error);
+            this.ctx.logger.error("使用公钥加密失败: %o", error);
             throw new Error("Encryption failed", { cause: error });
         }
     }
@@ -245,7 +243,7 @@ export default class RR3 {
     }
 
     private async submitTask(args: GenerateArgs, secret: string): Promise<GenerateResult> {
-        this.logger.debug("向 API 提交 txt2img 任务...");
+        this.ctx.logger.debug("向 API 提交 txt2img 任务...");
         const response = await this.fetchWithHandling(`${this.config.endpoint}/v2/generate/txt2img?token=${this.config.token}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

@@ -258,15 +258,12 @@ export default class VisionTools {
     private static readonly PAGE_RESULTS_LIMIT = 3;
     private static readonly ENTITY_RESULTS_LIMIT = 5;
 
-    private readonly logger: Logger;
-
     constructor(
         private ctx: Context,
         private config: Config
     ) {
-        this.logger = ctx.get(Services.Logger).getLogger("[视觉工具]");
         this.ctx.on("ready", async () => {
-            this.logger.info("增强视觉工具已加载");
+            this.ctx.logger.info("增强视觉工具已加载");
             this.setupPuppeteerAntiDetection();
         });
     }
@@ -275,7 +272,7 @@ export default class VisionTools {
     private setupPuppeteerAntiDetection() {
         const puppeteer = this.ctx.puppeteer;
         if (puppeteer?.browser) {
-            this.logger.info("✅ 检测到 Puppeteer 服务，正在附加反检测逻辑...");
+            this.ctx.logger.info("✅ 检测到 Puppeteer 服务，正在附加反检测逻辑...");
             puppeteer.browser.on("targetcreated", async (target) => {
                 if (target.type() === "page") {
                     try {
@@ -288,9 +285,9 @@ export default class VisionTools {
                     }
                 }
             });
-            this.logger.info("👍 反检测逻辑已附加到所有未来页面。");
+            this.ctx.logger.info("👍 反检测逻辑已附加到所有未来页面。");
         } else {
-            this.logger.warn("⚠️ 未找到 Puppeteer 服务或浏览器实例，浏览器抓取功能将不可用。");
+            this.ctx.logger.warn("⚠️ 未找到 Puppeteer 服务或浏览器实例，浏览器抓取功能将不可用。");
         }
     }
 
@@ -303,7 +300,7 @@ export default class VisionTools {
     })
     public async searchImageSource(args: Infer<{ image_id: string; method: string }>): Promise<ToolCallResult> {
         const { image_id, method } = args;
-        this.logger.info(`请求使用方法: ${method}`);
+        this.ctx.logger.info(`请求使用方法: ${method}`);
 
         const assetService = this.ctx.get(Services.Asset);
         const image = (await assetService.read(image_id, { format: "data-url" })) as string;
@@ -339,7 +336,7 @@ export default class VisionTools {
         const logPrefix = `[VisionAPI][${image_id}]`;
         const GOOGLE_API_KEY = this.config.googleVision?.api_key;
         if (!GOOGLE_API_KEY) {
-            this.logger.warn(`${logPrefix} 调用失败，Google Vision API 密钥未配置`);
+            this.ctx.logger.warn(`${logPrefix} 调用失败，Google Vision API 密钥未配置`);
             return Failed("管理员未配置Google Vision API密钥，无法使用此功能");
         }
 
@@ -365,12 +362,12 @@ export default class VisionTools {
             const webDetection = data?.responses?.[0]?.webDetection;
 
             if (!webDetection) {
-                this.logger.info(`${logPrefix} API 未返回有效的 webDetection 结果`);
+                this.ctx.logger.info(`${logPrefix} API 未返回有效的 webDetection 结果`);
                 return Success("分析完成，但未能从网络上找到关于此图片的明确信息。可能是一张个人原创图片或非常新的内容。");
             }
             return Success(this.formatWebDetectionResult(webDetection));
         } catch (error) {
-            this.logger.error(`${logPrefix} 搜索失败: %o`, error);
+            this.ctx.logger.error(`${logPrefix} 搜索失败: %o`, error);
             return Failed(`[VisionAPI] 搜索失败: ${error.message}`);
         }
     }
@@ -402,7 +399,7 @@ export default class VisionTools {
             }
             return Success(this.formatSerpApiResult(data));
         } catch (error) {
-            this.logger.error(`${logPrefix} 搜索失败: %o`, error);
+            this.ctx.logger.error(`${logPrefix} 搜索失败: %o`, error);
             return Failed(`[SerpApi-Reverse] 搜索失败: ${error.message}`);
         }
     }
@@ -435,7 +432,7 @@ export default class VisionTools {
 
             return Success(this.formatGoogleLensResult(data));
         } catch (error) {
-            this.logger.error(`${logPrefix} 搜索失败: %o`, error);
+            this.ctx.logger.error(`${logPrefix} 搜索失败: %o`, error);
             return Failed(`[SerpApi-Lens] 搜索失败: ${error.message}`);
         }
     }
@@ -455,7 +452,7 @@ export default class VisionTools {
             const tempImagePath = path.join(tempDirPath, `image.${image.data.mime.split("/")[1] || "jpg"}`);
             const imageBuffer = Buffer.from(image.content.split(",")[1], "base64");
             await fs.writeFile(tempImagePath, imageBuffer);
-            this.logger.info(`${logPrefix} 临时图片已保存到: ${tempImagePath}`);
+            this.ctx.logger.info(`${logPrefix} 临时图片已保存到: ${tempImagePath}`);
 
             // 2. 执行抓取
             const result = await this.runGoogleLensScraper(tempImagePath);
@@ -466,13 +463,13 @@ export default class VisionTools {
             // 3. 格式化并返回结果
             return Success(this.formatGoogleLensScraperResult(result));
         } catch (error) {
-            this.logger.error(`${logPrefix} 抓取过程中发生错误: %o`, error);
+            this.ctx.logger.error(`${logPrefix} 抓取过程中发生错误: %o`, error);
             return Failed(`[Lens-Scraper] 抓取失败: ${error.message}`);
         } finally {
             // 4. 清理临时文件
             if (tempDirPath) {
                 await fs.rm(tempDirPath, { recursive: true, force: true });
-                this.logger.info(`${logPrefix} 临时文件目录已清理: ${tempDirPath}`);
+                this.ctx.logger.info(`${logPrefix} 临时文件目录已清理: ${tempDirPath}`);
             }
         }
     }
@@ -581,13 +578,13 @@ export default class VisionTools {
     private async fetchWithProxy(url: URL | string, init: RequestInit = {}) {
         const proxyUrl = this.config.proxy;
         if (proxyUrl) {
-            this.logger.info(`› 使用代理: ${proxyUrl}`);
+            this.ctx.logger.info(`› 使用代理: ${proxyUrl}`);
             init.dispatcher = new ProxyAgent(proxyUrl);
         }
         const response = await ufetch(url, init);
         if (!response.ok) {
             const errorBody = await response.text();
-            this.logger.error(`请求失败 (${response.status}): ${errorBody}`);
+            this.ctx.logger.error(`请求失败 (${response.status}): ${errorBody}`);
             throw new Error(`API 请求失败 (状态 ${response.status}): ${errorBody}`);
         }
         return response;
@@ -596,7 +593,7 @@ export default class VisionTools {
     private async uploadImage(image_id: string, image: { data: { mime: string } }): Promise<string | null> {
         const apiKey = this.config.uploader?.apiKey;
         if (!apiKey) {
-            this.logger.error("图片上传失败：未配置 uploader.apiKey。");
+            this.ctx.logger.error("图片上传失败：未配置 uploader.apiKey。");
             return null;
         }
 
@@ -622,12 +619,12 @@ export default class VisionTools {
             }
             const responseData: any = await response.json();
             if (responseData?.status_code === 200) {
-                this.logger.info(`› 图片上传成功，URL: ${responseData.image.url}`);
+                this.ctx.logger.info(`› 图片上传成功，URL: ${responseData.image.url}`);
                 return responseData.image.url;
             }
             throw new Error(`图床返回未知数据: ${JSON.stringify(responseData)}`);
         } catch (error) {
-            this.logger.error(`✖ 图片上传失败: ${error.message}`);
+            this.ctx.logger.error(`✖ 图片上传失败: ${error.message}`);
             return null;
         }
     }
@@ -644,7 +641,7 @@ export default class VisionTools {
             limits: { directResults: 5, visualMatches: 10, relatedSearches: 10 },
         }
     ): Promise<GoogleLensResult> {
-        this.logger.info("🚀 启动浏览器抓取...");
+        this.ctx.logger.info("🚀 启动浏览器抓取...");
         const page = await this.ctx.puppeteer.page();
         try {
             await page.setViewport({ width: 1920, height: 1080 });
@@ -652,17 +649,17 @@ export default class VisionTools {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
             );
 
-            this.logger.info("🌍 导航到 Google Lens 并准备上传...");
+            this.ctx.logger.info("🌍 导航到 Google Lens 并准备上传...");
             await page.goto("https://lens.google.com/search?p", { waitUntil: "domcontentloaded" });
 
             const uploadInputSelector = 'input[type="file"]';
             const inputElement = await page.waitForSelector(uploadInputSelector);
             await inputElement.uploadFile(imagePath);
-            this.logger.info(`🖼️ 图片上传成功: ${imagePath}`);
+            this.ctx.logger.info(`🖼️ 图片上传成功: ${imagePath}`);
 
-            this.logger.info("⏳ 等待初始识别结果加载...");
+            this.ctx.logger.info("⏳ 等待初始识别结果加载...");
             await page.waitForSelector('div[role="navigation"] ::-p-text(全部)', { timeout: 30000 });
-            this.logger.info("✅ 初始结果页面加载完成！");
+            this.ctx.logger.info("✅ 初始结果页面加载完成！");
 
             await sleep(1000);
 
@@ -670,10 +667,10 @@ export default class VisionTools {
             const aiHintSelector = "div[jsname][data-rl][data-lht]";
             const aiHint = await page.$eval(aiHintSelector, (el) => (el as HTMLElement).innerText.trim()).catch(() => null);
             if (aiHint) {
-                this.logger.info(`💡 AI 提示: ${aiHint}`);
+                this.ctx.logger.info(`💡 AI 提示: ${aiHint}`);
             }
 
-            this.logger.info("📄 正在分析页面内容...");
+            this.ctx.logger.info("📄 正在分析页面内容...");
             const mainContainerSelector = 'div[role="main"] div[data-snc][data-snm]';
             await page.waitForSelector(mainContainerSelector, { timeout: 10000 });
 
@@ -682,7 +679,7 @@ export default class VisionTools {
             let visualMatchesUrl: string | null = null;
 
             const allBlockHandles = await page.$$(`${mainContainerSelector} > div`);
-            this.logger.debug(`🔍 发现 ${allBlockHandles.length} 个顶级内容块，开始遍历...`);
+            this.ctx.logger.debug(`🔍 发现 ${allBlockHandles.length} 个顶级内容块，开始遍历...`);
 
             for (const blockHandle of allBlockHandles) {
                 if (directResults.length >= options.limits.directResults) {
@@ -692,7 +689,7 @@ export default class VisionTools {
 
                 // 提取相关搜索
                 if (h2Text === "相关搜索" || h2Text === "Related searches") {
-                    this.logger.debug("  -> 识别到“相关搜索”块");
+                    this.ctx.logger.debug("  -> 识别到“相关搜索”块");
                     const links = await blockHandle.$$eval("a", (els) =>
                         els.map((el) => ({ title: (el as HTMLElement).innerText.trim(), link: el.href }))
                     );
@@ -707,7 +704,7 @@ export default class VisionTools {
 
                 // 提取“完全匹配”页面的链接
                 if (linkText.includes("查看完全匹配的结果") || linkText.includes("See all visual matches")) {
-                    this.logger.debug("  -> 识别到“查看完全匹配的结果”链接");
+                    this.ctx.logger.debug("  -> 识别到“查看完全匹配的结果”链接");
                     visualMatchesUrl = await mainLinkHandle.evaluate((el) => el.href);
                     continue;
                 }
@@ -719,7 +716,7 @@ export default class VisionTools {
                 if (heading) {
                     const link = await mainLinkHandle.evaluate((el) => el.href);
                     directResults.push({ title: heading, link });
-                    this.logger.debug(`  -> 提取到常规结果: ${heading.substring(0, 30)}...`);
+                    this.ctx.logger.debug(`  -> 提取到常规结果: ${heading.substring(0, 30)}...`);
                 }
             }
 
@@ -727,18 +724,18 @@ export default class VisionTools {
             const finalDirectResults = directResults.slice(0, options.limits.directResults);
             const finalRelatedSearches = relatedSearches.slice(0, options.limits.relatedSearches);
 
-            this.logger.info(`  - 初始页面找到 ${finalDirectResults.length}/${directResults.length} 条直接结果。`);
-            this.logger.info(`  - 找到 ${finalRelatedSearches.length}/${relatedSearches.length} 个“相关搜索”主题。`);
+            this.ctx.logger.info(`  - 初始页面找到 ${finalDirectResults.length}/${directResults.length} 条直接结果。`);
+            this.ctx.logger.info(`  - 找到 ${finalRelatedSearches.length}/${relatedSearches.length} 个“相关搜索”主题。`);
 
             let visualMatches: { title: string; link: string }[] = [];
             if (visualMatchesUrl) {
-                this.logger.info(`  - 找到“完全匹配”页链接，准备跳转抓取最多 ${options.limits.visualMatches} 条结果...`);
+                this.ctx.logger.info(`  - 找到“完全匹配”页链接，准备跳转抓取最多 ${options.limits.visualMatches} 条结果...`);
                 await page.goto(visualMatchesUrl, { waitUntil: "networkidle2" });
                 // 传入数量限制
                 visualMatches = await this.scrapeGoogleSearchResultsPage(page, options.limits.visualMatches);
             }
 
-            this.logger.info(`✨ 抓取完成！`);
+            this.ctx.logger.info(`✨ 抓取完成！`);
 
             return {
                 directResults: finalDirectResults,
@@ -746,11 +743,11 @@ export default class VisionTools {
                 relatedSearches: finalRelatedSearches,
             };
         } catch (error) {
-            this.logger.error("❌ 浏览器抓取操作过程中发生严重错误:", error);
+            this.ctx.logger.error("❌ 浏览器抓取操作过程中发生严重错误:", error);
             await page.screenshot({ path: `fatal_error_${Date.now()}.png` }).catch(() => {});
             throw error;
         } finally {
-            this.logger.info("🎬 关闭页面...");
+            this.ctx.logger.info("🎬 关闭页面...");
             await page.close();
         }
     }
@@ -763,7 +760,7 @@ export default class VisionTools {
      */
     // 添加 limit 参数，使其更通用
     private async scrapeGoogleSearchResultsPage(page: Page, limit: number): Promise<{ title: string; link: string }[]> {
-        this.logger.info(`🔎 正在抓取页面: ${page.url()}，上限 ${limit} 条`);
+        this.ctx.logger.info(`🔎 正在抓取页面: ${page.url()}，上限 ${limit} 条`);
         const searchResultLinksSelector = 'div[id="rso"] a';
 
         try {
@@ -799,13 +796,13 @@ export default class VisionTools {
             );
 
             if (results.length > 0) {
-                this.logger.info(`✅ 在该页面找到 ${results.length} 条有效结果。`);
+                this.ctx.logger.info(`✅ 在该页面找到 ${results.length} 条有效结果。`);
             } else {
-                this.logger.warn(`⚠️ 未能使用指定选择器找到任何结果。页面结构可能已改变。`);
+                this.ctx.logger.warn(`⚠️ 未能使用指定选择器找到任何结果。页面结构可能已改变。`);
             }
             return results;
         } catch (error) {
-            this.logger.error(`⚠️ 在页面 ${page.url()} 上抓取搜索结果时出错:`, error);
+            this.ctx.logger.error(`⚠️ 在页面 ${page.url()} 上抓取搜索结果时出错:`, error);
             await page.screenshot({ path: `scrape_error_${Date.now()}.png` });
             return [];
         }

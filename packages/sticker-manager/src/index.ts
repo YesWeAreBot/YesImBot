@@ -1,13 +1,10 @@
 import { readFile } from "fs/promises";
 import { Context, Schema, Session, h } from "koishi";
-import { AssetService, Extension, Failed, Infer, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { AssetService, Extension, Failed, Infer, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
+
+import { StickerConfig } from "./config";
 import { StickerService } from "./service";
-export interface StickerConfig {
-    storagePath: string;
-    classifiModel: ModelDescriptor;
-    classificationPrompt: string;
-}
 
 @Extension({
     name: "sticker-manager",
@@ -57,13 +54,13 @@ export default class StickerTools {
                 // 确保只初始化一次
                 if (!this.initialized) {
                     this.initialized = true;
-                    this.stickerService.logger.info("插件已成功启动");
+                    this.ctx.logger.info("插件已成功启动");
 
                     this.registerSnippets();
                 }
             } catch (error) {
-                this.stickerService.logger.warn("插件初始化失败！");
-                this.stickerService.logger.error(error);
+                this.ctx.logger.warn("插件初始化失败！");
+                this.ctx.logger.error(error);
             }
         });
 
