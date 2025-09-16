@@ -1,9 +1,13 @@
 import fs from "fs/promises";
 import path from "path";
 import { ControlMethod, GenSingleParams, GenSingleEvent, GradioApiError, GradioFileData } from "./types";
+import { Context } from "koishi";
 
 export class GradioAPI {
-    constructor(private baseURL: string) {}
+    constructor(
+        public ctx: Context,
+        private baseURL: string
+    ) {}
 
     /**
      * 将本地文件上传到 Gradio 服务器
@@ -21,21 +25,17 @@ export class GradioAPI {
 
         const uploadId = Math.random().toString(36).substring(2); // 生成一个随机的 upload_id
 
-        const response = await fetch(`${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`, {
-            method: "POST",
-            body: formData,
-        });
-
-        if (!response.ok) {
-            throw new Error(`文件上传失败: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-
-        if (Array.isArray(result) && result.length > 0) {
-            return result[0]; // 返回文件路径，例如 "C:\\...\\xxx.wav"
-        } else {
-            throw new Error("上传成功，但未返回有效的文件路径");
+        try {
+            const response = await this.ctx.http.post(`${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`, formData, {
+                responseType: "json",
+            });
+            if (Array.isArray(response) && response.length > 0) {
+                return response[0];
+            } else {
+                throw new Error("上传成功，但未返回有效的文件路径");
+            }
+        } catch (error) {
+            throw new Error(`文件上传失败: ${error.message}`);
         }
     }
 

@@ -1,5 +1,11 @@
 # @yesimbot/koishi-plugin-tts
 
+## 0.2.2
+
+### Patch Changes
+
+- 更新 IndexTTS2 配置，增加情感控制参数
+
 ## 0.2.1
 
 ### Patch Changes

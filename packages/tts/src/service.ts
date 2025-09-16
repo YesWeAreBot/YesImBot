@@ -21,7 +21,7 @@ export const Config = Schema.intersect([
         }),
         Schema.object({
             provider: Schema.const("index-tts2"),
-            "index-tts2": IndexTTS2Config.description("IndexTTS2 配置"),
+            "index-tts2": IndexTTS2Config,
         }),
         Schema.object({
             provider: Schema.const("fish-audio"),
