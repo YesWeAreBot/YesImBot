@@ -6,21 +6,28 @@ import { TTSAdapter } from "../base";
 import { GradioAPI } from "./gradioApi";
 import { ControlMethod, GenSingleParams, IndexTTS2GenSingleParams } from "./types";
 
-export interface IndexTTS2Config extends BaseTTSConfig, Omit<IndexTTS2GenSingleParams, "prompt_audio" | "text"> {
+export interface IndexTTS2Config extends BaseTTSConfig, Omit<IndexTTS2GenSingleParams, "emo_control_method" | "prompt_audio" | "text"> {
     baseURL: string;
+    apiLang: "en-US" | "zh-CN";
     prompt_audio: string;
-    emo_control_method: ControlMethod;
+    emo_control_method: string;
 }
 
 export const IndexTTS2Config: Schema<IndexTTS2Config> = Schema.intersect([
     Schema.object({
         baseURL: Schema.string().default("http://127.0.0.1:7860").description("index-tts2 Gradio API 的地址"),
+        apiLang: Schema.union(["en-US", "zh-CN"]).default("en-US").description("API 后端使用的语音"),
         prompt_audio: Schema.path({ filters: ["file"] })
             .required()
             .description("用于声音克隆的音色参考音频的路径"),
-        emo_control_method: Schema.union(Object.values(ControlMethod))
+        emo_control_method: Schema.union([
+            Schema.const(ControlMethod.SAME_AS_TIMBRE).description("与音色参考音频相同"),
+            Schema.const(ControlMethod.USE_EMO_REF).description("使用情感参考音频"),
+            Schema.const(ControlMethod.USE_EMO_VECTOR).description("使用情感向量控制"),
+            // Schema.const(ControlMethod.USE_EMO_TEXT).description("使用情感描述文本控制"),
+        ])
             .default(ControlMethod.SAME_AS_TIMBRE)
-            .description("默认的情感控制方式"),
+            .description("默认的情感控制方式") as Schema<string>,
         advanced: Schema.object({
             do_sample: Schema.boolean().default(true).description("是否进行采样"),
             top_p: Schema.number().min(0).max(1).default(0.8).role("slider").step(0.01).description("Top P 采样阈值"),
@@ -78,12 +85,23 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
     }
 
     async synthesize(params: IndexTTS2TTSParams): Promise<SynthesisResult> {
+        const {
+            advanced,
+            baseURL, // 排除不需要传给后端的字段
+            prompt_audio,
+            emo_control_method,
+            ...controlSpecific // 判别联合字段：emo_ref_audio/emo_weight 或 vec_* 等
+        } = this.config as any;
+
+        const emo_control_method_text = this.ctx.i18n
+            .render([this.config.apiLang], [`indextts.${this.config.emo_control_method}`], {})
+            .join("");
         const fullParams: GenSingleParams = {
-            ...params,
+            ...controlSpecific,
             text: params.text,
-            prompt_audio: this.config.prompt_audio,
-            emo_control_method: this.config.emo_control_method,
-            ...((this.config as any)?.advanced || {}),
+            prompt_audio,
+            emo_control_method: emo_control_method_text,
+            ...(advanced ?? {}),
         };
 
         try {

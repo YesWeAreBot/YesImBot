@@ -3,10 +3,10 @@
  * @description 情感控制方式的枚举
  */
 export enum ControlMethod {
-    SAME_AS_TIMBRE = "Same as the voice reference",
-    USE_EMO_REF = "Use emotion reference audio",
-    USE_EMO_VECTOR = "Use emotion vectors",
-    // USE_EMO_TEXT = "Use text description to control emotion",
+    SAME_AS_TIMBRE = "SAME_AS_TIMBRE",
+    USE_EMO_REF = "USE_EMO_REF",
+    USE_EMO_VECTOR = "USE_EMO_VECTOR",
+    USE_EMO_TEXT = "USE_EMO_TEXT",
 }
 
 /**
@@ -31,7 +31,7 @@ export interface GradioFileData {
  */
 export interface GenSingleParams {
     /** 情感控制方式 */
-    emo_control_method: ControlMethod;
+    emo_control_method: string;
     /** 音色参考音频的本地文件路径或 Buffer */
     prompt_audio: string | Buffer;
     /** 要生成的文本 */
@@ -81,7 +81,7 @@ export interface GenSingleParams {
 }
 
 export interface SAME_AS_TIMBRE {
-    emo_control_method: ControlMethod.SAME_AS_TIMBRE;
+    // emo_control_method: ControlMethod.SAME_AS_TIMBRE;
     do_sample: boolean;
     temperature: number;
     top_p: number;
@@ -94,13 +94,13 @@ export interface SAME_AS_TIMBRE {
 }
 
 export interface USE_EMO_REF {
-    emo_control_method: ControlMethod.USE_EMO_REF;
+    // emo_control_method: ControlMethod.USE_EMO_REF;
     emo_ref_audio: string;
     emo_weight: number;
 }
 
 export interface USE_EMO_VECTOR {
-    emo_control_method: ControlMethod.USE_EMO_VECTOR;
+    // emo_control_method: ControlMethod.USE_EMO_VECTOR;
     random_emotion_sampling: boolean;
     vec_joy: number;
     vec_angry: number;
