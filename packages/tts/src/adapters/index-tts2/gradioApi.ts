@@ -1,9 +1,13 @@
 import fs from "fs/promises";
 import path from "path";
 import { ControlMethod, GenSingleParams, GenSingleEvent, GradioApiError, GradioFileData } from "./types";
+import { Context } from "koishi";
 
 export class GradioAPI {
-    constructor(private baseURL: string) {}
+    constructor(
+        public ctx: Context,
+        private baseURL: string
+    ) {}
 
     /**
      * 将本地文件上传到 Gradio 服务器
@@ -21,21 +25,21 @@ export class GradioAPI {
 
         const uploadId = Math.random().toString(36).substring(2); // 生成一个随机的 upload_id
 
-        const response = await fetch(`${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`, {
-            method: "POST",
-            body: formData,
-        });
-
-        if (!response.ok) {
-            throw new Error(`文件上传失败: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-
-        if (Array.isArray(result) && result.length > 0) {
-            return result[0]; // 返回文件路径，例如 "C:\\...\\xxx.wav"
-        } else {
+        try {
+            const response = await this.ctx.http.post<string[] | { path: string }[]>(
+                `${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`,
+                formData,
+                { responseType: "json", timeout: 60_000 }
+            );
+            if (Array.isArray(response) && response.length > 0) {
+                const first = response[0] as unknown;
+                if (typeof first === "string") return first;
+                if (first && typeof (first as any).path === "string") return (first as any).path;
+            }
             throw new Error("上传成功，但未返回有效的文件路径");
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new Error(`文件上传失败: ${msg}`);
         }
     }
 
@@ -44,7 +48,7 @@ export class GradioAPI {
         const promptAudioPath = await this.uploadToGradio(params.prompt_audio, "prompt_audio.wav");
 
         let emoRefAudioPath: string | null = null;
-        if (params.emo_control_method === ControlMethod.USE_EMO_REF && params.emo_ref_audio) {
+        if (params.emo_ref_audio) {
             emoRefAudioPath = await this.uploadToGradio(params.emo_ref_audio, "emo_ref_audio.wav");
         }
 
@@ -77,47 +81,35 @@ export class GradioAPI {
             params.max_mel_tokens ?? 1500, // [23] max_mel_tokens
         ];
 
-        // 3. 发送 POST 请求
-        const response = await fetch(`${this.baseURL}/gradio_api/call/gen_single`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                data: dataPayload,
-            }),
-        });
+        try {
+            const result = await this.ctx.http.post<GenSingleEvent | GradioApiError>(
+                `${this.baseURL}/gradio_api/call/gen_single`,
+                { data: dataPayload },
+                { responseType: "json", timeout: 120_000 }
+            );
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`API 请求失败: ${errorData.error || response.statusText}`);
-        }
+            if ("error" in result) {
+                throw new Error(`Gradio API 返回错误: ${result.error}`);
+            }
 
-        const result: GenSingleEvent | GradioApiError = await response.json();
-
-        if ("error" in result) {
-            throw new Error(`Gradio API 返回错误: ${result.error}`);
-        }
-
-        // 4. 解析并返回结果
-        if (result.event_id) {
-            return result.event_id;
-        } else {
-            throw new Error("API 返回了非预期的格式");
+            // 4. 解析并返回结果
+            if (result.event_id) {
+                return result.event_id;
+            } else {
+                throw new Error("API 返回了非预期的格式");
+            }
+        } catch (error) {
+            throw new Error(`API 请求失败: ${error.message}`);
         }
     }
 
     private async getTask(event_id: string): Promise<GradioFileData> {
-        const response = await fetch(`${this.baseURL}/gradio_api/call/gen_single/${event_id}`);
+        const sseText = await this.ctx.http.get<string>(`${this.baseURL}/gradio_api/call/gen_single/${event_id}`, {
+            responseType: "text",
+            timeout: 120_000,
+        });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`API 请求失败: ${errorData.error || response.statusText}`);
-        }
-
-        const result = await response.text();
-
-        const event = this.extractEventData(result);
+        const event = this.extractEventData(sseText);
 
         if (Array.isArray(event) && event.length > 0) {
             return event[0].value as GradioFileData;

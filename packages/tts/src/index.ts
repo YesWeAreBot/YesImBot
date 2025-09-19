@@ -11,6 +11,9 @@ export { Config };
 export function apply(ctx: Context, config: Config) {
     const logger = ctx.logger("tts");
 
+    ctx.i18n.define("en-US", require("./locales/en-US"));
+    ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
+
     try {
         const ttsService = new TTSService(ctx, config);
         const tool = ttsService.getTool();

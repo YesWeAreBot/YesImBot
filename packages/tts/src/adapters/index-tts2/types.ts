@@ -3,10 +3,10 @@
  * @description 情感控制方式的枚举
  */
 export enum ControlMethod {
-    SAME_AS_TIMBRE = "与音色参考音频相同",
-    USE_EMO_REF = "使用情感参考音频",
-    USE_EMO_VECTOR = "使用情感向量控制",
-    USE_EMO_TEXT = "使用情感描述文本控制",
+    SAME_AS_TIMBRE = "SAME_AS_TIMBRE",
+    USE_EMO_REF = "USE_EMO_REF",
+    USE_EMO_VECTOR = "USE_EMO_VECTOR",
+    USE_EMO_TEXT = "USE_EMO_TEXT",
 }
 
 /**
@@ -31,7 +31,7 @@ export interface GradioFileData {
  */
 export interface GenSingleParams {
     /** 情感控制方式 */
-    emo_control_method: ControlMethod;
+    emo_control_method: string;
     /** 音色参考音频的本地文件路径或 Buffer */
     prompt_audio: string | Buffer;
     /** 要生成的文本 */
@@ -79,6 +79,47 @@ export interface GenSingleParams {
     /** 生成的最大 Mel Tokens 数量 */
     max_mel_tokens?: number;
 }
+
+export interface SAME_AS_TIMBRE {
+    // emo_control_method: ControlMethod.SAME_AS_TIMBRE;
+    do_sample: boolean;
+    temperature: number;
+    top_p: number;
+    top_k: number;
+    num_beams: number;
+    repetition_penalty: number;
+    length_penalty: number;
+    max_mel_tokens: number;
+    max_text_tokens_per_segment: number;
+}
+
+export interface USE_EMO_REF {
+    // emo_control_method: ControlMethod.USE_EMO_REF;
+    emo_ref_audio: string;
+    emo_weight: number;
+}
+
+export interface USE_EMO_VECTOR {
+    // emo_control_method: ControlMethod.USE_EMO_VECTOR;
+    random_emotion_sampling: boolean;
+    vec_joy: number;
+    vec_angry: number;
+    vec_sad: number;
+    vec_fear: number;
+    vec_disgust: number;
+    vec_depressed: number;
+    vec_surprise: number;
+    vec_neutral: number;
+}
+
+// export interface USE_EMO_TEXT {
+//     emo_control_method: ControlMethod.USE_EMO_TEXT;
+//     emo_text: string;
+//     emo_weight: number;
+// }
+
+// export type IndexTTS2GenSingleParams = GenSingleParams & (SAME_AS_TIMBRE | USE_EMO_REF | USE_EMO_VECTOR | USE_EMO_TEXT);
+export type IndexTTS2GenSingleParams = GenSingleParams & (SAME_AS_TIMBRE | USE_EMO_REF | USE_EMO_VECTOR);
 
 export interface GenSingleEvent {
     event_id: string;
