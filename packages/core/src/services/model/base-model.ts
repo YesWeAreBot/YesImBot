@@ -15,6 +15,6 @@ export abstract class BaseModel {
         this.ctx = ctx;
         this.config = modelConfig;
         this.id = modelConfig.modelId;
-        this.logger = ctx[Services.Logger]?.getLogger(loggerName) || ctx.logger(loggerName);
+        this.logger = ctx.logger(loggerName);
     }
 }

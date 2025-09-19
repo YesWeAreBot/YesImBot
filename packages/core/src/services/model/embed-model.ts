@@ -41,26 +41,3 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         return embedMany(embedManyOptions);
     }
 }
-
-/**
- * Calculates the cosine similarity between two vectors.
- * The similarity is normalized to a [0, 1] range.
- * @param vec1 The first vector.
- * @param vec2 The second vector.
- * @returns A similarity score between 0 (not similar) and 1 (identical).
- */
-export function calculateCosineSimilarity(vec1: number[], vec2: number[]): number {
-    if (vec1.length === 0 || vec2.length === 0 || vec1.length !== vec2.length) {
-        return 0;
-    }
-    const dotProduct = vec1.reduce((sum, val, i) => sum + val * vec2[i], 0);
-    const magnitude1 = Math.sqrt(vec1.reduce((sum, val) => sum + val * val, 0));
-    const magnitude2 = Math.sqrt(vec2.reduce((sum, val) => sum + val * val, 0));
-
-    if (magnitude1 === 0 || magnitude2 === 0) {
-        return 0;
-    }
-
-    const similarity = dotProduct / (magnitude1 * magnitude2);
-    return (similarity + 1) / 2; // Normalize from [-1, 1] to [0, 1]
-}

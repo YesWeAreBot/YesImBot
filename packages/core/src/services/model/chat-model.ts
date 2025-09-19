@@ -9,9 +9,6 @@ import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 
-/**
- * 验证器函数的返回值
- */
 export interface ValidationResult {
     /** 内容是否有效 */
     valid: boolean;
@@ -30,15 +27,13 @@ export interface ValidationResult {
  */
 export type ContentValidator = (chunk: string, final?: boolean) => ValidationResult;
 
-/**
- * 传递给 chat 方法的验证选项
- */
 export interface ValidationOptions {
     /** 预期的响应格式，用于选择内置验证器 */
     format?: "json";
     /** 自定义验证函数，优先级高于 format */
     validator?: ContentValidator;
 }
+
 export interface ChatRequestOptions {
     abortSignal?: AbortSignal;
     onStreamStart?: () => void;
@@ -49,15 +44,12 @@ export interface ChatRequestOptions {
     topP?: number;
     [key: string]: any;
 }
+
 export interface IChatModel extends BaseModel {
     chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
     isVisionModel(): boolean;
 }
 
-/**
- * ChatModel 类提供了与大语言模型进行聊天交互的核心功能
- * 它封装了流式与非流式请求、参数合并、内容验证以及统一的错误处理逻辑
- */
 export class ChatModel extends BaseModel implements IChatModel {
     private readonly customParameters: Record<string, unknown> = {};
 
@@ -75,9 +67,6 @@ export class ChatModel extends BaseModel implements IChatModel {
         return this.config.abilities.includes(ModelAbility.Vision);
     }
 
-    /**
-     * 解析并加载模型配置文件中的自定义参数
-     */
     private parseCustomParameters(): void {
         if (!this.config.parameters.custom) return;
         for (const item of this.config.parameters.custom) {
@@ -109,12 +98,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
     }
 
-    /**
-     * 发起聊天请求的核心方法
-     * 根据配置和运行时参数，自动选择流式或非流式处理
-     */
     public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
-        // 优先级: 运行时参数 > 模型配置 > 默认值 (true)
+        // 优先级: 运行时参数 > 模型配置 > 默认值
         const useStream = options.stream ?? this.config.parameters.stream ?? true;
         const chatOptions = this.buildChatOptions(options);
 
@@ -129,10 +114,6 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
     }
 
-    /**
-     * 构建最终传递给 @xsai/shared-chat 的选项对象。
-     * 该方法实现了参数的优先级合并。
-     */
     private buildChatOptions(options: ChatRequestOptions): ChatOptions {
         // 参数合并优先级 (后者覆盖前者):
         // 1. 模型配置中的基础参数 (temperature, topP)
@@ -172,7 +153,7 @@ export class ChatModel extends BaseModel implements IChatModel {
     }
 
     /**
-     * 执行流式请求，并处理实时内容验证。
+     * 执行流式请求，并处理实时内容验证
      */
     private async _executeStream(
         chatOptions: ChatOptions,
@@ -229,6 +210,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                 },
             });
 
+            // FIXME: xsai 0.4.0 beta 修复了文本流
             // 仅等待元数据（如 usage, finishReason）处理完成
             // 文本部分已在 onEvent 中实时处理
             await (async () => {

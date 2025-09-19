@@ -34,9 +34,6 @@ export class ProviderInstance {
         // this.logger.info(`[初始化] 🔌 提供商实例已创建`);
     }
 
-    /**
-     * (优化) 通用模型获取器
-     */
     private _getModel<T extends BaseModel>(
         modelId: string,
         requiredAbility: ModelAbility,
