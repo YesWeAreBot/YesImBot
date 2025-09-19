@@ -11,7 +11,7 @@ import { PromptServiceConfig, PromptServiceConfigSchema } from "@/services/promp
 import { HistoryConfig, HistoryConfigSchema } from "@/services/worldstate";
 import { ErrorReporterConfig, ErrorReporterConfigSchema } from "@/shared/errors";
 
-export const CONFIG_VERSION = "2.0.1";
+export const CONFIG_VERSION = "2.0.2";
 
 export interface SystemConfig {
     logging: LoggingConfig;

@@ -87,12 +87,14 @@ declare module "koishi" {
 
 export class LoggerService extends Service<Config> {
     _logger: Logger;
+    level: LogLevel;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Logger, true);
         this.ctx = ctx;
         this.config = config;
-        this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), config.logging.level);
+        this.level = config.logging?.level ?? LogLevel.INFO;
+        this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), this.level);
     }
 
     protected start(): void {
@@ -106,6 +108,6 @@ export class LoggerService extends Service<Config> {
     /** @deprecated */
     public getLogger(name?: string): Logger {
         const originalLogger = this.ctx?.logger(name) || new Logger(name, {});
-        return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level);
+        return createLevelAwareLoggerProxy(originalLogger, this.level);
     }
 }

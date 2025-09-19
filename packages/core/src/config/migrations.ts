@@ -1,8 +1,10 @@
 import { Config, CONFIG_VERSION } from "./config";
 import { ConfigV1, ConfigV200 } from "./versions";
 import semver from "semver";
+import { ConfigV201 } from "./versions/v201";
+import { ModelAbility, ModelDescriptor } from "@/services";
 
-function migrateV1ToV200(configV1: ConfigV1): Omit<Config, "enableTelemetry" | "sentryDsn"> {
+function migrateV1ToV200(configV1: ConfigV1): Omit<ConfigV200, "enableTelemetry" | "sentryDsn"> {
     const { modelService, agentBehavior, capabilities, assetService, promptService, system } = configV1;
 
     const { arousal, willingness, vision, prompt } = agentBehavior || {};
@@ -37,10 +39,33 @@ function migrateV1ToV200(configV1: ConfigV1): Omit<Config, "enableTelemetry" | "
     };
 }
 
-function migrateV200ToV201(configV200: ConfigV200): Config {
+function migrateV200ToV201(configV200: ConfigV200): ConfigV201 {
     return {
         ...configV200,
         version: "2.0.1",
+    };
+}
+
+function migrateV201ToV202(configV201: ConfigV201): Config {
+    configV201 = structuredClone(configV201);
+
+    const embeddingGroup = configV201.modelGroups.find((group) => group.name === configV201.task.embed);
+    let embeddingModel: ModelDescriptor;
+    if (embeddingGroup) {
+        embeddingModel = embeddingGroup.models[0];
+    }
+
+    const { task, ...rest } = configV201;
+
+    return {
+        ...rest,
+        chatModelGroup: configV201.task.chat,
+        embeddingModel: {
+            providerName: embeddingModel?.providerName || "",
+            modelId: embeddingModel?.modelId || "",
+        },
+        ignoreCommandMessage: false,
+        version: "2.0.2",
     };
 }
 
@@ -49,7 +74,7 @@ const MIGRATIONS = {
     // 键是起始版本，值是迁移到下一版本的函数
     "1.0.0": migrateV1ToV200,
     "2.0.0": migrateV200ToV201,
-    // "2.0.1"
+    "2.0.1": migrateV201ToV202,
 };
 
 export function migrateConfig(config: any): Config {

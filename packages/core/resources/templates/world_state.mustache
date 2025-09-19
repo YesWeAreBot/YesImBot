@@ -49,12 +49,12 @@
     </summary>
 
     <processed_events>
-    {{#l1_working_memory.processed_events}}
+    {{#working_memory.processed_events}}
       {{> agent.partial.l1_history_item }}
-    {{/l1_working_memory.processed_events}}
-    {{^l1_working_memory.processed_events}}
+    {{/working_memory.processed_events}}
+    {{^working_memory.processed_events}}
       <system_note>There are no processed events in the current context.</system_note>
-    {{/l1_working_memory.processed_events}}
+    {{/working_memory.processed_events}}
     </processed_events>
 
     <new_events>
@@ -65,31 +65,31 @@
            ALWAYS check for observations FIRST.
            If present, treat them as the single-use heartbeat result.
            If it's error/empty, adjust plan immediately — DO NOT keep waiting. -->
-    {{#l1_working_memory.new_events}}
+    {{#working_memory.new_events}}
       {{> agent.partial.l1_history_item }}
-    {{/l1_working_memory.new_events}}
-    {{^l1_working_memory.new_events}}
+    {{/working_memory.new_events}}
+    {{^working_memory.new_events}}
       <system_note>There are no new events since the last time you responded.</system_note>
-    {{/l1_working_memory.new_events}}
+    {{/working_memory.new_events}}
     </new_events>
 
   </working_memory>
   {{! ======================= L2 Retrieved Memories ======================= }}
-  {{#l2_retrieved_memories.length}}
+  {{#retrieved_memories.length}}
   <retrieved_memories>
     <summary>
       Relevant snippets from past conversations, retrieved for their similarity to the current topic.
       These are passive memory injections — use them BEFORE consulting external tools.
     </summary>
-    {{#l2_retrieved_memories}}
+    {{#retrieved_memories}}
     <memory_chunk timestamp="{{timestamp}}">
 {{content}}
     </memory_chunk>
-    {{/l2_retrieved_memories}}
+    {{/retrieved_memories}}
   </retrieved_memories>
-  {{/l2_retrieved_memories.length}}
+  {{/retrieved_memories.length}}
   {{! ======================= L3 Diary Entries ======================= }}
-  {{#l3_diary_entries}}
+  {{#diary_entries}}
   <diary_entries>
     <summary>Long-term memory reflections on past events.</summary>
     {{#.}}
@@ -105,5 +105,5 @@
     </diary_entry>
     {{/.}}
   </diary_entries>
-  {{/l3_diary_entries}}
+  {{/diary_entries}}
 </world_state>

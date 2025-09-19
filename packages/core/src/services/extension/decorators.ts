@@ -55,7 +55,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                     ctx.on("dispose", () => {
                         if (toolService) {
                             toolService.unregister(metadata.name);
-                            logger.info(`扩展 "${metadata.name}" 已卸载。`);
+                            //logger.info(`扩展 "${metadata.name}" 已卸载。`);
                         }
                     });
                 } else {
