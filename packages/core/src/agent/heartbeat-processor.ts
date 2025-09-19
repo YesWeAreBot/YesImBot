@@ -470,6 +470,15 @@ export class HeartbeatProcessor {
     }
 }
 
+/**
+ * Convert a value to a string suitable for templates.
+ *
+ * If `obj` is already a string it is returned unchanged; otherwise the value
+ * is serialized with `JSON.stringify`.
+ *
+ * @param obj - Value to convert (string or any JSON-serializable value)
+ * @returns A string representation of `obj`
+ */
 function _toString(obj) {
     if (typeof obj === "string") return obj;
     return JSON.stringify(obj);
