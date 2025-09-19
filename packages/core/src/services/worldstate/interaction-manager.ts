@@ -11,7 +11,6 @@ import {
     AgentLogEntry,
     AgentObservationLog,
     AgentThoughtLog,
-    InteractionLogEntry,
     L1HistoryItem,
     MessageData,
     SystemEventData,
@@ -207,7 +206,7 @@ export class InteractionManager {
         return combinedEvents.slice(-limit);
     }
 
-    private logEntryToHistoryItem(entry: InteractionLogEntry): L1HistoryItem {
+    private logEntryToHistoryItem(entry: AgentLogEntry): L1HistoryItem {
         const timestamp = new Date(entry.timestamp);
         switch (entry.type) {
             case "agent_thought":
@@ -244,10 +243,7 @@ export class InteractionManager {
                     current: entry.current,
                     max: entry.max,
                 };
-            // 下面的 case 理论上不会被这个私有方法调用，因为消息和系统事件直接从数据库转换
-            case "message":
-            case "system_event":
-                // This path should not be taken in the new flow
+            default:
                 return null;
         }
     }

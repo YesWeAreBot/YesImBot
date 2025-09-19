@@ -1,17 +1,19 @@
 import { Context, Service, Session } from "koishi";
 
 import { Config } from "@/config";
-import { ChatModelSwitcher, ModelService, TaskType } from "@/services/model";
+import { ChatModelSwitcher, ModelService } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
-import { AgentStimulus } from "@/services/worldstate";
+import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "@/services/worldstate";
 import { WorldStateService } from "@/services/worldstate/index";
 import { Services } from "@/shared/constants";
 import { AppError, handleError } from "@/shared/errors";
 import { ErrorDefinitions } from "@/shared/errors/definitions";
 import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
-import { StimulusScheduler } from "./scheduler";
 import { WillingnessManager } from "./willing";
+
+type TaskCallback = (stimulus: AnyAgentStimulus) => Promise<any>;
+type WithDispose<T> = T & { dispose: () => void };
 
 declare module "koishi" {
     interface Events {
@@ -37,11 +39,14 @@ export class AgentCore extends Service<Config> {
 
     // 核心组件
     private willing: WillingnessManager;
-    private scheduler: StimulusScheduler;
     private contextBuilder: PromptContextBuilder;
     private processor: HeartbeatProcessor;
 
     private modelSwitcher: ChatModelSwitcher;
+
+    private readonly runningTasks = new Set<string>();
+    private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AnyAgentStimulus) => void>>();
+    private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Agent, true);
@@ -52,7 +57,7 @@ export class AgentCore extends Service<Config> {
         this.modelService = this.ctx[Services.Model];
         this.promptService = this.ctx[Services.Prompt];
 
-        this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat);
+        this.modelSwitcher = this.modelService.useChatGroup(this.config.chatModelGroup);
         if (!this.modelSwitcher) {
             const notifier = ctx.notifier.create({
                 type: "danger",
@@ -72,56 +77,36 @@ export class AgentCore extends Service<Config> {
             this.worldState.l1_manager,
             this.contextBuilder
         );
-
-        this.scheduler = new StimulusScheduler(ctx, config, async (stimulus) => {
-            const { channelCid } = stimulus;
-
-            this.willing.handlePreReply(channelCid);
-
-            const success = await this.processor.runCycle(stimulus);
-
-            if (success) {
-                const willingnessBeforeReply = this.willing.getCurrentWillingness(channelCid);
-                this.willing.handlePostReply(stimulus.session, channelCid);
-                const willingnessAfterReply = this.willing.getCurrentWillingness(channelCid);
-
-                /* prettier-ignore */
-                this.logger.debug(`[${channelCid}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
-            }
-        });
     }
 
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus", (stimulus: AgentStimulus<any>) => {
-            const { type, channelCid, session } = stimulus;
+        this.ctx.on("agent/stimulus-message", (stimulus: UserMessageStimulus) => {
+            const { session, platform, channelId } = stimulus.payload;
+
+            const channelCid = `${platform}:${channelId}`;
 
             let decision = false;
 
-            if (type === "user_message") {
-                try {
-                    const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
-                    const result = this.willing.shouldReply(session);
-                    const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
-                    decision = result.decision;
+            try {
+                const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
+                const result = this.willing.shouldReply(session);
+                const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
+                decision = result.decision;
 
-                    /* prettier-ignore */
-                    this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
-                } catch (error) {
-                    handleError(
-                        this.logger,
-                        new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
-                            cause: error as Error,
-                            context: { channelCid },
-                        }),
-                        `Willingness calculation (Channel: ${channelCid})`
-                    );
-                    return;
-                }
-            } else {
-                decision = true;
-                this.logger.info(`[${channelCid}] 接收到系统刺激 [${type}]，自动触发响应。`);
+                /* prettier-ignore */
+                this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
+            } catch (error) {
+                handleError(
+                    this.logger,
+                    new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
+                        cause: error as Error,
+                        context: { channelCid },
+                    }),
+                    `Willingness calculation (Channel: ${channelCid})`
+                );
+                return;
             }
 
             if (!decision) {
@@ -133,14 +118,15 @@ export class AgentCore extends Service<Config> {
                 return;
             }
 
-            this.scheduler.schedule(stimulus);
+            this.schedule(stimulus);
         });
 
         this.willing.startDecayCycle();
     }
 
     protected stop(): void {
-        this.scheduler.dispose();
+        this.debouncedReplyTasks.forEach((task) => task.dispose());
+        this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.willing.stopDecayCycle();
     }
 
@@ -155,5 +141,63 @@ export class AgentCore extends Service<Config> {
 
         // 注册动态片段
         this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
+    }
+
+    public schedule(stimulus: AnyAgentStimulus): void {
+        const { type, priority } = stimulus;
+
+        if (type === StimulusSource.UserMessage) {
+            const { session, platform, channelId } = stimulus.payload;
+            const channelKey = `${platform}:${channelId}`;
+
+            if (this.runningTasks.has(channelKey)) {
+                this.logger.info(`[${channelKey}] 频道当前有任务在运行，跳过本次响应`);
+                return;
+            }
+
+            const schedulingStack = new Error("Scheduling context stack").stack;
+
+            // 将堆栈传递给任务
+            this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
+        }
+    }
+
+    private getDebouncedTask(channelKey: string, schedulingStack?: string): WithDispose<(stimulus: UserMessageStimulus) => void> {
+        let debouncedTask = this.debouncedReplyTasks.get(channelKey);
+        if (!debouncedTask) {
+            debouncedTask = this.ctx.debounce(async (stimulus: UserMessageStimulus) => {
+                this.runningTasks.add(channelKey);
+                this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
+                try {
+                    const { platform, channelId, session } = stimulus.payload;
+                    const chatKey = `${platform}:${channelId}`;
+                    this.willing.handlePreReply(chatKey);
+                    const success = await this.processor.runCycle(stimulus);
+                    if (success) {
+                        const willingnessBeforeReply = this.willing.getCurrentWillingness(chatKey);
+                        this.willing.handlePostReply(session, chatKey);
+                        const willingnessAfterReply = this.willing.getCurrentWillingness(chatKey);
+                        /* prettier-ignore */
+                        this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+                    }
+                } catch (error) {
+                    // 创建错误时附加调度堆栈
+                    const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
+                        cause: error as Error,
+                        context: {
+                            channelCid: channelKey,
+                            stimulusType: stimulus.type,
+                            schedulingStack: schedulingStack,
+                        },
+                    });
+                    handleError(this.logger, taskError, `调度任务执行失败 (Channel: ${channelKey})`);
+                } finally {
+                    this.runningTasks.delete(channelKey);
+                    this.logger.debug(`[${channelKey}] 频道锁已释放`);
+                }
+            }, this.config.debounceMs);
+            this.debouncedReplyTasks.set(channelKey, debouncedTask);
+        }
+        return debouncedTask;
     }
 }

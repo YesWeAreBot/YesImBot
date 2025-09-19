@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AgentStimulus } from "@/services/worldstate";
+import { AgentResponse, AnyAgentStimulus } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
@@ -37,7 +37,7 @@ export class HeartbeatProcessor {
      * 运行完整的 Agent 思考-行动周期
      * @returns 返回 true 如果至少有一次心跳成功
      */
-    public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
+    public async runCycle(stimulus: AnyAgentStimulus): Promise<boolean> {
         const turnId = uuidv4();
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
@@ -58,13 +58,16 @@ export class HeartbeatProcessor {
                     shouldContinueHeartbeat = false;
                 }
                 if (shouldContinueHeartbeat) {
-                    await this.interactionManager.recordHeartbeat(
-                        turnId,
-                        stimulus.session.platform,
-                        stimulus.session.channelId,
-                        heartbeatCount,
-                        this.config.heartbeat
-                    );
+                    const session = this.getSessionFromStimulus(stimulus);
+                    if (session) {
+                        await this.interactionManager.recordHeartbeat(
+                            turnId,
+                            session.platform,
+                            session.channelId,
+                            heartbeatCount,
+                            this.config.heartbeat
+                        );
+                    }
                 }
             } catch (error) {
                 handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
@@ -77,7 +80,7 @@ export class HeartbeatProcessor {
     /**
      * 准备LLM请求所需的消息负载
      */
-    private async _prepareLlmRequest(stimulus: AgentStimulus<any>): Promise<{ messages: Message[] }> {
+    private async _prepareLlmRequest(stimulus: AnyAgentStimulus): Promise<{ messages: Message[] }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
@@ -85,7 +88,7 @@ export class HeartbeatProcessor {
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
         const view = {
-            session: stimulus.session,
+            session: this.getSessionFromStimulus(stimulus),
             TOOL_DEFINITION: prepareDataForTemplate(promptContext.toolSchemas),
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
@@ -156,8 +159,12 @@ export class HeartbeatProcessor {
     /**
      * 执行单次心跳的完整逻辑（非流式）
      */
-    private async performSingleHeartbeat(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
-        const { session } = stimulus;
+    private async performSingleHeartbeat(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
+        const session = this.getSessionFromStimulus(stimulus);
+        if (!session) {
+            this.logger.warn("无法从刺激中获取 session，跳过心跳处理");
+            return null;
+        }
         const { platform, channelId } = session;
         const parser = new JsonParser<AgentResponse>();
 
@@ -222,8 +229,12 @@ export class HeartbeatProcessor {
     /**
      * 执行单次心跳的完整逻辑（流式，支持重试批次切换）
      */
-    private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
-        const { session } = stimulus;
+    private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
+        const session = this.getSessionFromStimulus(stimulus);
+        if (!session) {
+            this.logger.warn("无法从刺激中获取 session，跳过心跳处理");
+            return null;
+        }
         const { platform, channelId } = session;
 
         // 步骤 1-4: 准备请求
@@ -438,6 +449,23 @@ export class HeartbeatProcessor {
                 result: result.result,
                 error: result.error,
             });
+        }
+    }
+
+    /**
+     * 从刺激中获取 Session 对象
+     */
+    private getSessionFromStimulus(stimulus: AnyAgentStimulus): Session | null {
+        switch (stimulus.type) {
+            case "user_message":
+            case "system_event":
+                return stimulus.payload.session;
+            case "scheduled_task":
+            case "background_task_completion":
+                // 定时任务和后台任务没有 session
+                return null;
+            default:
+                return null;
         }
     }
 }

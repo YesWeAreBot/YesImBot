@@ -6,7 +6,14 @@ import { AssetService } from "@/services/assets";
 import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
-import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
+import {
+    AgentStimulus,
+    AnyAgentStimulus,
+    ContextualMessage,
+    UserMessagePayload,
+    WorldState,
+    WorldStateService,
+} from "@/services/worldstate";
 import { Config } from "@/config";
 
 interface ImageCandidate {
@@ -39,26 +46,8 @@ export class PromptContextBuilder {
         this.worldStateService = ctx[Services.WorldState];
     }
 
-    /**
-     * 构建完整的上下文对象，用于渲染提示词模板。
-     */
-    public async build(stimulus: AgentStimulus<any>) {
-        const { type, session, payload } = stimulus;
-
-        const worldState = await this.worldStateService.buildWorldState(session);
-
-        let triggerContext: object = {};
-        switch (type) {
-            case "user_message":
-                triggerContext = { isUserMessage: true, messageIds: (payload as UserMessagePayload).messageIds };
-                break;
-            case "system_event":
-                triggerContext = { isSystemEvent: true, event: payload };
-                break;
-        }
-        worldState.triggerContext = triggerContext;
-
-        // 5. 返回最终的上下文对象
+    public async build(stimulus: AnyAgentStimulus) {
+        const worldState = await this.worldStateService.buildWorldState(stimulus);
         return {
             toolSchemas: this.toolService.getToolSchemas(),
             memoryBlocks: this.memoryService.getMemoryBlocksForRendering(),
@@ -97,10 +86,9 @@ export class PromptContextBuilder {
      */
     private async buildMultimodalImages(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
         // 1. 将所有消息扁平化并建立索引
-        const allMessages = [
-            ...(worldState.l1_working_memory.processed_events || []),
-            ...(worldState.l1_working_memory.new_events || []),
-        ].filter((item): item is { type: "message" } & ContextualMessage => item.type === "message");
+        const allMessages = [...(worldState.working_memory.processed_events || []), ...(worldState.working_memory.new_events || [])].filter(
+            (item): item is { type: "message" } & ContextualMessage => item.type === "message"
+        );
 
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 

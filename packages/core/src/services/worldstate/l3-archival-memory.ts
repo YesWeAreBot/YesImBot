@@ -1,8 +1,8 @@
+import fs from "fs/promises";
 import { Context, Logger } from "koishi";
-import fs from "node:fs/promises";
-import path from "node:path";
+import path from "path";
 
-import { IChatModel, TaskType } from "@/services/model";
+import { IChatModel } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
@@ -18,14 +18,14 @@ export class ArchivalMemoryManager {
         private config: HistoryConfig,
         private interactionManager: InteractionManager
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[L3-长期记忆]");
+        this.logger = ctx[Services.Logger].getLogger("[长期记忆]");
     }
 
     public start() {
         if (!this.config.l3_memory.enabled) return;
 
         try {
-            this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Chat).getModels()[0];
+            this.chatModel = this.ctx[Services.Model].getChatModel(this.config.l3_memory.useModel);
         } catch {
             this.chatModel = null;
         }

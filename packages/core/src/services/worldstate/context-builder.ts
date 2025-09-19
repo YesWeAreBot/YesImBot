@@ -5,7 +5,19 @@ import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
-import { ContextualMessage, DiaryEntryData, L1HistoryItem, RetrievedMemoryChunk, WorldState } from "./types";
+import {
+    ContextualMessage,
+    DiaryEntryData,
+    L1HistoryItem,
+    RetrievedMemoryChunk,
+    WorldState,
+    AnyAgentStimulus,
+    UserMessageStimulus,
+    SystemEventStimulus,
+    ScheduledTaskStimulus,
+    BackgroundTaskCompletionStimulus,
+    StimulusSource,
+} from "./types";
 
 export class ContextBuilder {
     private logger: Logger;
@@ -20,8 +32,119 @@ export class ContextBuilder {
         this.logger = ctx[Services.Logger].getLogger("[数据上下文构建器]");
     }
 
-    public async build(session: Session): Promise<WorldState> {
-        const { platform, channelId, isDirect } = session;
+    /**
+     * 根据刺激类型构建世界状态
+     */
+    public async buildFromStimulus(stimulus: AnyAgentStimulus): Promise<WorldState> {
+        switch (stimulus.type) {
+            case StimulusSource.UserMessage:
+                return this.buildFromUserMessage(stimulus as UserMessageStimulus);
+            case StimulusSource.SystemEvent:
+                return this.buildFromSystemEvent(stimulus as SystemEventStimulus);
+            case StimulusSource.ScheduledTask:
+                return this.buildFromScheduledTask(stimulus as ScheduledTaskStimulus);
+            case StimulusSource.BackgroundTaskCompletion:
+                return this.buildFromBackgroundTask(stimulus as BackgroundTaskCompletionStimulus);
+            default:
+                throw new Error(`Unsupported stimulus type: ${(stimulus as any).type}`);
+        }
+    }
+
+    /**
+     * 从用户消息刺激构建世界状态
+     */
+    private async buildFromUserMessage(stimulus: UserMessageStimulus): Promise<WorldState> {
+        const session = stimulus.payload.session;
+        const { platform, channelId } = session;
+
+        const baseWorldState = await this.buildBaseWorldState(platform, channelId, session);
+
+        return {
+            ...baseWorldState,
+            triggerContext: {
+                type: "user_message",
+                sender: session.author,
+            },
+        };
+    }
+
+    /**
+     * 从系统事件刺激构建世界状态
+     */
+    private async buildFromSystemEvent(stimulus: SystemEventStimulus): Promise<WorldState> {
+        const session = stimulus.payload.session;
+        const { platform, channelId } = session;
+
+        const baseWorldState = await this.buildBaseWorldState(platform, channelId, session);
+
+        return {
+            ...baseWorldState,
+            triggerContext: {
+                type: "system_event",
+                eventType: stimulus.payload.eventType,
+                message: stimulus.payload.message,
+                details: stimulus.payload.details,
+            },
+        };
+    }
+
+    /**
+     * 从定时任务刺激构建世界状态
+     */
+    private async buildFromScheduledTask(stimulus: ScheduledTaskStimulus): Promise<WorldState> {
+        const { platform, channelId } = stimulus.payload;
+
+        // 对于定时任务，没有真实的 session，需要创建一个虚拟的上下文
+        const bot = this.ctx.bots.find((b) => b.platform === platform);
+        if (!bot) {
+            throw new Error(`No bot found for platform: ${platform}`);
+        }
+
+        const baseWorldState = await this.buildBaseWorldStateWithoutSession(platform, channelId, bot);
+
+        return {
+            ...baseWorldState,
+            triggerContext: {
+                type: "scheduled_task",
+                taskId: stimulus.payload.taskId,
+                taskType: stimulus.payload.taskType,
+                scheduledTime: stimulus.payload.scheduledTime,
+                params: stimulus.payload.params,
+            },
+        };
+    }
+
+    /**
+     * 从后台任务完成刺激构建世界状态
+     */
+    private async buildFromBackgroundTask(stimulus: BackgroundTaskCompletionStimulus): Promise<WorldState> {
+        const { platform, channelId } = stimulus.payload;
+
+        const bot = this.ctx.bots.find((b) => b.platform === platform);
+        if (!bot) {
+            throw new Error(`No bot found for platform: ${platform}`);
+        }
+
+        const baseWorldState = await this.buildBaseWorldStateWithoutSession(platform, channelId, bot);
+
+        return {
+            ...baseWorldState,
+            triggerContext: {
+                type: "background_task_completion",
+                taskId: stimulus.payload.taskId,
+                taskType: stimulus.payload.taskType,
+                result: stimulus.payload.result,
+                error: stimulus.payload.error,
+                completedAt: stimulus.payload.completedAt,
+            },
+        };
+    }
+
+    /**
+     * 构建基础世界状态（有 session 的情况）
+     */
+    private async buildBaseWorldState(platform: string, channelId: string, session: Session): Promise<WorldState> {
+        const { isDirect, bot } = session;
 
         const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
 
@@ -31,7 +154,7 @@ export class ContextBuilder {
 
         const { processed_events, new_events } = this.partitionL1History(session.selfId, l1_history);
 
-        let l2_retrieved_memories = [];
+        let retrieved_memories = [];
         if (isL1Overloaded) {
             const earliestMessageTimestamp = raw_l1_history
                 .filter((e) => e.type === "message")
@@ -39,24 +162,24 @@ export class ContextBuilder {
                 .reduce((earliest, current) => (current < earliest ? current : earliest), new Date());
 
             try {
-                l2_retrieved_memories = await this.retrieveL2Memories(new_events, {
+                retrieved_memories = await this.retrieveL2Memories(new_events, {
                     platform,
                     channelId,
                     k: this.config.l2_memory.retrievalK,
                     endTimestamp: earliestMessageTimestamp,
                 });
-                this.logger.info(`成功检索 ${l2_retrieved_memories.length} 条召回记忆`);
+                this.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
             } catch (error) {
                 this.logger.error(`L2 语义检索失败: ${error.message}`);
             }
         } else {
-            l2_retrieved_memories = [];
+            retrieved_memories = [];
         }
 
-        const l3_diary_entries = await this.retrieveL3Memories(channelId);
+        const diary_entries = await this.retrieveL3Memories(channelId);
 
-        const channelInfo = await this.getChannelInfo(session);
-        const selfInfo = await this.getSelfInfo(session);
+        const channelInfo = await this.getChannelInfo(bot, channelId, isDirect);
+        const selfInfo = await this.getSelfInfo(bot);
 
         const users = [];
 
@@ -64,11 +187,13 @@ export class ContextBuilder {
             users.push({
                 id: session.userId,
                 name: session.author.name,
+                description: "",
             });
             users.push({
                 id: session.selfId,
                 name: selfInfo.name,
                 roles: ["self"],
+                description: "",
             });
         } else {
             let selfInGuild: Awaited<ReturnType<Bot["getGuildMember"]>>;
@@ -82,6 +207,7 @@ export class ContextBuilder {
                 id: session.selfId,
                 name: selfInGuild?.nick || selfInGuild?.name || selfInfo.name,
                 roles: ["self", ...(selfInGuild?.roles || [])],
+                description: "",
             });
 
             l1_history.forEach((item) => {
@@ -91,13 +217,14 @@ export class ContextBuilder {
                             id: item.sender.id,
                             name: item.sender.name,
                             roles: item.sender.roles,
+                            description: "",
                         });
                     }
                 }
             });
         }
 
-        const worldState: WorldState = {
+        return {
             channel: {
                 id: channelId,
                 name: channelInfo.name,
@@ -106,19 +233,103 @@ export class ContextBuilder {
             },
             current_time: new Date().toISOString(),
             self: selfInfo,
-            l1_working_memory: { processed_events, new_events },
-            l2_retrieved_memories,
-            l3_diary_entries,
-            users: users, // User profile can be another service
+            working_memory: { processed_events, new_events },
+            retrieved_memories,
+            diary_entries,
+            users: users,
+        };
+    }
+
+    /**
+     * 构建基础世界状态（没有 session 的情况，用于定时任务等）
+     */
+    private async buildBaseWorldStateWithoutSession(platform: string, channelId: string, bot: Bot): Promise<WorldState> {
+        const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
+
+        const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
+
+        const l1_history = this.applyGracefulDegradation(raw_l1_history);
+
+        const { processed_events, new_events } = this.partitionL1History(bot.selfId, l1_history);
+
+        let retrieved_memories = [];
+        if (isL1Overloaded && new_events.length > 0) {
+            const earliestMessageTimestamp = raw_l1_history
+                .filter((e) => e.type === "message")
+                .map((e) => e.timestamp)
+                .reduce((earliest, current) => (current < earliest ? current : earliest), new Date());
+
+            try {
+                retrieved_memories = await this.retrieveL2Memories(new_events, {
+                    platform,
+                    channelId,
+                    k: this.config.l2_memory.retrievalK,
+                    endTimestamp: earliestMessageTimestamp,
+                });
+                this.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
+            } catch (error) {
+                this.logger.error(`L2 语义检索失败: ${error.message}`);
+            }
+        }
+
+        const diary_entries = await this.retrieveL3Memories(channelId);
+
+        // 获取频道信息
+        let channelInfo: { id: string; name: string };
+        try {
+            const channel = await bot.getChannel(channelId);
+            channelInfo = { id: channelId, name: channel.name || "未知频道" };
+        } catch (error) {
+            this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
+            channelInfo = { id: channelId, name: "未知频道" };
+        }
+
+        // 获取机器人自身信息
+        const selfInfo = {
+            id: bot.selfId,
+            name: bot.user.nick || bot.user.name || "Bot",
         };
 
-        return worldState;
+        // 从历史记录中提取用户信息
+        const users = [];
+        users.push({
+            id: bot.selfId,
+            name: selfInfo.name,
+            roles: ["self"],
+            description: "",
+        });
+
+        l1_history.forEach((item) => {
+            if (item.type === "message") {
+                if (!users.find((u) => u.id === item.sender.id)) {
+                    users.push({
+                        id: item.sender.id,
+                        name: item.sender.name,
+                        roles: item.sender.roles,
+                        description: "",
+                    });
+                }
+            }
+        });
+
+        return {
+            channel: {
+                id: channelId,
+                name: channelInfo.name,
+                type: "guild", // 定时任务通常不在私聊中触发
+                platform: platform,
+            },
+            current_time: new Date().toISOString(),
+            self: selfInfo,
+            working_memory: { processed_events, new_events },
+            retrieved_memories,
+            diary_entries,
+            users: users,
+        };
     }
 
     /**
      * 裁剪过期的智能体响应
-     * @param history
-     * @returns
      */
     private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
         const turnIdsToKeep = new Set<string>();
@@ -127,7 +338,12 @@ export class ContextBuilder {
         // 从后往前遍历，找到超出保留数量的思考事件，并记录它们的 turnId
         for (let i = history.length - 1; i >= 0; i--) {
             const item = history[i];
-            if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
+            if (
+                item.type === "agent_thought" ||
+                item.type === "agent_action" ||
+                item.type === "agent_observation" ||
+                item.type === "agent_heartbeat"
+            ) {
                 if (turnIdsToKeep.size < this.config.l1_memory.keepFullTurnCount) {
                     turnIdsToKeep.add(item.turnId);
                 } else {
@@ -144,7 +360,12 @@ export class ContextBuilder {
 
         // 返回一个新数组，其中不包含属于要删除的 turnId 的所有事件
         return history.filter((item) => {
-            if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
+            if (
+                item.type === "agent_thought" ||
+                item.type === "agent_action" ||
+                item.type === "agent_observation" ||
+                item.type === "agent_heartbeat"
+            ) {
                 const turnId = item.turnId;
                 return !turnIdsToDrop.has(turnId);
             }
@@ -179,35 +400,36 @@ export class ContextBuilder {
                 relevance: chunk.similarity,
                 timestamp: chunk.startTimestamp,
             }));
-        } catch (error) {}
+        } catch (error) {
+            return [];
+        }
     }
 
+    // TODO
     private async retrieveL3Memories(channelId: string): Promise<DiaryEntryData[]> {
         if (!this.config.l3_memory.enabled) return [];
-        // Example: retrieve yesterday's diary
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const dateStr = yesterday.toISOString().split("T")[0];
         return this.ctx.database.get(TableName.L3Diaries, { channelId, date: dateStr });
     }
 
-    private async getChannelInfo(session: Session) {
-        const { isDirect, channelId } = session;
+    private async getChannelInfo(bot: Bot, channelId: string, isDirect?: boolean) {
         let channelInfo: Awaited<ReturnType<Bot["getChannel"]>>;
         let channelName = "";
 
         if (isDirect) {
             let userInfo: Awaited<ReturnType<Bot["getUser"]>>;
             try {
-                userInfo = await session.bot.getUser(session.userId);
+                userInfo = await bot.getUser(channelId);
             } catch (error) {
-                this.logger.debug(`获取用户信息失败 for user ${session.userId}: ${error.message}`);
+                this.logger.debug(`获取用户信息失败 for user ${channelId}: ${error.message}`);
             }
 
-            channelName = `与 ${userInfo?.name || session.userId} 的私聊`;
+            channelName = `与 ${userInfo?.name || channelId} 的私聊`;
         } else {
             try {
-                channelInfo = await session.bot.getChannel(channelId);
+                channelInfo = await bot.getChannel(channelId);
                 channelName = channelInfo.name;
             } catch (error) {
                 this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
@@ -218,14 +440,14 @@ export class ContextBuilder {
         return { id: channelId, name: channelName };
     }
 
-    private async getSelfInfo(session: Session) {
-        const { selfId } = session;
+    private async getSelfInfo(bot: Bot) {
+        const selfId = bot.user.id;
         try {
-            const user = await session.bot.getUser(selfId);
+            const user = await bot.getUser(selfId);
             return { id: selfId, name: user.name };
         } catch (error) {
             this.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
-            return { id: selfId, name: session.bot.user.name || "Self" };
+            return { id: selfId, name: bot.user.name || "Self" };
         }
     }
 
@@ -240,8 +462,8 @@ export class ContextBuilder {
 
         history.forEach((item) => {
             // 基于时间戳判断是否是新的
-            // 如果 item 是一个消息，则它需要发送者不是机器人自身才算“新”
-            // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
+            // 如果 item 是一个消息，则它需要发送者不是机器人自身才算"新"
+            // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是"新"的
             item.is_new = item.timestamp > lastAgentTurnTime && (item.type === "message" ? item.sender.id !== selfId : true);
 
             (item as any).is_message = item.type === "message";

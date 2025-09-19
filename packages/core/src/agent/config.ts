@@ -2,7 +2,6 @@ import { readFileSync } from "fs";
 import { Computed, Schema } from "koishi";
 import path from "path";
 
-import { SystemConfig } from "@/config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
@@ -80,8 +79,6 @@ export interface WillingnessConfig {
         /** 决定回复后，扣除的"发言精力惩罚"基础值 */
         replyCost: Computed<number>;
     };
-
-    readonly system?: SystemConfig;
 }
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
@@ -122,10 +119,6 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
             .min(0)
             .default(35)
             .description('决定回复后，扣除的"发言精力惩罚"'),
-        // refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
-        //     .min(0)
-        //     .default(3000)
-        //     .description("回复后的“不应期”（毫秒），防止AI连续发言"),
     }),
 });
 
@@ -162,9 +155,6 @@ export type AgentBehaviorConfig = ArousalConfig &
     } & {
         streamAction: boolean;
         heartbeat: number;
-
-        newMessageStrategy: "skip" | "immediate" | "deferred";
-        deferredProcessingTime?: number;
     };
 
 export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.intersect([
@@ -188,14 +178,5 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
     Schema.object({
         streamAction: Schema.boolean().default(false).experimental(),
         heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
-
-        newMessageStrategy: Schema.union([
-            Schema.const("skip").description("跳过新消息（默认）"),
-            Schema.const("immediate").description("立即处理新消息"),
-            Schema.const("deferred").description("延迟处理被跳过话题"),
-        ])
-            .default("skip")
-            .description("处理新消息的策略"),
-        deferredProcessingTime: Schema.number().default(10000).description("延迟处理策略的安静期时间（毫秒）"),
     }),
 ]);

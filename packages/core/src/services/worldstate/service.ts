@@ -8,7 +8,20 @@ import { EventListenerManager } from "./event-listener";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
-import { AgentStimulus, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
+import {
+    AgentStimulus,
+    AnyAgentStimulus,
+    BackgroundTaskCompletionStimulus,
+    DiaryEntryData,
+    MemberData,
+    MemoryChunkData,
+    MessageData,
+    ScheduledTaskStimulus,
+    SystemEventData,
+    SystemEventStimulus,
+    UserMessageStimulus,
+    WorldState,
+} from "./types";
 
 declare module "koishi" {
     interface Context {
@@ -16,6 +29,10 @@ declare module "koishi" {
     }
     interface Events {
         "agent/stimulus": (stimulus: AgentStimulus<any>) => void;
+        "agent/stimulus-message": (stimulus: UserMessageStimulus) => void;
+        "agent/stimulus-system-event": (stimulus: SystemEventStimulus) => void;
+        "agent/stimulus-scheduled-task": (stimulus: ScheduledTaskStimulus) => void;
+        "agent/stimulus-background-task-completion": (stimulus: BackgroundTaskCompletionStimulus) => void;
     }
     interface Tables {
         [TableName.Members]: MemberData;
@@ -78,8 +95,8 @@ export class WorldStateService extends Service<Config> {
         this.logger.info("服务已停止");
     }
 
-    public async buildWorldState(session: Session): Promise<WorldState> {
-        return await this.contextBuilder.build(session);
+    public async buildWorldState(stimulus: AnyAgentStimulus): Promise<WorldState> {
+        return await this.contextBuilder.buildFromStimulus(stimulus);
     }
 
     public async recordMessage(message: MessageData): Promise<void> {

@@ -1,23 +1,16 @@
-import { Context, Logger, Query } from "koishi";
+import { Context, Query } from "koishi";
 
-import { Services, TableName } from "@/shared/constants";
+import { TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { WorldStateService } from "./index";
 import { MessageData } from "./types";
 
-// =================================================================================
-// #region HistoryCommandManager - 负责所有CLI指令
-// =================================================================================
 export class HistoryCommandManager {
-    private logger: Logger;
-
     constructor(
         private ctx: Context,
         private service: WorldStateService,
         private config: HistoryConfig
-    ) {
-        this.logger = ctx[Services.Logger].getLogger("[世界状态.指令]");
-    }
+    ) {}
 
     public register(): void {
         const historyCmd = this.ctx.command("history", "历史记录管理指令集", { authority: 3 });
@@ -194,4 +187,3 @@ export class HistoryCommandManager {
             });
     }
 }
-// #endregion

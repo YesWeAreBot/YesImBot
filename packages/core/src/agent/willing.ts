@@ -6,8 +6,6 @@ import { Config } from "@/config";
 export interface MessageContext {
     chatId: string;
     content: string;
-    //isImage: boolean;
-    //isEmoji: boolean;
     isMentioned: boolean;
     isQuote: boolean;
     isDirect: boolean;

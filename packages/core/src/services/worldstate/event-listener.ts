@@ -5,7 +5,16 @@ import { truncate } from "@/shared/utils";
 import { AssetService } from "../assets";
 import { HistoryConfig } from "./config";
 import { WorldStateService } from "./service";
-import { AgentStimulus, MessageData, SystemEventData, SystemEventPayload, UserMessagePayload } from "./types";
+import {
+    AgentStimulus,
+    MessageData,
+    StimulusSource,
+    SystemEventData,
+    SystemEventPayload,
+    SystemEventStimulus,
+    UserMessagePayload,
+    UserMessageStimulus,
+} from "./types";
 
 interface PendingCommand {
     commandEventId: string;
@@ -60,6 +69,7 @@ export class EventListenerManager {
     }
 
     private registerEventListeners(): void {
+        // 这个中间件记录用户消息，并触发响应流程
         this.disposers.push(
             this.ctx.middleware(async (session, next) => {
                 if (!this.service.isChannelAllowed(session)) {
@@ -71,19 +81,23 @@ export class EventListenerManager {
                 await this.recordUserMessage(session);
                 await next();
 
-                if (!session["__commandHandled"]) {
-                    const stimulus: AgentStimulus<UserMessagePayload> = {
-                        type: "user_message",
-                        channelCid: session.cid,
-                        session,
-                        priority: 5, // Normal message priority
-                        payload: { messageIds: [session.messageId] },
+                if ((session["__commandHandled"] && !this.config.ignoreCommandMessage) || !session["__commandHandled"]) {
+                    const stimulus: UserMessageStimulus = {
+                        type: StimulusSource.UserMessage,
+                        payload: {
+                            platform: session.platform,
+                            channelId: session.channelId,
+                            session: session,
+                        },
+                        priority: 5,
+                        timestamp: new Date(),
                     };
-                    this.ctx.emit("agent/stimulus", stimulus);
+                    this.ctx.emit("agent/stimulus-message", stimulus);
                 }
             })
         );
 
+        // 监听指令调用，记录指令事件
         this.disposers.push(
             this.ctx.on("command/before-execute", (argv) => {
                 argv.session["__commandHandled"] = true;
@@ -91,9 +105,12 @@ export class EventListenerManager {
             })
         );
 
+        // 在发送前匹配指令结果
         this.disposers.push(this.ctx.on("before-send", (session) => this.matchCommandResult(session), true));
+        // 在发送后记录机器人消息
         this.disposers.push(this.ctx.on("after-send", (session) => this.recordBotSentMessage(session), true));
 
+        // 记录从另一个设备手动发送的消息
         this.disposers.push(
             this.ctx.on("message", (session) => {
                 if (!this.service.isChannelAllowed(session)) return;
@@ -104,6 +121,7 @@ export class EventListenerManager {
             })
         );
 
+        // 监听系统事件，记录特定事件
         this.disposers.push(
             this.ctx.on("internal/session", (session) => {
                 if (!this.service.isChannelAllowed(session)) return;
@@ -176,14 +194,18 @@ export class EventListenerManager {
 
                     if (isTargetingBot) {
                         this.service.updateMuteStatus(session.cid, 0);
-                        const stimulus: AgentStimulus<SystemEventPayload> = {
-                            type: "system_event",
-                            channelCid: session.cid,
-                            session,
+                        const stimulus: SystemEventStimulus = {
+                            type: StimulusSource.SystemEvent,
+                            payload: {
+                                eventType: payload.type,
+                                details: (payload.payload as any)?.details || {},
+                                message: payload.message || "",
+                                session: session,
+                            },
                             priority: 8,
-                            payload: payload as SystemEventPayload,
+                            timestamp: new Date(),
                         };
-                        this.ctx.emit("agent/stimulus", stimulus);
+                        this.ctx.emit("agent/stimulus-system-event", stimulus);
                     }
                     this.service.recordSystemEvent({
                         id: `sysevt_unban_${Random.id()}`,
@@ -324,6 +346,7 @@ export class EventListenerManager {
         await this.service.recordMessage(message);
     }
 
+    // TODO: 从平台适配器拉取用户信息
     private async updateMemberInfo(session: Session): Promise<void> {
         if (!session.guildId || !session.author) return;
 
@@ -347,4 +370,3 @@ export class EventListenerManager {
         }
     }
 }
-// #endregion

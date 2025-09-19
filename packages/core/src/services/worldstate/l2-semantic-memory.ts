@@ -1,29 +1,29 @@
 import { Context, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { IEmbedModel, TaskType } from "@/services/model";
+import { Config } from "@/config";
+import { IEmbedModel } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
 import { cosineSimilarity } from "@/shared/utils";
-import { HistoryConfig } from "./config";
 import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
 
 export class SemanticMemoryManager {
     private ctx: Context;
-    private config: HistoryConfig;
+    private config: Config;
     private logger: Logger;
     private embedModel: IEmbedModel;
     private messageBuffer: Map<string, MessageData[]> = new Map();
     private isRebuilding: boolean = false;
 
-    constructor(ctx: Context, config: HistoryConfig) {
+    constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[L2-语义记忆]");
+        this.logger = ctx[Services.Logger].getLogger("[语义记忆]");
     }
 
     public start() {
         try {
-            this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
+            this.embedModel = this.ctx[Services.Model].getEmbedModel(this.config.embeddingModel);
         } catch {
             this.embedModel = null;
         }

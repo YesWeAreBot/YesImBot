@@ -1,24 +1,6 @@
-/**
- * @file types.ts
- * @description 定义基于多级缓存记忆模型的核心领域对象。
- *
- * 该模型将 Agent 的记忆分为三个层级：
- * - L1 (工作记忆): 包含最近的、完整的交互轮次，是 Agent 进行即时响应的基础。
- * - L2 (语义索引): 由从 L1 中移出的交互轮次转化而来的、经过向量化的记忆片段，用于相关性检索。
- * - L3 (长期存档): 以“日记”形式存在的、对每日交互的高度概括和总结，提供长周期的时间感和叙事记忆。
- */
-
 import { TableName } from "@/shared/constants";
 import { Element, Session } from "koishi";
 
-// =================================================================================
-// #region 核心数据模型 (对应数据库表结构)
-// =================================================================================
-
-/**
- * `worldstate.members` 表的数据结构
- * 存储用户在一个特定服务器 (Guild) 内的身份信息
- */
 export interface MemberData {
     pid: string;
     platform: string;
@@ -31,9 +13,8 @@ export interface MemberData {
     lastActive: Date;
 }
 
-/** 消息的数据模型 */
 export interface MessageData {
-    id: string; // 消息唯一ID
+    id: string;
     platform: string;
     channelId: string;
     sender: {
@@ -46,21 +27,16 @@ export interface MessageData {
     quoteId?: string;
 }
 
-/** 系统事件的数据模型 */
 export interface SystemEventData {
-    id: string; // 事件唯一ID
+    id: string;
     platform: string;
     channelId: string;
-    type: string; // 例如 'guild-member-ban', 'command-invoked'
+    type: string;
     timestamp: Date;
-    payload: object; // 事件具体内容
-    message?: string; // 预渲染的自然语言消息
+    payload: object;
+    message?: string;
 }
 
-/**
- * @description 从LLM响应中解析出的、尚未持久化的数据结构。
- * 这是 `HeartbeatProcessor` 内部流转的核心对象。
- */
 export interface AgentResponse {
     thoughts: { observe: string; analyze_infer: string; plan: string };
     actions: { function: string; params: Record<string, unknown> }[];
@@ -68,36 +44,29 @@ export interface AgentResponse {
     request_heartbeat: boolean;
 }
 
-// =================================================================================
-// #region 交互日志条目 (用于文件存储)
-// =================================================================================
-
-/** 交互日志中 Agent 思考事件的结构 */
 export interface AgentThoughtLog {
     type: "agent_thought";
-    id: string; // 思考事件的唯一ID
-    turnId: string; // 关联的 Agent 回合ID
-    timestamp: string; // ISO 8601 格式
+    id: string;
+    turnId: string;
+    timestamp: string;
     thoughts: { observe: string; analyze_infer: string; plan: string };
 }
 
-/** 交互日志中 Agent 动作事件的结构 */
 export interface AgentActionLog {
     type: "agent_action";
-    id: string; // 动作的唯一ID
-    turnId: string; // 关联的 Agent 回合ID
-    timestamp: string; // ISO 8601 格式
+    id: string;
+    turnId: string;
+    timestamp: string;
     function: string;
     params: Record<string, unknown>;
 }
 
-/** 交互日志中 Agent 观察事件的结构 */
 export interface AgentObservationLog {
     type: "agent_observation";
-    id: string; // 观察结果的唯一ID
-    turnId: string; // 关联的 Agent 回合ID
-    actionId: string; // 关联的动作ID
-    timestamp: string; // ISO 8601 格式
+    id: string;
+    turnId: string;
+    actionId: string;
+    timestamp: string;
     function: string;
     status: "success" | "failed" | string;
     result?: any;
@@ -115,29 +84,6 @@ export interface AgentHeartbeatLog {
 
 export type AgentLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog;
 
-/** 交互日志中消息事件的结构 */
-export interface MessageLog {
-    type: "message";
-    id: string;
-    timestamp: string; // ISO 8601 格式
-    sender: MessageData["sender"];
-    content: string;
-    quoteId?: string;
-}
-
-/** 交互日志中系统事件的结构 */
-export interface SystemEventLog {
-    type: "system_event";
-    id: string;
-    timestamp: string; // ISO 8601 格式
-    eventType: string;
-    message: string;
-}
-
-/** 写入日志文件的统一事件条目类型 */
-export type InteractionLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog | MessageLog | SystemEventLog;
-
-/** L2 记忆片段的数据模型，存储在向量数据库中。 */
 export interface MemoryChunkData {
     id: string;
     platform: string;
@@ -149,7 +95,6 @@ export interface MemoryChunkData {
     endTimestamp: Date;
 }
 
-/** L3 日记条目的数据模型 */
 export interface DiaryEntryData {
     id: string;
     date: string; // 'YYYY-MM-DD'
@@ -159,11 +104,6 @@ export interface DiaryEntryData {
     keywords: string[]; // 当天发生的关键事件或提及的关键词，用于快速过滤
     mentionedUserIds: string[]; // 当天交互过的主要人物
 }
-// #endregion
-
-// =================================================================================
-// #region 领域对象 (用于构建上下文和业务逻辑)
-// =================================================================================
 
 /** 上下文中的消息对象 */
 export interface ContextualMessage {
@@ -185,7 +125,6 @@ export interface ContextualSystemEvent {
     is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
 }
 
-/** Agent 响应回合在上下文中的表现形式（支持优雅降级） */
 /** 上下文中的 Agent 思考对象 */
 export interface ContextualAgentThought {
     type: "agent_thought";
@@ -218,7 +157,7 @@ export interface ContextualAgentObservation {
     is_new?: boolean;
 }
 
-export interface AgentHeartbeat {
+export interface ContextualAgentHeartbeat {
     type: "agent_heartbeat";
     turnId: string;
     timestamp: Date;
@@ -233,7 +172,7 @@ export type L1HistoryItem =
     | ContextualAgentThought
     | ContextualAgentAction
     | ContextualAgentObservation
-    | AgentHeartbeat
+    | ContextualAgentHeartbeat
     | ({ type: "system_event" } & ContextualSystemEvent);
 
 /** 从 L2 语义索引中检索出的记忆片段 */
@@ -259,14 +198,14 @@ export interface WorldState {
         name: string;
     };
     /** L1: 工作记忆，一个按时间顺序排列的线性事件流。 */
-    l1_working_memory: {
+    working_memory: {
         processed_events: L1HistoryItem[];
         new_events: L1HistoryItem[];
     };
     /** L2: 从海量历史中检索到的相关记忆片段 */
-    l2_retrieved_memories?: RetrievedMemoryChunk[];
+    retrieved_memories?: RetrievedMemoryChunk[];
     /** L3: 相关的历史日记条目 */
-    l3_diary_entries?: DiaryEntryData[];
+    diary_entries?: DiaryEntryData[];
     // 其他动态信息，如用户画像等
     users?: {
         id: string;
@@ -276,37 +215,80 @@ export interface WorldState {
     }[];
 }
 
-// #endregion
-
-// =================================================================================
-// #region Agent 刺激与响应
-// =================================================================================
-
-/** 智能体接收到的刺激类型 */
-export type StimulusType = "user_message" | "system_event" | "scheduled_task" | "background_task_completion";
-
-/** 用户消息刺激的载荷 */
-export interface UserMessagePayload {
-    messageIds: string[];
+export enum StimulusSource {
+    UserMessage = "user_message",
+    SystemEvent = "system_event",
+    ScheduledTask = "scheduled_task",
+    BackgroundTaskCompletion = "background_task_completion",
 }
 
-/** 系统事件刺激的载荷 */
+export interface UserMessagePayload {
+    platform: string;
+    channelId: string;
+    session: Session;
+}
+
 export interface SystemEventPayload {
     eventType: string;
     details: object;
     message: string;
-}
-
-/** Agent 接收到的外部刺激，是驱动其行为的入口。 */
-export interface AgentStimulus<T> {
-    type: StimulusType;
-    channelCid: string;
     session: Session;
-    priority: number;
-    payload: T;
 }
 
-// #endregion
+export interface ScheduledTaskPayload {
+    taskId: string;
+    taskType: string;
+    platform: string;
+    channelId: string;
+    params?: Record<string, unknown>;
+    scheduledTime: Date;
+}
+
+export interface BackgroundTaskCompletionPayload {
+    taskId: string;
+    taskType: string;
+    platform: string;
+    channelId: string;
+    result: any;
+    error?: string;
+    completedAt: Date;
+}
+
+export interface StimulusPayloadMap {
+    [StimulusSource.UserMessage]: UserMessagePayload;
+    [StimulusSource.SystemEvent]: SystemEventPayload;
+    [StimulusSource.ScheduledTask]: ScheduledTaskPayload;
+    [StimulusSource.BackgroundTaskCompletion]: BackgroundTaskCompletionPayload;
+}
+
+export interface AgentStimulus<T extends StimulusSource = StimulusSource> {
+    type: T;
+    priority: number;
+    timestamp: Date;
+    payload: StimulusPayloadMap[T];
+}
+
+export interface UserMessageStimulus extends AgentStimulus<StimulusSource.UserMessage> {
+    type: StimulusSource.UserMessage;
+    payload: UserMessagePayload;
+}
+
+export interface SystemEventStimulus extends AgentStimulus<StimulusSource.SystemEvent> {
+    type: StimulusSource.SystemEvent;
+    payload: SystemEventPayload;
+}
+
+export interface ScheduledTaskStimulus extends AgentStimulus<StimulusSource.ScheduledTask> {
+    type: StimulusSource.ScheduledTask;
+    payload: ScheduledTaskPayload;
+}
+
+export interface BackgroundTaskCompletionStimulus extends AgentStimulus<StimulusSource.BackgroundTaskCompletion> {
+    type: StimulusSource.BackgroundTaskCompletion;
+    payload: BackgroundTaskCompletionPayload;
+}
+
+export type AnyAgentStimulus = UserMessageStimulus | SystemEventStimulus | ScheduledTaskStimulus | BackgroundTaskCompletionStimulus;
 
 declare module "koishi" {
     interface Tables {
