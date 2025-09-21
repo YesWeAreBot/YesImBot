@@ -81,7 +81,7 @@ export class EventListenerManager {
                 await this.recordUserMessage(session);
                 await next();
 
-                if ((session["__commandHandled"] && !this.config.ignoreCommandMessage) || !session["__commandHandled"]) {
+                if (!session["__commandHandled"] || !this.config.ignoreCommandMessage) {
                     const stimulus: UserMessageStimulus = {
                         type: StimulusSource.UserMessage,
                         payload: {

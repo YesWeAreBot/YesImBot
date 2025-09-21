@@ -1,7 +1,7 @@
 import * as fs from "fs/promises";
 import { Context, Logger, Schema, sleep } from "koishi";
 import {} from "koishi-plugin-puppeteer";
-import { Extension, Failed, Infer, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, WithSession, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import * as os from "os";
 import * as path from "path";
@@ -298,7 +298,7 @@ export default class VisionTools {
             image_id: Schema.string().required().description("要搜索的图片ID，例如在 `<img id='12345'>` 中的 `12345`。"),
         }),
     })
-    public async searchImageSource(args: Infer<{ image_id: string; method: string }>): Promise<ToolCallResult> {
+    public async searchImageSource(args: WithSession<{ image_id: string; method: string }>): Promise<ToolCallResult> {
         const { image_id, method } = args;
         this.ctx.logger.info(`请求使用方法: ${method}`);
 

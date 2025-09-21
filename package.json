@@ -12,7 +12,8 @@
   ],
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "plugins/*"
   ],
   "scripts": {
     "dev": "turbo run dev",

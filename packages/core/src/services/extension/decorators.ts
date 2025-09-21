@@ -1,9 +1,8 @@
 import { Context, Schema } from "koishi";
 
 import { Services } from "@/shared/constants";
-import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types";
+import { ExtensionMetadata, WithSession, ToolDefinition, ToolMetadata } from "./types";
 
-// 定义一个更精确的类型，表示任何可以被 new 的类
 type Constructor<T = {}> = new (...args: any[]) => T;
 
 /**
@@ -30,13 +29,11 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
 
                 const logger = ctx.logger("[Extension]");
 
-                // 默认启用，因此配置中明确禁用才跳过加载
+                // 默认启用，配置中明确禁用才跳过加载
                 const enabled = !Object.hasOwn(config, "enabled") || config.enabled;
 
                 super(ctx, config);
 
-                // 在原始构造函数执行完毕后，执行自动注册逻辑。
-                // 'this' 在这里是完全初始化好的、用户类的实例。
                 const toolService = ctx[Services.Tool];
                 if (toolService) {
                     // 关键步骤：处理工具的 `this` 绑定
@@ -63,7 +60,6 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                     ctx.on("dispose", () => {
                         if (toolService) {
                             toolService.unregister(metadata.name);
-                            //logger.info(`扩展 "${metadata.name}" 已卸载。`);
                         }
                     });
                 } else {
@@ -119,7 +115,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
  * @param metadata 工具的元数据
  */
 export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
-    return function (target: any, propertyKey: string, descriptor: TypedPropertyDescriptor<(args: Infer<TParams>) => Promise<any>>) {
+    return function (target: any, propertyKey: string, descriptor: TypedPropertyDescriptor<(args: WithSession<TParams>) => Promise<any>>) {
         if (!descriptor.value) {
             return;
         }
@@ -136,31 +132,6 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
         target.tools.set(toolDefinition.name, toolDefinition);
     };
 }
-
-/**
- * @Support 方法装饰器
- * 用于指定工具是否在特定会话中可用。
- * @param predicate
- * @returns
- */
-// export function Support(predicate: (session: Session) => boolean) {
-//     return function (
-//         target: any,
-//         propertyKey: string,
-//         descriptor: TypedPropertyDescriptor<(args: any) => Promise<any>>
-//     ) {
-//         if (!descriptor.value) {
-//             return;
-//         }
-
-//         target.tools ??= new Map<string, ToolDefinition>();
-
-//         const toolDefinition = target.tools.get(propertyKey);
-//         if (toolDefinition) {
-//             toolDefinition.isSupported = predicate;
-//         }
-//     };
-// }
 
 export function withInnerThoughts(params: { [T: string]: Schema<any> }): Schema<any> {
     return Schema.object({

@@ -1,6 +1,6 @@
 import { Computed } from "koishi";
 
-type ChannelDescriptor = {
+export type ChannelDescriptor = {
     platform: string;
     type: "private" | "guild";
     id: string;
@@ -10,7 +10,7 @@ type ChannelDescriptor = {
  * 定义日志的详细级别，与 Koishi (reggol) 的模型对齐。
  * 数值越大，输出的日志越详细。
  */
-enum LogLevel {
+export enum LogLevel {
     // 级别 0: 完全静默，不输出任何日志
     SILENT = 0,
     // 级别 1: 只显示最核心的成功/失败信息
@@ -22,32 +22,32 @@ enum LogLevel {
 }
 
 /** 描述一个模型在特定提供商中的位置 */
-type ModelDescriptor = {
+export type ModelDescriptor = {
     providerName: string;
     modelId: string;
 };
 
 /** 模型切换策略 */
-enum ModelSwitchingStrategy {
+export enum ModelSwitchingStrategy {
     Failover = "failover", // 故障转移 (默认)
     RoundRobin = "round-robin", // 轮询
 }
 
 /** 内容验证失败时的处理动作 */
-enum ContentFailureAction {
+export enum ContentFailureAction {
     FailoverToNext = "failover_to_next", // 立即切换到下一个模型
     AugmentAndRetry = "augment_and_retry", // 增强提示词并在当前模型重试
 }
 
 /** 定义断路器策略 */
-interface CircuitBreakerPolicy {
+export interface CircuitBreakerPolicy {
     /** 触发断路的连续失败次数 */
     failureThreshold: number;
     /** 断路器开启后的冷却时间 (秒) */
     cooldownSeconds: number;
 }
 
-interface ModelConfig {
+export interface ModelConfig {
     providerName?: string;
     modelId: string;
     abilities: ModelAbility[];
@@ -66,7 +66,7 @@ interface ModelConfig {
 }
 
 /** 定义模型支持的能力 */
-enum ModelAbility {
+export enum ModelAbility {
     Vision = "视觉",
     WebSearch = "网络搜索",
     Reasoning = "推理",
@@ -75,7 +75,7 @@ enum ModelAbility {
     Chat = "对话",
 }
 
-interface ProviderConfig {
+export interface ProviderConfig {
     name: string;
     type: any;
     baseURL?: string;
@@ -85,7 +85,7 @@ interface ProviderConfig {
 }
 
 /** 定义超时策略 */
-interface TimeoutPolicy {
+export interface TimeoutPolicy {
     /** 首次响应超时 (秒) */
     firstTokenTimeout?: number;
     /** 总请求超时 (秒) */
@@ -93,17 +93,13 @@ interface TimeoutPolicy {
 }
 
 /** 定义重试策略 */
-interface RetryPolicy {
+export interface RetryPolicy {
     /** 最大重试次数 (在同一模型上) */
     maxRetries: number;
     /** 内容验证失败时的动作 */
     onContentFailure: ContentFailureAction;
 }
-/**
- * ConfigV200 - 由脚本自动生成的配置快照
- * 来源: Config in config.ts
- * 生成时间: 2025-09-08T15:41:10.407Z
- */
+
 export interface ConfigV201 {
     providers: ProviderConfig[];
     modelGroups: { name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }[];

@@ -1,10 +1,10 @@
 import { Context, h, Schema, Session } from "koishi";
-import { } from "koishi-plugin-adapter-onebot";
+import {} from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
+import { WithSession } from "@/services/extension/types";
 import { formatDate, isEmpty } from "@/shared";
 
 interface InteractionsConfig {}
@@ -22,7 +22,10 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
 export default class InteractionsExtension {
     static readonly Config = InteractionsConfigSchema;
 
-    constructor(public ctx: Context, public config: InteractionsConfig) {}
+    constructor(
+        public ctx: Context,
+        public config: InteractionsConfig
+    ) {}
 
     @Tool({
         name: "reaction_create",
@@ -33,7 +36,7 @@ export default class InteractionsExtension {
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async reactionCreate({ session, message_id, emoji_id }: Infer<{ message_id: string; emoji_id: number }>) {
+    async reactionCreate({ session, message_id, emoji_id }: WithSession<{ message_id: string; emoji_id: number }>) {
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
             const result = await session.onebot._request("set_msg_emoji_like", {
@@ -58,7 +61,7 @@ export default class InteractionsExtension {
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async essenceCreate({ session, message_id }: Infer<{ message_id: string }>) {
+    async essenceCreate({ session, message_id }: WithSession<{ message_id: string }>) {
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
             await session.onebot.setEssenceMsg(message_id);
@@ -78,7 +81,7 @@ export default class InteractionsExtension {
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async essenceDelete({ session, message_id }: Infer<{ message_id: string }>) {
+    async essenceDelete({ session, message_id }: WithSession<{ message_id: string }>) {
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
             const result = await session.onebot.deleteEssenceMsg(message_id);
@@ -99,7 +102,7 @@ export default class InteractionsExtension {
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async sendPoke({ session, user_id, channel }: Infer<{ user_id: string; channel: string }>) {
+    async sendPoke({ session, user_id, channel }: WithSession<{ user_id: string; channel: string }>) {
         if (isEmpty(String(user_id))) return Failed("user_id is required");
         const targetChannel = isEmpty(channel) ? session.channelId : channel;
         try {
@@ -126,7 +129,7 @@ export default class InteractionsExtension {
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async getForwardMsg({ session, id }: Infer<{ id: string }>) {
+    async getForwardMsg({ session, id }: WithSession<{ id: string }>) {
         if (isEmpty(id)) return Failed("id is required");
         try {
             const forwardMessages: ForwardMessage[] = await session.onebot.getForwardMsg(id);
@@ -140,11 +143,7 @@ export default class InteractionsExtension {
     }
 }
 
-async function formatForwardMessage(
-    ctx: Context,
-    session: Session,
-    formatForwardMessages: ForwardMessage[]
-): Promise<string> {
+async function formatForwardMessage(ctx: Context, session: Session, formatForwardMessages: ForwardMessage[]): Promise<string> {
     try {
         const formattedMessages = await Promise.all(
             formatForwardMessages.map(async (message) => {

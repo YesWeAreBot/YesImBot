@@ -3,7 +3,7 @@ import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
 import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
+import { WithSession } from "@/services/extension/types";
 import { IChatModel, ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
@@ -80,7 +80,7 @@ export default class CoreUtilExtension {
       Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
     })
-    async sendMessage(args: Infer<{ message: string; target?: string }>) {
+    async sendMessage(args: WithSession<{ message: string; target?: string }>) {
         const { session, message, target } = args;
 
         if (!session) {
@@ -122,7 +122,7 @@ export default class CoreUtilExtension {
             question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
         }),
     })
-    async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
+    async getImageDescription(args: WithSession<{ image_id: string; question: string }>) {
         const { image_id, question } = args;
 
         const imageInfo = await this.assetService.getInfo(image_id);

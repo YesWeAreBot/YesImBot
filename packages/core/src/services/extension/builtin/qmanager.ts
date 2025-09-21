@@ -2,7 +2,7 @@ import { Context, Schema } from "koishi";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
+import { WithSession } from "@/services/extension/types";
 import { isEmpty } from "@/shared/utils";
 
 @Extension({
@@ -16,7 +16,10 @@ import { isEmpty } from "@/shared/utils";
 export default class QManagerExtension {
     static readonly Config = Schema.object({});
 
-    constructor(public ctx: Context, public config: any) {}
+    constructor(
+        public ctx: Context,
+        public config: any
+    ) {}
 
     @Tool({
         name: "delmsg",
@@ -26,7 +29,7 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async delmsg({ session, message_id, channel_id }: Infer<{ message_id: string; channel_id: string }>) {
+    async delmsg({ session, message_id, channel_id }: WithSession<{ message_id: string; channel_id: string }>) {
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.deleteMessage(targetChannel, message_id);
@@ -49,12 +52,7 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async ban({
-        session,
-        user_id,
-        duration,
-        channel_id,
-    }: Infer<{ user_id: string; duration: number; channel_id: string }>) {
+    async ban({ session, user_id, duration, channel_id }: WithSession<{ user_id: string; duration: number; channel_id: string }>) {
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
@@ -75,7 +73,7 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async kick({ session, user_id, channel_id }: Infer<{ user_id: string; channel_id: string }>) {
+    async kick({ session, user_id, channel_id }: WithSession<{ user_id: string; channel_id: string }>) {
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {

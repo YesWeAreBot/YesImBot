@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 import { performance } from "perf_hooks";
-import { AssetService, Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { AssetService, Extension, Failed, WithSession, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { Context, Logger, Schema } from "koishi";
 
@@ -137,7 +137,7 @@ export default class RR3 {
                 .description("选择图片的构图方向。portrait 为竖屏，landscape 为横屏，square 为方形") as Schema<string>,
         }),
     })
-    async generateImage(args: Infer<{ prompt: string; orientation: string }>) {
+    async generateImage(args: WithSession<{ prompt: string; orientation: string }>) {
         const totalTimer = new Timer();
         this.ctx.logger.info(`开始执行 generateImage 任务, 提示词: "${args.prompt}"`);
 

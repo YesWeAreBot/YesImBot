@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import { mkdir } from "fs/promises";
 import { base64ToArrayBuffer, Context, h, Logger, Schema } from "koishi";
 import {} from "koishi-plugin-puppeteer";
-import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, WithSession, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import * as path from "path";
 import type { BuiltinLanguage, BuiltinTheme, HighlighterCore } from "shiki";
 
@@ -261,7 +261,7 @@ export default class CodeToImage {
     async sendCodeImage({
         session,
         ...options
-    }: Infer<{
+    }: WithSession<{
         code: string;
         lang?: BuiltinLanguage;
         theme?: BuiltinTheme | string;

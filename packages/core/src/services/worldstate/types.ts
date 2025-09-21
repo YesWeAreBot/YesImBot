@@ -268,25 +268,10 @@ export interface AgentStimulus<T extends StimulusSource = StimulusSource> {
     payload: StimulusPayloadMap[T];
 }
 
-export interface UserMessageStimulus extends AgentStimulus<StimulusSource.UserMessage> {
-    type: StimulusSource.UserMessage;
-    payload: UserMessagePayload;
-}
-
-export interface SystemEventStimulus extends AgentStimulus<StimulusSource.SystemEvent> {
-    type: StimulusSource.SystemEvent;
-    payload: SystemEventPayload;
-}
-
-export interface ScheduledTaskStimulus extends AgentStimulus<StimulusSource.ScheduledTask> {
-    type: StimulusSource.ScheduledTask;
-    payload: ScheduledTaskPayload;
-}
-
-export interface BackgroundTaskCompletionStimulus extends AgentStimulus<StimulusSource.BackgroundTaskCompletion> {
-    type: StimulusSource.BackgroundTaskCompletion;
-    payload: BackgroundTaskCompletionPayload;
-}
+export type UserMessageStimulus = AgentStimulus<StimulusSource.UserMessage>;
+export type SystemEventStimulus = AgentStimulus<StimulusSource.SystemEvent>;
+export type ScheduledTaskStimulus = AgentStimulus<StimulusSource.ScheduledTask>;
+export type BackgroundTaskCompletionStimulus = AgentStimulus<StimulusSource.BackgroundTaskCompletion>;
 
 export type AnyAgentStimulus = UserMessageStimulus | SystemEventStimulus | ScheduledTaskStimulus | BackgroundTaskCompletionStimulus;
 

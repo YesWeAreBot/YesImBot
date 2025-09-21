@@ -1,6 +1,6 @@
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
+import { WithSession } from "@/services/extension/types";
 import { isEmpty } from "@/shared";
 import { Context, Schema } from "koishi";
 import {} from "koishi-plugin-puppeteer";
@@ -76,7 +76,7 @@ export default class SearchExtension {
         },
     })
     async fetchWebPage(
-        args: Infer<{
+        args: WithSession<{
             url: string;
             format: "html" | "text";
             max_length: number;
@@ -261,7 +261,7 @@ export default class SearchExtension {
             query: Schema.string().required().description("搜索关键词或查询内容。"),
         }),
     })
-    async webSearch(args: Infer<{ query: string }>) {
+    async webSearch(args: WithSession<{ query: string }>) {
         const { query } = args;
 
         if (isEmpty(query)) return Failed("query is required");

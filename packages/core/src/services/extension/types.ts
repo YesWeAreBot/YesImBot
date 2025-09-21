@@ -53,7 +53,7 @@ export interface ToolDefinition<TParams = any> {
     description: string;
     parameters: Schema<TParams>;
     isSupported?: (session: Session) => boolean;
-    execute: (args: Infer<TParams>) => Promise<any>;
+    execute: (args: WithSession<TParams>) => Promise<any>;
 }
 
 /**
@@ -99,5 +99,7 @@ export interface IExtension<TConfig = any> extends Object {
     tools: Map<string, ToolDefinition>;
 }
 
-// 一个辅助类型，用于推断并合并 session 到参数中
-export type Infer<T> = T & { session?: Session };
+export type WithSession<T> = T & { session?: Session };
+
+/** @deprecated */
+export type Infer<T> = WithSession<T>;

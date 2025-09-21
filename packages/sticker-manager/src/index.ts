@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import { Context, Schema, Session, h } from "koishi";
-import { AssetService, Extension, Failed, Infer, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { AssetService, Extension, Failed, WithSession, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
 import { StickerConfig } from "./config";
@@ -306,7 +306,7 @@ export default class StickerTools {
             image_id: Schema.string().required().description("要偷取的表情图片ID"),
         }),
     })
-    async stealSticker({ image_id, session }: Infer<{ image_id: string }> & { session: Session }) {
+    async stealSticker({ image_id, session }: WithSession<{ image_id: string }> & { session: Session }) {
         try {
             // 需要两份图片数据
             // 经过处理的，静态的图片供LLM分析
@@ -331,7 +331,7 @@ export default class StickerTools {
             category: Schema.string().required().description("表情包分类名称。当前可用分类: {{ sticker.categories }}"),
         }),
     })
-    async sendRandomSticker({ session, category }: Infer<{ category: string }>) {
+    async sendRandomSticker({ session, category }: WithSession<{ category: string }>) {
         try {
             const sticker = await this.stickerService.getRandomSticker(category);
 

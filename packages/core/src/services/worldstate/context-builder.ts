@@ -29,7 +29,7 @@ export class ContextBuilder {
         private l2Manager: SemanticMemoryManager,
         private l3Manager: ArchivalMemoryManager
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[数据上下文构建器]");
+        this.logger = ctx[Services.Logger].getLogger("[上下文构建]");
     }
 
     /**
@@ -46,6 +46,7 @@ export class ContextBuilder {
             case StimulusSource.BackgroundTaskCompletion:
                 return this.buildFromBackgroundTask(stimulus as BackgroundTaskCompletionStimulus);
             default:
+                const _exhaustive: never = stimulus;
                 throw new Error(`Unsupported stimulus type: ${(stimulus as any).type}`);
         }
     }
@@ -97,7 +98,9 @@ export class ContextBuilder {
         // 对于定时任务，没有真实的 session，需要创建一个虚拟的上下文
         const bot = this.ctx.bots.find((b) => b.platform === platform);
         if (!bot) {
-            throw new Error(`No bot found for platform: ${platform}`);
+            throw new Error(
+                `No bot found for platform: ${platform}, available platforms: ${this.ctx.bots.map((b) => b.platform).join(", ")}`
+            );
         }
 
         const baseWorldState = await this.buildBaseWorldStateWithoutSession(platform, channelId, bot);
@@ -401,6 +404,7 @@ export class ContextBuilder {
                 timestamp: chunk.startTimestamp,
             }));
         } catch (error) {
+            this.logger.error(`检索 L2 记忆时发生错误: ${error.message}`);
             return [];
         }
     }

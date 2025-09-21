@@ -7,7 +7,7 @@ import { generateText, streamText } from "@/dependencies/xsai";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
-import { ModelAbility, ModelConfig } from "./config";
+import { ChatModelConfig, ModelAbility, ModelConfig } from "./config";
 
 export interface ValidationResult {
     /** 内容是否有效 */
@@ -46,20 +46,22 @@ export interface ChatRequestOptions {
 }
 
 export interface IChatModel extends BaseModel {
+    config: ChatModelConfig;
     chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
     isVisionModel(): boolean;
 }
 
 export class ChatModel extends BaseModel implements IChatModel {
+    declare public readonly config: ChatModelConfig;
     private readonly customParameters: Record<string, unknown> = {};
-
     constructor(
         ctx: Context,
+        private readonly providerName: string,
         private readonly chatProvider: ChatProvider["chat"],
-        modelConfig: ModelConfig,
+        modelConfig: ChatModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, modelConfig, `[聊天模型] [${modelConfig.modelId}]`);
+        super(ctx, modelConfig);
         this.parseCustomParameters();
     }
 
@@ -68,8 +70,8 @@ export class ChatModel extends BaseModel implements IChatModel {
     }
 
     private parseCustomParameters(): void {
-        if (!this.config.parameters.custom) return;
-        for (const item of this.config.parameters.custom) {
+        if (!this.config.custom) return;
+        for (const item of this.config.custom) {
             try {
                 let parsedValue: any;
                 switch (item.type) {
@@ -82,7 +84,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                     case "boolean":
                         parsedValue = toBoolean(item.value);
                         break;
-                    case "object":
+                    case "json":
                         parsedValue = JSON.parse(item.value);
                         break;
                     default:
@@ -100,14 +102,33 @@ export class ChatModel extends BaseModel implements IChatModel {
 
     public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
         // 优先级: 运行时参数 > 模型配置 > 默认值
-        const useStream = options.stream ?? this.config.parameters.stream ?? true;
+        const useStream = options.stream ?? this.config.stream ?? true;
         const chatOptions = this.buildChatOptions(options);
+
+        // 本地控制器：承接外部 signal，并用于 earlyExit 主动中断
+        const controller = new AbortController();
+        if (options.abortSignal) {
+            if (options.abortSignal.aborted && !controller.signal.aborted) {
+                controller.abort(options.abortSignal.reason);
+            } else {
+                options.abortSignal.addEventListener("abort", () => {
+                    if (!controller.signal.aborted) controller.abort(options.abortSignal.reason);
+                });
+            }
+        }
+
+        // 将本地 signal 注入到请求 fetch
+        const baseFetch = chatOptions.fetch ?? this.fetch;
+        chatOptions.fetch = async (url: string, init: RequestInit) => {
+            init.signal = controller.signal;
+            return baseFetch(url, init);
+        };
 
         this.logger.info(`🚀 [请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
 
         try {
             return useStream
-                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation)
+                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, controller)
                 : await this._executeNonStream(chatOptions);
         } catch (error) {
             await this._wrapAndThrow(error, chatOptions);
@@ -128,8 +149,8 @@ export class ChatModel extends BaseModel implements IChatModel {
             },
 
             // 默认参数
-            temperature: this.config.parameters.temperature,
-            topP: this.config.parameters.topP,
+            temperature: this.config.temperature,
+            topP: this.config.topP,
             ...this.customParameters,
 
             // 运行时参数 (会覆盖上面的默认值)
@@ -158,7 +179,8 @@ export class ChatModel extends BaseModel implements IChatModel {
     private async _executeStream(
         chatOptions: ChatOptions,
         onStreamStart?: () => void,
-        validation?: ValidationOptions
+        validation?: ValidationOptions,
+        controller?: AbortController
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let streamStarted = false;
@@ -172,6 +194,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
         let streamFinished = false;
+        let earlyExitByValidator = false;
 
         try {
             const buffer: string[] = [];
@@ -198,13 +221,13 @@ export class ChatModel extends BaseModel implements IChatModel {
                         if (validationResult.valid && validationResult.earlyExit) {
                             this.logger.debug(`✅ 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
                             streamFinished = true;
+                            earlyExitByValidator = true;
                             // 使用解析后的干净数据替换部分流式文本
                             if (validationResult.parsedData) {
                                 finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
                             }
                             // 触发 AbortController 来中断HTTP连接
-                            const controller = (chatOptions.abortSignal as any)?.controller;
-                            if (controller) controller.abort("early_exit");
+                            controller?.abort("early_exit");
                         }
                     }
                 },
@@ -224,7 +247,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             })();
         } catch (error) {
             // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
-            if (error.name === "AbortError" && error.message === "early_exit") {
+            if (error.name === "AbortError" && earlyExitByValidator) {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
             } else {
                 throw error; // 重新抛出其他未预料的错误
@@ -272,7 +295,12 @@ export class ChatModel extends BaseModel implements IChatModel {
         if (validation?.format === "json") {
             const jsonParser = new JsonParser();
             return (text: string, final?: boolean) => {
-                const trimmedText = text.trim();
+                let trimmedText = text.trim();
+                // 兼容 ```json fenced code block
+                if (trimmedText.startsWith("```")) {
+                    const m = trimmedText.match(/^```(?:json)?\n([\s\S]*?)\n```$/);
+                    if (m) trimmedText = m[1].trim();
+                }
                 // 简单的完整性检查
                 if (
                     (trimmedText.startsWith("{") && trimmedText.endsWith("}")) ||
@@ -293,7 +321,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 始终附加基础上下文信息
         const context = {
             modelId: this.id,
-            provider: this.config.providerName,
+            provider: this.providerName,
             baseURL: options.baseURL,
             isStream: options.stream,
         };

@@ -14,11 +14,12 @@ export interface IEmbedModel extends BaseModel {
 export class EmbedModel extends BaseModel implements IEmbedModel {
     constructor(
         ctx: Context,
+        private readonly providerName: string,
         private readonly embedProvider: EmbedProvider["embed"],
         modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, modelConfig, `[嵌入模型] [${modelConfig.modelId}]`);
+        super(ctx, modelConfig);
     }
 
     public async embed(text: string): Promise<EmbedResult> {

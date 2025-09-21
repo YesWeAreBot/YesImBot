@@ -2,7 +2,7 @@ import { Context, h, Schema } from "koishi";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
+import { WithSession } from "@/services/extension/types";
 
 @Extension({
     name: "command",
@@ -14,7 +14,10 @@ import { Infer } from "@/services/extension/types";
 export default class CommandExtension {
     static readonly Config = Schema.object({});
 
-    constructor(public ctx: Context, public config: any) {}
+    constructor(
+        public ctx: Context,
+        public config: any
+    ) {}
 
     @Tool({
         name: "send_platform_command",
@@ -23,12 +26,10 @@ export default class CommandExtension {
         parameters: withInnerThoughts({
             command: Schema.string()
                 .required()
-                .description(
-                    "要发送到平台的【纯文本指令字符串】。这【不应该】是代码或函数调用。例如：'今日人品'、'#天气 北京'。"
-                ),
+                .description("要发送到平台的【纯文本指令字符串】。这【不应该】是代码或函数调用。例如：'今日人品'、'#天气 北京'。"),
         }),
     })
-    async executeKoishiCommand({ session, command }: Infer<{ command: string }>) {
+    async executeKoishiCommand({ session, command }: WithSession<{ command: string }>) {
         try {
             const result = await session.sendQueued(h("execute", {}, command));
 

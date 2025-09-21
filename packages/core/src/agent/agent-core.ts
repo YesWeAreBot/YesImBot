@@ -3,16 +3,13 @@ import { Context, Service, Session } from "koishi";
 import { Config } from "@/config";
 import { ChatModelSwitcher, ModelService } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
-import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "@/services/worldstate";
-import { WorldStateService } from "@/services/worldstate/index";
+import { AnyAgentStimulus, StimulusSource, UserMessageStimulus, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
-import { AppError, handleError } from "@/shared/errors";
-import { ErrorDefinitions } from "@/shared/errors/definitions";
+import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
 
-type TaskCallback = (stimulus: AnyAgentStimulus) => Promise<any>;
 type WithDispose<T> = T & { dispose: () => void };
 
 declare module "koishi" {

@@ -24,7 +24,8 @@ export class SemanticMemoryManager {
     public start() {
         try {
             this.embedModel = this.ctx[Services.Model].getEmbedModel(this.config.embeddingModel);
-        } catch {
+        } catch (error) {
+            this.logger.debug(`获取嵌入模型失败: ${error?.message || "未知错误"}`);
             this.embedModel = null;
         }
         if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，记忆功能将受限");

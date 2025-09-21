@@ -2,7 +2,7 @@ import { Context, Query, Schema } from "koishi";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
+import { WithSession } from "@/services/extension/types";
 import { MemoryService } from "@/services/memory";
 import { MessageData } from "@/services/worldstate";
 import { formatDate, truncate } from "@/shared";
@@ -23,7 +23,10 @@ export default class MemoryExtension {
 
     static readonly inject = [Services.Memory];
 
-    constructor(public ctx: Context, public config: any) {}
+    constructor(
+        public ctx: Context,
+        public config: any
+    ) {}
 
     private get memoryService(): MemoryService {
         if (!this.ctx[Services.Memory]) {
@@ -47,7 +50,7 @@ export default class MemoryExtension {
     //         ),
     //     }),
     // })
-    // async archivalMemoryInsert({ content, metadata }: Infer<{ content: string; metadata?: Record<string, any> }>) {
+    // async archivalMemoryInsert({ content, metadata }: WithSession<{ content: string; metadata?: Record<string, any> }>) {
     //     try {
     //         const result = await this.memoryService.storeInArchivalMemory(content, metadata);
     //         if (!result.success) return Failed(result.message);
@@ -79,7 +82,7 @@ export default class MemoryExtension {
     //     }),
     // })
     // async archivalMemorySearch(
-    //     args: Infer<{
+    //     args: WithSession<{
     //         query: string;
     //         top_k?: number;
     //         similarity_threshold?: number;
@@ -116,21 +119,13 @@ export default class MemoryExtension {
         description:
             "Searches your raw conversation history (recall memory). Useful for finding specific keywords, names, or direct quotes from past conversations.",
         parameters: withInnerThoughts({
-            query: Schema.string()
-                .required()
-                .description("The search term to find in past messages. This is a keyword-based search."),
-            limit: Schema.number()
-                .min(1)
-                .default(10)
-                .max(25)
-                .description("Maximum number of messages to return (default: 10, max: 25)."),
+            query: Schema.string().required().description("The search term to find in past messages. This is a keyword-based search."),
+            limit: Schema.number().min(1).default(10).max(25).description("Maximum number of messages to return (default: 10, max: 25)."),
             channel_id: Schema.string().description("Optional: Filter by a specific channel ID."),
-            user_id: Schema.string().description(
-                "Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."
-            ),
+            user_id: Schema.string().description("Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."),
         }),
     })
-    async conversationSearch(args: Infer<{ query: string; limit?: number; channel_id?: string; user_id?: string }>) {
+    async conversationSearch(args: WithSession<{ query: string; limit?: number; channel_id?: string; user_id?: string }>) {
         const { query, limit = 10, channel_id, user_id } = args;
 
         try {

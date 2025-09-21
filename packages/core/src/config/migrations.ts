@@ -1,8 +1,10 @@
+import semver from "semver";
+
+import { ModelType } from "@/services/model";
 import { Config, CONFIG_VERSION } from "./config";
 import { ConfigV1, ConfigV200 } from "./versions";
-import semver from "semver";
+import * as V201 from "./versions/v201";
 import { ConfigV201 } from "./versions/v201";
-import { ModelAbility, ModelDescriptor } from "@/services";
 
 /**
  * Migrate a v1 configuration object to the v2.0.0 configuration shape.
@@ -81,18 +83,26 @@ function migrateV200ToV201(configV200: ConfigV200): ConfigV201 {
  * @returns The migrated configuration in the v2.0.2 shape
  */
 function migrateV201ToV202(configV201: ConfigV201): Config {
-    configV201 = structuredClone(configV201);
-
     const embeddingGroup = configV201.modelGroups.find((group) => group.name === configV201.task.embed);
-    let embeddingModel: ModelDescriptor;
-    if (embeddingGroup) {
-        embeddingModel = embeddingGroup.models[0];
-    }
+    const embeddingModel: V201.ModelDescriptor | undefined = embeddingGroup?.models?.[0];
 
     const { task, ...rest } = configV201;
 
+    const providers: Config["providers"] = configV201.providers.map((provider) => {
+        const models: Config["providers"][number]["models"] = provider.models.map((model) => {
+            const modelType = model.abilities.includes(V201.ModelAbility.Chat)
+                ? ModelType.Chat
+                : model.abilities.includes(V201.ModelAbility.Embedding)
+                  ? ModelType.Embedding
+                  : ModelType.Image;
+            return { ...model, modelType };
+        });
+        return { ...provider, models };
+    });
+
     return {
         ...rest,
+        providers,
         chatModelGroup: configV201.task.chat,
         embeddingModel: {
             providerName: embeddingModel?.providerName || "",

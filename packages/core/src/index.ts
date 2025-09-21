@@ -48,7 +48,7 @@ export default class YesImBot extends Service<Config> {
                 config.version = version;
                 const newConfig = migrateConfig(config);
 
-                const validatedConfig = Config(newConfig);
+                const validatedConfig = Config(newConfig, { autofix: true });
                 ctx.scope.update(validatedConfig, false);
                 config = validatedConfig;
                 ctx.logger.success("配置迁移成功");

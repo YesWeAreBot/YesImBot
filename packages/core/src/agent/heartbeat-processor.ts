@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AnyAgentStimulus } from "@/services/worldstate";
+import { AgentResponse, AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
@@ -457,11 +457,11 @@ export class HeartbeatProcessor {
      */
     private getSessionFromStimulus(stimulus: AnyAgentStimulus): Session | null {
         switch (stimulus.type) {
-            case "user_message":
-            case "system_event":
+            case StimulusSource.UserMessage:
+            case StimulusSource.SystemEvent:
                 return stimulus.payload.session;
-            case "scheduled_task":
-            case "background_task_completion":
+            case StimulusSource.ScheduledTask:
+            case StimulusSource.BackgroundTaskCompletion:
                 // 定时任务和后台任务没有 session
                 return null;
             default:

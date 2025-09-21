@@ -1,3 +1,4 @@
+import { Dirent } from "fs";
 import fs from "fs/promises";
 import { Context, Logger } from "koishi";
 import path from "path";
@@ -68,10 +69,15 @@ export class ArchivalMemoryManager {
         this.logger.info("开始执行每日日记生成任务...");
         const messageChannels = await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] });
 
-        // Agent 日志现在存储在文件中，我们需要读取目录来找到所有有活动的频道
-        const agentLogDirs = await fs.readdir(path.join(this.ctx.baseDir, "data", "yesimbot", "interactions"), {
-            withFileTypes: true,
-        });
+        let agentLogDirs: Dirent[] = [];
+        try {
+            agentLogDirs = (await fs.readdir(path.join(this.ctx.baseDir, "data", "yesimbot", "interactions"), {
+                withFileTypes: true,
+            })) as unknown as Dirent[];
+        } catch (err: any) {
+            if (err?.code !== "ENOENT") throw err;
+        }
+
         const agentChannels = (
             await Promise.all(
                 agentLogDirs

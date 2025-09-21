@@ -1,5 +1,5 @@
 import { Context, Schema, h } from "koishi";
-import { Failed, Infer, Success, ToolDefinition } from "koishi-plugin-yesimbot/services";
+import { Failed, WithSession, Success, ToolDefinition } from "koishi-plugin-yesimbot/services";
 
 import { TTSAdapter } from "./adapters/base";
 import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";
@@ -95,7 +95,7 @@ export class TTSService {
         };
     }
 
-    private async execute(args: Infer<BaseTTSParams>) {
+    private async execute(args: WithSession<BaseTTSParams>) {
         const { session, text } = args;
 
         if (!text?.trim()) {

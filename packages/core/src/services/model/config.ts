@@ -1,19 +1,16 @@
 import { Schema } from "koishi";
 
-/** 模型切换策略 */
-export enum ModelSwitchingStrategy {
-    Failover = "failover", // 故障转移 (默认)
-    RoundRobin = "round-robin", // 轮询
-}
-
-/** 定义模型支持的能力 */
 export enum ModelAbility {
     Vision = "视觉",
     WebSearch = "网络搜索",
     Reasoning = "推理",
     FunctionCalling = "函数调用",
-    Embedding = "嵌入",
-    Chat = "对话",
+}
+
+export enum ModelType {
+    Chat = "Chat",
+    Image = "Image",
+    Embedding = "Embedding",
 }
 
 export type ModelDescriptor = {
@@ -21,51 +18,68 @@ export type ModelDescriptor = {
     modelId: string;
 };
 
-export interface ModelConfig {
-    providerName?: string;
+export interface BaseModelConfig {
     modelId: string;
-    abilities: ModelAbility[];
-    parameters?: {
-        temperature?: number;
-        topP?: number;
-        stream?: boolean;
-        custom?: Array<{ key: string; type: "string" | "number" | "boolean" | "object"; value: string }>;
-    };
+    modelType: ModelType;
 }
 
-export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
-    modelId: Schema.string().required().description("模型ID"),
-    abilities: Schema.array(
-        Schema.union([
-            ModelAbility.Chat,
-            ModelAbility.Vision,
-            ModelAbility.WebSearch,
-            ModelAbility.Reasoning,
-            ModelAbility.FunctionCalling,
-            ModelAbility.Embedding,
-        ])
-    )
-        .role("checkbox")
-        .default([ModelAbility.Chat, ModelAbility.FunctionCalling])
-        .description("模型支持的能力"),
+export interface ChatModelConfig extends BaseModelConfig {
+    modelType: ModelType.Chat;
+    abilities?: ModelAbility[];
+    temperature?: number;
+    topP?: number;
+    stream?: boolean;
+    custom?: Array<{ key: string; type: "string" | "number" | "boolean" | "json"; value: string }>;
+}
 
-    parameters: Schema.object({
-        temperature: Schema.number().default(0.85),
-        topP: Schema.number().default(0.95),
-        stream: Schema.boolean().default(true).description("流式传输"),
-        custom: Schema.array(
-            Schema.object({
-                key: Schema.string().required(),
-                type: Schema.union(["string", "number", "boolean", "object"]).default("string"),
-                value: Schema.string().required(),
-            })
-        )
-            .role("table")
-            .description("自定义参数"),
-    }),
-})
-    .collapse()
-    .description("单个模型配置");
+export type ModelConfig = BaseModelConfig | ChatModelConfig;
+
+export const ModelConfigSchema: Schema<ModelConfig> = Schema.intersect([
+    Schema.object({
+        modelId: Schema.string().required().description("模型ID"),
+        modelType: Schema.union([
+            Schema.const(ModelType.Chat).description("聊天"),
+            Schema.const(ModelType.Image).description("图像"),
+            Schema.const(ModelType.Embedding).description("嵌入"),
+        ])
+            .default(ModelType.Chat)
+            .description("模型类型"),
+    }).description("模型设置"),
+
+    Schema.union([
+        Schema.object({
+            modelType: Schema.const(ModelType.Chat),
+            abilities: Schema.array(
+                Schema.union([
+                    Schema.const(ModelAbility.Vision).description("视觉"),
+                    Schema.const(ModelAbility.FunctionCalling).description("工具"),
+                    Schema.const(ModelAbility.Reasoning).description("推理"),
+                ])
+            )
+                .default([])
+                .role("checkbox")
+                .description("能力"),
+            temperature: Schema.number().default(0.85),
+            topP: Schema.number().default(0.95),
+            stream: Schema.boolean().default(true).description("流式传输"),
+            custom: Schema.array(
+                Schema.object({
+                    key: Schema.string().required(),
+                    type: Schema.union(["string", "number", "boolean", "json"]).default("string"),
+                    value: Schema.string().required(),
+                })
+            )
+                .role("table")
+                .description("自定义参数"),
+        }),
+        Schema.object({
+            modelType: Schema.const(ModelType.Image),
+        }),
+        Schema.object({
+            modelType: Schema.const(ModelType.Embedding),
+        }),
+    ]),
+]).collapse();
 
 const PROVIDERS = {
     OpenAI: { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
@@ -141,7 +155,7 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
 
 export interface ModelServiceConfig {
     providers: ProviderConfig[];
-    modelGroups: { name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }[];
+    modelGroups: { name: string; models: ModelDescriptor[] }[];
     chatModelGroup?: string;
     embeddingModel?: ModelDescriptor;
 }
@@ -151,12 +165,6 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
     modelGroups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组名称"),
-            strategy: Schema.union([
-                Schema.const(ModelSwitchingStrategy.Failover).description("故障转移"),
-                Schema.const(ModelSwitchingStrategy.RoundRobin).description("轮询/负载均衡"),
-            ])
-                .default(ModelSwitchingStrategy.Failover)
-                .description("模型切换策略"),
             models: Schema.array(Schema.dynamic("modelService.selectableModels"))
                 .required()
                 .role("table")
@@ -165,10 +173,8 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
     )
         .role("table")
         .description("**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值"),
-    chatModelGroup: Schema.dynamic("modelService.availableGroups").description(
-        "主要聊天功能使用的模型**组**<br/>如 `gpt-4` `claude-3` `gemini-2.5` 等对话模型"
-    ),
-    embeddingModel: Schema.dynamic("modelService.selectableModels").description(
-        "生成文本嵌入(Embedding)时使用的模型<br/>如 `bge-m3` `text-embedding-3-small` 等嵌入模型"
+    chatModelGroup: Schema.dynamic("modelService.availableGroups").description("主要聊天功能使用的模型**组**"),
+    embeddingModel: Schema.dynamic("modelService.embeddingModels").description(
+        "生成文本嵌入时使用的模型<br/>如 `bge-m3` `text-embedding-3-small` 等嵌入模型"
     ),
 }).description("模型服务配置");

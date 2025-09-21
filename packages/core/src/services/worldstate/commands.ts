@@ -1,4 +1,4 @@
-import { Context, Query } from "koishi";
+import { $, Context, Query } from "koishi";
 
 import { TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
@@ -46,11 +46,13 @@ export class HistoryCommandManager {
                             return `❌❌ 频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}请使用 -p <platform> 来指定`;
                     }
 
-                    // const messageCount = await this.ctx.database.eval(TableName.Messages, { platform, channelId }, (row) => row.count());
-                    const messageCount = await this.ctx.database.get(TableName.Messages, { platform, channelId }, { fields: ["id"] });
+                    const messageCount = await this.ctx.database.eval(TableName.Messages, (row) => $.count(row.id), {
+                        platform,
+                        channelId,
+                    });
 
                     /* prettier-ignore */
-                    return `在 ${platform}:${channelId} 中有 ${messageCount.length} 条消息，L1工作记忆中最多保留 ${this.config.l1_memory.maxMessages} 条`;
+                    return `在 ${platform}:${channelId} 中有 ${messageCount} 条消息，L1工作记忆中最多保留 ${this.config.l1_memory.maxMessages} 条`;
                 }
             });
 

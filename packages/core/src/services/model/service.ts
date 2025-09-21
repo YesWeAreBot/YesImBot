@@ -1,4 +1,4 @@
-import { Awaitable, Context, Logger, Random, Schema, Service } from "koishi";
+import { Context, Logger, Random, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
 import { Services } from "@/shared/constants";
@@ -7,7 +7,7 @@ import { isNotEmpty } from "@/shared/utils";
 import { GenerateTextResult } from "@xsai/generate-text";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { ModelDescriptor, ModelSwitchingStrategy } from "./config";
+import { ModelDescriptor, ModelType } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
@@ -85,12 +85,14 @@ export class ModelService extends Service<Config> {
         }
 
         if (this.config.modelGroups.length === 0) {
-            const defaultGroup = {
-                name: "default",
-                models: this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat(),
-                strategy: ModelSwitchingStrategy.Failover,
+            const models = this.config.providers
+                .map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId, modelType: m.modelType })))
+                .flat();
+            const defaultChatGroup = {
+                name: "_default",
+                models: models.filter((m) => m.modelType === ModelType.Chat),
             };
-            this.config.modelGroups.push(defaultGroup);
+            this.config.modelGroups.push(defaultChatGroup);
             modified = true;
         }
 
@@ -102,26 +104,27 @@ export class ModelService extends Service<Config> {
 
         const defaultGroup = this.config.modelGroups.find((g) => g.models.length > 0);
 
-        if (this.config.chatModelGroup) {
-            const chatGroup = this.config.modelGroups.find((g) => g.name === this.config.chatModelGroup);
-            if (!chatGroup) {
-                this.logger.warn(
-                    `配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`
-                );
-                this.config.chatModelGroup = defaultGroup.name;
-                modified = true;
-            }
+        const chatGroup = this.config.modelGroups.find((g) => g.name === this.config.chatModelGroup);
+        if (!chatGroup) {
+            this.logger.warn(`配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`);
+            this.config.chatModelGroup = defaultGroup.name;
+            modified = true;
         }
 
         if (modified) {
-            this.ctx.scope.update(this.config);
+            const parent = this.ctx.scope.parent;
+            if (parent.name === "yesimbot") {
+                parent.scope.update(this.config);
+            }
         } else {
             //this.logger.debug("配置验证通过");
         }
     }
 
     private registerSchemas() {
-        const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
+        const models = this.config.providers
+            .map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId, modelType: m.modelType })))
+            .flat();
 
         const selectableModels = models
             .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
@@ -129,10 +132,31 @@ export class ModelService extends Service<Config> {
                 /* prettier-ignore */
                 return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
             });
+
+        const embeddingModels = models
+            .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName) && m.modelType === ModelType.Embedding)
+            .map((m) => {
+                /* prettier-ignore */
+                return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
+            });
+
         this.ctx.schema.set(
             "modelService.selectableModels",
             Schema.union([
                 ...selectableModels,
+                Schema.object({
+                    providerName: Schema.string().required().description("提供商名称"),
+                    modelId: Schema.string().required().description("模型ID"),
+                })
+                    .role("table")
+                    .description("自定义模型"),
+            ]).default({ providerName: "", modelId: "" })
+        );
+
+        this.ctx.schema.set(
+            "modelService.embeddingModels",
+            Schema.union([
+                ...embeddingModels,
                 Schema.object({
                     providerName: Schema.string().required().description("提供商名称"),
                     modelId: Schema.string().required().description("模型ID"),

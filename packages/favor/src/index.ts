@@ -1,5 +1,5 @@
 import { Context, Schema, Session } from "koishi";
-import { Extension, Failed, Infer, PromptService, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, WithSession, PromptService, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
 // --- 配置项接口定义 ---
@@ -113,7 +113,7 @@ export default class FavorExtension {
         }),
         isSupported: (session) => session.isDirect,
     })
-    async addFavor({ user_id, amount }: Infer<{ user_id: string; amount: number }>) {
+    async addFavor({ user_id, amount }: WithSession<{ user_id: string; amount: number }>) {
         if (!user_id) return Failed("必须提供 user_id。");
         try {
             await this.ctx.database.get("favor", { user_id }).then((res) => {
@@ -142,7 +142,7 @@ export default class FavorExtension {
         }),
         isSupported: (session) => session.isDirect,
     })
-    async setFavor({ user_id, amount }: Infer<{ user_id: string; amount: number }>) {
+    async setFavor({ user_id, amount }: WithSession<{ user_id: string; amount: number }>) {
         if (!user_id) return Failed("必须提供 user_id。");
         try {
             const finalAmount = this._clampFavor(amount);

@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
-import { Failed, Infer, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot/services";
+import { Failed, WithSession, ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
@@ -146,7 +146,7 @@ export class MCPManager {
                     description: tool.description,
 
                     parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
-                    execute: async (args: Infer<any>) => {
+                    execute: async (args: WithSession<any>) => {
                         const { session, ...cleanArgs } = args;
                         return await this.executeTool(client, tool.name, cleanArgs);
                     },

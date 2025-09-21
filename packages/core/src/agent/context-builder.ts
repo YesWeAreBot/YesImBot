@@ -39,7 +39,7 @@ export class PromptContextBuilder {
         private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[上下文构建器]");
+        this.logger = ctx[Services.Logger].getLogger("[提示词构建]");
         this.assetService = ctx[Services.Asset];
         this.memoryService = ctx[Services.Memory];
         this.toolService = ctx[Services.Tool];
@@ -97,7 +97,7 @@ export class PromptContextBuilder {
         // 2. 收集所有潜在的图片候选者，并赋予优先级
         const imageCandidates: ImageCandidate[] = allMessages.flatMap((msg) => {
             const elements = msg.elements;
-            const imageIds = elements.filter((e) => imageTags.includes(e.type) && e.attrs.id).map((e) => e.attrs.id as string);
+            const imageIds = elements.filter((e) => imageTags.includes(e.type) && e.attrs?.id).map((e) => e.attrs!.id as string);
 
             // 检查引用，为被引用的图片赋予更高优先级
             let isQuotedImage = false;
