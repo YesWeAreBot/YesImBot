@@ -7,9 +7,17 @@ import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types"
 type Constructor<T = {}> = new (...args: any[]) => T;
 
 /**
- * @Extension 类装饰器
- * 将一个普通类转换为功能完备、可被 Koishi 直接加载的工具扩展插件。
- * @param metadata 扩展包的元数据对象
+ * Class decorator that turns a plain class into a Koishi-loadable tool extension.
+ *
+ * The decorator wraps the target class to perform automatic runtime registration with the tool
+ * management service: it binds per-instance tool `execute` methods, registers the extension
+ * on the Koishi `ready` event (using the instance config `enabled` flag), and unregisters it
+ * on `dispose`. It also attaches the provided metadata to the wrapped prototype, preserves a
+ * static `Config` if present, sets the wrapped class name to `metadata.name`, and ensures the
+ * wrapped class declares the tool and logger services in its `inject` metadata.
+ *
+ * @param metadata - Extension package metadata used for registration (provides the extension name and related info)
+ * @returns A class decorator that produces a wrapped extension class compatible with Koishi's tool service
  */
 export function Extension(metadata: ExtensionMetadata): ClassDecorator {
     //@ts-ignore

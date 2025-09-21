@@ -4,6 +4,20 @@ import semver from "semver";
 import { ConfigV201 } from "./versions/v201";
 import { ModelAbility, ModelDescriptor } from "@/services";
 
+/**
+ * Migrate a v1 configuration object to the v2.0.0 configuration shape.
+ *
+ * Produces a new config with version "2.0.0" by:
+ * - copying top-level service sections (modelService, assetService, promptService, system),
+ * - flattening nested agentBehavior fields (arousal, willingness, vision, prompt) into the top level,
+ * - setting `enableVision` from `vision?.enabled`,
+ * - carrying selected agentBehavior flags (streamAction, heartbeat, newMessageStrategy, deferredProcessingTime),
+ * - flattening capabilities (history, memory, tools) into the top level,
+ * - mapping `assetEndpoint` from `assetService.endpoint`.
+ *
+ * @param configV1 - The original configuration in the 1.0.0 shape to migrate.
+ * @returns A config object shaped as v2.0.0 (omitting `enableTelemetry` and `sentryDsn`).
+ */
 function migrateV1ToV200(configV1: ConfigV1): Omit<ConfigV200, "enableTelemetry" | "sentryDsn"> {
     const { modelService, agentBehavior, capabilities, assetService, promptService, system } = configV1;
 
@@ -39,6 +53,12 @@ function migrateV1ToV200(configV1: ConfigV1): Omit<ConfigV200, "enableTelemetry"
     };
 }
 
+/**
+ * Migrate a 2.0.0 config object to the 2.0.1 shape by preserving all fields and updating the version.
+ *
+ * @param configV200 - Configuration object with version "2.0.0"
+ * @returns The same configuration adjusted to version "2.0.1"
+ */
 function migrateV200ToV201(configV200: ConfigV200): ConfigV201 {
     return {
         ...configV200,
@@ -46,6 +66,20 @@ function migrateV200ToV201(configV200: ConfigV200): ConfigV201 {
     };
 }
 
+/**
+ * Migrates a v2.0.1 configuration to the v2.0.2 shape.
+ *
+ * Produces a new Config with:
+ * - chatModelGroup set from `task.chat`
+ * - embeddingModel taken from the first model of the model group named by `task.embed` (both `providerName` and `modelId` default to empty strings if not found)
+ * - ignoreCommandMessage set to `false`
+ * - version set to `"2.0.2"`
+ *
+ * The function does not mutate the input; it clones the input before reading. The rest of the configuration fields are preserved unchanged.
+ *
+ * @param configV201 - Configuration object in the v2.0.1 shape to migrate
+ * @returns The migrated configuration in the v2.0.2 shape
+ */
 function migrateV201ToV202(configV201: ConfigV201): Config {
     configV201 = structuredClone(configV201);
 
@@ -77,6 +111,17 @@ const MIGRATIONS = {
     "2.0.1": migrateV201ToV202,
 };
 
+/**
+ * Migrate an arbitrary configuration object forward to the current CONFIG_VERSION.
+ *
+ * Repeatedly applies versioned migration functions until the config reaches the latest version.
+ *
+ * @param config - A configuration object of any (possibly older) schema version. The object must include a `version` field indicating its current semantic version.
+ * @returns The migrated configuration shaped as the current `Config` type and annotated with the latest `version`.
+ *
+ * @throws Error If a required migration step is missing for a detected intermediate version.
+ * @throws Error If a migration function returns a config without a `version` field.
+ */
 export function migrateConfig(config: any): Config {
     let migratedConfig = { ...config };
     let currentVersion = String(migratedConfig.version);
