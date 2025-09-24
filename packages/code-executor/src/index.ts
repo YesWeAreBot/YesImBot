@@ -57,7 +57,7 @@ export default class MultiEngineCodeExecutor {
             this.toolService.registerTool(toolDefinition);
             this.executors.push(executor);
             this.logger.info(`Successfully registered tool: ${toolDefinition.name}`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.warn(`Failed to register tool for engine '${executor.type}':`, error);
         }
     }

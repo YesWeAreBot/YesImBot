@@ -108,7 +108,7 @@
 //                 this.proxiedModuleCache.set(moduleName, proxiedModule);
 
 //                 return new ivm.ExternalCopy(proxiedModule).copyInto();
-//             } catch (error) {
+//             } catch (error: any) {
 //                 throw new Error(`Host require failed for module '${moduleName}': ${error.message}`);
 //             }
 //         });
@@ -151,7 +151,7 @@
 
 //         try {
 //             await this.prepareEnvironment(code);
-//         } catch (error) {
+//         } catch (error: any) {
 //             this.logger.error("Environment preparation failed.", error);
 //             return {
 //                 status: "error",
@@ -191,7 +191,7 @@
 //                     ...(errorMessages.length > 0 ? { artifactCreationErrors: errorMessages } : {}),
 //                 },
 //             };
-//         } catch (error) {
+//         } catch (error: any) {
 //             const execError = error as ExecutionError;
 //             return {
 //                 status: "error",
@@ -335,7 +335,7 @@
 //             this.logger.info(`Executing: \`${installCommand}\` in ${this.sharedConfig.dependenciesPath}`);
 //             await asyncExec(installCommand, { cwd: this.sharedConfig.dependenciesPath });
 //             this.logger.info(`Successfully installed ${moduleNames.join(", ")}`);
-//         } catch (error) {
+//         } catch (error: any) {
 //             const stderr = error.stderr || "No stderr output.";
 //             this.logger.error(`Failed to install dependencies. Stderr: ${stderr}`, error);
 //             const suggestion = `请检查模块名 '${moduleNames.join(", ")}' 是否拼写正确，以及它们是否存在于 ${pm} 仓库中。`;
@@ -479,7 +479,7 @@
 //                 const resourceSource = req.content as Uint8Array;
 //                 const assetId = await this.assetService.create(Buffer.from(resourceSource), { filename: req.fileName });
 //                 createdArtifacts.push({ assetId, fileName: req.fileName });
-//             } catch (error) {
+//             } catch (error: any) {
 //                 const errorMessage = `[Artifact Creation Failed] 资源 '${req.fileName}' 创建失败: ${error.message}`;
 //                 this.logger.warn(errorMessage, error);
 //                 errorMessages.push(errorMessage);

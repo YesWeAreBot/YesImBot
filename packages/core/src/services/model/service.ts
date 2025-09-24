@@ -33,7 +33,7 @@ export class ModelService extends Service<Config> {
             this.validateConfig();
             this.initializeProviders();
             this.registerSchemas();
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`模型服务初始化失败 | ${error.message}`);
             ctx.notifier.create({ type: "danger", content: `模型服务初始化失败 | ${error.message}` });
         }
@@ -55,7 +55,7 @@ export class ModelService extends Service<Config> {
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
                 this.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
             }
         }
@@ -238,7 +238,7 @@ export class ModelService extends Service<Config> {
         }
         try {
             return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this));
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;
         }

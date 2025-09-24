@@ -121,7 +121,7 @@ export default class DailyPlannerExtension {
         try {
             const schedule = await this.service.getTodaysSchedule();
             return Success(schedule);
-        } catch (error) {
+        } catch (error: any) {
             return Failed(`获取日程失败: ${error.message}`);
         }
     }
@@ -134,7 +134,7 @@ export default class DailyPlannerExtension {
             }
 
             return `${currentSegment.start}-${currentSegment.end}: ${currentSegment.content}`;
-        } catch (error) {
+        } catch (error: any) {
             return `获取当前日程失败: ${error.message}`;
         }
     }

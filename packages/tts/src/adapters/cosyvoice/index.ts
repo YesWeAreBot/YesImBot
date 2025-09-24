@@ -57,7 +57,7 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
         try {
             fs.mkdirSync(path.join(ctx.baseDir, "cache"));
             this.tempDir = fs.mkdtempSync(path.join(ctx.baseDir, "cache", "koishi-tts-"));
-        } catch (error) {
+        } catch (error: any) {
             this.tempDir = path.join(ctx.baseDir, "data", "tts");
             fs.mkdirSync(this.tempDir, { recursive: true });
         }
@@ -68,7 +68,7 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
     async stop() {
         try {
             fs.unlinkSync(this.tempDir);
-        } catch (error) {}
+        } catch (error: any) {}
     }
 
     private connect() {

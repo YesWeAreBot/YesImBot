@@ -174,7 +174,7 @@ export class ToolService extends Service<Config> {
                             }
                         }
                     }
-                } catch (error) {
+                } catch (error: any) {
                     return `参数解析失败：${error.message}\n请检查您的参数格式是否正确（key=value）。`;
                 }
 
@@ -244,7 +244,7 @@ export class ToolService extends Service<Config> {
                 this.register(ext, true, config);
                 this.ctx.scope.update({ [name]: { enabled: true } }, false);
                 return `启用成功`;
-            } catch (error) {
+            } catch (error: any) {
                 return `启用失败: ${error.message}`;
             }
         });
@@ -404,7 +404,7 @@ export class ToolService extends Service<Config> {
             }
 
             // this._logger.debug(`扩展 "${metadata.name}" 已加载`);
-        } catch (error) {
+        } catch (error: any) {
             this._logger.error(`扩展配置验证失败: ${error.message}`);
             return;
         }
@@ -422,7 +422,7 @@ export class ToolService extends Service<Config> {
                 this.tools.delete(tool.name);
             }
             this._logger.info(`已卸载扩展: "${name}"`);
-        } catch (error) {
+        } catch (error: any) {
             this._logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
         }
         return true;
@@ -450,7 +450,7 @@ export class ToolService extends Service<Config> {
             try {
                 // Schema 对象本身就是验证函数
                 validatedParams = tool.parameters(params);
-            } catch (error) {
+            } catch (error: any) {
                 this._logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
                 // 将详细的验证错误返回给 AI
                 return Failed(`Parameter validation failed: ${error.message}`); // 参数错误不可重试
@@ -488,7 +488,7 @@ export class ToolService extends Service<Config> {
                 } else {
                     return lastResult;
                 }
-            } catch (error) {
+            } catch (error: any) {
                 this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
                 this._logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);

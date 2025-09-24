@@ -108,13 +108,13 @@ export class MCPManager {
 
             // 注册工具
             await this.registerTools(client, serverName);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`连接服务器 ${serverName} 失败: ${error.message}`);
             if (transport) {
                 try {
                     await transport.close();
-                } catch (closeError) {
-                    this.logger.debug(`关闭传输连接失败: ${closeError.message}`);
+                } catch (error: any) {
+                    this.logger.debug(`关闭传输连接失败: ${error.message}`);
                 }
             }
         }
@@ -155,7 +155,7 @@ export class MCPManager {
                 this.registeredTools.push(tool.name);
                 this.logger.success(`已注册工具: ${tool.name} (来自 ${serverName})`);
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`注册工具失败: ${error.message}`);
         }
     }
@@ -201,7 +201,7 @@ export class MCPManager {
 
             this.logger.success(`工具 ${toolName} 执行成功`);
             return { status: "success", result: content as any };
-        } catch (error) {
+        } catch (error: any) {
             if (timer) clearTimeout(timer);
             this.logger.error(`工具执行异常: ${error.message}`);
             return Failed(error.message);
@@ -219,7 +219,7 @@ export class MCPManager {
             try {
                 this.toolService.unregisterTool(toolName);
                 this.logger.debug(`注销工具: ${toolName}`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.warn(`注销工具失败: ${error.message}`);
             }
         }
@@ -228,7 +228,7 @@ export class MCPManager {
         for await (const client of this.clients) {
             try {
                 await client.close();
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.warn(`关闭客户端失败: ${error.message}`);
             }
         }
@@ -237,7 +237,7 @@ export class MCPManager {
         for await (const transport of this.transports) {
             try {
                 await transport.close();
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.warn(`关闭传输失败: ${error.message}`);
             }
         }

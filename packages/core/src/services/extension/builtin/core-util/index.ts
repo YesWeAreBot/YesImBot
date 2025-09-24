@@ -108,7 +108,7 @@ export default class CoreUtilExtension {
             await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
 
             return Success();
-        } catch (error) {
+        } catch (error: any) {
             //this.logger.error(error);
             return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
         }
@@ -150,7 +150,7 @@ export default class CoreUtilExtension {
                 this.logger.warn(`✖ 模型不支持多模态 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
                 return Failed(`模型不支持多模态`);
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`获取视觉模型失败: ${error.message}`);
             return Failed(`获取视觉模型失败: ${error.message}`);
         }
@@ -177,7 +177,7 @@ export default class CoreUtilExtension {
                 temperature: 0.2,
             });
             return Success(response.text);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`图片描述失败: ${error.message}`);
             return Failed(`图片描述失败: ${error.message}`);
         }

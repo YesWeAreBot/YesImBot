@@ -90,7 +90,7 @@ export function stringify(obj: any, space?: number, fallback: string = ""): stri
     if (obj == null) return fallback; // 处理 null 和 undefined
     try {
         return JSON.stringify(obj, null, space);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Failed to stringify object:", error);
         // 对于无法序列化的对象（如含循环引用），返回备用值
         return fallback;

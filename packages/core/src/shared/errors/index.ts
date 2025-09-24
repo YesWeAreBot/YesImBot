@@ -84,7 +84,7 @@ export class ErrorReporter {
 
             const data = await response.json();
             return data?.url || null;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`连接上报服务失败: ${(error as Error).message}`);
             return null;
         }

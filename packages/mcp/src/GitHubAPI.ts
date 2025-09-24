@@ -28,7 +28,7 @@ export class GitHubAPI {
             }
 
             return null;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`获取版本失败: ${error.message}`);
             return null;
         }

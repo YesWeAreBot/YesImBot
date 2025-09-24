@@ -89,7 +89,7 @@ export class MemoryBlock {
             this._content = block.content;
             this.lastModifiedInMemory = new Date();
             this.logger.debug(`同步成功`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`同步失败 | 错误: ${error.message}`);
         }
     }
@@ -112,7 +112,7 @@ export class MemoryBlock {
                         this.lastModifiedFileMs = currentFstat.mtimeMs;
                         await this.reloadFromFile();
                     }
-                } catch (error) {
+                } catch (error: any) {
                     this.logger.error(`处理变更时出错 | 错误: ${error.message}`);
                 }
             }, 300);
@@ -150,7 +150,7 @@ export class MemoryBlock {
             ctx.on("dispose", () => block.dispose());
 
             return block;
-        } catch (error) {
+        } catch (error: any) {
             logger.error(`加载失败 | 路径: "${filePath}" | 错误: ${error.message}`);
 
             throw new AppError(ErrorDefinitions.MEMORY.PROVIDER_ERROR, {

@@ -48,7 +48,7 @@ export async function apply(ctx: Context, config: Config) {
             // 创建必要目录
             await fs.mkdir(path.join(dataDir, "mcp-ext", "bin"), { recursive: true });
             await fs.mkdir(cacheDir, { recursive: true });
-        } catch (error) {
+        } catch (error: any) {
             logger.error("目录创建失败");
         }
 

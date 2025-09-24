@@ -127,9 +127,9 @@ export default class FavorExtension {
             });
             this.logger.info(`为用户 ${user_id} 调整了 ${amount} 点好感度。`);
             return Success(`成功为用户 ${user_id} 调整了 ${amount} 点好感度。`);
-        } catch (e) {
-            this.logger.error(`为用户 ${user_id} 增加好感度失败:`, e);
-            return Failed(`为用户 ${user_id} 增加好感度失败：${e.message}`);
+        } catch (error: any) {
+            this.logger.error(`为用户 ${user_id} 增加好感度失败:`, error);
+            return Failed(`为用户 ${user_id} 增加好感度失败：${error.message}`);
         }
     }
 
@@ -149,9 +149,9 @@ export default class FavorExtension {
             await this.ctx.database.upsert("favor", [{ user_id, amount: finalAmount }]);
             this.logger.info(`将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
             return Success(`成功将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
-        } catch (e) {
-            this.logger.error(`为用户 ${user_id} 设置好感度失败:`, e);
-            return Failed(`为用户 ${user_id} 设置好感度失败：${e.message}`);
+        } catch (error: any) {
+            this.logger.error(`为用户 ${user_id} 设置好感度失败:`, error);
+            return Failed(`为用户 ${user_id} 设置好感度失败：${error.message}`);
         }
     }
 

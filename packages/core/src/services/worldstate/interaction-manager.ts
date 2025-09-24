@@ -48,7 +48,7 @@ export class InteractionManager {
     private async ensureDirExists(dirPath: string): Promise<void> {
         try {
             await fs.mkdir(dirPath, { recursive: true });
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`创建日志目录失败: ${dirPath}`, error);
         }
     }
@@ -59,7 +59,7 @@ export class InteractionManager {
         const line = JSON.stringify(entry) + "\n";
         try {
             await fs.appendFile(filePath, line);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`写入Agent日志失败 | 文件: ${filePath} | ID: ${entry.id}`);
             this.logger.debug(error);
         }
@@ -130,7 +130,7 @@ export class InteractionManager {
             const lines = content.trim().split("\n").filter(Boolean);
             const recentLines = lines.slice(-limit);
             return recentLines.map((line) => this.logEntryToHistoryItem(JSON.parse(line)));
-        } catch (error) {
+        } catch (error: any) {
             if (error.code === "ENOENT") return [];
             this.logger.error(`读取Agent日志失败: ${filePath}`, error);
             return [];
@@ -142,7 +142,7 @@ export class InteractionManager {
     public async recordMessage(message: MessageData): Promise<void> {
         try {
             await this.ctx.database.create(TableName.Messages, message);
-        } catch (error) {
+        } catch (error: any) {
             if (error?.message === "UNIQUE constraint failed: worldstate.messages.id") {
                 this.logger.warn(`存在重复的消息记录: ${message.id} | 若此问题持续发生，考虑开启忽略自身消息`);
                 return;
@@ -156,7 +156,7 @@ export class InteractionManager {
         try {
             await this.ctx.database.create(TableName.SystemEvents, event);
             this.logger.debug(`记录系统事件 | ${event.type} | ${event.message}`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`记录系统事件到数据库失败 | ID: ${event.id}`);
             this.logger.debug(error);
         }
@@ -262,7 +262,7 @@ export class InteractionManager {
                     const linesToKeep = this.config.logLengthLimit ? lines.slice(-this.config.logLengthLimit) : lines;
 
                     await fs.writeFile(filePath, linesToKeep.join("\n") + "\n");
-                } catch (error) {
+                } catch (error: any) {
                     this.logger.error(`清理日志文件失败: ${filePath}`, error);
                 }
             }
@@ -315,7 +315,7 @@ export class InteractionManager {
                 }
             }
             return entries;
-        } catch (error) {
+        } catch (error: any) {
             if (error.code === "ENOENT") return [];
             this.logger.error(`读取Agent日志失败: ${filePath}`, error);
             return [];

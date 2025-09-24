@@ -97,7 +97,7 @@ export class SystemUtils {
             });
             const versionMatch = output.match(/\d+\.\d+\.\d+/);
             return versionMatch ? versionMatch[0] : null;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.debug(`获取版本失败: ${error.message}`);
             return null;
         }
@@ -111,7 +111,7 @@ export class SystemUtils {
             try {
                 await fs.chmod(filePath, 0o755);
                 this.logger.debug(`设置可执行权限: ${filePath}`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.warn(`设置权限失败: ${error.message}`);
             }
         }

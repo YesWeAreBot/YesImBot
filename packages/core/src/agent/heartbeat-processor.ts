@@ -69,7 +69,7 @@ export class HeartbeatProcessor {
                         );
                     }
                 }
-            } catch (error) {
+            } catch (error: any) {
                 handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
                 shouldContinueHeartbeat = false;
             }
@@ -336,9 +336,9 @@ export class HeartbeatProcessor {
                     if (!final) {
                         try {
                             streamParser.processText(text, false);
-                        } catch (e) {
-                            if (!e.message.includes("Cannot read properties of null")) {
-                                this.logger.warn(`流式解析器错误: ${e.message}`);
+                        } catch (error: any) {
+                            if (!error.message.includes("Cannot read properties of null")) {
+                                this.logger.warn(`流式解析器错误: ${error.message}`);
                             }
                         }
                         return { valid: true, earlyExit: false };

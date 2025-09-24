@@ -51,7 +51,7 @@ export class MemoryService extends Service<Config> {
                     }
 
                     this.loadCoreMemoryBlocks();
-                } catch (error) {
+                } catch (error: any) {
                     this.logger.error(`复制默认记忆块失败: ${error.message}`);
                 }
                 return;
@@ -67,11 +67,11 @@ export class MemoryService extends Service<Config> {
                         this.coreMemoryBlocks.set(block.label, block);
                         this.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'`);
                     }
-                } catch (error) {
+                } catch (error: any) {
                     //this.logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
                 }
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
         }
     }

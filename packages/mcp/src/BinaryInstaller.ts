@@ -77,7 +77,7 @@ export class BinaryInstaller {
 
             this.logger.success(`UV ${targetVersion} 安装成功: ${finalPath}`);
             return finalPath;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`UV 安装失败: ${error.message}`);
             return null;
         } finally {
@@ -132,7 +132,7 @@ export class BinaryInstaller {
 
             this.logger.success(`Bun ${targetVersion} 安装成功: ${finalPath}`);
             return finalPath;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`Bun 安装失败: ${error.message}`);
             return null;
         } finally {

@@ -105,7 +105,7 @@ export class HistoryCommandManager {
                                 agentLogRemoved ? "Agent日志文件已删除。" : ""
                             }`
                         );
-                    } catch (error) {
+                    } catch (error: any) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
                         results.push(`❌ ${description} - 操作失败`);
                     }

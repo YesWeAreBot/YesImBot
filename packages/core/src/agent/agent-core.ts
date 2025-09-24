@@ -94,7 +94,7 @@ export class AgentCore extends Service<Config> {
 
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
-            } catch (error) {
+            } catch (error: any) {
                 handleError(
                     this.logger,
                     new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
@@ -177,7 +177,7 @@ export class AgentCore extends Service<Config> {
                         /* prettier-ignore */
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                     }
-                } catch (error) {
+                } catch (error: any) {
                     // 创建错误时附加调度堆栈
                     const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
                         cause: error as Error,

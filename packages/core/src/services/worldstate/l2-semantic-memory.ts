@@ -24,7 +24,7 @@ export class SemanticMemoryManager {
     public start() {
         try {
             this.embedModel = this.ctx[Services.Model].getEmbedModel(this.config.embeddingModel);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.debug(`获取嵌入模型失败: ${error?.message || "未知错误"}`);
             this.embedModel = null;
         }
@@ -93,7 +93,7 @@ export class SemanticMemoryManager {
             };
             await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
             this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`消息索引创建失败 | ${error.message}`);
             this.logger.debug(error);
         }
@@ -298,13 +298,13 @@ export class SemanticMemoryManager {
                     const result = await this.embedModel.embed(chunk.content);
                     await this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding });
                     successCount++;
-                } catch (error) {
+                } catch (error: any) {
                     failCount++;
                     this.logger.error(`重建块 ${chunk.id} 的索引失败 | ${error.message}`);
                 }
             }
             this.logger.info(`L2 记忆索引重建完成。成功: ${successCount}，失败: ${failCount}。`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`索引重建过程中发生严重错误: ${error.message}`);
         } finally {
             this.isRebuilding = false; // 确保在任务结束或失败时解锁

@@ -24,7 +24,7 @@ export function apply(ctx: Context, config: Config) {
         } else {
             logger.warn("No active TTS provider found, tool not registered.");
         }
-    } catch (error) {
+    } catch (error: any) {
         logger.error(`Failed to initialize TTSService: ${error.message}`);
     }
 }

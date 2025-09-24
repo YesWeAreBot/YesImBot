@@ -47,9 +47,9 @@ export default class InteractionsExtension {
             if (result["status"] === "failed") return Failed(result["message"]);
             this.ctx.logger.info(`Bot[${session.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, e.message);
-            return Failed(`对消息 ${message_id} 进行表态失败： ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
+            return Failed(`对消息 ${message_id} 进行表态失败： ${error.message}`);
         }
     }
 
@@ -67,9 +67,9 @@ export default class InteractionsExtension {
             await session.onebot.setEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, e.message);
-            return Failed(`设置精华消息失败： ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, error.message);
+            return Failed(`设置精华消息失败： ${error.message}`);
         }
     }
 
@@ -87,9 +87,9 @@ export default class InteractionsExtension {
             const result = await session.onebot.deleteEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, e.message);
-            return Failed(`从精华中移除消息失败： ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
+            return Failed(`从精华中移除消息失败： ${error.message}`);
         }
     }
 
@@ -115,9 +115,9 @@ export default class InteractionsExtension {
 
             this.ctx.logger.info(`Bot[${session.selfId}]戳了戳 ${user_id}`);
             return Success(result);
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
-            return Failed(`戳了戳 ${user_id} 失败： ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
+            return Failed(`戳了戳 ${user_id} 失败： ${error.message}`);
         }
     }
 
@@ -136,9 +136,9 @@ export default class InteractionsExtension {
             const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessages);
 
             return Success(formattedResult);
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, e.message);
-            return Failed(`获取转发消息失败： ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, error.message);
+            return Failed(`获取转发消息失败： ${error.message}`);
         }
     }
 }
@@ -176,8 +176,8 @@ async function formatForwardMessage(ctx: Context, session: Session, formatForwar
         );
 
         return formattedMessages.filter(Boolean).join("\n") || "无有效消息内容";
-    } catch (e) {
-        ctx.logger.error("格式化转发消息失败:", e);
+    } catch (error: any) {
+        ctx.logger.error("格式化转发消息失败:", error);
         return "消息格式化失败";
     }
 }

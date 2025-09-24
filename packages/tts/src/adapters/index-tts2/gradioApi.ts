@@ -37,7 +37,7 @@ export class GradioAPI {
                 if (first && typeof (first as any).path === "string") return (first as any).path;
             }
             throw new Error("上传成功，但未返回有效的文件路径");
-        } catch (error) {
+        } catch (error: any) {
             const msg = error instanceof Error ? error.message : String(error);
             throw new Error(`文件上传失败: ${msg}`);
         }
@@ -98,7 +98,7 @@ export class GradioAPI {
             } else {
                 throw new Error("API 返回了非预期的格式");
             }
-        } catch (error) {
+        } catch (error: any) {
             throw new Error(`API 请求失败: ${error.message}`);
         }
     }
@@ -138,7 +138,7 @@ export class GradioAPI {
                 if (currentEvent === targetEvent && currentData && currentData !== "null") {
                     try {
                         return JSON.parse(currentData);
-                    } catch (error) {
+                    } catch (error: any) {
                         console.warn(`Failed to parse data for event ${targetEvent}:`, currentData);
                     }
                 }

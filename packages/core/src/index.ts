@@ -52,7 +52,7 @@ export default class YesImBot extends Service<Config> {
                 ctx.scope.update(validatedConfig, false);
                 config = validatedConfig;
                 ctx.logger.success("配置迁移成功");
-            } catch (error) {
+            } catch (error: any) {
                 ctx.logger.error("配置迁移失败:", error.message);
                 ctx.logger.debug(error);
             }
@@ -109,11 +109,11 @@ export default class YesImBot extends Service<Config> {
                     // services.forEach((service) => {
                     //     try {
                     //         service.dispose();
-                    //     } catch (error) {
+                    //     } catch (error: any) {
                     //     }
                     // });
                 });
-        } catch (error) {
+        } catch (error: any) {
             ctx.notifier.create("初始化时发生错误");
             // this.ctx.logger.error("初始化时发生错误:", error.message);
             // this.ctx.logger.error(error.stack);

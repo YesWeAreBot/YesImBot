@@ -9,11 +9,10 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
+    "build": "tsc -b && dumble",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "pack": "bun pm pack"
   },
   "license": "MIT",
   "keywords": [

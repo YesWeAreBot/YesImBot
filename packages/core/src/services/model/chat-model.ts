@@ -91,7 +91,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                         parsedValue = item.value;
                 }
                 this.customParameters[item.key] = parsedValue;
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.warn(`解析自定义参数失败 | 键: "${item.key}" | 值: "${item.value}" | 错误: ${error.message}`);
             }
         }
@@ -130,7 +130,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             return useStream
                 ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, controller)
                 : await this._executeNonStream(chatOptions);
-        } catch (error) {
+        } catch (error: any) {
             await this._wrapAndThrow(error, chatOptions);
         }
     }
@@ -245,7 +245,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                     if (step.finishReason) finalFinishReason = step.finishReason;
                 }
             })();
-        } catch (error) {
+        } catch (error: any) {
             // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
             if (error.name === "AbortError" && earlyExitByValidator) {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);

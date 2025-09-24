@@ -92,7 +92,7 @@ class PyodideEnginePool {
             try {
                 await pyodide.loadPackage(this.config.packages);
                 this.logger.info(`[创建实例] 成功加载预设包: ${packageList}`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`[创建实例] 加载预设包失败: ${packageList}。错误: ${error.message}`);
                 // 抛出更具体的错误，方便上层捕获
                 throw new Error(`Pyodide 引擎在加载包时创建失败: ${error.message}`);
@@ -117,7 +117,7 @@ class PyodideEnginePool {
             this.pool.push(...engines);
             this.isInitialized = true;
             this.logger.info(`[初始化] 引擎池初始化成功，已创建 ${this.pool.length} 个可用实例`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`[初始化] Pyodide 引擎池初始化失败！`, error);
             this.isInitialized = false; // 确保状态正确
             // 将初始化错误向上抛出，让启动逻辑知道失败了
@@ -178,7 +178,7 @@ export class PythonExecutor implements CodeExecutor {
                     await this.pool.initialize();
                     this.isReady = true;
                     this.logger.info("Python 执行器初始化成功，已准备就绪");
-                } catch (error) {
+                } catch (error: any) {
                     this.logger.error("Python 执行器启动失败，将不可用", error);
                     // isReady 保持 false
                 }
@@ -403,7 +403,7 @@ if plt.get_fignums():
                     artifacts: artifacts,
                 },
             };
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error("[执行] 代码执行时发生错误", error);
             return {
                 status: "error",

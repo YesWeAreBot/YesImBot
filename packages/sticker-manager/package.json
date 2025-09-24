@@ -9,10 +9,9 @@
   ],
   "homepage": "https://github.com/HydroGest/YesImBot",
   "scripts": {
-    "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
+    "build": "tsc -b && dumble",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
+    "lint": "eslint . --ext .ts",
     "pack": "bun pm pack"
   },
   "devDependencies": {

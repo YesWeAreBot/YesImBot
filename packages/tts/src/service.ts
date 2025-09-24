@@ -54,7 +54,7 @@ export class TTSService {
         ctx.on("dispose", async () => {
             try {
                 this.adapter?.stop();
-            } catch (error) {
+            } catch (error: any) {
                 ctx.logger.error(error);
             }
         });
@@ -109,10 +109,10 @@ export class TTSService {
             // }
             await session.send(h.audio(result.audio, result.mimeType));
             return Success();
-        } catch (err) {
-            this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${err.message}`);
-            this.ctx.logger.error(err);
-            return Failed({ name: "Error", message: `语音合成失败: ${err.message}` });
+        } catch (error: any) {
+            this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${error.message}`);
+            this.ctx.logger.error(error);
+            return Failed({ name: "Error", message: `语音合成失败: ${error.message}` });
         }
     }
 }

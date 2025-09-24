@@ -110,7 +110,7 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
             const audio = await this.ctx.http(result.url, { responseType: "arraybuffer" });
 
             return { audio: Buffer.from(audio.data), mimeType: "audio/wav" };
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error(`[IndexTTS2] Synthesis failed: ${error.message}`);
             throw error;
         }

@@ -95,7 +95,7 @@ export class AssetService extends Service<Config> {
             try {
                 // 首次运行立即执行清理
                 await this.runAutoClear();
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error("资源自动清理任务失败:", error.message);
                 this.logger.debug(error.stack);
             }
@@ -156,8 +156,8 @@ export class AssetService extends Service<Config> {
                 const jimp = await Jimp.read(data);
                 metadata.width = jimp.width;
                 metadata.height = jimp.height;
-            } catch (e) {
-                this.logger.warn(`无法解析图片元数据: ${e.message}`);
+            } catch (error: any) {
+                this.logger.warn(`无法解析图片元数据: ${error.message}`);
             }
         }
 
@@ -273,7 +273,7 @@ export class AssetService extends Service<Config> {
                 const tagName = getTagNameFromMime(info.mime);
                 const { id, ...restAttrs } = element.attrs;
                 return h(tagName, { ...restAttrs, src });
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`获取资源 "${element.attrs.id}" 的公开链接失败: ${error.message}`);
                 return element;
             }
@@ -320,7 +320,7 @@ export class AssetService extends Service<Config> {
             (async () => {
                 try {
                     await this.create(originalUrl, metadata, { id: placeholderId });
-                } catch (error) {
+                } catch (error: any) {
                     this.logger.error(`后台资源持久化失败 (ID: ${placeholderId}, 源: ${truncate(originalUrl, 100)}): ${error.message}`);
                     // 可在此处添加失败处理逻辑，如更新数据库标记此ID无效
                 }
@@ -330,7 +330,7 @@ export class AssetService extends Service<Config> {
             try {
                 const id = await this.create(originalUrl, metadata);
                 return h(tagName, { ...displayAttrs, id });
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`资源持久化失败 (源: ${truncate(originalUrl, 100)}): ${error.message}`);
                 return element; // 失败时返回原始元素
             }
@@ -374,7 +374,7 @@ export class AssetService extends Service<Config> {
             if (contentLength && Number(contentLength) > this.config.maxFileSize) {
                 throw new Error(`文件大小 (${formatSize(Number(contentLength))}) 超出限制 (${formatSize(this.config.maxFileSize)})`);
             }
-        } catch (error) {
+        } catch (error: any) {
             if (error.message.includes("超出限制")) throw error;
         }
 
@@ -390,7 +390,7 @@ export class AssetService extends Service<Config> {
     private async _readOriginalWithRecovery(id: string, asset: AssetData): Promise<Buffer> {
         try {
             return await this.storage.read(id);
-        } catch (error) {
+        } catch (error: any) {
             // 如果文件在本地丢失，且开启了恢复功能，且有原始链接，则尝试恢复
             if (error.code === "ENOENT" && this.config.recoveryEnabled && asset.metadata.src) {
                 this.logger.warn(`本地文件 ${id} 丢失，尝试从 ${asset.metadata.src} 恢复...`);
@@ -399,9 +399,9 @@ export class AssetService extends Service<Config> {
                     await this.storage.write(id, data); // 恢复文件
                     this.logger.success(`资源 ${id} 已成功恢复`);
                     return data;
-                } catch (recoveryError) {
-                    this.logger.error(`资源 ${id} 恢复失败: ${recoveryError.message}`);
-                    throw recoveryError; // 抛出恢复失败的错误
+                } catch (error: any) {
+                    this.logger.error(`资源 ${id} 恢复失败: ${error.message}`);
+                    throw error; // 抛出恢复失败的错误
                 }
             }
             throw error; // 抛出原始的读取错误
@@ -421,8 +421,8 @@ export class AssetService extends Service<Config> {
                     if (this.config.image.gifProcessingStrategy === "firstFrame") {
                         return await this._processGifFirstFrame(gif);
                     }
-                } catch (gifError) {
-                    this.logger.warn(`GIF处理失败，将按静态图片处理: ${gifError.message}`);
+                } catch (error: any) {
+                    this.logger.warn(`GIF处理失败，将按静态图片处理: ${error.message}`);
                     // 如果GIF处理失败，按普通图片处理
                     return await this._compressAndResizeImage(buffer);
                 }
@@ -431,7 +431,7 @@ export class AssetService extends Service<Config> {
             }
 
             return await this._compressAndResizeImage(buffer);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`图片处理失败: ${error.message}`);
             // 如果处理失败，返回原始buffer
             return buffer;
@@ -632,9 +632,9 @@ export class AssetService extends Service<Config> {
                 ctx.set("Content-Length", info.size.toString());
                 ctx.set("Cache-Control", "public, max-age=31536000, immutable"); // 长期缓存
                 ctx.body = buffer;
-            } catch (err) {
+            } catch (error: any) {
                 // 如果是文件找不到，返回404，否则可能为其他服务器错误，但为简单起见统一返回404
-                this.logger.warn(`通过 HTTP 端点提供资源 ${id} 失败: ${err.message}`);
+                this.logger.warn(`通过 HTTP 端点提供资源 ${id} 失败: ${error.message}`);
                 ctx.status = 404;
                 ctx.body = "Asset not found";
             }
@@ -662,7 +662,7 @@ export class AssetService extends Service<Config> {
                 // 同时删除可能存在的处理后缓存
                 await this.cacheStorage.delete(asset.id + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
                 deletedFileCount++;
-            } catch (error) {
+            } catch (error: any) {
                 if (error.code !== "ENOENT") {
                     // 如果文件本就不存在，则忽略错误
                     this.logger.error(`删除物理文件 ${asset.id} 失败: ${error.message}`);
@@ -710,7 +710,7 @@ export class AssetService extends Service<Config> {
                     await this.cacheStorage.delete(fileId + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
 
                     deletedOrphanedCount++;
-                } catch (error) {
+                } catch (error: any) {
                     if (error.code !== "ENOENT") {
                         this.logger.error(`删除孤立文件 ${fileId} 失败: ${error.message}`);
                     }

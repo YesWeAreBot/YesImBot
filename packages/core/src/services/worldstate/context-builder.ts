@@ -172,7 +172,7 @@ export class ContextBuilder {
                     endTimestamp: earliestMessageTimestamp,
                 });
                 this.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`L2 语义检索失败: ${error.message}`);
             }
         } else {
@@ -202,7 +202,7 @@ export class ContextBuilder {
             let selfInGuild: Awaited<ReturnType<Bot["getGuildMember"]>>;
             try {
                 selfInGuild = await session.bot.getGuildMember(channelId, session.selfId);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`获取机器人自身信息失败 for id ${session.selfId}: ${error.message}`);
             }
 
@@ -270,7 +270,7 @@ export class ContextBuilder {
                     endTimestamp: earliestMessageTimestamp,
                 });
                 this.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`L2 语义检索失败: ${error.message}`);
             }
         }
@@ -282,7 +282,7 @@ export class ContextBuilder {
         try {
             const channel = await bot.getChannel(channelId);
             channelInfo = { id: channelId, name: channel.name || "未知频道" };
-        } catch (error) {
+        } catch (error: any) {
             this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
             channelInfo = { id: channelId, name: "未知频道" };
         }
@@ -403,7 +403,7 @@ export class ContextBuilder {
                 relevance: chunk.similarity,
                 timestamp: chunk.startTimestamp,
             }));
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`检索 L2 记忆时发生错误: ${error.message}`);
             return [];
         }
@@ -426,7 +426,7 @@ export class ContextBuilder {
             let userInfo: Awaited<ReturnType<Bot["getUser"]>>;
             try {
                 userInfo = await bot.getUser(channelId);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.debug(`获取用户信息失败 for user ${channelId}: ${error.message}`);
             }
 
@@ -435,7 +435,7 @@ export class ContextBuilder {
             try {
                 channelInfo = await bot.getChannel(channelId);
                 channelName = channelInfo.name;
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
             }
             channelName = channelInfo?.name || "未知群组";
@@ -449,7 +449,7 @@ export class ContextBuilder {
         try {
             const user = await bot.getUser(selfId);
             return { id: selfId, name: user.name };
-        } catch (error) {
+        } catch (error: any) {
             this.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
             return { id: selfId, name: bot.user.name || "Self" };
         }

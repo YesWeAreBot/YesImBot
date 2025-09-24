@@ -18,9 +18,8 @@
   ],
   "scripts": {
     "build": "tsc && tsc-alias && node scripts/bundle.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
+    "lint": "eslint . --ext .ts",
     "pack": "bun pm pack"
   },
   "license": "MIT",
@@ -39,7 +38,11 @@
     "url": "https://github.com/YesWeAreBot/YesImBot/issues"
   },
   "exports": {
-    ".": "./lib/index.js",
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.js"
+    },
     "./package.json": "./package.json",
     "./services": {
       "types": "./lib/services/index.d.ts",

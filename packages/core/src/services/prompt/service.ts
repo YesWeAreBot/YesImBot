@@ -154,7 +154,7 @@ export class PromptService extends Service<Config> {
                         const result = await injection.renderFn(scope);
                         if (!result) return "";
                         return `<${injection.name}>\n${result}\n</${injection.name}>`;
-                    } catch (error) {
+                    } catch (error: any) {
                         this._logger.error(`执行注入片段 "${injection.name}" 时出错: ${error.message}`);
                         return `<!-- Error in injection: ${injection.name} -->`;
                     }
@@ -173,7 +173,7 @@ export class PromptService extends Service<Config> {
             try {
                 const value = await snippetFn(scope);
                 this.setNestedProperty(scope, key, value);
-            } catch (error) {
+            } catch (error: any) {
                 this.setNestedProperty(scope, key, null);
             }
         }

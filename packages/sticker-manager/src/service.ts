@@ -111,7 +111,7 @@ export class StickerService {
             );
 
             this.ctx.logger.debug("表情包表已创建");
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error("创建表情包表失败", error);
             throw error;
         }
@@ -202,7 +202,7 @@ export class StickerService {
             });
 
             return response.text.trim();
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error("表情分类失败", error);
             return "分类失败";
         }
@@ -254,7 +254,7 @@ export class StickerService {
                         } else {
                             stats.skipped++;
                         }
-                    } catch (error) {
+                    } catch (error: any) {
                         stats.failed++;
                         stats.failedFiles.push(file);
                         this.ctx.logger.warn(`导入失败: ${file} - ${error.message}`);
@@ -392,7 +392,7 @@ export class StickerService {
                 .split("\n")
                 .map((url) => url.trim())
                 .filter((url) => url.length > 0);
-        } catch (error) {
+        } catch (error: any) {
             throw new Error(`无法读取文件: ${error.message}`);
         }
 
@@ -458,7 +458,7 @@ export class StickerService {
                             this.ctx.logger.warn(`清理临时文件失败: ${tempFilePath}`, cleanupError);
                         }
                     }
-                } catch (error) {
+                } catch (error: any) {
                     stats.failed++;
                     stats.failedUrls.push({ url: rawUrl, error: error.message });
                     this.ctx.logger.warn(`导入失败: ${rawUrl} - ${error.message}`);
@@ -529,7 +529,7 @@ export class StickerService {
             }
             await rmdir(tempDir);
             this.ctx.logger.debug(`已清理临时目录: ${tempDir}`);
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.warn(`清理临时目录失败: ${error.message}`);
         }
     }
@@ -612,7 +612,7 @@ export class StickerService {
             try {
                 await unlink(sticker.filePath);
                 this.ctx.logger.debug(`已删除表情包文件: ${sticker.filePath}`);
-            } catch (error) {
+            } catch (error: any) {
                 this.ctx.logger.warn(`删除文件失败: ${sticker.filePath}`, error);
             }
         }
@@ -678,7 +678,7 @@ export class StickerService {
                     await unlink(path.join(this.config.storagePath, file));
                     this.ctx.logger.debug(`清理未引用表情: ${file}`);
                     deletedCount++;
-                } catch (error) {
+                } catch (error: any) {
                     this.ctx.logger.warn(`清理失败: ${file}`, error);
                 }
             }

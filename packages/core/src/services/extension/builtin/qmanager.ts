@@ -35,9 +35,9 @@ export default class QManagerExtension {
             await session.bot.deleteMessage(targetChannel, message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]撤回了消息: ${message_id}`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]撤回消息失败: ${message_id} - `, e.message);
-            return Failed(`撤回消息失败 - ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]撤回消息失败: ${message_id} - `, error.message);
+            return Failed(`撤回消息失败 - ${error.message}`);
         }
     }
 
@@ -59,9 +59,9 @@ export default class QManagerExtension {
             await session.bot.muteGuildMember(targetChannel, user_id, Number(duration) * 60 * 1000);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id}`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id} 失败 - `, e.message);
-            return Failed(`禁言用户 ${user_id} 失败 - ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id} 失败 - `, error.message);
+            return Failed(`禁言用户 ${user_id} 失败 - ${error.message}`);
         }
     }
 
@@ -80,9 +80,9 @@ export default class QManagerExtension {
             await session.bot.kickGuildMember(targetChannel, user_id);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 踢出了用户: ${user_id}`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${channel_id} 踢出用户: ${user_id} 失败 - `, e.message);
-            return Failed(`踢出用户 ${user_id} 失败 - ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${channel_id} 踢出用户: ${user_id} 失败 - `, error.message);
+            return Failed(`踢出用户 ${user_id} 失败 - ${error.message}`);
         }
     }
 }

@@ -129,7 +129,7 @@ export class DailyPlannerService {
                 }
             }
             return null;
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error("获取当前时间段失败", error);
             return null;
         }
@@ -271,7 +271,7 @@ export class DailyPlannerService {
             }
 
             return segments;
-        } catch (error) {
+        } catch (error: any) {
             this.ctx.logger.error("JSON解析失败:", error.message);
             return this.fallbackParse(text);
         }
@@ -399,12 +399,12 @@ export class DailyPlannerService {
                     const jsonStr = response.text.slice(jsonStart, jsonEnd + 1);
                     JSON.parse(jsonStr); // 验证是否能解析
                     return response.text;
-                } catch (error) {
+                } catch (error: any) {
                     this.ctx.logger.warn("响应不是有效的JSON数组，将重试");
                     retryCount++;
                     continue;
                 }
-            } catch (error) {
+            } catch (error: any) {
                 this.ctx.logger.error("模型调用失败:", error);
                 retryCount++;
             }

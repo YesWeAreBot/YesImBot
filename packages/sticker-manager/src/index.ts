@@ -58,7 +58,7 @@ export default class StickerTools {
 
                     this.registerSnippets();
                 }
-            } catch (error) {
+            } catch (error: any) {
                 this.ctx.logger.warn("插件初始化失败！");
                 this.ctx.logger.error(error);
             }
@@ -93,7 +93,7 @@ export default class StickerTools {
                     }
 
                     return message;
-                } catch (error) {
+                } catch (error: any) {
                     return `导入失败: ${error.message}`;
                 }
             });
@@ -126,7 +126,7 @@ export default class StickerTools {
                     }
 
                     return message;
-                } catch (error) {
+                } catch (error: any) {
                     return `导入失败: ${error.message}`;
                 }
             });
@@ -159,7 +159,7 @@ export default class StickerTools {
                     const count = await this.stickerService.renameCategory(oldName, newName);
 
                     return `✅ 已将分类 "${oldName}" 重命名为 "${newName}"，共更新 ${count} 个表情包`;
-                } catch (error) {
+                } catch (error: any) {
                     return `❌ 重命名失败: ${error.message}`;
                 }
             });
@@ -193,7 +193,7 @@ export default class StickerTools {
                     const deletedCount = await this.stickerService.deleteCategory(category);
 
                     return `✅ 已删除分类 "${category}"，共移除 ${deletedCount} 个表情包`;
-                } catch (error) {
+                } catch (error: any) {
                     return `❌ 删除失败: ${error.message}`;
                 }
             });
@@ -208,7 +208,7 @@ export default class StickerTools {
                     const movedCount = await this.stickerService.mergeCategories(sourceCategory, targetCategory);
 
                     return `✅ 已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，共移动 ${movedCount} 个表情包`;
-                } catch (error) {
+                } catch (error: any) {
                     return `❌ 合并失败: ${error.message}`;
                 }
             });
@@ -221,7 +221,7 @@ export default class StickerTools {
                 try {
                     await this.stickerService.moveSticker(stickerId, newCategory);
                     return `✅ 已将表情包 ${stickerId} 移动到分类 "${newCategory}"`;
-                } catch (error) {
+                } catch (error: any) {
                     return `❌ 移动失败: ${error.message}`;
                 }
             });
@@ -282,7 +282,7 @@ export default class StickerTools {
                     const deletedCount = await this.stickerService.cleanupUnreferenced();
 
                     return `✅ 已清理 ${deletedCount} 个未使用的表情包`;
-                } catch (error) {
+                } catch (error: any) {
                     return `❌ 清理失败: ${error.message}`;
                 }
             });
@@ -319,7 +319,7 @@ export default class StickerTools {
                 category: record.category,
                 message: `已偷取表情包到分类: ${record.category}`,
             });
-        } catch (error) {
+        } catch (error: any) {
             return Failed(`偷取失败: ${error.message}`);
         }
     }
@@ -342,7 +342,7 @@ export default class StickerTools {
             return Success({
                 message: `已发送 ${category} 分类的表情包`,
             });
-        } catch (error) {
+        } catch (error: any) {
             return Failed(`发送失败: ${error.message}`);
         }
     }

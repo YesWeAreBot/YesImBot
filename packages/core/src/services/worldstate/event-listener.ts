@@ -365,7 +365,7 @@ export class EventListenerManager {
             } else {
                 await this.ctx.database.create(TableName.Members, { ...memberKey, ...memberData });
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`更新成员信息失败: ${error.message}`);
         }
     }

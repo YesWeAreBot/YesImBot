@@ -39,9 +39,9 @@ export default class CommandExtension {
 
             this.ctx.logger.info(`Bot[${session.selfId}]执行了指令: ${command}`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]执行指令失败: ${command} - `, e.message);
-            return Failed(`执行指令失败 - ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`Bot[${session.selfId}]执行指令失败: ${command} - `, error.message);
+            return Failed(`执行指令失败 - ${error.message}`);
         }
     }
 }

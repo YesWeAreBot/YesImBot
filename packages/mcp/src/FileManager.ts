@@ -30,7 +30,7 @@ export class FileManager {
             await Stream.promises.pipeline(response, writer);
 
             this.logger.success(`${description} 下载完成`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`下载失败: ${error.message}`);
             throw error;
         }
@@ -108,7 +108,7 @@ export class FileManager {
             try {
                 await fs.rm(filePath, { recursive: true, force: true });
                 this.logger.debug(`清理: ${filePath}`);
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.debug(`清理失败: ${filePath} - ${error.message}`);
             }
         }
