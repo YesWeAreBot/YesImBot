@@ -4,7 +4,7 @@ import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { WithSession } from "@/services/extension/types";
-import { IChatModel, ModelDescriptor } from "@/services/model";
+import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
 
@@ -16,7 +16,7 @@ interface CoreUtilConfig {
         maxDelay: number;
     };
     vision: {
-        model: ModelDescriptor;
+        modelOrGroup: ModelDescriptor | string;
         detail: "low" | "high" | "auto";
     };
 }
@@ -29,7 +29,7 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
         maxDelay: Schema.number().default(4000).description("最大延迟 (毫秒)"),
     }),
     vision: Schema.object({
-        model: Schema.dynamic("modelService.selectableModels").description("用于图片描述的多模态模型"),
+        modelOrGroup: Schema.dynamic("modelService.chatModelOrGroup").description("用于图片描述的多模态模型或模型组"),
         detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
     }),
 });
@@ -49,12 +49,41 @@ export default class CoreUtilExtension {
     private readonly assetService: AssetService;
     private disposed: boolean;
 
+    private chatModel: IChatModel | null = null;
+    private modelGroup: ChatModelSwitcher | null = null;
+
     constructor(
         public ctx: Context,
         public config: CoreUtilConfig
     ) {
         this.logger = ctx[Services.Logger].getLogger("[核心工具]");
         this.assetService = ctx[Services.Asset];
+
+        try {
+            const visionModel = this.config.vision.modelOrGroup;
+            if (visionModel) {
+                if (typeof visionModel === "string") {
+                    this.modelGroup = this.ctx[Services.Model].useChatGroup(visionModel);
+                    if (!this.modelGroup) {
+                        this.logger.warn(``);
+                    }
+                    const visionModels = this.modelGroup.getModels().filter((m) => m.isVisionModel()) || [];
+                    if (visionModels.length === 0) {
+                        this.logger.warn(``);
+                    }
+                } else {
+                    this.chatModel = this.ctx[Services.Model].getChatModel(visionModel);
+                    if (!this.chatModel) {
+                        this.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(this.chatModel.id)}`);
+                    }
+                    if (!this.chatModel.isVisionModel()) {
+                        this.logger.warn(`✖ 模型不支持多模态 | 模型: ${JSON.stringify(this.chatModel.id)}`);
+                    }
+                }
+            }
+        } catch (error: any) {
+            this.logger.error(`获取视觉模型失败: ${error.message}`);
+        }
 
         ctx.on("dispose", () => {
             this.disposed = true;
@@ -137,24 +166,6 @@ export default class CoreUtilExtension {
 
         const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
 
-        const visionModel = this.config.vision.model;
-        let model: IChatModel | null = null;
-
-        try {
-            model = this.ctx[Services.Model].getChatModel(visionModel.providerName, visionModel.modelId);
-            if (!model) {
-                this.logger.warn(`✖ 模型未找到 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
-                return Failed(`模型未找到`);
-            }
-            if (!model.isVisionModel()) {
-                this.logger.warn(`✖ 模型不支持多模态 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
-                return Failed(`模型不支持多模态`);
-            }
-        } catch (error: any) {
-            this.logger.error(`获取视觉模型失败: ${error.message}`);
-            return Failed(`获取视觉模型失败: ${error.message}`);
-        }
-
         let prompt;
 
         if (imageInfo.mime === "image/gif") {
@@ -164,7 +175,7 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const response = await model.chat({
+            const response = await this.chatModel.chat({
                 messages: [
                     {
                         role: "user",

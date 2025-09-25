@@ -175,6 +175,23 @@ export class ModelService extends Service<Config> {
                 Schema.string().description("自定义模型组"),
             ]).default("default")
         );
+
+        // 混合类型，包括单个模型和模型组
+        this.ctx.schema.set(
+            "modelService.chatModelOrGroup",
+            Schema.union([
+                ...this.config.modelGroups.map((group) => {
+                    return Schema.const(group.name).description(`模型组 - ${group.name}`);
+                }),
+                ...selectableModels,
+                Schema.object({
+                    providerName: Schema.string().required().description("提供商名称"),
+                    modelId: Schema.string().required().description("模型ID"),
+                })
+                    .role("table")
+                    .description("自定义模型"),
+            ]).default({ providerName: "", modelId: "" })
+        );
     }
 
     public getChatModel(modelDescriptor: ModelDescriptor): IChatModel | null;
