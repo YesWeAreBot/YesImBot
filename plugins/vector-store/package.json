@@ -48,14 +48,14 @@
     "pack": "bun pm pack"
   },
   "peerDependencies": {
+    "@yesimbot/minato": "^3.6.1",
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0",
-    "minato": "^3.6.1"
+    "koishi-plugin-yesimbot": "^3.0.0"
   },
   "devDependencies": {
+    "@yesimbot/minato": "^3.6.1",
     "koishi": "^4.18.7",
-    "koishi-plugin-yesimbot": "^3.0.0",
-    "minato": "^3.6.1"
+    "koishi-plugin-yesimbot": "^3.0.0"
   },
   "dependencies": {
     "@yesimbot/driver-pglite": "^2.6.0"

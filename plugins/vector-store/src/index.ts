@@ -1,10 +1,24 @@
 import { PGliteDriver } from "@yesimbot/driver-pglite";
-import { Context, Service, Schema } from "koishi";
-import * as minato from "minato";
-import { Database, Driver, FlatKeys, Field, Query, Create, Model, Keys, Selection, Relation, Values } from "minato";
+import {
+    Create,
+    Database,
+    Driver,
+    Field,
+    FlatKeys,
+    FlatPick,
+    Model,
+    Tables as MTables,
+    Types as MTypes,
+    Query,
+    Relation,
+    Selection,
+    Values,
+} from "@yesimbot/minato";
+import { Context, Schema, Service } from "koishi";
+import { EmbedModel, ModelDescriptor, Services } from "koishi-plugin-yesimbot";
 import path from "path";
-import zhCN from "./locales/zh-CN.yml";
 import enUS from "./locales/en-US.yml";
+import zhCN from "./locales/zh-CN.yml";
 
 declare module "koishi" {
     interface Services {
@@ -12,14 +26,16 @@ declare module "koishi" {
     }
 }
 
-export interface Types extends minato.Types {
+export interface Types extends MTypes {
     vector: number[];
 }
 
-export interface Tables extends minato.Tables {}
+export interface Tables extends MTables {}
 
 export interface Config {
     path: string;
+    dimension: number;
+    embeddingModel?: ModelDescriptor;
 }
 
 export interface VectorStore {
@@ -33,15 +49,18 @@ export interface VectorStore {
 export default class VectorStoreService extends Service<Config> implements VectorStore {
     static readonly Config: Schema<Config> = Schema.object({
         path: Schema.path({ filters: ["directory"], allowCreate: true }).default("data/yesimbot/vector-store/pgdata"),
+        dimension: Schema.number().default(1536),
+        embeddingModel: Schema.dynamic("modelService.embeddingModels"),
     }).i18n({
         "en-US": enUS,
         "zh-CN": zhCN,
     });
 
+    static readonly inject = [Services.Model];
+
     private db: Database<Tables, Types>;
-
+    private embedModel!: EmbedModel;
     private driver!: PGliteDriver;
-
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot-vector-store");
         this.config = config;
@@ -55,7 +74,15 @@ export default class VectorStoreService extends Service<Config> implements Vecto
 
         this.driver = this.db.drivers[0] as PGliteDriver;
 
-        this.driver.query;
+        try {
+            if (this.config.embeddingModel) {
+                this.embedModel = this.ctx[Services.Model].getEmbedModel(this.config.embeddingModel) as EmbedModel;
+            }
+        } catch (error: any) {
+            this.logger.warn(error.message);
+        }
+
+        this.logger.info("Vector store is ready.");
     }
 
     query<T extends any[] = any[]>(sql: string): Promise<T> {
@@ -75,11 +102,11 @@ export default class VectorStoreService extends Service<Config> implements Vecto
     }
 
     get<K extends keyof Tables>(table: K, query: Query<Tables[K]>): Promise<Tables[K][]>;
-    get<K extends keyof Tables, P extends minato.FlatKeys<Tables[K]> = any>(
+    get<K extends keyof Tables, P extends FlatKeys<Tables[K]> = any>(
         table: K,
         query: Query<Tables[K]>,
-        cursor?: minato.Driver.Cursor<P, Tables, K>
-    ): Promise<minato.FlatPick<Tables[K], P>[]> {
+        cursor?: Driver.Cursor<P, Tables, K>
+    ): Promise<FlatPick<Tables[K], P>[]> {
         return this.db.get(table, query, cursor);
     }
 

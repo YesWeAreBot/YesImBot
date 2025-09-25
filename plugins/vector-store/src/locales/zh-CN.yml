@@ -1,5 +1,3 @@
-host: 要连接到的主机名。
-port: 要连接到的端口号。
-username: 要使用的用户名。
-password: 要使用的密码。
-database: 要访问的数据库名。
+path: 向量存储数据将要存储的目录的文件路径。
+dimension: 要存储的向量的维度。
+embeddingModel: 用于生成向量的嵌入模型的名称。
