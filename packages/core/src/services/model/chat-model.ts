@@ -4,7 +4,6 @@ import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolRes
 import { Context } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
-import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ChatModelConfig, ModelAbility, ModelConfig } from "./config";
@@ -107,33 +106,22 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         // 本地控制器：承接外部 signal，并用于 earlyExit 主动中断
         const controller = new AbortController();
-        if (options.abortSignal) {
-            if (options.abortSignal.aborted && !controller.signal.aborted) {
-                controller.abort(options.abortSignal.reason);
-            } else {
-                options.abortSignal.addEventListener("abort", () => {
-                    if (!controller.signal.aborted) controller.abort(options.abortSignal.reason);
-                });
-            }
-        }
 
-        // 将本地 signal 注入到请求 fetch
-        const baseFetch = chatOptions.fetch ?? this.fetch;
-        chatOptions.fetch = (async (url: string, init: RequestInit) => {
-            init.signal = controller.signal;
-            //@ts-ignore
-            return baseFetch(url, init);
-        }) as typeof globalThis.fetch;
+        if (options.abortSignal) {
+            // 将本地 signal 注入到请求 fetch
+            const baseFetch = chatOptions.fetch ?? this.fetch;
+            chatOptions.fetch = (async (url: string, init: RequestInit) => {
+                init.signal = AbortSignal.any([options.abortSignal, controller.signal]);
+                //@ts-ignore
+                return baseFetch(url, init);
+            }) as typeof globalThis.fetch;
+        }
 
         this.logger.info(`🚀 [请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
 
-        try {
-            return useStream
-                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, controller)
-                : await this._executeNonStream(chatOptions);
-        } catch (error: any) {
-            await this._wrapAndThrow(error, chatOptions);
-        }
+        return useStream
+            ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, controller)
+            : await this._executeNonStream(chatOptions);
     }
 
     private buildChatOptions(options: ChatRequestOptions): ChatOptions {
@@ -260,9 +248,7 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         if (isEmpty(finalText)) {
             this.logger.warn(`💬 [流式] 模型未输出有效内容`);
-            throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
-                context: { rawResponse: finalText, details: "模型未输出有效内容" },
-            });
+            throw new Error("模型未输出有效内容");
         }
 
         /* prettier-ignore */
@@ -274,9 +260,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             if (!finalValidation.valid) {
                 const errorMsg = finalValidation.error || "格式不匹配或模型未输出有效内容";
                 this.logger.warn(`⚠️ 最终内容验证失败 | 错误: ${errorMsg}`);
-                throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
-                    context: { rawResponse: finalText, details: errorMsg },
-                });
+                throw new Error(`最终内容验证失败: ${errorMsg}`);
             }
         }
 
@@ -316,51 +300,5 @@ export class ChatModel extends BaseModel implements IChatModel {
             };
         }
         return null;
-    }
-
-    private async _wrapAndThrow(error: any, options: ChatOptions): Promise<never> {
-        // 始终附加基础上下文信息
-        const context = {
-            modelId: this.id,
-            provider: this.providerName,
-            baseURL: options.baseURL,
-            isStream: options.stream,
-        };
-
-        // 1. 如果错误已经是我们自定义的 AppError，直接附加上下文并重新抛出
-        if (error instanceof AppError) {
-            error.addContext(context);
-            throw error;
-        }
-
-        // 2. 处理 AbortError，通常由超时引起
-        if (error.name === "AbortError" || error.message === "timeout") {
-            const duration = error.duration ? ` (${error.duration}s)` : "";
-            this.logger.error(`🛑 [错误] 请求超时${duration} | 模型: ${this.id}`);
-            throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { cause: error, context });
-        }
-
-        if (error.name === "XSAIError" && error.response) {
-            const { status, url } = error.response;
-            context["url"] = url;
-            context["httpStatus"] = status;
-
-            let definition;
-            if (status === 401) definition = ErrorDefinitions.LLM.INVALID_API_KEY;
-            else if (status === 429) definition = ErrorDefinitions.LLM.RATE_LIMIT_EXCEEDED;
-            else if (status >= 500) definition = ErrorDefinitions.LLM.PROVIDER_ERROR;
-            else definition = ErrorDefinitions.LLM.REQUEST_FAILED;
-
-            this.logger.error(`🛑 [错误] API 请求失败 | 状态码: ${status} | 模型: ${this.id}`);
-            throw new AppError(definition, { args: [`HTTP ${status}: ${error.message}`], cause: error, context });
-        }
-
-        if (error.message === "fetch failed") {
-            this.logger.error(`🛑 [错误] 网络请求失败 (fetch failed) | 模型: ${this.id}`);
-            throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
-        }
-
-        this.logger.error(`🛑 [错误] 未知或网络错误 | ${error.message}`);
-        throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
     }
 }

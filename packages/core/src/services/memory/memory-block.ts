@@ -4,7 +4,6 @@ import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 
 import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions } from "@/shared/errors";
 
 export interface MemoryBlockData {
     title: string;
@@ -153,10 +152,7 @@ export class MemoryBlock {
         } catch (error: any) {
             logger.error(`加载失败 | 路径: "${filePath}" | 错误: ${error.message}`);
 
-            throw new AppError(ErrorDefinitions.MEMORY.PROVIDER_ERROR, {
-                cause: error,
-                context: { filePath },
-            });
+            throw new Error(`无法加载记忆块文件: ${error.message}`);
         }
     }
 

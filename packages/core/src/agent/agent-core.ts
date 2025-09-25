@@ -5,7 +5,6 @@ import { ChatModelSwitcher, ModelService } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
 import { AnyAgentStimulus, StimulusSource, UserMessageStimulus, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
@@ -95,14 +94,7 @@ export class AgentCore extends Service<Config> {
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
             } catch (error: any) {
-                handleError(
-                    this.logger,
-                    new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
-                        cause: error as Error,
-                        context: { channelCid },
-                    }),
-                    `Willingness calculation (Channel: ${channelCid})`
-                );
+                this.logger.error(`计算意愿值失败，已阻止本次响应: ${error.message}`);
                 return;
             }
 
@@ -178,16 +170,7 @@ export class AgentCore extends Service<Config> {
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                     }
                 } catch (error: any) {
-                    // 创建错误时附加调度堆栈
-                    const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
-                        cause: error as Error,
-                        context: {
-                            channelCid: channelKey,
-                            stimulusType: stimulus.type,
-                            schedulingStack: schedulingStack,
-                        },
-                    });
-                    handleError(this.logger, taskError, `调度任务执行失败 (Channel: ${channelKey})`);
+                    this.logger.error(`调度任务执行失败 (Channel: ${channelKey}): ${error.message}`);
                 } finally {
                     this.runningTasks.delete(channelKey);
                     this.logger.debug(`[${channelKey}] 频道锁已释放`);

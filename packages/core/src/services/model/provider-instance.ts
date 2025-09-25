@@ -1,10 +1,10 @@
-import { Services } from "@/shared/constants";
-import { isNotEmpty } from "@/shared/utils";
 import { Context, Logger } from "koishi";
 import { ProxyAgent, fetch as ufetch } from "undici";
-import { BaseModel } from "./base-model";
+
+import { Services } from "@/shared/constants";
+import { isNotEmpty } from "@/shared/utils";
 import { ChatModel, IChatModel } from "./chat-model";
-import { ChatModelConfig, ModelAbility, ModelConfig, ModelType, ProviderConfig } from "./config";
+import { ChatModelConfig, ModelConfig, ModelType, ProviderConfig } from "./config";
 import { EmbedModel, IEmbedModel } from "./embed-model";
 import { IProviderClient } from "./factories";
 

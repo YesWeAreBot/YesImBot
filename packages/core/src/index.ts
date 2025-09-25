@@ -5,7 +5,6 @@ import { AgentCore } from "./agent";
 import * as ConfigCommand from "./commands/config";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
 import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
-import { handleError, initializeErrorReporter } from "./shared/errors";
 
 declare module "koishi" {
     interface Context {
@@ -96,8 +95,6 @@ export default class YesImBot extends Service<Config> {
                 agentCore,
             ];
 
-            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"));
-
             waitForServices(services)
                 .then(() => {
                     this.ctx.logger.info("所有服务已就绪");
@@ -117,7 +114,6 @@ export default class YesImBot extends Service<Config> {
             ctx.notifier.create("初始化时发生错误");
             // this.ctx.logger.error("初始化时发生错误:", error.message);
             // this.ctx.logger.error(error.stack);
-            handleError(this.ctx.logger("yesimbot"), error, "初始化时发生错误");
             this.ctx.stop();
         }
     }

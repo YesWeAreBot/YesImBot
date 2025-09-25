@@ -9,7 +9,6 @@ import { PromptService } from "@/services/prompt";
 import { AgentResponse, AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
 import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./context-builder";
@@ -70,7 +69,7 @@ export class HeartbeatProcessor {
                     }
                 }
             } catch (error: any) {
-                handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
+                this.logger.error(`Heartbeat #${heartbeatCount} 处理失败: ${error.message}`);
                 shouldContinueHeartbeat = false;
             }
         }
@@ -405,14 +404,12 @@ export class HeartbeatProcessor {
 
         const { data, error } = parser.parse(llmRawResponse.text);
         if (error || !data) {
-            const parseError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { cause: error as any, context: errorContext });
-            handleError(this.logger, parseError, `解析LLM响应时 (CID: ${cid})`);
+            this.logger.error(`解析LLM响应时 (CID: ${cid}): ${error}`);
             return null;
         }
 
         if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
-            const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: errorContext });
-            handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
+            this.logger.error(`验证LLM响应格式时 (CID: ${cid}): ${error}`);
             return null;
         }
 

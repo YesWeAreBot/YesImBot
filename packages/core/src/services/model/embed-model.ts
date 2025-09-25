@@ -23,7 +23,6 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
     }
 
     public async embed(text: string): Promise<EmbedResult> {
-        //this.logger.debug(`正在为文本生成嵌入向量："${truncate(text, 50)}"`);
         const embedOptions: EmbedOptions = {
             ...this.embedProvider(this.config.modelId),
             fetch: this.fetch,

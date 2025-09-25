@@ -7,20 +7,16 @@ import { LoggingConfig, LoggingConfigSchema } from "@/services/logger";
 import { MemoryConfig, MemoryConfigSchema } from "@/services/memory";
 import { ModelServiceConfig, ModelServiceConfigSchema } from "@/services/model";
 import { PromptServiceConfig, PromptServiceConfigSchema } from "@/services/prompt";
-//import { TelemetryConfig, TelemetryConfigSchema } from "@/services/telemetry";
 import { HistoryConfig, HistoryConfigSchema } from "@/services/worldstate";
-import { ErrorReporterConfig, ErrorReporterConfigSchema } from "@/shared/errors";
 
 export const CONFIG_VERSION = "2.0.2";
 
 export interface SystemConfig {
     logging: LoggingConfig;
-    errorReporting: ErrorReporterConfig;
 }
 
 export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
     logging: LoggingConfigSchema,
-    errorReporting: ErrorReporterConfigSchema,
 });
 
 export type Config = ModelServiceConfig &

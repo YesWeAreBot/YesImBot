@@ -2,7 +2,6 @@ import { Context, Logger, Random, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
 import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isNotEmpty } from "@/shared/utils";
 import { GenerateTextResult } from "@xsai/generate-text";
 import { BaseModel } from "./base-model";
@@ -73,9 +72,7 @@ export class ModelService extends Service<Config> {
         let modified = false;
         // this.logger.debug("开始验证服务配置");
         if (!this.config.providers || this.config.providers.length === 0) {
-            throw new AppError(ErrorDefinitions.CONFIG.INVALID, {
-                args: ["至少需要配置一个提供商"],
-            });
+            throw new Error("配置错误: 至少需要配置一个模型提供商");
         }
 
         for (const providerConfig of this.config.providers) {
@@ -288,7 +285,7 @@ export class ModelSwitcher<T extends BaseModel> {
             const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
             this.logger.error(`❌ 加载失败 | ${errorMsg}`);
 
-            throw new AppError(ErrorDefinitions.MODEL.GROUP_INIT_FAILED, { args: [groupConfig.name] });
+            throw new Error(`模型组 "${groupConfig.name}" 初始化失败: ${errorMsg}`);
         }
     }
 
@@ -338,12 +335,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         }
 
         if (candidateModels.length === 0) {
-            // throw new AppError(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求`, {
-            //     code: ErrorCodes.RESOURCE.NOT_FOUND,
-            // });
-            throw new AppError(ErrorDefinitions.MODEL.NO_SUITABLE_MODEL, {
-                args: [this.groupConfig.name],
-            });
+            throw new Error(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求`);
         }
 
         const selectedModel = Random.pick(candidateModels);
