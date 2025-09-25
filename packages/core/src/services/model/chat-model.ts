@@ -119,10 +119,11 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         // 将本地 signal 注入到请求 fetch
         const baseFetch = chatOptions.fetch ?? this.fetch;
-        chatOptions.fetch = async (url: string, init: RequestInit) => {
+        chatOptions.fetch = (async (url: string, init: RequestInit) => {
             init.signal = controller.signal;
+            //@ts-ignore
             return baseFetch(url, init);
-        };
+        }) as typeof globalThis.fetch;
 
         this.logger.info(`🚀 [请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
 
@@ -143,10 +144,10 @@ export class ChatModel extends BaseModel implements IChatModel {
         const { validation, onStreamStart, abortSignal, ...restOptions } = options;
         return {
             ...this.chatProvider(this.config.modelId),
-            fetch: async (url: string, init: RequestInit) => {
+            fetch: (async (url: string, init: RequestInit) => {
                 init.signal = options.abortSignal;
                 return this.fetch(url, init);
-            },
+            }) as typeof globalThis.fetch,
 
             // 默认参数
             temperature: this.config.temperature,
