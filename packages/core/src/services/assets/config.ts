@@ -22,7 +22,7 @@ export interface AssetServiceConfig {
     recoveryEnabled: boolean;
 }
 
-export const AssetServiceConfigSchema: Schema<AssetServiceConfig> = Schema.object({
+export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
     storagePath: Schema.path({ allowCreate: true, filters: ["directory"] })
         .default("data/assets")
         .description("资源本地存储路径"),

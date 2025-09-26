@@ -44,7 +44,7 @@ declare module "koishi" {
 }
 
 export class WorldStateService extends Service<Config> {
-    static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
+    static readonly inject = [Services.Model, Services.Asset, Services.Prompt, Services.Memory, "database"];
 
     public l1_manager: InteractionManager;
     public l2_manager: SemanticMemoryManager;
@@ -60,7 +60,6 @@ export class WorldStateService extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.WorldState, true);
         this.config = config;
-        this.logger = this.ctx[Services.Logger].getLogger("[世界状态]");
 
         // Initialize all managers
         this.l1_manager = new InteractionManager(ctx, config);
@@ -82,7 +81,7 @@ export class WorldStateService extends Service<Config> {
         this.eventListenerManager.start();
         this.commandManager.register();
 
-        this.logger.info("服务已启动");
+        this.ctx.logger.info("服务已启动");
     }
 
     protected stop(): void {
@@ -92,7 +91,7 @@ export class WorldStateService extends Service<Config> {
         if (this.clearTimer) {
             this.clearTimer();
         }
-        this.logger.info("服务已停止");
+        this.ctx.logger.info("服务已停止");
     }
 
     public async buildWorldState(stimulus: AnyAgentStimulus): Promise<WorldState> {
@@ -136,15 +135,15 @@ export class WorldStateService extends Service<Config> {
     public updateMuteStatus(cid: string, expiresAt: number): void {
         if (expiresAt > Date.now()) {
             this.mutedChannels.set(cid, expiresAt);
-            this.logger.debug(`[${cid}] | 已被禁言 | 解封时间: ${new Date(expiresAt).toLocaleString()}`);
+            this.ctx.logger.debug(`[${cid}] | 已被禁言 | 解封时间: ${new Date(expiresAt).toLocaleString()}`);
         } else {
             this.mutedChannels.delete(cid);
-            this.logger.debug(`[${cid}] | 禁言状态已解除`);
+            this.ctx.logger.debug(`[${cid}] | 禁言状态已解除`);
         }
     }
 
     private async initializeMuteStatus(): Promise<void> {
-        this.logger.info("正在从历史记录初始化机器人禁言状态...");
+        this.ctx.logger.info("正在从历史记录初始化机器人禁言状态...");
         const allBanEvents = await this.ctx.database.get(TableName.SystemEvents, {
             type: "guild-member-ban",
         });
@@ -176,7 +175,7 @@ export class WorldStateService extends Service<Config> {
                 }
             }
         }
-        this.logger.info("机器人禁言状态初始化完成");
+        this.ctx.logger.info("机器人禁言状态初始化完成");
     }
 
     private registerModels(): void {
@@ -260,7 +259,7 @@ export class WorldStateService extends Service<Config> {
             this.clear();
         }, this.config.cleanupIntervalSec * 1000);
 
-        this.logger.info(`数据清理任务已启动，间隔 ${this.config.cleanupIntervalSec} 秒`);
+        this.ctx.logger.info(`数据清理任务已启动，间隔 ${this.config.cleanupIntervalSec} 秒`);
     }
 
     private async clear() {
@@ -274,9 +273,9 @@ export class WorldStateService extends Service<Config> {
             });
 
             await this.l1_manager.pruneOldData();
-            this.logger.info("历史数据清理完成");
+            this.ctx.logger.info("历史数据清理完成");
         } catch (err) {
-            this.logger.error("历史数据清理失败", err);
+            this.ctx.logger.error("历史数据清理失败", err);
         }
     }
 }

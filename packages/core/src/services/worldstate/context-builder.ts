@@ -20,17 +20,13 @@ import {
 } from "./types";
 
 export class ContextBuilder {
-    private logger: Logger;
-
     constructor(
         private ctx: Context,
         private config: HistoryConfig,
         private interactionManager: InteractionManager,
         private l2Manager: SemanticMemoryManager,
         private l3Manager: ArchivalMemoryManager
-    ) {
-        this.logger = ctx[Services.Logger].getLogger("[上下文构建]");
-    }
+    ) {}
 
     /**
      * 根据刺激类型构建世界状态
@@ -171,9 +167,9 @@ export class ContextBuilder {
                     k: this.config.l2_memory.retrievalK,
                     endTimestamp: earliestMessageTimestamp,
                 });
-                this.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
+                this.ctx.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
             } catch (error: any) {
-                this.logger.error(`L2 语义检索失败: ${error.message}`);
+                this.ctx.logger.error(`L2 语义检索失败: ${error.message}`);
             }
         } else {
             retrieved_memories = [];
@@ -203,7 +199,7 @@ export class ContextBuilder {
             try {
                 selfInGuild = await session.bot.getGuildMember(channelId, session.selfId);
             } catch (error: any) {
-                this.logger.error(`获取机器人自身信息失败 for id ${session.selfId}: ${error.message}`);
+                this.ctx.logger.error(`获取机器人自身信息失败 for id ${session.selfId}: ${error.message}`);
             }
 
             users.push({
@@ -269,9 +265,9 @@ export class ContextBuilder {
                     k: this.config.l2_memory.retrievalK,
                     endTimestamp: earliestMessageTimestamp,
                 });
-                this.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
+                this.ctx.logger.info(`成功检索 ${retrieved_memories.length} 条召回记忆`);
             } catch (error: any) {
-                this.logger.error(`L2 语义检索失败: ${error.message}`);
+                this.ctx.logger.error(`L2 语义检索失败: ${error.message}`);
             }
         }
 
@@ -283,7 +279,7 @@ export class ContextBuilder {
             const channel = await bot.getChannel(channelId);
             channelInfo = { id: channelId, name: channel.name || "未知频道" };
         } catch (error: any) {
-            this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
+            this.ctx.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
             channelInfo = { id: channelId, name: "未知频道" };
         }
 
@@ -404,7 +400,7 @@ export class ContextBuilder {
                 timestamp: chunk.startTimestamp,
             }));
         } catch (error: any) {
-            this.logger.error(`检索 L2 记忆时发生错误: ${error.message}`);
+            this.ctx.logger.error(`检索 L2 记忆时发生错误: ${error.message}`);
             return [];
         }
     }
@@ -427,7 +423,7 @@ export class ContextBuilder {
             try {
                 userInfo = await bot.getUser(channelId);
             } catch (error: any) {
-                this.logger.debug(`获取用户信息失败 for user ${channelId}: ${error.message}`);
+                this.ctx.logger.debug(`获取用户信息失败 for user ${channelId}: ${error.message}`);
             }
 
             channelName = `与 ${userInfo?.name || channelId} 的私聊`;
@@ -436,7 +432,7 @@ export class ContextBuilder {
                 channelInfo = await bot.getChannel(channelId);
                 channelName = channelInfo.name;
             } catch (error: any) {
-                this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
+                this.ctx.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
             }
             channelName = channelInfo?.name || "未知群组";
         }
@@ -450,7 +446,7 @@ export class ContextBuilder {
             const user = await bot.getUser(selfId);
             return { id: selfId, name: user.name };
         } catch (error: any) {
-            this.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
+            this.ctx.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
             return { id: selfId, name: bot.user.name || "Self" };
         }
     }

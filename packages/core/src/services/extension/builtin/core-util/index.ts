@@ -21,7 +21,7 @@ interface CoreUtilConfig {
     };
 }
 
-const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
+const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     typing: Schema.object({
         baseDelay: Schema.number().default(500).description("基础延迟 (毫秒)"),
         charPerSecond: Schema.number().default(5).description("每秒字符数"),
@@ -42,10 +42,9 @@ const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
     builtin: true,
 })
 export default class CoreUtilExtension {
-    static readonly inject = [Services.Logger, Services.Asset, Services.Model];
-    static readonly Config = CoreUtilConfigSchema;
+    static readonly inject = [Services.Asset, Services.Model];
+    static readonly Config = CoreUtilConfig;
 
-    private readonly logger: Logger;
     private readonly assetService: AssetService;
     private disposed: boolean;
 
@@ -56,7 +55,6 @@ export default class CoreUtilExtension {
         public ctx: Context,
         public config: CoreUtilConfig
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[核心工具]");
         this.assetService = ctx[Services.Asset];
 
         try {
@@ -65,24 +63,24 @@ export default class CoreUtilExtension {
                 if (typeof visionModel === "string") {
                     this.modelGroup = this.ctx[Services.Model].useChatGroup(visionModel);
                     if (!this.modelGroup) {
-                        this.logger.warn(``);
+                        this.ctx.logger.warn(``);
                     }
                     const visionModels = this.modelGroup.getModels().filter((m) => m.isVisionModel()) || [];
                     if (visionModels.length === 0) {
-                        this.logger.warn(``);
+                        this.ctx.logger.warn(``);
                     }
                 } else {
                     this.chatModel = this.ctx[Services.Model].getChatModel(visionModel);
                     if (!this.chatModel) {
-                        this.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(this.chatModel.id)}`);
+                        this.ctx.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(this.chatModel.id)}`);
                     }
                     if (!this.chatModel.isVisionModel()) {
-                        this.logger.warn(`✖ 模型不支持多模态 | 模型: ${JSON.stringify(this.chatModel.id)}`);
+                        this.ctx.logger.warn(`✖ 模型不支持多模态 | 模型: ${JSON.stringify(this.chatModel.id)}`);
                     }
                 }
             }
         } catch (error: any) {
-            this.logger.error(`获取视觉模型失败: ${error.message}`);
+            this.ctx.logger.error(`获取视觉模型失败: ${error.message}`);
         }
 
         ctx.on("dispose", () => {
@@ -113,13 +111,13 @@ export default class CoreUtilExtension {
         const { session, message, target } = args;
 
         if (!session) {
-            this.logger.warn("✖ 缺少有效会话，无法发送消息");
+            this.ctx.logger.warn("✖ 缺少有效会话，无法发送消息");
             return Failed("缺少会话对象");
         }
 
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
-            this.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
+            this.ctx.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
             return Failed("消息内容为空");
         }
 
@@ -128,17 +126,17 @@ export default class CoreUtilExtension {
 
             if (!bot) {
                 const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
-                this.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
+                this.ctx.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
                 return Failed(`未找到平台 ${target} 对应的机器人实例`);
             }
 
-            // this.logger.info(`准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
+            // this.ctx.logger.info(`准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
 
             await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
 
             return Success();
         } catch (error: any) {
-            //this.logger.error(error);
+            //this.ctx.logger.error(error);
             return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
         }
     }
@@ -156,11 +154,11 @@ export default class CoreUtilExtension {
 
         const imageInfo = await this.assetService.getInfo(image_id);
         if (!imageInfo) {
-            this.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
+            this.ctx.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
             return Failed(`图片未找到`);
         }
         if (!imageInfo.mime.startsWith("image/")) {
-            this.logger.warn(`✖ 资源不是图片 | ID: ${image_id}`);
+            this.ctx.logger.warn(`✖ 资源不是图片 | ID: ${image_id}`);
             return Failed(`资源不是图片`);
         }
 
@@ -189,7 +187,7 @@ export default class CoreUtilExtension {
             });
             return Success(response.text);
         } catch (error: any) {
-            this.logger.error(`图片描述失败: ${error.message}`);
+            this.ctx.logger.error(`图片描述失败: ${error.message}`);
             return Failed(`图片描述失败: ${error.message}`);
         }
     }
@@ -288,7 +286,7 @@ export default class CoreUtilExtension {
             // --- 处理图片元素 ---
             const content = await this.assetService.encode(msg);
 
-            this.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
+            this.ctx.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
             await sleep(delay);
 

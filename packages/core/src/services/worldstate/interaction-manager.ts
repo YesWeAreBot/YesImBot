@@ -23,14 +23,12 @@ import {
  * 并提供统一的方法来检索和组合这些来源的数据，以构建线性的历史记录。
  */
 export class InteractionManager {
-    private logger: Logger;
     private basePath: string;
 
     constructor(
         private ctx: Context,
         private config: HistoryConfig
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[L1 记忆]");
         this.basePath = path.join(ctx.baseDir, "data", "yesimbot", "interactions");
         this.ensureDirExists(this.basePath);
     }
@@ -49,7 +47,7 @@ export class InteractionManager {
         try {
             await fs.mkdir(dirPath, { recursive: true });
         } catch (error: any) {
-            this.logger.error(`创建日志目录失败: ${dirPath}`, error);
+            this.ctx.logger.error(`创建日志目录失败: ${dirPath}`, error);
         }
     }
 
@@ -60,8 +58,8 @@ export class InteractionManager {
         try {
             await fs.appendFile(filePath, line);
         } catch (error: any) {
-            this.logger.error(`写入Agent日志失败 | 文件: ${filePath} | ID: ${entry.id}`);
-            this.logger.debug(error);
+            this.ctx.logger.error(`写入Agent日志失败 | 文件: ${filePath} | ID: ${entry.id}`);
+            this.ctx.logger.debug(error);
         }
     }
 
@@ -132,7 +130,7 @@ export class InteractionManager {
             return recentLines.map((line) => this.logEntryToHistoryItem(JSON.parse(line)));
         } catch (error: any) {
             if (error.code === "ENOENT") return [];
-            this.logger.error(`读取Agent日志失败: ${filePath}`, error);
+            this.ctx.logger.error(`读取Agent日志失败: ${filePath}`, error);
             return [];
         }
     }
@@ -144,21 +142,21 @@ export class InteractionManager {
             await this.ctx.database.create(TableName.Messages, message);
         } catch (error: any) {
             if (error?.message === "UNIQUE constraint failed: worldstate.messages.id") {
-                this.logger.warn(`存在重复的消息记录: ${message.id} | 若此问题持续发生，考虑开启忽略自身消息`);
+                this.ctx.logger.warn(`存在重复的消息记录: ${message.id} | 若此问题持续发生，考虑开启忽略自身消息`);
                 return;
             }
-            this.logger.error(`记录消息到数据库失败 | 消息ID: ${message.id} | Error: ${error.message}`);
-            this.logger.debug(error);
+            this.ctx.logger.error(`记录消息到数据库失败 | 消息ID: ${message.id} | Error: ${error.message}`);
+            this.ctx.logger.debug(error);
         }
     }
 
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
         try {
             await this.ctx.database.create(TableName.SystemEvents, event);
-            this.logger.debug(`记录系统事件 | ${event.type} | ${event.message}`);
+            this.ctx.logger.debug(`记录系统事件 | ${event.type} | ${event.message}`);
         } catch (error: any) {
-            this.logger.error(`记录系统事件到数据库失败 | ID: ${event.id}`);
-            this.logger.debug(error);
+            this.ctx.logger.error(`记录系统事件到数据库失败 | ID: ${event.id}`);
+            this.ctx.logger.debug(error);
         }
     }
 
@@ -263,7 +261,7 @@ export class InteractionManager {
 
                     await fs.writeFile(filePath, linesToKeep.join("\n") + "\n");
                 } catch (error: any) {
-                    this.logger.error(`清理日志文件失败: ${filePath}`, error);
+                    this.ctx.logger.error(`清理日志文件失败: ${filePath}`, error);
                 }
             }
         }
@@ -287,10 +285,10 @@ export class InteractionManager {
         }
         try {
             await fs.rm(targetPath, { recursive: true, force: true });
-            this.logger.info(`已删除Agent日志${targetType === "dir" ? "目录" : "文件"}: ${targetPath}`);
+            this.ctx.logger.info(`已删除Agent日志${targetType === "dir" ? "目录" : "文件"}: ${targetPath}`);
         } catch (error: any) {
             // force: true 已经避免 ENOENT 报错，这里主要处理其他异常
-            this.logger.error(`删除Agent日志${targetType === "dir" ? "目录" : "文件"}失败: ${targetPath}`, error);
+            this.ctx.logger.error(`删除Agent日志${targetType === "dir" ? "目录" : "文件"}失败: ${targetPath}`, error);
             throw error;
         }
     }
@@ -317,7 +315,7 @@ export class InteractionManager {
             return entries;
         } catch (error: any) {
             if (error.code === "ENOENT") return [];
-            this.logger.error(`读取Agent日志失败: ${filePath}`, error);
+            this.ctx.logger.error(`读取Agent日志失败: ${filePath}`, error);
             return [];
         }
     }

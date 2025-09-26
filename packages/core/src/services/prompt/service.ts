@@ -17,19 +17,16 @@ export interface Injection {
 }
 
 export class PromptService extends Service<Config> {
-    static readonly inject = [Services.Logger];
     private readonly renderer: IRenderer;
     private readonly templates: Map<string, string> = new Map();
     private readonly snippets: Map<string, Snippet> = new Map();
     private readonly injections: Injection[] = [];
-    private _logger: Logger;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Prompt, true);
         this.ctx = ctx;
         this.config = config;
         this.renderer = new MustacheRenderer();
-        this._logger = this.ctx[Services.Logger].getLogger("[提示词]");
     }
 
     protected async start() {
@@ -54,7 +51,7 @@ export class PromptService extends Service<Config> {
             throw new Error("Snippet key cannot be empty");
         }
         if (this.snippets.has(key)) {
-            this._logger.warn(`覆盖已存在的片段 "${key}"`);
+            this.ctx.logger.warn(`覆盖已存在的片段 "${key}"`);
         }
         this.snippets.set(key, snippetFn);
     }
@@ -68,7 +65,7 @@ export class PromptService extends Service<Config> {
     public inject(name: string, priority: number, renderFn: Snippet): void {
         const existingIndex = this.injections.findIndex((i) => i.name === name);
         if (existingIndex > -1) {
-            this._logger.warn(`覆盖已存在的注入 "${name}"`);
+            this.ctx.logger.warn(`覆盖已存在的注入 "${name}"`);
             this.injections[existingIndex] = { name, priority, renderFn };
         } else {
             this.injections.push({ name, priority, renderFn });
@@ -82,7 +79,7 @@ export class PromptService extends Service<Config> {
      */
     public registerTemplate(name: string, content: string): void {
         if (this.templates.has(name)) {
-            this._logger.warn(`覆盖已存在的模板 "${name}"`);
+            this.ctx.logger.warn(`覆盖已存在的模板 "${name}"`);
         }
         this.templates.set(name, content);
     }
@@ -155,7 +152,7 @@ export class PromptService extends Service<Config> {
                         if (!result) return "";
                         return `<${injection.name}>\n${result}\n</${injection.name}>`;
                     } catch (error: any) {
-                        this._logger.error(`执行注入片段 "${injection.name}" 时出错: ${error.message}`);
+                        this.ctx.logger.error(`执行注入片段 "${injection.name}" 时出错: ${error.message}`);
                         return `<!-- Error in injection: ${injection.name} -->`;
                     }
                 })

@@ -9,7 +9,7 @@ import { formatDate, isEmpty } from "@/shared";
 
 interface InteractionsConfig {}
 
-const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
+const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
 
 @Extension({
     name: "interactions",
@@ -20,7 +20,7 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
     builtin: true,
 })
 export default class InteractionsExtension {
-    static readonly Config = InteractionsConfigSchema;
+    static readonly Config = InteractionsConfig;
 
     constructor(
         public ctx: Context,

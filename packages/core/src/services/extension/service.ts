@@ -24,17 +24,15 @@ declare module "koishi" {
  * 负责注册、管理和提供所有扩展和工具。
  */
 export class ToolService extends Service<Config> {
-    static readonly inject = [Services.Logger, Services.Prompt];
+    static readonly inject = [Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
 
-    private _logger: Logger;
     private promptService: PromptService;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Tool, true);
         this.config = config;
-        this._logger = ctx[Services.Logger].getLogger("[工具管理器]");
         this.promptService = ctx[Services.Prompt];
     }
 
@@ -55,7 +53,7 @@ export class ToolService extends Service<Config> {
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
             // if (config && !config.enabled) {
-            //     this._logger.info(`跳过内置扩展: ${name}`);
+            //     this.ctx.logger.info(`跳过内置扩展: ${name}`);
             //     continue;
             // }
             //@ts-ignore
@@ -63,7 +61,7 @@ export class ToolService extends Service<Config> {
         }
         this._registerPromptTemplates();
         this.registerCommands();
-        //this._logger.info("服务已启动");
+        //this.ctx.logger.info("服务已启动");
     }
 
     private registerCommands() {
@@ -359,7 +357,7 @@ export class ToolService extends Service<Config> {
 
         try {
             if (!extensionInstance.metadata || !extensionInstance.metadata.name) {
-                this._logger.warn("一个扩展在注册时缺少元数据或名称，已跳过");
+                this.ctx.logger.warn("一个扩展在注册时缺少元数据或名称，已跳过");
                 return;
             }
 
@@ -387,25 +385,25 @@ export class ToolService extends Service<Config> {
             }
 
             if (!enabled) {
-                // this._logger.info(`扩展 "${metadata.name}" 已禁用`);
+                // this.ctx.logger.info(`扩展 "${metadata.name}" 已禁用`);
                 return;
             }
 
             const display = metadata.display || metadata.name;
 
-            this._logger.info(`正在注册扩展: "${display}"`);
+            this.ctx.logger.info(`正在注册扩展: "${display}"`);
             this.extensions.set(metadata.name, extensionInstance);
 
             if (extensionInstance.tools) {
                 for (const [name, tool] of extensionInstance.tools.entries()) {
-                    this._logger.debug(`  -> 注册工具: "${tool.name}"`);
+                    this.ctx.logger.debug(`  -> 注册工具: "${tool.name}"`);
                     this.tools.set(name, tool);
                 }
             }
 
-            // this._logger.debug(`扩展 "${metadata.name}" 已加载`);
+            // this.ctx.logger.debug(`扩展 "${metadata.name}" 已加载`);
         } catch (error: any) {
-            this._logger.error(`扩展配置验证失败: ${error.message}`);
+            this.ctx.logger.error(`扩展配置验证失败: ${error.message}`);
             return;
         }
     }
@@ -413,7 +411,7 @@ export class ToolService extends Service<Config> {
     public unregister(name: string): boolean {
         const ext = this.extensions.get(name);
         if (!ext) {
-            this._logger.warn(`尝试卸载不存在的扩展: "${name}"`);
+            this.ctx.logger.warn(`尝试卸载不存在的扩展: "${name}"`);
             return false;
         }
         this.extensions.delete(name);
@@ -421,9 +419,9 @@ export class ToolService extends Service<Config> {
             for (const tool of ext.tools.values()) {
                 this.tools.delete(tool.name);
             }
-            this._logger.info(`已卸载扩展: "${name}"`);
+            this.ctx.logger.info(`已卸载扩展: "${name}"`);
         } catch (error: any) {
-            this._logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
+            this.ctx.logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
         }
         return true;
     }
@@ -440,7 +438,7 @@ export class ToolService extends Service<Config> {
         // 1. 获取工具，这里已经包含了 isSupported 的检查
         const tool = this.getTool(functionName, session);
         if (!tool) {
-            this._logger.warn(`工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
+            this.ctx.logger.warn(`工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
             return Failed(`Tool ${functionName} not found or not supported in this context.`);
         }
 
@@ -451,20 +449,20 @@ export class ToolService extends Service<Config> {
                 // Schema 对象本身就是验证函数
                 validatedParams = tool.parameters(params);
             } catch (error: any) {
-                this._logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
+                this.ctx.logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
                 // 将详细的验证错误返回给 AI
                 return Failed(`Parameter validation failed: ${error.message}`); // 参数错误不可重试
             }
         }
 
         const stringifyParams = stringify(params);
-        this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
+        this.ctx.logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
         for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
             try {
                 if (attempt > 1) {
-                    this._logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
+                    this.ctx.logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
@@ -474,28 +472,28 @@ export class ToolService extends Service<Config> {
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
-                    this._logger.success(`✔ 成功 ← 返回: ${resultString}`);
+                    this.ctx.logger.success(`✔ 成功 ← 返回: ${resultString}`);
                     return lastResult;
                 }
                 if (lastResult.error) {
                     if (!lastResult.error.retryable) {
-                        this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
+                        this.ctx.logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
                         return lastResult;
                     } else {
-                        this._logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
+                        this.ctx.logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
                         continue;
                     }
                 } else {
                     return lastResult;
                 }
             } catch (error: any) {
-                this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
-                this._logger.debug(error.stack);
+                this.ctx.logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
+                this.ctx.logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);
                 return lastResult;
             }
         }
-        this._logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
+        this.ctx.logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
         return lastResult;
     }
 

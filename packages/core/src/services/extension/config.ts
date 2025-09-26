@@ -10,7 +10,7 @@ export interface ToolServiceConfig {
     };
 }
 
-export const ToolServiceConfigSchema = Schema.object({
+export const ToolServiceConfig = Schema.object({
     extra: Schema.dynamic("toolService.availableExtensions").default({}),
 
     advanced: Schema.object({

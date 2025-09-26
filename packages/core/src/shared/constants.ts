@@ -26,7 +26,6 @@ export enum Services {
     Agent = "yesimbot.agent",
     Asset = "yesimbot.asset",
     Config = "yesimbot.config",
-    Logger = "yesimbot.logger",
     Memory = "yesimbot.memory",
     Model = "yesimbot.model",
     Prompt = "yesimbot.prompt",

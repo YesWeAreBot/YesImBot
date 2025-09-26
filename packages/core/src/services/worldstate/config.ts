@@ -46,7 +46,7 @@ export interface HistoryConfig {
     cleanupIntervalSec: number;
 }
 
-export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
+export const HistoryConfig: Schema<HistoryConfig> = Schema.object({
     l1_memory: Schema.object({
         maxMessages: Schema.number().default(50).description("上下文中最多包含的消息数量"),
         pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),

@@ -1,23 +1,14 @@
 import { Schema } from "koishi";
 
-import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "@/agent";
-import { AssetServiceConfig, AssetServiceConfigSchema } from "@/services/assets";
-import { ToolServiceConfig, ToolServiceConfigSchema } from "@/services/extension";
-import { LoggingConfig, LoggingConfigSchema } from "@/services/logger";
-import { MemoryConfig, MemoryConfigSchema } from "@/services/memory";
-import { ModelServiceConfig, ModelServiceConfigSchema } from "@/services/model";
-import { PromptServiceConfig, PromptServiceConfigSchema } from "@/services/prompt";
-import { HistoryConfig, HistoryConfigSchema } from "@/services/worldstate";
+import { AgentBehaviorConfig } from "@/agent";
+import { AssetServiceConfig } from "@/services/assets";
+import { ToolServiceConfig } from "@/services/extension";
+import { MemoryConfig } from "@/services/memory";
+import { ModelServiceConfig } from "@/services/model";
+import { PromptServiceConfig } from "@/services/prompt";
+import { HistoryConfig } from "@/services/worldstate";
 
 export const CONFIG_VERSION = "2.0.2";
-
-export interface SystemConfig {
-    logging: LoggingConfig;
-}
-
-export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
-    logging: LoggingConfigSchema,
-});
 
 export type Config = ModelServiceConfig &
     AgentBehaviorConfig &
@@ -25,26 +16,29 @@ export type Config = ModelServiceConfig &
     HistoryConfig &
     ToolServiceConfig &
     AssetServiceConfig &
-    PromptServiceConfig &
-    //TelemetryConfig &
-    SystemConfig & {
-        readonly version: string | number;
+    PromptServiceConfig & {
+        logLevel: 1 | 2 | 3;
+        version?: string;
     };
 
 export const Config: Schema<Config> = Schema.intersect([
+    ModelServiceConfig.description("模型服务"),
+    AgentBehaviorConfig,
+
+    MemoryConfig.description("记忆能力配置"),
+    HistoryConfig.description("历史记录管理"),
+    ToolServiceConfig.description("工具能力配置"),
+
+    AssetServiceConfig.description("资源服务配置"),
+    PromptServiceConfig,
     Schema.object({
-        version: Schema.union([Schema.string(), Schema.number()]).hidden(),
+        logLevel: Schema.union([
+            Schema.const(1).description("错误"),
+            Schema.const(2).description("信息"),
+            Schema.const(3).description("调试"),
+        ])
+            .default(2)
+            .description("日志等级"),
+        version: Schema.string().hidden(),
     }),
-
-    ModelServiceConfigSchema.description("模型服务"),
-    AgentBehaviorConfigSchema,
-
-    MemoryConfigSchema.description("记忆能力配置"),
-    HistoryConfigSchema.description("历史记录管理"),
-    ToolServiceConfigSchema.description("工具能力配置"),
-
-    AssetServiceConfigSchema.description("资源服务配置"),
-    PromptServiceConfigSchema,
-    //TelemetryConfigSchema,
-    SystemConfigSchema.description("系统设置"),
 ]);

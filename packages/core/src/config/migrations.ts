@@ -1,6 +1,6 @@
 import semver from "semver";
 
-import { ModelType } from "@/services/model";
+import { ModelType, SwitchStrategy } from "@/services/model/types";
 import { Config, CONFIG_VERSION } from "./config";
 import { ConfigV1, ConfigV200 } from "./versions";
 import * as V201 from "./versions/v201";
@@ -109,6 +109,18 @@ function migrateV201ToV202(configV201: ConfigV201): Config {
             modelId: embeddingModel?.modelId || "",
         },
         ignoreCommandMessage: false,
+        switchConfig: {
+            strategy: SwitchStrategy.Failover,
+            firstToken: 30000,
+            requestTimeout: 60000,
+            maxRetries: 3,
+            maxFailures: 3,
+            failureCooldown: 60000,
+            circuitBreakerThreshold: 5,
+            circuitBreakerRecoveryTime: 300000,
+        },
+        stream: true,
+        logLevel: 2,
         version: "2.0.2",
     };
 }

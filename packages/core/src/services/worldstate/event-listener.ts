@@ -26,7 +26,6 @@ interface PendingCommand {
 export class EventListenerManager {
     private readonly disposers: (() => boolean)[] = [];
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
-    private logger: Logger;
     private assetService: AssetService;
 
     constructor(
@@ -34,7 +33,6 @@ export class EventListenerManager {
         private service: WorldStateService,
         private config: HistoryConfig
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[世界状态]");
         this.assetService = ctx[Services.Asset];
     }
 
@@ -64,7 +62,7 @@ export class EventListenerManager {
             }
         }
         if (cleanedCount > 0) {
-            this.logger.debug(`清理了 ${cleanedCount} 个过期待定指令`);
+            this.ctx.logger.debug(`清理了 ${cleanedCount} 个过期待定指令`);
         }
     }
 
@@ -247,7 +245,7 @@ export class EventListenerManager {
     }
 
     private async handleOperatorMessage(session: Session): Promise<void> {
-        this.logger.debug(`记录手动发送的消息 | 频道: ${session.cid}`);
+        this.ctx.logger.debug(`记录手动发送的消息 | 频道: ${session.cid}`);
         await this.recordBotSentMessage(session);
     }
 
@@ -255,7 +253,9 @@ export class EventListenerManager {
         const { session, command, source } = argv;
         if (!session) return;
 
-        this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
+        this.ctx.logger.info(
+            `记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`
+        );
         const commandEventId = `cmd_invoked_${session.messageId || Random.id()}`;
 
         const eventPayload: SystemEventData = {
@@ -294,7 +294,7 @@ export class EventListenerManager {
         if (pendingIndex === -1) return;
 
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
-        this.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
+        this.ctx.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
         if (existingEvent) {
@@ -305,14 +305,14 @@ export class EventListenerManager {
 
     private async recordUserMessage(session: Session): Promise<void> {
         /* prettier-ignore */
-        this.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
+        this.ctx.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
         if (session.guildId) {
             await this.updateMemberInfo(session);
         }
 
         const content = await this.assetService.transform(session.content);
-        this.logger.debug(`记录转义后的消息：${content}`);
+        this.ctx.logger.debug(`记录转义后的消息：${content}`);
 
         const message: MessageData = {
             id: session.messageId,
@@ -333,7 +333,7 @@ export class EventListenerManager {
     private async recordBotSentMessage(session: Session): Promise<void> {
         if (!session.content || !session.messageId) return;
 
-        this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
+        this.ctx.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
 
         const message: MessageData = {
             id: session.messageId,
@@ -366,7 +366,7 @@ export class EventListenerManager {
                 await this.ctx.database.create(TableName.Members, { ...memberKey, ...memberData });
             }
         } catch (error: any) {
-            this.logger.error(`更新成员信息失败: ${error.message}`);
+            this.ctx.logger.error(`更新成员信息失败: ${error.message}`);
         }
     }
 }

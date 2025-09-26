@@ -49,7 +49,7 @@ declare module "koishi" {
  * 负责资源的持久化存储、去重、读取、处理和生命周期管理
  */
 export class AssetService extends Service<Config> {
-    static readonly inject = ["database", "server", "http", Services.Logger];
+    static readonly inject = ["database", "server", "http"];
 
     // 缓存和常量
     private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
@@ -64,7 +64,6 @@ export class AssetService extends Service<Config> {
         super(ctx, Services.Asset, true);
         this.config = config;
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节
-        this.logger = ctx[Services.Logger].getLogger("[资源服务]");
         this.assetEndpoint = this.config.assetEndpoint;
     }
 

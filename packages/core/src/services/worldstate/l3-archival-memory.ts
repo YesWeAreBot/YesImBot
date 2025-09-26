@@ -10,7 +10,6 @@ import { InteractionManager } from "./interaction-manager";
 import { AgentLogEntry, DiaryEntryData } from "./types";
 
 export class ArchivalMemoryManager {
-    private logger: Logger;
     private chatModel: IChatModel;
     private dailyTaskTimer: NodeJS.Timeout;
 
@@ -18,9 +17,7 @@ export class ArchivalMemoryManager {
         private ctx: Context,
         private config: HistoryConfig,
         private interactionManager: InteractionManager
-    ) {
-        this.logger = ctx[Services.Logger].getLogger("[长期记忆]");
-    }
+    ) {}
 
     public start() {
         if (!this.config.l3_memory.enabled) return;
@@ -31,12 +28,12 @@ export class ArchivalMemoryManager {
             this.chatModel = null;
         }
         if (!this.chatModel) {
-            this.logger.warn("未找到任何可用的聊天模型，L3 日记功能将无法工作");
+            this.ctx.logger.warn("未找到任何可用的聊天模型，L3 日记功能将无法工作");
             return;
         }
 
         this.scheduleDailyTask();
-        this.logger.info("L3 日记服务已启动");
+        this.ctx.logger.info("L3 日记服务已启动");
     }
 
     public stop() {
@@ -62,11 +59,11 @@ export class ArchivalMemoryManager {
             this.scheduleDailyTask(); // Schedule for the next day
         }, delay);
 
-        this.logger.info(`下一次日记生成任务将在 ${nextRun.toLocaleString()} 执行`);
+        this.ctx.logger.info(`下一次日记生成任务将在 ${nextRun.toLocaleString()} 执行`);
     }
 
     public async generateDiariesForAllChannels() {
-        this.logger.info("开始执行每日日记生成任务...");
+        this.ctx.logger.info("开始执行每日日记生成任务...");
         const messageChannels = await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] });
 
         let agentLogDirs: Dirent[] = [];
@@ -100,7 +97,7 @@ export class ArchivalMemoryManager {
             const channelId = channelIdParts.join(":");
             await this.generateDiaryForChannel(platform, channelId, new Date());
         }
-        this.logger.info("每日日记生成任务完成。");
+        this.ctx.logger.info("每日日记生成任务完成。");
     }
 
     public async generateDiaryForChannel(platform: string, channelId: string, date: Date) {
@@ -138,9 +135,9 @@ export class ArchivalMemoryManager {
                 mentionedUserIds: [...new Set(messages.map((m) => m.sender.id))],
             };
             await this.ctx.database.create(TableName.L3Diaries, diaryEntry);
-            this.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${date.toISOString().split("T")[0]} 的日记`);
+            this.ctx.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${date.toISOString().split("T")[0]} 的日记`);
         } catch (error: any) {
-            this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);
+            this.ctx.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);
         }
     }
 

@@ -4,7 +4,7 @@ import { Context, ForkScope, Service, sleep } from "koishi";
 import { AgentCore } from "./agent";
 import * as ConfigCommand from "./commands/config";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
-import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
+import { AssetService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
 
 declare module "koishi" {
     interface Context {
@@ -61,9 +61,6 @@ export default class YesImBot extends Service<Config> {
         try {
             ctx.plugin(ConfigCommand, config);
 
-            // 注册日志服务
-            const loggerService = ctx.plugin(LoggerService, config);
-
             // 注册资源中心服务
             const assetService = ctx.plugin(AssetService, config);
 
@@ -84,16 +81,7 @@ export default class YesImBot extends Service<Config> {
 
             const agentCore = ctx.plugin(AgentCore, config);
 
-            const services = [
-                loggerService,
-                assetService,
-                promptService,
-                toolService,
-                modelService,
-                memoryService,
-                worldStateService,
-                agentCore,
-            ];
+            const services = [assetService, promptService, toolService, modelService, memoryService, worldStateService, agentCore];
 
             waitForServices(services)
                 .then(() => {

@@ -10,7 +10,6 @@ import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
 export class SemanticMemoryManager {
     private ctx: Context;
     private config: Config;
-    private logger: Logger;
     private embedModel: IEmbedModel;
     private messageBuffer: Map<string, MessageData[]> = new Map();
     private isRebuilding: boolean = false;
@@ -18,17 +17,16 @@ export class SemanticMemoryManager {
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[语义记忆]");
     }
 
     public start() {
         try {
             this.embedModel = this.ctx[Services.Model].getEmbedModel(this.config.embeddingModel);
         } catch (error: any) {
-            this.logger.debug(`获取嵌入模型失败: ${error?.message || "未知错误"}`);
+            this.ctx.logger.debug(`获取嵌入模型失败: ${error?.message || "未知错误"}`);
             this.embedModel = null;
         }
-        if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，记忆功能将受限");
+        if (!this.embedModel) this.ctx.logger.warn("未找到任何可用的嵌入模型，记忆功能将受限");
     }
 
     public stop() {
@@ -92,10 +90,10 @@ export class SemanticMemoryManager {
                 endTimestamp: lastEvent.timestamp,
             };
             await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
-            this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
+            this.ctx.logger.debug(`已为 ${messages.length} 条消息建立索引`);
         } catch (error: any) {
-            this.logger.error(`消息索引创建失败 | ${error.message}`);
-            this.logger.debug(error);
+            this.ctx.logger.error(`消息索引创建失败 | ${error.message}`);
+            this.ctx.logger.debug(error);
         }
     }
 
@@ -277,16 +275,16 @@ export class SemanticMemoryManager {
      */
     public async rebuildIndex() {
         if (this.isRebuilding) {
-            this.logger.info("索引重建任务已在后台运行，本次请求被跳过");
+            this.ctx.logger.info("索引重建任务已在后台运行，本次请求被跳过");
             return;
         }
         if (!this.embedModel) {
-            this.logger.warn("无可用嵌入模型，无法重建索引");
+            this.ctx.logger.warn("无可用嵌入模型，无法重建索引");
             return;
         }
 
         this.isRebuilding = true;
-        this.logger.info("开始重建 L2 记忆索引...");
+        this.ctx.logger.info("开始重建 L2 记忆索引...");
 
         try {
             const allChunks = await this.ctx.database.get(TableName.L2Chunks, {});
@@ -300,12 +298,12 @@ export class SemanticMemoryManager {
                     successCount++;
                 } catch (error: any) {
                     failCount++;
-                    this.logger.error(`重建块 ${chunk.id} 的索引失败 | ${error.message}`);
+                    this.ctx.logger.error(`重建块 ${chunk.id} 的索引失败 | ${error.message}`);
                 }
             }
-            this.logger.info(`L2 记忆索引重建完成。成功: ${successCount}，失败: ${failCount}。`);
+            this.ctx.logger.info(`L2 记忆索引重建完成。成功: ${successCount}，失败: ${failCount}。`);
         } catch (error: any) {
-            this.logger.error(`索引重建过程中发生严重错误: ${error.message}`);
+            this.ctx.logger.error(`索引重建过程中发生严重错误: ${error.message}`);
         } finally {
             this.isRebuilding = false; // 确保在任务结束或失败时解锁
         }

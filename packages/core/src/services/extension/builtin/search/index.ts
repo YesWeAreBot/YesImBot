@@ -17,7 +17,7 @@ interface SearchConfig {
     puppeteerWaitTime: number; // Puppeteer加载后等待时间（毫秒）
 }
 
-const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
+const SearchConfig: Schema<SearchConfig> = Schema.object({
     endpoint: Schema.string().default("https://search.yesimbot.chat/search").role("link").description("搜索服务的 API Endpoint"),
     limit: Schema.number().default(5).description("默认搜索结果数量"),
     sources: Schema.array(Schema.string()).default(["baidu", "github", "bing", "presearch"]).role("table").description("默认搜索源"),
@@ -38,7 +38,7 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
     builtin: true,
 })
 export default class SearchExtension {
-    public static readonly Config = SearchConfigSchema;
+    public static readonly Config = SearchConfig;
     static readonly inject = {
         required: ["http"],
         optional: ["puppeteer"],

@@ -93,12 +93,12 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
 
         if (Array.isArray(originalInjects)) {
             Object.defineProperty(WrappedAsAny, "inject", {
-                value: [...new Set([...originalInjects, Services.Tool, Services.Logger])], // deprecated Services.Logger
+                value: [...new Set([...originalInjects, Services.Tool])], // deprecated Services.Logger
                 writable: false,
             });
         } else {
             const required = originalInjects["required"] || [];
-            originalInjects["required"] = [...new Set([...required, Services.Tool, Services.Logger])]; // deprecated Services.Logger
+            originalInjects["required"] = [...new Set([...required, Services.Tool])]; // deprecated Services.Logger
             Object.defineProperty(WrappedAsAny, "inject", {
                 value: originalInjects,
                 writable: false,
