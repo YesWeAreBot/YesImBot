@@ -1,7 +1,7 @@
 import type { ChatProvider } from "@xsai-ext/shared-providers";
 import type { GenerateTextResult } from "@xsai/generate-text";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
-import { Context } from "koishi";
+import { Context, Logger } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
@@ -55,13 +55,13 @@ export class ChatModel extends BaseModel implements IChatModel {
     declare public readonly config: ChatModelConfig;
     private readonly customParameters: Record<string, unknown> = {};
     constructor(
-        ctx: Context,
+        logger: Logger,
         private readonly providerName: string,
         private readonly chatProvider: ChatProvider["chat"],
         modelConfig: ChatModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, modelConfig);
+        super(logger, modelConfig);
         this.parseCustomParameters();
     }
 
@@ -102,7 +102,7 @@ export class ChatModel extends BaseModel implements IChatModel {
 
     public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
         // 优先级: 运行时参数 > 模型配置 > 默认值
-        const useStream = options.stream ?? this.config.stream ?? true;
+        const useStream = options.stream ?? true;
         const chatOptions = this.buildChatOptions(options);
 
         // 本地控制器：承接外部 signal，并用于 earlyExit 主动中断

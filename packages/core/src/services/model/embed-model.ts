@@ -1,6 +1,6 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
-import { Context } from "koishi";
+import { Logger } from "koishi";
 
 import { embed, embedMany } from "@/dependencies/xsai";
 import { BaseModel } from "./base-model";
@@ -13,13 +13,13 @@ export interface IEmbedModel extends BaseModel {
 
 export class EmbedModel extends BaseModel implements IEmbedModel {
     constructor(
-        ctx: Context,
+        logger: Logger,
         private readonly providerName: string,
         private readonly embedProvider: EmbedProvider["embed"],
         modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, modelConfig);
+        super(logger, modelConfig);
     }
 
     public async embed(text: string): Promise<EmbedResult> {

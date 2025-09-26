@@ -61,7 +61,6 @@ export interface ChatModelConfig extends BaseModelConfig {
     abilities?: ModelAbility[];
     temperature?: number;
     topP?: number;
-    stream?: boolean;
     custom?: Array<{ key: string; type: "string" | "number" | "boolean" | "json"; value: string }>;
 }
 
@@ -97,7 +96,6 @@ export const ModelConfig: Schema<ModelConfig> = Schema.intersect([
                 .description("模型具备的特殊能力。"),
             temperature: Schema.number().min(0).max(2).step(0.1).default(0.7).description("控制生成文本的随机性，值越高越随机。"),
             topP: Schema.number().min(0).max(1).step(0.05).default(0.95).description("控制生成文本的多样性，也称为核采样。"),
-            stream: Schema.boolean().default(true).description("是否启用流式传输，以获得更快的响应体验。"),
             custom: Schema.array(
                 Schema.object({
                     key: Schema.string().required().description("参数键"),
@@ -244,6 +242,7 @@ export interface ModelServiceConfig {
     chatModelGroup?: string;
     embeddingModel?: ModelDescriptor;
     switchConfig: StrategyConfig;
+    stream: boolean;
 }
 
 /**
@@ -271,4 +270,6 @@ export const ModelServiceConfig: Schema<ModelServiceConfig> = Schema.object({
     ),
 
     switchConfig: SwitchConfig,
+
+    stream: Schema.boolean().default(true).description("是否启用流式传输，以获得更快的响应体验。"),
 }).description("模型服务核心配置");

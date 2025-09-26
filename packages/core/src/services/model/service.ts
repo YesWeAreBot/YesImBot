@@ -29,32 +29,34 @@ export class ModelService extends Service<Config> {
             this.initializeProviders();
             this.registerSchemas();
         } catch (error: any) {
-            this.ctx.logger.error(`模型服务初始化失败 | ${error.message}`);
+            this.logger = this.ctx.logger("model");
+            this.logger.level = this.config.logLevel;
+            this.logger.error(`模型服务初始化失败 | ${error.message}`);
             ctx.notifier.create({ type: "danger", content: `模型服务初始化失败 | ${error.message}` });
         }
     }
 
     private initializeProviders(): void {
-        this.ctx.logger.info("--- 开始初始化模型提供商 ---");
+        this.logger.info("--- 开始初始化模型提供商 ---");
         for (const providerConfig of this.config.providers) {
             const providerId = `${providerConfig.name} (${providerConfig.type})`;
 
             const factory = ProviderFactoryRegistry.get(providerConfig.type);
             if (!factory) {
-                this.ctx.logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
+                this.logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
                 continue;
             }
 
             try {
                 const client = factory.createClient(providerConfig);
-                const instance = new ProviderInstance(this.ctx, providerConfig, client);
+                const instance = new ProviderInstance(this.logger, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this.ctx.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
+                this.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
             } catch (error: any) {
-                this.ctx.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
+                this.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
             }
         }
-        this.ctx.logger.info("--- 模型提供商初始化完成 ---");
+        this.logger.info("--- 模型提供商初始化完成 ---");
     }
 
     /**
@@ -66,7 +68,7 @@ export class ModelService extends Service<Config> {
      */
     private validateConfig(): void {
         let modified = false;
-        // this.ctx.logger.debug("开始验证服务配置");
+        // this.logger.debug("开始验证服务配置");
         if (!this.config.providers || this.config.providers.length === 0) {
             throw new Error("配置错误: 至少需要配置一个模型提供商");
         }
@@ -99,9 +101,7 @@ export class ModelService extends Service<Config> {
 
         const chatGroup = this.config.modelGroups.find((g) => g.name === this.config.chatModelGroup);
         if (!chatGroup) {
-            this.ctx.logger.warn(
-                `配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`
-            );
+            this.logger.warn(`配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`);
             this.config.chatModelGroup = defaultGroup.name;
             modified = true;
         }
@@ -112,7 +112,7 @@ export class ModelService extends Service<Config> {
                 parent.scope.update(this.config);
             }
         } else {
-            //this.ctx.logger.debug("配置验证通过");
+            //this.logger.debug("配置验证通过");
         }
     }
 
@@ -245,13 +245,13 @@ export class ModelService extends Service<Config> {
 
         const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
-            this.ctx.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
+            this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
         }
         try {
             return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this), this.config.switchConfig);
         } catch (error: any) {
-            this.ctx.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
+            this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;
         }
     }
