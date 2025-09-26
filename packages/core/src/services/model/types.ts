@@ -121,7 +121,7 @@ export interface ModelHealthInfo {
     /** 成功率 */
     successRate: number;
     /** 模型权重 */
-    weight: number;
+    weight?: number;
     /** 是否在熔断状态 */
     isCircuitBroken: boolean;
     /** 熔断恢复时间 */

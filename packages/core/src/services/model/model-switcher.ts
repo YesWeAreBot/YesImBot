@@ -1,31 +1,26 @@
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Context, Logger } from "koishi";
+
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { ModelDescriptor, SwitchConfig } from "./config";
-import { ModelError, ModelErrorType, ModelHealthInfo, ChatModelType, SwitchStrategy } from "./types";
+import { ModelDescriptor, StrategyConfig } from "./config";
+import { ChatModelType, ModelError, ModelErrorType, ModelHealthInfo, SwitchStrategy } from "./types";
 
 export interface IModelSwitcher<T extends BaseModel> {
-    /** 获取一个可用模型（用于外部控制重试） */
+    /** 获取一个可用模型（外部控制重试） */
     pickModel(modelType?: ChatModelType): T | null;
 
     /** 统一的聊天接口（内部自动重试所有可用模型） */
     chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
 
-    /** 记录模型执行结果（用于健康状态管理） */
+    /** 记录模型执行结果 */
     recordResult(model: T, success: boolean, error?: ModelError, latency?: number): void;
 
     /** 获取模型健康状态 */
     getModelHealth(model: T): ModelHealthInfo;
 
-    /** 重置所有模型状态 */
-    resetAllModels(): void;
-
-    /** 获取当前配置 */
-    getConfig(): SwitchConfig;
-
-    /** 更新配置 */
-    updateConfig(config: Partial<SwitchConfig>): void;
+    /** 获取所有模型 */
+    getModels(): T[];
 }
 
 export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
@@ -38,7 +33,7 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         protected readonly models: T[],
         protected readonly visionModels: T[],
         protected readonly nonVisionModels: T[],
-        protected config: SwitchConfig
+        protected config: StrategyConfig
     ) {
         this.logger = ctx.logger("ModelSwitcher");
 
@@ -60,7 +55,7 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
                 successRequests: 0,
                 failureRequests: 0,
                 successRate: 1.0,
-                weight: this.config.modelWeights?.[model.id] || 1.0,
+                weight: this.config.strategy === SwitchStrategy.WeightedRandom ? (this.config as any).weights?.[model.id] || 1 : 1,
                 isCircuitBroken: false,
             });
         }
@@ -323,26 +318,8 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         return { ...health };
     }
 
-    public resetAllModels(): void {
-        this.logger.info("重置所有模型状态");
-        this.initializeHealthStates();
-        this.currentRoundRobinIndex = 0;
-    }
-
-    public getConfig(): SwitchConfig {
-        return { ...this.config };
-    }
-
-    public updateConfig(config: Partial<SwitchConfig>): void {
-        this.config = { ...this.config, ...config };
-        this.logger.info(`配置已更新 | 策略: ${this.config.strategy}`);
-
-        // 如果权重配置发生变化，更新健康状态中的权重
-        if (config.modelWeights) {
-            for (const [modelId, health] of this.modelHealthMap) {
-                health.weight = this.config.modelWeights[modelId] || 1.0;
-            }
-        }
+    public getModels(): T[] {
+        return this.models;
     }
 
     public getHealthySummary(): { total: number; healthy: number; broken: number } {
@@ -374,7 +351,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> implements IMod
         ctx: Context,
         groupConfig: { name: string; models: ModelDescriptor[] },
         modelGetter: (providerName: string, modelId: string) => IChatModel | null,
-        config: SwitchConfig
+        config: StrategyConfig
     ) {
         // 加载所有可用模型
         const allModels: IChatModel[] = [];
@@ -427,53 +404,6 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> implements IMod
      */
     public hasVisionCapability(): boolean {
         return this.visionModels.length > 0;
-    }
-
-    /**
-     * 获取所有模型
-     * @returns 所有模型列表
-     */
-    public getModels(): IChatModel[] {
-        return this.models;
-    }
-
-    /**
-     * 手动标记模型为健康状态（用于管理员操作）
-     * @param modelId 模型ID
-     */
-    public markModelHealthy(modelId: string): void {
-        const model = this.models.find((m) => m.id === modelId);
-        if (!model) {
-            throw new Error(`模型不存在: ${modelId}`);
-        }
-
-        const health = this.getModelHealth(model);
-        health.isHealthy = true;
-        health.failureCount = 0;
-        health.isCircuitBroken = false;
-        delete health.circuitBreakerResetTime;
-        delete health.lastFailureTime;
-
-        this.logger.info(`模型已手动标记为健康 | 模型: ${modelId}`);
-    }
-
-    /**
-     * 手动标记模型为不健康状态（用于维护）
-     * @param modelId 模型ID
-     * @param reason 原因
-     */
-    public markModelUnhealthy(modelId: string, reason?: string): void {
-        const model = this.models.find((m) => m.id === modelId);
-        if (!model) {
-            throw new Error(`模型不存在: ${modelId}`);
-        }
-
-        const health = this.getModelHealth(model);
-        health.isHealthy = false;
-        health.failureCount = this.config.maxFailures;
-        health.lastFailureTime = Date.now();
-
-        this.logger.info(`模型已手动标记为不健康 | 模型: ${modelId} | 原因: ${reason || "手动标记"}`);
     }
 
     /**

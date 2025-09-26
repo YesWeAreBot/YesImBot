@@ -152,49 +152,44 @@ export const ProviderConfig: Schema<ProviderConfig> = Schema.intersect([
 
 // --- 4. 切换策略配置 (Switch Strategy Configuration) ---
 
-export interface SwitchConfig {
+export interface SharedSwitchConfig {
     /** 切换策略 */
     strategy: SwitchStrategy;
-    /** 最大失败重试次数 */
-    maxFailures?: number;
-    /** 失败冷却时间(ms) */
-    failureCooldown?: number;
-    /** 熔断阈值 */
-    circuitBreakerThreshold?: number;
-    /** 熔断恢复时间(ms) */
-    circuitBreakerRecoveryTime?: number;
+    firstToken: number;
     /** 请求超时时间(ms) */
-    requestTimeout?: number;
-    /** 模型权重配置 */
-    modelWeights?: Record<string, number>;
-}
-
-interface FailoverStrategyConfig extends SwitchConfig {
-    strategy: SwitchStrategy.Failover;
+    requestTimeout: number;
+    /** 最大失败重试次数 */
+    maxRetries: number;
+    /** 单个模型在进入冷却前允许的最大连续失败次数 */
     maxFailures: number;
+    /** 失败冷却时间(ms) */
     failureCooldown: number;
+    /** 熔断阈值 */
     circuitBreakerThreshold: number;
+    /** 熔断恢复时间(ms) */
     circuitBreakerRecoveryTime: number;
 }
 
-interface RoundRobinStrategyConfig extends SwitchConfig {
+interface FailoverStrategyConfig extends SharedSwitchConfig {
+    strategy: SwitchStrategy.Failover;
+}
+
+interface RoundRobinStrategyConfig extends SharedSwitchConfig {
     strategy: SwitchStrategy.RoundRobin;
-    requestTimeout: number;
 }
 
-interface RandomStrategyConfig extends SwitchConfig {
+interface RandomStrategyConfig extends SharedSwitchConfig {
     strategy: SwitchStrategy.Random;
-    requestTimeout: number;
 }
 
-interface WeightedRandomStrategyConfig extends SwitchConfig {
+interface WeightedRandomStrategyConfig extends SharedSwitchConfig {
     strategy: SwitchStrategy.WeightedRandom;
-    requestTimeout: number;
+    /** 模型权重配置 */
     modelWeights: Record<string, number>;
 }
 
-type StrategyConfig =
-    | SwitchConfig
+export type StrategyConfig =
+    | SharedSwitchConfig
     | FailoverStrategyConfig
     | RoundRobinStrategyConfig
     | RandomStrategyConfig
@@ -213,26 +208,27 @@ export const SwitchConfig: Schema<StrategyConfig> = Schema.intersect([
         ])
             .default(SwitchStrategy.Failover)
             .description("模型组的负载均衡与故障切换策略。"),
+        firstToken: Schema.number().min(1000).default(30000).description("首字到达时的超时时间 (毫秒)。"),
+        requestTimeout: Schema.number().min(1000).default(60000).description("单次请求的超时时间 (毫秒)。"),
+        maxRetries: Schema.number().min(1).default(3).description("最大重试次数。"),
+
+        maxFailures: Schema.number().min(1).default(3).description("单个模型在进入冷却前允许的最大连续失败次数。"),
+        failureCooldown: Schema.number().min(1000).default(60000).description("模型失败后，暂时禁用的冷却时间 (毫秒)。"),
+        circuitBreakerThreshold: Schema.number().min(1).default(5).description("触发熔断的连续失败次数阈值。"),
+        circuitBreakerRecoveryTime: Schema.number().min(0).default(300000).description("熔断后，模型自动恢复服务的等待时间 (毫秒)。"),
     }).description("切换策略"),
     Schema.union([
         Schema.object({
             strategy: Schema.const(SwitchStrategy.Failover),
-            maxFailures: Schema.number().min(1).default(3).description("单个模型在进入冷却前允许的最大连续失败次数。"),
-            failureCooldown: Schema.number().min(1000).default(60000).description("模型失败后，暂时禁用的冷却时间 (毫秒)。"),
-            circuitBreakerThreshold: Schema.number().min(1).default(5).description("触发熔断的连续失败次数阈值。"),
-            circuitBreakerRecoveryTime: Schema.number().min(0).default(300000).description("熔断后，模型自动恢复服务的等待时间 (毫秒)。"),
         }),
         Schema.object({
             strategy: Schema.const(SwitchStrategy.RoundRobin),
-            requestTimeout: Schema.number().min(1000).default(30000).description("单次请求的超时时间 (毫秒)。"),
         }),
         Schema.object({
             strategy: Schema.const(SwitchStrategy.Random),
-            requestTimeout: Schema.number().min(1000).default(30000).description("单次请求的超时时间 (毫秒)。"),
         }),
         Schema.object({
             strategy: Schema.const(SwitchStrategy.WeightedRandom),
-            requestTimeout: Schema.number().min(1000).default(30000).description("单次请求的超时时间 (毫秒)。"),
             modelWeights: Schema.dict(Schema.number().min(0).default(1).description("权重"))
                 .role("table")
                 .description("为每个模型设置权重，权重越高被选中的概率越大。"),

@@ -1,8 +1,8 @@
 import { GenerateTextResult } from "@xsai/generate-text";
+
 import { ChatRequestOptions, IChatModel } from "./chat-model";
 import { ChatModelSwitcher } from "./model-switcher";
-import { SwitchConfig } from "./config";
-import { ModelError, ModelErrorType, ChatModelType, SwitchStrategy } from "./types";
+import { ChatModelType, ModelError, ModelErrorType } from "./types";
 
 /**
  * 模型切换器工具类
@@ -78,24 +78,6 @@ export class ModelSwitcherUtils {
         }
 
         throw new ModelError(ModelErrorType.UnknownError, "所有重试都失败了", undefined, false);
-    }
-
-    /**
-     * 创建自适应的切换配置
-     * @param strategy 基础策略
-     * @param modelWeights 模型权重映射
-     * @returns 配置对象
-     */
-    static createAdaptiveConfig(strategy: SwitchStrategy = SwitchStrategy.Failover, modelWeights?: Record<string, number>): SwitchConfig {
-        return {
-            strategy,
-            maxFailures: 3,
-            failureCooldown: 60000, // 1分钟
-            circuitBreakerThreshold: 5,
-            circuitBreakerRecoveryTime: 300000, // 5分钟
-            requestTimeout: 30000, // 30秒
-            modelWeights: modelWeights || {},
-        };
     }
 
     /**

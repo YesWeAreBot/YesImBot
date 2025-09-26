@@ -12,7 +12,6 @@ import { ModelType } from "./types";
 export class ProviderInstance {
     public readonly name: string;
     private readonly fetch: typeof globalThis.fetch;
-    private logger: Logger;
 
     constructor(
         private ctx: Context,
@@ -20,11 +19,10 @@ export class ProviderInstance {
         private readonly client: IProviderClient
     ) {
         this.name = config.name;
-        this.logger = ctx[Services.Logger].getLogger(`[提供商] [${this.name}]`);
 
         if (isNotEmpty(this.config.proxy)) {
             this.fetch = (async (input, init) => {
-                this.logger.debug(`🌐 使用代理 | 地址: ${this.config.proxy}`);
+                this.ctx.logger.debug(`🌐 使用代理 | 地址: ${this.config.proxy}`);
                 init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
                 return ufetch(input, init);
             }) as unknown as typeof globalThis.fetch;
@@ -36,11 +34,11 @@ export class ProviderInstance {
     public getChatModel(modelId: string): IChatModel | null {
         const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
-            this.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
+            this.ctx.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
             return null;
         }
         if (modelConfig.modelType !== ModelType.Chat) {
-            this.logger.warn(`模型 ${modelId} 不是聊天模型`);
+            this.ctx.logger.warn(`模型 ${modelId} 不是聊天模型`);
             return null;
         }
         return new ChatModel(this.ctx, this.name, this.client.chat, modelConfig as ChatModelConfig, this.fetch);
@@ -49,11 +47,11 @@ export class ProviderInstance {
     public getEmbedModel(modelId: string): IEmbedModel | null {
         const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
-            this.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
+            this.ctx.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
             return null;
         }
         if (modelConfig.modelType !== ModelType.Embedding) {
-            this.logger.warn(`模型 ${modelId} 不是嵌入模型`);
+            this.ctx.logger.warn(`模型 ${modelId} 不是嵌入模型`);
             return null;
         }
         return new EmbedModel(this.ctx, this.name, this.client.embed, modelConfig as ModelConfig, this.fetch);

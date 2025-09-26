@@ -18,7 +18,6 @@ declare module "koishi" {
 }
 
 export class ModelService extends Service<Config> {
-    static readonly inject = [Services.Logger];
     private readonly providerInstances = new Map<string, ProviderInstance>();
 
     constructor(ctx: Context, config: Config) {
