@@ -4,9 +4,10 @@ import { ProxyAgent, fetch as ufetch } from "undici";
 import { Services } from "@/shared/constants";
 import { isNotEmpty } from "@/shared/utils";
 import { ChatModel, IChatModel } from "./chat-model";
-import { ChatModelConfig, ModelConfig, ModelType, ProviderConfig } from "./config";
+import { ChatModelConfig, ModelConfig, ProviderConfig } from "./config";
 import { EmbedModel, IEmbedModel } from "./embed-model";
 import { IProviderClient } from "./factories";
+import { ModelType } from "./types";
 
 export class ProviderInstance {
     public readonly name: string;

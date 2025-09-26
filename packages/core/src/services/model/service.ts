@@ -1,23 +1,21 @@
-import { Context, Logger, Random, Schema, Service } from "koishi";
+import { Context, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
 import { Services } from "@/shared/constants";
 import { isNotEmpty } from "@/shared/utils";
-import { GenerateTextResult } from "@xsai/generate-text";
-import { BaseModel } from "./base-model";
-import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { ModelDescriptor, ModelType } from "./config";
+import { IChatModel } from "./chat-model";
+import { ModelDescriptor } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
+import { ChatModelSwitcher } from "./model-switcher";
 import { ProviderInstance } from "./provider-instance";
+import { ModelType } from "./types";
 
 declare module "koishi" {
     interface Context {
         [Services.Model]: ModelService;
     }
 }
-
-export type SwitcherMode = "round-robin" | "failover" | "random" | "weighted-random";
 
 export class ModelService extends Service<Config> {
     static readonly inject = [Services.Logger];
@@ -26,26 +24,25 @@ export class ModelService extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Model, true);
         this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[模型服务]");
 
         try {
             this.validateConfig();
             this.initializeProviders();
             this.registerSchemas();
         } catch (error: any) {
-            this.logger.error(`模型服务初始化失败 | ${error.message}`);
+            this.ctx.logger.error(`模型服务初始化失败 | ${error.message}`);
             ctx.notifier.create({ type: "danger", content: `模型服务初始化失败 | ${error.message}` });
         }
     }
 
     private initializeProviders(): void {
-        this.logger.info("--- 开始初始化模型提供商 ---");
+        this.ctx.logger.info("--- 开始初始化模型提供商 ---");
         for (const providerConfig of this.config.providers) {
             const providerId = `${providerConfig.name} (${providerConfig.type})`;
 
             const factory = ProviderFactoryRegistry.get(providerConfig.type);
             if (!factory) {
-                this.logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
+                this.ctx.logger.error(`❌ 不支持的类型 | 提供商: ${providerId}`);
                 continue;
             }
 
@@ -53,12 +50,12 @@ export class ModelService extends Service<Config> {
                 const client = factory.createClient(providerConfig);
                 const instance = new ProviderInstance(this.ctx, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
-                this.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
+                this.ctx.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
             } catch (error: any) {
-                this.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
+                this.ctx.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
             }
         }
-        this.logger.info("--- 模型提供商初始化完成 ---");
+        this.ctx.logger.info("--- 模型提供商初始化完成 ---");
     }
 
     /**
@@ -70,7 +67,7 @@ export class ModelService extends Service<Config> {
      */
     private validateConfig(): void {
         let modified = false;
-        // this.logger.debug("开始验证服务配置");
+        // this.ctx.logger.debug("开始验证服务配置");
         if (!this.config.providers || this.config.providers.length === 0) {
             throw new Error("配置错误: 至少需要配置一个模型提供商");
         }
@@ -103,7 +100,9 @@ export class ModelService extends Service<Config> {
 
         const chatGroup = this.config.modelGroups.find((g) => g.name === this.config.chatModelGroup);
         if (!chatGroup) {
-            this.logger.warn(`配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`);
+            this.ctx.logger.warn(
+                `配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`
+            );
             this.config.chatModelGroup = defaultGroup.name;
             modified = true;
         }
@@ -114,7 +113,7 @@ export class ModelService extends Service<Config> {
                 parent.scope.update(this.config);
             }
         } else {
-            //this.logger.debug("配置验证通过");
+            //this.ctx.logger.debug("配置验证通过");
         }
     }
 
@@ -247,99 +246,14 @@ export class ModelService extends Service<Config> {
 
         const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
-            this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
+            this.ctx.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
         }
         try {
-            return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this));
+            return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this), this.config.switchConfig);
         } catch (error: any) {
-            this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
+            this.ctx.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;
         }
-    }
-}
-
-export class ModelSwitcher<T extends BaseModel> {
-    protected readonly logger: Logger;
-    protected readonly models: T[] = [];
-    protected currentIndex = 0;
-
-    constructor(
-        private ctx: Context,
-        protected readonly groupConfig: { name: string; models: ModelDescriptor[] },
-        protected readonly modelGetter: (providerName: string, modelId: string) => T | null
-    ) {
-        this.logger = ctx[Services.Logger].getLogger(`[模型组][${groupConfig.name}]`);
-
-        for (const descriptor of groupConfig.models) {
-            const model = this.modelGetter(descriptor.providerName, descriptor.modelId);
-            if (model) {
-                this.models.push(model);
-            } else {
-                /* prettier-ignore */
-                this.logger.warn(`⚠ 无法加载模型 | 提供商: ${descriptor.providerName} | 模型ID: ${descriptor.modelId} | 所属组: ${groupConfig.name}`);
-            }
-        }
-
-        if (this.models.length === 0) {
-            const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
-            this.logger.error(`❌ 加载失败 | ${errorMsg}`);
-
-            throw new Error(`模型组 "${groupConfig.name}" 初始化失败: ${errorMsg}`);
-        }
-    }
-
-    public getModels(): T[] {
-        return this.models;
-    }
-}
-
-export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
-    private readonly visionModels: IChatModel[];
-    private readonly nonVisionModels: IChatModel[];
-
-    constructor(
-        ctx: Context,
-        groupConfig: { name: string; models: ModelDescriptor[] },
-        modelGetter: (providerName: string, modelId: string) => IChatModel | null
-    ) {
-        super(ctx, groupConfig, modelGetter);
-
-        // 根据能力对模型进行分类
-        this.visionModels = this.models.filter((m) => m.isVisionModel?.());
-        this.nonVisionModels = this.models.filter((m) => !m.isVisionModel?.());
-        //this.logger.debug(`模型能力分类 | 视觉: ${this.visionModels.length} | 非视觉: ${this.nonVisionModels.length}`);
-    }
-
-    public hasVisionCapability(): boolean {
-        return this.visionModels.length > 0;
-    }
-
-    public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
-        /* prettier-ignore */
-        // @ts-ignore
-        const hasImages = options.messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"));
-
-        let candidateModels: IChatModel[];
-
-        if (hasImages) {
-            if (this.visionModels.length > 0) {
-                this.logger.info("检测到图片内容，将使用视觉模型");
-                candidateModels = this.visionModels;
-            } else {
-                this.logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理");
-                candidateModels = this.nonVisionModels;
-            }
-        } else {
-            candidateModels = this.models;
-        }
-
-        if (candidateModels.length === 0) {
-            throw new Error(`模型组 "${this.groupConfig.name}" 中没有合适的模型来处理此请求`);
-        }
-
-        const selectedModel = Random.pick(candidateModels);
-
-        return selectedModel.chat(options);
     }
 }

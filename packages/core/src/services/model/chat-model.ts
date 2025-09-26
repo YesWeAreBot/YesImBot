@@ -6,7 +6,8 @@ import { Context } from "koishi";
 import { generateText, streamText } from "@/dependencies/xsai";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
-import { ChatModelConfig, ModelAbility, ModelConfig } from "./config";
+import { ChatModelConfig } from "./config";
+import { ModelAbility } from "./types";
 
 export interface ValidationResult {
     /** 内容是否有效 */
