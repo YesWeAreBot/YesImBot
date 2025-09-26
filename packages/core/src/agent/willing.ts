@@ -1,7 +1,7 @@
-import { Services } from "@/shared/constants";
-import { Context, Eval, Logger, Session, merge } from "koishi";
-import { WillingnessConfig } from "./config";
+import { Context, Eval, Session } from "koishi";
+
 import { Config } from "@/config";
+import { WillingnessConfig } from "./config";
 
 export interface MessageContext {
     chatId: string;
@@ -42,7 +42,6 @@ export interface ReplyDecision {
 export class WillingnessManager {
     private readonly ctx: Context;
     private readonly baseConfig: Config;
-    private logger: Logger;
 
     // --- 状态存储 ---
     private willingnessScores: Map<string, number> = new Map();
@@ -54,7 +53,6 @@ export class WillingnessManager {
     constructor(ctx: Context, config: Config) {
         this.ctx = ctx;
         this.baseConfig = config;
-        this.logger = ctx[Services.Logger].getLogger("[意愿管理器]");
 
         ctx.on("dispose", () => {
             this.stopDecayCycle();
@@ -305,7 +303,7 @@ export class WillingnessManager {
         );
 
         this.willingnessScores.set(chatId, newValue);
-        this.logger.debug(`[${chatId}] 引导关注被跳过话题，意愿值: ${current.toFixed(2)} -> ${newValue.toFixed(2)}`);
+        this.ctx.logger.debug(`[${chatId}] 引导关注被跳过话题，意愿值: ${current.toFixed(2)} -> ${newValue.toFixed(2)}`);
     }
 }
 

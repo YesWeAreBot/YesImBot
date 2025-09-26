@@ -18,15 +18,7 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<Config> {
-    static readonly inject = [
-        Services.Asset,
-        Services.Logger,
-        Services.Memory,
-        Services.Model,
-        Services.Prompt,
-        Services.Tool,
-        Services.WorldState,
-    ];
+    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Tool, Services.WorldState];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;
@@ -47,7 +39,10 @@ export class AgentCore extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Agent, true);
         this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
+
+        this.logger = this.ctx.logger("agent");
+
+        this.logger.level = this.config.logLevel;
 
         this.worldState = this.ctx[Services.WorldState];
         this.modelService = this.ctx[Services.Model];

@@ -27,7 +27,6 @@ interface ImageCandidate {
  * 它聚合了世界状态、记忆、工具定义，并处理复杂的多模态（图片）内容筛选。
  */
 export class PromptContextBuilder {
-    private readonly logger: Logger;
     private readonly assetService: AssetService;
     private readonly memoryService: MemoryService;
     private readonly toolService: ToolService;
@@ -39,7 +38,6 @@ export class PromptContextBuilder {
         private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[提示词构建]");
         this.assetService = ctx[Services.Asset];
         this.memoryService = ctx[Services.Memory];
         this.toolService = ctx[Services.Tool];
@@ -59,15 +57,19 @@ export class PromptContextBuilder {
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
      */
-    public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | (ImagePart | TextPart)[]> {
-        const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.enableVision;
+    public async buildMultimodalUserMessage(
+        userPromptText: string,
+        worldState: WorldState,
+        includeImages: boolean = false
+    ): Promise<string | (ImagePart | TextPart)[]> {
+        const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.enableVision && includeImages;
         if (!canUseVision) {
             return userPromptText;
         }
 
         const multiModalData = await this.buildMultimodalImages(worldState);
         if (multiModalData.images.length > 0) {
-            this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
+            this.ctx.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
             return [
                 { type: "text", text: this.config.multiModalSystemTemplate },
                 ...multiModalData.images,

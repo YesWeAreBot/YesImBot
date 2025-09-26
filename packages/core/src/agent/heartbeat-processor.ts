@@ -3,14 +3,14 @@ import { Message } from "@xsai/shared-chat";
 import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
+import { Config } from "@/config";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
+import { ChatModelType } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
 import { AgentResponse, AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
-import { Services } from "@/shared/constants";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
-import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./context-builder";
 
 /**
@@ -18,18 +18,18 @@ import { PromptContextBuilder } from "./context-builder";
  * 它协调上下文构建、LLM调用、响应解析和动作执行
  */
 export class HeartbeatProcessor {
-    private readonly logger: Logger;
-
+    private logger: Logger;
     constructor(
         private readonly ctx: Context,
-        private readonly config: AgentBehaviorConfig,
+        private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher,
         private readonly promptService: PromptService,
         private readonly toolService: ToolService,
         private readonly interactionManager: InteractionManager,
         private readonly contextBuilder: PromptContextBuilder
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[心跳处理器]");
+        this.logger = ctx.logger("heartbeat");
+        this.logger.level = config.logLevel || 2;
     }
 
     /**
@@ -79,7 +79,10 @@ export class HeartbeatProcessor {
     /**
      * 准备LLM请求所需的消息负载
      */
-    private async _prepareLlmRequest(stimulus: AnyAgentStimulus): Promise<{ messages: Message[] }> {
+    private async _prepareLlmRequest(
+        stimulus: AnyAgentStimulus,
+        includeImages: boolean = false
+    ): Promise<{ messages: Message[]; includeImages: boolean }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
@@ -145,14 +148,18 @@ export class HeartbeatProcessor {
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
         this.logger.debug("步骤 4/4: 构建最终消息...");
-        const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(userPromptText, promptContext.worldState);
+        const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(
+            userPromptText,
+            promptContext.worldState,
+            includeImages
+        );
 
         const messages: Message[] = [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessageContent },
         ];
 
-        return { messages };
+        return { messages, includeImages: userMessageContent instanceof Array };
     }
 
     /**
@@ -165,46 +172,93 @@ export class HeartbeatProcessor {
             return null;
         }
         const { platform, channelId } = session;
-        const parser = new JsonParser<AgentResponse>();
 
-        // 步骤 1-4: 准备请求
-        const { messages } = await this._prepareLlmRequest(stimulus);
+        let attempt = 0;
 
-        // 步骤 5: 调用LLM
-        this.logger.info("步骤 5/7: 调用大语言模型...");
-        const llmRawResponse = await this.modelSwitcher.chat({
-            messages,
-            validation: {
-                format: "json",
-                validator: (text, final) => {
-                    if (!final) return { valid: false, earlyExit: false }; // 非流式，只在最后验证
+        let llmRawResponse: GenerateTextResult | null = null;
 
-                    const { data, error } = parser.parse(text);
-                    if (error) return { valid: false, earlyExit: false, error };
-                    if (!data) return { valid: true, earlyExit: false, parsedData: null };
+        let includeImages = this.config.enableVision;
 
-                    // 归一化处理
-                    //@ts-ignore
-                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
-                        //@ts-ignore
-                        data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+        while (attempt < this.config.switchConfig.maxRetries) {
+            const parser = new JsonParser<AgentResponse>();
+
+            // 步骤 1-4: 准备请求
+            const { messages, includeImages: hasImages } = await this._prepareLlmRequest(stimulus, includeImages);
+
+            // 步骤 5: 调用LLM
+            this.logger.info("步骤 5/7: 调用大语言模型...");
+
+            try {
+                const model = this.modelSwitcher.pickModel(hasImages ? ChatModelType.Vision : ChatModelType.All);
+
+                if (!model) {
+                    if (hasImages) {
+                        includeImages = false; // 降级为纯文本
+                        continue; // 重试
+                    } else {
+                        // 所有模型均不可用
+                        this.logger.warn("未找到合适的模型，跳过本次心跳");
+                        break;
                     }
+                }
 
-                    // 结构验证
-                    const isThoughtsValid = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
-                    const isActionsValid = Array.isArray(data.actions);
+                const controller = new AbortController();
 
-                    if (isThoughtsValid && isActionsValid) {
-                        return { valid: true, earlyExit: false, parsedData: data };
+                const timeout = setTimeout(() => {
+                    if (this.config.stream) {
+                        controller.abort("请求超时");
                     }
-                    return { valid: false, earlyExit: false, error: "Missing 'thoughts' or 'actions' field." };
-                },
-            },
-        });
+                }, this.config.switchConfig.firstToken);
 
-        const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
-        const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
-        this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+                llmRawResponse = await model.chat({
+                    messages,
+                    stream: this.config.stream,
+                    abortSignal: AbortSignal.any([AbortSignal.timeout(this.config.switchConfig.requestTimeout), controller.signal]),
+                    validation: {
+                        format: "json",
+                        validator: (text, final) => {
+                            clearTimeout(timeout);
+                            if (!final) return { valid: false, earlyExit: false }; // 非流式，只在最后验证
+
+                            const { data, error } = parser.parse(text);
+                            if (error) return { valid: false, earlyExit: false, error };
+                            if (!data) return { valid: true, earlyExit: false, parsedData: null };
+
+                            // 归一化处理
+                            //@ts-ignore
+                            if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
+                                //@ts-ignore
+                                data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+                            }
+
+                            // 结构验证
+                            const isThoughtsValid = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
+                            const isActionsValid = Array.isArray(data.actions);
+
+                            if (isThoughtsValid && isActionsValid) {
+                                return { valid: true, earlyExit: false, parsedData: data };
+                            }
+                            return { valid: false, earlyExit: false, error: "Missing 'thoughts' or 'actions' field." };
+                        },
+                    },
+                });
+                const prompt_tokens =
+                    llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
+                const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
+                this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+                break; // 成功调用，跳出重试循环
+            } catch (error) {
+                this.logger.error(`调用 LLM 失败: ${error instanceof Error ? error.message : error}`);
+                attempt++;
+                if (attempt < this.config.switchConfig.maxRetries) {
+                    this.logger.info(`重试调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`);
+                    continue;
+                } else {
+                    this.logger.error("达到最大重试次数，跳过本次心跳");
+                    return { continue: false };
+                }
+            }
+        }
 
         // 步骤 6: 解析和验证响应
         this.logger.debug("步骤 6/7: 解析并验证LLM响应...");

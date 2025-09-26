@@ -25,7 +25,7 @@ export interface ArousalConfig {
     debounceMs: number;
 }
 
-export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
+export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
     allowedChannels: Schema.array(
         Schema.object({
             platform: Schema.string().required().description("平台"),
@@ -81,7 +81,7 @@ export interface WillingnessConfig {
     };
 }
 
-const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
+const WillingnessConfig: Schema<WillingnessConfig> = Schema.object({
     base: Schema.object({
         text: Schema.computed<Schema<number>>(Schema.number().default(12))
             .default(12)
@@ -138,7 +138,7 @@ export interface VisionConfig {
     detail: "low" | "high" | "auto";
 }
 
-export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
+export const VisionConfig: Schema<VisionConfig> = Schema.object({
     enableVision: Schema.boolean().default(false).description("是否启用视觉功能"),
     allowedImageTypes: Schema.array(Schema.string()).default(["image/jpeg", "image/png"]).description("允许的图片类型"),
     maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量"),
@@ -157,10 +157,10 @@ export type AgentBehaviorConfig = ArousalConfig &
         heartbeat: number;
     };
 
-export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.intersect([
-    ArousalConfigSchema.description("唤醒条件"),
-    WillingnessConfigSchema.description("响应意愿"),
-    VisionConfigSchema.description("视觉配置"),
+export const AgentBehaviorConfig: Schema<AgentBehaviorConfig> = Schema.intersect([
+    ArousalConfig.description("唤醒条件"),
+    WillingnessConfig.description("响应意愿"),
+    VisionConfig.description("视觉配置"),
     Schema.object({
         systemTemplate: Schema.string()
             .default(SystemBaseTemplate)
