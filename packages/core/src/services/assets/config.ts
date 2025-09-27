@@ -27,7 +27,9 @@ export const AssetServiceConfig: Schema<AssetServiceConfig> = Schema.object({
         .default("data/assets")
         .description("资源本地存储路径"),
 
-    driver: Schema.union(["local"]).default("local").description("存储驱动类型"),
+    driver: Schema.union([Schema.const("local")])
+        .default("local")
+        .description("存储驱动类型"),
 
     assetEndpoint: Schema.string().role("link").description("公开访问端点 URL (可选)"),
 

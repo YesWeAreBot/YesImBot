@@ -58,7 +58,6 @@ export class ToolService extends Service<Config> {
 
     private registerCommands() {
         this.ctx.command("tool", "工具管理指令集");
-        this.ctx.command("extension", "扩展管理指令集");
 
         this.ctx
             .command("tool.list", "列出所有可用工具", { authority: 3 })
