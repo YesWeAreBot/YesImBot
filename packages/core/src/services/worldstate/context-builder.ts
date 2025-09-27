@@ -2,7 +2,6 @@ import { Bot, Context, Logger, Session } from "koishi";
 
 import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
-import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
