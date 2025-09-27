@@ -179,12 +179,12 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         const hasImages = this.hasImagesInMessages(options.messages);
         let modelType = hasImages ? ChatModelType.Vision : ChatModelType.NonVision;
 
-        const startTime = Date.now();
         const maxRetries = this.models.length * 2; // 允许重试所有模型两轮
         let attempt = 0;
         let lastError: ModelError | null = null;
 
         while (attempt < maxRetries) {
+            const startTime = Date.now();
             const model = this.pickModel(modelType);
 
             if (!model) {

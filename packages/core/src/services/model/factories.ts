@@ -210,7 +210,7 @@ class DeepInfraFactory implements IProviderFactory {
     }
 }
 
-class FatherlessAIFactory implements IProviderFactory {
+class FeatherlessAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
         const client = createFatherless(apiKey, baseURL);
@@ -339,7 +339,7 @@ class FactoryRegistry {
         // this.register("Azure OpenAI", new AzureOpenAIFactory());
         this.register("Cerebras", new CerebrasFactory());
         this.register("DeepInfra", new DeepInfraFactory());
-        this.register("Fatherless AI", new FatherlessAIFactory());
+        this.register("Featherless AI", new FeatherlessAIFactory());
         this.register("Groq", new GroqFactory());
         this.register("Minimax", new MinimaxFactory());
         this.register("Minimax (International)", new MinimaxiFactory());

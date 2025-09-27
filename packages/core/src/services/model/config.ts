@@ -25,7 +25,7 @@ const PROVIDERS = {
     Ollama: { baseURL: "http://localhost:11434/v1/", link: "https://ollama.com/" },
     Cerebras: { baseURL: "https://api.cerebras.ai/v1/", link: "https://inference-docs.cerebras.ai/api-reference/chat-completions" },
     DeepInfra: { baseURL: "https://api.deepinfra.com/v1/openai/", link: "https://deepinfra.com/dash/api_keys" },
-    "Fatherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
+    "Featherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
     Groq: { baseURL: "https://api.groq.com/openai/v1/", link: "https://console.groq.com/keys" },
     Minimax: { baseURL: "https://api.minimax.chat/v1/", link: "https://platform.minimaxi.com/api-key" },
     "Minimax (International)": { baseURL: "https://api.minimaxi.chat/v1/", link: "https://www.minimax.io/user-center/api-keys" },
