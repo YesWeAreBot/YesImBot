@@ -14,7 +14,7 @@ import { PythonExecutor } from "./executors/python";
     version: "2.0.0",
 })
 export default class MultiEngineCodeExecutor {
-    static readonly inject = [Services.Tool, Services.Asset, Services.Logger];
+    static readonly inject = [Services.Tool, Services.Asset];
     static readonly Config = Config;
     private readonly logger: Logger;
     private executors: CodeExecutor[] = [];

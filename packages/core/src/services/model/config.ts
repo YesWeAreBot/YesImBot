@@ -64,7 +64,14 @@ export interface ChatModelConfig extends BaseModelConfig {
     custom?: Array<{ key: string; type: "string" | "number" | "boolean" | "json"; value: string }>;
 }
 
-export type ModelConfig = BaseModelConfig | ChatModelConfig;
+export interface ImageModelConfig extends BaseModelConfig {}
+
+export interface EmbeddingModelConfig extends BaseModelConfig {
+    modelType: ModelType.Embedding;
+    dimensions?: number;
+}
+
+export type ModelConfig = BaseModelConfig | ChatModelConfig | ImageModelConfig | EmbeddingModelConfig;
 
 /**
  * Schema for a single model configuration.
@@ -107,7 +114,10 @@ export const ModelConfig: Schema<ModelConfig> = Schema.intersect([
                 .description("自定义请求参数，用于支持特定提供商的非标准 API 字段。"),
         }),
         Schema.object({ modelType: Schema.const(ModelType.Image) }),
-        Schema.object({ modelType: Schema.const(ModelType.Embedding) }),
+        Schema.object({
+            modelType: Schema.const(ModelType.Embedding),
+            dimensions: Schema.number().description("嵌入向量的维度 (例如 1536)。"),
+        }),
     ]),
 ]).collapse();
 

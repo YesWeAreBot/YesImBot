@@ -18,6 +18,7 @@ export class MemoryService extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Memory, true);
         this.config = config;
+        this.logger.level = this.config.logLevel;
     }
 
     protected start() {
@@ -39,7 +40,7 @@ export class MemoryService extends Service<Config> {
             const memoryFiles = files.filter((file) => file.endsWith(".md") || file.endsWith(".txt"));
 
             if (memoryFiles.length === 0) {
-                this.ctx.logger.warn(`核心记忆目录 '${memoryPath}' 为空，将应用默认设定`);
+                this.logger.warn(`核心记忆目录 '${memoryPath}' 为空，将应用默认设定`);
                 try {
                     const defaultMemoryFiles = await fs.readdir(path.join(RESOURCES_DIR, "memory_block"));
 
@@ -49,7 +50,7 @@ export class MemoryService extends Service<Config> {
 
                     this.loadCoreMemoryBlocks();
                 } catch (error: any) {
-                    this.ctx.logger.error(`复制默认记忆块失败: ${error.message}`);
+                    this.logger.error(`复制默认记忆块失败: ${error.message}`);
                 }
                 return;
             }
@@ -59,17 +60,17 @@ export class MemoryService extends Service<Config> {
                 try {
                     const block = await MemoryBlock.createFromFile(this.ctx, filePath);
                     if (this.coreMemoryBlocks.has(block.label)) {
-                        this.ctx.logger.warn(`发现重复的记忆块标签 '${block.label}'，来自文件 '${filePath}'已忽略`);
+                        this.logger.warn(`发现重复的记忆块标签 '${block.label}'，来自文件 '${filePath}'已忽略`);
                     } else {
                         this.coreMemoryBlocks.set(block.label, block);
-                        this.ctx.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'`);
+                        this.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'`);
                     }
                 } catch (error: any) {
-                    //this.ctx.logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
+                    //this.logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
                 }
             }
         } catch (error: any) {
-            this.ctx.logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
+            this.logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
         }
     }
 }

@@ -29,7 +29,6 @@ export class ModelService extends Service<Config> {
             this.initializeProviders();
             this.registerSchemas();
         } catch (error: any) {
-            this.logger = this.ctx.logger("model");
             this.logger.level = this.config.logLevel;
             this.logger.error(`模型服务初始化失败 | ${error.message}`);
             ctx.notifier.create({ type: "danger", content: `模型服务初始化失败 | ${error.message}` });
@@ -249,7 +248,7 @@ export class ModelService extends Service<Config> {
             return undefined;
         }
         try {
-            return new ChatModelSwitcher(this.ctx, group, this.getChatModel.bind(this), this.config.switchConfig);
+            return new ChatModelSwitcher(this.logger, group, this.getChatModel.bind(this), this.config.switchConfig);
         } catch (error: any) {
             this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;

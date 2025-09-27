@@ -9,7 +9,6 @@ import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
 import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
-import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
 
@@ -37,14 +36,7 @@ export class ToolService extends Service<Config> {
     }
 
     protected async start() {
-        const builtinExtensions = [
-            CoreUtilExtension,
-            CommandExtension,
-            MemoryExtension,
-            QManagerExtension,
-            SearchExtension,
-            InteractionsExtension,
-        ];
+        const builtinExtensions = [CoreUtilExtension, CommandExtension, MemoryExtension, QManagerExtension, InteractionsExtension];
         const loadedExtensions = new Map<string, ForkScope>();
 
         for (const Ext of builtinExtensions) {
@@ -185,73 +177,6 @@ export class ToolService extends Service<Config> {
                     return `❌ 工具 ${name} 调用失败。\n原因：${stringify(result.error)}`;
                 }
             });
-
-        this.ctx
-            .command("tool.delete <name:string>", "删除一个已注册的工具", { authority: 3 })
-            .usage("根据工具名称，从工具服务中卸载一个工具。此操作是临时的，服务重启后可能会被重新加载")
-            .example("tool.delete web_search")
-            .action(async ({ session }, name) => {
-                if (!name) return "未指定要删除的工具名称";
-                const result = this.unregisterTool(name);
-                return result ? `工具 "${name}" 已成功删除。` : `删除失败：未找到名为 "${name}" 的工具。`;
-            });
-
-        this.ctx
-            .command("extension.list", "列出所有已加载的扩展", { authority: 3 })
-            .usage("查询并展示当前所有已成功加载的扩展及其描述")
-            .example("extension.list")
-            .action(async ({ session }) => {
-                const extensions = this.extensions;
-                if (extensions.size === 0) {
-                    return "当前没有已加载的扩展";
-                }
-                const extList = Array.from(extensions.values())
-                    .map((e) => `- ${e.metadata.name}: ${e.metadata.description}`)
-                    .join("\n");
-                return `发现 ${extensions.size} 个已加载的扩展：\n${extList}`;
-            });
-
-        this.ctx.command("extension.enable <name:string>", "启用扩展", { authority: 3 }).action(async ({ session }, name) => {
-            try {
-                const ext = (await import(name)) as IExtension;
-                if (!ext) {
-                    return `扩展未找到`;
-                }
-                if (this.extensions.has(name)) {
-                    return `扩展已启用`;
-                }
-                if (!ext.metadata) {
-                    return `扩展元数据未定义`;
-                }
-                if (!ext.metadata.name) {
-                    return `扩展元数据中缺少名称`;
-                }
-                if (!ext.metadata.description) {
-                    return `扩展元数据中缺少描述`;
-                }
-                if (!ext.metadata.version) {
-                    return `扩展元数据中缺少版本`;
-                }
-                if (!ext.metadata.author) {
-                    return `扩展元数据中缺少作者`;
-                }
-                if (!ext.metadata.display) {
-                    return `扩展元数据中缺少显示名称`;
-                }
-                const config = resolveConfig(ext, this.config.extra[name] || {});
-                this.register(ext, true, config);
-                this.ctx.scope.update({ [name]: { enabled: true } }, false);
-                return `启用成功`;
-            } catch (error: any) {
-                return `启用失败: ${error.message}`;
-            }
-        });
-
-        this.ctx.command("extension.disable <name:string>", "禁用扩展", { authority: 3 }).action(async ({ session }, name) => {
-            const result = this.unregister(name);
-            this.ctx.scope.update({ [name]: { enabled: false } }, false);
-            return result ? `禁用成功` : `禁用失败`;
-        });
     }
 
     private _registerPromptTemplates() {

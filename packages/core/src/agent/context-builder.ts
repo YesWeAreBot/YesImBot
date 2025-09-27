@@ -2,19 +2,12 @@ import { Services } from "@/shared/constants";
 import { ImagePart, TextPart } from "@xsai/shared-chat";
 import { Context, Logger } from "koishi";
 
+import { Config } from "@/config";
 import { AssetService } from "@/services/assets";
 import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
-import {
-    AgentStimulus,
-    AnyAgentStimulus,
-    ContextualMessage,
-    UserMessagePayload,
-    WorldState,
-    WorldStateService,
-} from "@/services/worldstate";
-import { Config } from "@/config";
+import { AnyAgentStimulus, ContextualMessage, WorldState, WorldStateService } from "@/services/worldstate";
 
 interface ImageCandidate {
     id: string;
@@ -27,6 +20,7 @@ interface ImageCandidate {
  * 它聚合了世界状态、记忆、工具定义，并处理复杂的多模态（图片）内容筛选。
  */
 export class PromptContextBuilder {
+    private readonly logger: Logger;
     private readonly assetService: AssetService;
     private readonly memoryService: MemoryService;
     private readonly toolService: ToolService;
@@ -34,7 +28,7 @@ export class PromptContextBuilder {
     private imageLifecycleTracker = new Map<string, number>();
 
     constructor(
-        private readonly ctx: Context,
+        ctx: Context,
         private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher
     ) {
@@ -42,6 +36,9 @@ export class PromptContextBuilder {
         this.memoryService = ctx[Services.Memory];
         this.toolService = ctx[Services.Tool];
         this.worldStateService = ctx[Services.WorldState];
+
+        this.logger = ctx.logger("prompt-builder");
+        this.logger.level = this.config.logLevel;
     }
 
     public async build(stimulus: AnyAgentStimulus) {
@@ -69,7 +66,7 @@ export class PromptContextBuilder {
 
         const multiModalData = await this.buildMultimodalImages(worldState);
         if (multiModalData.images.length > 0) {
-            this.ctx.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
+            this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
             return [
                 { type: "text", text: this.config.multiModalSystemTemplate },
                 ...multiModalData.images,

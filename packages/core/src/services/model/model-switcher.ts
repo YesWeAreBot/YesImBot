@@ -24,19 +24,16 @@ export interface IModelSwitcher<T extends BaseModel> {
 }
 
 export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
-    protected readonly logger: Logger;
     protected currentRoundRobinIndex: number = 0;
     protected readonly modelHealthMap = new Map<string, ModelHealthInfo>();
 
     constructor(
-        protected readonly ctx: Context,
+        protected readonly logger: Logger,
         protected readonly models: T[],
         protected readonly visionModels: T[],
         protected readonly nonVisionModels: T[],
         protected config: StrategyConfig
     ) {
-        this.logger = ctx.logger("ModelSwitcher");
-
         // 初始化健康状态
         this.initializeHealthStates();
 
@@ -348,7 +345,7 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
  */
 export class ChatModelSwitcher extends ModelSwitcher<IChatModel> implements IModelSwitcher<IChatModel> {
     constructor(
-        ctx: Context,
+        protected readonly logger: Logger,
         groupConfig: { name: string; models: ModelDescriptor[] },
         modelGetter: (providerName: string, modelId: string) => IChatModel | null,
         config: StrategyConfig
@@ -370,7 +367,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> implements IMod
                     nonVisionModels.push(model);
                 }
             } else {
-                ctx.logger.warn(
+                logger.warn(
                     `⚠ 无法加载模型 | 提供商: ${descriptor.providerName} | 模型ID: ${descriptor.modelId} | 所属组: ${groupConfig.name}`
                 );
             }
@@ -378,13 +375,13 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> implements IMod
 
         if (allModels.length === 0) {
             const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
-            ctx.logger.error(`❌ 加载失败 | ${errorMsg}`);
+            logger.error(`❌ 加载失败 | ${errorMsg}`);
             throw new Error(`模型组 "${groupConfig.name}" 初始化失败: ${errorMsg}`);
         }
 
-        super(ctx, allModels, visionModels, nonVisionModels, config);
+        super(logger, allModels, visionModels, nonVisionModels, config);
 
-        ctx.logger.success(
+        logger.success(
             `✅ 聊天模型切换器初始化成功 | 组名: ${groupConfig.name} | 总模型数: ${allModels.length} | 视觉模型: ${visionModels.length} | 普通模型: ${nonVisionModels.length}`
         );
     }

@@ -20,7 +20,7 @@ import { PromptContextBuilder } from "./context-builder";
 export class HeartbeatProcessor {
     private logger: Logger;
     constructor(
-        private readonly ctx: Context,
+        ctx: Context,
         private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher,
         private readonly promptService: PromptService,
@@ -29,7 +29,7 @@ export class HeartbeatProcessor {
         private readonly contextBuilder: PromptContextBuilder
     ) {
         this.logger = ctx.logger("heartbeat");
-        this.logger.level = config.logLevel || 2;
+        this.logger.level = config.logLevel;
     }
 
     /**
