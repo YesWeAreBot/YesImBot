@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Config } from "@/config";
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
-import { ChatModelType } from "@/services/model/types";
+import { ChatModelType, ModelError } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
 import { AgentResponse, AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
@@ -188,9 +188,10 @@ export class HeartbeatProcessor {
             // 步骤 5: 调用LLM
             this.logger.info("步骤 5/7: 调用大语言模型...");
 
-            try {
-                const model = this.modelSwitcher.pickModel(hasImages ? ChatModelType.Vision : ChatModelType.All);
+            const model = this.modelSwitcher.getModel(hasImages ? ChatModelType.Vision : ChatModelType.All);
+            const startTime = Date.now();
 
+            try {
                 if (!model) {
                     if (hasImages) {
                         includeImages = false; // 降级为纯文本
@@ -205,9 +206,7 @@ export class HeartbeatProcessor {
                 const controller = new AbortController();
 
                 const timeout = setTimeout(() => {
-                    if (this.config.stream) {
-                        controller.abort("请求超时");
-                    }
+                    if (this.config.stream) controller.abort("请求超时");
                 }, this.config.switchConfig.firstToken);
 
                 llmRawResponse = await model.chat({
@@ -246,10 +245,17 @@ export class HeartbeatProcessor {
                     llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
                 const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
                 this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+                this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
                 break; // 成功调用，跳出重试循环
             } catch (error) {
                 this.logger.error(`调用 LLM 失败: ${error instanceof Error ? error.message : error}`);
                 attempt++;
+                this.modelSwitcher.recordResult(
+                    model,
+                    false,
+                    ModelError.classify(error instanceof Error ? error : new Error(String(error))),
+                    Date.now() - startTime
+                );
                 if (attempt < this.config.switchConfig.maxRetries) {
                     this.logger.info(`重试调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`);
                     continue;
@@ -290,10 +296,7 @@ export class HeartbeatProcessor {
         }
         const { platform, channelId } = session;
 
-        // 步骤 1-4: 准备请求
-        const { messages } = await this._prepareLlmRequest(stimulus);
-
-        this.logger.info("步骤 5/7: 调用大语言模型...");
+        this.logger.info("步骤 5/7: 调用大语言模型 (流式)...");
         const stime = Date.now();
 
         interface ConsumerBatch {
@@ -305,18 +308,13 @@ export class HeartbeatProcessor {
         let batchCounter = 0;
         let currentBatch: ConsumerBatch | null = null;
 
+        // 这些值会由消费者在每个批次内重置
         let thoughts = { observe: "", analyze_infer: "", plan: "" };
         let request_heartbeat = false;
 
-        let streamParser = new StreamParser({
-            thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
-            actions: [{ function: "string", params: "any" }],
-            request_heartbeat: "boolean",
-        });
-
-        // 启动一个批次的消费者
+        // factory: 创建新的流式解析器与消费者批次
+        let streamParser: StreamParser;
         const startConsumers = () => {
-            // 中断并结束旧批次
             if (currentBatch) {
                 this.logger.warn(`中断旧批次 #${currentBatch.id}`);
                 currentBatch.controller.abort();
@@ -338,7 +336,7 @@ export class HeartbeatProcessor {
                     for await (const chunk of streamParser.stream<any>("thoughts")) {
                         if (signal.aborted) break;
                         const [key, value] = Object.entries(chunk)[0];
-                        thoughts = { ...thoughts, [key]: value };
+                        thoughts = { ...thoughts, [key]: value } as any;
                         this.logger.debug(`[流式思考 #${id}] 🤔 ${key}: ${value}`);
                     }
                 } finally {
@@ -375,73 +373,146 @@ export class HeartbeatProcessor {
             };
         };
 
-        // 第一次启动消费者
-        startConsumers();
-
         const finalValidatorParser = new JsonParser<any>();
 
-        const llmPromise = this.modelSwitcher.chat({
-            messages,
-            stream: true,
-            validation: {
-                format: "json",
-                validator: (text, final) => {
-                    if (!final) {
-                        try {
-                            streamParser.processText(text, false);
-                        } catch (error: any) {
-                            if (!error.message.includes("Cannot read properties of null")) {
-                                this.logger.warn(`流式解析器错误: ${error.message}`);
-                            }
-                        }
-                        return { valid: true, earlyExit: false };
+        let attempt = 0;
+        let includeImages = this.config.enableVision;
+
+        // 重试与模型切换
+        while (attempt < this.config.switchConfig.maxRetries) {
+            // 1-4: 为当前尝试构建请求（含多模态）
+            const { messages, includeImages: hasImages } = await this._prepareLlmRequest(stimulus, includeImages);
+            const desiredType = hasImages ? ChatModelType.Vision : ChatModelType.All;
+            const model = this.modelSwitcher.getModel(desiredType);
+
+            // 新的解析器与消费者批次
+            streamParser = new StreamParser({
+                thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
+                actions: [{ function: "string", params: "any" }],
+                request_heartbeat: "boolean",
+            });
+            startConsumers();
+
+            const startTime = Date.now();
+            let firstTokenTimer: any;
+            try {
+                if (!model) {
+                    if (hasImages) {
+                        this.logger.warn("未找到支持多模态的模型，降级为纯文本模式后重试");
+                        includeImages = false; // 降级
+                        continue; // 不计入重试次数
                     }
+                    this.logger.warn("未找到合适的模型（纯文本），终止本次心跳");
+                    break;
+                }
 
-                    const { data, error } = finalValidatorParser.parse(text);
+                this.logger.info(
+                    `尝试调用模型（${hasImages ? "Vision" : "Text"}），第 ${attempt + 1}/${this.config.switchConfig.maxRetries} 次...`
+                );
 
-                    if (error) {
-                        this.logger.warn("最终JSON解析失败，即将触发重试...");
-                        // 用新的 parser 启动新的批次
-                        streamParser = new StreamParser({
-                            thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
-                            actions: [{ function: "string", params: "any" }],
-                            request_heartbeat: "boolean",
-                        });
-                        startConsumers();
-                        return { valid: false, earlyExit: false, error };
-                    }
-
+                const controller = new AbortController();
+                // 首 token 监控：若迟迟未到首 token，则中止请求（仅在流式时）
+                firstTokenTimer = setTimeout(() => {
                     try {
-                        streamParser.processText(text, true);
-                    } catch (e) {
-                        /* 忽略完成阶段错误 */
-                    }
+                        controller.abort("首 token 超时");
+                    } catch {}
+                }, this.config.switchConfig.firstToken);
 
-                    let finalData = data;
-                    if (finalData.thoughts && typeof finalData.thoughts.request_heartbeat === "boolean") {
-                        finalData.request_heartbeat = finalData.request_heartbeat ?? finalData.thoughts.request_heartbeat;
-                    }
+                const llmResult = await model.chat({
+                    messages,
+                    stream: true,
+                    abortSignal: AbortSignal.any([AbortSignal.timeout(this.config.switchConfig.requestTimeout), controller.signal]),
+                    validation: {
+                        format: "json",
+                        validator: (text, final) => {
+                            // 一旦收到任何片段，视为首 token 已到
+                            if (firstTokenTimer) {
+                                clearTimeout(firstTokenTimer);
+                                firstTokenTimer = null;
+                            }
 
-                    const isComplete =
-                        finalData.thoughts && Array.isArray(finalData.actions) && typeof finalData.request_heartbeat === "boolean";
+                            if (!final) {
+                                try {
+                                    streamParser.processText(text, false);
+                                } catch (error: any) {
+                                    if (!error?.message?.includes("Cannot read properties of null")) {
+                                        this.logger.warn(`流式解析器错误: ${error?.message ?? error}`);
+                                    }
+                                }
+                                return { valid: true, earlyExit: false };
+                            }
 
-                    if (isComplete) {
-                        return { valid: true, earlyExit: true, parsedData: finalData };
-                    }
+                            const { data, error } = finalValidatorParser.parse(text);
+                            if (error) {
+                                this.logger.warn("最终JSON解析失败，准备切换或重试模型...");
+                                // 触发重试：返回 invalid 让底层抛出
+                                return { valid: false, earlyExit: false, error } as any;
+                            }
 
-                    return { valid: true, earlyExit: false, parsedData: finalData };
-                },
-            },
-        });
+                            try {
+                                streamParser.processText(text, true);
+                            } catch {
+                                // 忽略完成阶段错误
+                            }
 
-        // 等待 LLM 结束后，再只等待最后的批次
-        await llmPromise;
-        if (currentBatch) {
-            await Promise.all(currentBatch.promises);
+                            const finalData = data;
+                            if (finalData?.thoughts && typeof finalData.thoughts.request_heartbeat === "boolean") {
+                                finalData.request_heartbeat = finalData.request_heartbeat ?? finalData.thoughts.request_heartbeat;
+                            }
+
+                            const isComplete =
+                                finalData?.thoughts && Array.isArray(finalData.actions) && typeof finalData.request_heartbeat === "boolean";
+                            return isComplete
+                                ? ({ valid: true, earlyExit: true, parsedData: finalData } as any)
+                                : ({ valid: true, earlyExit: false, parsedData: finalData } as any);
+                        },
+                    },
+                });
+
+                // 成功
+                if (firstTokenTimer) clearTimeout(firstTokenTimer);
+                const prompt_tokens = llmResult.usage?.prompt_tokens ?? "~N/A";
+                const completion_tokens = llmResult.usage?.completion_tokens ?? "~N/A";
+                this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+                this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
+
+                // 等待最后一个批次完成
+                if (currentBatch) {
+                    await Promise.all(currentBatch.promises);
+                }
+
+                this.logger.success("单次心跳成功完成");
+                return { continue: request_heartbeat };
+            } catch (error) {
+                if (firstTokenTimer) clearTimeout(firstTokenTimer);
+                this.logger.error(`调用 LLM (流式) 失败: ${error instanceof Error ? error.message : error}`);
+                this.modelSwitcher.recordResult(
+                    model,
+                    false,
+                    ModelError.classify(error instanceof Error ? error : new Error(String(error))),
+                    Date.now() - startTime
+                );
+                attempt++;
+
+                if (attempt < this.config.switchConfig.maxRetries) {
+                    this.logger.info(`重试流式调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`);
+                    continue;
+                }
+
+                this.logger.error("达到最大重试次数，跳过本次心跳");
+                // 终止当前消费者
+                if (currentBatch) {
+                    currentBatch.controller.abort();
+                }
+                return { continue: false };
+            }
         }
 
-        this.logger.success("单次心跳成功完成");
-        return { continue: request_heartbeat };
+        // 如果未进入成功分支且未命中 return，则认为失败
+        if (currentBatch) {
+            currentBatch.controller.abort();
+        }
+        return { continue: false };
     }
 
     /**

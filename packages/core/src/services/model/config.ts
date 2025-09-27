@@ -168,14 +168,20 @@ export interface SharedSwitchConfig {
     requestTimeout: number;
     /** 最大失败重试次数 */
     maxRetries: number;
-    /** 单个模型在进入冷却前允许的最大连续失败次数 */
-    maxFailures: number;
-    /** 失败冷却时间(ms) */
-    failureCooldown: number;
-    /** 熔断阈值 */
-    circuitBreakerThreshold: number;
-    /** 熔断恢复时间(ms) */
-    circuitBreakerRecoveryTime: number;
+
+    /** 熔断器设置 */
+    breaker: {
+        /** 是否启用熔断器 */
+        enabled: boolean;
+        /** 单个模型在进入冷却前允许的最大连续失败次数 */
+        maxFailures?: number;
+        /** 失败冷却时间(ms) */
+        cooldown?: number;
+        /** 熔断阈值 */
+        threshold?: number;
+        /** 熔断恢复时间(ms) */
+        recoveryTime?: number;
+    };
 }
 
 interface FailoverStrategyConfig extends SharedSwitchConfig {
@@ -220,10 +226,15 @@ export const SwitchConfig: Schema<StrategyConfig> = Schema.intersect([
         requestTimeout: Schema.number().min(1000).default(60000).description("单次请求的超时时间 (毫秒)。"),
         maxRetries: Schema.number().min(1).default(3).description("最大重试次数。"),
 
-        maxFailures: Schema.number().min(1).default(3).description("单个模型在进入冷却前允许的最大连续失败次数。"),
-        failureCooldown: Schema.number().min(1000).default(60000).description("模型失败后，暂时禁用的冷却时间 (毫秒)。"),
-        circuitBreakerThreshold: Schema.number().min(1).default(5).description("触发熔断的连续失败次数阈值。"),
-        circuitBreakerRecoveryTime: Schema.number().min(0).default(300000).description("熔断后，模型自动恢复服务的等待时间 (毫秒)。"),
+        breaker: Schema.object({
+            enabled: Schema.boolean().default(false).description("启用熔断器以防止频繁调用失败的模型。"),
+            maxFailures: Schema.number().min(1).default(3).description("单个模型在进入冷却前允许的最大连续失败次数。"),
+            cooldown: Schema.number().min(1000).default(60000).description("模型失败后，暂时禁用的冷却时间 (毫秒)。"),
+            threshold: Schema.number().min(1).default(5).description("触发熔断的连续失败次数阈值。"),
+            recoveryTime: Schema.number().min(0).default(300000).description("熔断后，模型自动恢复服务的等待时间 (毫秒)。"),
+        })
+            .collapse()
+            .description("熔断器配置"),
     }).description("切换策略"),
     Schema.union([
         Schema.object({

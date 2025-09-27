@@ -114,10 +114,9 @@ function migrateV201ToV202(configV201: ConfigV201): Config {
             firstToken: 30000,
             requestTimeout: 60000,
             maxRetries: 3,
-            maxFailures: 3,
-            failureCooldown: 60000,
-            circuitBreakerThreshold: 5,
-            circuitBreakerRecoveryTime: 300000,
+            breaker: {
+                enabled: false,
+            },
         },
         stream: true,
         logLevel: 2,

@@ -1,50 +1,41 @@
-import { GenerateTextResult } from "@xsai/generate-text";
-import { Context, Logger } from "koishi";
+import type { GenerateTextResult } from "@xsai/generate-text";
+import type { Message } from "@xsai/shared-chat";
+import { Logger } from "koishi";
 
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
 import { ModelDescriptor, StrategyConfig } from "./config";
-import { ChatModelType, ModelError, ModelErrorType, ModelHealthInfo, SwitchStrategy } from "./types";
+import { ChatModelType, ModelError, ModelErrorType, ModelStatus, SwitchStrategy } from "./types";
 
 export interface IModelSwitcher<T extends BaseModel> {
-    /** 获取一个可用模型（外部控制重试） */
-    pickModel(modelType?: ChatModelType): T | null;
-
-    /** 统一的聊天接口（内部自动重试所有可用模型） */
-    chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
-
-    /** 记录模型执行结果 */
-    recordResult(model: T, success: boolean, error?: ModelError, latency?: number): void;
-
-    /** 获取模型健康状态 */
-    getModelHealth(model: T): ModelHealthInfo;
+    /** 获取一个可用模型 */
+    getModel(): T | null;
 
     /** 获取所有模型 */
     getModels(): T[];
+
+    /** 获取模型状态 */
+    getModelStatus(model: T): ModelStatus;
+
+    /** 检查模型是否可用 */
+    isModelAvailable(model: T): boolean;
+
+    /** 记录一次调用结果 */
+    recordResult(model: T, success: boolean, error?: ModelError, latency?: number): void;
 }
 
-export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
+export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
     protected currentRoundRobinIndex: number = 0;
-    protected readonly modelHealthMap = new Map<string, ModelHealthInfo>();
+    protected readonly modelStatusMap = new Map<string, ModelStatus>();
 
     constructor(
         protected readonly logger: Logger,
         protected readonly models: T[],
-        protected readonly visionModels: T[],
-        protected readonly nonVisionModels: T[],
         protected config: StrategyConfig
     ) {
         // 初始化健康状态
-        this.initializeHealthStates();
-
-        this.logger.info(
-            `模型切换器已初始化 | 策略: ${this.config.strategy} | 总模型数: ${this.models.length} | 视觉模型: ${this.visionModels.length} | 普通模型: ${this.nonVisionModels.length}`
-        );
-    }
-
-    private initializeHealthStates(): void {
         for (const model of this.models) {
-            this.modelHealthMap.set(model.id, {
+            this.modelStatusMap.set(model.id, {
                 isHealthy: true,
                 failureCount: 0,
                 averageLatency: 0,
@@ -58,32 +49,18 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         }
     }
 
-    public pickModel(modelType: ChatModelType = ChatModelType.All): T | null {
-        const candidateModels = this.getCandidateModels(modelType);
-        const healthyModels = candidateModels.filter((model) => this.isModelHealthy(model));
+    public getModel(): T | null {
+        const healthyModels = this.models.filter((model) => this.isModelAvailable(model));
 
         if (healthyModels.length === 0) {
-            this.logger.warn(`没有可用的健康模型 | 请求类型: ${modelType}`);
             return null;
         }
 
         return this.selectModelByStrategy(healthyModels);
     }
 
-    protected getCandidateModels(modelType: ChatModelType): T[] {
-        switch (modelType) {
-            case ChatModelType.Vision:
-                return this.visionModels;
-            case ChatModelType.NonVision:
-                return this.nonVisionModels;
-            case ChatModelType.All:
-            default:
-                return this.models;
-        }
-    }
-
-    private isModelHealthy(model: T): boolean {
-        const health = this.modelHealthMap.get(model.id);
+    public isModelAvailable(model: T): boolean {
+        const health = this.modelStatusMap.get(model.id);
         if (!health) return false;
 
         const now = Date.now();
@@ -101,22 +78,25 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
             return false;
         }
 
-        // 检查失败冷却
-        if (health.failureCount >= this.config.maxFailures && health.lastFailureTime) {
-            const cooldownExpired = now - health.lastFailureTime > this.config.failureCooldown;
-            if (!cooldownExpired) {
-                return false;
+        if (this.config.breaker.enabled) {
+            // 检查失败冷却
+            if (health.failureCount >= this.config.breaker.maxFailures && health.lastFailureTime) {
+                const cooldownExpired = now - health.lastFailureTime > this.config.breaker.cooldown;
+                if (!cooldownExpired) {
+                    return false;
+                }
+                // 冷却期已过，重置失败计数
+                health.failureCount = 0;
+                health.isHealthy = true;
+                this.logger.info(`模型冷却期已过，重新可用 | 模型: ${model.id}`);
             }
-            // 冷却期已过，重置失败计数
-            health.failureCount = 0;
-            health.isHealthy = true;
-            this.logger.info(`模型冷却期已过，重新可用 | 模型: ${model.id}`);
         }
 
         return health.isHealthy;
     }
 
-    private selectModelByStrategy(models: T[]): T | null {
+    /** 根据策略选择模型，传入可用模型列表 */
+    protected selectModelByStrategy(models: T[]): T | null {
         if (models.length === 0) return null;
         if (models.length === 1) return models[0];
 
@@ -134,30 +114,34 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         }
     }
 
+    /** 选择轮询策略 */
     private selectRoundRobin(models: T[]): T {
         const model = models[this.currentRoundRobinIndex % models.length];
         this.currentRoundRobinIndex = (this.currentRoundRobinIndex + 1) % models.length;
         return model;
     }
 
+    /** 选择故障转移策略 */
     private selectFailover(models: T[]): T {
         // 按健康度排序，优先选择成功率高的模型
         const sortedModels = models.sort((a, b) => {
-            const healthA = this.modelHealthMap.get(a.id)!;
-            const healthB = this.modelHealthMap.get(b.id)!;
+            const healthA = this.modelStatusMap.get(a.id)!;
+            const healthB = this.modelStatusMap.get(b.id)!;
             return healthB.successRate - healthA.successRate;
         });
         return sortedModels[0];
     }
 
+    /** 选择随机策略 */
     private selectRandom(models: T[]): T {
         const randomIndex = Math.floor(Math.random() * models.length);
         return models[randomIndex];
     }
 
+    /** 选择加权随机策略 */
     private selectWeightedRandom(models: T[]): T {
         const weights = models.map((model) => {
-            const health = this.modelHealthMap.get(model.id)!;
+            const health = this.modelStatusMap.get(model.id)!;
             return health.weight * health.successRate;
         });
 
@@ -174,18 +158,166 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         return models[models.length - 1];
     }
 
+    public getModelStatus(model: T): ModelStatus {
+        const health = this.modelStatusMap.get(model.id);
+        if (!health) {
+            throw new Error(`未找到模型健康信息: ${model.id}`);
+        }
+        return { ...health };
+    }
+
+    public getModels(): T[] {
+        return this.models;
+    }
+
+    public recordResult(model: T, success: boolean, error?: ModelError, latency?: number) {
+        const health = this.modelStatusMap.get(model.id);
+        if (!health) return;
+
+        health.totalRequests += 1;
+        if (success) {
+            health.successRequests += 1;
+            health.failureCount = 0; // 重置连续失败计数
+            health.isHealthy = true;
+
+            // 更新平均延迟
+            if (latency !== undefined) {
+                health.averageLatency = (health.averageLatency * (health.successRequests - 1) + latency) / health.successRequests;
+            }
+        } else {
+            health.failureRequests += 1;
+            health.failureCount += 1;
+            health.lastFailureTime = Date.now();
+
+            // 更新成功率
+            health.successRate = health.successRequests / health.totalRequests;
+
+            if (this.config.breaker.enabled) {
+                // 检查是否需要触发熔断
+                if (health.failureCount >= this.config.breaker.threshold) {
+                    health.isCircuitBroken = true;
+                    health.circuitBreakerResetTime = Date.now() + this.config.breaker.recoveryTime;
+                    this.logger.warn(`模型熔断器已触发 | 模型: ${model.id} | 熔断持续时间: ${this.config.breaker.recoveryTime}ms`);
+                }
+            }
+
+            // 如果是超时或服务器错误，可能需要更新平均延迟
+            if (latency !== undefined && (error?.type === ModelErrorType.TimeoutError || error?.type === ModelErrorType.ServerError)) {
+                health.averageLatency =
+                    (health.averageLatency * (health.successRequests + health.failureRequests - 1) + latency) /
+                    (health.successRequests + health.failureRequests);
+            }
+        }
+    }
+}
+
+/**
+ * 专门用于聊天模型的切换器
+ * 继承基础切换器功能，添加视觉模型处理逻辑
+ */
+export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
+    private readonly visionModels: IChatModel[] = [];
+    private readonly nonVisionModels: IChatModel[] = [];
+    constructor(
+        protected readonly logger: Logger,
+        groupConfig: { name: string; models: ModelDescriptor[] },
+        modelGetter: (providerName: string, modelId: string) => IChatModel | null,
+        config: StrategyConfig
+    ) {
+        // 加载所有可用模型
+        const allModels: IChatModel[] = [];
+        const visionModels: IChatModel[] = [];
+        const nonVisionModels: IChatModel[] = [];
+
+        for (const descriptor of groupConfig.models) {
+            const model = modelGetter(descriptor.providerName, descriptor.modelId);
+            if (model) {
+                allModels.push(model);
+
+                // 根据模型能力分类
+                if (model.isVisionModel?.()) {
+                    visionModels.push(model);
+                } else {
+                    nonVisionModels.push(model);
+                }
+            } else {
+                /* prettier-ignore */
+                logger.warn(`⚠ 无法加载模型 | 提供商: ${descriptor.providerName} | 模型ID: ${descriptor.modelId} | 所属组: ${groupConfig.name}`);
+            }
+        }
+
+        if (allModels.length === 0) {
+            const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
+            logger.error(`❌ 加载失败 | ${errorMsg}`);
+            throw new Error(`模型组 "${groupConfig.name}" 初始化失败: ${errorMsg}`);
+        }
+
+        super(logger, allModels, config);
+
+        this.visionModels = visionModels;
+        this.nonVisionModels = nonVisionModels;
+
+        /* prettier-ignore */
+        logger.info(`✅ 模型组加载成功 | 组名: ${groupConfig.name} | 总模型数: ${allModels.length} | 视觉模型数: ${visionModels.length} | 普通模型数: ${nonVisionModels.length}`);
+    }
+
+    /**
+     * @override
+     *
+     * 根据模型类型获取合适的模型
+     * @param type 模型类型
+     * @returns 选中的模型，如果没有可用模型则返回 null
+     */
+    public getModel(type?: ChatModelType): IChatModel | null {
+        let candidateModels: IChatModel[] = [];
+
+        if (type === ChatModelType.Vision) {
+            candidateModels = this.visionModels.filter((model) => this.isModelAvailable(model));
+            if (candidateModels.length === 0) {
+                this.logger.warn("所有视觉模型均不可用，尝试降级到普通模型");
+                candidateModels = this.nonVisionModels.filter((model) => this.isModelAvailable(model));
+            }
+        } else if (type === ChatModelType.NonVision) {
+            candidateModels = this.nonVisionModels.filter((model) => this.isModelAvailable(model));
+        } else {
+            // 未指定类型，优先选择视觉模型
+            candidateModels = this.models.filter((model) => this.isModelAvailable(model));
+        }
+
+        if (candidateModels.length === 0) {
+            return null;
+        }
+
+        return this.selectModelByStrategy(candidateModels);
+    }
+
+    /**
+     * 检查此模型组中是否有视觉模型
+     */
+    public hasVisionCapability(): boolean {
+        let candidateModels: IChatModel[] = [];
+        // FIXME: 放宽检测条件，不检查模型可用性
+        candidateModels = this.visionModels.filter((model) => this.isModelAvailable(model));
+        return candidateModels.length > 0;
+    }
+
+    /**
+     * 带内部重试机制的聊天接口
+     * @param options
+     * @returns
+     */
     public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
         // 检测是否包含图片
-        const hasImages = this.hasImagesInMessages(options.messages);
+        const hasImages = this.hasImages(options.messages);
         let modelType = hasImages ? ChatModelType.Vision : ChatModelType.NonVision;
 
-        const maxRetries = this.models.length * 2; // 允许重试所有模型两轮
+        const maxRetries = this.config.maxRetries;
         let attempt = 0;
         let lastError: ModelError | null = null;
 
         while (attempt < maxRetries) {
             const startTime = Date.now();
-            const model = this.pickModel(modelType);
+            const model = this.getModel(modelType);
 
             if (!model) {
                 if (modelType === ChatModelType.Vision && hasImages) {
@@ -206,30 +338,16 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
                 // 创建带超时的请求选项
                 const requestOptions = { ...options };
                 if (this.config.requestTimeout > 0) {
-                    const timeoutController = new AbortController();
-                    const timeoutId = setTimeout(() => timeoutController.abort(), this.config.requestTimeout);
-
+                    const timeoutSignal = AbortSignal.timeout(this.config.requestTimeout);
                     if (requestOptions.abortSignal) {
-                        // 合并现有的abort signal
-                        const combinedController = new AbortController();
-                        const cleanup = () => {
-                            clearTimeout(timeoutId);
-                            timeoutController.abort();
-                            combinedController.abort();
-                        };
-
-                        requestOptions.abortSignal.addEventListener("abort", cleanup);
-                        timeoutController.signal.addEventListener("abort", cleanup);
-                        requestOptions.abortSignal = combinedController.signal;
+                        requestOptions.abortSignal = AbortSignal.any([requestOptions.abortSignal, timeoutSignal]);
                     } else {
-                        requestOptions.abortSignal = timeoutController.signal;
-                        // 确保清理超时
-                        requestOptions.abortSignal.addEventListener("abort", () => clearTimeout(timeoutId));
+                        requestOptions.abortSignal = timeoutSignal;
                     }
                 }
 
                 // 执行请求
-                const result = await (model as any).chat(requestOptions);
+                const result = await model.chat(requestOptions);
                 const latency = Date.now() - startTime;
 
                 // 记录成功结果
@@ -261,198 +379,8 @@ export class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
         throw new ModelError(lastError?.type || ModelErrorType.UnknownError, errorMsg, lastError?.originalError, false);
     }
 
-    private hasImagesInMessages(messages: any[]): boolean {
+    /** 检查消息列表中是否包含图片 */
+    private hasImages(messages: Message[]): boolean {
         return messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"));
-    }
-
-    public recordResult(model: T, success: boolean, error?: ModelError, latency?: number): void {
-        const health = this.modelHealthMap.get(model.id);
-        if (!health) return;
-
-        const now = Date.now();
-        health.totalRequests++;
-
-        if (success) {
-            health.successRequests++;
-            health.failureCount = 0;
-            health.lastSuccessTime = now;
-            health.isHealthy = true;
-
-            // 更新平均延迟
-            if (latency !== undefined) {
-                health.averageLatency = health.averageLatency === 0 ? latency : (health.averageLatency + latency) / 2;
-            }
-        } else {
-            health.failureRequests++;
-            health.failureCount++;
-            health.lastFailureTime = now;
-
-            // 检查是否需要标记为不健康
-            if (health.failureCount >= this.config.maxFailures) {
-                health.isHealthy = false;
-                this.logger.warn(`模型标记为不健康 | 模型: ${model.id} | 连续失败: ${health.failureCount}次`);
-            }
-
-            // 检查是否需要触发熔断
-            if (health.failureCount >= this.config.circuitBreakerThreshold) {
-                health.isCircuitBroken = true;
-                health.circuitBreakerResetTime = now + this.config.circuitBreakerRecoveryTime;
-                this.logger.warn(
-                    `模型熔断器触发 | 模型: ${model.id} | 恢复时间: ${new Date(health.circuitBreakerResetTime).toISOString()}`
-                );
-            }
-        }
-
-        // 更新成功率
-        health.successRate = health.totalRequests > 0 ? health.successRequests / health.totalRequests : 1.0;
-    }
-
-    public getModelHealth(model: T): ModelHealthInfo {
-        const health = this.modelHealthMap.get(model.id);
-        if (!health) {
-            throw new Error(`未找到模型健康信息: ${model.id}`);
-        }
-        return { ...health };
-    }
-
-    public getModels(): T[] {
-        return this.models;
-    }
-
-    public getHealthySummary(): { total: number; healthy: number; broken: number } {
-        let healthy = 0;
-        let broken = 0;
-
-        for (const health of this.modelHealthMap.values()) {
-            if (health.isCircuitBroken) {
-                broken++;
-            } else if (health.isHealthy) {
-                healthy++;
-            }
-        }
-
-        return {
-            total: this.models.length,
-            healthy,
-            broken,
-        };
-    }
-}
-
-/**
- * 专门用于聊天模型的切换器
- * 继承基础切换器功能，添加视觉模型处理逻辑
- */
-export class ChatModelSwitcher extends ModelSwitcher<IChatModel> implements IModelSwitcher<IChatModel> {
-    constructor(
-        protected readonly logger: Logger,
-        groupConfig: { name: string; models: ModelDescriptor[] },
-        modelGetter: (providerName: string, modelId: string) => IChatModel | null,
-        config: StrategyConfig
-    ) {
-        // 加载所有可用模型
-        const allModels: IChatModel[] = [];
-        const visionModels: IChatModel[] = [];
-        const nonVisionModels: IChatModel[] = [];
-
-        for (const descriptor of groupConfig.models) {
-            const model = modelGetter(descriptor.providerName, descriptor.modelId);
-            if (model) {
-                allModels.push(model);
-
-                // 根据模型能力分类
-                if (model.isVisionModel?.()) {
-                    visionModels.push(model);
-                } else {
-                    nonVisionModels.push(model);
-                }
-            } else {
-                logger.warn(
-                    `⚠ 无法加载模型 | 提供商: ${descriptor.providerName} | 模型ID: ${descriptor.modelId} | 所属组: ${groupConfig.name}`
-                );
-            }
-        }
-
-        if (allModels.length === 0) {
-            const errorMsg = "模型组中无任何可用的模型 (请检查模型配置和能力声明)";
-            logger.error(`❌ 加载失败 | ${errorMsg}`);
-            throw new Error(`模型组 "${groupConfig.name}" 初始化失败: ${errorMsg}`);
-        }
-
-        super(logger, allModels, visionModels, nonVisionModels, config);
-
-        logger.success(
-            `✅ 聊天模型切换器初始化成功 | 组名: ${groupConfig.name} | 总模型数: ${allModels.length} | 视觉模型: ${visionModels.length} | 普通模型: ${nonVisionModels.length}`
-        );
-    }
-
-    /**
-     * 根据模型类型获取合适的模型
-     * @param type 模型类型
-     * @returns 选中的模型，如果没有可用模型则返回 null
-     */
-    public getModel(type?: ChatModelType): IChatModel | null {
-        return this.pickModel(type || ChatModelType.All);
-    }
-
-    /**
-     * 检查是否有视觉能力
-     * @returns 是否有视觉模型可用
-     */
-    public hasVisionCapability(): boolean {
-        return this.visionModels.length > 0;
-    }
-
-    /**
-     * 获取推荐使用的模型（基于成功率和延迟）
-     * @param modelType 模型类型
-     * @returns 推荐模型信息
-     */
-    public getRecommendedModel(modelType: ChatModelType = ChatModelType.All): {
-        model: IChatModel;
-        health: ModelHealthInfo;
-        score: number;
-    } | null {
-        const candidates = this.getCandidateModelsForType(modelType);
-        if (candidates.length === 0) return null;
-
-        let bestModel: IChatModel | null = null;
-        let bestScore = -1;
-        let bestHealth: ModelHealthInfo | null = null;
-
-        for (const model of candidates) {
-            const health = this.getModelHealth(model);
-            if (!health.isHealthy || health.isCircuitBroken) continue;
-
-            // 计算综合得分：成功率 * 权重 - 平均延迟影响
-            const latencyFactor = health.averageLatency > 0 ? Math.max(0.1, 1 - health.averageLatency / 10000) : 1;
-            const score = health.successRate * health.weight * latencyFactor;
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestModel = model;
-                bestHealth = health;
-            }
-        }
-
-        return bestModel && bestHealth
-            ? {
-                  model: bestModel,
-                  health: bestHealth,
-                  score: bestScore,
-              }
-            : null;
-    }
-
-    private getCandidateModelsForType(modelType: ChatModelType): IChatModel[] {
-        switch (modelType) {
-            case ChatModelType.Vision:
-                return this.visionModels;
-            case ChatModelType.NonVision:
-                return this.nonVisionModels;
-            case ChatModelType.All:
-            default:
-                return this.models;
-        }
     }
 }

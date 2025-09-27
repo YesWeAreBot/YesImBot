@@ -101,7 +101,7 @@ export class ModelError extends Error {
     }
 }
 
-export interface ModelHealthInfo {
+export interface ModelStatus {
     /** 模型是否可用 */
     isHealthy: boolean;
     /** 连续失败次数 */
