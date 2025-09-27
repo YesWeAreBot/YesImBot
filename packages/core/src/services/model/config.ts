@@ -173,12 +173,10 @@ export interface SharedSwitchConfig {
     breaker: {
         /** 是否启用熔断器 */
         enabled: boolean;
-        /** 单个模型在进入冷却前允许的最大连续失败次数 */
-        maxFailures?: number;
-        /** 失败冷却时间(ms) */
-        cooldown?: number;
         /** 熔断阈值 */
         threshold?: number;
+        /** 失败冷却时间(ms) */
+        cooldown?: number;
         /** 熔断恢复时间(ms) */
         recoveryTime?: number;
     };
@@ -228,9 +226,8 @@ export const SwitchConfig: Schema<StrategyConfig> = Schema.intersect([
 
         breaker: Schema.object({
             enabled: Schema.boolean().default(false).description("启用熔断器以防止频繁调用失败的模型。"),
-            maxFailures: Schema.number().min(1).default(3).description("单个模型在进入冷却前允许的最大连续失败次数。"),
-            cooldown: Schema.number().min(1000).default(60000).description("模型失败后，暂时禁用的冷却时间 (毫秒)。"),
             threshold: Schema.number().min(1).default(5).description("触发熔断的连续失败次数阈值。"),
+            cooldown: Schema.number().min(1000).default(60000).description("模型失败后，暂时禁用的冷却时间 (毫秒)。"),
             recoveryTime: Schema.number().min(0).default(300000).description("熔断后，模型自动恢复服务的等待时间 (毫秒)。"),
         })
             .collapse()
