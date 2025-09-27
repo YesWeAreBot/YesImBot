@@ -1,5 +1,6 @@
 import { Bot, Context, Logger, Session } from "koishi";
 
+import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
@@ -22,7 +23,7 @@ import {
 export class ContextBuilder {
     constructor(
         private ctx: Context,
-        private config: HistoryConfig,
+        private config: Config,
         private interactionManager: InteractionManager,
         private l2Manager: SemanticMemoryManager,
         private l3Manager: ArchivalMemoryManager
@@ -142,10 +143,100 @@ export class ContextBuilder {
     /**
      * 构建基础世界状态（有 session 的情况）
      */
+    /**
+     * 获取与指定频道链接的所有频道
+     */
+    private getLinkedChannels(platform: string, channelId: string): { platform: string; channelId: string }[] {
+        if (!this.config.linkedChannelGroups) {
+            return [];
+        }
+
+        // 查找包含当前频道的链接组
+        const linkedGroup = this.config.linkedChannelGroups.find(group =>
+            group.channels.some(ch => {
+                // 支持通配符匹配
+                if (ch.platform === "*" || ch.platform === platform) {
+                    return ch.id === "*" || ch.id === channelId;
+                }
+                return false;
+            })
+        );
+
+        if (!linkedGroup) {
+            return [];
+        }
+
+        // 返回组内其他频道（不包括当前频道）
+        return linkedGroup.channels
+            .filter(ch => {
+                // 过滤掉当前频道本身
+                if (ch.platform === platform && ch.id === channelId) {
+                    return false;
+                }
+                // 如果是通配符，则跳过（通配符不代表具体频道）
+                if (ch.platform === "*" || ch.id === "*") {
+                    return false;
+                }
+                return true;
+            })
+            .map(ch => ({ platform: ch.platform, channelId: ch.id }));
+    }
+
+    /**
+     * 获取链接频道组的配置
+     */
+    private getLinkedChannelGroupConfig(platform: string, channelId: string) {
+        if (!this.config.linkedChannelGroups) {
+            return null;
+        }
+
+        return this.config.linkedChannelGroups.find(group =>
+            group.channels.some(ch => {
+                if (ch.platform === "*" || ch.platform === platform) {
+                    return ch.id === "*" || ch.id === channelId;
+                }
+                return false;
+            })
+        );
+    }
+
     private async buildBaseWorldState(platform: string, channelId: string, session: Session): Promise<WorldState> {
         const { isDirect, bot } = session;
 
-        const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
+        // 获取当前频道的历史记录
+        let raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
+
+        // 检查是否有链接的频道组
+        const linkedChannels = this.getLinkedChannels(platform, channelId);
+        const groupConfig = this.getLinkedChannelGroupConfig(platform, channelId);
+
+        if (linkedChannels.length > 0 && groupConfig) {
+            // 获取链接频道的历史记录
+            const linkedHistories = await Promise.all(
+                linkedChannels.map(async ({ platform: linkPlatform, channelId: linkChannelId }) => {
+                    const linkLimit = Math.min(
+                        groupConfig.maxMessagesPerChannel || 10,
+                        Math.floor(this.config.l1_memory.maxMessages / (linkedChannels.length + 1))
+                    );
+                    const linkHistory = await this.interactionManager.getL1History(linkPlatform, linkChannelId, linkLimit);
+                    
+                    // 过滤过旧的消息
+                    if (groupConfig.maxMessageAge) {
+                        const cutoffTime = new Date(Date.now() - groupConfig.maxMessageAge * 1000);
+                        return linkHistory.filter(item => item.timestamp >= cutoffTime);
+                    }
+                    
+                    return linkHistory;
+                })
+            );
+
+            // 合并所有历史记录
+            const allHistory = [...raw_l1_history, ...linkedHistories.flat()];
+            
+            // 按时间排序并限制总数量
+            allHistory.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+            raw_l1_history = allHistory.slice(-this.config.l1_memory.maxMessages);
+        }
 
         const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
 
@@ -243,7 +334,40 @@ export class ContextBuilder {
      * 构建基础世界状态（没有 session 的情况，用于定时任务等）
      */
     private async buildBaseWorldStateWithoutSession(platform: string, channelId: string, bot: Bot): Promise<WorldState> {
-        const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
+        // 获取当前频道的历史记录
+        let raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
+
+        // 检查是否有链接的频道组
+        const linkedChannels = this.getLinkedChannels(platform, channelId);
+        const groupConfig = this.getLinkedChannelGroupConfig(platform, channelId);
+
+        if (linkedChannels.length > 0 && groupConfig) {
+            // 获取链接频道的历史记录
+            const linkedHistories = await Promise.all(
+                linkedChannels.map(async ({ platform: linkPlatform, channelId: linkChannelId }) => {
+                    const linkLimit = Math.min(
+                        groupConfig.maxMessagesPerChannel || 10,
+                        Math.floor(this.config.l1_memory.maxMessages / (linkedChannels.length + 1))
+                    );
+                    const linkHistory = await this.interactionManager.getL1History(linkPlatform, linkChannelId, linkLimit);
+                    
+                    // 过滤过旧的消息
+                    if (groupConfig.maxMessageAge) {
+                        const cutoffTime = new Date(Date.now() - groupConfig.maxMessageAge * 1000);
+                        return linkHistory.filter(item => item.timestamp >= cutoffTime);
+                    }
+                    
+                    return linkHistory;
+                })
+            );
+
+            // 合并所有历史记录
+            const allHistory = [...raw_l1_history, ...linkedHistories.flat()];
+            
+            // 按时间排序并限制总数量
+            allHistory.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+            raw_l1_history = allHistory.slice(-this.config.l1_memory.maxMessages);
+        }
 
         const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
 

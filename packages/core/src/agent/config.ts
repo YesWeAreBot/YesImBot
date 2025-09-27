@@ -17,12 +17,25 @@ export type ChannelDescriptor = {
     id: string;
 };
 
+export type LinkedChannelGroup = {
+    /** 群组名称，用于标识 */
+    name: string;
+    /** 参与链接的频道列表 */
+    channels: ChannelDescriptor[];
+    /** 最大消息年龄（秒），过滤过久的消息 */
+    maxMessageAge?: number;
+    /** 每个频道的最大消息数量限制 */
+    maxMessagesPerChannel?: number;
+};
+
 /** Agent 的唤醒条件配置 */
 export interface ArousalConfig {
     /** 允许 Agent 响应的频道 */
     allowedChannels: ChannelDescriptor[];
     /** 消息防抖时间 (毫秒)，防止短时间内对相同模式的重复响应 */
     debounceMs: number;
+    /** 链接的频道组，用于共享上下文 */
+    linkedChannelGroups?: LinkedChannelGroup[];
 }
 
 export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
@@ -39,6 +52,27 @@ export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
         .default([{ platform: "onebot", type: "guild", id: "*" }])
         .description("允许 Agent 响应的频道。使用 * 作为通配符"),
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
+    linkedChannelGroups: Schema.array(
+        Schema.object({
+            name: Schema.string().required().description("群组名称"),
+            channels: Schema.array(
+                Schema.object({
+                    platform: Schema.string().required().description("平台"),
+                    type: Schema.union([Schema.const("private").description("私聊"), Schema.const("guild").description("群组")])
+                        .default("guild")
+                        .description("频道类型"),
+                    id: Schema.string().required().description("频道或用户 ID"),
+                })
+            )
+                .min(2)
+                .role("table")
+                .description("参与链接的频道列表，至少需要2个频道"),
+            maxMessageAge: Schema.number().min(60).default(3600).description("最大消息年龄（秒），过滤过久的消息"),
+            maxMessagesPerChannel: Schema.number().min(1).max(50).default(10).description("每个频道的最大消息数量限制"),
+        })
+    )
+        .role("table")
+        .description("链接的频道组，用于共享上下文。被链接的频道将共享聊天记录"),
 });
 
 export interface WillingnessConfig {
