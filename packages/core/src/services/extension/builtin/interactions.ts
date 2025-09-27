@@ -171,7 +171,7 @@ async function formatForwardMessage(ctx: Context, session: Session, formatForwar
                 );
 
                 /* prettier-ignore */
-                return `[${formatDate(new Date(time), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join(" ")}}`;
+                return `[${formatDate(new Date(time), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join(" ")}`;
             })
         );
 

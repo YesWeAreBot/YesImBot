@@ -127,7 +127,9 @@ export class InteractionManager {
             const content = await fs.readFile(filePath, "utf-8");
             const lines = content.trim().split("\n").filter(Boolean);
             const recentLines = lines.slice(-limit);
-            return recentLines.map((line) => this.logEntryToHistoryItem(JSON.parse(line)));
+            return recentLines
+                .map((line) => this.logEntryToHistoryItem(JSON.parse(line)))
+                .filter((item): item is L1HistoryItem => item !== null);
         } catch (error: any) {
             if (error.code === "ENOENT") return [];
             this.ctx.logger.error(`读取Agent日志失败: ${filePath}`, error);
@@ -204,7 +206,7 @@ export class InteractionManager {
         return combinedEvents.slice(-limit);
     }
 
-    private logEntryToHistoryItem(entry: AgentLogEntry): L1HistoryItem {
+    private logEntryToHistoryItem(entry: AgentLogEntry): L1HistoryItem | null {
         const timestamp = new Date(entry.timestamp);
         switch (entry.type) {
             case "agent_thought":

@@ -70,9 +70,7 @@ export class EventListenerManager {
         // 这个中间件记录用户消息，并触发响应流程
         this.disposers.push(
             this.ctx.middleware(async (session, next) => {
-                if (!this.service.isChannelAllowed(session)) {
-                    return next();
-                }
+                if (!this.service.isChannelAllowed(session)) return next();
 
                 if (session.author?.isBot) return next();
 
@@ -98,15 +96,34 @@ export class EventListenerManager {
         // 监听指令调用，记录指令事件
         this.disposers.push(
             this.ctx.on("command/before-execute", (argv) => {
+                if (!argv.session || !this.service.isChannelAllowed(argv.session) || this.config.ignoreCommandMessage) return;
                 argv.session["__commandHandled"] = true;
                 this.handleCommandInvocation(argv);
             })
         );
 
         // 在发送前匹配指令结果
-        this.disposers.push(this.ctx.on("before-send", (session) => this.matchCommandResult(session), true));
+        this.disposers.push(
+            this.ctx.on(
+                "before-send",
+                (session) => {
+                    if (!this.service.isChannelAllowed(session) || this.config.ignoreCommandMessage) return;
+                    this.matchCommandResult(session);
+                },
+                true
+            )
+        );
         // 在发送后记录机器人消息
-        this.disposers.push(this.ctx.on("after-send", (session) => this.recordBotSentMessage(session), true));
+        this.disposers.push(
+            this.ctx.on(
+                "after-send",
+                (session) => {
+                    if (!this.service.isChannelAllowed(session)) return;
+                    this.recordBotSentMessage(session);
+                },
+                true
+            )
+        );
 
         // 记录从另一个设备手动发送的消息
         this.disposers.push(

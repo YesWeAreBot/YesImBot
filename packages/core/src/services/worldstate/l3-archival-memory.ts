@@ -55,7 +55,9 @@ export class ArchivalMemoryManager {
 
         const delay = nextRun.getTime() - now.getTime();
         this.dailyTaskTimer = setTimeout(() => {
-            this.generateDiariesForAllChannels();
+            void this.generateDiariesForAllChannels().catch((error) => {
+                this.ctx.logger.error("每日日记生成任务执行失败", error);
+            });
             this.scheduleDailyTask(); // Schedule for the next day
         }, delay);
 
