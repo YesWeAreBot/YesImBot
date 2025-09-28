@@ -1,5 +1,5 @@
+import { Logger } from "koishi";
 import { Config } from "./Config";
-import { Logger } from "./Logger";
 import { SystemUtils } from "./SystemUtils";
 
 // 命令解析器类

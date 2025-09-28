@@ -2,11 +2,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Context, Schema } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import { Failed, WithSession, ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
-import { Logger } from "./Logger";
 
 // MCP 连接管理器
 export class MCPManager {

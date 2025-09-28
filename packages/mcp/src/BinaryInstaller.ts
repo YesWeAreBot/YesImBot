@@ -1,8 +1,8 @@
 import fs from "fs/promises";
+import { Logger } from "koishi";
 import path from "path";
 import { FileManager } from "./FileManager";
 import { GitHubAPI } from "./GitHubAPI";
-import { Logger } from "./Logger";
 import { SystemUtils } from "./SystemUtils";
 
 // 二进制安装器类

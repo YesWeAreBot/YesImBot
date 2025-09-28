@@ -1,14 +1,13 @@
-import { Context } from "koishi";
 import fs from "fs/promises";
-import path from "path";
+import { Context, Logger } from "koishi";
 import { Services } from "koishi-plugin-yesimbot/shared";
+import path from "path";
 
 import { BinaryInstaller } from "./BinaryInstaller";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { FileManager } from "./FileManager";
 import { GitHubAPI } from "./GitHubAPI";
-import { Logger } from "./Logger";
 import { MCPManager } from "./MCPManager";
 import { SystemUtils } from "./SystemUtils";
 
@@ -22,7 +21,7 @@ export { Config } from "./Config";
 
 // 主应用入口
 export async function apply(ctx: Context, config: Config) {
-    const logger = new Logger(ctx);
+    const logger = ctx.logger("mcp");
     const systemUtils = new SystemUtils(logger);
     const fileManager = new FileManager(logger, ctx.http);
     const githubAPI = new GitHubAPI(logger, ctx.http);

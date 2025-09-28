@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import fs from "fs/promises";
+import { Logger } from "koishi";
 import { PlatformMapping } from "./Config";
-import { Logger } from "./Logger";
 
 const PLATFORM_ARCH_MAP: PlatformMapping[] = [
     {
