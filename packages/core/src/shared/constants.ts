@@ -29,6 +29,7 @@ export enum Services {
     Memory = "yesimbot.memory",
     Model = "yesimbot.model",
     Prompt = "yesimbot.prompt",
+    Telemetry = "yesimbot.telemetry",
     Tool = "yesimbot.tool",
     WorldState = "yesimbot.world-state",
 }

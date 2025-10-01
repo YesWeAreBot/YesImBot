@@ -16,6 +16,9 @@
     "Miaowfish <1293865264@qq.com>",
     "Touch-Night <1762918301@qq.com>"
   ],
+  "engines": {
+    "node": ">=18.17.0"
+  },
   "scripts": {
     "build": "tsc && tsc-alias && node scripts/bundle.mjs",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
@@ -57,6 +60,7 @@
   },
   "dependencies": {
     "@miaowfish/gifwrap": "^0.10.1",
+    "@sentry/node": "^10.11.0",
     "gray-matter": "^4.0.3",
     "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
@@ -65,7 +69,7 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@types/semver": "^7",
+    "@types/semver": "^7.7.0",
     "@xsai-ext/providers-cloud": "^0.3.2",
     "@xsai-ext/providers-local": "^0.3.2",
     "@xsai-ext/shared-providers": "^0.3.2",
@@ -84,7 +88,6 @@
       "zh": "让语言大模型机器人假装群友并和群友聊天！",
       "en": "A Koishi plugin that allows LLM chat in your guild."
     },
-    "browser": true,
     "service": {
       "required": [
         "database"

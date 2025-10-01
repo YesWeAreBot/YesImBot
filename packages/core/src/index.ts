@@ -2,9 +2,9 @@ import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service, sleep } from "koishi";
 
 import { AgentCore } from "./agent";
-import * as ConfigCommand from "./commands/config";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
-import { AssetService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
+import { AssetService, MemoryService, ModelService, PromptService, TelemetryService, ToolService, WorldStateService } from "./services";
+import { Services } from "./shared";
 
 declare module "koishi" {
     interface Context {
@@ -24,6 +24,10 @@ export default class YesImBot extends Service<Config> {
 官方交流群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)\n`;
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
+
+        const telemetryService = ctx.plugin(TelemetryService, config.telemetry);
+
+        const telemetry: TelemetryService = ctx.get(Services.Telemetry);
 
         let version = config.version;
         const hasLegacyV1Field = Object.hasOwn(config, "modelService");
@@ -53,13 +57,11 @@ export default class YesImBot extends Service<Config> {
             } catch (error: any) {
                 ctx.logger.error("配置迁移失败:", error.message);
                 ctx.logger.debug(error);
+                telemetry.captureException(error);
             }
-        } else {
         }
 
         try {
-            ctx.plugin(ConfigCommand, config);
-
             // 注册资源中心服务
             const assetService = ctx.plugin(AssetService, config);
 
@@ -80,7 +82,16 @@ export default class YesImBot extends Service<Config> {
 
             const agentCore = ctx.plugin(AgentCore, config);
 
-            const services = [assetService, promptService, toolService, modelService, memoryService, worldStateService, agentCore];
+            const services = [
+                agentCore,
+                assetService,
+                memoryService,
+                modelService,
+                promptService,
+                telemetryService,
+                toolService,
+                worldStateService,
+            ];
 
             waitForServices(services)
                 .then(() => {
@@ -89,18 +100,21 @@ export default class YesImBot extends Service<Config> {
                 })
                 .catch((err) => {
                     this.ctx.logger.error(err.message);
-                    ctx.notifier.create("初始化时发生错误");
-                    // services.forEach((service) => {
-                    //     try {
-                    //         service.dispose();
-                    //     } catch (error: any) {
-                    //     }
-                    // });
+                    this.ctx.notifier.create("初始化时发生错误");
+                    services.forEach((service) => {
+                        try {
+                            service.dispose();
+                        } catch (error: any) {
+                            telemetry.captureException(error);
+                        }
+                    });
+                    this.ctx.stop();
                 });
         } catch (error: any) {
-            ctx.notifier.create("初始化时发生错误");
+            this.ctx.notifier.create("初始化时发生错误");
             // this.ctx.logger.error("初始化时发生错误:", error.message);
             // this.ctx.logger.error(error.stack);
+            telemetry.captureException(error);
             this.ctx.stop();
         }
     }
@@ -127,7 +141,7 @@ async function waitForServices(services: ForkScope[]) {
             if (notReadyServices.size === 0) {
                 resolve();
             } else {
-                setTimeout(check, 100);
+                setTimeout(check, 1000);
             }
         };
         check();
