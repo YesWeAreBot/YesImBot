@@ -76,6 +76,27 @@ export class ModelError extends Error {
         const err = error as Error;
         const message = (err.message || "").toLowerCase();
         const name = (err.name || "").toLowerCase();
+        const anyErr = err as any;
+        const status: number | undefined = anyErr?.status ?? anyErr?.response?.status;
+        const code = String(anyErr?.code || "").toUpperCase();
+
+        // 优先按 HTTP 状态码分类
+        if (typeof status === "number") {
+            if (status === 401 || status === 403) return new ModelError(ModelErrorType.AuthenticationError, err.message, err, false);
+            if (status === 408) return new ModelError(ModelErrorType.TimeoutError, err.message, err, true);
+            if (status === 400) return new ModelError(ModelErrorType.InvalidRequestError, err.message, err, false);
+            if (status === 429) {
+                // 429 有两类：限流与配额耗尽
+                const isQuota = message.includes("quota") || message.includes("insufficient_quota");
+                return new ModelError(
+                    isQuota ? ModelErrorType.QuotaExceededError : ModelErrorType.RateLimitError,
+                    err.message,
+                    err,
+                    !isQuota
+                );
+            }
+            if (status >= 500 && status <= 599) return new ModelError(ModelErrorType.ServerError, err.message, err, true);
+        }
 
         // 请求被中止 (通常由 AbortSignal 触发)
         if (name === "aborterror" || message.includes("aborted")) {
@@ -83,7 +104,7 @@ export class ModelError extends Error {
         }
 
         // 超时错误
-        if (name === "timeouterror" || message.includes("timeout")) {
+        if (name === "timeouterror" || message.includes("timeout") || code.includes("ETIMEDOUT")) {
             return new ModelError(ModelErrorType.TimeoutError, err.message, err, true);
         }
 
@@ -98,7 +119,14 @@ export class ModelError extends Error {
         }
 
         // 网络相关错误
-        if (message.includes("network") || message.includes("connection") || message.includes("socket") || message.includes("econnreset")) {
+        if (
+            message.includes("network") ||
+            message.includes("connection") ||
+            message.includes("socket") ||
+            message.includes("fetch failed") ||
+            message.includes("econnreset") ||
+            ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "ERR_NETWORK"].some((k) => code.includes(k))
+        ) {
             return new ModelError(ModelErrorType.NetworkError, err.message, err, true);
         }
 

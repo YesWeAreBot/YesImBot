@@ -37,7 +37,7 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
         protected config: StrategyConfig
     ) {
         for (const model of this.models) {
-            const weights = (config as any).weights; // Safely access potential weights
+            const weights = (config as any).modelWeights as Record<string, number> | undefined;
             this.modelStatusMap.set(model.id, {
                 circuitState: "CLOSED",
                 failureCount: 0,
@@ -65,6 +65,16 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
         if (!status) return false;
 
         if (this.config.breaker.enabled) {
+            // CLOSED 下的失败冷却
+            const cooldown = this.config.breaker.cooldown;
+            if (
+                status.circuitState === "CLOSED" &&
+                typeof cooldown === "number" &&
+                status.lastFailureTime &&
+                Date.now() - status.lastFailureTime < cooldown
+            ) {
+                return false;
+            }
             if (status.circuitState === "OPEN") {
                 if (status.openUntil && Date.now() > status.openUntil) {
                     // 恢复时间已到，进入半开状态
