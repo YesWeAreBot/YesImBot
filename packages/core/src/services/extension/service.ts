@@ -57,10 +57,9 @@ export class ToolService extends Service<Config> {
     }
 
     private registerCommands() {
-        this.ctx.command("tool", "工具管理指令集");
+        const cmd = this.ctx.command("tool", "工具管理指令集", { authority: 3 });
 
-        this.ctx
-            .command("tool.list", "列出所有可用工具", { authority: 3 })
+        cmd.subcommand(".list", "列出所有可用工具")
             .option("filter", "-f <keyword:string> 按名称或描述过滤工具")
             .option("page", "--page <page:natural> 指定显示的页码 (默认为 1)", { fallback: 1 })
             .option("size", "--size <size:natural> 指定每页显示的数量 (默认为 10)", { fallback: 5 })
@@ -113,8 +112,7 @@ export class ToolService extends Service<Config> {
                 return header + toolList;
             });
 
-        this.ctx
-            .command("tool.info <name:string>", "显示工具的详细信息", { authority: 3 })
+        cmd.subcommand(".info <name:string>", "显示工具的详细信息")
             .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等")
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
@@ -129,8 +127,7 @@ export class ToolService extends Service<Config> {
                 return h.escape(renderResult);
             });
 
-        this.ctx
-            .command("tool.invoke <name:string> [...params:string]", "调用工具", { authority: 3 })
+        cmd.subcommand(".invoke <name:string> [...params:string]", "调用工具")
             .usage(
                 [
                     "调用指定的工具并传递参数",

@@ -64,7 +64,38 @@ export default class StickerTools {
             }
         });
 
-        ctx.command("sticker.import.emojihub <category> <filePath>", "导入 emojihub-bili 格式的 TXT 文件", { authority: 3 })
+        const cmd = ctx.command("sticker", "表情包管理相关指令", { authority: 3 });
+
+        cmd.subcommand(".import <sourceDir>", "从外部文件夹导入表情包。该文件夹须包含若干子文件夹作为分类，子文件夹下是表情包的图片文件。")
+            .option("force", "-f  强制覆盖已存在的表情包")
+            .action(async ({ session, options }, sourceDir) => {
+                if (!sourceDir) return "请指定源文件夹路径";
+
+                try {
+                    const stats = await this.stickerService.importFromDirectory(sourceDir, session);
+
+                    // 准备结果消息
+                    let message = `导入完成!\n`;
+                    message += `✅ 总数: ${stats.total}\n`;
+                    message += `✅ 成功导入: ${stats.success}\n`;
+                    message += `⚠️ 跳过重复: ${stats.skipped}\n`;
+                    message += `❌ 失败: ${stats.failed}\n`;
+
+                    // 添加失败文件列表
+                    if (stats.failedFiles.length > 0) {
+                        message += `\n失败文件列表:\n${stats.failedFiles.slice(0, 10).join("\n")}`;
+                        if (stats.failedFiles.length > 10) {
+                            message += `\n...等 ${stats.failedFiles.length} 个文件`;
+                        }
+                    }
+
+                    return message;
+                } catch (error: any) {
+                    return `导入失败: ${error.message}`;
+                }
+            });
+
+        cmd.subcommand(".import.emojihub <category> <filePath>", "导入 emojihub-bili 格式的 TXT 文件")
             .option("prefix", "-p [prefix:string] 自定义 URL 前缀")
             .action(async ({ session, options }, category, filePath) => {
                 if (!category) return "请指定分类名称";
@@ -98,40 +129,7 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command(
-            "sticker.import <sourceDir>",
-            "从外部文件夹导入表情包。该文件夹须包含若干子文件夹作为分类，子文件夹下是表情包的图片文件。",
-            { authority: 3 }
-        )
-            .option("force", "-f  强制覆盖已存在的表情包")
-            .action(async ({ session, options }, sourceDir) => {
-                if (!sourceDir) return "请指定源文件夹路径";
-
-                try {
-                    const stats = await this.stickerService.importFromDirectory(sourceDir, session);
-
-                    // 准备结果消息
-                    let message = `导入完成!\n`;
-                    message += `✅ 总数: ${stats.total}\n`;
-                    message += `✅ 成功导入: ${stats.success}\n`;
-                    message += `⚠️ 跳过重复: ${stats.skipped}\n`;
-                    message += `❌ 失败: ${stats.failed}\n`;
-
-                    // 添加失败文件列表
-                    if (stats.failedFiles.length > 0) {
-                        message += `\n失败文件列表:\n${stats.failedFiles.slice(0, 10).join("\n")}`;
-                        if (stats.failedFiles.length > 10) {
-                            message += `\n...等 ${stats.failedFiles.length} 个文件`;
-                        }
-                    }
-
-                    return message;
-                } catch (error: any) {
-                    return `导入失败: ${error.message}`;
-                }
-            });
-
-        ctx.command("sticker.list", "列出表情包分类", { authority: 3 })
+        cmd.subcommand(".list", "列出表情包分类")
             .alias("表情分类")
             .action(async ({ session }) => {
                 const categories = await this.stickerService.getCategories();
@@ -149,7 +147,7 @@ export default class StickerTools {
                 return `📁 表情包分类列表:\n${categoryWithCounts.join("\n")}`;
             });
 
-        ctx.command("sticker.rename <oldName> <newName>", "重命名表情包分类", { authority: 3 })
+        cmd.subcommand(".rename <oldName> <newName>", "重命名表情包分类")
             .alias("表情重命名")
             .action(async ({ session }, oldName, newName) => {
                 if (!oldName || !newName) return "请提供原分类名和新分类名";
@@ -164,7 +162,7 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command("sticker.delete <category>", "删除表情包分类", { authority: 3 })
+        cmd.subcommand(".delete <category>", "删除表情包分类")
             .alias("删除分类")
             .option("force", "-f 强制删除，不确认")
             .action(async ({ session, options }, category) => {
@@ -198,7 +196,7 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command("sticker.merge <sourceCategory> <targetCategory>", "合并两个表情包分类", { authority: 3 })
+        cmd.subcommand(".merge <sourceCategory> <targetCategory>", "合并两个表情包分类")
             .alias("合并分类")
             .action(async ({ session }, sourceCategory, targetCategory) => {
                 if (!sourceCategory || !targetCategory) return "请提供源分类和目标分类";
@@ -213,7 +211,7 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command("sticker.move <stickerId> <newCategory>", "移动表情包到新分类", { authority: 3 })
+        cmd.subcommand(".move <stickerId> <newCategory>", "移动表情包到新分类")
             .alias("移动表情")
             .action(async ({ session }, stickerId, newCategory) => {
                 if (!stickerId || !newCategory) return "请提供表情包ID和目标分类";
@@ -226,7 +224,7 @@ export default class StickerTools {
                 }
             });
 
-        ctx.command("sticker.get <category> [index:posint]", "获取指定分类的表情包")
+        cmd.subcommand(".get <category> [index:posint]", "获取指定分类的表情包")
             .option("all", "-a 发送该分类下所有表情包")
             .option("delay", "-d [delay:posint] 发送所有表情包时的延时 (毫秒), 默认为 500 毫秒")
             .action(async ({ session, options }, category, index) => {
@@ -265,7 +263,7 @@ export default class StickerTools {
                 return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
             });
 
-        ctx.command("sticker.info <category>", "查看分类详情", { authority: 3 }).action(async ({ session }, category) => {
+        cmd.subcommand(".info <category>", "查看分类详情").action(async ({ session }, category) => {
             const stickers = await this.stickerService.getStickersByCategory(category);
             if (!stickers.length) return `分类 "${category}" 中没有表情包`;
 
@@ -275,7 +273,7 @@ export default class StickerTools {
 👆 使用: sticker.get ${category} [1-${stickers.length}]`;
         });
 
-        ctx.command("sticker.cleanup", "清理未使用的表情包")
+        cmd.subcommand(".cleanup", "清理未使用的表情包")
             .alias("清理表情")
             .action(async ({ session }) => {
                 try {

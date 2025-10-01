@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
-import { Context, h, Logger, Session } from "koishi";
+import { Context, h, Session } from "koishi";
 import { PromptService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
@@ -19,6 +19,19 @@ interface StickerRecord {
         messageId: string;
     };
     createdAt: Date;
+}
+
+interface ImportStats {
+    total: number; // 总尝试导入数
+    success: number; // 成功导入数
+    failed: number; // 导入失败数
+    skipped: number; // 跳过数（重复表情包）
+    failedFiles?: string[]; // 失败的文件名列表
+    failedUrls?: {
+        // 失败的 URL 列表
+        url: string;
+        error: string;
+    }[];
 }
 
 const TableName = "yesimbot.stickers";
@@ -686,17 +699,4 @@ export class StickerService {
 
         return deletedCount;
     }
-}
-
-interface ImportStats {
-    total: number; // 总尝试导入数
-    success: number; // 成功导入数
-    failed: number; // 导入失败数
-    skipped: number; // 跳过数（重复表情包）
-    failedFiles?: string[]; // 失败的文件名列表
-    failedUrls?: {
-        // 失败的 URL 列表
-        url: string;
-        error: string;
-    }[];
 }
