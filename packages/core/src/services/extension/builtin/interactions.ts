@@ -34,7 +34,7 @@ export default class InteractionsExtension {
             message_id: Schema.string().required().description("消息 ID"),
             emoji_id: Schema.number().required().description("表态编号"),
         }),
-        isSupported: (session) => session.platform === "onebot",
+        isSupported: ({ session }) => session.platform === "onebot",
     })
     async reactionCreate({ session, message_id, emoji_id }: WithSession<{ message_id: string; emoji_id: number }>) {
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
@@ -59,7 +59,7 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        isSupported: (session) => session.platform === "onebot",
+        isSupported: ({ session }) => session.platform === "onebot",
     })
     async essenceCreate({ session, message_id }: WithSession<{ message_id: string }>) {
         if (isEmpty(message_id)) return Failed("message_id is required");
@@ -79,7 +79,7 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        isSupported: (session) => session.platform === "onebot",
+        isSupported: ({ session }) => session.platform === "onebot",
     })
     async essenceDelete({ session, message_id }: WithSession<{ message_id: string }>) {
         if (isEmpty(message_id)) return Failed("message_id is required");
@@ -100,7 +100,7 @@ export default class InteractionsExtension {
             user_id: Schema.string().required().description("用户名称"),
             channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        isSupported: (session) => session.platform === "onebot",
+        isSupported: ({ session }) => session.platform === "onebot",
     })
     async sendPoke({ session, user_id, channel }: WithSession<{ user_id: string; channel: string }>) {
         if (isEmpty(String(user_id))) return Failed("user_id is required");
@@ -127,7 +127,7 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
         }),
-        isSupported: (session) => session.platform === "onebot",
+        isSupported: ({ session }) => session.platform === "onebot",
     })
     async getForwardMsg({ session, id }: WithSession<{ id: string }>) {
         if (isEmpty(id)) return Failed("id is required");

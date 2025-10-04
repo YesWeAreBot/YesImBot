@@ -422,7 +422,8 @@ export class ToolService extends Service<Config> {
         const tool = this.tools.get(name);
         // 如果没有 session，默认工具可用
         // 如果有 session，则必须通过 isSupported 的检查
-        if (!tool || (session && tool.isSupported && !tool.isSupported(session))) {
+        if (!tool || (session && tool.isSupported && !tool.isSupported({ session, config: resolveConfig(this.config, session) }))) {
+            // FIXME
             return undefined;
         }
         return tool;
@@ -434,7 +435,9 @@ export class ToolService extends Service<Config> {
             return Array.from(this.tools.values());
         }
         // 如果有 session，则过滤出支持的工具
-        return Array.from(this.tools.values()).filter((tool) => !tool.isSupported || tool.isSupported(session));
+        return Array.from(this.tools.values()).filter(
+            (tool) => !tool.isSupported || tool.isSupported({ session, config: resolveConfig(this.config, session) })
+        );
     }
 
     public getExtension(name: string): IExtension | undefined {

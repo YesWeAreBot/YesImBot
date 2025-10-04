@@ -250,13 +250,13 @@ export default class CoreUtilExtension {
     /**
      * 决定消息的最终目标和使用的机器人实例
      */
-    private determineTarget(koishiSession: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
-        if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
+    private determineTarget(session: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
+        if (!target || target === `${session.platform}:${session.channelId}`) {
             // 发送至当前会话
             return {
-                bot: koishiSession.bot,
-                channelId: koishiSession.channelId,
-                finalTarget: `${koishiSession.platform}:${koishiSession.channelId}`,
+                bot: session.bot,
+                channelId: session.channelId,
+                finalTarget: `${session.platform}:${session.channelId}`,
             };
         } else {
             // 发送至指定目标
@@ -288,7 +288,9 @@ export default class CoreUtilExtension {
 
             this.ctx.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
-            await sleep(delay);
+            if (i >= 1) {
+                await sleep(delay);
+            }
 
             if (this.disposed) return;
 

@@ -26,33 +26,29 @@ export interface ToolSchema {
 /**
  * 扩展包元数据接口，用于描述一个扩展包的基本信息。
  */
-export interface ExtensionMetadata {
+export interface ExtensionMetadata<TConfig = any> {
     display?: string; // 显示名称
     name: string; // 扩展包唯一标识，建议使用 npm 包名
     description: string; // 扩展包功能描述
     author?: string; // 作者
-    version: string; // 版本号
+    version?: string; // 版本号
     builtin?: boolean; // 是否为内置扩展
 }
 
 /**
  * 工具元数据接口，用于描述一个可供 LLM 调用的工具。
  */
-export interface ToolMetadata<TParams> {
+export interface ToolMetadata<TConfig = {}, TParams = any> {
     name?: string; // 工具名称，若不提供，则使用方法名
     description: string; // 工具功能详细描述，这是给 LLM 看的关键信息
     parameters: Schema<TParams>; // 工具的参数定义，使用 Koishi 的 Schema
-    isSupported?: (session: Session) => boolean;
+    isSupported?: ({ session, config }: { session: Session; config: TConfig }) => boolean;
 }
 
 /**
  * 完整的工具定义，包含了元数据和可执行函数。
  */
-export interface ToolDefinition<TParams = any> {
-    name: string;
-    description: string;
-    parameters: Schema<TParams>;
-    isSupported?: (session: Session) => boolean;
+export interface ToolDefinition<TConfig = {}, TParams = any> extends ToolMetadata<TConfig, TParams> {
     execute: (args: WithSession<TParams>) => Promise<any>;
 }
 
