@@ -56,21 +56,13 @@ export class AgentCore extends Service<Config> {
         this.willing = new WillingnessManager(ctx, config);
 
         this.contextBuilder = new PromptContextBuilder(ctx, config, this.modelSwitcher);
-        this.processor = new HeartbeatProcessor(
-            ctx,
-            config,
-            this.modelSwitcher,
-            ctx[Services.Prompt],
-            ctx[Services.Tool],
-            this.worldState.l1_manager,
-            this.contextBuilder
-        );
+        this.processor = new HeartbeatProcessor(ctx, config, this.modelSwitcher, this.worldState.l1_manager, this.contextBuilder);
     }
 
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus-message", (stimulus: UserMessageStimulus) => {
+        this.ctx.on("agent/stimulus-message", (stimulus) => {
             const { session, platform, channelId } = stimulus.payload;
 
             const channelCid = `${platform}:${channelId}`;
@@ -102,6 +94,14 @@ export class AgentCore extends Service<Config> {
             this.schedule(stimulus);
         });
 
+        this.ctx.on("agent/stimulus-system-event", (stimulus) => {
+            const { eventType, session } = stimulus.payload;
+        });
+
+        this.ctx.on("agent/stimulus-scheduled-task", (stimulus) => {
+            const { taskType } = stimulus.payload;
+        });
+
         this.willing.startDecayCycle();
     }
 
@@ -127,19 +127,26 @@ export class AgentCore extends Service<Config> {
     public schedule(stimulus: AnyAgentStimulus): void {
         const { type, priority } = stimulus;
 
-        if (type === StimulusSource.UserMessage) {
-            const { session, platform, channelId } = stimulus.payload;
-            const channelKey = `${platform}:${channelId}`;
+        switch (type) {
+            case StimulusSource.UserMessage:
+                const { session, platform, channelId } = stimulus.payload;
+                const channelKey = `${platform}:${channelId}`;
 
-            if (this.runningTasks.has(channelKey)) {
-                this.logger.info(`[${channelKey}] 频道当前有任务在运行，跳过本次响应`);
-                return;
-            }
+                if (this.runningTasks.has(channelKey)) {
+                    this.logger.info(`[${channelKey}] 频道当前有任务在运行，跳过本次响应`);
+                    return;
+                }
 
-            const schedulingStack = new Error("Scheduling context stack").stack;
+                const schedulingStack = new Error("Scheduling context stack").stack;
 
-            // 将堆栈传递给任务
-            this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
+                // 将堆栈传递给任务
+                this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
+                break;
+
+            case StimulusSource.SystemEvent:
+            case StimulusSource.ScheduledTask:
+            case StimulusSource.BackgroundTaskCompletion:
+                break;
         }
     }
 

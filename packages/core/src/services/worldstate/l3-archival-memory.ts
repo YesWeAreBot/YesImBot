@@ -9,6 +9,7 @@ import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { AgentLogEntry, DiaryEntryData } from "./types";
 
+/** @experimental */
 export class ArchivalMemoryManager {
     private chatModel: IChatModel;
     private dailyTaskTimer: NodeJS.Timeout;

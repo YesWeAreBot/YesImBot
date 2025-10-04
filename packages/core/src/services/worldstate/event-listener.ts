@@ -1,20 +1,11 @@
-import { Argv, Context, Logger, Random, Session } from "koishi";
+import { Argv, Context, Random, Session } from "koishi";
 
+import { AssetService } from "@/services/assets";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
-import { AssetService } from "../assets";
 import { HistoryConfig } from "./config";
 import { WorldStateService } from "./service";
-import {
-    AgentStimulus,
-    MessageData,
-    StimulusSource,
-    SystemEventData,
-    SystemEventPayload,
-    SystemEventStimulus,
-    UserMessagePayload,
-    UserMessageStimulus,
-} from "./types";
+import { MessageData, StimulusSource, SystemEventData, SystemEventStimulus, UserMessageStimulus } from "./types";
 
 interface PendingCommand {
     commandEventId: string;
@@ -286,7 +277,7 @@ export class EventListenerManager {
                 source,
                 invoker: { pid: session.userId, name: session.author.nick || session.author.name },
             },
-            message: `系统提示：用户 "${session.author.name || session.userId}" 调用了指令 "${command.name}"`,
+            message: `系统提示：用户 "${session.author.name || session.userId}" 调用了指令 "${source}"`,
         };
 
         await this.service.recordSystemEvent(eventPayload);

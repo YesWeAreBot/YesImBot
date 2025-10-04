@@ -8,8 +8,9 @@ import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { ChatModelType, ModelError } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
+import { AgentResponse, AnyAgentStimulus, StimulusSource, UserMessagePayload, UserMessageStimulus } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
+import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
 import { PromptContextBuilder } from "./context-builder";
 
@@ -19,17 +20,19 @@ import { PromptContextBuilder } from "./context-builder";
  */
 export class HeartbeatProcessor {
     private logger: Logger;
+    private promptService: PromptService;
+    private toolService: ToolService;
     constructor(
         ctx: Context,
         private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher,
-        private readonly promptService: PromptService,
-        private readonly toolService: ToolService,
         private readonly interactionManager: InteractionManager,
         private readonly contextBuilder: PromptContextBuilder
     ) {
         this.logger = ctx.logger("heartbeat");
         this.logger.level = config.logLevel;
+        this.promptService = ctx[Services.Prompt];
+        this.toolService = ctx[Services.Tool];
     }
 
     /**
@@ -79,10 +82,8 @@ export class HeartbeatProcessor {
     /**
      * 准备LLM请求所需的消息负载
      */
-    private async _prepareLlmRequest(
-        stimulus: AnyAgentStimulus,
-        includeImages: boolean = false
-    ): Promise<{ messages: Message[]; includeImages: boolean }> {
+    /* prettier-ignore */
+    private async _prepareLlmRequest(stimulus: AnyAgentStimulus, includeImages: boolean = false): Promise<{ messages: Message[]; includeImages: boolean }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
@@ -166,13 +167,7 @@ export class HeartbeatProcessor {
      * 执行单次心跳的完整逻辑（非流式）
      */
     private async performSingleHeartbeat(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
-        const session = this.getSessionFromStimulus(stimulus);
-        if (!session) {
-            this.logger.warn("无法从刺激中获取 session，跳过心跳处理");
-            return null;
-        }
-        const { platform, channelId } = session;
-
+        const { platform, channelId, session } = stimulus.payload as UserMessagePayload;
         let attempt = 0;
 
         let llmRawResponse: GenerateTextResult | null = null;
@@ -268,7 +263,7 @@ export class HeartbeatProcessor {
 
         // 步骤 6: 解析和验证响应
         this.logger.debug("步骤 6/7: 解析并验证LLM响应...");
-        const agentResponseData = this.parseAndValidateResponse(llmRawResponse, session.cid);
+        const agentResponseData = this.parseAndValidateResponse(llmRawResponse);
         if (!agentResponseData) {
             this.logger.error("LLM响应解析或验证失败，终止本次心跳");
             return null;
@@ -288,15 +283,12 @@ export class HeartbeatProcessor {
     /**
      * 执行单次心跳的完整逻辑（流式，支持重试批次切换）
      */
+    /* prettier-ignore */
     private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
-        const session = this.getSessionFromStimulus(stimulus);
-        if (!session) {
-            this.logger.warn("无法从刺激中获取 session，跳过心跳处理");
-            return null;
-        }
-        const { platform, channelId } = session;
+        const { platform, channelId, session } = stimulus.payload as UserMessagePayload;
 
         this.logger.info("步骤 5/7: 调用大语言模型 (流式)...");
+
         const stime = Date.now();
 
         interface ConsumerBatch {
@@ -337,7 +329,7 @@ export class HeartbeatProcessor {
                         if (signal.aborted) break;
                         const [key, value] = Object.entries(chunk)[0];
                         thoughts = { ...thoughts, [key]: value } as any;
-                        this.logger.debug(`[流式思考 #${id}] 🤔 ${key}: ${value}`);
+                        this.logger.debug(`[流式思考 #${id}] ${key}: ${value}`);
                     }
                 } finally {
                     this.logger.debug(`[批次 ${id}] thoughts consumer end`);
@@ -518,23 +510,15 @@ export class HeartbeatProcessor {
     /**
      * 解析并验证来自LLM的响应
      */
-    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, cid: string): Omit<AgentResponse, "observations"> | null {
-        const errorContext = {
-            rawResponse: llmRawResponse.text,
-            cid,
-            promptTokens: llmRawResponse.usage?.prompt_tokens,
-            completionTokens: llmRawResponse.usage?.completion_tokens,
-        };
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult): Omit<AgentResponse, "observations"> | null {
         const parser = new JsonParser<AgentResponse>();
 
         const { data, error } = parser.parse(llmRawResponse.text);
         if (error || !data) {
-            this.logger.error(`解析LLM响应时 (CID: ${cid}): ${error}`);
             return null;
         }
 
         if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
-            this.logger.error(`验证LLM响应格式时 (CID: ${cid}): ${error}`);
             return null;
         }
 

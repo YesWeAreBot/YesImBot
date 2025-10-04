@@ -235,6 +235,9 @@ export interface SystemEventPayload {
     session: Session;
 }
 
+/**
+ * 计划任务或主动消息
+ */
 export interface ScheduledTaskPayload {
     taskId: string;
     taskType: string;
@@ -244,6 +247,9 @@ export interface ScheduledTaskPayload {
     scheduledTime: Date;
 }
 
+/**
+ * 后台任务完成通知
+ */
 export interface BackgroundTaskCompletionPayload {
     taskId: string;
     taskType: string;

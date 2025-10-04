@@ -1,4 +1,4 @@
-import { Context, Service, Session } from "koishi";
+import { Bot, Context, Service, Session } from "koishi";
 
 import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
