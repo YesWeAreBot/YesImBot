@@ -7,6 +7,7 @@ import { MemoryConfig } from "@/services/memory";
 import { ModelServiceConfig } from "@/services/model";
 import { PromptServiceConfig } from "@/services/prompt";
 import { HistoryConfig } from "@/services/worldstate";
+import { TelemetryConfig } from "@/services/telemetry";
 
 export const CONFIG_VERSION = "2.0.2";
 
@@ -17,6 +18,7 @@ export type Config = ModelServiceConfig &
     ToolServiceConfig &
     AssetServiceConfig &
     PromptServiceConfig & {
+        telemetry: TelemetryConfig;
         logLevel: 1 | 2 | 3;
         version?: string;
     };
@@ -32,6 +34,7 @@ export const Config: Schema<Config> = Schema.intersect([
     AssetServiceConfig.description("资源服务配置"),
     PromptServiceConfig,
     Schema.object({
+        telemetry: TelemetryConfig.description("错误上报配置"),
         logLevel: Schema.union([
             Schema.const(1).description("错误"),
             Schema.const(2).description("信息"),

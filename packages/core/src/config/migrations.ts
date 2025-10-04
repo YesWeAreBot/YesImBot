@@ -119,6 +119,7 @@ function migrateV201ToV202(configV201: ConfigV201): Config {
             },
         },
         stream: true,
+        telemetry: {},
         logLevel: 2,
         version: "2.0.2",
     };

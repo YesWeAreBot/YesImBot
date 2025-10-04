@@ -15,13 +15,10 @@ export class TelemetryService extends Service<TelemetryConfig> {
     constructor(ctx: Context, config: TelemetryConfig) {
         super(ctx, Services.Telemetry, true);
         this.config = config;
-        if (config.enabled && config.dsn) {
-            Sentry.init({ dsn: config.dsn });
-        }
     }
 
     start(): Awaitable<void> {
-        if (this.config.dsn) {
+        if (this.config.enabled && this.config.dsn) {
             Sentry.init({
                 ...this.config,
             });
