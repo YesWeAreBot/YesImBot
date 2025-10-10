@@ -14,6 +14,8 @@
     "noImplicitAny": false,
     "noImplicitThis": false,
     "strictFunctionTypes": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@satorijs/element",
     "types": ["node", "bun-types", "yml-register/types"]
   }
 }
