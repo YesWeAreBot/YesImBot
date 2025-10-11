@@ -1,28 +1,28 @@
-import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
+import { Context, ForkScope, h, Logger, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
 import { PromptService } from "@/services/prompt";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
-import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
 import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
 import { extractMetaFromSchema, Failed } from "./helpers";
-import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+import { IExtension, Properties, ToolDefinition, ToolInvocation, ToolResult, ToolSchema } from "./types";
+import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "../worldstate/types";
 
 declare module "koishi" {
     interface Context {
-        [Services.Tool]: ToolService;
+        [Services.Tool]: ToolKitService;
     }
 }
 
 /**
- * ToolService
+ * ToolKitService
  * 负责注册、管理和提供所有扩展和工具。
  */
-export class ToolService extends Service<Config> {
+export class ToolKitService extends Service<Config> {
     static readonly inject = [Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
@@ -33,10 +33,11 @@ export class ToolService extends Service<Config> {
         super(ctx, Services.Tool, true);
         this.config = config;
         this.promptService = ctx[Services.Prompt];
+        this.logger.level = this.config.logLevel;
     }
 
     protected async start() {
-        const builtinExtensions = [CoreUtilExtension, CommandExtension, MemoryExtension, QManagerExtension, InteractionsExtension];
+        const builtinExtensions = [CoreUtilExtension, MemoryExtension, QManagerExtension, InteractionsExtension];
         const loadedExtensions = new Map<string, ForkScope>();
 
         for (const Ext of builtinExtensions) {
@@ -44,16 +45,10 @@ export class ToolService extends Service<Config> {
             // 不能在这里判断是否启用，否则无法生成配置
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
-            // if (config && !config.enabled) {
-            //     this.ctx.logger.info(`跳过内置扩展: ${name}`);
-            //     continue;
-            // }
-            //@ts-ignore
             loadedExtensions.set(name, this.ctx.plugin(Ext, config));
         }
-        this._registerPromptTemplates();
+        this.registerPromptTemplates();
         this.registerCommands();
-        //this.ctx.logger.info("服务已启动");
     }
 
     private registerCommands() {
@@ -73,8 +68,9 @@ export class ToolService extends Service<Config> {
                 ].join("\n")
             )
             .action(async ({ session, options }) => {
-                // 1. 获取所有可用工具
-                let allTools = this.getAvailableTools(session);
+                // TODO: This command needs to be refactored to work without a session.
+                // For now, it will list all registered tools.
+                let allTools = Array.from(this.tools.values());
 
                 // 2. 应用过滤器（如果提供了 filter 选项）
                 const filterKeyword = options.filter?.toLowerCase();
@@ -117,8 +113,8 @@ export class ToolService extends Service<Config> {
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
                 if (!name) return "未指定要查询的工具名称";
-
-                const renderResult = await this.promptService.render("tool.info", { toolName: name, session: session });
+                // TODO: Refactor to work without session
+                const renderResult = await this.promptService.render("tool.info", { toolName: name });
 
                 if (!renderResult) {
                     return `未找到名为 "${name}" 的工具或渲染失败。`;
@@ -164,7 +160,22 @@ export class ToolService extends Service<Config> {
                     return `参数解析失败：${error.message}\n请检查您的参数格式是否正确（key=value）。`;
                 }
 
-                const result = await this.invoke(name, parsedParams, session);
+                // TODO: Refactor to work without session. A mock context is needed.
+                if (!session) return "此指令需要在一个会话上下文中使用。";
+
+                const stimulus: UserMessageStimulus = {
+                    type: StimulusSource.UserMessage,
+                    priority: 1,
+                    timestamp: new Date(),
+                    payload: {
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        session: session,
+                    },
+                };
+
+                const invocation = this.buildInvocation(stimulus);
+                const result = await this.invoke(name, parsedParams, invocation);
 
                 if (result.status === "success") {
                     /* prettier-ignore */
@@ -175,7 +186,7 @@ export class ToolService extends Service<Config> {
             });
     }
 
-    private _registerPromptTemplates() {
+    private registerPromptTemplates() {
         const toolInfoTemplate = `# 工具名称: {{tool.name}}
 ## 描述
 {{tool.description}}
@@ -227,9 +238,10 @@ export class ToolService extends Service<Config> {
         this.promptService.registerTemplate("tool.info", toolInfoTemplate);
         this.promptService.registerTemplate("tool.paramDetail", paramDetailPartial);
 
-        this.promptService.registerSnippet("tool", (context) => {
-            const { toolName, session } = context;
-            const tool = this.getSchema(toolName, session);
+        this.promptService.registerSnippet("tool", async (context) => {
+            const { toolName } = context;
+            // TODO: Refactor to work without session
+            const tool = await this.getSchema(toolName);
             if (!tool) return null;
 
             const processParams = (params: Properties, indent = ""): any[] => {
@@ -266,8 +278,8 @@ export class ToolService extends Service<Config> {
      * @param enabled 是否启用此扩展
      * @param extConfig 传递给扩展实例的配置
      */
-    public register(extensionInstance: IExtension, enabled: boolean, extConfig: any) {
-        const validate: Schema<any> = extensionInstance.constructor["Config"];
+    public register<TConfig = any>(extensionInstance: IExtension<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
+        const validate: Schema<TConfig> = extensionInstance.constructor["Config"];
         const validatedConfig = validate ? validate(extConfig) : extConfig;
 
         let availableExtensions = this.ctx.schema.get("toolService.availableExtensions");
@@ -278,7 +290,7 @@ export class ToolService extends Service<Config> {
 
         try {
             if (!extensionInstance.metadata || !extensionInstance.metadata.name) {
-                this.ctx.logger.warn("一个扩展在注册时缺少元数据或名称，已跳过");
+                this.logger.warn("一个扩展在注册时缺少元数据或名称，已跳过");
                 return;
             }
 
@@ -306,25 +318,27 @@ export class ToolService extends Service<Config> {
             }
 
             if (!enabled) {
-                // this.ctx.logger.info(`扩展 "${metadata.name}" 已禁用`);
                 return;
             }
 
             const display = metadata.display || metadata.name;
 
-            this.ctx.logger.info(`正在注册扩展: "${display}"`);
+            this.logger.info(`正在注册扩展: "${display}"`);
             this.extensions.set(metadata.name, extensionInstance);
 
             if (extensionInstance.tools) {
                 for (const [name, tool] of extensionInstance.tools.entries()) {
-                    this.ctx.logger.debug(`  -> 注册工具: "${tool.name}"`);
-                    this.tools.set(name, tool);
+                    this.logger.debug(`  -> 注册工具: "${tool.name}"`);
+                    const boundTool = {
+                        ...tool,
+                        extensionName: metadata.name,
+                    } as ToolDefinition;
+                    extensionInstance.tools.set(name, boundTool);
+                    this.tools.set(name, boundTool);
                 }
             }
-
-            // this.ctx.logger.debug(`扩展 "${metadata.name}" 已加载`);
         } catch (error: any) {
-            this.ctx.logger.error(`扩展配置验证失败: ${error.message}`);
+            this.logger.error(`扩展配置验证失败: ${error.message}`);
             return;
         }
     }
@@ -332,7 +346,7 @@ export class ToolService extends Service<Config> {
     public unregister(name: string): boolean {
         const ext = this.extensions.get(name);
         if (!ext) {
-            this.ctx.logger.warn(`尝试卸载不存在的扩展: "${name}"`);
+            this.logger.warn(`尝试卸载不存在的扩展: "${name}"`);
             return false;
         }
         this.extensions.delete(name);
@@ -340,14 +354,18 @@ export class ToolService extends Service<Config> {
             for (const tool of ext.tools.values()) {
                 this.tools.delete(tool.name);
             }
-            this.ctx.logger.info(`已卸载扩展: "${name}"`);
+            this.logger.info(`已卸载扩展: "${name}"`);
         } catch (error: any) {
-            this.ctx.logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
+            this.logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
         }
         return true;
     }
 
     public registerTool(definition: ToolDefinition) {
+        if (!definition.extensionName) {
+            this.logger.warn(`registerTool 失败：工具 "${definition.name}" 缺少 extensionName`);
+            return;
+        }
         this.tools.set(definition.name, definition);
     }
 
@@ -355,114 +373,249 @@ export class ToolService extends Service<Config> {
         return this.tools.delete(name);
     }
 
-    public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
-        // 1. 获取工具，这里已经包含了 isSupported 的检查
-        const tool = this.getTool(functionName, session);
+    public buildInvocation(stimulus: AnyAgentStimulus, extras: Partial<Omit<ToolInvocation, "stimulus">> = {}): ToolInvocation {
+        return {
+            stimulus,
+            ...this.extractInvocationIdentity(stimulus),
+            ...extras,
+        };
+    }
+
+    public async invoke(functionName: string, params: Record<string, unknown>, invocation: ToolInvocation): Promise<ToolResult> {
+        const tool = await this.getTool(functionName, invocation);
         if (!tool) {
-            this.ctx.logger.warn(`工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
-            return Failed(`Tool ${functionName} not found or not supported in this context.`);
+            this.logger.warn(`工具未找到或在当前上下文中不可用 | 名称: ${functionName}`);
+            return Failed(`Tool ${functionName} not found or not supported in this context.`).build();
         }
 
-        // 2. 参数验证 (新加的优雅方案)
         let validatedParams = params;
         if (tool.parameters) {
             try {
-                // Schema 对象本身就是验证函数
                 validatedParams = tool.parameters(params);
             } catch (error: any) {
-                this.ctx.logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
-                // 将详细的验证错误返回给 AI
-                return Failed(`Parameter validation failed: ${error.message}`); // 参数错误不可重试
+                this.logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
+                return Failed(`Parameter validation failed: ${error.message}`).build();
             }
         }
 
         const stringifyParams = stringify(params);
-        this.ctx.logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
-        let lastResult: ToolCallResult = Failed("Tool call did not execute.");
+        this.logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
+        let lastResult: ToolResult = Failed("Tool call did not execute.").build();
 
         for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
             try {
                 if (attempt > 1) {
-                    this.ctx.logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
+                    this.logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
-                // 3. 使用验证和处理过后的参数执行工具
-                /* prettier-ignore */
-                lastResult = (await tool.execute({ session, ...validatedParams })) || Failed("Tool call did not execute.");
+                const executionResult = await tool.execute(validatedParams, invocation);
+
+                // Handle both direct ToolResult and builder transparently
+                if (executionResult && "build" in executionResult && typeof executionResult.build === "function") {
+                    lastResult = executionResult.build();
+                } else if (executionResult && "status" in executionResult) {
+                    lastResult = executionResult as ToolResult;
+                } else {
+                    lastResult = Failed("Tool call did not return a valid result.").build();
+                }
+
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
-                    this.ctx.logger.success(`✔ 成功 ← 返回: ${resultString}`);
+                    this.logger.success(`✔ 成功 ← 返回: ${resultString}`);
                     return lastResult;
                 }
                 if (lastResult.error) {
                     if (!lastResult.error.retryable) {
-                        this.ctx.logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
+                        this.logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
                         return lastResult;
                     } else {
-                        this.ctx.logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
+                        this.logger.warn(`⚠ 失败 (可重试) ← 原因: ${stringify(lastResult.error)}`);
                         continue;
                     }
                 } else {
                     return lastResult;
                 }
             } catch (error: any) {
-                this.ctx.logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
-                this.ctx.logger.debug(error.stack);
-                lastResult = Failed(`Exception: ${error.message}`);
+                this.logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
+                this.logger.debug(error.stack);
+                lastResult = Failed(`Exception: ${error.message}`).build();
                 return lastResult;
             }
         }
-        this.ctx.logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
+        this.logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
         return lastResult;
     }
 
-    public getTool(name: string, session?: Session): ToolDefinition | undefined {
+    public async getTool(name: string, invocation?: ToolInvocation): Promise<ToolDefinition | undefined> {
         const tool = this.tools.get(name);
-        // 如果没有 session，默认工具可用
-        // 如果有 session，则必须通过 isSupported 的检查
-        if (!tool || (session && tool.isSupported && !tool.isSupported({ session, config: resolveConfig(this.config, session) }))) {
-            // FIXME
+        if (!tool) return undefined;
+
+        if (!invocation) {
+            return tool;
+        }
+
+        const assessment = await this.assessTool(tool, invocation);
+        if (!assessment.available) {
+            if (assessment.hints.length) {
+                this.logger.debug(`工具不可用 | 名称: ${tool.name} | 原因: ${assessment.hints.join("; ")}`);
+            }
             return undefined;
         }
+
         return tool;
     }
 
-    public getAvailableTools(session?: Session): ToolDefinition[] {
-        // 如果没有 session，无法进行过滤，返回所有工具
-        if (!session) {
-            return Array.from(this.tools.values());
-        }
-        // 如果有 session，则过滤出支持的工具
-        return Array.from(this.tools.values()).filter(
-            (tool) => !tool.isSupported || tool.isSupported({ session, config: resolveConfig(this.config, session) })
-        );
+    public async getAvailableTools(invocation: ToolInvocation): Promise<ToolDefinition[]> {
+        const evaluations = await this.evaluateTools(invocation);
+
+        return evaluations
+            .filter((record) => record.assessment.available)
+            .sort((a, b) => (b.assessment.priority ?? 0) - (a.assessment.priority ?? 0))
+            .map((record) => record.tool);
     }
 
     public getExtension(name: string): IExtension | undefined {
         return this.extensions.get(name);
     }
 
-    /**
-     * 根据工具名称获取其 schema。
-     * 如果工具在当前会话中不可用，则返回 undefined。
-     * @param name 工具名称
-     * @param session 可选的会话对象
-     * @returns 工具的 Schema 或 undefined
-     */
-    public getSchema(name: string, session?: Session): ToolSchema | undefined {
-        const tool = this.getTool(name, session);
-        return tool ? this._toolDefinitionToSchema(tool) : undefined;
+    public async getSchema(name: string, invocation?: ToolInvocation): Promise<ToolSchema | undefined> {
+        const tool = await this.getTool(name, invocation);
+        return tool ? this.toolDefinitionToSchema(tool) : undefined;
     }
 
-    /**
-     * 获取在当前会话中所有可用工具的 Schema 列表。
-     * @param session 可选的会话对象
-     * @returns 可用工具的 Schema 数组
-     */
-    public getToolSchemas(session?: Session): ToolSchema[] {
-        return this.getAvailableTools(session).map(this._toolDefinitionToSchema);
+    public async getToolSchemas(invocation: ToolInvocation): Promise<ToolSchema[]> {
+        const evaluations = await this.evaluateTools(invocation);
+
+        return evaluations
+            .filter((record) => record.assessment.available)
+            .sort((a, b) => (b.assessment.priority ?? 0) - (a.assessment.priority ?? 0))
+            .map((record) => this.toolDefinitionToSchema(record.tool, record.assessment.hints));
+    }
+
+    public getConfig(name: string): any {
+        const ext = this.extensions.get(name);
+        if (!ext) return null;
+        return ext.config;
+    }
+
+    private async evaluateTools(
+        invocation: ToolInvocation
+    ): Promise<{ tool: ToolDefinition; assessment: { available: boolean; priority: number; hints: string[] } }[]> {
+        return Promise.all(
+            Array.from(this.tools.values()).map(async (tool) => ({
+                tool,
+                assessment: await this.assessTool(tool, invocation),
+            }))
+        );
+    }
+
+    private async assessTool(
+        tool: ToolDefinition,
+        invocation: ToolInvocation
+    ): Promise<{ available: boolean; priority: number; hints: string[] }> {
+        const config = this.getConfig(tool.extensionName);
+        const hints: string[] = [];
+        let priority = 0;
+
+        if (tool.supports?.length) {
+            for (const guard of tool.supports) {
+                try {
+                    const result = guard({ invocation, config });
+                    if (result === false) {
+                        return { available: false, priority: 0, hints };
+                    }
+                    if (typeof result === "object") {
+                        if (result.reason) {
+                            hints.push(result.reason);
+                        }
+                        if (result.ok === false) {
+                            return { available: false, priority: 0, hints };
+                        }
+                    }
+                } catch (error: any) {
+                    this.logger.warn(`工具支持检查失败 | 工具: ${tool.name} | 错误: ${error.message ?? error}`);
+                    return { available: false, priority: 0, hints };
+                }
+            }
+        }
+
+        if (tool.activators?.length) {
+            for (const activator of tool.activators) {
+                try {
+                    const result = await activator({ invocation, config });
+                    if (!result.allow) {
+                        if (result.hints?.length) {
+                            hints.push(...result.hints);
+                        }
+                        return { available: false, priority: 0, hints };
+                    }
+                    if (result.hints?.length) {
+                        hints.push(...result.hints);
+                    }
+                    if (typeof result.priority === "number") {
+                        priority = Math.max(priority, result.priority);
+                    }
+                } catch (error: any) {
+                    this.logger.warn(`工具激活器执行失败 | 工具: ${tool.name} | 错误: ${error.message ?? error}`);
+                    return { available: false, priority: 0, hints };
+                }
+            }
+        }
+
+        return { available: true, priority, hints };
+    }
+
+    private extractInvocationIdentity(stimulus: AnyAgentStimulus): Omit<ToolInvocation, "stimulus"> {
+        switch (stimulus.type) {
+            case StimulusSource.UserMessage: {
+                const { platform, channelId, session } = stimulus.payload;
+                const guildId = session?.guildId;
+                const userId = session?.userId;
+                return {
+                    platform,
+                    channelId,
+                    bot: session?.bot,
+                    session,
+                    guildId,
+                    userId,
+                };
+            }
+            case StimulusSource.SystemEvent: {
+                const { session } = stimulus.payload;
+                const platform = session?.platform;
+                const channelId = session?.channelId;
+                const guildId = session?.guildId;
+                const userId = session?.userId;
+                return {
+                    platform,
+                    channelId,
+                    bot: session?.bot,
+                    session,
+                    guildId,
+                    userId,
+                };
+            }
+            case StimulusSource.ScheduledTask: {
+                const { platform, channelId } = stimulus.payload;
+                return {
+                    platform,
+                    channelId,
+                    bot: this.ctx.bots.find((bot) => bot.platform === platform),
+                };
+            }
+            case StimulusSource.BackgroundTaskCompletion: {
+                const { platform, channelId } = stimulus.payload;
+                return {
+                    platform,
+                    channelId,
+                    bot: this.ctx.bots.find((bot) => bot.platform === platform),
+                };
+            }
+            default:
+                return {};
+        }
     }
 
     /**
@@ -470,11 +623,13 @@ export class ToolService extends Service<Config> {
      * @param tool 工具定义对象
      * @returns 工具的 Schema 对象
      */
-    private _toolDefinitionToSchema(tool: ToolDefinition): ToolSchema {
+    private toolDefinitionToSchema(tool: ToolDefinition, hints: string[] = []): ToolSchema {
         return {
             name: tool.name,
             description: tool.description,
             parameters: extractMetaFromSchema(tool.parameters),
+            type: tool.type,
+            hints: hints.length ? hints : undefined,
         };
     }
 }

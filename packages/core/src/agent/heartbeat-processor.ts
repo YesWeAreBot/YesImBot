@@ -4,15 +4,17 @@ import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "@/config";
-import { Properties, ToolSchema, ToolService } from "@/services/extension";
+import { Properties, ToolInvocation, ToolKitService, ToolSchema } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { ChatModelType, ModelError } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
-import { AgentResponse, AnyAgentStimulus, StimulusSource, UserMessagePayload, UserMessageStimulus } from "@/services/worldstate";
+import { AgentResponse, AnyAgentStimulus, StimulusSource, WorldState } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
 import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
 import { PromptContextBuilder } from "./context-builder";
+
+type PromptContextSnapshot = Awaited<ReturnType<PromptContextBuilder["build"]>>;
 
 /**
  * @description 负责执行 Agent 的核心“心跳”循环
@@ -21,7 +23,7 @@ import { PromptContextBuilder } from "./context-builder";
 export class HeartbeatProcessor {
     private logger: Logger;
     private promptService: PromptService;
-    private toolService: ToolService;
+    private toolService: ToolKitService;
     constructor(
         ctx: Context,
         private readonly config: Config,
@@ -82,8 +84,10 @@ export class HeartbeatProcessor {
     /**
      * 准备LLM请求所需的消息负载
      */
-    /* prettier-ignore */
-    private async _prepareLlmRequest(stimulus: AnyAgentStimulus, includeImages: boolean = false): Promise<{ messages: Message[]; includeImages: boolean }> {
+    private async _prepareLlmRequest(
+        stimulus: AnyAgentStimulus,
+        includeImages: boolean = false
+    ): Promise<{ messages: Message[]; includeImages: boolean; promptContext: PromptContextSnapshot }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
@@ -160,25 +164,28 @@ export class HeartbeatProcessor {
             { role: "user", content: userMessageContent },
         ];
 
-        return { messages, includeImages: userMessageContent instanceof Array };
+        return { messages, includeImages: userMessageContent instanceof Array, promptContext };
     }
 
     /**
      * 执行单次心跳的完整逻辑（非流式）
      */
     private async performSingleHeartbeat(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
-        const { platform, channelId, session } = stimulus.payload as UserMessagePayload;
+        const baseInvocation = this.toolService.buildInvocation(stimulus);
+        const { platform, channelId } = this.resolveInvocationChannel(baseInvocation, stimulus);
         let attempt = 0;
 
         let llmRawResponse: GenerateTextResult | null = null;
 
         let includeImages = this.config.enableVision;
+        let lastPromptContext: PromptContextSnapshot | null = null;
 
         while (attempt < this.config.switchConfig.maxRetries) {
             const parser = new JsonParser<AgentResponse>();
 
             // 步骤 1-4: 准备请求
-            const { messages, includeImages: hasImages } = await this._prepareLlmRequest(stimulus, includeImages);
+            const { messages, includeImages: hasImages, promptContext } = await this._prepareLlmRequest(stimulus, includeImages);
+            lastPromptContext = promptContext;
 
             // 步骤 5: 调用LLM
             this.logger.info("步骤 5/7: 调用大语言模型...");
@@ -274,7 +281,7 @@ export class HeartbeatProcessor {
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-        await this.executeActions(turnId, session, agentResponseData.actions);
+        await this.executeActions(turnId, stimulus, agentResponseData.actions, lastPromptContext?.worldState);
 
         this.logger.success("单次心跳成功完成");
         return { continue: agentResponseData.request_heartbeat };
@@ -285,7 +292,8 @@ export class HeartbeatProcessor {
      */
     /* prettier-ignore */
     private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
-        const { platform, channelId, session } = stimulus.payload as UserMessagePayload;
+        const baseInvocation = this.toolService.buildInvocation(stimulus);
+        const { platform, channelId } = this.resolveInvocationChannel(baseInvocation, stimulus);
 
         this.logger.info("步骤 5/7: 调用大语言模型 (流式)...");
 
@@ -302,7 +310,8 @@ export class HeartbeatProcessor {
 
         // 这些值会由消费者在每个批次内重置
         let thoughts = { observe: "", analyze_infer: "", plan: "" };
-        let request_heartbeat = false;
+    let request_heartbeat = false;
+    let latestPromptContext: PromptContextSnapshot | null = null;
 
         // factory: 创建新的流式解析器与消费者批次
         let streamParser: StreamParser;
@@ -343,7 +352,7 @@ export class HeartbeatProcessor {
                 for await (const action of streamParser.stream<any>("actions")) {
                     if (signal.aborted) break;
                     this.logger.info(`[流式执行 #${id}] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
-                    await this.executeActions(turnId, session, [action]);
+                    await this.executeActions(turnId, stimulus, [action], latestPromptContext?.worldState);
                 }
                 this.logger.debug(`[批次 ${id}] actions consumer end`);
             })();
@@ -373,7 +382,8 @@ export class HeartbeatProcessor {
         // 重试与模型切换
         while (attempt < this.config.switchConfig.maxRetries) {
             // 1-4: 为当前尝试构建请求（含多模态）
-            const { messages, includeImages: hasImages } = await this._prepareLlmRequest(stimulus, includeImages);
+            const { messages, includeImages: hasImages, promptContext } = await this._prepareLlmRequest(stimulus, includeImages);
+            latestPromptContext = promptContext;
             const desiredType = hasImages ? ChatModelType.Vision : ChatModelType.All;
             const model = this.modelSwitcher.getModel(desiredType);
 
@@ -536,18 +546,40 @@ export class HeartbeatProcessor {
   - 计划: ${plan || "N/A"}`);
     }
 
-    private async executeActions(turnId: string, session: Session, actions: AgentResponse["actions"]): Promise<void> {
+    private async executeActions(
+        turnId: string,
+        stimulus: AnyAgentStimulus,
+        actions: AgentResponse["actions"],
+        worldState?: WorldState
+    ): Promise<void> {
         if (actions.length === 0) {
             this.logger.info("无动作需要执行");
             return;
         }
 
-        const { platform, channelId } = session;
+        const baseInvocation = this.toolService.buildInvocation(stimulus, {
+            world: worldState,
+            metadata: { turnId },
+        });
 
-        for await (const action of actions) {
-            if (!action.function) continue; // FIXME: params is nullable
+        const { platform, channelId } = this.resolveInvocationChannel(baseInvocation, stimulus);
+
+        for (let index = 0; index < actions.length; index++) {
+            const action = actions[index];
+            if (!action?.function) continue;
+
+            const invocation: ToolInvocation = {
+                ...baseInvocation,
+                metadata: {
+                    ...(baseInvocation.metadata ?? {}),
+                    actionIndex: index,
+                    actionName: action.function,
+                },
+            };
+
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
-            const result = await this.toolService.invoke(action.function, action.params, session);
+            const result = await this.toolService.invoke(action.function, action.params ?? {}, invocation);
+
             await this.interactionManager.recordObservation(actionId, platform, channelId, {
                 turnId,
                 function: action.function,
@@ -556,6 +588,38 @@ export class HeartbeatProcessor {
                 error: result.error,
             });
         }
+    }
+
+    private resolveInvocationChannel(invocation: ToolInvocation, stimulus: AnyAgentStimulus): { platform: string; channelId: string } {
+        let platform = invocation.platform;
+        let channelId = invocation.channelId;
+
+        if (!platform || !channelId) {
+            switch (stimulus.type) {
+                case StimulusSource.UserMessage:
+                    platform ??= stimulus.payload.platform;
+                    channelId ??= stimulus.payload.channelId;
+                    break;
+                case StimulusSource.SystemEvent:
+                    platform ??= stimulus.payload.session?.platform;
+                    channelId ??= stimulus.payload.session?.channelId;
+                    break;
+                case StimulusSource.ScheduledTask:
+                case StimulusSource.BackgroundTaskCompletion:
+                    platform ??= stimulus.payload.platform;
+                    channelId ??= stimulus.payload.channelId;
+                    break;
+            }
+        }
+
+        if (!platform || !channelId) {
+            this.logger.warn(`无法确定工具调用的渠道信息 | platform: ${platform ?? "unknown"}, channelId: ${channelId ?? "unknown"}`);
+        }
+
+        return {
+            platform: platform ?? "unknown",
+            channelId: channelId ?? "unknown",
+        };
     }
 
     /**

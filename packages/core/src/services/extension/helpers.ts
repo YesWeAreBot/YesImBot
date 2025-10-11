@@ -1,36 +1,65 @@
 import { Schema } from "koishi";
-import { Param, Properties, ToolCallResult, ToolError } from "./types";
+import { NextStep, Param, Properties, ToolError, ToolResult } from "./types";
 
-/**
- * 成功结果辅助函数
- */
-export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): ToolCallResult<T> {
-    return {
-        status: "success",
-        result,
-        metadata,
-    };
+class ToolResultBuilder<T> {
+    public result: ToolResult<T>;
+    constructor(result: ToolResult<T>) {
+        this.result = result;
+    }
+
+    /**
+     * 附加一个推荐的下一步操作。
+     * @param nextStep - 推荐的下一步对象
+     */
+    withNextStep(nextStep: NextStep): this {
+        this.result.metadata ??= {};
+        this.result.metadata.nextSteps ??= [];
+        this.result.metadata.nextSteps.push(nextStep);
+        return this;
+    }
+
+    /**
+     * 附加任意元数据。
+     * @param key - 元数据的键
+     * @param value - 元数据的值
+     */
+    withMetadata(key: string, value: any): this {
+        this.result.metadata ??= {};
+        this.result.metadata[key] = value;
+        return this;
+    }
+
+    /**
+     * 构建最终的 ToolCallResult 对象。
+     */
+    build(): ToolResult<T> {
+        return this.result;
+    }
 }
 
 /**
- * 失败结果辅助函数
- * @param error - 结构化的错误对象或一个简单的错误消息字符串
- * @param metadata - 附加元数据
+ * 创建一个表示成功的结果构建器。
+ * @param result - 成功时返回的结果数据
  */
-export function Failed(error: ToolError | string, metadata?: ToolCallResult["metadata"]): ToolCallResult {
-    if (typeof error === 'string') {
-        // 如果只提供一个字符串，自动包装成基础的 ToolError
-        return {
-            status: "error",
-            error: { name: "ToolError", message: error },
-            metadata,
-        };
-    }
-    return {
-        status: "error",
-        error,
-        metadata,
+export function Success<T>(result?: T): ToolResultBuilder<T> {
+    const initialResult: ToolResult<T> = {
+        status: "success",
+        result,
     };
+    return new ToolResultBuilder(initialResult);
+}
+
+/**
+ * 创建一个表示失败的结果构建器。
+ * @param error - 结构化的错误对象或一个简单的错误消息字符串
+ */
+export function Failed(error: ToolError | string): ToolResultBuilder<never> {
+    const toolError: ToolError = typeof error === "string" ? { name: "ToolError", message: error } : error;
+    const initialResult: ToolResult<never> = {
+        status: "error",
+        error: toolError,
+    };
+    return new ToolResultBuilder(initialResult);
 }
 
 /**

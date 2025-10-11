@@ -2,9 +2,9 @@ import { Context, h, Schema, Session } from "koishi";
 import {} from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
+import { ToolInvocation } from "@/services/extension";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { WithSession } from "@/services/extension/types";
 import { formatDate, isEmpty } from "@/shared";
 
 interface InteractionsConfig {}
@@ -34,10 +34,17 @@ export default class InteractionsExtension {
             message_id: Schema.string().required().description("消息 ID"),
             emoji_id: Schema.number().required().description("表态编号"),
         }),
-        isSupported: ({ session }) => session.platform === "onebot",
+        supports: [
+            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        ],
     })
-    async reactionCreate({ session, message_id, emoji_id }: WithSession<{ message_id: string; emoji_id: number }>) {
+    async reactionCreate({ message_id, emoji_id }: { message_id: string; emoji_id: number }, invocation: ToolInvocation) {
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
+        const session = invocation.session;
+        if (!session) return Failed("This tool requires a session.");
+        const bot = invocation.bot;
+        if (!bot) return Failed("Missing bot instance in invocation");
+        const { selfId } = bot;
         try {
             const result = await session.onebot._request("set_msg_emoji_like", {
                 message_id: message_id,
@@ -45,10 +52,10 @@ export default class InteractionsExtension {
             });
 
             if (result["status"] === "failed") return Failed(result["message"]);
-            this.ctx.logger.info(`Bot[${session.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
+            this.ctx.logger.info(`Bot[${selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
+            this.ctx.logger.error(`Bot[${selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
             return Failed(`对消息 ${message_id} 进行表态失败： ${error.message}`);
         }
     }
@@ -59,16 +66,23 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        isSupported: ({ session }) => session.platform === "onebot",
+        supports: [
+            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        ],
     })
-    async essenceCreate({ session, message_id }: WithSession<{ message_id: string }>) {
+    async essenceCreate({ message_id }: { message_id: string }, invocation: ToolInvocation) {
         if (isEmpty(message_id)) return Failed("message_id is required");
+        const session = invocation.session;
+        if (!session) return Failed("This tool requires a session.");
+        const bot = invocation.bot;
+        if (!bot) return Failed("Missing bot instance in invocation");
+        const { selfId } = bot;
         try {
             await session.onebot.setEssenceMsg(message_id);
-            this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 设置为精华`);
+            this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, error.message);
+            this.ctx.logger.error(`Bot[${selfId}]设置精华消息失败: ${message_id} - `, error.message);
             return Failed(`设置精华消息失败： ${error.message}`);
         }
     }
@@ -79,16 +93,23 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        isSupported: ({ session }) => session.platform === "onebot",
+        supports: [
+            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        ],
     })
-    async essenceDelete({ session, message_id }: WithSession<{ message_id: string }>) {
+    async essenceDelete({ message_id }: { message_id: string }, invocation: ToolInvocation) {
         if (isEmpty(message_id)) return Failed("message_id is required");
+        const session = invocation.session;
+        if (!session) return Failed("This tool requires a session.");
+        const bot = invocation.bot;
+        if (!bot) return Failed("Missing bot instance in invocation");
+        const { selfId } = bot;
         try {
-            const result = await session.onebot.deleteEssenceMsg(message_id);
-            this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
+            await session.onebot.deleteEssenceMsg(message_id);
+            this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
+            this.ctx.logger.error(`Bot[${selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
             return Failed(`从精华中移除消息失败： ${error.message}`);
         }
     }
@@ -100,11 +121,18 @@ export default class InteractionsExtension {
             user_id: Schema.string().required().description("用户名称"),
             channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        isSupported: ({ session }) => session.platform === "onebot",
+        supports: [
+            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        ],
     })
-    async sendPoke({ session, user_id, channel }: WithSession<{ user_id: string; channel: string }>) {
+    async sendPoke({ user_id, channel }: { user_id: string; channel: string }, invocation: ToolInvocation) {
         if (isEmpty(String(user_id))) return Failed("user_id is required");
-        const targetChannel = isEmpty(channel) ? session.channelId : channel;
+        const session = invocation.session;
+        if (!session) return Failed("This tool requires a session.");
+        const bot = invocation.bot;
+        if (!bot) return Failed("Missing bot instance in invocation");
+        const { selfId } = bot;
+        const targetChannel = isEmpty(channel) ? invocation.channelId : channel;
         try {
             const result = await session.onebot._request("group_poke", {
                 group_id: targetChannel,
@@ -113,10 +141,10 @@ export default class InteractionsExtension {
 
             if (result["status"] === "failed") return Failed(result["data"]);
 
-            this.ctx.logger.info(`Bot[${session.selfId}]戳了戳 ${user_id}`);
+            this.ctx.logger.info(`Bot[${selfId}]戳了戳 ${user_id}`);
             return Success(result);
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
+            this.ctx.logger.error(`Bot[${selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
             return Failed(`戳了戳 ${user_id} 失败： ${error.message}`);
         }
     }
@@ -127,17 +155,25 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
         }),
-        isSupported: ({ session }) => session.platform === "onebot",
+        supports: [
+            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        ],
     })
-    async getForwardMsg({ session, id }: WithSession<{ id: string }>) {
+    async getForwardMsg({ id }: { id: string }, invocation: ToolInvocation) {
         if (isEmpty(id)) return Failed("id is required");
+        const session = invocation.session;
+        if (!session) return Failed("This tool requires a session.");
+        const bot = invocation.bot;
+        if (!bot) return Failed("Missing bot instance in invocation");
+        const onebot = session.onebot;
+        const { selfId } = bot;
         try {
-            const forwardMessages: ForwardMessage[] = await session.onebot.getForwardMsg(id);
+            const forwardMessages: ForwardMessage[] = await onebot.getForwardMsg(id);
             const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessages);
 
             return Success(formattedResult);
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, error.message);
+            this.ctx.logger.error(`Bot[${selfId}]获取转发消息失败: ${id} - `, error.message);
             return Failed(`获取转发消息失败： ${error.message}`);
         }
     }

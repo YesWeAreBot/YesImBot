@@ -1,9 +1,9 @@
-import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
+import { Bot, Context, h, Schema, Session, sleep } from "koishi";
 
 import { AssetService } from "@/services/assets";
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { ToolInvocation } from "@/services/extension";
+import { Action, Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { WithSession } from "@/services/extension/types";
 import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
@@ -88,7 +88,7 @@ export default class CoreUtilExtension {
         });
     }
 
-    @Tool({
+    @Action({
         name: "send_message",
         description: "发送消息",
         parameters: withInnerThoughts({
@@ -107,12 +107,22 @@ export default class CoreUtilExtension {
       Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
     })
-    async sendMessage(args: WithSession<{ message: string; target?: string }>) {
-        const { session, message, target } = args;
+    async sendMessage(params: { message: string; target?: string }, invocation: ToolInvocation) {
+        const { message, target } = params;
 
-        if (!session) {
-            this.ctx.logger.warn("✖ 缺少有效会话，无法发送消息");
-            return Failed("缺少会话对象");
+        const currentPlatform = invocation.platform;
+        const currentChannelId = invocation.channelId;
+        let bot = invocation.bot;
+
+        if (!bot && currentPlatform) {
+            bot = this.ctx.bots.find((b) => b.platform === currentPlatform && (!invocation.bot || b.selfId === invocation.bot.selfId));
+        }
+
+        if (!currentPlatform || !currentChannelId || !bot) {
+            this.ctx.logger.warn(
+                `✖ 发送消息失败 | 缺少上下文信息 platform=${currentPlatform ?? "unknown"}, channel=${currentChannelId ?? "unknown"}, bot=${bot?.selfId ?? "unknown"}`
+            );
+            return Failed("缺少平台或频道信息，无法发送消息");
         }
 
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
@@ -122,21 +132,24 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const { bot, channelId, finalTarget } = this.determineTarget(session, target);
+            const { bot: targetBot, targetChannelId } = this.determineTarget(invocation, target);
+            const resolvedBot = targetBot ?? bot;
 
-            if (!bot) {
+            if (!resolvedBot) {
                 const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
                 this.ctx.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
                 return Failed(`未找到平台 ${target} 对应的机器人实例`);
             }
 
-            // this.ctx.logger.info(`准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
+            if (!targetChannelId) {
+                this.ctx.logger.warn("✖ 未找到目标频道，无法发送消息");
+                return Failed("目标频道缺失，无法发送消息");
+            }
 
-            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
+            await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId);
 
             return Success();
         } catch (error: any) {
-            //this.ctx.logger.error(error);
             return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
         }
     }
@@ -149,8 +162,8 @@ export default class CoreUtilExtension {
             question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
         }),
     })
-    async getImageDescription(args: WithSession<{ image_id: string; question: string }>) {
-        const { image_id, question } = args;
+    async getImageDescription(params: { image_id: string; question: string }, _invocation: ToolInvocation) {
+        const { image_id, question } = params;
 
         const imageInfo = await this.assetService.getInfo(image_id);
         if (!imageInfo) {
@@ -193,141 +206,85 @@ export default class CoreUtilExtension {
     }
 
     private getTypingDelay(text: string): number {
-        // --- 可配置参数 ---
         const BASE_DELAY = this.config.typing.baseDelay;
-
-        // 中文输入模拟 (拼音输入法)
         const CHINESE_CHAR_PER_SECOND = this.config.typing.charPerSecond;
         const CHINESE_RANDOM_FACTOR = 0.5;
-
-        // 英文输入模拟
         const ENGLISH_CHAR_PER_SECOND = this.config.typing.charPerSecond * 1.5;
-        const ENGLISH_RANDOM_FACTOR = 0.3; // 英文输入的随机性较小
-
-        // 延迟上下限
+        const ENGLISH_RANDOM_FACTOR = 0.3;
         const MIN_DELAY = this.config.typing.minDelay;
         const MAX_DELAY = this.config.typing.maxDelay;
 
-        // --- 逻辑实现 ---
-
-        // 1. 统计中英文字符数
-        let chineseCharCount = 0;
-        let englishCharCount = 0;
-
-        // 只统计纯文本
         text = h
             .parse(text)
             .filter((e) => e.type === "text")
             .join("");
+        if (isEmpty(text)) return MIN_DELAY;
 
-        if (isEmpty(text)) {
-            return MIN_DELAY;
-        }
-
-        // 使用正则表达式匹配中文字符 (Unicode范围)
         const chineseRegex = /[\u4e00-\u9fa5]/g;
         const chineseMatches = text.match(chineseRegex);
-        chineseCharCount = chineseMatches ? chineseMatches.length : 0;
-
-        // 英文及其他字符（数字、符号等）可以大致归为一类
-        englishCharCount = text.length - chineseCharCount;
-
-        // 2. 分别计算中英文部分的延迟
+        const chineseCharCount = chineseMatches ? chineseMatches.length : 0;
+        const englishCharCount = text.length - chineseCharCount;
         const chineseDelay = (chineseCharCount / CHINESE_CHAR_PER_SECOND) * 1000;
         const englishDelay = (englishCharCount / ENGLISH_CHAR_PER_SECOND) * 1000;
-
-        // 3. 计算总延迟并加入随机性
-        // 随机性的大小也与中英文字符数量有关，让节奏更真实
         const totalRandomness = (chineseCharCount * CHINESE_RANDOM_FACTOR + englishCharCount * ENGLISH_RANDOM_FACTOR) / text.length;
-        const randomFactor = 1 + (Math.random() - 0.5) * 2 * totalRandomness; // 在 (1-totalRandomness) 到 (1+totalRandomness) 之间
-
+        const randomFactor = 1 + (Math.random() - 0.5) * 2 * totalRandomness;
         const calculatedDelay = BASE_DELAY + (chineseDelay + englishDelay) * randomFactor;
-
-        // 4. 应用延迟上下限
         return Math.max(MIN_DELAY, Math.min(calculatedDelay, MAX_DELAY));
     }
 
-    /**
-     * 决定消息的最终目标和使用的机器人实例
-     */
-    private determineTarget(session: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
-        if (!target || target === `${session.platform}:${session.channelId}`) {
-            // 发送至当前会话
+    private determineTarget(invocation: ToolInvocation, target?: string): { bot: Bot | undefined; targetChannelId: string } {
+        if (!target) {
             return {
-                bot: session.bot,
-                channelId: session.channelId,
-                finalTarget: `${session.platform}:${session.channelId}`,
+                bot: invocation.bot,
+                targetChannelId: invocation.channelId ?? "",
             };
-        } else {
-            // 发送至指定目标
-            const parts = target.split(":");
-            const platform = parts[0];
-            const channelId = parts.slice(1).join(":");
-            const bot = this.ctx.bots.find((b) => b.platform === platform);
-            return { bot, channelId, finalTarget: target };
         }
+
+        const parts = target.split(":");
+        const platform = parts[0];
+        const channelId = parts.slice(1).join(":");
+        const bot = this.ctx.bots.find((b) => b.platform === platform);
+        return { bot, targetChannelId: channelId };
     }
 
-    /**
-     * 带有“人性化”延迟的消息发送执行器
-     * @param messages 要发送的消息数组
-     * @param bot 用于发送的机器人实例
-     * @param channelId 目标频道ID
-     * @param originalSession 原始会话，用于创建after-send事件
-     */
-    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
+    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string): Promise<void> {
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
             if (!msg) continue;
 
-            // --- 人性化延迟的核心部分 ---
             const delay = this.getTypingDelay(msg);
-
-            // --- 处理图片元素 ---
             const content = await this.assetService.encode(msg);
-
             this.ctx.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
-            if (i >= 1) {
-                await sleep(delay);
-            }
-
+            if (i >= 1) await sleep(delay);
             if (this.disposed) return;
 
-            // --- 发送消息 ---
             const messageIds = await bot.sendMessage(channelId, content);
 
-            // --- 发送后处理 ---
             if (messageIds && messageIds.length > 0) {
-                this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
+                this.emitAfterSendEvent(bot, channelId, msg, messageIds[0]);
             }
 
-            // 如果还有下一条消息，增加一个“段落间隔”延迟
             if (i < messages.length - 1) {
-                const paragraphDelay = 1000 + Math.random() * 1500; // 1秒到2.5秒的随机停顿
-
+                const paragraphDelay = 1000 + Math.random() * 1500;
                 await sleep(paragraphDelay);
             }
         }
     }
 
-    /**
-     * 封装 after-send 事件的发射逻辑
-     */
-    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): void {
+    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string): void {
+        // Creating a session-like object for the event
         const session = bot.session({
-            ...originalSession.event,
             type: "after-send",
+            channel: { id: channelId, type: 0 }, // Assuming guild channel for now
+            guild: { id: channelId },
+            user: bot.user,
             message: {
                 id: messageId,
                 content: content,
                 elements: h.parse(content),
                 timestamp: Date.now(),
                 user: bot.user,
-            },
-            channel: {
-                id: channelId,
-                type: originalSession.guildId ? 0 : 1,
             },
         });
         this.ctx.emit("after-send", session as Session);
