@@ -2,7 +2,7 @@ import { Context, h, Schema, Session } from "koishi";
 import {} from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
-import { ToolInvocation } from "@/services/extension";
+import { ToolRuntime } from "@/services/extension";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { formatDate, isEmpty } from "@/shared";
@@ -38,7 +38,7 @@ export default class InteractionsExtension {
             ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
         ],
     })
-    async reactionCreate({ message_id, emoji_id }: { message_id: string; emoji_id: number }, invocation: ToolInvocation) {
+    async reactionCreate({ message_id, emoji_id }: { message_id: string; emoji_id: number }, invocation: ToolRuntime) {
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         const session = invocation.session;
         if (!session) return Failed("This tool requires a session.");
@@ -70,7 +70,7 @@ export default class InteractionsExtension {
             ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
         ],
     })
-    async essenceCreate({ message_id }: { message_id: string }, invocation: ToolInvocation) {
+    async essenceCreate({ message_id }: { message_id: string }, invocation: ToolRuntime) {
         if (isEmpty(message_id)) return Failed("message_id is required");
         const session = invocation.session;
         if (!session) return Failed("This tool requires a session.");
@@ -97,7 +97,7 @@ export default class InteractionsExtension {
             ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
         ],
     })
-    async essenceDelete({ message_id }: { message_id: string }, invocation: ToolInvocation) {
+    async essenceDelete({ message_id }: { message_id: string }, invocation: ToolRuntime) {
         if (isEmpty(message_id)) return Failed("message_id is required");
         const session = invocation.session;
         if (!session) return Failed("This tool requires a session.");
@@ -125,7 +125,7 @@ export default class InteractionsExtension {
             ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
         ],
     })
-    async sendPoke({ user_id, channel }: { user_id: string; channel: string }, invocation: ToolInvocation) {
+    async sendPoke({ user_id, channel }: { user_id: string; channel: string }, invocation: ToolRuntime) {
         if (isEmpty(String(user_id))) return Failed("user_id is required");
         const session = invocation.session;
         if (!session) return Failed("This tool requires a session.");
@@ -159,7 +159,7 @@ export default class InteractionsExtension {
             ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
         ],
     })
-    async getForwardMsg({ id }: { id: string }, invocation: ToolInvocation) {
+    async getForwardMsg({ id }: { id: string }, invocation: ToolRuntime) {
         if (isEmpty(id)) return Failed("id is required");
         const session = invocation.session;
         if (!session) return Failed("This tool requires a session.");

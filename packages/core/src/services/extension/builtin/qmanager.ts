@@ -2,7 +2,6 @@ import { Context, Schema } from "koishi";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { WithSession } from "@/services/extension/types";
 import { isEmpty } from "@/shared/utils";
 
 @Extension({
@@ -29,7 +28,7 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async delmsg({ session, message_id, channel_id }: WithSession<{ message_id: string; channel_id: string }>) {
+    async delmsg({ session, message_id, channel_id }: { message_id: string; channel_id: string }) {
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.deleteMessage(targetChannel, message_id);

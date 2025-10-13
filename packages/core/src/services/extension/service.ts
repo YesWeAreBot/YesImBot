@@ -1,28 +1,25 @@
-import { Context, ForkScope, h, Logger, Schema, Service } from "koishi";
+import { Context, ForkScope, h, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
 import { PromptService } from "@/services/prompt";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
+import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "../worldstate/types";
+import { extractMetaFromSchema, Failed } from "./helpers";
+import { IExtension, Properties, ToolDefinition, ToolRuntime, ToolResult, ToolSchema } from "./types";
+
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
 import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
-import { extractMetaFromSchema, Failed } from "./helpers";
-import { IExtension, Properties, ToolDefinition, ToolInvocation, ToolResult, ToolSchema } from "./types";
-import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "../worldstate/types";
 
 declare module "koishi" {
     interface Context {
-        [Services.Tool]: ToolKitService;
+        [Services.Tool]: ToolService;
     }
 }
 
-/**
- * ToolKitService
- * 负责注册、管理和提供所有扩展和工具。
- */
-export class ToolKitService extends Service<Config> {
+export class ToolService extends Service<Config> {
     static readonly inject = [Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
@@ -272,8 +269,9 @@ export class ToolKitService extends Service<Config> {
             };
         });
     }
+
     /**
-     * 注册一个新的扩展。
+     * 注册一个新的扩展
      * @param ExtConstructor 扩展的构造函数
      * @param enabled 是否启用此扩展
      * @param extConfig 传递给扩展实例的配置
@@ -373,7 +371,7 @@ export class ToolKitService extends Service<Config> {
         return this.tools.delete(name);
     }
 
-    public buildInvocation(stimulus: AnyAgentStimulus, extras: Partial<Omit<ToolInvocation, "stimulus">> = {}): ToolInvocation {
+    public buildInvocation(stimulus: AnyAgentStimulus, extras: Partial<Omit<ToolRuntime, "stimulus">> = {}): ToolRuntime {
         return {
             stimulus,
             ...this.extractInvocationIdentity(stimulus),
@@ -381,7 +379,7 @@ export class ToolKitService extends Service<Config> {
         };
     }
 
-    public async invoke(functionName: string, params: Record<string, unknown>, invocation: ToolInvocation): Promise<ToolResult> {
+    public async invoke(functionName: string, params: Record<string, unknown>, invocation: ToolRuntime): Promise<ToolResult> {
         const tool = await this.getTool(functionName, invocation);
         if (!tool) {
             this.logger.warn(`工具未找到或在当前上下文中不可用 | 名称: ${functionName}`);
@@ -448,7 +446,7 @@ export class ToolKitService extends Service<Config> {
         return lastResult;
     }
 
-    public async getTool(name: string, invocation?: ToolInvocation): Promise<ToolDefinition | undefined> {
+    public async getTool(name: string, invocation?: ToolRuntime): Promise<ToolDefinition | undefined> {
         const tool = this.tools.get(name);
         if (!tool) return undefined;
 
@@ -467,7 +465,7 @@ export class ToolKitService extends Service<Config> {
         return tool;
     }
 
-    public async getAvailableTools(invocation: ToolInvocation): Promise<ToolDefinition[]> {
+    public async getAvailableTools(invocation: ToolRuntime): Promise<ToolDefinition[]> {
         const evaluations = await this.evaluateTools(invocation);
 
         return evaluations
@@ -480,12 +478,12 @@ export class ToolKitService extends Service<Config> {
         return this.extensions.get(name);
     }
 
-    public async getSchema(name: string, invocation?: ToolInvocation): Promise<ToolSchema | undefined> {
+    public async getSchema(name: string, invocation?: ToolRuntime): Promise<ToolSchema | undefined> {
         const tool = await this.getTool(name, invocation);
         return tool ? this.toolDefinitionToSchema(tool) : undefined;
     }
 
-    public async getToolSchemas(invocation: ToolInvocation): Promise<ToolSchema[]> {
+    public async getToolSchemas(invocation: ToolRuntime): Promise<ToolSchema[]> {
         const evaluations = await this.evaluateTools(invocation);
 
         return evaluations
@@ -500,9 +498,8 @@ export class ToolKitService extends Service<Config> {
         return ext.config;
     }
 
-    private async evaluateTools(
-        invocation: ToolInvocation
-    ): Promise<{ tool: ToolDefinition; assessment: { available: boolean; priority: number; hints: string[] } }[]> {
+    /* prettier-ignore */
+    private async evaluateTools(invocation: ToolRuntime): Promise<{ tool: ToolDefinition; assessment: { available: boolean; priority: number; hints: string[] }}[]> {
         return Promise.all(
             Array.from(this.tools.values()).map(async (tool) => ({
                 tool,
@@ -511,10 +508,8 @@ export class ToolKitService extends Service<Config> {
         );
     }
 
-    private async assessTool(
-        tool: ToolDefinition,
-        invocation: ToolInvocation
-    ): Promise<{ available: boolean; priority: number; hints: string[] }> {
+    /* prettier-ignore */
+    private async assessTool(tool: ToolDefinition, invocation: ToolRuntime): Promise<{ available: boolean; priority: number; hints: string[] }> {
         const config = this.getConfig(tool.extensionName);
         const hints: string[] = [];
         let priority = 0;
@@ -567,7 +562,7 @@ export class ToolKitService extends Service<Config> {
         return { available: true, priority, hints };
     }
 
-    private extractInvocationIdentity(stimulus: AnyAgentStimulus): Omit<ToolInvocation, "stimulus"> {
+    private extractInvocationIdentity(stimulus: AnyAgentStimulus): Omit<ToolRuntime, "stimulus"> {
         switch (stimulus.type) {
             case StimulusSource.UserMessage: {
                 const { platform, channelId, session } = stimulus.payload;
@@ -619,7 +614,7 @@ export class ToolKitService extends Service<Config> {
     }
 
     /**
-     * 将 ToolDefinition 转换为 ToolSchema。
+     * 将 ToolDefinition 转换为 ToolSchema
      * @param tool 工具定义对象
      * @returns 工具的 Schema 对象
      */

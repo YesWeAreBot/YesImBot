@@ -4,7 +4,7 @@ import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "@/config";
-import { Properties, ToolInvocation, ToolKitService, ToolSchema } from "@/services/extension";
+import { Properties, ToolRuntime, ToolService, ToolSchema } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
 import { ChatModelType, ModelError } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
@@ -23,7 +23,7 @@ type PromptContextSnapshot = Awaited<ReturnType<PromptContextBuilder["build"]>>;
 export class HeartbeatProcessor {
     private logger: Logger;
     private promptService: PromptService;
-    private toolService: ToolKitService;
+    private toolService: ToolService;
     constructor(
         ctx: Context,
         private readonly config: Config,
@@ -568,7 +568,7 @@ export class HeartbeatProcessor {
             const action = actions[index];
             if (!action?.function) continue;
 
-            const invocation: ToolInvocation = {
+            const invocation: ToolRuntime = {
                 ...baseInvocation,
                 metadata: {
                     ...(baseInvocation.metadata ?? {}),
@@ -590,7 +590,7 @@ export class HeartbeatProcessor {
         }
     }
 
-    private resolveInvocationChannel(invocation: ToolInvocation, stimulus: AnyAgentStimulus): { platform: string; channelId: string } {
+    private resolveInvocationChannel(invocation: ToolRuntime, stimulus: AnyAgentStimulus): { platform: string; channelId: string } {
         let platform = invocation.platform;
         let channelId = invocation.channelId;
 

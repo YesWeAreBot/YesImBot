@@ -1,7 +1,7 @@
 import { Context, Schema } from "koishi";
 
 import { Services } from "@/shared/constants";
-import { ExtensionMetadata, ToolDefinition, ToolInvocation, ToolMetadata } from "./types";
+import { ExtensionMetadata, ToolDefinition, ToolRuntime, ToolMetadata } from "./types";
 
 type Constructor<T = {}> = new (...args: any[]) => T;
 
@@ -125,7 +125,7 @@ export function Tool<TParams>(metadata: Omit<ToolMetadata<any, TParams>, "type">
     return function (
         target: any,
         propertyKey: string,
-        descriptor: TypedPropertyDescriptor<(params: TParams, invocation: ToolInvocation) => Promise<any>>
+        descriptor: TypedPropertyDescriptor<(params: TParams, invocation: ToolRuntime) => Promise<any>>
     ) {
         if (!descriptor.value) {
             return;
@@ -157,7 +157,7 @@ export function Action<TParams>(metadata: Omit<ToolMetadata<any, TParams>, "type
     return function (
         target: any,
         propertyKey: string,
-        descriptor: TypedPropertyDescriptor<(params: TParams, invocation: ToolInvocation) => Promise<any>>
+        descriptor: TypedPropertyDescriptor<(params: TParams, invocation: ToolRuntime) => Promise<any>>
     ) {
         if (!descriptor.value) {
             return;

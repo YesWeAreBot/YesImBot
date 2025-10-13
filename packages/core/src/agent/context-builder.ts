@@ -4,7 +4,7 @@ import { Context, Logger } from "koishi";
 
 import { Config } from "@/config";
 import { AssetService } from "@/services/assets";
-import { ToolKitService } from "@/services/extension";
+import { ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
 import { AnyAgentStimulus, ContextualMessage, WorldState, WorldStateService } from "@/services/worldstate";
@@ -23,7 +23,7 @@ export class PromptContextBuilder {
     private readonly logger: Logger;
     private readonly assetService: AssetService;
     private readonly memoryService: MemoryService;
-    private readonly toolService: ToolKitService;
+    private readonly toolService: ToolService;
     private readonly worldStateService: WorldStateService;
     private imageLifecycleTracker = new Map<string, number>();
 

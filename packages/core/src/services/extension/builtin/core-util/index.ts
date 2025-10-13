@@ -1,7 +1,7 @@
 import { Bot, Context, h, Schema, Session, sleep } from "koishi";
 
 import { AssetService } from "@/services/assets";
-import { ToolInvocation } from "@/services/extension";
+import { ToolRuntime } from "@/services/extension";
 import { Action, Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
@@ -107,7 +107,7 @@ export default class CoreUtilExtension {
       Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
     })
-    async sendMessage(params: { message: string; target?: string }, invocation: ToolInvocation) {
+    async sendMessage(params: { message: string; target?: string }, invocation: ToolRuntime) {
         const { message, target } = params;
 
         const currentPlatform = invocation.platform;
@@ -162,7 +162,7 @@ export default class CoreUtilExtension {
             question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
         }),
     })
-    async getImageDescription(params: { image_id: string; question: string }, _invocation: ToolInvocation) {
+    async getImageDescription(params: { image_id: string; question: string }, _invocation: ToolRuntime) {
         const { image_id, question } = params;
 
         const imageInfo = await this.assetService.getInfo(image_id);
@@ -232,7 +232,7 @@ export default class CoreUtilExtension {
         return Math.max(MIN_DELAY, Math.min(calculatedDelay, MAX_DELAY));
     }
 
-    private determineTarget(invocation: ToolInvocation, target?: string): { bot: Bot | undefined; targetChannelId: string } {
+    private determineTarget(invocation: ToolRuntime, target?: string): { bot: Bot | undefined; targetChannelId: string } {
         if (!target) {
             return {
                 bot: invocation.bot,

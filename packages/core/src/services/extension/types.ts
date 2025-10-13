@@ -4,7 +4,7 @@ import { Bot, Context, Schema, Session } from "koishi";
 
 import { AnyAgentStimulus, WorldState } from "@/services/worldstate";
 
-export interface ToolInvocation {
+export interface ToolRuntime {
     /** 原始刺激 */
     readonly stimulus: AnyAgentStimulus;
     /** 触发平台 (如果存在) */
@@ -49,7 +49,7 @@ export interface ToolSchema {
 }
 
 export interface SupportGuardContext<TConfig = any> {
-    invocation: ToolInvocation;
+    invocation: ToolRuntime;
     config: TConfig;
 }
 
@@ -132,7 +132,7 @@ export interface NextStep {
  * 完整的工具定义，包含了元数据和可执行函数。
  */
 export interface ToolDefinition<TConfig = {}, TParams = any, TResult = any> extends ToolMetadata<TConfig, TParams> {
-    execute: (params: TParams, invocation: ToolInvocation) => Promise<ToolResult<TResult> | { build: () => ToolResult<TResult> }>;
+    execute: (params: TParams, invocation: ToolRuntime) => Promise<ToolResult<TResult> | { build: () => ToolResult<TResult> }>;
     extensionName: string; // 所属扩展的名称
 }
 
@@ -170,18 +170,9 @@ export interface ToolResult<TResult = any, TError extends ToolError = ToolError>
 
 export type ToolCallResult<TResult = any, TError extends ToolError = ToolError> = ToolResult<TResult, TError>;
 
-/**
- * 扩展包实例需要实现的接口。
- */
 export interface IExtension<TConfig = any> extends Object {
     ctx: Context;
     config: TConfig;
     metadata: ExtensionMetadata;
     tools: Map<string, ToolDefinition>;
 }
-
-// @deprecated: 旧类型，已由 ToolInvocation 替代
-export type WithSession<T> = T & { session?: Session };
-
-// @deprecated: 旧类型，已由 ToolInvocation 和 params 分离替代
-export type Infer<T> = T;

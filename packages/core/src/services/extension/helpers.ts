@@ -1,5 +1,5 @@
-import { Schema } from "koishi";
-import { NextStep, Param, Properties, ToolError, ToolResult } from "./types";
+import { Context, Schema } from "koishi";
+import { ExtensionMetadata, IExtension, NextStep, Param, Properties, ToolDefinition, ToolError, ToolResult } from "./types";
 
 class ToolResultBuilder<T> {
     public result: ToolResult<T>;
@@ -37,10 +37,6 @@ class ToolResultBuilder<T> {
     }
 }
 
-/**
- * 创建一个表示成功的结果构建器。
- * @param result - 成功时返回的结果数据
- */
 export function Success<T>(result?: T): ToolResultBuilder<T> {
     const initialResult: ToolResult<T> = {
         status: "success",
@@ -49,10 +45,6 @@ export function Success<T>(result?: T): ToolResultBuilder<T> {
     return new ToolResultBuilder(initialResult);
 }
 
-/**
- * 创建一个表示失败的结果构建器。
- * @param error - 结构化的错误对象或一个简单的错误消息字符串
- */
 export function Failed(error: ToolError | string): ToolResultBuilder<never> {
     const toolError: ToolError = typeof error === "string" ? { name: "ToolError", message: error } : error;
     const initialResult: ToolResult<never> = {
@@ -119,4 +111,33 @@ export function extractMetaFromSchema(schema: Schema): Properties {
             return [key, param];
         })
     );
+}
+
+export interface CreateExtensionOptions<TConfig = any> {
+    config?: TConfig;
+    tools?: ToolDefinition<TConfig, any>[];
+}
+
+export function createExtension<TConfig = any>(
+    ctx: Context,
+    metadata: ExtensionMetadata<TConfig>,
+    options: CreateExtensionOptions<TConfig> = {}
+): IExtension<TConfig> {
+    const { config, tools = [] } = options;
+
+    const toolMap = new Map<string, ToolDefinition<TConfig, any>>();
+    for (const tool of tools) {
+        const bounded = {
+            ...tool,
+            extensionName: metadata.name,
+        } as ToolDefinition<TConfig, any>;
+        toolMap.set(bounded.name, bounded);
+    }
+
+    return {
+        ctx,
+        config: config ?? ({} as TConfig),
+        metadata,
+        tools: toolMap,
+    };
 }

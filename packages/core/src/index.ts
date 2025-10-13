@@ -3,7 +3,7 @@ import { Context, ForkScope, Service, sleep } from "koishi";
 
 import { AgentCore } from "./agent";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
-import { AssetService, MemoryService, ModelService, PromptService, TelemetryService, ToolKitService, WorldStateService } from "./services";
+import { AssetService, MemoryService, ModelService, PromptService, TelemetryService, ToolService, WorldStateService } from "./services";
 import { Services } from "./shared";
 
 declare module "koishi" {
@@ -69,7 +69,7 @@ export default class YesImBot extends Service<Config> {
             const promptService = ctx.plugin(PromptService, config);
 
             // 注册工具管理器
-            const toolService = ctx.plugin(ToolKitService, config);
+            const toolService = ctx.plugin(ToolService, config);
 
             // 注册模型服务
             const modelService = ctx.plugin(ModelService, config);
