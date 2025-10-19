@@ -113,10 +113,13 @@ export type AnyAgentStimulus =
     | BackgroundTaskCompletionStimulus
     | SelfInitiatedStimulus;
 
+export type ChannelBoundStimulus = UserMessageStimulus | ChannelEventStimulus | ScheduledTaskStimulus | BackgroundTaskCompletionStimulus;
+export type GlobalStimulus = GlobalEventStimulus | SelfInitiatedStimulus | ScheduledTaskStimulus | BackgroundTaskCompletionStimulus;
+
 export interface ContextualMessage extends Pick<EventData, "id" | "timestamp">, MessagePayload {
     type: "message";
     is_new?: boolean;
-    elements: Element[]; // 在业务逻辑中从 `content` 解析得来
+    elements: Element[];
 }
 
 export interface ContextualChannelEvent extends Pick<EventData, "id" | "timestamp">, ChannelEventPayloadData {
@@ -142,16 +145,13 @@ export interface ChannelWorldState extends BaseWorldState {
         type: "guild" | "private";
         platform: string;
     };
-    l1_working_memory: {
-        processed_events: L1HistoryItem[];
-        new_events: L1HistoryItem[];
-    };
     users: {
         id: string;
         name: string;
         roles?: string[];
         description: string;
     }[];
+    history: L1HistoryItem[];
 }
 
 /** 用于全局思考和规划的上下文 */
