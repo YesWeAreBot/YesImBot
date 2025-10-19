@@ -3,7 +3,7 @@ import { $, Context, Query } from "koishi";
 import { TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { WorldStateService } from "./service";
-import { EventData } from "./types";
+import { EventData, ScheduledTaskStimulus, StimulusSource } from "./types";
 
 export class HistoryCommandManager {
     constructor(
@@ -172,6 +172,82 @@ export class HistoryCommandManager {
                 }
 
                 return `--- 清理报告 ---\n${results.join("\n")}`;
+            });
+
+        const scheduleCmd = this.ctx.command("schedule", "计划任务管理指令集", { authority: 3 });
+
+        scheduleCmd
+            .subcommand(".add", "添加计划任务")
+            .option("name", "-n <name:string> 任务名称")
+            .option("interval", "-i <interval:string> 执行间隔的 Cron 表达式")
+            .option("action", "-a <action:string> 任务执行的操作描述")
+            .usage("添加一个定时执行的任务")
+            .example('schedule.add -n "Daily Summary" -i "0 9 * * *" -a "Generate daily summary report"')
+            .action(async ({ session, options }) => {
+                // Implementation for adding a scheduled task
+                return "计划任务添加功能尚未实现";
+            });
+
+        scheduleCmd
+            .subcommand(".delay", "添加延迟任务")
+            .option("name", "-n <name:string> 任务名称")
+            .option("delay", "-d <delay:number> 延迟时间，单位为秒")
+            .option("action", "-a <action:string> 任务执行的操作描述")
+            .option("platform", "-p <platform:string> 指定平台")
+            .option("channel", "-c <channel:string> 指定频道ID")
+            .option("global", "-g 指定为全局任务")
+            .usage("添加一个延迟执行的任务")
+            .example('schedule.delay -n "Reminder" -d 3600 -a "Send reminder message"')
+            .action(async ({ session, options }) => {
+                if (!options.delay || isNaN(options.delay) || options.delay <= 0) {
+                    return "错误：请提供有效的延迟时间（秒）";
+                }
+
+                let platform, channelId;
+
+                if (!options.global) {
+                    platform = options.platform || session.platform;
+                    channelId = options.channel || session.channelId;
+
+                    if (!platform || !channelId) {
+                        return "错误：请指定有效的频道，或使用 -g 标记创建全局任务";
+                    }
+                }
+
+                this.ctx.setTimeout(() => {
+                    const stimulus: ScheduledTaskStimulus = {
+                        type: StimulusSource.ScheduledTask,
+                        priority: 1,
+                        timestamp: new Date(),
+                        payload: {
+                            taskId: `delay-${Date.now()}`,
+                            taskType: options.name || "delayed_task",
+                            platform: options.global ? undefined : platform,
+                            channelId: options.global ? undefined : channelId,
+                            params: {},
+                            message: options.action || "No action specified",
+                        },
+                    };
+                    this.ctx.emit("agent/stimulus-scheduled-task", stimulus);
+                }, options.delay * 1000);
+
+                return `延迟任务 "${options.name}" 已设置，将在 ${options.delay} 秒后执行`;
+            });
+
+        scheduleCmd
+            .subcommand(".list", "列出所有计划任务")
+            .usage("显示当前所有已设置的计划任务")
+            .action(async ({ session, options }) => {
+                // Implementation for listing scheduled tasks
+                return "计划任务列表功能尚未实现";
+            });
+
+        scheduleCmd
+            .subcommand(".remove", "移除计划任务")
+            .usage('移除指定名称的计划任务，例如: schedule.remove -n "Daily Summary"')
+            .action(async ({ session, options }) => {
+                // Implementation for removing a scheduled task
+                return "计划任务移除功能尚未实现";
             });
     }
 }

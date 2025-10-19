@@ -1,6 +1,6 @@
-{{#is_message}}
+{{#is_user_message}}
 <message>[{{id}}|{{#timestamp}}{{_formatDate}}{{/timestamp}}|{{sender.name}}({{sender.id}})] {{content}}</message>
-{{/is_message}}
+{{/is_user_message}}
 {{#is_agent_thought}}
 <thoughts>
   <observe>{{observe}}</observe>

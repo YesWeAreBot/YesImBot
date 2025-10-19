@@ -54,6 +54,8 @@ export class WorldStateService extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.WorldState, true);
         this.config = config;
+        this.logger = this.ctx.logger("worldstate");
+        this.logger.level = this.config.logLevel;
 
         this.history = new HistoryManager(ctx);
         this.contextBuilder = new ContextBuilder(ctx, config, this.history);
@@ -91,6 +93,7 @@ export class WorldStateService extends Service<Config> {
             platform: message.platform,
             channelId: message.channelId,
             payload: {
+                id: message.id,
                 sender: message.sender,
                 content: message.content,
                 quoteId: message.quoteId,

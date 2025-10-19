@@ -13,6 +13,7 @@ export interface MemberData {
 }
 
 export interface MessagePayload {
+    id: string;
     sender: {
         id: string;
         name?: string;
@@ -72,6 +73,7 @@ export interface ScheduledTaskPayload {
     platform?: string;
     channelId?: string;
     params?: Record<string, unknown>;
+    message?: string;
 }
 
 export interface BackgroundTaskCompletionPayload {

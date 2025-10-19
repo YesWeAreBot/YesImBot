@@ -106,6 +106,8 @@ export class AgentCore extends Service<Config> {
     private _registerPromptTemplates(): void {
         // 注册所有可重用的局部模板
         this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
+        this.promptService.registerTemplate("agent.partial.channel_state", loadTemplate("channel_context"));
+        this.promptService.registerTemplate("agent.partial.global_state", loadTemplate("global_context"));
         this.promptService.registerTemplate("agent.partial.l1_history_item", loadTemplate("l1_history_item"));
 
         // 注册主模板

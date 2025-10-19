@@ -40,70 +40,9 @@
   </users>
 
   {{! ======================= L1 Working Memory ======================= }}
-  <working_memory>
-    <summary>
-      This section is your most recent and active conversation memory.
-      It is split into:
-      1) processed_events = past history you have already handled,
-      2) new_events = NEW stimuli that triggered this turn.
-    </summary>
-
-    <processed_events>
-    {{#working_memory.processed_events}}
+  <history>
+    {{#history}}
       {{> agent.partial.l1_history_item }}
-    {{/working_memory.processed_events}}
-    {{^working_memory.processed_events}}
-      <system_note>There are no processed events in the current context.</system_note>
-    {{/working_memory.processed_events}}
-    </processed_events>
-
-    <new_events>
-      <!-- The following are new events you have NOT seen before.
-           They include:
-            - (A) Observation results from your LAST ACTION
-            - (B) New user/system messages.
-           ALWAYS check for observations FIRST.
-           If present, treat them as the single-use heartbeat result.
-           If it's error/empty, adjust plan immediately — DO NOT keep waiting. -->
-    {{#working_memory.new_events}}
-      {{> agent.partial.l1_history_item }}
-    {{/working_memory.new_events}}
-    {{^working_memory.new_events}}
-      <system_note>There are no new events since the last time you responded.</system_note>
-    {{/working_memory.new_events}}
-    </new_events>
-
-  </working_memory>
-  {{! ======================= L2 Retrieved Memories ======================= }}
-  {{#retrieved_memories.length}}
-  <retrieved_memories>
-    <summary>
-      Relevant snippets from past conversations, retrieved for their similarity to the current topic.
-      These are passive memory injections — use them BEFORE consulting external tools.
-    </summary>
-    {{#retrieved_memories}}
-    <memory_chunk timestamp="{{timestamp}}">
-{{content}}
-    </memory_chunk>
-    {{/retrieved_memories}}
-  </retrieved_memories>
-  {{/retrieved_memories.length}}
-  {{! ======================= L3 Diary Entries ======================= }}
-  {{#diary_entries}}
-  <diary_entries>
-    <summary>Long-term memory reflections on past events.</summary>
-    {{#.}}
-    <diary_entry date="{{date}}">
-      <keywords>
-      {{#keywords}}
-        <keyword>{{.}}</keyword>
-      {{/keywords}}
-      </keywords>
-      <content>
-        {{content}}
-      </content>
-    </diary_entry>
-    {{/.}}
-  </diary_entries>
-  {{/diary_entries}}
+    {{/history}}
+  </history>
 </world_state>

@@ -285,6 +285,7 @@ export class EventListenerManager {
         this.ctx.logger.debug(`记录转义后的消息：${content}`);
 
         await this.service.recordMessage({
+            id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
             sender: {
@@ -303,6 +304,7 @@ export class EventListenerManager {
         this.ctx.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
 
         await this.service.recordMessage({
+            id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
             sender: { id: session.bot.selfId, name: session.bot.user.nick || session.bot.user.name },

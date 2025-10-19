@@ -22,6 +22,16 @@ export class HistoryManager {
 
         const combined = [...contextualDbEvents];
         combined.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        combined.map((item: any, index) => {
+            switch (item.type) {
+                case "message":
+                    item.is_user_message = true;
+                    break;
+                case "channel_event":
+                    item.is_channel_event = true;
+                    break;
+            }
+        });
 
         return combined.slice(-limit);
     }

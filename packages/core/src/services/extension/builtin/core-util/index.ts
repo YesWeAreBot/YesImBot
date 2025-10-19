@@ -146,7 +146,7 @@ export default class CoreUtilExtension {
                 return Failed("目标频道缺失，无法发送消息");
             }
 
-            await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId);
+            await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId, invocation.session.isDirect);
 
             return Success();
         } catch (error: any) {
@@ -247,7 +247,7 @@ export default class CoreUtilExtension {
         return { bot, targetChannelId: channelId };
     }
 
-    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string): Promise<void> {
+    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, isDirect: boolean): Promise<void> {
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
             if (!msg) continue;
@@ -262,7 +262,7 @@ export default class CoreUtilExtension {
             const messageIds = await bot.sendMessage(channelId, content);
 
             if (messageIds && messageIds.length > 0) {
-                this.emitAfterSendEvent(bot, channelId, msg, messageIds[0]);
+                this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], isDirect);
             }
 
             if (i < messages.length - 1) {
@@ -272,11 +272,10 @@ export default class CoreUtilExtension {
         }
     }
 
-    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string): void {
-        // Creating a session-like object for the event
+    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, isDirect: boolean): void {
         const session = bot.session({
             type: "after-send",
-            channel: { id: channelId, type: 0 }, // Assuming guild channel for now
+            channel: { id: channelId, type: isDirect ? 1 : 0 },
             guild: { id: channelId },
             user: bot.user,
             message: {

@@ -5,13 +5,13 @@ import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "@/config";
 import { Properties, ToolRuntime, ToolSchema, ToolService } from "@/services/extension";
+import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher } from "@/services/model";
-import { ChatModelType, ModelError } from "@/services/model/types";
+import { ModelError } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
 import { AnyAgentStimulus, HistoryManager, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
-import { MemoryService } from "@/services/memory";
 
 export class HeartbeatProcessor {
     private logger: Logger;
@@ -61,7 +61,6 @@ export class HeartbeatProcessor {
         return success;
     }
 
-    /* prettier-ignore */
     private async _prepareLlmRequest(stimulus: AnyAgentStimulus): Promise<Message[]> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
@@ -70,8 +69,6 @@ export class HeartbeatProcessor {
         const runtime = this.toolService.getRuntime(stimulus);
 
         const toolSchemas = await this.toolService.getToolSchemas(runtime);
-
-
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
@@ -139,7 +136,7 @@ export class HeartbeatProcessor {
             { role: "user", content: userPromptText },
         ];
 
-        return messages
+        return messages;
     }
 
     private async performSingleHeartbeat(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
