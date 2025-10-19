@@ -5,9 +5,10 @@ import { AssetServiceConfig } from "@/services/assets";
 import { ToolServiceConfig } from "@/services/extension";
 import { MemoryConfig } from "@/services/memory";
 import { ModelServiceConfig } from "@/services/model";
+import { PluginConfig } from "@/services/plugin";
 import { PromptServiceConfig } from "@/services/prompt";
-import { HistoryConfig } from "@/services/worldstate";
 import { TelemetryConfig } from "@/services/telemetry";
+import { HistoryConfig } from "@/services/worldstate";
 
 export const CONFIG_VERSION = "2.0.2";
 
@@ -16,6 +17,7 @@ export type Config = ModelServiceConfig &
     MemoryConfig &
     HistoryConfig &
     ToolServiceConfig &
+    PluginConfig &
     AssetServiceConfig &
     PromptServiceConfig & {
         telemetry: TelemetryConfig;

@@ -43,6 +43,11 @@ export interface EventData {
     payload: MessagePayload | ChannelEventPayloadData | GlobalEventPayloadData;
 }
 
+export interface MessageData extends EventData {
+    type: "message";
+    payload: MessagePayload;
+}
+
 export enum StimulusSource {
     UserMessage = "user_message",
     ChannelEvent = "channel_event",

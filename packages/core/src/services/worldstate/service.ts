@@ -44,7 +44,7 @@ declare module "koishi" {
 export class WorldStateService extends Service<Config> {
     static readonly inject = [Services.Model, Services.Asset, Services.Prompt, Services.Memory, "database"];
 
-    private history: HistoryManager;
+    public readonly history: HistoryManager;
     private contextBuilder: ContextBuilder;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;

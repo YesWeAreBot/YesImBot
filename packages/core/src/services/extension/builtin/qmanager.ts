@@ -3,6 +3,7 @@ import { Context, Schema } from "koishi";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { isEmpty } from "@/shared/utils";
+import { ToolRuntime } from "../types";
 
 @Extension({
     name: "qmanager",
@@ -28,7 +29,9 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async delmsg({ session, message_id, channel_id }: { message_id: string; channel_id: string }) {
+    async delmsg({ message_id, channel_id }: { message_id: string; channel_id: string }, runtime: ToolRuntime) {
+        const session = runtime.session;
+        if (isEmpty(message_id)) return Failed("message_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.deleteMessage(targetChannel, message_id);
@@ -51,7 +54,8 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async ban({ session, user_id, duration, channel_id }: WithSession<{ user_id: string; duration: number; channel_id: string }>) {
+    async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id: string }, runtime: ToolRuntime) {
+        const session = runtime.session;
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
@@ -72,7 +76,8 @@ export default class QManagerExtension {
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
     })
-    async kick({ session, user_id, channel_id }: WithSession<{ user_id: string; channel_id: string }>) {
+    async kick({ user_id, channel_id }: { user_id: string; channel_id: string }, runtime: ToolRuntime) {
+        const session = runtime.session;
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {

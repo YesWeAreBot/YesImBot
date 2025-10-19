@@ -2,11 +2,11 @@ import { Context, Query, Schema } from "koishi";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
-import { WithSession } from "@/services/extension/types";
 import { MemoryService } from "@/services/memory";
-import { MessageData } from "@/services/worldstate";
 import { formatDate, truncate } from "@/shared";
 import { Services, TableName } from "@/shared/constants";
+import { ToolRuntime } from "../types";
+import { EventData, MessageData } from "@/services/worldstate";
 
 @Extension({
     name: "memory",
@@ -125,31 +125,31 @@ export default class MemoryExtension {
             user_id: Schema.string().description("Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."),
         }),
     })
-    async conversationSearch(args: WithSession<{ query: string; limit?: number; channel_id?: string; user_id?: string }>) {
+    async conversationSearch(args: { query: string; limit?: number; channel_id?: string; user_id?: string }, runtime: ToolRuntime) {
         const { query, limit = 10, channel_id, user_id } = args;
 
         try {
-            const whereClauses: Query.Expr<MessageData>[] = [{ content: { $regex: new RegExp(query, "i") } }];
+            const whereClauses: Query.Expr<MessageData>[] = [{ payload: { content: { $regex: new RegExp(query, "i") } }, type: "message" }];
             if (channel_id) whereClauses.push({ channelId: channel_id });
-            if (user_id) whereClauses.push({ sender: { id: user_id } });
+            if (user_id) whereClauses.push({ payload: { sender: { id: user_id } } });
 
             const finalQuery: Query<MessageData> = { $and: whereClauses };
 
-            const messages = await this.ctx.database
-                .select(TableName.Messages)
+            const results = (await this.ctx.database
+                .select(TableName.Events)
                 .where(finalQuery)
                 .limit(limit)
                 .orderBy("timestamp", "desc")
-                .execute();
+                .execute()) as MessageData[];
 
-            if (!messages || messages.length === 0) {
+            if (!results || results.length === 0) {
                 return Success("No matching messages found in recall memory.");
             }
 
             /* prettier-ignore */
-            const formattedResults = messages.map((msg) =>`[${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm")}|${msg.sender.name || "user"}(${msg.sender.id})] ${truncate(msg.content,120)}`);
+            const formattedResults = results.map((msg) =>`[${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm")}|${msg.payload.sender.name || "user"}(${msg.payload.sender.id})] ${truncate(msg.payload.content,120)}`);
             return Success({
-                results_count: messages.length,
+                results_count: results.length,
                 results: formattedResults,
             });
         } catch (e: any) {

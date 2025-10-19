@@ -5,7 +5,6 @@ import { ChatModelSwitcher, ModelService } from "@/services/model";
 import { loadTemplate, PromptService } from "@/services/prompt";
 import { AnyAgentStimulus, StimulusSource, UserMessageStimulus, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
-import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
 
@@ -27,7 +26,6 @@ export class AgentCore extends Service<Config> {
 
     // 核心组件
     private willing: WillingnessManager;
-    private contextBuilder: PromptContextBuilder;
     private processor: HeartbeatProcessor;
 
     private modelSwitcher: ChatModelSwitcher;
@@ -55,15 +53,14 @@ export class AgentCore extends Service<Config> {
 
         this.willing = new WillingnessManager(ctx, config);
 
-        this.contextBuilder = new PromptContextBuilder(ctx, config, this.modelSwitcher);
-        this.processor = new HeartbeatProcessor(ctx, config, this.modelSwitcher, this.worldState.l1_manager, this.contextBuilder);
+        this.processor = new HeartbeatProcessor(ctx, config, this.modelSwitcher);
     }
 
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus-message", (stimulus) => {
-            const { session, platform, channelId } = stimulus.payload;
+        this.ctx.on("agent/stimulus-user-message", (stimulus) => {
+            const { platform, channelId } = stimulus.payload;
 
             const channelCid = `${platform}:${channelId}`;
 
@@ -71,7 +68,7 @@ export class AgentCore extends Service<Config> {
 
             try {
                 const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
-                const result = this.willing.shouldReply(session);
+                const result = this.willing.shouldReply(stimulus.payload);
                 const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
                 decision = result.decision;
 
@@ -86,16 +83,11 @@ export class AgentCore extends Service<Config> {
                 return;
             }
 
-            if (this.worldState.isBotMuted(channelCid)) {
-                this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
-                return;
-            }
-
             this.schedule(stimulus);
         });
 
-        this.ctx.on("agent/stimulus-system-event", (stimulus) => {
-            const { eventType, session } = stimulus.payload;
+        this.ctx.on("agent/stimulus-channel-event", (stimulus) => {
+            const { eventType } = stimulus.payload;
         });
 
         this.ctx.on("agent/stimulus-scheduled-task", (stimulus) => {
@@ -129,7 +121,7 @@ export class AgentCore extends Service<Config> {
 
         switch (type) {
             case StimulusSource.UserMessage:
-                const { session, platform, channelId } = stimulus.payload;
+                const { platform, channelId } = stimulus.payload;
                 const channelKey = `${platform}:${channelId}`;
 
                 if (this.runningTasks.has(channelKey)) {
@@ -143,7 +135,7 @@ export class AgentCore extends Service<Config> {
                 this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
                 break;
 
-            case StimulusSource.SystemEvent:
+            case StimulusSource.ChannelEvent:
             case StimulusSource.ScheduledTask:
             case StimulusSource.BackgroundTaskCompletion:
                 break;
@@ -157,13 +149,13 @@ export class AgentCore extends Service<Config> {
                 this.runningTasks.add(channelKey);
                 this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
                 try {
-                    const { platform, channelId, session } = stimulus.payload;
+                    const { platform, channelId } = stimulus.payload;
                     const chatKey = `${platform}:${channelId}`;
                     this.willing.handlePreReply(chatKey);
                     const success = await this.processor.runCycle(stimulus);
                     if (success) {
                         const willingnessBeforeReply = this.willing.getCurrentWillingness(chatKey);
-                        this.willing.handlePostReply(session, chatKey);
+                        this.willing.handlePostReply(stimulus.payload, chatKey);
                         const willingnessAfterReply = this.willing.getCurrentWillingness(chatKey);
                         /* prettier-ignore */
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);

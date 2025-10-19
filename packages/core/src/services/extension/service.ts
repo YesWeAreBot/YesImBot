@@ -164,14 +164,10 @@ export class ToolService extends Service<Config> {
                     type: StimulusSource.UserMessage,
                     priority: 1,
                     timestamp: new Date(),
-                    payload: {
-                        platform: session.platform,
-                        channelId: session.channelId,
-                        session: session,
-                    },
+                    payload: session,
                 };
 
-                const invocation = this.buildInvocation(stimulus);
+                const invocation = this.getRuntime(stimulus);
                 const result = await this.invoke(name, parsedParams, invocation);
 
                 if (result.status === "success") {
@@ -371,7 +367,7 @@ export class ToolService extends Service<Config> {
         return this.tools.delete(name);
     }
 
-    public buildInvocation(stimulus: AnyAgentStimulus, extras: Partial<Omit<ToolRuntime, "stimulus">> = {}): ToolRuntime {
+    public getRuntime(stimulus: AnyAgentStimulus, extras: Partial<Omit<ToolRuntime, "stimulus">> = {}): ToolRuntime {
         return {
             stimulus,
             ...this.extractInvocationIdentity(stimulus),
@@ -565,31 +561,21 @@ export class ToolService extends Service<Config> {
     private extractInvocationIdentity(stimulus: AnyAgentStimulus): Omit<ToolRuntime, "stimulus"> {
         switch (stimulus.type) {
             case StimulusSource.UserMessage: {
-                const { platform, channelId, session } = stimulus.payload;
-                const guildId = session?.guildId;
-                const userId = session?.userId;
+                const { platform, channelId, guildId, userId, bot } = stimulus.payload;
                 return {
                     platform,
                     channelId,
-                    bot: session?.bot,
-                    session,
+                    bot,
+                    session: stimulus.payload,
                     guildId,
                     userId,
                 };
             }
-            case StimulusSource.SystemEvent: {
-                const { session } = stimulus.payload;
-                const platform = session?.platform;
-                const channelId = session?.channelId;
-                const guildId = session?.guildId;
-                const userId = session?.userId;
+            case StimulusSource.ChannelEvent: {
+                const { platform, channelId, message } = stimulus.payload;
                 return {
                     platform,
                     channelId,
-                    bot: session?.bot,
-                    session,
-                    guildId,
-                    userId,
                 };
             }
             case StimulusSource.ScheduledTask: {

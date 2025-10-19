@@ -2,7 +2,7 @@
 
 import { Bot, Context, Schema, Session } from "koishi";
 
-import { AnyAgentStimulus, WorldState } from "@/services/worldstate";
+import { AnyAgentStimulus } from "@/services/worldstate";
 
 export interface ToolRuntime {
     /** 原始刺激 */
@@ -19,8 +19,6 @@ export interface ToolRuntime {
     readonly bot?: Bot;
     /** (可选) 原始 Session，用于需要直接访问适配器 API 的工具 */
     readonly session?: Session;
-    /** (可选) 世界状态快照 */
-    readonly world?: WorldState;
     /** 其他共享元数据 */
     readonly metadata?: Record<string, unknown>;
 }
