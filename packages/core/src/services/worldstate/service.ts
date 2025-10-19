@@ -1,18 +1,21 @@
 import { Context, Service, Session } from "koishi";
+import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
 import { EventListenerManager } from "./event-listener";
-import { HistoryManager } from "./message-manager";
+import { HistoryManager } from "./history-manager";
 import {
     AgentStimulus,
     AnyAgentStimulus,
     AnyWorldState,
     BackgroundTaskCompletionStimulus,
+    ChannelEventPayloadData,
     ChannelEventStimulus,
     EventData,
+    GlobalEventPayloadData,
     GlobalEventStimulus,
     MemberData,
     MessagePayload,
@@ -82,7 +85,9 @@ export class WorldStateService extends Service<Config> {
     /* prettier-ignore */
     public async recordMessage(message: MessagePayload & { platform: string; channelId: string; }): Promise<void> {
         await this.ctx.database.create(TableName.Events, {
+            id: uuidv4(),
             type: "message",
+            timestamp: new Date(),
             platform: message.platform,
             channelId: message.channelId,
             payload: {
@@ -90,6 +95,35 @@ export class WorldStateService extends Service<Config> {
                 content: message.content,
                 quoteId: message.quoteId,
             },
+        });
+    }
+
+    /* prettier-ignore */
+    public async recordEvent(event: Omit<EventData, "id" | "type" | "timestamp"> & { type: "channel_event" | "global_event" }): Promise<void> {
+        await this.ctx.database.create(TableName.Events, {
+            id: uuidv4(),
+            type: event.type,
+            timestamp: new Date(),
+            platform: event.platform,
+            channelId: event.channelId,
+            payload: event.payload,
+        });
+    }
+
+    /* prettier-ignore */
+    public async recordChannelEvent(platform: string, channelId: string, eventPayload: ChannelEventPayloadData): Promise<void> {
+        this.recordEvent({
+            type: "channel_event",
+            platform,
+            channelId,
+            payload: eventPayload,
+        });
+    }
+
+    public async recordGlobalEvent(eventPayload: GlobalEventPayloadData): Promise<void> {
+        this.recordEvent({
+            type: "global_event",
+            payload: eventPayload,
         });
     }
 

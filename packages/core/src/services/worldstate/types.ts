@@ -168,6 +168,7 @@ export interface GlobalWorldState extends BaseWorldState {
 export type AnyWorldState = ChannelWorldState | GlobalWorldState;
 
 export const ChannelEventType = {
+    Command: "command-invoked",
     Poke: "notice-poke",
     MemberJoined: "member-joined",
     MemberLeft: "member-left",
