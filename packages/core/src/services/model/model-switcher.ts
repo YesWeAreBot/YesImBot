@@ -120,14 +120,9 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
 
     /** 选择故障转移策略 */
     private selectFailover(models: T[]): T {
-        // 优先选择成功率高、延迟低的模型
-        return models.sort((a, b) => {
-            const statusA = this.modelStatusMap.get(a.id)!;
-            const statusB = this.modelStatusMap.get(b.id)!;
-            if (statusB.successRate !== statusA.successRate) {
-                return statusB.successRate - statusA.successRate;
-            }
-            return statusA.averageLatency - statusB.averageLatency; // 延迟越低越好
+        return models.filter((model) => {
+            const status = this.modelStatusMap.get(model.id);
+            return status.circuitState !== "OPEN";
         })[0];
     }
 

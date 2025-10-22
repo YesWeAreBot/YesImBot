@@ -70,14 +70,15 @@
   },
   "devDependencies": {
     "@types/semver": "^7.7.0",
-    "@xsai-ext/providers-cloud": "^0.3.2",
-    "@xsai-ext/providers-local": "^0.3.2",
-    "@xsai-ext/shared-providers": "^0.3.2",
-    "@xsai/embed": "^0.3.2",
-    "@xsai/generate-text": "^0.3.2",
-    "@xsai/shared-chat": "^0.3.2",
-    "@xsai/stream-text": "^0.3.2",
-    "@xsai/utils-chat": "^0.3.2",
+    "@xsai-ext/providers-cloud": "^0.4.0-beta.5",
+    "@xsai-ext/providers-local": "^0.4.0-beta.5",
+    "@xsai-ext/shared-providers": "^0.4.0-beta.5",
+    "@xsai/embed": "^0.4.0-beta.5",
+    "@xsai/generate-text": "^0.4.0-beta.5",
+    "@xsai/shared": "^0.4.0-beta.5",
+    "@xsai/shared-chat": "^0.4.0-beta.5",
+    "@xsai/stream-text": "^0.4.0-beta.5",
+    "@xsai/utils-chat": "^0.4.0-beta.5",
     "koishi": "^4.18.7"
   },
   "peerDependencies": {

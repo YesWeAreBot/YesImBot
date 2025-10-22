@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Config } from "@/config";
 import { Properties, ToolRuntime, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
-import { ChatModelSwitcher } from "@/services/model";
+import { ChatModelSwitcher, IChatModel } from "@/services/model";
 import { ModelError } from "@/services/model/types";
 import { PromptService } from "@/services/prompt";
 import { AnyAgentStimulus, HistoryManager, WorldStateService } from "@/services/worldstate";
@@ -144,17 +144,22 @@ export class HeartbeatProcessor {
 
         let llmRawResponse: GenerateTextResult | null = null;
 
+        // 步骤 1-4: 准备请求
+        const messages = await this._prepareLlmRequest(stimulus);
+
+        let model: IChatModel | null = null;
+
+        let startTime: number;
+
         while (attempt < this.config.switchConfig.maxRetries) {
             const parser = new JsonParser<AgentResponse>();
 
-            // 步骤 1-4: 准备请求
-            const messages = await this._prepareLlmRequest(stimulus);
+            model = this.modelSwitcher.getModel();
 
             // 步骤 5: 调用LLM
             this.logger.info("步骤 5/7: 调用大语言模型...");
 
-            const model = this.modelSwitcher.getModel();
-            const startTime = Date.now();
+            startTime = Date.now();
 
             try {
                 if (!model) {
@@ -172,38 +177,12 @@ export class HeartbeatProcessor {
                     messages,
                     stream: this.config.stream,
                     abortSignal: AbortSignal.any([AbortSignal.timeout(this.config.switchConfig.requestTimeout), controller.signal]),
-                    validation: {
-                        format: "json",
-                        validator: (text, final) => {
-                            clearTimeout(timeout);
-                            if (!final) return { valid: false, earlyExit: false }; // 非流式，只在最后验证
-
-                            const { data, error } = parser.parse(text);
-                            if (error) return { valid: false, earlyExit: false, error };
-                            if (!data) return { valid: true, earlyExit: false, parsedData: null };
-
-                            // 归一化处理
-                            //@ts-ignore
-                            if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
-                                //@ts-ignore
-                                data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
-                            }
-
-                            // 结构验证
-                            const isThoughtsValid = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
-                            const isActionsValid = Array.isArray(data.actions);
-
-                            if (isThoughtsValid && isActionsValid) {
-                                return { valid: true, earlyExit: false, parsedData: data };
-                            }
-                            return { valid: false, earlyExit: false, error: "Missing 'thoughts' or 'actions' field." };
-                        },
-                    },
                 });
                 const prompt_tokens =
                     llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
                 const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
-                this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+                /* prettier-ignore */
+                this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 耗时: ${new Date().getTime() - startTime}ms`);
                 this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
                 break; // 成功调用，跳出重试循环
             } catch (error) {
@@ -230,10 +209,18 @@ export class HeartbeatProcessor {
         const agentResponseData = this.parseAndValidateResponse(llmRawResponse);
         if (!agentResponseData) {
             this.logger.error("LLM响应解析或验证失败，终止本次心跳");
+            this.modelSwitcher.recordResult(
+                model,
+                false,
+                ModelError.classify(new Error("Invalid LLM response format")),
+                new Date().getTime() - startTime
+            );
             return null;
         }
 
-        this.displayThoughts(agentResponseData.thoughts);
+        this.modelSwitcher.recordResult(model, true, undefined, new Date().getTime() - startTime);
+
+        // this.displayThoughts(agentResponseData.thoughts);
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
@@ -246,7 +233,7 @@ export class HeartbeatProcessor {
     /**
      * 解析并验证来自LLM的响应
      */
-    private parseAndValidateResponse(llmRawResponse: GenerateTextResult): Omit<AgentResponse, "observations"> | null {
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult): AgentResponse | null {
         const parser = new JsonParser<AgentResponse>();
 
         const { data, error } = parser.parse(llmRawResponse.text);
@@ -254,23 +241,25 @@ export class HeartbeatProcessor {
             return null;
         }
 
-        if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
-            return null;
-        }
+        // if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
+        //     return null;
+        // }
+
+        if (!Array.isArray(data.actions)) return null;
 
         data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
 
-        return data as Omit<AgentResponse, "observations">;
+        return data;
     }
 
-    private displayThoughts(thoughts: AgentResponse["thoughts"]) {
-        if (!thoughts) return;
-        const { observe, analyze_infer, plan } = thoughts;
-        this.logger.info(`[思考过程]
-  - 观察: ${observe || "N/A"}
-  - 分析: ${analyze_infer || "N/A"}
-  - 计划: ${plan || "N/A"}`);
-    }
+    //     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
+    //         if (!thoughts) return;
+    //         const { observe, analyze_infer, plan } = thoughts;
+    //         this.logger.info(`[思考过程]
+    //   - 观察: ${observe || "N/A"}
+    //   - 分析: ${analyze_infer || "N/A"}
+    //   - 计划: ${plan || "N/A"}`);
+    //     }
 
     private async executeActions(turnId: string, stimulus: AnyAgentStimulus, actions: AgentResponse["actions"]): Promise<void> {
         if (actions.length === 0) {
@@ -339,11 +328,11 @@ function prepareDataForTemplate(tools: ToolSchema[]) {
 }
 
 interface AgentResponse {
-    thoughts: {
-        observe?: string;
-        analyze_infer?: string;
-        plan?: string;
-    };
+    // thoughts: {
+    //     observe?: string;
+    //     analyze_infer?: string;
+    //     plan?: string;
+    // };
     actions: Array<{
         function: string;
         params?: Record<string, any>;

@@ -1,5 +1,6 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
+import type { WithUnknown } from "@xsai/shared";
 import { Logger } from "koishi";
 
 import { embed, embedMany } from "@/dependencies/xsai";
@@ -23,7 +24,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
     }
 
     public async embed(text: string): Promise<EmbedResult> {
-        const embedOptions: EmbedOptions = {
+        const embedOptions: WithUnknown<EmbedOptions> = {
             ...this.embedProvider(this.config.modelId),
             fetch: this.fetch,
             input: text,
@@ -33,7 +34,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
 
     public async embedMany(texts: string[]): Promise<EmbedManyResult> {
         this.logger.debug(`Embedding ${texts.length} texts.`);
-        const embedManyOptions: EmbedManyOptions = {
+        const embedManyOptions: WithUnknown<EmbedManyOptions> = {
             ...this.embedProvider(this.config.modelId),
             fetch: this.fetch,
             input: texts,
