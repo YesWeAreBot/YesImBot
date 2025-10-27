@@ -5,8 +5,25 @@ import { PromptService } from "@/services/prompt";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
 import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "../worldstate/types";
-import { extractMetaFromSchema, Failed } from "./helpers";
-import { IExtension, Properties, ToolDefinition, ToolRuntime, ToolResult, ToolSchema } from "./types";
+import { IExtension, Properties, ToolDefinition, ToolResult, ToolSchema, ToolContext } from "./types";
+import { ContextCapabilityMap } from "./types/context";
+import { StimulusContextAdapter } from "./context";
+import { Failed } from "./result-builder";
+
+// Helper function to extract metadata from Schema (moved from deleted helpers.ts)
+function extractMetaFromSchema(schema: Schema | undefined): Properties {
+    if (!schema) return {};
+    const meta = schema?.meta as any;
+    if (!meta) return {};
+
+    const properties: Properties = {};
+    for (const [key, value] of Object.entries(meta)) {
+        if (typeof value === "object" && value !== null) {
+            properties[key] = value as any;
+        }
+    }
+    return properties;
+}
 
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
@@ -25,11 +42,13 @@ export class ToolService extends Service<Config> {
     private extensions: Map<string, IExtension> = new Map();
 
     private promptService: PromptService;
+    private contextAdapter: StimulusContextAdapter;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Tool, true);
         this.config = config;
         this.promptService = ctx[Services.Prompt];
+        this.contextAdapter = new StimulusContextAdapter(ctx);
         this.logger.level = this.config.logLevel;
     }
 
@@ -42,6 +61,7 @@ export class ToolService extends Service<Config> {
             // 不能在这里判断是否启用，否则无法生成配置
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
+            //@ts-ignore
             loadedExtensions.set(name, this.ctx.plugin(Ext, config));
         }
         this.registerPromptTemplates();
@@ -167,8 +187,8 @@ export class ToolService extends Service<Config> {
                     payload: session,
                 };
 
-                const invocation = this.getRuntime(stimulus);
-                const result = await this.invoke(name, parsedParams, invocation);
+                const context = this.getContext(stimulus);
+                const result = await this.invoke(name, parsedParams, context);
 
                 if (result.status === "success") {
                     /* prettier-ignore */
@@ -355,31 +375,18 @@ export class ToolService extends Service<Config> {
         return true;
     }
 
-    public registerTool(definition: ToolDefinition) {
-        if (!definition.extensionName) {
-            this.logger.warn(`registerTool 失败：工具 "${definition.name}" 缺少 extensionName`);
-            return;
-        }
-        this.tools.set(definition.name, definition);
+    /**
+     * Get ToolContext from stimulus.
+     */
+    public getContext(stimulus: AnyAgentStimulus, extras?: Partial<ContextCapabilityMap>): ToolContext {
+        return this.contextAdapter.fromStimulus(stimulus, extras);
     }
 
-    public unregisterTool(name: string) {
-        return this.tools.delete(name);
-    }
-
-    public getRuntime(stimulus: AnyAgentStimulus, extras: Partial<Omit<ToolRuntime, "stimulus">> = {}): ToolRuntime {
-        return {
-            stimulus,
-            ...this.extractInvocationIdentity(stimulus),
-            ...extras,
-        };
-    }
-
-    public async invoke(functionName: string, params: Record<string, unknown>, invocation: ToolRuntime): Promise<ToolResult> {
-        const tool = await this.getTool(functionName, invocation);
+    public async invoke(functionName: string, params: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
+        const tool = await this.getTool(functionName, context);
         if (!tool) {
             this.logger.warn(`工具未找到或在当前上下文中不可用 | 名称: ${functionName}`);
-            return Failed(`Tool ${functionName} not found or not supported in this context.`).build();
+            return Failed(`Tool ${functionName} not found or not supported in this context.`);
         }
 
         let validatedParams = params;
@@ -388,13 +395,13 @@ export class ToolService extends Service<Config> {
                 validatedParams = tool.parameters(params);
             } catch (error: any) {
                 this.logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
-                return Failed(`Parameter validation failed: ${error.message}`).build();
+                return Failed(`Parameter validation failed: ${error.message}`);
             }
         }
 
         const stringifyParams = stringify(params);
         this.logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
-        let lastResult: ToolResult = Failed("Tool call did not execute.").build();
+        let lastResult: ToolResult = Failed("Tool call did not execute.");
 
         for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
             try {
@@ -403,7 +410,7 @@ export class ToolService extends Service<Config> {
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
-                const executionResult = await tool.execute(validatedParams, invocation);
+                const executionResult = await tool.execute(validatedParams, context);
 
                 // Handle both direct ToolResult and builder transparently
                 if (executionResult && "build" in executionResult && typeof executionResult.build === "function") {
@@ -411,7 +418,7 @@ export class ToolService extends Service<Config> {
                 } else if (executionResult && "status" in executionResult) {
                     lastResult = executionResult as ToolResult;
                 } else {
-                    lastResult = Failed("Tool call did not return a valid result.").build();
+                    lastResult = Failed("Tool call did not return a valid result.");
                 }
 
                 const resultString = truncate(stringify(lastResult), 120);
@@ -434,7 +441,7 @@ export class ToolService extends Service<Config> {
             } catch (error: any) {
                 this.logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
                 this.logger.debug(error.stack);
-                lastResult = Failed(`Exception: ${error.message}`).build();
+                lastResult = Failed(`Exception: ${error.message}`);
                 return lastResult;
             }
         }
@@ -442,15 +449,15 @@ export class ToolService extends Service<Config> {
         return lastResult;
     }
 
-    public async getTool(name: string, invocation?: ToolRuntime): Promise<ToolDefinition | undefined> {
+    public async getTool(name: string, context?: ToolContext): Promise<ToolDefinition | undefined> {
         const tool = this.tools.get(name);
         if (!tool) return undefined;
 
-        if (!invocation) {
+        if (!context) {
             return tool;
         }
 
-        const assessment = await this.assessTool(tool, invocation);
+        const assessment = await this.assessTool(tool, context);
         if (!assessment.available) {
             if (assessment.hints.length) {
                 this.logger.debug(`工具不可用 | 名称: ${tool.name} | 原因: ${assessment.hints.join("; ")}`);
@@ -461,8 +468,8 @@ export class ToolService extends Service<Config> {
         return tool;
     }
 
-    public async getAvailableTools(invocation: ToolRuntime): Promise<ToolDefinition[]> {
-        const evaluations = await this.evaluateTools(invocation);
+    public async getAvailableTools(context: ToolContext): Promise<ToolDefinition[]> {
+        const evaluations = await this.evaluateTools(context);
 
         return evaluations
             .filter((record) => record.assessment.available)
@@ -474,13 +481,13 @@ export class ToolService extends Service<Config> {
         return this.extensions.get(name);
     }
 
-    public async getSchema(name: string, invocation?: ToolRuntime): Promise<ToolSchema | undefined> {
-        const tool = await this.getTool(name, invocation);
+    public async getSchema(name: string, context?: ToolContext): Promise<ToolSchema | undefined> {
+        const tool = await this.getTool(name, context);
         return tool ? this.toolDefinitionToSchema(tool) : undefined;
     }
 
-    public async getToolSchemas(invocation: ToolRuntime): Promise<ToolSchema[]> {
-        const evaluations = await this.evaluateTools(invocation);
+    public async getToolSchemas(context: ToolContext): Promise<ToolSchema[]> {
+        const evaluations = await this.evaluateTools(context);
 
         return evaluations
             .filter((record) => record.assessment.available)
@@ -495,25 +502,27 @@ export class ToolService extends Service<Config> {
     }
 
     /* prettier-ignore */
-    private async evaluateTools(invocation: ToolRuntime): Promise<{ tool: ToolDefinition; assessment: { available: boolean; priority: number; hints: string[] }}[]> {
+    private async evaluateTools(context: ToolContext): Promise<{ tool: ToolDefinition; assessment: { available: boolean; priority: number; hints: string[] }}[]> {
         return Promise.all(
             Array.from(this.tools.values()).map(async (tool) => ({
                 tool,
-                assessment: await this.assessTool(tool, invocation),
+                assessment: await this.assessTool(tool, context),
             }))
         );
     }
 
     /* prettier-ignore */
-    private async assessTool(tool: ToolDefinition, invocation: ToolRuntime): Promise<{ available: boolean; priority: number; hints: string[] }> {
+    private async assessTool(tool: ToolDefinition, context: ToolContext): Promise<{ available: boolean; priority: number; hints: string[] }> {
         const config = this.getConfig(tool.extensionName);
         const hints: string[] = [];
         let priority = 0;
 
+        // Check support guards
         if (tool.supports?.length) {
             for (const guard of tool.supports) {
                 try {
-                    const result = guard({ invocation, config });
+                    const guardContext = { context, config };
+                    const result = guard(guardContext);
                     if (result === false) {
                         return { available: false, priority: 0, hints };
                     }
@@ -532,10 +541,12 @@ export class ToolService extends Service<Config> {
             }
         }
 
+        // Check activators
         if (tool.activators?.length) {
             for (const activator of tool.activators) {
                 try {
-                    const result = await activator({ invocation, config });
+                    const activatorContext = { context, config };
+                    const result = await activator(activatorContext);
                     if (!result.allow) {
                         if (result.hints?.length) {
                             hints.push(...result.hints);
@@ -556,47 +567,6 @@ export class ToolService extends Service<Config> {
         }
 
         return { available: true, priority, hints };
-    }
-
-    private extractInvocationIdentity(stimulus: AnyAgentStimulus): Omit<ToolRuntime, "stimulus"> {
-        switch (stimulus.type) {
-            case StimulusSource.UserMessage: {
-                const { platform, channelId, guildId, userId, bot } = stimulus.payload;
-                return {
-                    platform,
-                    channelId,
-                    bot,
-                    session: stimulus.payload,
-                    guildId,
-                    userId,
-                };
-            }
-            case StimulusSource.ChannelEvent: {
-                const { platform, channelId, message } = stimulus.payload;
-                return {
-                    platform,
-                    channelId,
-                };
-            }
-            case StimulusSource.ScheduledTask: {
-                const { platform, channelId } = stimulus.payload;
-                return {
-                    platform,
-                    channelId,
-                    bot: this.ctx.bots.find((bot) => bot.platform === platform),
-                };
-            }
-            case StimulusSource.BackgroundTaskCompletion: {
-                const { platform, channelId } = stimulus.payload;
-                return {
-                    platform,
-                    channelId,
-                    bot: this.ctx.bots.find((bot) => bot.platform === platform),
-                };
-            }
-            default:
-                return {};
-        }
     }
 
     /**
