@@ -1,17 +1,19 @@
 import { Context, h, Schema, Session } from "koishi";
-import {} from "koishi-plugin-adapter-onebot";
+import { } from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
-import { ToolRuntime } from "@/services/extension";
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { formatDate, isEmpty } from "@/shared";
+import { requirePlatform, requireSession } from "@/services/extension/activators";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Plugin } from "@/services/extension/plugin";
+import { Failed, Success } from "@/services/extension/result-builder";
+import { ContextCapability, ToolContext } from "@/services/extension/types";
+import { formatDate, isEmpty } from "@/shared/utils";
 
-interface InteractionsConfig {}
+interface InteractionsConfig { }
 
 const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
 
-@Extension({
+@Metadata({
     name: "interactions",
     display: "群内交互",
     version: "1.1.0",
@@ -19,32 +21,33 @@ const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
     author: "HydroGest",
     builtin: true,
 })
-export default class InteractionsExtension {
+export default class InteractionsExtension extends Plugin<InteractionsConfig> {
     static readonly Config = InteractionsConfig;
 
-    constructor(
-        public ctx: Context,
-        public config: InteractionsConfig
-    ) {}
+    constructor(ctx: Context, config: InteractionsConfig) {
+        super(ctx, config);
+    }
 
-    @Tool({
+    @Action({
         name: "reaction_create",
         description: `在当前频道对一个或多个消息进行表态。表态编号是数字，这里是一个简略的参考：惊讶(0)，不适(1)，无语(27)，震惊(110)，滑稽(178), 点赞(76)`,
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
             emoji_id: Schema.number().required().description("表态编号"),
         }),
-        supports: [
-            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        activators: [
+            requirePlatform("onebot", "OneBot platform required"),
+            requireSession("Active session required"),
         ],
+        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
-    async reactionCreate({ message_id, emoji_id }: { message_id: string; emoji_id: number }, invocation: ToolRuntime) {
-        if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
-        const session = invocation.session;
-        if (!session) return Failed("This tool requires a session.");
-        const bot = invocation.bot;
-        if (!bot) return Failed("Missing bot instance in invocation");
-        const { selfId } = bot;
+    async reactionCreate(params: { message_id: string; emoji_id: number }, context: ToolContext) {
+        const { message_id, emoji_id } = params;
+
+        const session = context.require(ContextCapability.Session);
+        const bot = context.require(ContextCapability.Bot);
+        const selfId = bot.selfId;
+
         try {
             const result = await session.onebot._request("set_msg_emoji_like", {
                 message_id: message_id,
@@ -60,23 +63,25 @@ export default class InteractionsExtension {
         }
     }
 
-    @Tool({
+    @Action({
         name: "essence_create",
         description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        supports: [
-            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        activators: [
+            requirePlatform("onebot", "OneBot platform required"),
+            requireSession("Active session required"),
         ],
+        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
-    async essenceCreate({ message_id }: { message_id: string }, invocation: ToolRuntime) {
-        if (isEmpty(message_id)) return Failed("message_id is required");
-        const session = invocation.session;
-        if (!session) return Failed("This tool requires a session.");
-        const bot = invocation.bot;
-        if (!bot) return Failed("Missing bot instance in invocation");
-        const { selfId } = bot;
+    async essenceCreate(params: { message_id: string }, context: ToolContext) {
+        const { message_id } = params;
+
+        const session = context.require(ContextCapability.Session);
+        const bot = context.require(ContextCapability.Bot);
+        const selfId = bot.selfId;
+
         try {
             await session.onebot.setEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 设置为精华`);
@@ -87,23 +92,25 @@ export default class InteractionsExtension {
         }
     }
 
-    @Tool({
+    @Action({
         name: "essence_delete",
         description: `在当前频道将一个消息从精华中移除。`,
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        supports: [
-            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        activators: [
+            requirePlatform("onebot", "OneBot platform required"),
+            requireSession("Active session required"),
         ],
+        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
-    async essenceDelete({ message_id }: { message_id: string }, invocation: ToolRuntime) {
-        if (isEmpty(message_id)) return Failed("message_id is required");
-        const session = invocation.session;
-        if (!session) return Failed("This tool requires a session.");
-        const bot = invocation.bot;
-        if (!bot) return Failed("Missing bot instance in invocation");
-        const { selfId } = bot;
+    async essenceDelete(params: { message_id: string }, context: ToolContext) {
+        const { message_id } = params;
+
+        const session = context.require(ContextCapability.Session);
+        const bot = context.require(ContextCapability.Bot);
+        const selfId = bot.selfId;
+
         try {
             await session.onebot.deleteEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 从精华中移除`);
@@ -114,25 +121,27 @@ export default class InteractionsExtension {
         }
     }
 
-    @Tool({
+    @Action({
         name: "send_poke",
         description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("用户名称"),
             channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        supports: [
-            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        activators: [
+            requirePlatform("onebot", "OneBot platform required"),
+            requireSession("Active session required"),
         ],
+        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
-    async sendPoke({ user_id, channel }: { user_id: string; channel: string }, invocation: ToolRuntime) {
-        if (isEmpty(String(user_id))) return Failed("user_id is required");
-        const session = invocation.session;
-        if (!session) return Failed("This tool requires a session.");
-        const bot = invocation.bot;
-        if (!bot) return Failed("Missing bot instance in invocation");
-        const { selfId } = bot;
-        const targetChannel = isEmpty(channel) ? invocation.channelId : channel;
+    async sendPoke(params: { user_id: string; channel: string }, context: ToolContext) {
+        const { user_id, channel } = params;
+
+        const session = context.require(ContextCapability.Session);
+        const bot = context.require(ContextCapability.Bot);
+        const selfId = bot.selfId;
+        const targetChannel = isEmpty(channel) ? session.channelId : channel;
+
         try {
             const result = await session.onebot._request("group_poke", {
                 group_id: targetChannel,
@@ -155,18 +164,18 @@ export default class InteractionsExtension {
         parameters: withInnerThoughts({
             id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
         }),
-        supports: [
-            ({ invocation }) => (invocation.platform === "onebot" && invocation.session ? true : { ok: false, reason: "需要 OneBot 会话" }),
+        activators: [
+            requirePlatform("onebot", "OneBot platform required"),
+            requireSession("Active session required"),
         ],
+        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
-    async getForwardMsg({ id }: { id: string }, invocation: ToolRuntime) {
-        if (isEmpty(id)) return Failed("id is required");
-        const session = invocation.session;
-        if (!session) return Failed("This tool requires a session.");
-        const bot = invocation.bot;
-        if (!bot) return Failed("Missing bot instance in invocation");
-        const onebot = session.onebot;
-        const { selfId } = bot;
+    async getForwardMsg(params: { id: string }, context: ToolContext) {
+        const { id } = params;
+        const session = context.require(ContextCapability.Session);
+        const bot = context.require(ContextCapability.Bot);
+        const { onebot, selfId } = session;
+
         try {
             const forwardMessages: ForwardMessage[] = await onebot.getForwardMsg(id);
             const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessages);

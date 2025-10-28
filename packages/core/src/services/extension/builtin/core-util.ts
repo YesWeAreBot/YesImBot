@@ -1,12 +1,15 @@
 import { Bot, Context, h, Schema, Session, sleep } from "koishi";
 
-import { AssetService } from "@/services/assets";
-import { ToolRuntime } from "@/services/extension";
-import { Action, Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
+import { requirePlatform, requireSession } from "@/services/extension/activators";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Plugin } from "@/services/extension/plugin";
+import { Failed, Success } from "@/services/extension/result-builder";
+import { ContextCapability, ToolContext } from "@/services/extension/types";
+import { formatDate, isEmpty } from "@/shared/utils";
 import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
 import { Services } from "@/shared/constants";
-import { isEmpty } from "@/shared/utils";
+import { AssetService } from "@/services";
+
 
 interface CoreUtilConfig {
     typing: {
@@ -34,14 +37,14 @@ const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     }),
 });
 
-@Extension({
+@Metadata({
     name: "core_util",
     display: "核心工具集",
     description: "必要工具",
     version: "1.0.0",
     builtin: true,
 })
-export default class CoreUtilExtension {
+export default class CoreUtilExtension extends Plugin<CoreUtilConfig> {
     static readonly inject = [Services.Asset, Services.Model];
     static readonly Config = CoreUtilConfig;
 
@@ -51,10 +54,9 @@ export default class CoreUtilExtension {
     private chatModel: IChatModel | null = null;
     private modelGroup: ChatModelSwitcher | null = null;
 
-    constructor(
-        public ctx: Context,
-        public config: CoreUtilConfig
-    ) {
+    constructor(ctx: Context, config: CoreUtilConfig) {
+        super(ctx, config);
+
         this.assetService = ctx[Services.Asset];
 
         try {
@@ -106,24 +108,15 @@ export default class CoreUtilExtension {
             target: Schema.string().description(`Optional. Specifies where to send the message, using \`platform:id\` format.
       Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
+        requiredContext: [ContextCapability.Session, ContextCapability.Platform, ContextCapability.ChannelId, ContextCapability.Bot],
     })
-    async sendMessage(params: { message: string; target?: string }, invocation: ToolRuntime) {
+    async sendMessage(params: { message: string; target?: string }, context: ToolContext) {
         const { message, target } = params;
 
-        const currentPlatform = invocation.platform;
-        const currentChannelId = invocation.channelId;
-        let bot = invocation.bot;
-
-        if (!bot && currentPlatform) {
-            bot = this.ctx.bots.find((b) => b.platform === currentPlatform && (!invocation.bot || b.selfId === invocation.bot.selfId));
-        }
-
-        if (!currentPlatform || !currentChannelId || !bot) {
-            this.ctx.logger.warn(
-                `✖ 发送消息失败 | 缺少上下文信息 platform=${currentPlatform ?? "unknown"}, channel=${currentChannelId ?? "unknown"}, bot=${bot?.selfId ?? "unknown"}`
-            );
-            return Failed("缺少平台或频道信息，无法发送消息");
-        }
+        const session = context.require(ContextCapability.Session);
+        const currentPlatform = context.require(ContextCapability.Platform);
+        const currentChannelId = context.require(ContextCapability.ChannelId);
+        const bot = context.require(ContextCapability.Bot);
 
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
@@ -132,7 +125,7 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const { bot: targetBot, targetChannelId } = this.determineTarget(invocation, target);
+            const { bot: targetBot, targetChannelId } = this.determineTarget(context, target);
             const resolvedBot = targetBot ?? bot;
 
             if (!resolvedBot) {
@@ -146,7 +139,7 @@ export default class CoreUtilExtension {
                 return Failed("目标频道缺失，无法发送消息");
             }
 
-            await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId, invocation.session.isDirect);
+            await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId, session.isDirect);
 
             return Success();
         } catch (error: any) {
@@ -162,7 +155,7 @@ export default class CoreUtilExtension {
             question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
         }),
     })
-    async getImageDescription(params: { image_id: string; question: string }, _invocation: ToolRuntime) {
+    async getImageDescription(params: { image_id: string; question: string }, context: ToolContext) {
         const { image_id, question } = params;
 
         const imageInfo = await this.assetService.getInfo(image_id);
@@ -232,11 +225,13 @@ export default class CoreUtilExtension {
         return Math.max(MIN_DELAY, Math.min(calculatedDelay, MAX_DELAY));
     }
 
-    private determineTarget(invocation: ToolRuntime, target?: string): { bot: Bot | undefined; targetChannelId: string } {
+    private determineTarget(context: ToolContext, target?: string): { bot: Bot | undefined; targetChannelId: string } {
         if (!target) {
+            const bot = context.require(ContextCapability.Bot);
+            const channelId = context.require(ContextCapability.ChannelId);
             return {
-                bot: invocation.bot,
-                targetChannelId: invocation.channelId ?? "",
+                bot,
+                targetChannelId: channelId ?? "",
             };
         }
 

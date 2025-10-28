@@ -1,14 +1,17 @@
 import { Context, Query, Schema } from "koishi";
 
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { MemoryService } from "@/services/memory";
-import { formatDate, truncate } from "@/shared";
-import { Services, TableName } from "@/shared/constants";
-import { ToolRuntime } from "../types";
-import { EventData, MessageData } from "@/services/worldstate";
+import { MemoryService } from "@/services";
+import { Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Plugin } from "@/services/extension/plugin";
+import { Failed, Success } from "@/services/extension/result-builder";
+import { ToolContext } from "@/services/extension/types";
+import { MessageData } from "@/services/worldstate";
+import { Services, TableName } from "@/shared";
+import { formatDate, truncate } from "@/shared/utils";
 
-@Extension({
+interface MemoryConfig { }
+
+@Metadata({
     name: "memory",
     display: "记忆管理",
     version: "2.0.0",
@@ -16,17 +19,16 @@ import { EventData, MessageData } from "@/services/worldstate";
     author: "MiaowFISH",
     builtin: true,
 })
-export default class MemoryExtension {
-    static readonly Config = Schema.object({
+export default class MemoryExtension extends Plugin<MemoryConfig> {
+    static readonly Config: Schema<MemoryConfig> = Schema.object({
         // topics: Schema.array(Schema.string()).default().description("记忆的主要主题分类。"),
     });
 
     static readonly inject = [Services.Memory];
 
-    constructor(
-        public ctx: Context,
-        public config: any
-    ) {}
+    constructor(ctx: Context, config: MemoryConfig) {
+        super(ctx, config);
+    }
 
     private get memoryService(): MemoryService {
         if (!this.ctx[Services.Memory]) {
@@ -125,7 +127,7 @@ export default class MemoryExtension {
             user_id: Schema.string().description("Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."),
         }),
     })
-    async conversationSearch(args: { query: string; limit?: number; channel_id?: string; user_id?: string }, runtime: ToolRuntime) {
+    async conversationSearch(args: { query: string; limit?: number; channel_id?: string; user_id?: string }, context: ToolContext) {
         const { query, limit = 10, channel_id, user_id } = args;
 
         try {
@@ -147,7 +149,7 @@ export default class MemoryExtension {
             }
 
             /* prettier-ignore */
-            const formattedResults = results.map((msg) =>`[${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm")}|${msg.payload.sender.name || "user"}(${msg.payload.sender.id})] ${truncate(msg.payload.content,120)}`);
+            const formattedResults = results.map((msg) => `[${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm")}|${msg.payload.sender.name || "user"}(${msg.payload.sender.id})] ${truncate(msg.payload.content, 120)}`);
             return Success({
                 results_count: results.length,
                 results: formattedResults,

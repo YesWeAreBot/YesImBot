@@ -1,11 +1,12 @@
 import { Context, Schema } from "koishi";
 
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Plugin } from "@/services/extension/plugin";
+import { Failed, Success } from "@/services/extension/result-builder";
+import { ContextCapability, ToolContext } from "@/services/extension/types";
 import { isEmpty } from "@/shared/utils";
-import { ToolRuntime } from "../types";
 
-@Extension({
+@Metadata({
     name: "qmanager",
     display: "频道管理",
     version: "1.0.0",
@@ -13,24 +14,24 @@ import { ToolRuntime } from "../types";
     author: "HydroGest",
     builtin: true,
 })
-export default class QManagerExtension {
+export default class QManagerExtension extends Plugin {
     static readonly Config = Schema.object({});
 
-    constructor(
-        public ctx: Context,
-        public config: any
-    ) {}
+    constructor(ctx: Context, config: any) {
+        super(ctx, config);
+    }
 
-    @Tool({
+    @Action({
         name: "delmsg",
         description: `撤回一条消息。撤回用户/你自己的消息。当你认为别人刷屏或发表不当内容时，运行这条指令。`,
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("要撤回的消息编号"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
+        requiredContext: [ContextCapability.Session],
     })
-    async delmsg({ message_id, channel_id }: { message_id: string; channel_id: string }, runtime: ToolRuntime) {
-        const session = runtime.session;
+    async delmsg({ message_id, channel_id }: { message_id: string; channel_id: string }, context: ToolContext) {
+        const session = context.require(ContextCapability.Session);
         if (isEmpty(message_id)) return Failed("message_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
@@ -43,7 +44,7 @@ export default class QManagerExtension {
         }
     }
 
-    @Tool({
+    @Action({
         name: "ban",
         description: `禁言用户。`,
         parameters: withInnerThoughts({
@@ -53,9 +54,10 @@ export default class QManagerExtension {
                 .description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
+        requiredContext: [ContextCapability.Session],
     })
-    async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id: string }, runtime: ToolRuntime) {
-        const session = runtime.session;
+    async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id: string }, context: ToolContext) {
+        const session = context.require(ContextCapability.Session);
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
@@ -68,16 +70,17 @@ export default class QManagerExtension {
         }
     }
 
-    @Tool({
+    @Action({
         name: "kick",
         description: `踢出用户。`,
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要踢出的用户 ID"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
+        requiredContext: [ContextCapability.Session],
     })
-    async kick({ user_id, channel_id }: { user_id: string; channel_id: string }, runtime: ToolRuntime) {
-        const session = runtime.session;
+    async kick({ user_id, channel_id }: { user_id: string; channel_id: string }, context: ToolContext) {
+        const session = context.require(ContextCapability.Session);
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
