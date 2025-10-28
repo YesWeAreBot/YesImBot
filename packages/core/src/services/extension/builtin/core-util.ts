@@ -1,6 +1,5 @@
 import { Bot, Context, h, Schema, Session, sleep } from "koishi";
 
-import { requirePlatform, requireSession } from "@/services/extension/activators";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Plugin } from "@/services/extension/plugin";
 import { Failed, Success } from "@/services/extension/result-builder";
@@ -65,18 +64,18 @@ export default class CoreUtilExtension extends Plugin<CoreUtilConfig> {
                 if (typeof visionModel === "string") {
                     this.modelGroup = this.ctx[Services.Model].useChatGroup(visionModel);
                     if (!this.modelGroup) {
-                        this.ctx.logger.warn(``);
+                        this.ctx.logger.warn(`✖ 模型组未找到 | 模型组: ${visionModel}`);
                     }
-                    const visionModels = this.modelGroup.getModels().filter((m) => m.isVisionModel()) || [];
+                    const visionModels = this.modelGroup?.getModels().filter((m) => m.isVisionModel()) || [];
                     if (visionModels.length === 0) {
-                        this.ctx.logger.warn(``);
+                        this.ctx.logger.warn(`✖ 模型组中没有视觉模型 | 模型组: ${visionModel}`);
                     }
                 } else {
                     this.chatModel = this.ctx[Services.Model].getChatModel(visionModel);
                     if (!this.chatModel) {
-                        this.ctx.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(this.chatModel.id)}`);
+                        this.ctx.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(visionModel)}`);
                     }
-                    if (!this.chatModel.isVisionModel()) {
+                    if (this.chatModel && !this.chatModel.isVisionModel()) {
                         this.ctx.logger.warn(`✖ 模型不支持多模态 | 模型: ${JSON.stringify(this.chatModel.id)}`);
                     }
                 }
@@ -158,6 +157,12 @@ export default class CoreUtilExtension extends Plugin<CoreUtilConfig> {
     async getImageDescription(params: { image_id: string; question: string }, context: ToolContext) {
         const { image_id, question } = params;
 
+        // Check if vision model is available
+        if (!this.chatModel && !this.modelGroup) {
+            this.ctx.logger.warn(`✖ 视觉模型未配置`);
+            return Failed(`视觉模型未配置，无法获取图片描述`);
+        }
+
         const imageInfo = await this.assetService.getInfo(image_id);
         if (!imageInfo) {
             this.ctx.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
@@ -170,16 +175,18 @@ export default class CoreUtilExtension extends Plugin<CoreUtilConfig> {
 
         const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
 
-        let prompt;
-
-        if (imageInfo.mime === "image/gif") {
-            prompt = `这是一张GIF动图的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述，并回答问题：${question}\n\n图片内容：`;
-        } else {
-            prompt = `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
-        }
+        const prompt = imageInfo.mime === "image/gif"
+            ? `这是一张GIF动图的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述，并回答问题：${question}\n\n图片内容：`
+            : `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
 
         try {
-            const response = await this.chatModel.chat({
+            const model = this.chatModel || this.modelGroup?.getModels()[0];
+            if (!model) {
+                this.ctx.logger.warn(`✖ 无可用的视觉模型`);
+                return Failed(`无可用的视觉模型`);
+            }
+
+            const response = await model.chat({
                 messages: [
                     {
                         role: "user",

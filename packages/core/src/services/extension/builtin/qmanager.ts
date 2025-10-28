@@ -1,10 +1,12 @@
 import { Context, Schema } from "koishi";
 
-import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
+import { Action, Metadata, withInnerThoughts } from "@/services/extension/decorators";
 import { Plugin } from "@/services/extension/plugin";
 import { Failed, Success } from "@/services/extension/result-builder";
 import { ContextCapability, ToolContext } from "@/services/extension/types";
 import { isEmpty } from "@/shared/utils";
+
+interface QManagerConfig {}
 
 @Metadata({
     name: "qmanager",
@@ -14,10 +16,10 @@ import { isEmpty } from "@/shared/utils";
     author: "HydroGest",
     builtin: true,
 })
-export default class QManagerExtension extends Plugin {
+export default class QManagerExtension extends Plugin<QManagerConfig> {
     static readonly Config = Schema.object({});
 
-    constructor(ctx: Context, config: any) {
+    constructor(ctx: Context, config: QManagerConfig) {
         super(ctx, config);
     }
 
@@ -30,7 +32,7 @@ export default class QManagerExtension extends Plugin {
         }),
         requiredContext: [ContextCapability.Session],
     })
-    async delmsg({ message_id, channel_id }: { message_id: string; channel_id: string }, context: ToolContext) {
+    async delmsg({ message_id, channel_id }: { message_id: string; channel_id?: string }, context: ToolContext) {
         const session = context.require(ContextCapability.Session);
         if (isEmpty(message_id)) return Failed("message_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
@@ -56,16 +58,16 @@ export default class QManagerExtension extends Plugin {
         }),
         requiredContext: [ContextCapability.Session],
     })
-    async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id: string }, context: ToolContext) {
+    async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id?: string }, context: ToolContext) {
         const session = context.require(ContextCapability.Session);
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.muteGuildMember(targetChannel, user_id, Number(duration) * 60 * 1000);
-            this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id}`);
+            this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id}`);
             return Success();
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id} 失败 - `, error.message);
+            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id} 失败 - `, error.message);
             return Failed(`禁言用户 ${user_id} 失败 - ${error.message}`);
         }
     }
@@ -79,16 +81,16 @@ export default class QManagerExtension extends Plugin {
         }),
         requiredContext: [ContextCapability.Session],
     })
-    async kick({ user_id, channel_id }: { user_id: string; channel_id: string }, context: ToolContext) {
+    async kick({ user_id, channel_id }: { user_id: string; channel_id?: string }, context: ToolContext) {
         const session = context.require(ContextCapability.Session);
         if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.kickGuildMember(targetChannel, user_id);
-            this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 踢出了用户: ${user_id}`);
+            this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${targetChannel} 踢出了用户: ${user_id}`);
             return Success();
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${channel_id} 踢出用户: ${user_id} 失败 - `, error.message);
+            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${targetChannel} 踢出用户: ${user_id} 失败 - `, error.message);
             return Failed(`踢出用户 ${user_id} 失败 - ${error.message}`);
         }
     }
