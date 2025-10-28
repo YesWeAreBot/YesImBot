@@ -56,7 +56,7 @@ export interface CodeExecutionSuccessResult {
  * 标准化的代码执行结果接口，继承自ToolCallResult。
  * 它封装了成功和失败两种状态。
  */
-export type CodeExecutionResult = ToolCallResult<CodeExecutionSuccessResult, ExecutionError>;
+export type CodeExecutionResult = ToolCallResult<CodeExecutionSuccessResult>;
 
 /**
  * 所有代码执行引擎必须实现的接口。

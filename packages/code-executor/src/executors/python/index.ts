@@ -1,5 +1,6 @@
 import { Context, Logger, Schema } from "koishi";
-import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { AssetService } from "koishi-plugin-yesimbot/services";
+import { Failed, InternalError, Success, ToolDefinition, ToolType, withInnerThoughts } from "koishi-plugin-yesimbot/services/extension";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { loadPyodide, PyodideAPI } from "pyodide";
@@ -28,10 +29,10 @@ export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
         Schema.object({
             enabled: Schema.const(true).required(),
             timeout: Schema.number().default(30000).description("代码执行的超时时间（毫秒）"),
-            poolSize: Schema.number().default(2).min(1).max(10).description("Pyodide 引擎池的大小，用于并发执行"),
+            poolSize: Schema.number().default(1).min(1).max(10).description("Pyodide 引擎池的大小，用于并发执行"),
             pyodideVersion: Schema.string()
                 .pattern(/^\d+\.\d+\.\d+$/)
-                .default("0.28.2")
+                .default("0.28.3")
                 .description("Pyodide 的版本"),
             cdnBaseUrl: Schema.union([
                 "https://cdn.jsdelivr.net",
@@ -45,11 +46,11 @@ export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
                 .default("https://fastly.jsdelivr.net")
                 .description("Pyodide 包下载镜像源"),
             allowedModules: Schema.array(String)
-                .default(["matplotlib", "numpy", "pandas", "sklearn", "scipy", "requests"])
+                .default(["matplotlib", "numpy", "requests"])
                 .role("table")
                 .description("允许代码通过 import 导入的模块白名单"),
             packages: Schema.array(String)
-                .default(["numpy", "pandas", "matplotlib", "scikit-learn"])
+                .default(["matplotlib", "numpy"])
                 .role("table")
                 .description("预加载到每个 Pyodide 实例中的 Python 包"),
             customToolDescription: Schema.string()
@@ -87,6 +88,11 @@ class PyodideEnginePool {
         this.logger.info(`[创建实例] Pyodide 核心加载完成`);
 
         if (this.config.packages && this.config.packages.length > 0) {
+            const packages = new Set(this.config.packages);
+            packages.add("micropip"); // 确保 micropip 总是被加载
+            this.config.packages = Array.from(packages);
+
+            // 加载预设包
             const packageList = this.config.packages.join(", ");
             this.logger.info(`[创建实例] 准备加载预设包: ${packageList}`);
             try {
@@ -244,6 +250,7 @@ if os.path.exists(workspace):
 
         if (err.message.includes("TimeoutError")) {
             return {
+                type: "internal_error",
                 name: "TimeoutError",
                 message: `Code execution exceeded the time limit of ${this.config.timeout}ms.`,
                 stack: err.stack,
@@ -254,6 +261,7 @@ if os.path.exists(workspace):
 
         if (err.message.includes("SecurityError")) {
             return {
+                type: "internal_error",
                 name: "SecurityError",
                 message: err.message,
                 stack: err.stack,
@@ -285,6 +293,7 @@ if os.path.exists(workspace):
         }
 
         return {
+            type: "internal_error",
             name: err.name,
             message: err.message,
             stack: err.stack,
@@ -303,7 +312,9 @@ if os.path.exists(workspace):
 - To generate files (like images, plots, data files), use the special function '__create_artifact__(fileName, content, type)'. It returns assets for download. For example, to save a plot, use matplotlib to save it to a BytesIO buffer and pass it to this function.`;
 
         return {
+            type: ToolType.Tool,
             name: "execute_python",
+            extensionName: "code-executor",
             description: this.config.customToolDescription || defaultDescription,
             parameters: withInnerThoughts({
                 code: Schema.string().required().description("The Python code to execute."),
@@ -315,14 +326,8 @@ if os.path.exists(workspace):
     async execute(code: string): Promise<CodeExecutionResult> {
         if (!this.isReady) {
             this.logger.warn("[执行] 由于执行器未准备就绪，已拒绝执行请求");
-            return {
-                status: "error",
-                error: {
-                    name: "EnvironmentError",
-                    message: "Python executor is not ready or failed to initialize.",
-                    suggestion: "Please wait a moment and try again, or contact the administrator.",
-                },
-            };
+            return Failed(InternalError("Python executor is not ready or failed to initialize."))
+                .withWarning("Please wait a moment and try again, or contact the administrator.");
         }
 
         this.logger.info("[执行] 收到新的代码执行请求");
@@ -395,20 +400,14 @@ if plt.get_fignums():
             }
 
             this.logger.info("[执行] 代码执行成功");
-            return {
-                status: "success",
-                result: {
-                    stdout: [...stdout, resultString].filter(Boolean).join("\n"),
-                    stderr: stderr.join("\n"),
-                    artifacts: artifacts,
-                },
-            };
+            return Success({
+                stdout: [...stdout, resultString].filter(Boolean).join("\n"),
+                stderr: stderr.join("\n"),
+                artifacts: artifacts,
+            });
         } catch (error: any) {
             this.logger.error("[执行] 代码执行时发生错误", error);
-            return {
-                status: "error",
-                error: this._parsePyodideError(error),
-            };
+            return Failed(this._parsePyodideError(error));
         } finally {
             if (engine) {
                 engine.globals.delete("__create_artifact__");

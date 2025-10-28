@@ -1,19 +1,19 @@
 import { Context, Logger } from "koishi";
-import { Extension, ToolService } from "koishi-plugin-yesimbot/services";
+import { Metadata, Plugin, ToolService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
 import { Config } from "./config";
 import { CodeExecutor } from "./executors/base";
 import { PythonExecutor } from "./executors/python";
 
-@Extension({
+@Metadata({
     name: "code-executor",
     display: "多引擎代码执行器",
     description: "提供一个可插拔的、支持多种语言的安全代码执行环境。",
     author: "AI-Powered Design",
     version: "2.0.0",
 })
-export default class MultiEngineCodeExecutor {
+export default class MultiEngineCodeExecutor extends Plugin<Schemastery.TypeS<typeof Config>> {
     static readonly inject = [Services.Tool, Services.Asset];
     static readonly Config = Config;
     private readonly logger: Logger;
@@ -22,9 +22,10 @@ export default class MultiEngineCodeExecutor {
     private toolService: ToolService;
 
     constructor(
-        public ctx: Context,
-        public config: Schemastery.TypeS<typeof Config>
+         ctx: Context,
+         config: Schemastery.TypeS<typeof Config>
     ) {
+        super(ctx, config);
         this.logger = ctx.logger("code-executor");
         this.toolService = ctx[Services.Tool];
 
@@ -54,7 +55,7 @@ export default class MultiEngineCodeExecutor {
     private registerExecutor(executor: CodeExecutor) {
         try {
             const toolDefinition = executor.getToolDefinition();
-            this.toolService.registerTool(toolDefinition);
+            this.addTool(toolDefinition);
             this.executors.push(executor);
             this.logger.info(`Successfully registered tool: ${toolDefinition.name}`);
         } catch (error: any) {
@@ -63,10 +64,6 @@ export default class MultiEngineCodeExecutor {
     }
 
     private unregisterAllTools() {
-        for (const executor of this.executors) {
-            const toolName = executor.getToolDefinition().name;
-            this.toolService.unregisterTool(toolName);
-        }
         this.executors = [];
     }
 }
