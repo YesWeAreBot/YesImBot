@@ -2,6 +2,7 @@
 // DECORATORS AND FACTORY FUNCTIONS
 // ============================================================================
 
+import { Schema } from "koishi";
 import { ToolDescriptor, ActionDescriptor, ToolDefinition, ToolType, ToolContext, ToolResult, PluginMetadata, ActionDefinition } from "./types";
 
 type Constructor<T = {}> = new (...args: any[]) => T;
@@ -105,4 +106,11 @@ export function defineAction<TParams>(
         descriptor: { ...descriptor, type: ToolType.Action } as ActionDescriptor<any, TParams>,
         execute,
     };
+}
+
+export function withInnerThoughts(params: { [T: string]: Schema<any> }): Schema<any> {
+    return Schema.object({
+        inner_thoughts: Schema.string().description("Deep inner monologue private to you only."),
+        ...params,
+    });
 }

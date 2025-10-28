@@ -8,7 +8,7 @@ import { ToolResult, ToolStatus, ToolError, NextStep, ToolErrorType } from "./ty
  * Tool result builder class.
  */
 export class ToolResultBuilder<T> {
-    private result: ToolResult<T>;
+    result: ToolResult<T>;
 
     constructor(status: ToolStatus, data?: T, error?: ToolError) {
         this.result = {
@@ -63,14 +63,14 @@ export function Success<T>(result?: T): ToolResult<T> & ToolResultBuilder<T> {
     const builder = new ToolResultBuilder(ToolStatus.Success, result);
     const toolResult = builder.build();
 
-    // Return a hybrid object that works both as ToolResult and Builder
+    // Create a hybrid object that works both as ToolResult and Builder
     return Object.assign(toolResult, {
         withError: builder.withError.bind(builder),
         withWarning: builder.withWarning.bind(builder),
         withNextStep: builder.withNextStep.bind(builder),
         withMetadata: builder.withMetadata.bind(builder),
         build: builder.build.bind(builder),
-    });
+    }) as ToolResult<T> & ToolResultBuilder<T>;
 }
 
 /**
@@ -96,7 +96,7 @@ export function Failed(error: ToolError | string): ToolResult<never> & ToolResul
         withNextStep: builder.withNextStep.bind(builder),
         withMetadata: builder.withMetadata.bind(builder),
         build: builder.build.bind(builder),
-    });
+    }) as ToolResult<never> & ToolResultBuilder<never>;
 }
 
 /**
@@ -121,7 +121,7 @@ export function PartialSuccess<T>(result: T, warnings: string[]): ToolResult<T> 
         withNextStep: builder.withNextStep.bind(builder),
         withMetadata: builder.withMetadata.bind(builder),
         build: builder.build.bind(builder),
-    });
+    }) as ToolResult<T> & ToolResultBuilder<T>;
 }
 
 /**

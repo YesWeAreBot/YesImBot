@@ -4,7 +4,7 @@ import { Context, h, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "@/config";
-import { Properties, ToolRuntime, ToolSchema, ToolService } from "@/services/extension";
+import { ActionDefinition, isAction, Properties, ToolContext, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher, IChatModel } from "@/services/model";
 import { ModelError } from "@/services/model/types";
@@ -66,9 +66,9 @@ export class HeartbeatProcessor {
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
 
         const worldState = await this.worldState.buildWorldState(stimulus);
-        const runtime = this.toolService.getRuntime(stimulus);
+        const context = this.toolService.getContext(stimulus);
 
-        const toolSchemas = await this.toolService.getToolSchemas(runtime);
+        const toolSchemas = await this.toolService.getToolSchemas(context);
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
@@ -224,10 +224,14 @@ export class HeartbeatProcessor {
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-        await this.executeActions(turnId, stimulus, agentResponseData.actions);
+        const actionResult = await this.executeActions(turnId, stimulus, agentResponseData.actions);
 
         this.logger.success("单次心跳成功完成");
-        return { continue: agentResponseData.request_heartbeat };
+
+        // Combine LLM's request_heartbeat with action-level continueHeartbeat override
+        // If any action sets continueHeartbeat=true, it overrides the LLM's decision
+        const shouldContinue = agentResponseData.request_heartbeat || actionResult.shouldContinue;
+        return { continue: shouldContinue };
     }
 
     /**
@@ -261,29 +265,47 @@ export class HeartbeatProcessor {
     //   - 计划: ${plan || "N/A"}`);
     //     }
 
-    private async executeActions(turnId: string, stimulus: AnyAgentStimulus, actions: AgentResponse["actions"]): Promise<void> {
+    /**
+     * Execute actions and check if any action requests heartbeat continuation.
+     * @returns Object with shouldContinue flag indicating if heartbeat should continue
+     */
+    private async executeActions(
+        turnId: string,
+        stimulus: AnyAgentStimulus,
+        actions: AgentResponse["actions"]
+    ): Promise<{ shouldContinue: boolean }> {
         if (actions.length === 0) {
             this.logger.info("无动作需要执行");
-            return;
+            return { shouldContinue: false };
         }
 
-        const baseInvocation = this.toolService.getRuntime(stimulus, { metadata: { turnId } });
+        const baseContext = this.toolService.getContext(stimulus, { metadata: { turnId } });
+        let shouldContinue = false;
 
         for (let index = 0; index < actions.length; index++) {
             const action = actions[index];
             if (!action?.function) continue;
 
-            const invocation: ToolRuntime = {
-                ...baseInvocation,
+            // Create context with action-specific metadata
+            const actionContext = this.toolService.getContext(stimulus, {
                 metadata: {
-                    ...(baseInvocation.metadata ?? {}),
+                    turnId,
                     actionIndex: index,
                     actionName: action.function,
                 },
-            };
+            });
 
-            const result = await this.toolService.invoke(action.function, action.params ?? {}, invocation);
+            const result = await this.toolService.invoke(action.function, action.params ?? {}, actionContext);
+
+            // Check if this action has continueHeartbeat property set
+            const toolDef = await this.toolService.getTool(action.function, baseContext);
+            if (toolDef && isAction(toolDef) && toolDef.continueHeartbeat) {
+                this.logger.debug(`动作 "${action.function}" 请求继续心跳循环`);
+                shouldContinue = true;
+            }
         }
+
+        return { shouldContinue };
     }
 }
 
