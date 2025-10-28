@@ -17,7 +17,7 @@ export function keywordActivator(
 ): Activator {
     return async ({ context, config }) => {
         // Get conversation context from metadata
-        const metadata = context.get(ContextCapability.Metadata);
+        const metadata: any = context.get(ContextCapability.Metadata);
         const conversationText = metadata?.conversationContext || "";
 
         const searchText = options?.caseSensitive ? conversationText : conversationText.toLowerCase();

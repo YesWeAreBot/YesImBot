@@ -5,10 +5,11 @@ import { PromptService } from "@/services/prompt";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
 import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "../worldstate/types";
-import { IExtension, Properties, ToolDefinition, ToolResult, ToolSchema, ToolContext } from "./types";
-import { ContextCapabilityMap } from "./types/context";
 import { StimulusContextAdapter } from "./context";
+import { Plugin } from "./plugin";
 import { Failed } from "./result-builder";
+import { ActionDefinition, AnyToolDefinition, isAction, Properties, ToolContext, ToolDefinition, ToolResult, ToolSchema } from "./types";
+import { ContextCapabilityMap } from "./types/context";
 
 // Helper function to extract metadata from Schema (moved from deleted helpers.ts)
 function extractMetaFromSchema(schema: Schema | undefined): Properties {
@@ -36,10 +37,36 @@ declare module "koishi" {
     }
 }
 
+/**
+ * ToolService manages both Tools and Actions in a unified registry.
+ *
+ * ## Tool vs Action Distinction
+ * - **Tools** (ToolType.Tool): Information retrieval operations that don't modify state
+ * - **Actions** (ToolType.Action): Concrete operations that modify state
+ *
+ * ## Unified Registry Design
+ * Both tools and actions are stored in the same `tools` Map for simplified management.
+ * They are distinguished at runtime by their `type` property (ToolType.Tool vs ToolType.Action).
+ * This design allows:
+ * - Unified invocation logic (same invoke() method for both)
+ * - Simplified registration and lifecycle management
+ * - Type-safe discrimination using type guards (isAction(), isTool())
+ *
+ * ## Heartbeat Behavior
+ * Actions can control heartbeat continuation via the `continueHeartbeat` property:
+ * - If `continueHeartbeat: true`, the action signals that the heartbeat loop should continue
+ * - This overrides the LLM's `request_heartbeat` decision
+ * - Useful for actions that trigger follow-up processing
+ */
 export class ToolService extends Service<Config> {
     static readonly inject = [Services.Prompt];
-    private tools: Map<string, ToolDefinition> = new Map();
-    private extensions: Map<string, IExtension> = new Map();
+    /**
+     * Unified registry for both tools and actions.
+     * Tools and actions share the same storage for simplified management,
+     * but are distinguished by their `type` property (ToolType.Tool vs ToolType.Action).
+     */
+    private tools: Map<string, AnyToolDefinition> = new Map();
+    private plugins: Map<string, Plugin> = new Map();
 
     private promptService: PromptService;
     private contextAdapter: StimulusContextAdapter;
@@ -53,16 +80,16 @@ export class ToolService extends Service<Config> {
     }
 
     protected async start() {
-        const builtinExtensions = [CoreUtilExtension, MemoryExtension, QManagerExtension, InteractionsExtension];
-        const loadedExtensions = new Map<string, ForkScope>();
+        const builtinPlugins = [CoreUtilExtension, MemoryExtension, QManagerExtension, InteractionsExtension];
+        const loadedPlugins = new Map<string, ForkScope>();
 
-        for (const Ext of builtinExtensions) {
+        for (const Ext of builtinPlugins) {
             //@ts-ignore
             // 不能在这里判断是否启用，否则无法生成配置
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
             //@ts-ignore
-            loadedExtensions.set(name, this.ctx.plugin(Ext, config));
+            loadedplugins.set(name, this.ctx.plugin(Ext, config));
         }
         this.registerPromptTemplates();
         this.registerCommands();
@@ -292,14 +319,14 @@ export class ToolService extends Service<Config> {
      * @param enabled 是否启用此扩展
      * @param extConfig 传递给扩展实例的配置
      */
-    public register<TConfig = any>(extensionInstance: IExtension<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
+    public register<TConfig = any>(extensionInstance: Plugin<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
         const validate: Schema<TConfig> = extensionInstance.constructor["Config"];
         const validatedConfig = validate ? validate(extConfig) : extConfig;
 
-        let availableExtensions = this.ctx.schema.get("toolService.availableExtensions");
+        let availableplugins = this.ctx.schema.get("toolService.availableplugins");
 
-        if (availableExtensions.type !== "object") {
-            availableExtensions = Schema.object({});
+        if (availableplugins.type !== "object") {
+            availableplugins = Schema.object({});
         }
 
         try {
@@ -312,8 +339,8 @@ export class ToolService extends Service<Config> {
 
             if (metadata.builtin) {
                 this.ctx.schema.set(
-                    "toolService.availableExtensions",
-                    availableExtensions.set(
+                    "toolService.availableplugins",
+                    availableplugins.set(
                         extensionInstance.metadata.name,
                         Schema.intersect([
                             Schema.object({
@@ -338,17 +365,34 @@ export class ToolService extends Service<Config> {
             const display = metadata.display || metadata.name;
 
             this.logger.info(`正在注册扩展: "${display}"`);
-            this.extensions.set(metadata.name, extensionInstance);
+            this.plugins.set(metadata.name, extensionInstance);
 
-            if (extensionInstance.tools) {
-                for (const [name, tool] of extensionInstance.tools.entries()) {
+            // Register tools (information retrieval operations)
+            const tools = extensionInstance.getTools();
+            if (tools) {
+                for (const [name, tool] of tools) {
                     this.logger.debug(`  -> 注册工具: "${tool.name}"`);
-                    const boundTool = {
+                    const boundTool: ToolDefinition = {
                         ...tool,
                         extensionName: metadata.name,
-                    } as ToolDefinition;
-                    extensionInstance.tools.set(name, boundTool);
+                    };
+                    // Store in unified registry - tools and actions share the same storage
                     this.tools.set(name, boundTool);
+                }
+            }
+
+            // Register actions (concrete state-modifying operations)
+            const actions = extensionInstance.getActions();
+            if (actions) {
+                for (const [name, action] of actions) {
+                    this.logger.debug(`  -> 注册动作: "${action.name}"`);
+                    const boundAction: ActionDefinition = {
+                        ...action,
+                        extensionName: metadata.name,
+                    };
+                    // Store in unified registry - tools and actions share the same storage
+                    // This allows unified invocation and management while preserving type distinction
+                    this.tools.set(name, boundAction);
                 }
             }
         } catch (error: any) {
@@ -358,15 +402,20 @@ export class ToolService extends Service<Config> {
     }
 
     public unregister(name: string): boolean {
-        const ext = this.extensions.get(name);
+        const ext = this.plugins.get(name);
         if (!ext) {
             this.logger.warn(`尝试卸载不存在的扩展: "${name}"`);
             return false;
         }
-        this.extensions.delete(name);
+        this.plugins.delete(name);
         try {
-            for (const tool of ext.tools.values()) {
+            // Unregister all tools
+            for (const tool of ext.getTools().values()) {
                 this.tools.delete(tool.name);
+            }
+            // Unregister all actions
+            for (const action of ext.getActions().values()) {
+                this.tools.delete(action.name);
             }
             this.logger.info(`已卸载扩展: "${name}"`);
         } catch (error: any) {
@@ -385,22 +434,26 @@ export class ToolService extends Service<Config> {
     public async invoke(functionName: string, params: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
         const tool = await this.getTool(functionName, context);
         if (!tool) {
-            this.logger.warn(`工具未找到或在当前上下文中不可用 | 名称: ${functionName}`);
+            this.logger.warn(`工具/动作未找到或在当前上下文中不可用 | 名称: ${functionName}`);
             return Failed(`Tool ${functionName} not found or not supported in this context.`);
         }
+
+        // Determine if this is a tool or action for enhanced logging
+        const isActionType = isAction(tool);
+        const typeLabel = isActionType ? "动作" : "工具";
 
         let validatedParams = params;
         if (tool.parameters) {
             try {
                 validatedParams = tool.parameters(params);
             } catch (error: any) {
-                this.logger.warn(`✖ 参数验证失败 | 工具: ${functionName} | 错误: ${error.message}`);
+                this.logger.warn(`✖ 参数验证失败 | ${typeLabel}: ${functionName} | 错误: ${error.message}`);
                 return Failed(`Parameter validation failed: ${error.message}`);
             }
         }
 
         const stringifyParams = stringify(params);
-        this.logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
+        this.logger.info(`→ 调用${typeLabel}: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolResult = Failed("Tool call did not execute.");
 
         for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
@@ -449,7 +502,7 @@ export class ToolService extends Service<Config> {
         return lastResult;
     }
 
-    public async getTool(name: string, context?: ToolContext): Promise<ToolDefinition | undefined> {
+    public async getTool(name: string, context?: ToolContext): Promise<AnyToolDefinition | undefined> {
         const tool = this.tools.get(name);
         if (!tool) return undefined;
 
@@ -468,7 +521,7 @@ export class ToolService extends Service<Config> {
         return tool;
     }
 
-    public async getAvailableTools(context: ToolContext): Promise<ToolDefinition[]> {
+    public async getAvailableTools(context: ToolContext): Promise<AnyToolDefinition[]> {
         const evaluations = await this.evaluateTools(context);
 
         return evaluations
@@ -477,8 +530,8 @@ export class ToolService extends Service<Config> {
             .map((record) => record.tool);
     }
 
-    public getExtension(name: string): IExtension | undefined {
-        return this.extensions.get(name);
+    public getExtension(name: string): Plugin | undefined {
+        return this.plugins.get(name);
     }
 
     public async getSchema(name: string, context?: ToolContext): Promise<ToolSchema | undefined> {
@@ -496,13 +549,13 @@ export class ToolService extends Service<Config> {
     }
 
     public getConfig(name: string): any {
-        const ext = this.extensions.get(name);
+        const ext = this.plugins.get(name);
         if (!ext) return null;
         return ext.config;
     }
 
     /* prettier-ignore */
-    private async evaluateTools(context: ToolContext): Promise<{ tool: ToolDefinition; assessment: { available: boolean; priority: number; hints: string[] }}[]> {
+    private async evaluateTools(context: ToolContext): Promise<{ tool: AnyToolDefinition; assessment: { available: boolean; priority: number; hints: string[] }}[]> {
         return Promise.all(
             Array.from(this.tools.values()).map(async (tool) => ({
                 tool,
@@ -512,7 +565,7 @@ export class ToolService extends Service<Config> {
     }
 
     /* prettier-ignore */
-    private async assessTool(tool: ToolDefinition, context: ToolContext): Promise<{ available: boolean; priority: number; hints: string[] }> {
+    private async assessTool(tool: AnyToolDefinition, context: ToolContext): Promise<{ available: boolean; priority: number; hints: string[] }> {
         const config = this.getConfig(tool.extensionName);
         const hints: string[] = [];
         let priority = 0;
@@ -570,11 +623,11 @@ export class ToolService extends Service<Config> {
     }
 
     /**
-     * 将 ToolDefinition 转换为 ToolSchema
-     * @param tool 工具定义对象
+     * 将 ToolDefinition 或 ActionDefinition 转换为 ToolSchema
+     * @param tool 工具或动作定义对象
      * @returns 工具的 Schema 对象
      */
-    private toolDefinitionToSchema(tool: ToolDefinition, hints: string[] = []): ToolSchema {
+    private toolDefinitionToSchema(tool: AnyToolDefinition, hints: string[] = []): ToolSchema {
         return {
             name: tool.name,
             description: tool.description,

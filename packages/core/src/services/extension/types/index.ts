@@ -11,8 +11,14 @@ export * from "./tool";
 // Result types
 export * from "./result";
 
-// Extension types
-export * from "./extension";
-
 // Schema type inference
 export * from "./schema-types";
+
+export interface PluginMetadata {
+    name: string;
+    display?: string;
+    description: string;
+    version?: string;
+    author?: string;
+    builtin?: boolean;
+}

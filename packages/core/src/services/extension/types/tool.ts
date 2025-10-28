@@ -160,3 +160,27 @@ export interface ToolSchema {
     type?: "tool" | "action";
     hints?: string[];
 }
+
+// ============================================================================
+// TYPE GUARDS
+// ============================================================================
+
+/**
+ * Type guard to check if a tool definition is an Action.
+ * Useful for runtime type checking and accessing action-specific properties.
+ */
+export function isAction<TConfig = any, TParams = any, TResult = any>(
+    tool: AnyToolDefinition<TConfig, TParams, TResult>
+): tool is ActionDefinition<TConfig, TParams, TResult> {
+    return tool.type === ToolType.Action;
+}
+
+/**
+ * Type guard to check if a tool definition is a Tool (information retrieval).
+ * Useful for runtime type checking and distinguishing from actions.
+ */
+export function isTool<TConfig = any, TParams = any, TResult = any>(
+    tool: AnyToolDefinition<TConfig, TParams, TResult>
+): tool is ToolDefinition<TConfig, TParams, TResult> {
+    return tool.type === ToolType.Tool;
+}

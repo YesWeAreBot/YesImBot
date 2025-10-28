@@ -2,7 +2,9 @@
 // DECORATORS AND FACTORY FUNCTIONS
 // ============================================================================
 
-import { ExtensionMetadata, ToolDescriptor, ActionDescriptor, ToolDefinition, ToolType, ToolContext, ToolResult } from "./types";
+import { ToolDescriptor, ActionDescriptor, ToolDefinition, ToolType, ToolContext, ToolResult, PluginMetadata, ActionDefinition } from "./types";
+
+type Constructor<T = {}> = new (...args: any[]) => T;
 
 /**
  * @Metadata decorator - attaches metadata to an extension class.
@@ -18,11 +20,12 @@ import { ExtensionMetadata, ToolDescriptor, ActionDescriptor, ToolDefinition, To
  *     static readonly Config = Schema.object({ });
  * }
  */
-export function Metadata(metadata: ExtensionMetadata): ClassDecorator {
-    return <T extends new (...args: any[]) => any>(TargetClass: T) => {
+export function Metadata(metadata: PluginMetadata): ClassDecorator {
+    //@ts-ignore
+    return <T extends Constructor>(TargetClass: T) => {
         // Simply attach metadata to the class
         (TargetClass as any).metadata = metadata;
-        return TargetClass;
+        return TargetClass as unknown as T;
     };
 }
 
@@ -62,9 +65,9 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
     ) {
         if (!methodDescriptor.value) return;
 
-        target.tools ??= new Map<string, ToolDefinition>();
+        target.actions ??= new Map<string, ActionDefinition>();
 
-        const actionDefinition: ToolDefinition<any, TParams> = {
+        const actionDefinition: ActionDefinition<any, TParams> = {
             ...descriptor,
             name: descriptor.name || propertyKey,
             type: ToolType.Action,
@@ -72,7 +75,7 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
             extensionName: "", // Will be set during registration
         };
 
-        target.tools.set(actionDefinition.name, actionDefinition);
+        target.actions.set(actionDefinition.name, actionDefinition);
     };
 }
 

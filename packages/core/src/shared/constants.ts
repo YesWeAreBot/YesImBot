@@ -10,8 +10,7 @@ export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");
  */
 export enum TableName {
     Members = "worldstate.members",
-    Messages = "worldstate.messages",
-    SystemEvents = "worldstate.system_events",
+    Events = "yesimbot.events",
     L2Chunks = "worldstate.l2_chunks",
     L3Diaries = "worldstate.l3_diaries",
 
@@ -32,4 +31,5 @@ export enum Services {
     Telemetry = "yesimbot.telemetry",
     Tool = "yesimbot.tool",
     WorldState = "yesimbot.world-state",
+    Plugin = "yesimbot.plugin",
 }
