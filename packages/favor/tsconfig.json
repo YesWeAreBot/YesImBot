@@ -1,25 +1,19 @@
 {
   "extends": "../../tsconfig.base",
   "compilerOptions": {
-    "rootDir": "src",
     "outDir": "lib",
-    "target": "es2022",
+    "rootDir": "src",
+    "baseUrl": ".",
     "module": "esnext",
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "composite": true,
-    "incremental": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
     "moduleResolution": "bundler",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    "strictNullChecks": false,
+    "emitDeclarationOnly": true,
     "types": [
       "node",
       "yml-register/types"
     ]
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }

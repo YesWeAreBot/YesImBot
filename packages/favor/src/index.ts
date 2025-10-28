@@ -1,5 +1,6 @@
 import { Context, Schema, Session } from "koishi";
-import { Extension, Failed, WithSession, PromptService, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { PromptService } from "koishi-plugin-yesimbot/services";
+import { Action, Failed, Metadata, Plugin, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services/extension";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
 // --- 配置项接口定义 ---
@@ -25,13 +26,13 @@ export interface FavorTable {
  * 一个用于管理用户好感度的扩展。
  * 提供了增加、设置好感度的工具，并能将好感度数值和阶段作为信息片段注入到 AI 的提示词中。
  */
-@Extension({
+@Metadata({
     name: "favor",
     display: "好感度管理",
     version: "1.0.0",
     description: "管理用户的好感度，并提供相应的状态描述。可通过 `{{roleplay.favor}}` 和 `{{roleplay.state}}` 将信息注入提示词。",
 })
-export default class FavorExtension {
+export default class FavorExtension extends Plugin<FavorSystemConfig> {
     // --- 静态配置 ---
     static readonly Config: Schema<FavorSystemConfig> = Schema.object({
         initialFavor: Schema.number().default(20).description("新用户的初始好感度。"),
@@ -53,10 +54,8 @@ export default class FavorExtension {
 
     private logger: ReturnType<Context["logger"]>;
 
-    constructor(
-        public ctx: Context,
-        public config: FavorSystemConfig
-    ) {
+    constructor(ctx: Context,config: FavorSystemConfig) {
+        super(ctx, config);
         this.logger = ctx.logger("favor-extension");
 
         // 扩展数据库模型
@@ -104,17 +103,16 @@ export default class FavorExtension {
 
     // --- AI 可用工具 ---
 
-    @Tool({
+    @Action({
         name: "add_favor",
         description: "为指定用户增加或减少好感度",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要增加好感度的用户 ID"),
             amount: Schema.number().required().description("要增加的好感度数量。负数则为减少。"),
         }),
-        isSupported: (session) => session.isDirect,
     })
-    async addFavor({ user_id, amount }: WithSession<{ user_id: string; amount: number }>) {
-        if (!user_id) return Failed("必须提供 user_id。");
+    async addFavor(params: { user_id: string; amount: number }) {
+        const { user_id, amount } = params;
         try {
             await this.ctx.database.get("favor", { user_id }).then((res) => {
                 if (res.length > 0) {
@@ -140,10 +138,10 @@ export default class FavorExtension {
             user_id: Schema.string().required().description("要设置好感度的用户 ID"),
             amount: Schema.number().required().description("要设置的好感度目标值。"),
         }),
-        isSupported: (session) => session.isDirect,
     })
-    async setFavor({ user_id, amount }: WithSession<{ user_id: string; amount: number }>) {
-        if (!user_id) return Failed("必须提供 user_id。");
+    async setFavor(params: { user_id: string; amount: number }) {
+        const { user_id, amount } = params;
+
         try {
             const finalAmount = this._clampFavor(amount);
             await this.ctx.database.upsert("favor", [{ user_id, amount: finalAmount }]);

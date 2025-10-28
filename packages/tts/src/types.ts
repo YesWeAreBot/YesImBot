@@ -20,5 +20,4 @@ export interface BaseTTSConfig {}
  */
 export interface BaseTTSParams {
     text: string;
-    session?: Session;
 }

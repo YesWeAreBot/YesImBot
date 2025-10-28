@@ -1,6 +1,6 @@
 import { Context, Schema } from "koishi";
 import {} from "koishi-plugin-cron";
-import { Extension, Failed, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { Metadata, Failed, ModelDescriptor, PromptService, Success, Tool, Plugin } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { DailyPlannerService } from "./service";
 
@@ -12,14 +12,14 @@ export interface DailyPlannerConfig {
     coreMemoryWeight: number;
 }
 
-@Extension({
+@Metadata({
     name: "daily-planner",
     display: "日程规划",
     description: "基于AI记忆的每日日程规划与管理",
     author: "HydroGest",
     version: "1.0.0",
 })
-export default class DailyPlannerExtension {
+export default class DailyPlannerExtension extends Plugin<DailyPlannerConfig> {
     static readonly inject = [
         "cron",
         "database",
@@ -42,9 +42,10 @@ export default class DailyPlannerExtension {
     private service: DailyPlannerService;
 
     constructor(
-        public ctx: Context,
-        public config: DailyPlannerConfig
+         ctx: Context,
+         config: DailyPlannerConfig
     ) {
+        super(ctx, config);
         this.service = new DailyPlannerService(ctx, config);
 
         // 将 HH:mm 格式转换为 cron 表达式

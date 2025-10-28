@@ -78,8 +78,9 @@ export class DailyPlannerService {
         // 1. 获取核心记忆和近期事件
         const coreMemories = await this.getCoreMemories();
 
-        const recentEvents = await this.ctx[Services.WorldState].l2_manager.search("我");
-
+        // const recentEvents = await this.ctx[Services.WorldState].l2_manager.search("我");
+        const recentEvents = [];
+        
         // 2. 构建提示词
         const prompt = this.buildSchedulePrompt(
             coreMemories,

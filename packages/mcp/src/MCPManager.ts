@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Logger, Schema } from "koishi";
-import { Failed, WithSession, ToolCallResult, ToolService } from "koishi-plugin-yesimbot/services";
+import { Failed, Plugin, ToolService, ToolType } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 
@@ -19,12 +19,23 @@ export class MCPManager {
     private registeredTools: string[] = []; // 已注册工具
     private availableTools: string[] = []; // 所有可用工具
 
+    private plugin: Plugin;
+
     constructor(ctx: Context, logger: Logger, commandResolver: CommandResolver, toolService: ToolService, config: Config) {
         this.ctx = ctx;
         this.logger = logger;
         this.commandResolver = commandResolver;
         this.toolService = toolService;
         this.config = config;
+
+        this.plugin = new class extends Plugin{
+            static metadata = {
+                name: "MCP",
+                description: "MCP 连接管理器",
+            };
+        }(ctx, this.config);
+
+        toolService.register(this.plugin, true, this.config);
     }
 
     /**
@@ -140,12 +151,12 @@ export class MCPManager {
                     continue;
                 }
 
-                this.toolService.registerTool({
+                this.plugin.addTool({
                     name: tool.name,
                     description: tool.description,
-
+                    type: ToolType.Tool,
                     parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
-                    execute: async (args: WithSession<any>) => {
+                    execute: async (args: any) => {
                         const { session, ...cleanArgs } = args;
                         return await this.executeTool(client, tool.name, cleanArgs);
                     },
@@ -162,7 +173,7 @@ export class MCPManager {
     /**
      * 执行工具
      */
-    private async executeTool(client: Client, toolName: string, params: any): Promise<ToolCallResult> {
+    private async executeTool(client: Client, toolName: string, params: any): Promise<any> {
         let timer: NodeJS.Timeout | null = null;
         let timeoutTriggered = false;
 
@@ -171,10 +182,13 @@ export class MCPManager {
             timer = setTimeout(() => {
                 timeoutTriggered = true;
                 this.logger.error(`工具 ${toolName} 执行超时 (${this.config.timeout}ms)`);
+                return Failed("工具执行超时");
             }, this.config.timeout);
 
             this.logger.debug(`执行工具: ${toolName}`);
-            const result = await client.callTool({ name: toolName, arguments: params });
+
+            const parser = { parse: (data: any) => data };
+            const result = await client.callTool({ name: toolName, arguments: params }, parser as any, { timeout: this.config.timeout });
 
             if (timer) clearTimeout(timer);
 
@@ -203,6 +217,7 @@ export class MCPManager {
         } catch (error: any) {
             if (timer) clearTimeout(timer);
             this.logger.error(`工具执行异常: ${error.message}`);
+            this.logger.error(error);
             return Failed(error.message);
         }
     }
@@ -216,7 +231,7 @@ export class MCPManager {
         // 注销工具
         for (const toolName of this.registeredTools) {
             try {
-                this.toolService.unregisterTool(toolName);
+                // this.toolService.unregisterTool(toolName);
                 this.logger.debug(`注销工具: ${toolName}`);
             } catch (error: any) {
                 this.logger.warn(`注销工具失败: ${error.message}`);

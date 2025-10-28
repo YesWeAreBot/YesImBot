@@ -1,5 +1,5 @@
 import { Context, Schema, h } from "koishi";
-import { Failed, WithSession, Success, ToolDefinition } from "koishi-plugin-yesimbot/services";
+import { ActionDefinition, ContextCapability, Failed, InternalError, Success, ToolContext, ToolDefinition, ToolType } from "koishi-plugin-yesimbot/services";
 
 import { TTSAdapter } from "./adapters/base";
 import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";
@@ -82,21 +82,24 @@ export class TTSService {
         }
     }
 
-    public getTool(): ToolDefinition {
+    public getTool(): ActionDefinition {
         if (!this.adapter) {
             return null;
         }
 
         return {
             name: "send_voice",
+            type: ToolType.Action,
+            extensionName: "",
             description: this.adapter.getToolDescription(),
             parameters: this.adapter.getToolSchema(),
             execute: this.execute.bind(this),
         };
     }
 
-    private async execute(args: WithSession<BaseTTSParams>) {
-        const { session, text } = args;
+    private async execute(args: BaseTTSParams, context: ToolContext) {
+        const { text } = args;
+        const session = context.require(ContextCapability.Session);
 
         if (!text?.trim()) {
             return Failed("text is required");
@@ -112,7 +115,7 @@ export class TTSService {
         } catch (error: any) {
             this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${error.message}`);
             this.ctx.logger.error(error);
-            return Failed({ name: "Error", message: `语音合成失败: ${error.message}` });
+            return Failed(InternalError(error.message));
         }
     }
 }

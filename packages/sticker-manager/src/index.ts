@@ -1,12 +1,12 @@
 import { readFile } from "fs/promises";
-import { Context, Schema, Session, h } from "koishi";
-import { AssetService, Extension, Failed, WithSession, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { Context, Schema, h } from "koishi";
+import { AssetService, PromptService } from "koishi-plugin-yesimbot/services";
+import { Action, ContextCapability, Failed, Metadata, Success, ToolContext } from "koishi-plugin-yesimbot/services/extension";
 import { Services } from "koishi-plugin-yesimbot/shared";
-
 import { StickerConfig } from "./config";
 import { StickerService } from "./service";
 
-@Extension({
+@Metadata({
     name: "sticker-manager",
     display: "表情包管理",
     description: "用于偷取和发送表情包",
@@ -297,14 +297,17 @@ export default class StickerTools {
         });
     }
 
-    @Tool({
+    @Action({
         name: "steal_sticker",
         description: "收藏一个表情包。当用户发送表情包时，调用此工具将表情包保存到本地并分类。分类后你也可以使用这些表情包。",
         parameters: Schema.object({
             image_id: Schema.string().required().description("要偷取的表情图片ID"),
         }),
+        requiredContext: [ContextCapability.Session],
     })
-    async stealSticker({ image_id, session }: WithSession<{ image_id: string }> & { session: Session }) {
+    async stealSticker(params: { image_id: string }, context: ToolContext) {
+        const { image_id } = params;
+        const session = context.require(ContextCapability.Session);
         try {
             // 需要两份图片数据
             // 经过处理的，静态的图片供LLM分析
@@ -322,14 +325,17 @@ export default class StickerTools {
         }
     }
 
-    @Tool({
+    @Action({
         name: "send_sticker",
         description: "发送一个表情包，用于辅助表达情感，结合语境酌情使用。",
         parameters: Schema.object({
             category: Schema.string().required().description("表情包分类名称。当前可用分类: {{ sticker.categories }}"),
         }),
+        requiredContext: [ContextCapability.Session],
     })
-    async sendRandomSticker({ session, category }: WithSession<{ category: string }>) {
+    async sendRandomSticker(params: { category: string }, context: ToolContext) {
+        const { category } = params;
+        const session = context.require(ContextCapability.Session);
         try {
             const sticker = await this.stickerService.getRandomSticker(category);
 
