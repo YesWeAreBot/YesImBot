@@ -2,11 +2,12 @@ import { Context, h, Schema, Session } from "koishi";
 import { } from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
-import { requirePlatform, requireSession } from "@/services/extension/activators";
-import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Plugin } from "@/services/extension/plugin";
-import { Failed, Success } from "@/services/extension/result-builder";
-import { ContextCapability, ToolContext } from "@/services/extension/types";
+import { requirePlatform, requireSession } from "@/services/plugin/activators";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
+import { Plugin } from "@/services/plugin/plugin";
+import { Failed, Success } from "@/services/plugin/result-builder";
+import { ContextCapability, ToolContext } from "@/services/plugin/types";
+import { Services } from "@/shared";
 import { formatDate, isEmpty } from "@/shared/utils";
 
 interface InteractionsConfig { }
@@ -21,7 +22,8 @@ const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
     author: "HydroGest",
     builtin: true,
 })
-export default class InteractionsExtension extends Plugin<InteractionsConfig> {
+export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
+    static inject = [Services.Plugin]
     static readonly Config = InteractionsConfig;
 
     constructor(ctx: Context, config: InteractionsConfig) {

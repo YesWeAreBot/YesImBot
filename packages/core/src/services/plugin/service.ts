@@ -33,7 +33,7 @@ import QManagerExtension from "./builtin/qmanager";
 
 declare module "koishi" {
     interface Context {
-        [Services.Tool]: ToolService;
+        [Services.Plugin]: PluginService;
     }
 }
 
@@ -58,7 +58,7 @@ declare module "koishi" {
  * - This overrides the LLM's `request_heartbeat` decision
  * - Useful for actions that trigger follow-up processing
  */
-export class ToolService extends Service<Config> {
+export class PluginService extends Service<Config> {
     static readonly inject = [Services.Prompt];
     /**
      * Unified registry for both tools and actions.
@@ -72,7 +72,7 @@ export class ToolService extends Service<Config> {
     private contextAdapter: StimulusContextAdapter;
 
     constructor(ctx: Context, config: Config) {
-        super(ctx, Services.Tool, true);
+        super(ctx, Services.Plugin, true);
         this.config = config;
         this.promptService = ctx[Services.Prompt];
         this.contextAdapter = new StimulusContextAdapter(ctx);
@@ -89,7 +89,7 @@ export class ToolService extends Service<Config> {
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
             //@ts-ignore
-            loadedplugins.set(name, this.ctx.plugin(Ext, config));
+            loadedPlugins.set(name, this.ctx.plugin(Ext, config));
         }
         this.registerPromptTemplates();
         this.registerCommands();
@@ -519,6 +519,10 @@ export class ToolService extends Service<Config> {
         }
 
         return tool;
+    }
+
+    public getToolsMap() {
+        return this.tools
     }
 
     public async getAvailableTools(context: ToolContext): Promise<AnyToolDefinition[]> {

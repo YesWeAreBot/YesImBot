@@ -52,6 +52,11 @@
       "import": "./lib/services/index.mjs",
       "require": "./lib/services/index.js"
     },
+    "./services/extension": {
+      "types": "./lib/services/extension/index.d.ts",
+      "import": "./lib/services/extension/index.mjs",
+      "require": "./lib/services/extension/index.js"
+    },
     "./shared": {
       "types": "./lib/shared/index.d.ts",
       "import": "./lib/shared/index.mjs",

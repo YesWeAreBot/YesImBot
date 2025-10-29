@@ -1,5 +1,5 @@
-import { Context, Logger } from "koishi";
-import { ToolService, Plugin, Metadata } from "koishi-plugin-yesimbot/services";
+import { Context } from "koishi";
+import { Metadata, Plugin } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { Config, TTSService } from "./service";
 
@@ -10,8 +10,8 @@ import { Config, TTSService } from "./service";
     description: "Text-to-Speech plugin for YesImBot.",
 })
 export default class TTSPlugin extends Plugin<Config> {
+    static inject = [Services.Plugin];
     static readonly Config = Config;
-    private logger: Logger;
     constructor(ctx: Context, config: Config) {
         super(ctx, config);
         this.logger = ctx.logger("tts");

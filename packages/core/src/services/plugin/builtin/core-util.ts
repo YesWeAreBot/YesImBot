@@ -1,13 +1,13 @@
 import { Bot, Context, h, Schema, Session, sleep } from "koishi";
 
-import { Action, Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Plugin } from "@/services/extension/plugin";
-import { Failed, Success } from "@/services/extension/result-builder";
-import { ContextCapability, ToolContext } from "@/services/extension/types";
-import { formatDate, isEmpty } from "@/shared/utils";
-import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
-import { Services } from "@/shared/constants";
 import { AssetService } from "@/services";
+import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
+import { Plugin } from "@/services/plugin/plugin";
+import { Failed, Success } from "@/services/plugin/result-builder";
+import { ContextCapability, ToolContext } from "@/services/plugin/types";
+import { Services } from "@/shared/constants";
+import { isEmpty } from "@/shared/utils";
 
 
 interface CoreUtilConfig {
@@ -43,8 +43,8 @@ const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     version: "1.0.0",
     builtin: true,
 })
-export default class CoreUtilExtension extends Plugin<CoreUtilConfig> {
-    static readonly inject = [Services.Asset, Services.Model];
+export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
+    static readonly inject = [Services.Asset, Services.Model, Services.Plugin];
     static readonly Config = CoreUtilConfig;
 
     private readonly assetService: AssetService;

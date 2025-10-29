@@ -17,7 +17,7 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<Config> {
-    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Tool, Services.WorldState];
+    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Plugin, Services.WorldState];
 
     // 依赖的服务
     private readonly worldState: WorldStateService;

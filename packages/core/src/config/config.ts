@@ -2,7 +2,7 @@ import { Schema } from "koishi";
 
 import { AgentBehaviorConfig } from "@/agent";
 import { AssetServiceConfig } from "@/services/assets";
-import { ToolServiceConfig } from "@/services/extension";
+import { ToolServiceConfig } from "@/services/plugin";
 import { MemoryConfig } from "@/services/memory";
 import { ModelServiceConfig } from "@/services/model";
 import { PromptServiceConfig } from "@/services/prompt";

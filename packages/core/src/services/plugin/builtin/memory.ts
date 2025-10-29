@@ -1,10 +1,9 @@
 import { Context, Query, Schema } from "koishi";
 
-import { MemoryService } from "@/services";
-import { Metadata, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Plugin } from "@/services/extension/plugin";
-import { Failed, Success } from "@/services/extension/result-builder";
-import { ToolContext } from "@/services/extension/types";
+import { Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
+import { Plugin } from "@/services/plugin/plugin";
+import { Failed, Success } from "@/services/plugin/result-builder";
+import { ToolContext } from "@/services/plugin/types";
 import { MessageData } from "@/services/worldstate";
 import { Services, TableName } from "@/shared";
 import { formatDate, truncate } from "@/shared/utils";
@@ -19,12 +18,11 @@ interface MemoryConfig { }
     author: "MiaowFISH",
     builtin: true,
 })
-export default class MemoryExtension extends Plugin<MemoryConfig> {
+export default class MemoryPlugin extends Plugin<MemoryConfig> {
+    static readonly inject = [Services.Memory, Services.Plugin];
     static readonly Config: Schema<MemoryConfig> = Schema.object({
         // topics: Schema.array(Schema.string()).default().description("记忆的主要主题分类。"),
     });
-
-    static readonly inject = [Services.Memory];
 
     constructor(ctx: Context, config: MemoryConfig) {
         super(ctx, config);

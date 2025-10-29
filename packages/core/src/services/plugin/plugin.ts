@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Services } from "@/shared/constants";
-import { Context, Schema } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
 
 /**
@@ -11,9 +11,11 @@ import { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDe
  * Extends Koishi's plugin system with tool registration capabilities.
  */
 export abstract class Plugin<TConfig extends Record<string, any> = {}> {
-    static inject: string[] | { required: string[]; optional?: string[] } = [Services.Tool];
+    static inject: string[] | { required: string[]; optional?: string[] } = [Services.Plugin];
     static Config: Schema<any>;
     static metadata: PluginMetadata;
+    static staticTools: ToolDefinition[];
+    static staticActions: ActionDefinition[];
 
     /** Extension metadata */
     get metadata(): PluginMetadata {
@@ -25,10 +27,13 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
 
     protected actions = new Map<string, ActionDefinition<TConfig, any>>();
 
+    public logger: Logger;
+
     constructor(
         public ctx: Context,
         public config: TConfig
     ) {
+        this.logger = ctx.logger(`plugin:${this.metadata.name}`);
         // Merge parent inject dependencies
         const childClass = this.constructor as typeof Plugin;
         const parentClass = Object.getPrototypeOf(childClass);
@@ -48,8 +53,16 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
             }
         }
 
+        for (const tool of (childClass.prototype as any).staticTools || []) {
+            this.addTool(tool);
+        }
+
+        for (const action of (childClass.prototype as any).staticActions || []) {
+            this.addAction(action);
+        }
+
         // Auto-register tools on ready
-        const toolService = ctx[Services.Tool];
+        const toolService = ctx[Services.Plugin];
         if (toolService) {
             ctx.on("ready", () => {
                 const enabled = !Object.hasOwn(config, "enabled") || config.enabled;
@@ -63,15 +76,15 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
      * Supports both descriptor+execute and unified tool object.
      */
     addTool<TParams = any, TResult = any>(
-        descriptorOrTool: ToolDescriptor<TConfig, TParams> | { descriptor: ToolDescriptor<TConfig, TParams>; execute: Function },
+        descriptorOrTool: ToolDescriptor<TConfig, TParams>,
         execute?: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>
     ): this {
         let descriptor: ToolDescriptor<TConfig, TParams>;
         let executeFn: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>;
 
+        descriptor = descriptorOrTool;
         // Support both patterns: addTool(descriptor, execute) and addTool({ descriptor, execute })
-        if ("descriptor" in descriptorOrTool && "execute" in descriptorOrTool) {
-            descriptor = descriptorOrTool.descriptor;
+        if ("execute" in descriptorOrTool) {
             executeFn = descriptorOrTool.execute as any;
         } else {
             descriptor = descriptorOrTool;
@@ -85,23 +98,27 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
             execute: executeFn,
             extensionName: this.metadata.name,
         };
+        this.logger.debug(`  -> 注册工具: "${name}"`);
         this.tools.set(name, definition);
+        const pluginService = this.ctx[Services.Plugin];
+        if (pluginService) {
+            pluginService.getToolsMap().set(name, definition);
+        }
         return this;
     }
 
     addAction<TParams = any, TResult = any>(
-        descriptorOrTool: ActionDescriptor<TConfig, TParams> | { descriptor: ActionDescriptor<TConfig, TParams>; execute: Function },
+        descriptorOrTool: ActionDescriptor<TConfig, TParams>,
         execute?: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>
     ): this {
         let descriptor: ActionDescriptor<TConfig, TParams>;
         let executeFn: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>;
 
         // Support both patterns: addTool(descriptor, execute) and addTool({ descriptor, execute })
-        if ("descriptor" in descriptorOrTool && "execute" in descriptorOrTool) {
-            descriptor = descriptorOrTool.descriptor;
+        descriptor = descriptorOrTool;
+        if ("execute" in descriptorOrTool) {
             executeFn = descriptorOrTool.execute as any;
         } else {
-            descriptor = descriptorOrTool;
             executeFn = execute!;
         }
 
@@ -112,7 +129,12 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
             execute: executeFn,
             extensionName: this.metadata.name,
         };
+        this.logger.debug(`  -> 注册动作: "${name}"`);
         this.actions.set(name, definition);
+        const pluginService = this.ctx[Services.Plugin];
+        if (pluginService) {
+            pluginService.getToolsMap().set(name, definition);
+        }
         return this;
     }
 

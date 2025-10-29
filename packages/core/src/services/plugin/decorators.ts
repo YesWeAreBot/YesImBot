@@ -41,7 +41,7 @@ export function Tool<TParams>(descriptor: Omit<ToolDescriptor<any, TParams>, "ty
     ) {
         if (!methodDescriptor.value) return;
 
-        target.tools ??= new Map<string, ToolDefinition>();
+        target.staticTools ??= [];
 
         const toolDefinition: ToolDefinition<any, TParams> = {
             ...descriptor,
@@ -51,7 +51,7 @@ export function Tool<TParams>(descriptor: Omit<ToolDescriptor<any, TParams>, "ty
             extensionName: "", // Will be set during registration
         };
 
-        target.tools.set(toolDefinition.name, toolDefinition);
+        (target.staticTools as ToolDefinition[]).push(toolDefinition);
     };
 }
 
@@ -66,7 +66,7 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
     ) {
         if (!methodDescriptor.value) return;
 
-        target.actions ??= new Map<string, ActionDefinition>();
+        target.staticActions ??= [];
 
         const actionDefinition: ActionDefinition<any, TParams> = {
             ...descriptor,
@@ -76,7 +76,7 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
             extensionName: "", // Will be set during registration
         };
 
-        target.actions.set(actionDefinition.name, actionDefinition);
+        (target.staticActions as ActionDefinition[]).push(actionDefinition);
     };
 }
 

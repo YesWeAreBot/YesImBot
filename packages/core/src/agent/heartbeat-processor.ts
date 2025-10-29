@@ -4,10 +4,10 @@ import { Context, h, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "@/config";
-import { ActionDefinition, isAction, Properties, ToolContext, ToolSchema, ToolService } from "@/services/extension";
 import { MemoryService } from "@/services/memory";
 import { ChatModelSwitcher, IChatModel } from "@/services/model";
 import { ModelError } from "@/services/model/types";
+import { isAction, PluginService, Properties, ToolSchema } from "@/services/plugin";
 import { PromptService } from "@/services/prompt";
 import { AnyAgentStimulus, HistoryManager, WorldStateService } from "@/services/worldstate";
 import { Services } from "@/shared";
@@ -16,7 +16,7 @@ import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
 export class HeartbeatProcessor {
     private logger: Logger;
     private promptService: PromptService;
-    private toolService: ToolService;
+    private PluginService: PluginService;
     private history: HistoryManager;
     private worldState: WorldStateService;
     private memoryService: MemoryService;
@@ -28,7 +28,7 @@ export class HeartbeatProcessor {
         this.logger = ctx.logger("heartbeat");
         this.logger.level = config.logLevel;
         this.promptService = ctx[Services.Prompt];
-        this.toolService = ctx[Services.Tool];
+        this.PluginService = ctx[Services.Plugin];
         this.worldState = ctx[Services.WorldState];
         this.history = this.worldState.history;
         this.memoryService = ctx[Services.Memory];
@@ -66,9 +66,9 @@ export class HeartbeatProcessor {
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
 
         const worldState = await this.worldState.buildWorldState(stimulus);
-        const context = this.toolService.getContext(stimulus);
+        const context = this.PluginService.getContext(stimulus);
 
-        const toolSchemas = await this.toolService.getToolSchemas(context);
+        const toolSchemas = await this.PluginService.getToolSchemas(context);
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
@@ -279,7 +279,7 @@ export class HeartbeatProcessor {
             return { shouldContinue: false };
         }
 
-        const baseContext = this.toolService.getContext(stimulus, { metadata: { turnId } });
+        const baseContext = this.PluginService.getContext(stimulus, { metadata: { turnId } });
         let shouldContinue = false;
 
         for (let index = 0; index < actions.length; index++) {
@@ -287,7 +287,7 @@ export class HeartbeatProcessor {
             if (!action?.function) continue;
 
             // Create context with action-specific metadata
-            const actionContext = this.toolService.getContext(stimulus, {
+            const actionContext = this.PluginService.getContext(stimulus, {
                 metadata: {
                     turnId,
                     actionIndex: index,
@@ -295,10 +295,10 @@ export class HeartbeatProcessor {
                 },
             });
 
-            const result = await this.toolService.invoke(action.function, action.params ?? {}, actionContext);
+            const result = await this.PluginService.invoke(action.function, action.params ?? {}, actionContext);
 
             // Check if this action has continueHeartbeat property set
-            const toolDef = await this.toolService.getTool(action.function, baseContext);
+            const toolDef = await this.PluginService.getTool(action.function, baseContext);
             if (toolDef && isAction(toolDef) && toolDef.continueHeartbeat) {
                 this.logger.debug(`动作 "${action.function}" 请求继续心跳循环`);
                 shouldContinue = true;

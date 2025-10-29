@@ -1,9 +1,9 @@
 import { Context, Schema } from "koishi";
 
-import { Action, Metadata, withInnerThoughts } from "@/services/extension/decorators";
-import { Plugin } from "@/services/extension/plugin";
-import { Failed, Success } from "@/services/extension/result-builder";
-import { ContextCapability, ToolContext } from "@/services/extension/types";
+import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
+import { Plugin } from "@/services/plugin/plugin";
+import { Failed, Success } from "@/services/plugin/result-builder";
+import { ContextCapability, ToolContext } from "@/services/plugin/types";
 import { isEmpty } from "@/shared/utils";
 
 interface QManagerConfig {}
@@ -16,7 +16,7 @@ interface QManagerConfig {}
     author: "HydroGest",
     builtin: true,
 })
-export default class QManagerExtension extends Plugin<QManagerConfig> {
+export default class QManagerPlugin extends Plugin<QManagerConfig> {
     static readonly Config = Schema.object({});
 
     constructor(ctx: Context, config: QManagerConfig) {
