@@ -1,21 +1,23 @@
-import { PGliteDriver } from "@yesimbot/driver-pglite";
-import {
-    Create,
-    Database,
+import { Context, MaybeArray, Schema, Service } from "koishi";
+import { PGliteDriver } from "koishi-plugin-driver-pglite";
+import { Create, Database } from "koishi-plugin-driver-pglite/Database";
+import { EmbedModel, ModelDescriptor, Services } from "koishi-plugin-yesimbot";
+import type {
     Driver,
     Field,
     FlatKeys,
     FlatPick,
+    Indexable,
     Model,
     Tables as MTables,
     Types as MTypes,
     Query,
     Relation,
+    Row,
     Selection,
+    Update,
     Values,
-} from "@yesimbot/minato";
-import { Context, Schema, Service } from "koishi";
-import { EmbedModel, ModelDescriptor, Services } from "koishi-plugin-yesimbot";
+} from "minato";
 import path from "path";
 import enUS from "./locales/en-US.yml";
 import zhCN from "./locales/zh-CN.yml";
@@ -26,11 +28,9 @@ declare module "koishi" {
     }
 }
 
-export interface Types extends MTypes {
-    vector: number[];
-}
+export interface Types extends MTypes { }
 
-export interface Tables extends MTables {}
+export interface Tables extends MTables { }
 
 export interface Config {
     path: string;
@@ -44,6 +44,7 @@ export interface VectorStore {
     get: Database<Tables, Types>["get"];
     remove: Database<Tables, Types>["remove"];
     select: Database<Tables, Types>["select"];
+    upsert: Database<Tables, Types>["upsert"];
 }
 
 export default class VectorStoreService extends Service<Config> implements VectorStore {
@@ -121,5 +122,9 @@ export default class VectorStoreService extends Service<Config> implements Vecto
         include?: Relation.Include<Tables[K], Values<Tables>> | null
     ): Selection<Tables[K]> {
         return this.db.select(table, query, include);
+    }
+
+    upsert<K extends keyof Tables>(table: K, upsert: Row.Computed<Tables[K], Update<Tables[K]>[]>, keys?: MaybeArray<FlatKeys<Tables[K], Indexable>>): Promise<Driver.WriteResult>{
+        return this.db.upsert(table, upsert, keys);
     }
 }
