@@ -1,15 +1,15 @@
 import { Context, ForkScope, h, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
+import { CommandService } from "@/services/command";
 import { PromptService } from "@/services/prompt";
+import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
-import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "../worldstate/types";
 import { StimulusContextAdapter } from "./context";
 import { Plugin } from "./plugin";
 import { Failed } from "./result-builder";
-import { ActionDefinition, AnyToolDefinition, isAction, Properties, ToolContext, ToolDefinition, ToolResult, ToolSchema } from "./types";
-import { ContextCapabilityMap } from "./types/context";
+import { ActionDefinition, AnyToolDefinition, ContextCapabilityMap, isAction, Properties, ToolContext, ToolDefinition, ToolResult, ToolSchema } from "./types";
 
 // Helper function to extract metadata from Schema (moved from deleted helpers.ts)
 function extractMetaFromSchema(schema: Schema | undefined): Properties {
@@ -96,7 +96,8 @@ export class PluginService extends Service<Config> {
     }
 
     private registerCommands() {
-        const cmd = this.ctx.command("tool", "工具管理指令集", { authority: 3 });
+        const commandService = this.ctx.get(Services.Command) as CommandService;
+        const cmd = commandService.subcommand(".tool", "工具管理指令集", { authority: 3 });
 
         cmd.subcommand(".list", "列出所有可用工具")
             .option("filter", "-f <keyword:string> 按名称或描述过滤工具")

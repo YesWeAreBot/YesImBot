@@ -191,3 +191,65 @@ export function toKebabCase(str: string): string {
         .replace(/[_\s]+/g, "-") // 将下划线、空格替换为单个连字符
         .toLowerCase();
 }
+
+/**
+ * 解析键字符串，支持点分隔和方括号索引格式。
+ * 例如 "a.b[0].c" => ["a", "b", 0, "c"]
+ * @param keyString 原始键字符串
+ * @returns (string | number)[] 包含字符串键和数字索引的数组
+ */
+export function parseKeyChain(keyString: string): (string | number)[] {
+    const parts: (string | number)[] = [];
+    // 使用正则表达式匹配 "key" 或 "key[index]" 模式
+    // 分割字符串，允许点分隔或方括号分隔
+    // 考虑 "root.items[0].name" 这样的情况
+    // 简化处理：先按点分割，再处理方括号
+    keyString.split(".").forEach((segment) => {
+        const arrayMatch = segment.match(/^(.+)\[(\d+)\]$/);
+        if (arrayMatch) {
+            // 匹配到如 'items[0]'
+            parts.push(arrayMatch[1]); // 键名 'items'
+            parts.push(parseInt(arrayMatch[2], 10)); // 索引 0
+        } else {
+            // 匹配普通键如 'name'
+            parts.push(segment);
+        }
+    });
+    // 验证解析结果，防止空字符串或不符合规范的键
+    if (parts.some((p) => typeof p === "string" && p.trim() === "")) {
+        throw new Error("配置键包含无效的空片段");
+    }
+    if (parts.length === 0) {
+        throw new Error("无法解析配置键");
+    }
+    return parts;
+}
+
+/**
+ * 智能地尝试将字符串转换为最合适的原始类型或JSON对象/数组。
+ */
+export function tryParse(value: string): any {
+    // 1. 尝试解析为布尔值
+    const lowerValue = value.toLowerCase().trim();
+    if (lowerValue === "true") return true;
+    if (lowerValue === "false") return false;
+    // 2. 尝试解析为数字 (但排除仅包含空格或空字符串)
+    // 使用 parseFloat 确保能处理小数，同时 Number() 检查 NaN 来排除非数字字符串
+    if (!isNaN(Number(value)) && !isNaN(parseFloat(value))) {
+        return Number(value);
+    }
+    // 3. 尝试解析为JSON (对象或数组)
+    try {
+        const parsedJSON = JSON.parse(value);
+        // 确保解析出来的确实是对象或数组，而不是JSON字符串代表的原始值
+        // 例如 '123' 会被 JSON.parse 解析为数字 123，但我们已经在前面处理了数字
+        // 所以这里只关心真正的对象或数组
+        if ((typeof parsedJSON === "object" && parsedJSON !== null) || Array.isArray(parsedJSON)) {
+            return parsedJSON;
+        }
+    } catch (e) {
+        // 解析失败，不是有效的JSON
+    }
+    // 4. Fallback: 如果都不是，则认为是普通字符串
+    return value;
+}

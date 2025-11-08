@@ -38,4 +38,5 @@ export enum Services {
     Telemetry = "yesimbot.telemetry",
     WorldState = "yesimbot.world-state",
     Plugin = "yesimbot.plugin",
+    Command = "yesimbot.command",
 }

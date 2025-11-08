@@ -3,7 +3,16 @@ import { Context, ForkScope, Service, sleep } from "koishi";
 
 import { AgentCore } from "./agent";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
-import { AssetService, MemoryService, ModelService, PromptService, TelemetryService, PluginService, WorldStateService } from "./services";
+import {
+    AssetService,
+    CommandService,
+    MemoryService,
+    ModelService,
+    PluginService,
+    PromptService,
+    TelemetryService,
+    WorldStateService,
+} from "./services";
 import { Services } from "./shared";
 
 declare module "koishi" {
@@ -24,6 +33,8 @@ export default class YesImBot extends Service<Config> {
 官方交流群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)\n`;
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
+
+        const commandService = ctx.plugin(CommandService, config);
 
         const telemetryService = ctx.plugin(TelemetryService, config.telemetry);
 
@@ -85,6 +96,7 @@ export default class YesImBot extends Service<Config> {
             const services = [
                 agentCore,
                 assetService,
+                commandService,
                 memoryService,
                 modelService,
                 promptService,
