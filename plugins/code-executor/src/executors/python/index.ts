@@ -1,6 +1,6 @@
 import { Context, Logger, Schema } from "koishi";
 import { AssetService } from "koishi-plugin-yesimbot/services";
-import { Failed, InternalError, Success, ToolDefinition, ToolType, withInnerThoughts } from "koishi-plugin-yesimbot/services/extension";
+import { Failed, InternalError, Success, ToolDefinition, ToolType, withInnerThoughts } from "koishi-plugin-yesimbot/services/plugin";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { loadPyodide, PyodideAPI } from "pyodide";

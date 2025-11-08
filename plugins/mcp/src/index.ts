@@ -14,7 +14,7 @@ import { SystemUtils } from "./SystemUtils";
 export const name = "yesimbot-extension-mcp";
 
 export const inject = {
-    required: ["http", Services.Tool],
+    required: ["http", Services.Plugin],
 };
 
 export { Config } from "./Config";

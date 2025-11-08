@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { Context, Schema, h } from "koishi";
 import { AssetService, PromptService } from "koishi-plugin-yesimbot/services";
-import { Action, ContextCapability, Failed, Metadata, Success, ToolContext } from "koishi-plugin-yesimbot/services/extension";
+import { Action, ContextCapability, Failed, Metadata, Success, ToolContext } from "koishi-plugin-yesimbot/services/plugin";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { StickerConfig } from "./config";
 import { StickerService } from "./service";
@@ -14,7 +14,7 @@ import { StickerService } from "./service";
     version: "1.0.0",
 })
 export default class StickerTools {
-    static readonly inject = ["database", Services.Asset, Services.Model, Services.Prompt, Services.Tool];
+    static readonly inject = ["database", Services.Asset, Services.Model, Services.Prompt, Services.Plugin];
 
     static readonly Config: Schema<StickerConfig> = Schema.object({
         storagePath: Schema.path({ allowCreate: true, filters: ["directory"] })

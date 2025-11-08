@@ -25,7 +25,7 @@ export default class DailyPlannerExtension extends Plugin<DailyPlannerConfig> {
         "database",
         "yesimbot",
         Services.Prompt,
-        Services.Tool,
+        Services.Plugin,
         Services.Model,
         Services.Memory,
         Services.WorldState,

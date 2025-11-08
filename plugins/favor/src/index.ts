@@ -1,6 +1,6 @@
 import { Context, Schema, Session } from "koishi";
 import { PromptService } from "koishi-plugin-yesimbot/services";
-import { Action, Failed, Metadata, Plugin, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services/extension";
+import { Action, Failed, Metadata, Plugin, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services/plugin";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
 // --- 配置项接口定义 ---
@@ -51,8 +51,6 @@ export default class FavorExtension extends Plugin<FavorSystemConfig> {
 
     // --- 依赖注入 ---
     static readonly inject = ["database", Services.Prompt];
-
-    private logger: ReturnType<Context["logger"]>;
 
     constructor(ctx: Context,config: FavorSystemConfig) {
         super(ctx, config);

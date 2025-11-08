@@ -11,7 +11,7 @@ interface TimeSegment {
 }
 
 // 日程数据结构
-interface DailySchedule {
+export interface DailySchedule {
     date: string; // YYYY-MM-DD
     segments: TimeSegment[]; // 时间段数组
     memoryContext?: string[]; // 关联的记忆ID

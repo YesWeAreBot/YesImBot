@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Logger, Schema } from "koishi";
-import { Failed, Plugin, ToolService, ToolType } from "koishi-plugin-yesimbot/services";
+import { Failed, Plugin, PluginService, ToolType } from "koishi-plugin-yesimbot/services";
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 
@@ -12,7 +12,7 @@ export class MCPManager {
     private ctx: Context;
     private logger: Logger;
     private commandResolver: CommandResolver;
-    private toolService: ToolService;
+    private toolService: PluginService;
     private config: Config;
     private clients: Client[] = [];
     private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
@@ -21,19 +21,19 @@ export class MCPManager {
 
     private plugin: Plugin;
 
-    constructor(ctx: Context, logger: Logger, commandResolver: CommandResolver, toolService: ToolService, config: Config) {
+    constructor(ctx: Context, logger: Logger, commandResolver: CommandResolver, toolService: PluginService, config: Config) {
         this.ctx = ctx;
         this.logger = logger;
         this.commandResolver = commandResolver;
         this.toolService = toolService;
         this.config = config;
 
-        this.plugin = new class extends Plugin{
+        this.plugin = new (class extends Plugin {
             static metadata = {
                 name: "MCP",
                 description: "MCP 连接管理器",
             };
-        }(ctx, this.config);
+        })(ctx, this.config);
 
         toolService.register(this.plugin, true, this.config);
     }
@@ -151,16 +151,18 @@ export class MCPManager {
                     continue;
                 }
 
-                this.plugin.addTool({
-                    name: tool.name,
-                    description: tool.description,
-                    type: ToolType.Tool,
-                    parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
-                    execute: async (args: any) => {
+                this.plugin.addTool(
+                    {
+                        name: tool.name,
+                        description: tool.description,
+                        type: ToolType.Tool,
+                        parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
+                    },
+                    async (args: any) => {
                         const { session, ...cleanArgs } = args;
                         return await this.executeTool(client, tool.name, cleanArgs);
-                    },
-                });
+                    }
+                );
 
                 this.registeredTools.push(tool.name);
                 this.logger.success(`已注册工具: ${tool.name} (来自 ${serverName})`);
