@@ -1,6 +1,6 @@
-import { Context, MaybeArray, Schema, Service } from "koishi";
-import { PGliteDriver } from "koishi-plugin-driver-pglite";
-import { Create, Database } from "koishi-plugin-driver-pglite/Database";
+import { PGliteDriver } from "@yesimbot/vector-driver-pglite";
+import { Create, Database } from "@yesimbot/vector-driver-pglite/Database";
+import { Context, MaybeArray, Random, Schema, Service } from "koishi";
 import { EmbedModel, ModelDescriptor, Services } from "koishi-plugin-yesimbot";
 import type {
     Driver,
@@ -28,9 +28,18 @@ declare module "koishi" {
     }
 }
 
-export interface Types extends MTypes { }
+export interface Types extends MTypes {
+    vector: number[];
+}
 
-export interface Tables extends MTables { }
+export interface Tables extends MTables {
+    documents: {
+        id: string;
+        content: string;
+        metadata: object | null;
+        vector: Types["vector"];
+    };
+}
 
 export interface Config {
     path: string;
@@ -79,11 +88,45 @@ export default class VectorStoreService extends Service<Config> implements Vecto
             if (this.config.embeddingModel) {
                 this.embedModel = this.ctx[Services.Model].getEmbedModel(this.config.embeddingModel) as EmbedModel;
             }
+
+            if (this.driver) {
+                this.logger.info(`Using PGlite at ${this.driver.config.dataDir}`);
+            } else {
+                throw new Error("PGlite driver is not available.");
+            }
+
+            this.extend("documents", {
+                id: "string",
+                content: "string",
+                metadata: "json",
+                vector: {
+                    type: "vector",
+                    length: this.config.dimension,
+                },
+            });
+
+            this.create("documents", {
+                id: Random.id(),
+                content: "This is a sample document.",
+                metadata: { source: "system" },
+                vector: new Array(this.config.dimension).fill(0),
+            });
+
+            const queryVector = new Array(this.config.dimension).fill(0.1);
+            const l2SQL = `
+        SELECT id, content, metadata,
+               vector <-> '[${queryVector.join(",")}]'::vector as distance
+        FROM documents
+        ORDER BY distance
+        LIMIT 2
+      `;
+            const results = await this.query<{ id: string; content: string; metadata: object; distance: number }[]>(l2SQL);
+            this.logger.info("Sample query results:", results);
+
+            this.logger.info("Vector store is ready.");
         } catch (error: any) {
             this.logger.warn(error.message);
         }
-
-        this.logger.info("Vector store is ready.");
     }
 
     query<T extends any[] = any[]>(sql: string): Promise<T> {
@@ -124,7 +167,11 @@ export default class VectorStoreService extends Service<Config> implements Vecto
         return this.db.select(table, query, include);
     }
 
-    upsert<K extends keyof Tables>(table: K, upsert: Row.Computed<Tables[K], Update<Tables[K]>[]>, keys?: MaybeArray<FlatKeys<Tables[K], Indexable>>): Promise<Driver.WriteResult>{
+    upsert<K extends keyof Tables>(
+        table: K,
+        upsert: Row.Computed<Tables[K], Update<Tables[K]>[]>,
+        keys?: MaybeArray<FlatKeys<Tables[K], Indexable>>
+    ): Promise<Driver.WriteResult> {
         return this.db.upsert(table, upsert, keys);
     }
 }
