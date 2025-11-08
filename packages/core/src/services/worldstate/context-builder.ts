@@ -1,6 +1,5 @@
 import { Bot, Context, Session } from "koishi";
 
-import { TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { HistoryManager } from "./history-manager";
 import {
@@ -9,14 +8,12 @@ import {
     ChannelBoundStimulus,
     ChannelEventStimulus,
     ChannelWorldState,
-    ContextualMessage,
     GlobalEventStimulus,
     GlobalStimulus,
     GlobalWorldState,
-    L1HistoryItem,
     SelfInitiatedStimulus,
     StimulusSource,
-    UserMessageStimulus,
+    UserMessageStimulus
 } from "./types";
 
 export class ContextBuilder {

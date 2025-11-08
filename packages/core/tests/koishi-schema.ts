@@ -93,3 +93,14 @@ console.log(TestSchema.toString());
 console.log("\n优化后提取的元信息:");
 const properties = extractMetaFromSchema(TestSchema);
 console.log(JSON.stringify(properties, null, 2));
+
+const Config = Schema.object({
+    foo: Schema.string().default("bar").description("示例配置项"),
+    bar: Schema.number().min(0).max(100).default(50).description("另一个示例配置项"),
+});
+
+export type Config = Schemastery.TypeT<typeof Config>;
+// type Config = {
+//     foo: string;
+//     bar: number;
+// } & Dict

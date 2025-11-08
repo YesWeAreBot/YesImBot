@@ -1,6 +1,13 @@
 import path from "path";
 
-export const BASE_DIR = path.resolve(__dirname, "../../");
+function getBaseDir(): string {
+    if (__dirname.includes("node_modules") || __dirname.endsWith(path.join("core", "lib"))) {
+        return path.resolve(__dirname, "../");
+    }
+    return path.resolve(__dirname, "../../");
+}
+
+export const BASE_DIR = getBaseDir();
 export const RESOURCES_DIR = path.resolve(BASE_DIR, "resources");
 export const PROMPTS_DIR = path.resolve(RESOURCES_DIR, "prompts");
 export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");

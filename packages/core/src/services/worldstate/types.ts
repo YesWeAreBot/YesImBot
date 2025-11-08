@@ -1,4 +1,3 @@
-import { TableName } from "@/shared/constants";
 import { Element, Session } from "koishi";
 
 export interface MemberData {

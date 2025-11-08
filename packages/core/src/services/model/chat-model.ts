@@ -3,8 +3,8 @@ import type { GenerateTextResult } from "@xsai/generate-text";
 import type { WithUnknown } from "@xsai/shared";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
 import { Logger } from "koishi";
+import { generateText, streamText } from "xsai";
 
-import { generateText, streamText } from "@/dependencies/xsai";
 import { isEmpty, isNotEmpty, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ChatModelConfig } from "./config";

@@ -1,7 +1,6 @@
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Message } from "@xsai/shared-chat";
-import { Context, h, Logger } from "koishi";
-import { v4 as uuidv4 } from "uuid";
+import { Context, h, Logger, Random } from "koishi";
 
 import { Config } from "@/config";
 import { MemoryService } from "@/services/memory";
@@ -35,7 +34,7 @@ export class HeartbeatProcessor {
     }
 
     public async runCycle(stimulus: AnyAgentStimulus): Promise<boolean> {
-        const turnId = uuidv4();
+        const turnId = Random.id();
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;

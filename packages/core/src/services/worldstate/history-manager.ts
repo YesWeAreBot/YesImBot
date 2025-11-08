@@ -1,6 +1,4 @@
-import fs from "fs/promises";
 import { $, Context, h, Query } from "koishi";
-import path from "path";
 
 import { TableName } from "@/shared/constants";
 import { ChannelEventPayloadData, ContextualChannelEvent, ContextualMessage, EventData, L1HistoryItem, MessagePayload } from "./types";

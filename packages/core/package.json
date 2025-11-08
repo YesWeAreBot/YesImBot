@@ -20,7 +20,7 @@
     "node": ">=18.17.0"
   },
   "scripts": {
-    "build": "tsc && tsc-alias && node scripts/bundle.mjs",
+    "build": "tsc -b && node scripts/bundle-core.mjs",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "lint": "eslint . --ext .ts",
     "pack": "bun pm pack"
@@ -52,10 +52,10 @@
       "import": "./lib/services/index.mjs",
       "require": "./lib/services/index.js"
     },
-    "./services/extension": {
-      "types": "./lib/services/extension/index.d.ts",
-      "import": "./lib/services/extension/index.mjs",
-      "require": "./lib/services/extension/index.js"
+    "./services/plugin": {
+      "types": "./lib/services/plugin/index.d.ts",
+      "import": "./lib/services/plugin/index.mjs",
+      "require": "./lib/services/plugin/index.js"
     },
     "./shared": {
       "types": "./lib/shared/index.d.ts",
@@ -70,21 +70,13 @@
     "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
     "mustache": "^4.2.0",
-    "semver": "^7.7.2",
-    "uuid": "^11.1.0"
+    "semver": "^7.7.2"
   },
   "devDependencies": {
     "@types/semver": "^7.7.0",
-    "@xsai-ext/providers-cloud": "^0.4.0-beta.5",
-    "@xsai-ext/providers-local": "^0.4.0-beta.5",
-    "@xsai-ext/shared-providers": "^0.4.0-beta.5",
-    "@xsai/embed": "^0.4.0-beta.5",
-    "@xsai/generate-text": "^0.4.0-beta.5",
-    "@xsai/shared": "^0.4.0-beta.5",
-    "@xsai/shared-chat": "^0.4.0-beta.5",
-    "@xsai/stream-text": "^0.4.0-beta.5",
-    "@xsai/utils-chat": "^0.4.0-beta.5",
-    "koishi": "^4.18.7"
+    "@xsai-ext/providers": "^0.4.0-beta.8",
+    "koishi": "^4.18.7",
+    "xsai": "^0.4.0-beta.8"
   },
   "peerDependencies": {
     "koishi": "^4.18.7"

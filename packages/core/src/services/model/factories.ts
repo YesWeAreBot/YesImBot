@@ -6,28 +6,26 @@ import type {
     SpeechProvider,
     TranscriptionProvider,
 } from "@xsai-ext/shared-providers";
-
 import {
     createAnthropic,
     createDeepSeek,
     createFireworks,
     createGoogleGenerativeAI,
-    createLMStudio,
-    createOllama,
+    createLmstudio,
     createOpenAI,
-    createQwen,
+    createAlibaba,
     createSiliconFlow,
     createWorkersAI,
-    createZhipu,
+    createZhipuai,
     createAzure,
     createCerebras,
-    createDeepInfra,
+    createDeepinfra,
     createFatherless,
     createGroq,
     createMinimax,
     createMinimaxi,
     createMistral,
-    createMoonshot,
+    createMoonshotai,
     createNovita,
     createOpenRouter,
     createPerplexity,
@@ -35,7 +33,8 @@ import {
     createTencentHunyuan,
     createTogetherAI,
     createXAI,
-} from "@/dependencies/xsai";
+} from "@xsai-ext/providers/create";
+
 import type { ProviderConfig, ProviderType } from "./config";
 
 // --- 接口定义 ---
@@ -72,7 +71,8 @@ class OpenAIFactory implements IProviderFactory {
 class OllamaFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { baseURL } = config;
-        const client = createOllama(baseURL);
+        // FIXME
+        const client = createOpenAI(baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
 }
@@ -121,7 +121,7 @@ class FireworksFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
         const client = createFireworks(apiKey, baseURL);
-        return { chat: client.chat, embed: client.embed, model: client.model };
+        return { chat: client.chat, model: client.model };
     }
 }
 
@@ -144,16 +144,16 @@ class GoogleGenerativeAIFactory implements IProviderFactory {
 class LMStudioFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { baseURL } = config;
-        const client = createLMStudio(baseURL);
-        return { chat: client.chat, embed: client.embed, model: client.model };
+        const client = createLmstudio(baseURL);
+        return { chat: client.chat, model: client.model };
     }
 }
 
 class ZhipuFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
-        const client = createZhipu(apiKey, baseURL);
-        return { chat: client.chat, embed: client.embed, model: client.model };
+        const client = createZhipuai(apiKey, baseURL);
+        return { chat: client.chat, model: client.model };
     }
 }
 
@@ -174,8 +174,8 @@ class SiliconFlowFactory implements IProviderFactory {
 class QwenFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
-        const client = createQwen(apiKey, baseURL);
-        return { chat: client.chat, embed: client.embed, model: client.model };
+        const client = createAlibaba(apiKey, baseURL);
+        return { chat: client.chat, model: client.model };
     }
 }
 
@@ -205,7 +205,7 @@ class CerebrasFactory implements IProviderFactory {
 class DeepInfraFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
-        const client = createDeepInfra(apiKey, baseURL);
+        const client = createDeepinfra(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
 }
@@ -222,7 +222,7 @@ class GroqFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
         const client = createGroq(apiKey, baseURL);
-        return { chat: client.chat, transcript: client.transcription, model: client.model };
+        return { chat: client.chat, model: client.model };
     }
 }
 
@@ -253,7 +253,7 @@ class MistralFactory implements IProviderFactory {
 class MoonshotFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
         const { apiKey, baseURL } = config;
-        const client = createMoonshot(apiKey, baseURL);
+        const client = createMoonshotai(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
 }

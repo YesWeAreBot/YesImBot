@@ -2,8 +2,8 @@ import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
 import type { WithUnknown } from "@xsai/shared";
 import { Logger } from "koishi";
+import { embed, embedMany } from "xsai";
 
-import { embed, embedMany } from "@/dependencies/xsai";
 import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 
