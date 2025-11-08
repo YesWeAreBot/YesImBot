@@ -49,12 +49,13 @@
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-driver-pglite": "^0.0.1",
-    "koishi-plugin-yesimbot": "^3.0.0"
+    "koishi-plugin-yesimbot": "^3.0.3"
   },
   "devDependencies": {
     "koishi": "^4.18.7",
-    "koishi-plugin-driver-pglite": "^0.0.1",
-    "koishi-plugin-yesimbot": "^3.0.0"
+    "koishi-plugin-yesimbot": "^3.0.3"
+  },
+  "optionalDependencies": {
+    "@yesimbot/vector-driver-pglite": "^0.0.1"
   }
 }

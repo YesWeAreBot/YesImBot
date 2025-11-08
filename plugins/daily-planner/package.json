@@ -9,7 +9,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -b && dumble",
+    "build": "tsc -b && pkgroll --clean-dist --srcdist src:lib --sourcemap",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "lint": "eslint . --ext .ts",
     "pack": "bun pm pack"
