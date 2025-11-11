@@ -1,7 +1,3 @@
-// ============================================================================
-// PLUGIN BASE CLASS
-// ============================================================================
-
 import { Services } from "@/shared/constants";
 import { Context, Logger, Schema } from "koishi";
 import { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDefinition, ToolDescriptor, ToolResult } from "./types";

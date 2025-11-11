@@ -1,7 +1,3 @@
-// ============================================================================
-// DECORATORS AND FACTORY FUNCTIONS
-// ============================================================================
-
 import { Schema } from "koishi";
 import { ToolDescriptor, ActionDescriptor, ToolDefinition, ToolType, ToolContext, ToolResult, PluginMetadata, ActionDefinition } from "./types";
 

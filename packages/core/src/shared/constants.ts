@@ -1,4 +1,4 @@
-import path from "path";
+import path from "node:path";
 
 function getBaseDir(): string {
     if (__dirname.includes("node_modules") || __dirname.endsWith(path.join("core", "lib"))) {

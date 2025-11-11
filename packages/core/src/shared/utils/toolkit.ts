@@ -1,4 +1,5 @@
-import fs from "fs/promises";
+import type { Buffer } from "node:buffer";
+import fs from "node:fs/promises";
 
 import { isEmpty } from "./string";
 
@@ -19,7 +20,7 @@ function escapeRegExp(str: string): string {
  * @returns 如果包含任意一个过滤词，则返回 true，否则返回 false。
  */
 export function containsFilter(content: string, filterList: string[]): boolean {
-    const validFilters = filterList.filter((f) => !isEmpty(f));
+    const validFilters = filterList.filter(f => !isEmpty(f));
     if (validFilters.length === 0) {
         return false;
     }
@@ -60,7 +61,7 @@ export function formatDate(date: Date | number, format: string = "YYYY-MM-DD HH:
 
     // 使用回调函数进行一次性替换，避免顺序问题
     const regex = /YYYY|YY|MM|M|DD|D|HH|H|mm|m|ss|s/g;
-    return format.replace(regex, (match) => replacements[match] || match);
+    return format.replace(regex, match => replacements[match] || match);
 }
 
 /**
@@ -91,7 +92,8 @@ export async function downloadFile(url: string, filePath: string, overwrite: boo
         if (!overwrite) {
             throw new Error(`File already exists at ${filePath} and overwrite is false.`);
         }
-    } catch (error: any) {
+    }
+    catch (error: any) {
         // 如果错误不是 "文件不存在"，则重新抛出
         if (error.code !== "ENOENT") {
             throw error;
@@ -111,7 +113,6 @@ export async function downloadFile(url: string, filePath: string, overwrite: boo
     // 使用流式写入，对大文件内存友好
     // Node.js v16.15.0+ 的 fs.writeFile可以直接处理Web Stream
     // 对于旧版本，需要手动pipe
-    // @ts-ignore - response.body is a ReadableStream<Uint8Array> which is compatible
     await fs.writeFile(filePath, response.body);
 }
 
@@ -131,12 +132,16 @@ export function toBoolean(value: any): boolean {
     }
     if (typeof value === "string") {
         const lowerValue = value.toLowerCase().trim();
-        if (lowerValue === "true" || lowerValue === "1") return true;
-        if (lowerValue === "false" || lowerValue === "0") return false;
+        if (lowerValue === "true" || lowerValue === "1")
+            return true;
+        if (lowerValue === "false" || lowerValue === "0")
+            return false;
     }
     if (typeof value === "number") {
-        if (value === 1) return true;
-        if (value === 0) return false;
+        if (value === 1)
+            return true;
+        if (value === 0)
+            return false;
     }
     return Boolean(value);
 }
@@ -157,7 +162,7 @@ export function estimateTokensByRegex(text: string): number {
     // | [a-zA-Z]+          - 匹配一个或多个连续的英文字母（一个单词）
     // | \d+                - 匹配一个或多个连续的数字
     // | [^\s\da-zA-Z\u4e00-\u9fa5] - 匹配任何非空白、非数字、非英文、非中文的单个字符（主要是标点符号）
-    const regex = /[\u4e00-\u9fa5]|[a-zA-Z]+|\d+|[^\s\da-zA-Z\u4e00-\u9fa5]/g;
+    const regex = /[\u4E00-\u9FA5]|[a-z]+|\d+|[^\s\da-z\u4E00-\u9FA5]/gi;
 
     let count = 0;
     // 使用 exec 循环代替 match，避免为长文本创建巨大的匹配数组，从而节省内存
@@ -174,7 +179,7 @@ export function estimateTokensByRegex(text: string): number {
  * @returns 一个在指定时间后 resolve 的 Promise。
  */
 export function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -197,6 +202,7 @@ export function clamp(num: number, min: number, max: number): number {
 export function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
     let timeout: NodeJS.Timeout | null;
     return function (this: ThisParameterType<T>, ...args: Parameters<T>): void {
+        // eslint-disable-next-line ts/no-this-alias
         const context = this;
         if (timeout) {
             clearTimeout(timeout);
@@ -231,89 +237,89 @@ const knownMimeTypes: MimeTypeSignature[] = [
     // 图片类型
     {
         mime: "image/jpeg",
-        validate: (buf) => check(buf, [0xff, 0xd8, 0xff]),
+        validate: buf => check(buf, [0xFF, 0xD8, 0xFF]),
     },
     {
         mime: "image/png",
-        validate: (buf) => check(buf, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        validate: buf => check(buf, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
     },
     {
         mime: "image/gif",
         // GIF87a 和 GIF89a
-        validate: (buf) => check(buf, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || check(buf, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
+        validate: buf => check(buf, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || check(buf, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
     },
     {
         mime: "image/webp",
         // 检查 RIFF 头部和 WEBP 标识
-        validate: (buf) => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x57, 0x45, 0x42, 0x50], 8),
+        validate: buf => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x57, 0x45, 0x42, 0x50], 8),
     },
     {
         mime: "image/bmp",
-        validate: (buf) => check(buf, [0x42, 0x4d]),
+        validate: buf => check(buf, [0x42, 0x4D]),
     },
     {
         mime: "image/tiff",
         // 两种字节序
-        validate: (buf) => check(buf, [0x49, 0x49, 0x2a, 0x00]) || check(buf, [0x4d, 0x4d, 0x00, 0x2a]),
+        validate: buf => check(buf, [0x49, 0x49, 0x2A, 0x00]) || check(buf, [0x4D, 0x4D, 0x00, 0x2A]),
     },
     {
         mime: "image/avif",
-        validate: (buf) => check(buf, [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], 4),
+        validate: buf => check(buf, [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], 4),
     },
 
     // 文档类型
     {
         mime: "application/pdf",
-        validate: (buf) => check(buf, [0x25, 0x50, 0x44, 0x46]),
+        validate: buf => check(buf, [0x25, 0x50, 0x44, 0x46]),
     },
 
     // 压缩包/复合文档类型
     {
         mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) && check(buf, [0x77, 0x6f, 0x72, 0x64, 0x2f]), // PK.. 和 'word/'
+        validate: buf => check(buf, [0x50, 0x4B, 0x03, 0x04]) && check(buf, [0x77, 0x6F, 0x72, 0x64, 0x2F]), // PK.. 和 'word/'
     },
     {
         mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) && check(buf, [0x78, 0x6c, 0x2f]), // PK.. 和 'xl/'
+        validate: buf => check(buf, [0x50, 0x4B, 0x03, 0x04]) && check(buf, [0x78, 0x6C, 0x2F]), // PK.. 和 'xl/'
     },
     {
         mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
-        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) && check(buf, [0x70, 0x70, 0x74, 0x2f]), // PK.. 和 'ppt/'
+        validate: buf => check(buf, [0x50, 0x4B, 0x03, 0x04]) && check(buf, [0x70, 0x70, 0x74, 0x2F]), // PK.. 和 'ppt/'
     },
     {
         mime: "application/zip",
-        validate: (buf) =>
-            check(buf, [0x50, 0x4b, 0x03, 0x04]) || check(buf, [0x50, 0x4b, 0x05, 0x06]) || check(buf, [0x50, 0x4b, 0x07, 0x08]),
+        validate: buf =>
+            check(buf, [0x50, 0x4B, 0x03, 0x04]) || check(buf, [0x50, 0x4B, 0x05, 0x06]) || check(buf, [0x50, 0x4B, 0x07, 0x08]),
     },
     {
         mime: "application/x-rar-compressed",
-        validate: (buf) => check(buf, [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07]),
+        validate: buf => check(buf, [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07]),
     },
     {
         mime: "application/x-7z-compressed",
-        validate: (buf) => check(buf, [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]),
+        validate: buf => check(buf, [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]),
     },
 
     // 音视频类型
     {
         mime: "video/mp4",
-        validate: (buf) => check(buf, [0x66, 0x74, 0x79, 0x70], 4), // 'ftyp' at offset 4
+        validate: buf => check(buf, [0x66, 0x74, 0x79, 0x70], 4), // 'ftyp' at offset 4
     },
     {
         mime: "video/x-msvideo", // avi
-        validate: (buf) => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x41, 0x56, 0x49, 0x20], 8), // RIFF and AVI
+        validate: buf => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x41, 0x56, 0x49, 0x20], 8), // RIFF and AVI
     },
     {
         mime: "video/quicktime", // .mov
-        validate: (buf) => check(buf, [0x66, 0x74, 0x79, 0x70, 0x71, 0x74, 0x20, 0x20], 4), // 'ftypqt'
+        validate: buf => check(buf, [0x66, 0x74, 0x79, 0x70, 0x71, 0x74, 0x20, 0x20], 4), // 'ftypqt'
     },
     {
         mime: "audio/mpeg", // mp3
-        validate: (buf) => check(buf, [0x49, 0x44, 0x33]) || check(buf, [0xff, 0xfb]), // ID3 tag or frame sync
+        validate: buf => check(buf, [0x49, 0x44, 0x33]) || check(buf, [0xFF, 0xFB]), // ID3 tag or frame sync
     },
     {
         mime: "audio/wav",
-        validate: (buf) => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x57, 0x41, 0x56, 0x45], 8), // RIFF and WAVE
+        validate: buf => check(buf, [0x52, 0x49, 0x46, 0x46]) && check(buf, [0x57, 0x41, 0x56, 0x45], 8), // RIFF and WAVE
     },
 ];
 

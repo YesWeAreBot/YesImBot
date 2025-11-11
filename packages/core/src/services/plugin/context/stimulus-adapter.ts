@@ -1,10 +1,7 @@
-// ============================================================================
-// STIMULUS CONTEXT ADAPTER
-// ============================================================================
-
 import { Context } from "koishi";
+
 import { AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
-import { ToolContext, ContextCapability, ContextCapabilityMap } from "../types";
+import { ContextCapability, ContextCapabilityMap, ToolContext } from "../types";
 import { ToolContextProvider } from "./provider";
 
 /**

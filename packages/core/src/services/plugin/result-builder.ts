@@ -1,7 +1,3 @@
-// ============================================================================
-// TOOL RESULT BUILDERS
-// ============================================================================
-
 import { ToolResult, ToolStatus, ToolError, NextStep, ToolErrorType } from "./types";
 
 /**

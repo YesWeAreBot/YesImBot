@@ -1,7 +1,3 @@
-// ============================================================================
-// TOOL CONTEXT PROVIDER
-// ============================================================================
-
 import { ToolContext, ContextCapability, ContextCapabilityMap } from "../types";
 
 /**

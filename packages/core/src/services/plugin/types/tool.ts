@@ -1,7 +1,3 @@
-// ============================================================================
-// TOOL DEFINITION TYPES
-// ============================================================================
-
 import { Schema } from "koishi";
 import { ToolContext, ContextCapability } from "./context";
 import { ToolResult } from "./result";

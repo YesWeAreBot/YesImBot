@@ -9,9 +9,18 @@ import { isEmpty, stringify, truncate } from "@/shared/utils";
 import { StimulusContextAdapter } from "./context";
 import { Plugin } from "./plugin";
 import { Failed } from "./result-builder";
-import { ActionDefinition, AnyToolDefinition, ContextCapabilityMap, isAction, Properties, ToolContext, ToolDefinition, ToolResult, ToolSchema } from "./types";
+import {
+    ActionDefinition,
+    AnyToolDefinition,
+    ContextCapabilityMap,
+    isAction,
+    Properties,
+    ToolContext,
+    ToolDefinition,
+    ToolResult,
+    ToolSchema,
+} from "./types";
 
-// Helper function to extract metadata from Schema (moved from deleted helpers.ts)
 function extractMetaFromSchema(schema: Schema | undefined): Properties {
     if (!schema) return {};
     const meta = schema?.meta as any;
@@ -523,7 +532,7 @@ export class PluginService extends Service<Config> {
     }
 
     public getToolsMap() {
-        return this.tools
+        return this.tools;
     }
 
     public async getAvailableTools(context: ToolContext): Promise<AnyToolDefinition[]> {

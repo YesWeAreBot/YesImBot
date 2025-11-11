@@ -1,5 +1,5 @@
+import type { Logger } from "koishi";
 import { jsonrepair, JSONRepairError } from "jsonrepair";
-import { Logger } from "koishi";
 
 export interface ParserOptions {
     debug?: boolean;
@@ -13,9 +13,10 @@ export interface ParseResult<T> {
 }
 
 const defaultLogger: Logger = {
-    info: (message) => console.log(`[INFO] ${message}`),
-    warn: (message) => console.warn(`[WARN] ${message}`),
-    error: (message) => console.error(`[ERROR] ${message}`),
+    // eslint-disable-next-line no-console
+    info: message => console.log(`[INFO] ${message}`),
+    warn: message => console.warn(`[WARN] ${message}`),
+    error: message => console.error(`[ERROR] ${message}`),
 } as Logger;
 
 export class JsonParser<T> {
@@ -60,8 +61,8 @@ export class JsonParser<T> {
             // 如果找不到结束的 ``` 标记（即 lastCodeBlockIndex <= codeBlockStartIndex），
             // 我们就假定内容是从开始的 ``` 之后一直到整个字符串的末尾。
             // 这可以稳健地处理 LLM 输出被截断的情况。
-            let content =
-                lastCodeBlockIndex > codeBlockStartIndex
+            let content
+                = lastCodeBlockIndex > codeBlockStartIndex
                     ? processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex)
                     : processedString.substring(codeBlockStartIndex + 3);
 
@@ -78,13 +79,14 @@ export class JsonParser<T> {
 
             processedString = content.trim();
             this.log(`从代码块提取并修整后，待处理字符串长度: ${processedString.length}`);
-        } else if (codeBlockStartIndex !== -1) {
+        }
+        else if (codeBlockStartIndex !== -1) {
             const lastCodeBlockIndex = processedString.lastIndexOf("```");
             if (lastCodeBlockIndex > codeBlockStartIndex) {
                 processedString = processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex).trim();
                 this.log(`从代码块提取后，待处理字符串长度: ${processedString.length}`);
             }
-            //this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取");
+            // this.log("检测到代码块，但字符串似乎已是有效JSON，跳过提取");
         }
 
         // 现在，无论 `processedString` 是来自代码块还是原始输入，
@@ -96,15 +98,18 @@ export class JsonParser<T> {
 
         if (firstBrace !== -1 && firstBracket !== -1) {
             startIndex = Math.min(firstBrace, firstBracket);
-        } else if (firstBrace !== -1) {
+        }
+        else if (firstBrace !== -1) {
             startIndex = firstBrace;
-        } else {
+        }
+        else {
             startIndex = firstBracket;
         }
 
         if (startIndex === -1) {
             this.log("未找到 JSON 起始符号，将尝试直接修复整个字符串");
-        } else {
+        }
+        else {
             if (startIndex > 0) {
                 this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的 ${startIndex} 个字符`);
                 processedString = processedString.substring(startIndex);
@@ -113,10 +118,10 @@ export class JsonParser<T> {
 
         // 只有当括号/大括号是平衡的，我们才认为后面有多余文本。
         // 否则，我们假设是JSON被截断，不进行裁剪。
-        const openBraces = (processedString.match(/{/g) || []).length;
-        const closeBraces = (processedString.match(/}/g) || []).length;
+        const openBraces = (processedString.match(/\{/g) || []).length;
+        const closeBraces = (processedString.match(/\}/g) || []).length;
         const openBrackets = (processedString.match(/\[/g) || []).length;
-        const closeBrackets = (processedString.match(/]/g) || []).length;
+        const closeBrackets = (processedString.match(/\]/g) || []).length;
 
         if (openBraces === closeBraces && openBrackets === closeBrackets) {
             const lastBrace = processedString.lastIndexOf("}");
@@ -127,7 +132,8 @@ export class JsonParser<T> {
                 this.log(`JSON 结构平衡，裁剪了结束符号之后的多余文本`);
                 processedString = processedString.substring(0, endIndex + 1);
             }
-        } else {
+        }
+        else {
             /* prettier-ignore */
             this.log(`JSON 结构不平衡 (括号: ${openBrackets}/${closeBrackets}, 大括号: ${openBraces}/${closeBraces})，跳过后缀裁剪以保留可能被截断的数据`);
         }
@@ -140,7 +146,8 @@ export class JsonParser<T> {
             let data: T;
             try {
                 data = JSON.parse(processedString) as T;
-            } catch (e: any) {
+            }
+            catch (e: any) {
                 this.log(`直接解析失败: ${e.message}`);
                 const repaired = jsonrepair(processedString);
                 data = JSON.parse(repaired) as T;
@@ -156,13 +163,14 @@ export class JsonParser<T> {
 
             this.log("解析流程成功完成");
             return { data, error: null, logs: this.logs };
-        } catch (e: any) {
+        }
+        catch (e: any) {
             this.log(`最终解析失败: ${e.message}`);
             if (e instanceof JSONRepairError) {
                 const line = (e as any).line;
                 const column = (e as any).column;
                 // 在源文本中标出错误位置
-                const pointer = " ".repeat(column - 1) + "^";
+                const pointer = `${" ".repeat(column - 1)}^`;
                 this.log(`${processedString.split("\n")[line - 1]}`);
                 this.log(`${pointer}`);
             }
@@ -188,14 +196,14 @@ export class JsonParser<T> {
             // 一个合法的JSON数组在'['之后（忽略空格）必须是值（如{, ", t, f, n, 数字）或']'。
             const charAfterBracket = trimmed.substring(1).trim().charAt(0);
             if (
-                charAfterBracket === "]" || // 空数组
-                charAfterBracket === "{" || // 对象数组
-                charAfterBracket === '"' || // 字符串数组
-                charAfterBracket === "t" || // 布尔值 (true)
-                charAfterBracket === "f" || // 布尔值 (false)
-                charAfterBracket === "n" || // null
-                (charAfterBracket >= "0" && charAfterBracket <= "9") || // 数字
-                charAfterBracket === "-" // 负数
+                charAfterBracket === "]" // 空数组
+                || charAfterBracket === "{" // 对象数组
+                || charAfterBracket === "\"" // 字符串数组
+                || charAfterBracket === "t" // 布尔值 (true)
+                || charAfterBracket === "f" // 布尔值 (false)
+                || charAfterBracket === "n" // null
+                || (charAfterBracket >= "0" && charAfterBracket <= "9") // 数字
+                || charAfterBracket === "-" // 负数
             ) {
                 return true;
             }

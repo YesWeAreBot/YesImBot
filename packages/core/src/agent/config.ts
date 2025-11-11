@@ -1,6 +1,8 @@
-import { readFileSync } from "fs";
-import { Computed, Schema } from "koishi";
-import path from "path";
+/* eslint-disable ts/no-redeclare */
+import type { Computed } from "koishi";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { Schema } from "koishi";
 
 import { PROMPTS_DIR } from "@/shared/constants";
 
@@ -11,11 +13,11 @@ In the subsequent conversation text, placeholders in the format <img id="[ID]" /
 Please participate in the conversation considering the full context of both images and text.
 If image data is not provided, use \`get_image_description\` to describe the image.`;
 
-export type ChannelDescriptor = {
+export interface ChannelDescriptor {
     platform: string;
     type: "private" | "guild";
     id: string;
-};
+}
 
 /** Agent 的唤醒条件配置 */
 export interface ArousalConfig {
@@ -33,7 +35,7 @@ export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
                 .default("guild")
                 .description("频道类型"),
             id: Schema.string().required().description("频道或用户 ID"),
-        })
+        }),
     )
         .role("table")
         .default([{ platform: "onebot", type: "guild", id: "*" }])
@@ -118,7 +120,7 @@ const WillingnessConfig: Schema<WillingnessConfig> = Schema.object({
         replyCost: Schema.computed<Schema<number>>(Schema.number().default(35))
             .min(0)
             .default(35)
-            .description('决定回复后，扣除的"发言精力惩罚"'),
+            .description("决定回复后，扣除的\"发言精力惩罚\""),
     }),
 });
 
@@ -146,9 +148,9 @@ export const VisionConfig: Schema<VisionConfig> = Schema.object({
     detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
 });
 
-export type AgentBehaviorConfig = ArousalConfig &
-    WillingnessConfig &
-    VisionConfig & {
+export type AgentBehaviorConfig = ArousalConfig
+    & WillingnessConfig
+    & VisionConfig & {
         systemTemplate: string;
         userTemplate: string;
         multiModalSystemTemplate: string;

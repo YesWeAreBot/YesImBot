@@ -1,9 +1,12 @@
-import { Context, Service, Session } from "koishi";
+import type { Context, Session } from "koishi";
+import type { Config } from "@/config";
 
-import { Config } from "@/config";
-import { ChatModelSwitcher, ModelService } from "@/services/model";
-import { loadTemplate, PromptService } from "@/services/prompt";
-import { AnyAgentStimulus, StimulusSource, UserMessageStimulus, WorldStateService } from "@/services/worldstate";
+import type { ChatModelSwitcher, ModelService } from "@/services/model";
+import type { PromptService } from "@/services/prompt";
+import type { AnyAgentStimulus, UserMessageStimulus, WorldStateService } from "@/services/worldstate";
+import { Service } from "koishi";
+import { loadTemplate } from "@/services/prompt";
+import { StimulusSource } from "@/services/worldstate";
 import { Services } from "@/shared/constants";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
@@ -45,7 +48,7 @@ export class AgentCore extends Service<Config> {
 
         this.modelSwitcher = this.modelService.useChatGroup(this.config.chatModelGroup);
         if (!this.modelSwitcher) {
-            const notifier = ctx.notifier.create({
+            const _notifier = ctx.notifier.create({
                 type: "danger",
                 content: `未给 '聊天 (Chat)' 任务类型配置任何模型组，请前往“模型服务”设置，并为 '聊天' 任务类型至少配置一个模型`,
             });
@@ -74,7 +77,8 @@ export class AgentCore extends Service<Config> {
 
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
-            } catch (error: any) {
+            }
+            catch (error: any) {
                 this.logger.error(`计算意愿值失败，已阻止本次响应: ${error.message}`);
                 return;
             }
@@ -86,20 +90,20 @@ export class AgentCore extends Service<Config> {
             this.schedule(stimulus);
         });
 
-        this.ctx.on("agent/stimulus-channel-event", (stimulus) => {
-            const { eventType } = stimulus.payload;
-        });
+        // this.ctx.on("agent/stimulus-channel-event", (stimulus) => {
+        //     const { eventType } = stimulus.payload;
+        // });
 
-        this.ctx.on("agent/stimulus-scheduled-task", (stimulus) => {
-            const { taskType } = stimulus.payload;
-        });
+        // this.ctx.on("agent/stimulus-scheduled-task", (stimulus) => {
+        //     const { taskType } = stimulus.payload;
+        // });
 
         this.willing.startDecayCycle();
     }
 
     protected stop(): void {
-        this.debouncedReplyTasks.forEach((task) => task.dispose());
-        this.deferredTimers.forEach((timer) => clearTimeout(timer));
+        this.debouncedReplyTasks.forEach(task => task.dispose());
+        this.deferredTimers.forEach(timer => clearTimeout(timer));
         this.willing.stopDecayCycle();
     }
 
@@ -119,10 +123,11 @@ export class AgentCore extends Service<Config> {
     }
 
     public schedule(stimulus: AnyAgentStimulus): void {
-        const { type, priority } = stimulus;
+        const { type } = stimulus;
 
         switch (type) {
             case StimulusSource.UserMessage:
+            {
                 const { platform, channelId } = stimulus.payload;
                 const channelKey = `${platform}:${channelId}`;
 
@@ -136,6 +141,7 @@ export class AgentCore extends Service<Config> {
                 // 将堆栈传递给任务
                 this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
                 break;
+            }
 
             case StimulusSource.ChannelEvent:
             case StimulusSource.ScheduledTask:
@@ -144,7 +150,7 @@ export class AgentCore extends Service<Config> {
         }
     }
 
-    private getDebouncedTask(channelKey: string, schedulingStack?: string): WithDispose<(stimulus: UserMessageStimulus) => void> {
+    private getDebouncedTask(channelKey: string, _schedulingStack?: string): WithDispose<(stimulus: UserMessageStimulus) => void> {
         let debouncedTask = this.debouncedReplyTasks.get(channelKey);
         if (!debouncedTask) {
             debouncedTask = this.ctx.debounce(async (stimulus: UserMessageStimulus) => {
@@ -162,9 +168,11 @@ export class AgentCore extends Service<Config> {
                         /* prettier-ignore */
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                     }
-                } catch (error: any) {
+                }
+                catch (error: any) {
                     this.logger.error(`调度任务执行失败 (Channel: ${channelKey}): ${error.message}`);
-                } finally {
+                }
+                finally {
                     this.runningTasks.delete(channelKey);
                     this.logger.debug(`[${channelKey}] 频道锁已释放`);
                 }
