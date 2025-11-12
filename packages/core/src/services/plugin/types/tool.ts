@@ -1,6 +1,6 @@
-import { Schema } from "koishi";
-import { ToolContext, ContextCapability } from "./context";
-import { ToolResult } from "./result";
+import type { Schema } from "koishi";
+import type { ContextCapability, ToolContext } from "./context";
+import type { ToolResult } from "./result";
 
 /**
  * Tool type discriminator.
@@ -130,9 +130,9 @@ export type AnyToolDescriptor<TConfig = any, TParams = any> = ToolDescriptor<TCo
 /**
  * Complete tool definition with execution function.
  */
-export type AnyToolDefinition<TConfig = any, TParams = any, TResult = any> =
-    | ToolDefinition<TConfig, TParams, TResult>
-    | ActionDefinition<TConfig, TParams, TResult>;
+export type AnyToolDefinition<TConfig = any, TParams = any, TResult = any>
+    = | ToolDefinition<TConfig, TParams, TResult>
+        | ActionDefinition<TConfig, TParams, TResult>;
 
 /**
  * Tool schema for LLM (serializable format).
@@ -166,7 +166,7 @@ export interface ToolSchema {
  * Useful for runtime type checking and accessing action-specific properties.
  */
 export function isAction<TConfig = any, TParams = any, TResult = any>(
-    tool: AnyToolDefinition<TConfig, TParams, TResult>
+    tool: AnyToolDefinition<TConfig, TParams, TResult>,
 ): tool is ActionDefinition<TConfig, TParams, TResult> {
     return tool.type === ToolType.Action;
 }
@@ -176,7 +176,7 @@ export function isAction<TConfig = any, TParams = any, TResult = any>(
  * Useful for runtime type checking and distinguishing from actions.
  */
 export function isTool<TConfig = any, TParams = any, TResult = any>(
-    tool: AnyToolDefinition<TConfig, TParams, TResult>
+    tool: AnyToolDefinition<TConfig, TParams, TResult>,
 ): tool is ToolDefinition<TConfig, TParams, TResult> {
     return tool.type === ToolType.Tool;
 }

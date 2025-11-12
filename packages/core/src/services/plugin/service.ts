@@ -1,30 +1,39 @@
-import { Context, ForkScope, h, Schema, Service } from "koishi";
-
-import { Config } from "@/config";
-import { CommandService } from "@/services/command";
-import { PromptService } from "@/services/prompt";
-import { AnyAgentStimulus, StimulusSource, UserMessageStimulus } from "@/services/worldstate";
-import { Services } from "@/shared/constants";
-import { isEmpty, stringify, truncate } from "@/shared/utils";
-import { StimulusContextAdapter } from "./context";
-import { Plugin } from "./plugin";
-import { Failed } from "./result-builder";
-import {
+import type { Context, ForkScope } from "koishi";
+import type { Plugin } from "./plugin";
+import type {
     ActionDefinition,
     AnyToolDefinition,
-    ContextCapabilityMap,
-    isAction,
     Properties,
-    ToolContext,
     ToolDefinition,
     ToolResult,
     ToolSchema,
 } from "./types";
+import type { Config } from "@/config";
+import type { CommandService } from "@/services/command";
+import type { ContextCapabilityMap, ToolContext } from "@/services/context";
+import type { PromptService } from "@/services/prompt";
+import type { AnyAgentStimulus, UserMessageStimulus } from "@/services/worldstate";
+
+import { h, Schema, Service } from "koishi";
+import { StimulusContextAdapter } from "@/services/context";
+import { StimulusSource } from "@/services/worldstate";
+import { Services } from "@/shared/constants";
+import { isEmpty, stringify, truncate } from "@/shared/utils";
+
+import CoreUtilExtension from "./builtin/core-util";
+import InteractionsExtension from "./builtin/interactions";
+import MemoryExtension from "./builtin/memory";
+import QManagerExtension from "./builtin/qmanager";
+
+import { Failed } from "./result-builder";
+import { isAction } from "./types";
 
 function extractMetaFromSchema(schema: Schema | undefined): Properties {
-    if (!schema) return {};
+    if (!schema)
+        return {};
     const meta = schema?.meta as any;
-    if (!meta) return {};
+    if (!meta)
+        return {};
 
     const properties: Properties = {};
     for (const [key, value] of Object.entries(meta)) {
@@ -34,11 +43,6 @@ function extractMetaFromSchema(schema: Schema | undefined): Properties {
     }
     return properties;
 }
-
-import CoreUtilExtension from "./builtin/core-util";
-import InteractionsExtension from "./builtin/interactions";
-import MemoryExtension from "./builtin/memory";
-import QManagerExtension from "./builtin/qmanager";
 
 declare module "koishi" {
     interface Context {
@@ -93,11 +97,9 @@ export class PluginService extends Service<Config> {
         const loadedPlugins = new Map<string, ForkScope>();
 
         for (const Ext of builtinPlugins) {
-            //@ts-ignore
             // 不能在这里判断是否启用，否则无法生成配置
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
-            //@ts-ignore
             loadedPlugins.set(name, this.ctx.plugin(Ext, config));
         }
         this.registerPromptTemplates();
@@ -119,7 +121,7 @@ export class PluginService extends Service<Config> {
                     `tool.list -f search            # 查找所有名称或描述中包含 "search" 的工具`,
                     "tool.list --page 2 --size 5    # 显示第 2 页，每页 5 个工具",
                     `tool.list -f memory --size 3   # 查找 "memory" 相关工具并每页显示 3 个`,
-                ].join("\n")
+                ].join("\n"),
             )
             .action(async ({ session, options }) => {
                 // TODO: This command needs to be refactored to work without a session.
@@ -130,7 +132,7 @@ export class PluginService extends Service<Config> {
                 const filterKeyword = options.filter?.toLowerCase();
                 if (filterKeyword) {
                     allTools = allTools.filter(
-                        (t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword)
+                        t => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword),
                     );
                 }
 
@@ -154,7 +156,7 @@ export class PluginService extends Service<Config> {
                 const pagedTools = allTools.slice(startIndex, startIndex + size);
 
                 // 6. 格式化输出
-                const toolList = pagedTools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
+                const toolList = pagedTools.map(t => `- ${t.name}: ${t.description}`).join("\n");
 
                 /* prettier-ignore */
                 const header = `发现 ${totalCount} 个${options.filter ? "匹配的" : ""}工具。正在显示第 ${page}/${totalPages} 页：\n`;
@@ -166,7 +168,8 @@ export class PluginService extends Service<Config> {
             .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等")
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
-                if (!name) return "未指定要查询的工具名称";
+                if (!name)
+                    return "未指定要查询的工具名称";
                 // TODO: Refactor to work without session
                 const renderResult = await this.promptService.render("tool.info", { toolName: name });
 
@@ -181,13 +184,14 @@ export class PluginService extends Service<Config> {
             .usage(
                 [
                     "调用指定的工具并传递参数",
-                    '参数格式为 "key=value"，多个参数用空格分隔。',
-                    '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
-                ].join("\n")
+                    "参数格式为 \"key=value\"，多个参数用空格分隔。",
+                    "如果 value 包含空格，请使用引号将其包裹，例如：key=\"some value",
+                ].join("\n"),
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
             .action(async ({ session }, name, ...params) => {
-                if (!name) return "错误：未指定要调用的工具名称";
+                if (!name)
+                    return "错误：未指定要调用的工具名称";
 
                 const parsedParams: Record<string, any> = {};
                 try {
@@ -210,12 +214,14 @@ export class PluginService extends Service<Config> {
                             }
                         }
                     }
-                } catch (error: any) {
+                }
+                catch (error: any) {
                     return `参数解析失败：${error.message}\n请检查您的参数格式是否正确（key=value）。`;
                 }
 
                 // TODO: Refactor to work without session. A mock context is needed.
-                if (!session) return "此指令需要在一个会话上下文中使用。";
+                if (!session)
+                    return "此指令需要在一个会话上下文中使用。";
 
                 const stimulus: UserMessageStimulus = {
                     type: StimulusSource.UserMessage,
@@ -230,7 +236,8 @@ export class PluginService extends Service<Config> {
                 if (result.status === "success") {
                     /* prettier-ignore */
                     return `✅ 工具 ${name} 调用成功！\n执行结果：${isEmpty(result.result) ? "无返回值" : stringify(result.result, 2)}`;
-                } else {
+                }
+                else {
                     return `❌ 工具 ${name} 调用失败。\n原因：${stringify(result.error)}`;
                 }
             });
@@ -292,22 +299,23 @@ export class PluginService extends Service<Config> {
             const { toolName } = context;
             // TODO: Refactor to work without session
             const tool = await this.getSchema(toolName);
-            if (!tool) return null;
+            if (!tool)
+                return null;
 
             const processParams = (params: Properties, indent = ""): any[] => {
                 return Object.entries(params).map(([key, param]) => {
                     const processedParam: any = { ...param, key, indent };
                     if (param.properties) {
-                        processedParam.properties = processParams(param.properties, indent + "    ");
+                        processedParam.properties = processParams(param.properties, `${indent}    `);
                     }
                     if (param.items) {
                         processedParam.items = [
                             {
                                 ...param.items,
                                 key: "item",
-                                indent: indent + "    ",
+                                indent: `${indent}    `,
                                 ...(param.items.properties && {
-                                    properties: processParams(param.items.properties, indent + "        "),
+                                    properties: processParams(param.items.properties, `${indent}        `),
                                 }),
                             },
                         ];
@@ -330,7 +338,7 @@ export class PluginService extends Service<Config> {
      * @param extConfig 传递给扩展实例的配置
      */
     public register<TConfig = any>(extensionInstance: Plugin<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
-        const validate: Schema<TConfig> = extensionInstance.constructor["Config"];
+        const validate: Schema<TConfig> = extensionInstance.constructor.Config;
         const validatedConfig = validate ? validate(extConfig) : extConfig;
 
         let availableplugins = this.ctx.schema.get("toolService.availableplugins");
@@ -363,8 +371,8 @@ export class PluginService extends Service<Config> {
                                 }),
                                 Schema.object({}),
                             ]),
-                        ])
-                    )
+                        ]),
+                    ),
                 );
             }
 
@@ -405,9 +413,9 @@ export class PluginService extends Service<Config> {
                     this.tools.set(name, boundAction);
                 }
             }
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.logger.error(`扩展配置验证失败: ${error.message}`);
-            return;
         }
     }
 
@@ -428,7 +436,8 @@ export class PluginService extends Service<Config> {
                 this.tools.delete(action.name);
             }
             this.logger.info(`已卸载扩展: "${name}"`);
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
         }
         return true;
@@ -456,7 +465,8 @@ export class PluginService extends Service<Config> {
         if (tool.parameters) {
             try {
                 validatedParams = tool.parameters(params);
-            } catch (error: any) {
+            }
+            catch (error: any) {
                 this.logger.warn(`✖ 参数验证失败 | ${typeLabel}: ${functionName} | 错误: ${error.message}`);
                 return Failed(`Parameter validation failed: ${error.message}`);
             }
@@ -470,7 +480,7 @@ export class PluginService extends Service<Config> {
             try {
                 if (attempt > 1) {
                     this.logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
-                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
+                    await new Promise(resolve => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
                 const executionResult = await tool.execute(validatedParams, context);
@@ -478,9 +488,11 @@ export class PluginService extends Service<Config> {
                 // Handle both direct ToolResult and builder transparently
                 if (executionResult && "build" in executionResult && typeof executionResult.build === "function") {
                     lastResult = executionResult.build();
-                } else if (executionResult && "status" in executionResult) {
+                }
+                else if (executionResult && "status" in executionResult) {
                     lastResult = executionResult as ToolResult;
-                } else {
+                }
+                else {
                     lastResult = Failed("Tool call did not return a valid result.");
                 }
 
@@ -494,14 +506,17 @@ export class PluginService extends Service<Config> {
                     if (!lastResult.error.retryable) {
                         this.logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
                         return lastResult;
-                    } else {
+                    }
+                    else {
                         this.logger.warn(`⚠ 失败 (可重试) ← 原因: ${stringify(lastResult.error)}`);
                         continue;
                     }
-                } else {
+                }
+                else {
                     return lastResult;
                 }
-            } catch (error: any) {
+            }
+            catch (error: any) {
                 this.logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
                 this.logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);
@@ -514,7 +529,8 @@ export class PluginService extends Service<Config> {
 
     public async getTool(name: string, context?: ToolContext): Promise<AnyToolDefinition | undefined> {
         const tool = this.tools.get(name);
-        if (!tool) return undefined;
+        if (!tool)
+            return undefined;
 
         if (!context) {
             return tool;
@@ -539,9 +555,9 @@ export class PluginService extends Service<Config> {
         const evaluations = await this.evaluateTools(context);
 
         return evaluations
-            .filter((record) => record.assessment.available)
+            .filter(record => record.assessment.available)
             .sort((a, b) => (b.assessment.priority ?? 0) - (a.assessment.priority ?? 0))
-            .map((record) => record.tool);
+            .map(record => record.tool);
     }
 
     public getExtension(name: string): Plugin | undefined {
@@ -557,24 +573,25 @@ export class PluginService extends Service<Config> {
         const evaluations = await this.evaluateTools(context);
 
         return evaluations
-            .filter((record) => record.assessment.available)
+            .filter(record => record.assessment.available)
             .sort((a, b) => (b.assessment.priority ?? 0) - (a.assessment.priority ?? 0))
-            .map((record) => this.toolDefinitionToSchema(record.tool, record.assessment.hints));
+            .map(record => this.toolDefinitionToSchema(record.tool, record.assessment.hints));
     }
 
     public getConfig(name: string): any {
         const ext = this.plugins.get(name);
-        if (!ext) return null;
+        if (!ext)
+            return null;
         return ext.config;
     }
 
     /* prettier-ignore */
-    private async evaluateTools(context: ToolContext): Promise<{ tool: AnyToolDefinition; assessment: { available: boolean; priority: number; hints: string[] }}[]> {
+    private async evaluateTools(context: ToolContext): Promise<{ tool: AnyToolDefinition; assessment: { available: boolean; priority: number; hints: string[] } }[]> {
         return Promise.all(
-            Array.from(this.tools.values()).map(async (tool) => ({
+            Array.from(this.tools.values()).map(async tool => ({
                 tool,
                 assessment: await this.assessTool(tool, context),
-            }))
+            })),
         );
     }
 
@@ -601,7 +618,8 @@ export class PluginService extends Service<Config> {
                             return { available: false, priority: 0, hints };
                         }
                     }
-                } catch (error: any) {
+                }
+                catch (error: any) {
                     this.logger.warn(`工具支持检查失败 | 工具: ${tool.name} | 错误: ${error.message ?? error}`);
                     return { available: false, priority: 0, hints };
                 }
@@ -626,7 +644,8 @@ export class PluginService extends Service<Config> {
                     if (typeof result.priority === "number") {
                         priority = Math.max(priority, result.priority);
                     }
-                } catch (error: any) {
+                }
+                catch (error: any) {
                     this.logger.warn(`工具激活器执行失败 | 工具: ${tool.name} | 错误: ${error.message ?? error}`);
                     return { available: false, priority: 0, hints };
                 }

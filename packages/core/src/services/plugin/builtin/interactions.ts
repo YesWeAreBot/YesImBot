@@ -1,17 +1,20 @@
-import { Context, h, Schema, Session } from "koishi";
-import { } from "koishi-plugin-adapter-onebot";
+import type { Context, Session } from "koishi";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
+import type { ToolContext } from "@/services/context/types";
 
+import { h, Schema } from "koishi";
+import { } from "koishi-plugin-adapter-onebot";
+import { ContextCapability } from "@/services/context/types";
 import { requirePlatform, requireSession } from "@/services/plugin/activators";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Plugin } from "@/services/plugin/plugin";
 import { Failed, Success } from "@/services/plugin/result-builder";
-import { ContextCapability, ToolContext } from "@/services/plugin/types";
 import { Services } from "@/shared";
 import { formatDate, isEmpty } from "@/shared/utils";
 
 interface InteractionsConfig { }
 
+// eslint-disable-next-line ts/no-redeclare
 const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
 
 @Metadata({
@@ -23,7 +26,7 @@ const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
     builtin: true,
 })
 export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
-    static inject = [Services.Plugin]
+    static inject = [Services.Plugin];
     static readonly Config = InteractionsConfig;
 
     constructor(ctx: Context, config: InteractionsConfig) {
@@ -52,14 +55,16 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
 
         try {
             const result = await session.onebot._request("set_msg_emoji_like", {
-                message_id: message_id,
-                emoji_id: emoji_id,
+                message_id,
+                emoji_id,
             });
 
-            if (result["status"] === "failed") return Failed(result["message"]);
+            if (result.status === "failed")
+                return Failed(result.message);
             this.ctx.logger.info(`Bot[${selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
             return Failed(`对消息 ${message_id} 进行表态失败： ${error.message}`);
         }
@@ -88,7 +93,8 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             await session.onebot.setEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]设置精华消息失败: ${message_id} - `, error.message);
             return Failed(`设置精华消息失败： ${error.message}`);
         }
@@ -117,7 +123,8 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             await session.onebot.deleteEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
             return Failed(`从精华中移除消息失败： ${error.message}`);
         }
@@ -150,11 +157,13 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
                 user_id: Number(user_id),
             });
 
-            if (result["status"] === "failed") return Failed(result["data"]);
+            if (result.status === "failed")
+                return Failed(result.data);
 
             this.ctx.logger.info(`Bot[${selfId}]戳了戳 ${user_id}`);
             return Success(result);
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
             return Failed(`戳了戳 ${user_id} 失败： ${error.message}`);
         }
@@ -183,7 +192,8 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessages);
 
             return Success(formattedResult);
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]获取转发消息失败: ${id} - `, error.message);
             return Failed(`获取转发消息失败： ${error.message}`);
         }
@@ -214,16 +224,17 @@ async function formatForwardMessage(ctx: Context, session: Session, formatForwar
                             default:
                                 return element;
                         }
-                    })
+                    }),
                 );
 
                 /* prettier-ignore */
                 return `[${formatDate(new Date(time), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join(" ")}`;
-            })
+            }),
         );
 
         return formattedMessages.filter(Boolean).join("\n") || "无有效消息内容";
-    } catch (error: any) {
+    }
+    catch (error: any) {
         ctx.logger.error("格式化转发消息失败:", error);
         return "消息格式化失败";
     }

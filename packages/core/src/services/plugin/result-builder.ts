@@ -1,4 +1,5 @@
-import { ToolResult, ToolStatus, ToolError, NextStep, ToolErrorType } from "./types";
+import type { NextStep, ToolError, ToolResult } from "./types";
+import { ToolErrorType, ToolStatus } from "./types";
 
 /**
  * Tool result builder class.
@@ -108,7 +109,7 @@ export function Failed(error: ToolError | string): ToolResult<never> & ToolResul
  */
 export function PartialSuccess<T>(result: T, warnings: string[]): ToolResult<T> & ToolResultBuilder<T> {
     const builder = new ToolResultBuilder(ToolStatus.PartialSuccess, result);
-    warnings.forEach((w) => builder.withWarning(w));
+    warnings.forEach(w => builder.withWarning(w));
     const toolResult = builder.build();
 
     return Object.assign(toolResult, {
@@ -129,7 +130,7 @@ export class ToolExecutionError extends Error implements ToolError {
         message: string,
         public retryable: boolean = false,
         public code?: string,
-        public details?: Record<string, unknown>
+        public details?: Record<string, unknown>,
     ) {
         super(message);
         this.name = "ToolExecutionError";

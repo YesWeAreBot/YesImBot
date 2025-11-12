@@ -1,4 +1,4 @@
-import { Schema } from "koishi";
+import type { Schema } from "koishi";
 
 /**
  * Extract TypeScript type from Koishi Schema.

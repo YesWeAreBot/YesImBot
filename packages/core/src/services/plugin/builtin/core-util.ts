@@ -1,14 +1,15 @@
-import { Bot, Context, h, Schema, Session, sleep } from "koishi";
+import type { Bot, Context, Session } from "koishi";
+import type { AssetService } from "@/services";
+import type { ToolContext } from "@/services/context/types";
+import type { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
 
-import { AssetService } from "@/services";
-import { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
+import { h, Schema, sleep } from "koishi";
+import { ContextCapability } from "@/services/context/types";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Plugin } from "@/services/plugin/plugin";
 import { Failed, Success } from "@/services/plugin/result-builder";
-import { ContextCapability, ToolContext } from "@/services/plugin/types";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
-
 
 interface CoreUtilConfig {
     typing: {
@@ -23,6 +24,7 @@ interface CoreUtilConfig {
     };
 }
 
+// eslint-disable-next-line ts/no-redeclare
 const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     typing: Schema.object({
         baseDelay: Schema.number().default(500).description("基础延迟 (毫秒)"),
@@ -66,11 +68,12 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                     if (!this.modelGroup) {
                         this.ctx.logger.warn(`✖ 模型组未找到 | 模型组: ${visionModel}`);
                     }
-                    const visionModels = this.modelGroup?.getModels().filter((m) => m.isVisionModel()) || [];
+                    const visionModels = this.modelGroup?.getModels().filter(m => m.isVisionModel()) || [];
                     if (visionModels.length === 0) {
                         this.ctx.logger.warn(`✖ 模型组中没有视觉模型 | 模型组: ${visionModel}`);
                     }
-                } else {
+                }
+                else {
                     this.chatModel = this.ctx[Services.Model].getChatModel(visionModel);
                     if (!this.chatModel) {
                         this.ctx.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(visionModel)}`);
@@ -80,7 +83,8 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                     }
                 }
             }
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`获取视觉模型失败: ${error.message}`);
         }
 
@@ -113,11 +117,11 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         const { message, target } = params;
 
         const session = context.require(ContextCapability.Session);
-        const currentPlatform = context.require(ContextCapability.Platform);
-        const currentChannelId = context.require(ContextCapability.ChannelId);
+        const _currentPlatform = context.require(ContextCapability.Platform);
+        const _currentChannelId = context.require(ContextCapability.ChannelId);
         const bot = context.require(ContextCapability.Bot);
 
-        const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
+        const messages = message.split("<sep/>").filter(msg => msg.trim() !== "");
         if (messages.length === 0) {
             this.ctx.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
             return Failed("消息内容为空");
@@ -128,7 +132,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             const resolvedBot = targetBot ?? bot;
 
             if (!resolvedBot) {
-                const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
+                const availablePlatforms = this.ctx.bots.map(b => b.platform).join(", ");
                 this.ctx.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
                 return Failed(`未找到平台 ${target} 对应的机器人实例`);
             }
@@ -141,7 +145,8 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId, session.isDirect);
 
             return Success();
-        } catch (error: any) {
+        }
+        catch (error: any) {
             return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
         }
     }
@@ -199,7 +204,8 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                 temperature: 0.2,
             });
             return Success(response.text);
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`图片描述失败: ${error.message}`);
             return Failed(`图片描述失败: ${error.message}`);
         }
@@ -216,11 +222,12 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
 
         text = h
             .parse(text)
-            .filter((e) => e.type === "text")
+            .filter(e => e.type === "text")
             .join("");
-        if (isEmpty(text)) return MIN_DELAY;
+        if (isEmpty(text))
+            return MIN_DELAY;
 
-        const chineseRegex = /[\u4e00-\u9fa5]/g;
+        const chineseRegex = /[\u4E00-\u9FA5]/g;
         const chineseMatches = text.match(chineseRegex);
         const chineseCharCount = chineseMatches ? chineseMatches.length : 0;
         const englishCharCount = text.length - chineseCharCount;
@@ -245,21 +252,24 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         const parts = target.split(":");
         const platform = parts[0];
         const channelId = parts.slice(1).join(":");
-        const bot = this.ctx.bots.find((b) => b.platform === platform);
+        const bot = this.ctx.bots.find(b => b.platform === platform);
         return { bot, targetChannelId: channelId };
     }
 
     private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, isDirect: boolean): Promise<void> {
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
-            if (!msg) continue;
+            if (!msg)
+                continue;
 
             const delay = this.getTypingDelay(msg);
             const content = await this.assetService.encode(msg);
             this.ctx.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
 
-            if (i >= 1) await sleep(delay);
-            if (this.disposed) return;
+            if (i >= 1)
+                await sleep(delay);
+            if (this.disposed)
+                return;
 
             const messageIds = await bot.sendMessage(channelId, content);
 
@@ -282,7 +292,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             user: bot.user,
             message: {
                 id: messageId,
-                content: content,
+                content,
                 elements: h.parse(content),
                 timestamp: Date.now(),
                 user: bot.user,

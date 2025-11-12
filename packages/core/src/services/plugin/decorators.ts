@@ -1,5 +1,7 @@
+import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
+import type { ToolContext } from "@/services/context/types";
 import { Schema } from "koishi";
-import { ToolDescriptor, ActionDescriptor, ToolDefinition, ToolType, ToolContext, ToolResult, PluginMetadata, ActionDefinition } from "./types";
+import { ToolType } from "./types";
 
 type Constructor<T = {}> = new (...args: any[]) => T;
 
@@ -18,7 +20,7 @@ type Constructor<T = {}> = new (...args: any[]) => T;
  * }
  */
 export function Metadata(metadata: PluginMetadata): ClassDecorator {
-    //@ts-ignore
+    // @ts-expect-error type checking
     return <T extends Constructor>(TargetClass: T) => {
         // Simply attach metadata to the class
         (TargetClass as any).metadata = metadata;
@@ -33,9 +35,10 @@ export function Tool<TParams>(descriptor: Omit<ToolDescriptor<any, TParams>, "ty
     return function (
         target: any,
         propertyKey: string,
-        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>
+        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>,
     ) {
-        if (!methodDescriptor.value) return;
+        if (!methodDescriptor.value)
+            return;
 
         target.staticTools ??= [];
 
@@ -58,9 +61,10 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
     return function (
         target: any,
         propertyKey: string,
-        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>
+        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>,
     ) {
-        if (!methodDescriptor.value) return;
+        if (!methodDescriptor.value)
+            return;
 
         target.staticActions ??= [];
 
@@ -82,7 +86,7 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
  */
 export function defineTool<TParams>(
     descriptor: Omit<ToolDescriptor<any, TParams>, "type">,
-    execute: (params: TParams, context: ToolContext) => Promise<ToolResult>
+    execute: (params: TParams, context: ToolContext) => Promise<ToolResult>,
 ) {
     return {
         descriptor: { ...descriptor, type: ToolType.Tool } as ToolDescriptor<any, TParams>,
@@ -96,7 +100,7 @@ export function defineTool<TParams>(
  */
 export function defineAction<TParams>(
     descriptor: Omit<ActionDescriptor<any, TParams>, "type">,
-    execute: (params: TParams, context: ToolContext) => Promise<ToolResult>
+    execute: (params: TParams, context: ToolContext) => Promise<ToolResult>,
 ) {
     return {
         descriptor: { ...descriptor, type: ToolType.Action } as ActionDescriptor<any, TParams>,

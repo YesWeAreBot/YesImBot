@@ -6,36 +6,36 @@ import type {
     SpeechProvider,
     TranscriptionProvider,
 } from "@xsai-ext/shared-providers";
+import type { ProviderConfig, ProviderType } from "./config";
+
 import {
-    createAnthropic,
-    createDeepSeek,
-    createFireworks,
-    createGoogleGenerativeAI,
-    createLmstudio,
-    createOpenAI,
     createAlibaba,
-    createSiliconFlow,
-    createWorkersAI,
-    createZhipuai,
+    createAnthropic,
     createAzure,
     createCerebras,
     createDeepinfra,
+    createDeepSeek,
     createFatherless,
+    createFireworks,
+    createGoogleGenerativeAI,
     createGroq,
+    createLmstudio,
     createMinimax,
     createMinimaxi,
     createMistral,
     createMoonshotai,
     createNovita,
+    createOpenAI,
     createOpenRouter,
     createPerplexity,
+    createSiliconFlow,
     createStepfun,
     createTencentHunyuan,
     createTogetherAI,
+    createWorkersAI,
     createXAI,
+    createZhipuai,
 } from "@xsai-ext/providers/create";
-
-import type { ProviderConfig, ProviderType } from "./config";
 
 // --- 接口定义 ---
 export interface IProviderClient {
@@ -48,7 +48,7 @@ export interface IProviderClient {
 }
 
 export interface IProviderFactory {
-    createClient(config: ProviderConfig): IProviderClient;
+    createClient: (config: ProviderConfig) => IProviderClient;
 }
 
 // --- 工厂类 ---

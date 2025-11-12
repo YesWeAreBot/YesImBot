@@ -10,6 +10,7 @@ export interface ToolServiceConfig {
     };
 }
 
+// eslint-disable-next-line ts/no-redeclare
 export const ToolServiceConfig = Schema.object({
     extra: Schema.dynamic("toolService.availableExtensions").default({}),
 

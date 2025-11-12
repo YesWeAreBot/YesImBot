@@ -1,6 +1,7 @@
+import type { Context, Logger, Schema } from "koishi";
+import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
+import type { ToolContext } from "@/services/context/types";
 import { Services } from "@/shared/constants";
-import { Context, Logger, Schema } from "koishi";
-import { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
 
 /**
  * Base class for all extensions.
@@ -27,7 +28,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
 
     constructor(
         public ctx: Context,
-        public config: TConfig
+        public config: TConfig,
     ) {
         this.logger = ctx.logger(`plugin:${this.metadata.name}`);
         // Merge parent inject dependencies
@@ -37,7 +38,8 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
         if (parentClass && parentClass.inject && childClass.inject) {
             if (Array.isArray(childClass.inject)) {
                 childClass.inject = [...new Set([...parentClass.inject, ...childClass.inject])];
-            } else if (typeof childClass.inject === "object") {
+            }
+            else if (typeof childClass.inject === "object") {
                 const parentRequired = Array.isArray(parentClass.inject) ? parentClass.inject : parentClass.inject.required || [];
                 const childRequired = childClass.inject.required || [];
                 const childOptional = childClass.inject.optional || [];
@@ -73,7 +75,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
      */
     addTool<TParams = any, TResult = any>(
         descriptorOrTool: ToolDescriptor<TConfig, TParams>,
-        execute?: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>
+        execute?: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>,
     ): this {
         let descriptor: ToolDescriptor<TConfig, TParams>;
         let executeFn: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>;
@@ -82,7 +84,8 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
         // Support both patterns: addTool(descriptor, execute) and addTool({ descriptor, execute })
         if ("execute" in descriptorOrTool) {
             executeFn = descriptorOrTool.execute as any;
-        } else {
+        }
+        else {
             descriptor = descriptorOrTool;
             executeFn = execute!;
         }
@@ -105,16 +108,16 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
 
     addAction<TParams = any, TResult = any>(
         descriptorOrTool: ActionDescriptor<TConfig, TParams>,
-        execute?: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>
+        execute?: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>,
     ): this {
-        let descriptor: ActionDescriptor<TConfig, TParams>;
         let executeFn: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>;
 
         // Support both patterns: addTool(descriptor, execute) and addTool({ descriptor, execute })
-        descriptor = descriptorOrTool;
+        const descriptor = descriptorOrTool;
         if ("execute" in descriptorOrTool) {
             executeFn = descriptorOrTool.execute as any;
-        } else {
+        }
+        else {
             executeFn = execute!;
         }
 

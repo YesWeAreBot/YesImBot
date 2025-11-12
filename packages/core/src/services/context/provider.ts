@@ -1,4 +1,4 @@
-import { ToolContext, ContextCapability, ContextCapabilityMap } from "../types";
+import type { ContextCapability, ContextCapabilityMap, ToolContext } from "./types";
 
 /**
  * Default implementation of ToolContext.
@@ -20,6 +20,8 @@ export class ToolContextProvider implements ToolContext {
     has<K extends ContextCapability>(capability: K): boolean {
         return this.capabilities.has(capability);
     }
+
+    tryGet: <K extends ContextCapability>(capability: K) => ContextCapabilityMap[K] | undefined;
 
     get<K extends ContextCapability>(capability: K): ContextCapabilityMap[K] | undefined {
         return this.capabilities.get(capability);

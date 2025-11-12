@@ -1,8 +1,10 @@
-import { Context } from "koishi";
+import type { Context } from "koishi";
+import type { ContextCapabilityMap, ToolContext } from "./types";
+import type { AnyAgentStimulus } from "@/services/worldstate";
 
-import { AnyAgentStimulus, StimulusSource } from "@/services/worldstate";
-import { ContextCapability, ContextCapabilityMap, ToolContext } from "../types";
+import { StimulusSource } from "@/services/worldstate";
 import { ToolContextProvider } from "./provider";
+import { ContextCapability } from "./types";
 
 /**
  * Adapter that converts AnyAgentStimulus to ToolContext.
@@ -30,15 +32,19 @@ export class StimulusContextAdapter {
                     .set(ContextCapability.Bot, bot)
                     .set(ContextCapability.Session, stimulus.payload);
 
-                if (guildId) provider.set(ContextCapability.GuildId, guildId);
-                if (userId) provider.set(ContextCapability.UserId, userId);
+                if (guildId)
+                    provider.set(ContextCapability.GuildId, guildId);
+                if (userId)
+                    provider.set(ContextCapability.UserId, userId);
                 break;
             }
 
             case StimulusSource.ChannelEvent: {
                 const { platform, channelId } = stimulus.payload;
-                if (platform) provider.set(ContextCapability.Platform, platform);
-                if (channelId) provider.set(ContextCapability.ChannelId, channelId);
+                if (platform)
+                    provider.set(ContextCapability.Platform, platform);
+                if (channelId)
+                    provider.set(ContextCapability.ChannelId, channelId);
                 break;
             }
 
@@ -47,10 +53,12 @@ export class StimulusContextAdapter {
                 const { platform, channelId } = stimulus.payload;
                 if (platform) {
                     provider.set(ContextCapability.Platform, platform);
-                    const bot = this.ctx.bots.find((b) => b.platform === platform);
-                    if (bot) provider.set(ContextCapability.Bot, bot);
+                    const bot = this.ctx.bots.find(b => b.platform === platform);
+                    if (bot)
+                        provider.set(ContextCapability.Bot, bot);
                 }
-                if (channelId) provider.set(ContextCapability.ChannelId, channelId);
+                if (channelId)
+                    provider.set(ContextCapability.ChannelId, channelId);
                 break;
             }
 

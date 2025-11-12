@@ -1,4 +1,6 @@
-import { Activator, ContextCapability } from "./types";
+import type { Activator } from "./types";
+
+import { ContextCapability } from "@/services/context/types";
 
 /**
  * Keyword-based activator - enables tool when keywords appear in context.
@@ -9,7 +11,7 @@ export function keywordActivator(
         priority?: number;
         caseSensitive?: boolean;
         contextField?: string; // Which field to search (default: all)
-    }
+    },
 ): Activator {
     return async ({ context, config }) => {
         // Get conversation context from metadata
@@ -18,9 +20,9 @@ export function keywordActivator(
 
         const searchText = options?.caseSensitive ? conversationText : conversationText.toLowerCase();
 
-        const normalizedKeywords = options?.caseSensitive ? keywords : keywords.map((k) => k.toLowerCase());
+        const normalizedKeywords = options?.caseSensitive ? keywords : keywords.map(k => k.toLowerCase());
 
-        const found = normalizedKeywords.some((keyword) => searchText.includes(keyword));
+        const found = normalizedKeywords.some(keyword => searchText.includes(keyword));
 
         return {
             allow: found,
@@ -77,7 +79,7 @@ export function requirePlatform(platforms: string | string[], reason?: string): 
  */
 export function timeWindowActivator(
     windows: Array<{ start: string; end: string }>, // "HH:MM" format
-    priority?: number
+    priority?: number,
 ): Activator {
     return async ({ context }) => {
         const timestamp = context.get(ContextCapability.Timestamp) || new Date();
@@ -100,22 +102,23 @@ export function timeWindowActivator(
  */
 export function compositeActivator(activators: Activator[], mode: "AND" | "OR" = "AND"): Activator {
     return async (ctx) => {
-        const results = await Promise.all(activators.map((a) => a(ctx)));
+        const results = await Promise.all(activators.map(a => a(ctx)));
 
         if (mode === "AND") {
-            const allAllow = results.every((r) => r.allow);
+            const allAllow = results.every(r => r.allow);
             return {
                 allow: allAllow,
-                priority: allAllow ? Math.max(...results.map((r) => r.priority ?? 0)) : 0,
-                hints: results.flatMap((r) => r.hints || []),
+                priority: allAllow ? Math.max(...results.map(r => r.priority ?? 0)) : 0,
+                hints: results.flatMap(r => r.hints || []),
             };
-        } else {
+        }
+        else {
             // OR mode
-            const anyAllow = results.some((r) => r.allow);
+            const anyAllow = results.some(r => r.allow);
             return {
                 allow: anyAllow,
-                priority: anyAllow ? Math.max(...results.map((r) => r.priority ?? 0)) : 0,
-                hints: results.flatMap((r) => r.hints || []),
+                priority: anyAllow ? Math.max(...results.map(r => r.priority ?? 0)) : 0,
+                hints: results.flatMap(r => r.hints || []),
             };
         }
     };
