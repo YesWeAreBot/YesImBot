@@ -1,4 +1,4 @@
-import { Element, Session } from "koishi";
+import type { Element, Session } from "koishi";
 
 export interface MemberData {
     pid: string;
@@ -57,6 +57,37 @@ export enum StimulusSource {
     SelfInitiated = "self_initiated",
 }
 
+/**
+ * Stimulus 的高层分类
+ * 用于工具的 Activator 过滤和上下文构建策略
+ */
+export enum StimulusCategory {
+    /** 用户交互类 - 用户发送的消息 */
+    UserInteraction = "user_interaction",
+    /** 频道事件类 - 群组内发生的事件（加入、离开、戳一戳等） */
+    ChannelEvent = "channel_event",
+    /** 系统事件类 - 全局系统事件（节假日、重大新闻等） */
+    SystemEvent = "system_event",
+    /** 定时任务类 - 预定的定时任务 */
+    ScheduledTask = "scheduled_task",
+    /** 任务完成类 - 后台任务完成的通知 */
+    TaskCompletion = "task_completion",
+    /** 自主发起类 - 智能体自主发起的行为 */
+    SelfInitiated = "self_initiated",
+}
+
+/**
+ * StimulusSource 到 StimulusCategory 的映射
+ */
+export const STIMULUS_CATEGORY_MAP: Record<StimulusSource, StimulusCategory> = {
+    [StimulusSource.UserMessage]: StimulusCategory.UserInteraction,
+    [StimulusSource.ChannelEvent]: StimulusCategory.ChannelEvent,
+    [StimulusSource.GlobalEvent]: StimulusCategory.SystemEvent,
+    [StimulusSource.ScheduledTask]: StimulusCategory.ScheduledTask,
+    [StimulusSource.BackgroundTaskCompletion]: StimulusCategory.TaskCompletion,
+    [StimulusSource.SelfInitiated]: StimulusCategory.SelfInitiated,
+};
+
 export interface UserMessageStimulusPayload extends Session {}
 
 export interface ChannelEventStimulusPayload extends ChannelEventPayloadData {
@@ -111,13 +142,13 @@ export type ScheduledTaskStimulus = AgentStimulus<StimulusSource.ScheduledTask>;
 export type BackgroundTaskCompletionStimulus = AgentStimulus<StimulusSource.BackgroundTaskCompletion>;
 export type SelfInitiatedStimulus = AgentStimulus<StimulusSource.SelfInitiated>;
 
-export type AnyAgentStimulus =
-    | UserMessageStimulus
-    | ChannelEventStimulus
-    | GlobalEventStimulus
-    | ScheduledTaskStimulus
-    | BackgroundTaskCompletionStimulus
-    | SelfInitiatedStimulus;
+export type AnyAgentStimulus
+    = | UserMessageStimulus
+        | ChannelEventStimulus
+        | GlobalEventStimulus
+        | ScheduledTaskStimulus
+        | BackgroundTaskCompletionStimulus
+        | SelfInitiatedStimulus;
 
 export type ChannelBoundStimulus = UserMessageStimulus | ChannelEventStimulus | ScheduledTaskStimulus | BackgroundTaskCompletionStimulus;
 export type GlobalStimulus = GlobalEventStimulus | SelfInitiatedStimulus | ScheduledTaskStimulus | BackgroundTaskCompletionStimulus;
