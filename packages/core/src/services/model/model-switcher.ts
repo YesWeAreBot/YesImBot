@@ -1,30 +1,30 @@
 import type { GenerateTextResult } from "@xsai/generate-text";
 import type { Message } from "@xsai/shared-chat";
-import { Logger } from "koishi";
-
-import { BaseModel } from "./base-model";
-import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { ModelDescriptor, StrategyConfig } from "./config";
-import { ChatModelType, ModelError, ModelErrorType, ModelStatus, SwitchStrategy, CircuitState } from "./types";
+import type { Logger } from "koishi";
+import type { BaseModel } from "./base-model";
+import type { ChatRequestOptions, IChatModel } from "./chat-model";
+import type { ModelDescriptor, StrategyConfig } from "./config";
+import type { ModelStatus } from "./types";
+import { ChatModelType, ModelError, ModelErrorType, SwitchStrategy } from "./types";
 
 // 指数移动平均 (EMA) 的 alpha 值，值越小，历史数据权重越大
 const EMA_ALPHA = 0.2;
 
 export interface IModelSwitcher<T extends BaseModel> {
     /** 根据可用性和策略获取一个模型 */
-    getModel(): T | null;
+    getModel: () => T | null;
 
     /** 获取所有已配置的模型 */
-    getModels(): T[];
+    getModels: () => T[];
 
     /** 获取指定模型的状态 */
-    getModelStatus(model: T): ModelStatus;
+    getModelStatus: (model: T) => ModelStatus;
 
     /** 检查一个模型当前是否可用 (通过熔断器状态判断) */
-    isModelAvailable(model: T): boolean;
+    isModelAvailable: (model: T) => boolean;
 
     /** 记录一次模型调用的结果，并更新其状态 */
-    recordResult(model: T, success: boolean, error?: ModelError, latency?: number): void;
+    recordResult: (model: T, success: boolean, error?: ModelError, latency?: number) => void;
 }
 
 export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitcher<T> {
@@ -34,7 +34,7 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
     constructor(
         protected readonly logger: Logger,
         protected readonly models: T[],
-        protected config: StrategyConfig
+        protected config: StrategyConfig,
     ) {
         for (const model of this.models) {
             const weights = (config as any).modelWeights as Record<string, number> | undefined;
@@ -51,7 +51,7 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
     }
 
     public getModel(): T | null {
-        const availableModels = this.models.filter((model) => this.isModelAvailable(model));
+        const availableModels = this.models.filter(model => this.isModelAvailable(model));
 
         if (availableModels.length === 0) {
             return null;
@@ -62,16 +62,17 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
 
     public isModelAvailable(model: T): boolean {
         const status = this.modelStatusMap.get(model.id);
-        if (!status) return false;
+        if (!status)
+            return false;
 
         if (this.config.breaker.enabled) {
             // CLOSED 下的失败冷却
             const cooldown = this.config.breaker.cooldown;
             if (
-                status.circuitState === "CLOSED" &&
-                typeof cooldown === "number" &&
-                status.lastFailureTime &&
-                Date.now() - status.lastFailureTime < cooldown
+                status.circuitState === "CLOSED"
+                && typeof cooldown === "number"
+                && status.lastFailureTime
+                && Date.now() - status.lastFailureTime < cooldown
             ) {
                 return false;
             }
@@ -94,8 +95,10 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
 
     /** 根据策略选择模型，传入可用模型列表 */
     protected selectModelByStrategy(models: T[]): T | null {
-        if (models.length === 0) return null;
-        if (models.length === 1) return models[0];
+        if (models.length === 0)
+            return null;
+        if (models.length === 1)
+            return models[0];
 
         switch (this.config.strategy) {
             case SwitchStrategy.RoundRobin:
@@ -140,7 +143,8 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
             return sum + status.weight * status.successRate;
         }, 0);
 
-        if (totalWeight <= 0) return this.selectFailover(models); // 如果总权重为0，回退到 Failover
+        if (totalWeight <= 0)
+            return this.selectFailover(models); // 如果总权重为0，回退到 Failover
 
         let random = Math.random() * totalWeight;
         for (const model of models) {
@@ -168,7 +172,8 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
 
     public recordResult(model: T, success: boolean, error?: ModelError, latency?: number) {
         const status = this.modelStatusMap.get(model.id);
-        if (!status) return;
+        if (!status)
+            return;
 
         status.totalRequests += 1;
 
@@ -186,11 +191,13 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
             if (latency !== undefined) {
                 if (status.averageLatency === 0) {
                     status.averageLatency = latency;
-                } else {
+                }
+                else {
                     status.averageLatency = EMA_ALPHA * latency + (1 - EMA_ALPHA) * status.averageLatency;
                 }
             }
-        } else {
+        }
+        else {
             // Failure
             status.lastFailureTime = Date.now();
             status.failureCount += 1;
@@ -238,7 +245,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         logger: Logger,
         groupConfig: { name: string; models: ModelDescriptor[] },
         modelGetter: (providerName: string, modelId: string) => IChatModel | null,
-        config: StrategyConfig
+        config: StrategyConfig,
     ) {
         const allModels: IChatModel[] = [];
         const visionModels: IChatModel[] = [];
@@ -250,10 +257,12 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
                 allModels.push(model);
                 if (model.isVisionModel?.()) {
                     visionModels.push(model);
-                } else {
+                }
+                else {
                     nonVisionModels.push(model);
                 }
-            } else {
+            }
+            else {
                 /* prettier-ignore */
                 logger.warn(`⚠ 无法加载模型 | 提供商: ${descriptor.providerName} | 模型ID: ${descriptor.modelId} | 所属组: ${groupConfig.name}`);
             }
@@ -282,23 +291,25 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         let candidateModels: IChatModel[] = [];
 
         if (type === ChatModelType.Vision) {
-            candidateModels = this.visionModels.filter((m) => this.isModelAvailable(m));
+            candidateModels = this.visionModels.filter(m => this.isModelAvailable(m));
             if (candidateModels.length === 0 && this.nonVisionModels.length > 0) {
                 this.logger.warn("所有视觉模型均不可用，尝试降级到普通模型");
                 // FIXME: 这里应该返回 null, 让调用者决定是否降级
-                candidateModels = this.nonVisionModels.filter((m) => this.isModelAvailable(m));
+                candidateModels = this.nonVisionModels.filter(m => this.isModelAvailable(m));
             }
-        } else if (type === ChatModelType.NonVision) {
-            candidateModels = this.nonVisionModels.filter((m) => this.isModelAvailable(m));
-        } else {
+        }
+        else if (type === ChatModelType.NonVision) {
+            candidateModels = this.nonVisionModels.filter(m => this.isModelAvailable(m));
+        }
+        else {
             // 所有模型
-            candidateModels = this.models.filter((m) => this.isModelAvailable(m));
+            candidateModels = this.models.filter(m => this.isModelAvailable(m));
         }
 
         if (candidateModels.length === 0) {
             // 如果特定类型模型全部不可用，尝试从所有模型中选择
-            //this.logger.warn(`类型 "${type}" 的模型均不可用, 尝试从所有可用模型中选择。`);
-            //candidateModels = this.models.filter((m) => this.isModelAvailable(m));
+            // this.logger.warn(`类型 "${type}" 的模型均不可用, 尝试从所有可用模型中选择。`);
+            // candidateModels = this.models.filter((m) => this.isModelAvailable(m));
             return null;
         }
 
@@ -311,7 +322,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
     public hasVisionCapability(): boolean {
         let candidateModels: IChatModel[] = [];
         // FIXME: 放宽检测条件，不检查模型可用性
-        candidateModels = this.visionModels.filter((model) => this.isModelAvailable(model));
+        candidateModels = this.visionModels.filter(model => this.isModelAvailable(model));
         return candidateModels.length > 0;
     }
 
@@ -356,7 +367,8 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
                 this.recordResult(model, true, undefined, latency);
                 this.logger.debug(`模型调用成功 | 模型: ${model.id} | 延迟: ${latency}ms`);
                 return result;
-            } catch (error) {
+            }
+            catch (error) {
                 const latency = Date.now() - startTime;
                 const modelError = ModelError.classify(error);
                 lastError = modelError;
@@ -377,6 +389,6 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
 
     /** 检查消息列表中是否包含图片内容 */
     private hasImages(messages: Message[]): boolean {
-        return messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p && p.type === "image_url"));
+        return messages.some(m => Array.isArray(m.content) && m.content.some((p: any) => p && p.type === "image_url"));
     }
 }

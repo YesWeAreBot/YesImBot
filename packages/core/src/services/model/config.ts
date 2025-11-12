@@ -8,33 +8,33 @@ import { ModelAbility, ModelType, SwitchStrategy } from "./types";
  * @internal
  */
 const PROVIDERS = {
-    OpenAI: { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
+    "OpenAI": { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
     "OpenAI Compatible": { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
-    Anthropic: { baseURL: "https://api.anthropic.com/v1/", link: "https://console.anthropic.com/settings/keys" },
-    Fireworks: { baseURL: "https://api.fireworks.ai/inference/v1/", link: "https://console.fireworks.ai/api-keys" },
-    DeepSeek: { baseURL: "https://api.deepseek.com/", link: "https://platform.deepseek.com/api_keys" },
+    "Anthropic": { baseURL: "https://api.anthropic.com/v1/", link: "https://console.anthropic.com/settings/keys" },
+    "Fireworks": { baseURL: "https://api.fireworks.ai/inference/v1/", link: "https://console.fireworks.ai/api-keys" },
+    "DeepSeek": { baseURL: "https://api.deepseek.com/", link: "https://platform.deepseek.com/api_keys" },
     "Google Gemini": {
         baseURL: "https://generativelanguage.googleapis.com/v1beta/",
         link: "https://aistudio.google.com/app/apikey",
     },
     "LM Studio": { baseURL: "http://localhost:5000/v1/", link: "https://lmstudio.ai/docs/app/api/endpoints/openai" },
     "Workers AI": { baseURL: "https://api.cloudflare.com/client/v4/", link: "https://dash.cloudflare.com/?to=/:account/workers-ai" },
-    Zhipu: { baseURL: "https://open.bigmodel.cn/api/paas/v4/", link: "https://open.bigmodel.cn/usercenter/apikeys" },
+    "Zhipu": { baseURL: "https://open.bigmodel.cn/api/paas/v4/", link: "https://open.bigmodel.cn/usercenter/apikeys" },
     "Silicon Flow": { baseURL: "https://api.siliconflow.cn/v1/", link: "https://console.siliconflow.cn/account/key" },
-    Qwen: { baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/", link: "https://dashscope.console.aliyun.com/apiKey" },
-    Ollama: { baseURL: "http://localhost:11434/v1/", link: "https://ollama.com/" },
-    Cerebras: { baseURL: "https://api.cerebras.ai/v1/", link: "https://inference-docs.cerebras.ai/api-reference/chat-completions" },
-    DeepInfra: { baseURL: "https://api.deepinfra.com/v1/openai/", link: "https://deepinfra.com/dash/api_keys" },
+    "Qwen": { baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/", link: "https://dashscope.console.aliyun.com/apiKey" },
+    "Ollama": { baseURL: "http://localhost:11434/v1/", link: "https://ollama.com/" },
+    "Cerebras": { baseURL: "https://api.cerebras.ai/v1/", link: "https://inference-docs.cerebras.ai/api-reference/chat-completions" },
+    "DeepInfra": { baseURL: "https://api.deepinfra.com/v1/openai/", link: "https://deepinfra.com/dash/api_keys" },
     "Featherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
-    Groq: { baseURL: "https://api.groq.com/openai/v1/", link: "https://console.groq.com/keys" },
-    Minimax: { baseURL: "https://api.minimax.chat/v1/", link: "https://platform.minimaxi.com/api-key" },
+    "Groq": { baseURL: "https://api.groq.com/openai/v1/", link: "https://console.groq.com/keys" },
+    "Minimax": { baseURL: "https://api.minimax.chat/v1/", link: "https://platform.minimaxi.com/api-key" },
     "Minimax (International)": { baseURL: "https://api.minimaxi.chat/v1/", link: "https://www.minimax.io/user-center/api-keys" },
-    Mistral: { baseURL: "https://api.mistral.ai/v1/", link: "https://console.mistral.ai/api-keys/" },
-    Moonshot: { baseURL: "https://api.moonshot.cn/v1/", link: "https://platform.moonshot.cn/console/api-keys" },
-    Novita: { baseURL: "https://api.novita.ai/v3/openai/", link: "https://novita.ai/get-started" },
-    OpenRouter: { baseURL: "https://openrouter.ai/api/v1/", link: "https://openrouter.ai/keys" },
-    Perplexity: { baseURL: "https://api.perplexity.ai/", link: "https://www.perplexity.ai/settings/api" },
-    Stepfun: { baseURL: "https://api.stepfun.com/v1/", link: "https://platform.stepfun.com/my-keys" },
+    "Mistral": { baseURL: "https://api.mistral.ai/v1/", link: "https://console.mistral.ai/api-keys/" },
+    "Moonshot": { baseURL: "https://api.moonshot.cn/v1/", link: "https://platform.moonshot.cn/console/api-keys" },
+    "Novita": { baseURL: "https://api.novita.ai/v3/openai/", link: "https://novita.ai/get-started" },
+    "OpenRouter": { baseURL: "https://openrouter.ai/api/v1/", link: "https://openrouter.ai/keys" },
+    "Perplexity": { baseURL: "https://api.perplexity.ai/", link: "https://www.perplexity.ai/settings/api" },
+    "Stepfun": { baseURL: "https://api.stepfun.com/v1/", link: "https://platform.stepfun.com/my-keys" },
     "Tencent Hunyuan": { baseURL: "https://api.hunyuan.cloud.tencent.com/v1/", link: "https://console.cloud.tencent.com/cam/capi" },
     "Together AI": { baseURL: "https://api.together.xyz/v1/", link: "https://api.together.ai/settings/api-keys" },
     "XAI (Grok)": { baseURL: "https://api.x.ai/v1/", link: "https://docs.x.ai/docs/overview" },
@@ -44,10 +44,10 @@ export type ProviderType = keyof typeof PROVIDERS;
 export const PROVIDER_TYPES = Object.keys(PROVIDERS) as ProviderType[];
 
 /** 描述一个唯一模型的标识符 */
-export type ModelDescriptor = {
+export interface ModelDescriptor {
     providerName: string;
     modelId: string;
-};
+}
 
 // --- 2. 模型配置 (Model Configuration) ---
 
@@ -96,7 +96,7 @@ export const ModelConfig: Schema<ModelConfig> = Schema.intersect([
                     Schema.const(ModelAbility.Vision).description("视觉 (识图)"),
                     Schema.const(ModelAbility.FunctionCalling).description("工具调用"),
                     Schema.const(ModelAbility.Reasoning).description("推理"),
-                ])
+                ]),
             )
                 .default([])
                 .role("checkbox")
@@ -108,7 +108,7 @@ export const ModelConfig: Schema<ModelConfig> = Schema.intersect([
                     key: Schema.string().required().description("参数键"),
                     type: Schema.union(["string", "number", "boolean", "json"]).default("string").description("值类型"),
                     value: Schema.string().required().description("参数值"),
-                })
+                }),
             )
                 .role("table")
                 .description("自定义请求参数，用于支持特定提供商的非标准 API 字段。"),
@@ -152,7 +152,7 @@ export const ProviderConfig: Schema<ProviderConfig> = Schema.intersect([
                 proxy: Schema.string().description("请求使用的代理地址 (例如 'http://localhost:7890')。"),
                 models: Schema.array(ModelConfig).required().description("此提供商下可用的模型列表。"),
             });
-        })
+        }),
     ),
 ])
     .collapse()
@@ -200,12 +200,12 @@ interface WeightedRandomStrategyConfig extends SharedSwitchConfig {
     modelWeights: Record<string, number>;
 }
 
-export type StrategyConfig =
-    | SharedSwitchConfig
-    | FailoverStrategyConfig
-    | RoundRobinStrategyConfig
-    | RandomStrategyConfig
-    | WeightedRandomStrategyConfig;
+export type StrategyConfig
+    = | SharedSwitchConfig
+        | FailoverStrategyConfig
+        | RoundRobinStrategyConfig
+        | RandomStrategyConfig
+        | WeightedRandomStrategyConfig;
 
 /**
  * Schema for model switching and failover strategies.
@@ -276,7 +276,7 @@ export const ModelServiceConfig: Schema<ModelServiceConfig> = Schema.object({
                 .required()
                 .role("table")
                 .description("选择要加入此模型组的模型。"),
-        }).collapse()
+        }).collapse(),
     )
         .role("table")
         .description("将不同提供商的模型组合成逻辑分组，用于故障转移或按需调用。注意：修改提供商模型后，需重启插件以刷新可选模型列表。"),
@@ -284,7 +284,7 @@ export const ModelServiceConfig: Schema<ModelServiceConfig> = Schema.object({
     chatModelGroup: Schema.dynamic("modelService.availableGroups").description("选择一个模型组作为默认的聊天服务。"),
 
     embeddingModel: Schema.dynamic("modelService.embeddingModels").description(
-        "指定用于生成文本嵌入 (Embedding) 的特定模型，例如 'bge-m3' 或 'text-embedding-3-small'。"
+        "指定用于生成文本嵌入 (Embedding) 的特定模型，例如 'bge-m3' 或 'text-embedding-3-small'。",
     ),
 
     switchConfig: SwitchConfig,

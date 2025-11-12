@@ -1,11 +1,12 @@
-import { Logger } from "koishi";
+import type { Logger } from "koishi";
+import type { IChatModel } from "./chat-model";
+import type { ChatModelConfig, ModelConfig, ProviderConfig } from "./config";
+import type { IEmbedModel } from "./embed-model";
+import type { IProviderClient } from "./factories";
 import { ProxyAgent, fetch as ufetch } from "undici";
-
 import { isNotEmpty } from "@/shared/utils";
-import { ChatModel, IChatModel } from "./chat-model";
-import { ChatModelConfig, ModelConfig, ProviderConfig } from "./config";
-import { EmbedModel, IEmbedModel } from "./embed-model";
-import { IProviderClient } from "./factories";
+import { ChatModel } from "./chat-model";
+import { EmbedModel } from "./embed-model";
 import { ModelType } from "./types";
 
 export class ProviderInstance {
@@ -15,7 +16,7 @@ export class ProviderInstance {
     constructor(
         private logger: Logger,
         public readonly config: ProviderConfig,
-        private readonly client: IProviderClient
+        private readonly client: IProviderClient,
     ) {
         this.name = config.name;
 
@@ -25,13 +26,14 @@ export class ProviderInstance {
                 init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
                 return ufetch(input, init);
             }) as unknown as typeof globalThis.fetch;
-        } else {
+        }
+        else {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
         }
     }
 
     public getChatModel(modelId: string): IChatModel | null {
-        const modelConfig = this.config.models.find((m) => m.modelId === modelId);
+        const modelConfig = this.config.models.find(m => m.modelId === modelId);
         if (!modelConfig) {
             this.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
             return null;
@@ -44,7 +46,7 @@ export class ProviderInstance {
     }
 
     public getEmbedModel(modelId: string): IEmbedModel | null {
-        const modelConfig = this.config.models.find((m) => m.modelId === modelId);
+        const modelConfig = this.config.models.find(m => m.modelId === modelId);
         if (!modelConfig) {
             this.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
             return null;

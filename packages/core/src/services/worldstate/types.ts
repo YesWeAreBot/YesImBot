@@ -261,6 +261,7 @@ export interface ChannelWorldState extends BaseWorldState {
         id: string;
         name: string;
         type: "guild" | "private";
+        guildId?: string;
         platform: string;
     };
     users: {
@@ -275,6 +276,7 @@ export interface ChannelWorldState extends BaseWorldState {
 /** 用于全局思考和规划的上下文 */
 export interface GlobalWorldState extends BaseWorldState {
     contextType: "global";
+    activeChannels?: any;
     active_channels_summary?: {
         platform: string;
         channelId: string;

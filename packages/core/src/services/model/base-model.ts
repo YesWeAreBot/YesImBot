@@ -1,5 +1,5 @@
-import { Logger } from "koishi";
-import { ModelConfig } from "./config";
+import type { Logger } from "koishi";
+import type { ModelConfig } from "./config";
 
 export abstract class BaseModel {
     public readonly id: string;

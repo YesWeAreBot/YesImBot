@@ -2,12 +2,12 @@ import type { ChatProvider } from "@xsai-ext/shared-providers";
 import type { GenerateTextResult } from "@xsai/generate-text";
 import type { WithUnknown } from "@xsai/shared";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
-import { Logger } from "koishi";
-import { generateText, streamText } from "xsai";
+import type { Logger } from "koishi";
+import type { ChatModelConfig } from "./config";
 
+import { generateText, streamText } from "xsai";
 import { isEmpty, isNotEmpty, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
-import { ChatModelConfig } from "./config";
 import { ModelAbility } from "./types";
 
 export interface ChatRequestOptions {
@@ -22,8 +22,8 @@ export interface ChatRequestOptions {
 
 export interface IChatModel extends BaseModel {
     config: ChatModelConfig;
-    chat(options: ChatRequestOptions): Promise<GenerateTextResult>;
-    isVisionModel(): boolean;
+    chat: (options: ChatRequestOptions) => Promise<GenerateTextResult>;
+    isVisionModel: () => boolean;
 }
 
 export class ChatModel extends BaseModel implements IChatModel {
@@ -34,7 +34,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         private readonly providerName: string,
         private readonly chatProvider: ChatProvider["chat"],
         modelConfig: ChatModelConfig,
-        private readonly fetch: typeof globalThis.fetch
+        private readonly fetch: typeof globalThis.fetch,
     ) {
         super(logger, modelConfig);
         this.parseCustomParameters();
@@ -45,7 +45,8 @@ export class ChatModel extends BaseModel implements IChatModel {
     }
 
     private parseCustomParameters(): void {
-        if (!this.config.custom) return;
+        if (!this.config.custom)
+            return;
         for (const item of this.config.custom) {
             try {
                 let parsedValue: any;
@@ -66,7 +67,8 @@ export class ChatModel extends BaseModel implements IChatModel {
                         parsedValue = item.value;
                 }
                 this.customParameters[item.key] = parsedValue;
-            } catch (error: any) {
+            }
+            catch (error: any) {
                 this.logger.warn(`解析自定义参数失败 | 键: "${item.key}" | 值: "${item.value}" | 错误: ${error.message}`);
             }
         }
@@ -88,8 +90,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             const baseFetch = chatOptions.fetch ?? this.fetch;
             chatOptions.fetch = (async (url: string, init: RequestInit) => {
                 init.signal = AbortSignal.any([options.abortSignal, controller.signal]);
-                //@ts-ignore
-                return baseFetch(url, init);
+                return baseFetch(url as any, init);
             }) as typeof globalThis.fetch;
         }
 
@@ -132,7 +133,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const duration = Date.now() - stime;
 
         const logMessage = result.toolCalls?.length
-            ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
+            ? `工具调用: "${result.toolCalls.map(tc => tc.toolName).join(", ")}"`
             : `文本长度: ${result.text.length}`;
         this.logger.success(`✅ [请求成功] [非流式] ${logMessage} | 耗时: ${duration}ms`);
         return result;
@@ -144,20 +145,20 @@ export class ChatModel extends BaseModel implements IChatModel {
     private async _executeStream(
         chatOptions: ChatOptions,
         onStreamStart?: () => void,
-        controller?: AbortController
+        controller?: AbortController,
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let streamStarted = false;
 
         const finalContentParts: string[] = [];
         let finalSteps: CompletionStep[] = [];
-        let finalToolCalls: CompletionToolCall[] = [];
-        let finalToolResults: CompletionToolResult[] = [];
+        const finalToolCalls: CompletionToolCall[] = [];
+        const finalToolResults: CompletionToolResult[] = [];
         let finalUsage: GenerateTextResult["usage"];
-        let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
+        const finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
-        let streamFinished = false;
-        let earlyExitByValidator = false;
+        const streamFinished = false;
+        const earlyExitByValidator = false;
 
         try {
             const buffer: string[] = [];
@@ -173,7 +174,8 @@ export class ChatModel extends BaseModel implements IChatModel {
                     streamStarted = true;
                     this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
                 }
-                if (textDelta === "") continue;
+                if (textDelta === "")
+                    continue;
 
                 buffer.push(textDelta);
                 finalContentParts.push(textDelta);
@@ -181,21 +183,23 @@ export class ChatModel extends BaseModel implements IChatModel {
 
             finalSteps = await steps;
             finalUsage = await totalUsage;
-        } catch (error: any) {
+        }
+        catch (error: any) {
             // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
             if (error.name === "AbortError" && earlyExitByValidator) {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
-            } else if (error.name === "XSAIError") {
+            }
+            else if (error.name === "XSAIError") {
                 switch (error.response.status) {
                     case 429:
                         this.logger.warn(`🟡 [流式] 请求过于频繁，请稍后再试。`);
                         break;
                     case 401:
-
                     default:
                         break;
                 }
-            } else {
+            }
+            else {
                 throw error;
             }
         }

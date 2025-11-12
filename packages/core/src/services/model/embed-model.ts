@@ -1,15 +1,15 @@
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
 import type { WithUnknown } from "@xsai/shared";
-import { Logger } from "koishi";
-import { embed, embedMany } from "xsai";
+import type { Logger } from "koishi";
+import type { ModelConfig } from "./config";
 
+import { embed, embedMany } from "xsai";
 import { BaseModel } from "./base-model";
-import { ModelConfig } from "./config";
 
 export interface IEmbedModel extends BaseModel {
-    embed(text: string): Promise<EmbedResult>;
-    embedMany(texts: string[]): Promise<EmbedManyResult>;
+    embed: (text: string) => Promise<EmbedResult>;
+    embedMany: (texts: string[]) => Promise<EmbedManyResult>;
 }
 
 export class EmbedModel extends BaseModel implements IEmbedModel {
@@ -18,7 +18,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         private readonly providerName: string,
         private readonly embedProvider: EmbedProvider["embed"],
         modelConfig: ModelConfig,
-        private readonly fetch: typeof globalThis.fetch
+        private readonly fetch: typeof globalThis.fetch,
     ) {
         super(logger, modelConfig);
     }

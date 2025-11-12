@@ -9,6 +9,12 @@ import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
 import { ChannelEventType, StimulusSource } from "./types";
 
+declare module "koishi" {
+    interface Session {
+        __commandHandled?: boolean;
+    }
+}
+
 interface PendingCommand {
     commandEventId: string;
     scope: string;
@@ -138,10 +144,9 @@ export class EventListenerManager {
             this.ctx.on("internal/session", (session) => {
                 if (!this.service.isChannelAllowed(session))
                     return;
-
-                if (session.type === "notice" && session.platform == "onebot")
+                if (session.type === "notice" && session.platform === "onebot")
                     return this.handleNotice(session);
-                if (session.type === "guild-member" && session.platform == "onebot")
+                if (session.type === "guild-member" && session.platform === "onebot")
                     return this.handleGuildMember(session);
                 if (session.type === "message-deleted")
                     return this.handleMessageDeleted(session);
@@ -152,6 +157,7 @@ export class EventListenerManager {
     private async handleNotice(session: Session): Promise<void> {
         switch (session.subtype) {
             case "poke":
+            {
                 const authorId = session.event._data.user_id;
                 const targetId = session.event._data.target_id;
                 const action = session.event._data.action;
@@ -164,12 +170,14 @@ export class EventListenerManager {
                 };
                 await this.service.recordChannelEvent(session.platform, session.channelId, payload);
                 break;
+            }
         }
     }
 
     private async handleGuildMember(session: Session): Promise<void> {
         switch (session.subtype) {
             case "ban":
+            {
                 const duration = session.event._data?.duration * 1000; // ms
                 const isTargetingBot = session.event.user?.id === session.bot.selfId;
 
@@ -224,6 +232,7 @@ export class EventListenerManager {
                     }
                 }
                 break;
+            }
         }
     }
 

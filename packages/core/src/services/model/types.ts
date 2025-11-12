@@ -50,7 +50,7 @@ export class ModelError extends Error {
         public readonly type: ModelErrorType,
         message: string,
         public readonly originalError?: unknown,
-        public readonly retryable: boolean = true
+        public readonly retryable: boolean = true,
     ) {
         super(message);
         this.name = "ModelError";
@@ -82,9 +82,12 @@ export class ModelError extends Error {
 
         // 优先按 HTTP 状态码分类
         if (typeof status === "number") {
-            if (status === 401 || status === 403) return new ModelError(ModelErrorType.AuthenticationError, err.message, err, false);
-            if (status === 408) return new ModelError(ModelErrorType.TimeoutError, err.message, err, true);
-            if (status === 400) return new ModelError(ModelErrorType.InvalidRequestError, err.message, err, false);
+            if (status === 401 || status === 403)
+                return new ModelError(ModelErrorType.AuthenticationError, err.message, err, false);
+            if (status === 408)
+                return new ModelError(ModelErrorType.TimeoutError, err.message, err, true);
+            if (status === 400)
+                return new ModelError(ModelErrorType.InvalidRequestError, err.message, err, false);
             if (status === 429) {
                 // 429 有两类：限流与配额耗尽
                 const isQuota = message.includes("quota") || message.includes("insufficient_quota");
@@ -92,10 +95,11 @@ export class ModelError extends Error {
                     isQuota ? ModelErrorType.QuotaExceededError : ModelErrorType.RateLimitError,
                     err.message,
                     err,
-                    !isQuota
+                    !isQuota,
                 );
             }
-            if (status >= 500 && status <= 599) return new ModelError(ModelErrorType.ServerError, err.message, err, true);
+            if (status >= 500 && status <= 599)
+                return new ModelError(ModelErrorType.ServerError, err.message, err, true);
         }
 
         // 请求被中止 (通常由 AbortSignal 触发)
@@ -114,29 +118,29 @@ export class ModelError extends Error {
         }
 
         // 服务器错误
-        if (/\b(500|502|503|504)\b/.test(message) || message.includes("server error")) {
+        if (/\b(?:500|502|503|504)\b/.test(message) || message.includes("server error")) {
             return new ModelError(ModelErrorType.ServerError, err.message, err, true);
         }
 
         // 网络相关错误
         if (
-            message.includes("network") ||
-            message.includes("connection") ||
-            message.includes("socket") ||
-            message.includes("fetch failed") ||
-            message.includes("econnreset") ||
-            ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "ERR_NETWORK"].some((k) => code.includes(k))
+            message.includes("network")
+            || message.includes("connection")
+            || message.includes("socket")
+            || message.includes("fetch failed")
+            || message.includes("econnreset")
+            || ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "ERR_NETWORK"].some(k => code.includes(k))
         ) {
             return new ModelError(ModelErrorType.NetworkError, err.message, err, true);
         }
 
         // 认证错误 (不可重试)
         if (
-            message.includes("auth") ||
-            message.includes("unauthorized") ||
-            /\b401\b/.test(message) ||
-            /\b403\b/.test(message) ||
-            message.includes("api key")
+            message.includes("auth")
+            || message.includes("unauthorized")
+            || /\b401\b/.test(message)
+            || /\b403\b/.test(message)
+            || message.includes("api key")
         ) {
             return new ModelError(ModelErrorType.AuthenticationError, err.message, err, false);
         }

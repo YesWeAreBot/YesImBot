@@ -1,7 +1,8 @@
-import { Argv, Command, Context, Service } from "koishi";
+import type { Argv, Command, Context } from "koishi";
+import type { Config } from "@/config";
+import { Service } from "koishi";
 import { Services } from "@/shared/constants";
 import { isEmpty, parseKeyChain, tryParse } from "@/shared/utils";
-import { Config } from "@/config";
 
 declare module "koishi" {
     interface Services {
@@ -18,11 +19,13 @@ export class CommandService extends Service {
         this.subcommand(".conf", "配置管理指令集", { authority: 3 });
 
         this.subcommand(".conf.get [key:string]", { authority: 3 }).action(async ({ session, options }, key) => {
-            if (isEmpty(key)) return "请输入有效的配置键";
+            if (isEmpty(key))
+                return "请输入有效的配置键";
             let parsedKeyChain: (string | number)[];
             try {
                 parsedKeyChain = parseKeyChain(key);
-            } catch (e) {
+            }
+            catch (e) {
                 return (e as Error).message;
             }
 
@@ -31,7 +34,8 @@ export class CommandService extends Service {
             return JSON.stringify(data, null, 2) || "未找到配置";
 
             function get(data: any, keys: (string | number)[]) {
-                if (keys.length === 0) return data;
+                if (keys.length === 0)
+                    return data;
 
                 // 递归情况：处理键链
                 const currentKey = keys[0]; // 当前处理的键或索引
@@ -45,14 +49,17 @@ export class CommandService extends Service {
         this.subcommand(".conf.set [key:string] [value:string]", { authority: 3 })
             .option("force", "-f <force:boolean>")
             .action(async ({ session, options }, key, value) => {
-                if (isEmpty(key)) return "请输入有效的配置键";
-                if (isEmpty(value)) return "请输入有效的值";
+                if (isEmpty(key))
+                    return "请输入有效的配置键";
+                if (isEmpty(value))
+                    return "请输入有效的值";
 
                 // 新增：解析键链，支持数组索引
                 let parsedKeyChain: (string | number)[];
                 try {
                     parsedKeyChain = parseKeyChain(key);
-                } catch (e) {
+                }
+                catch (e) {
                     return (e as Error).message;
                 }
 
@@ -69,7 +76,8 @@ export class CommandService extends Service {
                     ctx.scope.parent.scope.update(data, Boolean(options.force));
                     config = data; // 更新全局 config 变量
                     return "设置成功";
-                } catch (e) {
+                }
+                catch (e) {
                     // 恢复原来的配置
                     ctx.scope.update(config, Boolean(options.force)); // 确保作用域恢复到原始配置
                     ctx.logger.error(e);
@@ -98,11 +106,13 @@ export class CommandService extends Service {
                     if (nextSegment === undefined || nextSegment === null) {
                         // 如果下一个键是数字，初始化为数组；否则初始化为对象。
                         nextSegment = nextKeyIsIndex ? [] : {};
-                    } else if (nextKeyIsIndex && !Array.isArray(nextSegment)) {
+                    }
+                    else if (nextKeyIsIndex && !Array.isArray(nextSegment)) {
                         // 类型不匹配：期望数组，但现有不是数组，强制转换为数组
                         console.warn(`Path segment "${currentKey}" was not an array, converting to array.`);
                         nextSegment = [];
-                    } else if (!nextKeyIsIndex && (typeof nextSegment !== "object" || Array.isArray(nextSegment))) {
+                    }
+                    else if (!nextKeyIsIndex && (typeof nextSegment !== "object" || Array.isArray(nextSegment))) {
                         // 类型不匹配：期望对象，但现有不是对象或却是数组，强制转换为对象
                         console.warn(`Path segment "${currentKey}" was not an object, converting to object.`);
                         nextSegment = {};
@@ -118,7 +128,8 @@ export class CommandService extends Service {
                         const newArray = [...currentData];
                         newArray[currentKey] = set(nextSegment, keyChain, value);
                         return newArray;
-                    } else {
+                    }
+                    else {
                         // 如果当前键是字符串（对象键），且当前数据是对象
                         // 创建对象的拷贝以实现不可变更新
                         const newObject = { ...currentData };
@@ -134,7 +145,8 @@ export class CommandService extends Service {
     public subcommand<D extends string>(def: D, desc?: string | Command.Config, config?: Command.Config) {
         if (typeof desc === "string") {
             return this.command.subcommand(def, desc, config);
-        } else {
+        }
+        else {
             return this.command.subcommand(def, desc);
         }
     }

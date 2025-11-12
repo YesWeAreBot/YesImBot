@@ -60,7 +60,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             });
 
             if (result.status === "failed")
-                return Failed(result.message);
+                return Failed((result as any).message);
             this.ctx.logger.info(`Bot[${selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
         }

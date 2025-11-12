@@ -8,7 +8,7 @@ import { ContextCapability } from "./types";
 /**
  * ContextCollector extracts ContextCapabilities from WorldState.
  * This is the bridge between WorldState module and Context module.
- * 
+ *
  * Responsibility:
  * - WorldState module builds the "objective world snapshot"
  * - ContextCollector transforms it into "capabilities available to tools"
@@ -20,7 +20,7 @@ export class ContextCollector {
     /**
      * Collect context capabilities from WorldState and Stimulus.
      * This is the ONLY transformation point from WorldState → Context.
-     * 
+     *
      * @param worldState The world state snapshot
      * @param stimulus The stimulus that triggered this context
      * @returns Partial map of available capabilities
@@ -165,4 +165,3 @@ export class ContextCollector {
         capabilities[ContextCapability.Metadata] = metadata;
     }
 }
-

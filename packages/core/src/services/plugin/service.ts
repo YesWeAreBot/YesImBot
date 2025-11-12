@@ -107,6 +107,7 @@ export class PluginService extends Service<Config> {
             // 不能在这里判断是否启用，否则无法生成配置
             const name = Ext.prototype.metadata.name;
             const config = this.config.extra[name];
+            // @ts-expect-error type checking
             loadedPlugins.set(name, this.ctx.plugin(Ext, config));
         }
         this.registerPromptTemplates();
@@ -204,8 +205,10 @@ export class PluginService extends Service<Config> {
                 try {
                     // 更健壮的参数解析，支持 "key=value" 和 key="value with spaces"
                     const paramString = params?.join(" ") || "";
+                    // eslint-disable-next-line regexp/no-unused-capturing-group
                     const regex = /(\w+)=("([^"]*)"|'([^']*)'|(\S+))/g;
                     let match;
+                    // eslint-disable-next-line no-cond-assign
                     while ((match = regex.exec(paramString)) !== null) {
                         const key = match[1];
                         const value = match[3] ?? match[4] ?? match[5]; // 优先取引号内的内容
@@ -345,7 +348,7 @@ export class PluginService extends Service<Config> {
      * @param extConfig 传递给扩展实例的配置
      */
     public register<TConfig = any>(extensionInstance: Plugin<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
-        const validate: Schema<TConfig> = extensionInstance.constructor.Config;
+        const validate: Schema<TConfig> = (extensionInstance.constructor as any).Config;
         const validatedConfig = validate ? validate(extConfig) : extConfig;
 
         let availableplugins = this.ctx.schema.get("toolService.availableplugins");
