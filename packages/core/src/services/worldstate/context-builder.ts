@@ -1,8 +1,7 @@
-import { Bot, Context, Session } from "koishi";
-
-import { HistoryConfig } from "./config";
-import { HistoryManager } from "./history-manager";
-import {
+import type { Bot, Context, Session } from "koishi";
+import type { HistoryConfig } from "./config";
+import type { HistoryManager } from "./history-manager";
+import type {
     AnyAgentStimulus,
     AnyWorldState,
     ChannelBoundStimulus,
@@ -12,15 +11,16 @@ import {
     GlobalStimulus,
     GlobalWorldState,
     SelfInitiatedStimulus,
-    StimulusSource,
-    UserMessageStimulus
+    UserMessageStimulus,
 } from "./types";
+
+import { StimulusSource } from "./types";
 
 export class ContextBuilder {
     constructor(
         private ctx: Context,
         private config: HistoryConfig,
-        private history: HistoryManager
+        private history: HistoryManager,
     ) {}
 
     public async buildFromStimulus(stimulus: AnyAgentStimulus): Promise<AnyWorldState> {
@@ -40,7 +40,8 @@ export class ContextBuilder {
                 // 这些需要根据 payload 判断
                 if (stimulus.payload.channelId && stimulus.payload.platform) {
                     return this.buildChannelWorldState(stimulus);
-                } else {
+                }
+                else {
                     return this.buildGlobalWorldState(stimulus);
                 }
 
@@ -104,8 +105,9 @@ export class ContextBuilder {
 
     private getBot(platform?: string): Bot {
         if (platform) {
-            const bot = this.ctx.bots.find((b) => b.platform === platform);
-            if (bot) return bot;
+            const bot = this.ctx.bots.find(b => b.platform === platform);
+            if (bot)
+                return bot;
             throw new Error(`No bot found for platform: ${platform}`);
         }
         if (this.ctx.bots.length > 0) {
@@ -122,16 +124,19 @@ export class ContextBuilder {
             let userInfo: Awaited<ReturnType<Bot["getUser"]>>;
             try {
                 userInfo = await bot.getUser(channelId);
-            } catch (error: any) {
+            }
+            catch (error: any) {
                 this.ctx.logger.debug(`获取用户信息失败 for user ${channelId}: ${error.message}`);
             }
 
             channelName = `与 ${userInfo?.name || channelId} 的私聊`;
-        } else {
+        }
+        else {
             try {
                 channelInfo = await bot.getChannel(channelId);
                 channelName = channelInfo.name;
-            } catch (error: any) {
+            }
+            catch (error: any) {
                 this.ctx.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
             }
             channelName = channelInfo?.name || "未知群组";
@@ -145,7 +150,8 @@ export class ContextBuilder {
         try {
             const user = await bot.getUser(selfId);
             return { id: selfId, name: user.name };
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
             return { id: selfId, name: bot.user.name || "Self" };
         }

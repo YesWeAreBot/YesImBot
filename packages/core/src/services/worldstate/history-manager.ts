@@ -1,7 +1,17 @@
-import { $, Context, h, Query } from "koishi";
+import type { Context, Query } from "koishi";
+import type {
+    AgentResponsePayload,
+    ChannelEventPayloadData,
+    ContextualAgentResponse,
+    ContextualChannelEvent,
+    ContextualMessage,
+    EventData,
+    L1HistoryItem,
+    MessagePayload,
+} from "./types";
 
+import { $, h, Random } from "koishi";
 import { TableName } from "@/shared/constants";
-import { ChannelEventPayloadData, ContextualChannelEvent, ContextualMessage, EventData, L1HistoryItem, MessagePayload } from "./types";
 
 export class HistoryManager {
     constructor(private ctx: Context) {}
@@ -28,6 +38,9 @@ export class HistoryManager {
                 case "channel_event":
                     item.is_channel_event = true;
                     break;
+                case "agent_response":
+                    item.is_agent_response = true;
+                    break;
             }
         });
 
@@ -41,8 +54,10 @@ export class HistoryManager {
         };
         if (options.start || options.end) {
             query.timestamp = {};
-            if (options.start) query.timestamp.$gte = options.start;
-            if (options.end) query.timestamp.$lt = options.end;
+            if (options.start)
+                query.timestamp.$gte = options.start;
+            if (options.end)
+                query.timestamp.$lt = options.end;
         }
         const events = (await this.ctx.database.get(TableName.Events, query, {
             limit: options.limit,
@@ -56,8 +71,10 @@ export class HistoryManager {
         const query: Query.Expr<EventData> = { channelId };
         if (options.start || options.end) {
             query.timestamp = {};
-            if (options.start) query.timestamp.$gte = options.start;
-            if (options.end) query.timestamp.$lt = options.end;
+            if (options.start)
+                query.timestamp.$gte = options.start;
+            if (options.end)
+                query.timestamp.$lt = options.end;
         }
         const events = (await this.ctx.database.get(TableName.Events, query, {
             limit: options.limit,
@@ -71,24 +88,27 @@ export class HistoryManager {
     public async getEventsByChannelAndUser(channelId: string, userId: string, options: { start?: Date; end?: Date; limit?: number } = {}): Promise<EventData[]> {
         // Koishi 的 JSON 查询尚不直接支持 payload.sender.id, 我们需要在内存中过滤
         const allChannelEvents = await this.getEventsByChannel(channelId, options);
-        return allChannelEvents.filter((event) => (event.payload as MessagePayload)?.sender?.id === userId);
+        return allChannelEvents.filter(event => (event.payload as MessagePayload)?.sender?.id === userId);
     }
 
     // 获取指定用户在所有聊天中的事件
     public async getEventsByUser(userId: string, options: { start?: Date; end?: Date; limit?: number } = {}): Promise<EventData[]> {
         const allEvents = await this.getEventsByTime(options);
-        return allEvents.filter((event) => (event.payload as MessagePayload)?.sender?.id === userId);
+        return allEvents.filter(event => (event.payload as MessagePayload)?.sender?.id === userId);
     }
 
     public async getEventsBefore(timestamp: Date, limit: number, channelId?: string, userId?: string): Promise<EventData[]> {
         const options = { end: timestamp, limit };
         if (channelId && userId) {
             return this.getEventsByChannelAndUser(channelId, userId, options);
-        } else if (channelId) {
+        }
+        else if (channelId) {
             return this.getEventsByChannel(channelId, options);
-        } else if (userId) {
+        }
+        else if (userId) {
             return this.getEventsByUser(userId, options);
-        } else {
+        }
+        else {
             return this.getEventsByTime(options);
         }
     }
@@ -103,9 +123,9 @@ export class HistoryManager {
         if (options.userId) {
             // 需要在内存中过滤
             const events = (await this.ctx.database.get(TableName.Events, query as any)) as EventData[];
-            return events.filter((e) => (e.payload as MessagePayload)?.sender?.id === options.userId).length;
+            return events.filter(e => (e.payload as MessagePayload)?.sender?.id === options.userId).length;
         }
-        return this.ctx.database.eval(TableName.Events, (row) => $.count(row.id), query as any);
+        return this.ctx.database.eval(TableName.Events, row => $.count(row.id), query as any);
     }
 
     // 消息格式化
@@ -116,9 +136,11 @@ export class HistoryManager {
                 if (event.type === "message") {
                     const payload = event.payload as MessagePayload;
                     let base = `[${time}] ${payload.sender.name || payload.sender.id}: ${payload.content}`;
-                    if (options.includeDetails) base += ` (ID: ${event.id})`;
+                    if (options.includeDetails)
+                        base += ` (ID: ${event.id})`;
                     return base;
-                } else {
+                }
+                else {
                     return `[${time}] System: ${(event.payload as ChannelEventPayloadData).message}`;
                 }
             })
@@ -138,10 +160,34 @@ export class HistoryManager {
 
     // 移除机器人消息
     public filterOutBotMessages(events: EventData[], botId: string): EventData[] {
-        return events.filter((event) => (event.payload as MessagePayload)?.sender?.id !== botId);
+        return events.filter(event => (event.payload as MessagePayload)?.sender?.id !== botId);
     }
 
-    private eventDataToL1HistoryItem(event: EventData): ContextualMessage | ContextualChannelEvent | null {
+    /**
+     * 记录智能体响应（工具调用和动作）到数据库
+     * @param platform 平台
+     * @param channelId 频道 ID
+     * @param payload Agent 响应负载
+     * @returns 创建的事件 ID
+     */
+    public async recordAgentResponse(
+        platform: string,
+        channelId: string,
+        payload: AgentResponsePayload,
+    ): Promise<string> {
+        const eventId = Random.id();
+        await this.ctx.database.create(TableName.Events, {
+            id: eventId,
+            type: "agent_response",
+            timestamp: new Date(),
+            platform,
+            channelId,
+            payload,
+        });
+        return eventId;
+    }
+
+    private eventDataToL1HistoryItem(event: EventData): ContextualMessage | ContextualChannelEvent | ContextualAgentResponse | null {
         if (event.type === "message") {
             return {
                 type: "message",
@@ -158,6 +204,14 @@ export class HistoryManager {
                 timestamp: event.timestamp,
                 ...(event.payload as ChannelEventPayloadData),
             } as ContextualChannelEvent;
+        }
+        if (event.type === "agent_response") {
+            return {
+                type: "agent_response",
+                id: event.id,
+                timestamp: event.timestamp,
+                ...(event.payload as AgentResponsePayload),
+            } as ContextualAgentResponse;
         }
         return null;
     }

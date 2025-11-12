@@ -34,18 +34,59 @@ export interface GlobalEventPayloadData {
     details: object;
 }
 
+/**
+ * Agent 响应负载数据
+ * 记录智能体的工具调用和动作执行结果
+ */
+export interface AgentResponsePayload {
+    /** 工具调用记录（信息获取类操作） */
+    toolCalls?: Array<{
+        id: string;
+        function: string;
+        params: Record<string, any>;
+        result?: {
+            success: boolean;
+            data?: any;
+            error?: string;
+        };
+    }>;
+
+    /** 动作记录（与用户交互的操作） */
+    actions: Array<{
+        id: string;
+        function: string; // "send_message", "send_sticker" 等
+        params: Record<string, any>;
+        result?: {
+            success: boolean;
+            data?: any;
+            error?: string;
+        };
+    }>;
+
+    /** 元数据 */
+    metadata?: {
+        turnId?: string;
+        heartbeatCount?: number;
+    };
+}
+
 export interface EventData {
     id: string;
-    type: "message" | "channel_event" | "global_event";
+    type: "message" | "channel_event" | "global_event" | "agent_response";
     timestamp: Date;
     platform?: string; // 全局事件可能没有 platform
     channelId?: string; // 全局事件没有 channelId
-    payload: MessagePayload | ChannelEventPayloadData | GlobalEventPayloadData;
+    payload: MessagePayload | ChannelEventPayloadData | GlobalEventPayloadData | AgentResponsePayload;
 }
 
 export interface MessageData extends EventData {
     type: "message";
     payload: MessagePayload;
+}
+
+export interface AgentResponseData extends EventData {
+    type: "agent_response";
+    payload: AgentResponsePayload;
 }
 
 export enum StimulusSource {
@@ -164,7 +205,47 @@ export interface ContextualChannelEvent extends Pick<EventData, "id" | "timestam
     is_new?: boolean;
 }
 
-export type L1HistoryItem = ContextualMessage | ContextualChannelEvent;
+/**
+ * Agent 响应记录（用于 L1 历史）
+ * 记录智能体执行的工具调用和动作
+ */
+export interface ContextualAgentResponse extends Pick<EventData, "id" | "timestamp"> {
+    type: "agent_response";
+
+    /** 工具调用记录（信息获取类操作） */
+    toolCalls?: Array<{
+        id: string;
+        function: string;
+        params: Record<string, any>;
+        result?: {
+            success: boolean;
+            data?: any;
+            error?: string;
+        };
+    }>;
+
+    /** 动作记录（与用户交互的操作） */
+    actions: Array<{
+        id: string;
+        function: string;
+        params: Record<string, any>;
+        result?: {
+            success: boolean;
+            data?: any;
+            error?: string;
+        };
+    }>;
+
+    /** 元数据 */
+    metadata?: {
+        turnId?: string;
+        heartbeatCount?: number;
+    };
+
+    is_new?: boolean;
+}
+
+export type L1HistoryItem = ContextualMessage | ContextualChannelEvent | ContextualAgentResponse;
 
 interface BaseWorldState {
     contextType: "channel" | "global";

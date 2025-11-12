@@ -1,11 +1,13 @@
-import { Argv, Context, Random, Session } from "koishi";
+import type { Argv, Context, Session } from "koishi";
+import type { HistoryConfig } from "./config";
+import type { WorldStateService } from "./service";
+import type { ChannelEventPayloadData, ChannelEventStimulus, UserMessageStimulus } from "./types";
+import type { AssetService } from "@/services/assets";
 
-import { AssetService } from "@/services/assets";
+import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
-import { HistoryConfig } from "./config";
-import { WorldStateService } from "./service";
-import { ChannelEventPayloadData, ChannelEventStimulus, ChannelEventType, StimulusSource, UserMessageStimulus } from "./types";
+import { ChannelEventType, StimulusSource } from "./types";
 
 interface PendingCommand {
     commandEventId: string;
@@ -22,7 +24,7 @@ export class EventListenerManager {
     constructor(
         private ctx: Context,
         private service: WorldStateService,
-        private config: HistoryConfig
+        private config: HistoryConfig,
     ) {
         this.assetService = ctx[Services.Asset];
     }
@@ -32,7 +34,7 @@ export class EventListenerManager {
     }
 
     public stop(): void {
-        this.disposers.forEach((dispose) => dispose());
+        this.disposers.forEach(dispose => dispose());
         this.disposers.length = 0;
     }
 
@@ -43,12 +45,13 @@ export class EventListenerManager {
 
         for (const [channelId, commands] of this.pendingCommands.entries()) {
             const initialCount = commands.length;
-            const activeCommands = commands.filter((cmd) => now - cmd.timestamp < expirationTime);
+            const activeCommands = commands.filter(cmd => now - cmd.timestamp < expirationTime);
             cleanedCount += initialCount - activeCommands.length;
 
             if (activeCommands.length === 0) {
                 this.pendingCommands.delete(channelId);
-            } else {
+            }
+            else {
                 this.pendingCommands.set(channelId, activeCommands);
             }
         }
@@ -61,14 +64,16 @@ export class EventListenerManager {
         // 这个中间件记录用户消息，并触发响应流程
         this.disposers.push(
             this.ctx.middleware(async (session, next) => {
-                if (!this.service.isChannelAllowed(session)) return next();
+                if (!this.service.isChannelAllowed(session))
+                    return next();
 
-                if (session.author?.isBot) return next();
+                if (session.author?.isBot)
+                    return next();
 
                 await this.recordUserMessage(session);
                 await next();
 
-                if (!session["__commandHandled"] || !this.config.ignoreCommandMessage) {
+                if (!session.__commandHandled || !this.config.ignoreCommandMessage) {
                     const stimulus: UserMessageStimulus = {
                         type: StimulusSource.UserMessage,
                         payload: session,
@@ -77,16 +82,17 @@ export class EventListenerManager {
                     };
                     this.ctx.emit("agent/stimulus-user-message", stimulus);
                 }
-            })
+            }),
         );
 
         // 监听指令调用，记录指令事件
         this.disposers.push(
             this.ctx.on("command/before-execute", (argv) => {
-                if (!argv.session || !this.service.isChannelAllowed(argv.session) || this.config.ignoreCommandMessage) return;
-                argv.session["__commandHandled"] = true;
+                if (!argv.session || !this.service.isChannelAllowed(argv.session) || this.config.ignoreCommandMessage)
+                    return;
+                argv.session.__commandHandled = true;
                 this.handleCommandInvocation(argv);
-            })
+            }),
         );
 
         // 在发送前匹配指令结果
@@ -94,44 +100,52 @@ export class EventListenerManager {
             this.ctx.on(
                 "before-send",
                 (session) => {
-                    if (!this.service.isChannelAllowed(session) || this.config.ignoreCommandMessage) return;
+                    if (!this.service.isChannelAllowed(session) || this.config.ignoreCommandMessage)
+                        return;
                     this.matchCommandResult(session);
                 },
-                true
-            )
+                true,
+            ),
         );
         // 在发送后记录机器人消息
         this.disposers.push(
             this.ctx.on(
                 "after-send",
                 (session) => {
-                    if (!this.service.isChannelAllowed(session)) return;
+                    if (!this.service.isChannelAllowed(session))
+                        return;
                     this.recordBotSentMessage(session);
                 },
-                true
-            )
+                true,
+            ),
         );
 
         // 记录从另一个设备手动发送的消息
         this.disposers.push(
             this.ctx.on("message", (session) => {
-                if (!this.service.isChannelAllowed(session)) return;
+                if (!this.service.isChannelAllowed(session))
+                    return;
                 if (session.userId === session.bot.selfId && !session.scope) {
-                    if (this.config.ignoreSelfMessage) return;
+                    if (this.config.ignoreSelfMessage)
+                        return;
                     this.handleOperatorMessage(session);
                 }
-            })
+            }),
         );
 
         // 监听系统事件，记录特定事件
         this.disposers.push(
             this.ctx.on("internal/session", (session) => {
-                if (!this.service.isChannelAllowed(session)) return;
+                if (!this.service.isChannelAllowed(session))
+                    return;
 
-                if (session.type === "notice" && session.platform == "onebot") return this.handleNotice(session);
-                if (session.type === "guild-member" && session.platform == "onebot") return this.handleGuildMember(session);
-                if (session.type === "message-deleted") return this.handleMessageDeleted(session);
-            })
+                if (session.type === "notice" && session.platform == "onebot")
+                    return this.handleNotice(session);
+                if (session.type === "guild-member" && session.platform == "onebot")
+                    return this.handleGuildMember(session);
+                if (session.type === "message-deleted")
+                    return this.handleMessageDeleted(session);
+            }),
         );
     }
 
@@ -195,8 +209,8 @@ export class EventListenerManager {
                         };
                         this.ctx.emit("agent/stimulus-channel-event", stimulus);
                     }
-                    return;
-                } else {
+                }
+                else {
                     const payload: ChannelEventPayloadData = {
                         eventType: "guild-member-ban",
                         details: { user: session.event.user, operator: session.event.operator, duration },
@@ -226,7 +240,8 @@ export class EventListenerManager {
 
     private async handleCommandInvocation(argv: Argv): Promise<void> {
         const { session, command, source } = argv;
-        if (!session) return;
+        if (!session)
+            return;
 
         /* prettier-ignore */
         this.ctx.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
@@ -255,13 +270,16 @@ export class EventListenerManager {
     }
 
     private async matchCommandResult(session: Session): Promise<void> {
-        if (!session.scope) return;
+        if (!session.scope)
+            return;
 
         const pendingInChannel = this.pendingCommands.get(session.channelId);
-        if (!pendingInChannel?.length) return;
+        if (!pendingInChannel?.length)
+            return;
 
-        const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope);
-        if (pendingIndex === -1) return;
+        const pendingIndex = pendingInChannel.findIndex(p => p.scope === session.scope);
+        if (pendingIndex === -1)
+            return;
 
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
         this.ctx.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
@@ -299,7 +317,8 @@ export class EventListenerManager {
     }
 
     private async recordBotSentMessage(session: Session): Promise<void> {
-        if (!session.content || !session.messageId) return;
+        if (!session.content || !session.messageId)
+            return;
 
         this.ctx.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
 
@@ -314,7 +333,8 @@ export class EventListenerManager {
 
     // TODO: 从平台适配器拉取用户信息
     private async updateMemberInfo(session: Session): Promise<void> {
-        if (!session.guildId || !session.author) return;
+        if (!session.guildId || !session.author)
+            return;
 
         try {
             const memberKey = { pid: session.userId, platform: session.platform, guildId: session.guildId };
@@ -328,10 +348,12 @@ export class EventListenerManager {
             const existing = await this.ctx.database.get(TableName.Members, memberKey);
             if (existing.length > 0) {
                 await this.ctx.database.set(TableName.Members, memberKey, memberData);
-            } else {
+            }
+            else {
                 await this.ctx.database.create(TableName.Members, { ...memberKey, ...memberData });
             }
-        } catch (error: any) {
+        }
+        catch (error: any) {
             this.ctx.logger.error(`更新成员信息失败: ${error.message}`);
         }
     }
