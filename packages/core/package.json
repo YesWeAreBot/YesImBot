@@ -7,8 +7,8 @@
   "types": "lib/index.d.ts",
   "homepage": "https://github.com/YesWeAreBot/YesImBot",
   "files": [
-    "lib",
     "dist",
+    "lib",
     "resources",
     "src"
   ],
@@ -56,10 +56,25 @@
       "import": "./lib/services/index.mjs",
       "require": "./lib/services/index.js"
     },
+    "./services/context": {
+      "types": "./lib/services/context/index.d.ts",
+      "import": "./lib/services/context/index.mjs",
+      "require": "./lib/services/context/index.js"
+    },
+    "./services/model": {
+      "types": "./lib/services/model/index.d.ts",
+      "import": "./lib/services/model/index.mjs",
+      "require": "./lib/services/model/index.js"
+    },
     "./services/plugin": {
       "types": "./lib/services/plugin/index.d.ts",
       "import": "./lib/services/plugin/index.mjs",
       "require": "./lib/services/plugin/index.js"
+    },
+    "./services/world": {
+      "types": "./lib/services/world/index.d.ts",
+      "import": "./lib/services/world/index.mjs",
+      "require": "./lib/services/world/index.js"
     },
     "./shared": {
       "types": "./lib/shared/index.d.ts",

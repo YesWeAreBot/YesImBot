@@ -16,11 +16,8 @@ export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");
  * 所有数据库表的名称
  */
 export enum TableName {
-    Members = "worldstate.members",
-    Events = "yesimbot.events",
-    L2Chunks = "worldstate.l2_chunks",
-    L3Diaries = "worldstate.l3_diaries",
-
+    Timeline = "yesimbot.timeline",
+    Members = "yesimbot.members",
     Assets = "yesimbot.assets",
     Stickers = "yesimbot.stickers",
 }

@@ -1,5 +1,5 @@
+import type { ModelDescriptor } from "@/services/model";
 import { Schema } from "koishi";
-import { ModelDescriptor } from "../model";
 
 /**
  * 多级缓存记忆模型管理配置

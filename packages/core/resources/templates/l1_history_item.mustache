@@ -1,34 +1,54 @@
 {{#is_user_message}}
 <message>[{{id}}|{{#timestamp}}{{_formatDate}}{{/timestamp}}|{{sender.name}}({{sender.id}})] {{content}}</message>
 {{/is_user_message}}
-{{#is_agent_thought}}
-<thoughts>
-  <observe>{{observe}}</observe>
-  <analyze_infer>{{analyze_infer}}</analyze_infer>
-  <plan>{{plan}}</plan>
-</thoughts>
-{{/is_agent_thought}}
-{{#is_agent_action}}
-<action>
-  <function>{{function}}</function>
-  <params>{{_renderParams}}</params>
-</action>
-{{/is_agent_action}}
-{{#is_agent_observation}}
-<observation>
-  <function>{{function}}</function>
-  <status>{{status}}</status>
-  {{#result}}
-  <result>{{#.}}{{_toString}}{{/.}}</result>
-  {{/result}}
-  {{#error}}
-  <error>{{.}}</error>
-  {{/error}}
-</observation>
-{{/is_agent_observation}}
-{{#is_agent_heartbeat}}
-<heartbeat current={{current}} max={{max}}/>
-{{/is_agent_heartbeat}}
-{{#is_system_event}}
+{{#is_channel_event}}
 <system_event>[{{#timestamp}}{{_formatDate}}{{/timestamp}}|System] {{message}}</system_event>
-{{/is_system_event}}
+{{/is_channel_event}}
+{{#is_agent_response}}
+<agent_response id="{{id}}" timestamp="{{#timestamp}}{{_formatDate}}{{/timestamp}}">
+  {{#toolCalls}}
+  {{#toolCalls.length}}
+  <tool_calls>
+    {{#toolCalls}}
+    <tool_call id="{{id}}">
+      <function>{{function}}</function>
+      <params>{{#params}}{{_renderParams}}{{/params}}</params>
+      {{#result}}
+      <result success="{{success}}">
+        {{#data}}{{#.}}{{_toString}}{{/.}}{{/data}}
+        {{#error}}{{error}}{{/error}}
+      </result>
+      {{/result}}
+    </tool_call>
+    {{/toolCalls}}
+  </tool_calls>
+  {{/toolCalls.length}}
+  {{/toolCalls}}
+  {{#actions}}
+  {{#actions.length}}
+  <actions>
+    {{#actions}}
+    <action id="{{id}}">
+      <function>{{function}}</function>
+      <params>{{#params}}{{_renderParams}}{{/params}}</params>
+      {{#result}}
+      <result success="{{success}}">
+        {{#data}}{{#.}}{{_toString}}{{/.}}{{/data}}
+        {{#error}}{{error}}{{/error}}
+      </result>
+      {{/result}}
+    </action>
+    {{/actions}}
+  </actions>
+  {{/actions.length}}
+  {{/actions}}
+  {{#metadata}}
+  {{#metadata.turnId}}
+  <metadata>
+    <turn_id>{{metadata.turnId}}</turn_id>
+    {{#metadata.heartbeatCount}}<heartbeat_count>{{metadata.heartbeatCount}}</heartbeat_count>{{/metadata.heartbeatCount}}
+  </metadata>
+  {{/metadata.turnId}}
+  {{/metadata}}
+</agent_response>
+{{/is_agent_response}}
