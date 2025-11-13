@@ -30,4 +30,11 @@ export default antfu({
     // Disable jsonc and yaml support
     jsonc: false,
     yaml: false,
+
+    rules: {
+        "import/no-duplicates": ["off"],
+        "unused-imports/no-unused-vars": ["off"],
+        "ts/no-empty-object-type": ["off"],
+        "ts/no-redeclare": ["warn"],
+    },
 });
