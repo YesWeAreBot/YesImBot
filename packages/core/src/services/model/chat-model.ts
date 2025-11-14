@@ -157,9 +157,6 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalUsage: GenerateTextResult["usage"];
         const finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
-        const streamFinished = false;
-        const earlyExitByValidator = false;
-
         try {
             const buffer: string[] = [];
             const { textStream, steps, fullStream, totalUsage } = streamText({
@@ -168,36 +165,66 @@ export class ChatModel extends BaseModel implements IChatModel {
                 streamOptions: { includeUsage: true },
             });
 
-            for await (const textDelta of textStream) {
-                if (!streamStarted && isNotEmpty(textDelta)) {
-                    onStreamStart?.();
-                    streamStarted = true;
-                    this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
-                }
-                if (textDelta === "")
-                    continue;
+            const textProcessor = (async () => {
+                for await (const textDelta of textStream) {
+                    if (!streamStarted && isNotEmpty(textDelta)) {
+                        onStreamStart?.();
+                        streamStarted = true;
+                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
+                    }
+                    if (textDelta === "")
+                        continue;
 
-                buffer.push(textDelta);
-                finalContentParts.push(textDelta);
-            }
+                    buffer.push(textDelta);
+                    finalContentParts.push(textDelta);
+                }
+            })();
+
+            const eventProcessor = (async () => {
+                for await (const event of fullStream) {
+                    switch (event.type) {
+                        case "tool-call":
+                            continue;
+                        case "tool-result":
+                            continue;
+                        case "tool-call-delta":
+                            continue;
+                        case "error":
+                            console.warn(event.error);
+                            break;
+                        case "finish":
+                            continue;
+                        case "reasoning-delta":
+                            continue;
+                        case "text-delta":
+                            continue;
+                        case "tool-call-streaming-start":
+                            continue;
+                    };
+                }
+            })();
+
+            await Promise.all([textProcessor, eventProcessor]);
 
             finalSteps = await steps;
             finalUsage = await totalUsage;
         }
         catch (error: any) {
-            // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
-            if (error.name === "AbortError" && earlyExitByValidator) {
-                this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
-            }
-            else if (error.name === "XSAIError") {
+            if (error.name === "XSAIError") {
+                this.logger.error(error.message);
                 switch (error.response.status) {
                     case 429:
+                        // error.response.statusText
                         this.logger.warn(`🟡 [流式] 请求过于频繁，请稍后再试。`);
                         break;
                     case 401:
+                        break;
+                    case 503:
+                        break;
                     default:
                         break;
                 }
+                throw error;
             }
             else {
                 throw error;
