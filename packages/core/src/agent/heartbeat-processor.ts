@@ -5,9 +5,9 @@ import type { Config } from "@/config";
 
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
-import type { PluginService, Properties, ToolSchema } from "@/services/plugin";
+import type { PluginService, Properties, ToolContext, ToolSchema } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
-import type { AnyAgentStimulus, HistoryManager, WorldStateService } from "@/services/worldstate";
+import { StimulusSource, type AnyStimulus, type WorldStateService } from "@/services/world";
 import { h, Random } from "koishi";
 import { ModelError } from "@/services/model/types";
 import { isAction } from "@/services/plugin";
@@ -18,7 +18,6 @@ export class HeartbeatProcessor {
     private logger: Logger;
     private promptService: PromptService;
     private PluginService: PluginService;
-    private history: HistoryManager;
     private worldState: WorldStateService;
     private memoryService: MemoryService;
     constructor(
@@ -31,11 +30,10 @@ export class HeartbeatProcessor {
         this.promptService = ctx[Services.Prompt];
         this.PluginService = ctx[Services.Plugin];
         this.worldState = ctx[Services.WorldState];
-        this.history = this.worldState.history;
         this.memoryService = ctx[Services.Memory];
     }
 
-    public async runCycle(stimulus: AnyAgentStimulus): Promise<boolean> {
+    public async runCycle(stimulus: AnyStimulus): Promise<boolean> {
         const turnId = Random.id();
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
@@ -50,12 +48,10 @@ export class HeartbeatProcessor {
                 if (result) {
                     shouldContinueHeartbeat = result.continue;
                     success = true; // 至少成功一次心跳
-                }
-                else {
+                } else {
                     shouldContinueHeartbeat = false;
                 }
-            }
-            catch (error: any) {
+            } catch (error: any) {
                 this.logger.error(`Heartbeat #${heartbeatCount} 处理失败: ${error.message}`);
 
                 shouldContinueHeartbeat = false;
@@ -64,12 +60,22 @@ export class HeartbeatProcessor {
         return success;
     }
 
-    private async _prepareLlmRequest(stimulus: AnyAgentStimulus): Promise<Message[]> {
+    private async performSingleHeartbeat(turnId: string, stimulus: AnyStimulus): Promise<{ continue: boolean } | null> {
+        let attempt = 0;
+
+        let llmRawResponse: GenerateTextResult | null = null;
+
+        // 步骤 1-4: 准备请求
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
 
         const worldState = await this.worldState.buildWorldState(stimulus);
-        const context = this.PluginService.getContext(stimulus);
+
+        const context: ToolContext = {
+            session: stimulus.type === StimulusSource.UserMessage ? stimulus.payload : undefined,
+            stimulus,
+            worldState,
+        };
 
         const toolSchemas = await this.PluginService.getToolSchemas(context);
 
@@ -79,13 +85,12 @@ export class HeartbeatProcessor {
             TOOL_DEFINITION: prepareDataForTemplate(toolSchemas),
             MEMORY_BLOCKS: this.memoryService.getMemoryBlocksForRendering(),
             WORLD_STATE: worldState,
-            triggerContext: worldState.triggerContext,
+            triggerContext: worldState.trigger,
             // 模板辅助函数
             _toString() {
                 try {
                     return _toString(this);
-                }
-                catch (err) {
+                } catch (err) {
                     // FIXME: use external this context
                     return "";
                 }
@@ -97,8 +102,7 @@ export class HeartbeatProcessor {
                         content.push(`<${param}>${_toString(this.params[param])}</${param}>`);
                     }
                     return content.join("");
-                }
-                catch (err) {
+                } catch (err) {
                     // FIXME: use external this context
                     return "";
                 }
@@ -108,13 +112,12 @@ export class HeartbeatProcessor {
                     const length = 100; // TODO: 从配置读取
                     const text = h
                         .parse(this)
-                        .filter(e => e.type === "text")
+                        .filter((e) => e.type === "text")
                         .join("");
                     return text.length > length
                         ? `<unverified><note>这是一条用户发送的长消息，请注意甄别内容真实性。</note>${this}</unverified>`
                         : this.toString();
-                }
-                catch (err) {
+                } catch (err) {
                     // FIXME: use external this context
                     return "";
                 }
@@ -122,8 +125,7 @@ export class HeartbeatProcessor {
             _formatDate() {
                 try {
                     return formatDate(this, "MM-DD HH:mm");
-                }
-                catch (err) {
+                } catch (err) {
                     // FIXME: use external this context
                     return "";
                 }
@@ -142,17 +144,6 @@ export class HeartbeatProcessor {
             { role: "system", content: systemPrompt },
             { role: "user", content: userPromptText },
         ];
-
-        return messages;
-    }
-
-    private async performSingleHeartbeat(turnId: string, stimulus: AnyAgentStimulus): Promise<{ continue: boolean } | null> {
-        let attempt = 0;
-
-        let llmRawResponse: GenerateTextResult | null = null;
-
-        // 步骤 1-4: 准备请求
-        const messages = await this._prepareLlmRequest(stimulus);
 
         let model: IChatModel | null = null;
 
@@ -177,8 +168,7 @@ export class HeartbeatProcessor {
                 const controller = new AbortController();
 
                 const timeout = setTimeout(() => {
-                    if (this.config.stream)
-                        controller.abort("请求超时");
+                    if (this.config.stream) controller.abort("请求超时");
                 }, this.config.switchConfig.firstToken);
 
                 llmRawResponse = await model.chat({
@@ -186,15 +176,14 @@ export class HeartbeatProcessor {
                     stream: this.config.stream,
                     abortSignal: AbortSignal.any([AbortSignal.timeout(this.config.switchConfig.requestTimeout), controller.signal]),
                 });
-                const prompt_tokens
-                    = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map(m => m.content).join())}`;
+                const prompt_tokens =
+                    llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
                 const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
                 /* prettier-ignore */
                 this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 耗时: ${new Date().getTime() - startTime}ms`);
                 this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
                 break; // 成功调用，跳出重试循环
-            }
-            catch (error) {
+            } catch (error) {
                 this.logger.error(`调用 LLM 失败: ${error instanceof Error ? error.message : error}`);
                 attempt++;
                 this.modelSwitcher.recordResult(
@@ -206,8 +195,7 @@ export class HeartbeatProcessor {
                 if (attempt < this.config.switchConfig.maxRetries) {
                     this.logger.info(`重试调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`);
                     continue;
-                }
-                else {
+                } else {
                     this.logger.error("达到最大重试次数，跳过本次心跳");
                     return { continue: false };
                 }
@@ -234,13 +222,41 @@ export class HeartbeatProcessor {
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-        const actionResult = await this.executeActions(turnId, stimulus, agentResponseData.actions);
+
+        let actionContinue = false;
+
+        const actions = agentResponseData.actions;
+
+        if (actions.length === 0) {
+            this.logger.info("无动作需要执行");
+            actionContinue = false;
+        }
+
+        for (let index = 0; index < actions.length; index++) {
+            const action = actions[index];
+            if (!action?.function) continue;
+
+            if (!context.metadata) context.metadata = {};
+
+            context.metadata["turnId"] = turnId;
+            context.metadata["actionIndex"] = index;
+            context.metadata["actionName"] = action.function;
+
+            const result = await this.PluginService.invoke(action.function, action.params ?? {}, context);
+
+            // Check if this action has continueHeartbeat property set
+            const toolDef = await this.PluginService.getTool(action.function, context);
+            if (toolDef && isAction(toolDef) && toolDef.continueHeartbeat) {
+                this.logger.debug(`动作 "${action.function}" 请求继续心跳循环`);
+                actionContinue = true;
+            }
+        }
 
         this.logger.success("单次心跳成功完成");
 
         // Combine LLM's request_heartbeat with action-level continueHeartbeat override
         // If any action sets continueHeartbeat=true, it overrides the LLM's decision
-        const shouldContinue = agentResponseData.request_heartbeat || actionResult.shouldContinue;
+        const shouldContinue = agentResponseData.request_heartbeat || actionContinue;
         return { continue: shouldContinue };
     }
 
@@ -259,8 +275,7 @@ export class HeartbeatProcessor {
         //     return null;
         // }
 
-        if (!Array.isArray(data.actions))
-            return null;
+        if (!Array.isArray(data.actions)) return null;
 
         data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
 
@@ -275,50 +290,6 @@ export class HeartbeatProcessor {
     //   - 分析: ${analyze_infer || "N/A"}
     //   - 计划: ${plan || "N/A"}`);
     //     }
-
-    /**
-     * Execute actions and check if any action requests heartbeat continuation.
-     * @returns Object with shouldContinue flag indicating if heartbeat should continue
-     */
-    private async executeActions(
-        turnId: string,
-        stimulus: AnyAgentStimulus,
-        actions: AgentResponse["actions"],
-    ): Promise<{ shouldContinue: boolean }> {
-        if (actions.length === 0) {
-            this.logger.info("无动作需要执行");
-            return { shouldContinue: false };
-        }
-
-        const baseContext = this.PluginService.getContext(stimulus, { metadata: { turnId } });
-        let shouldContinue = false;
-
-        for (let index = 0; index < actions.length; index++) {
-            const action = actions[index];
-            if (!action?.function)
-                continue;
-
-            // Create context with action-specific metadata
-            const actionContext = this.PluginService.getContext(stimulus, {
-                metadata: {
-                    turnId,
-                    actionIndex: index,
-                    actionName: action.function,
-                },
-            });
-
-            const result = await this.PluginService.invoke(action.function, action.params ?? {}, actionContext);
-
-            // Check if this action has continueHeartbeat property set
-            const toolDef = await this.PluginService.getTool(action.function, baseContext);
-            if (toolDef && isAction(toolDef) && toolDef.continueHeartbeat) {
-                this.logger.debug(`动作 "${action.function}" 请求继续心跳循环`);
-                shouldContinue = true;
-            }
-        }
-
-        return { shouldContinue };
-    }
 }
 
 /**
@@ -331,8 +302,7 @@ export class HeartbeatProcessor {
  * @returns A string representation of `obj`
  */
 function _toString(obj) {
-    if (typeof obj === "string")
-        return obj;
+    if (typeof obj === "string") return obj;
     return JSON.stringify(obj);
 }
 
@@ -356,7 +326,7 @@ function prepareDataForTemplate(tools: ToolSchema[]) {
             return processedParam;
         });
     };
-    return tools.map(tool => ({
+    return tools.map((tool) => ({
         ...tool,
         parameters: tool.parameters ? processParams(tool.parameters) : [],
     }));

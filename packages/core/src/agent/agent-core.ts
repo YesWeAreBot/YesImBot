@@ -3,10 +3,10 @@ import type { Config } from "@/config";
 
 import type { ChatModelSwitcher, ModelService } from "@/services/model";
 import type { PromptService } from "@/services/prompt";
-import type { AnyAgentStimulus, UserMessageStimulus, WorldStateService } from "@/services/worldstate";
+import type { AnyStimulus, UserMessageStimulus, WorldStateService } from "@/services/world";
 import { Service } from "koishi";
 import { loadTemplate } from "@/services/prompt";
-import { StimulusSource } from "@/services/worldstate";
+import { StimulusSource } from "@/services/world";
 import { Services } from "@/shared/constants";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
@@ -34,7 +34,7 @@ export class AgentCore extends Service<Config> {
     private modelSwitcher: ChatModelSwitcher;
 
     private readonly runningTasks = new Set<string>();
-    private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AnyAgentStimulus) => void>>();
+    private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AnyStimulus) => void>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
 
     constructor(ctx: Context, config: Config) {
@@ -77,8 +77,7 @@ export class AgentCore extends Service<Config> {
 
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
-            }
-            catch (error: any) {
+            } catch (error: any) {
                 this.logger.error(`计算意愿值失败，已阻止本次响应: ${error.message}`);
                 return;
             }
@@ -102,8 +101,8 @@ export class AgentCore extends Service<Config> {
     }
 
     protected stop(): void {
-        this.debouncedReplyTasks.forEach(task => task.dispose());
-        this.deferredTimers.forEach(timer => clearTimeout(timer));
+        this.debouncedReplyTasks.forEach((task) => task.dispose());
+        this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.willing.stopDecayCycle();
     }
 
@@ -122,12 +121,11 @@ export class AgentCore extends Service<Config> {
         this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
     }
 
-    public schedule(stimulus: AnyAgentStimulus): void {
+    public schedule(stimulus: AnyStimulus): void {
         const { type } = stimulus;
 
         switch (type) {
-            case StimulusSource.UserMessage:
-            {
+            case StimulusSource.UserMessage: {
                 const { platform, channelId } = stimulus.payload;
                 const channelKey = `${platform}:${channelId}`;
 
@@ -142,11 +140,6 @@ export class AgentCore extends Service<Config> {
                 this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
                 break;
             }
-
-            case StimulusSource.ChannelEvent:
-            case StimulusSource.ScheduledTask:
-            case StimulusSource.BackgroundTaskCompletion:
-                break;
         }
     }
 
@@ -168,11 +161,9 @@ export class AgentCore extends Service<Config> {
                         /* prettier-ignore */
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                     }
-                }
-                catch (error: any) {
+                } catch (error: any) {
                     this.logger.error(`调度任务执行失败 (Channel: ${channelKey}): ${error.message}`);
-                }
-                finally {
+                } finally {
                     this.runningTasks.delete(channelKey);
                     this.logger.debug(`[${channelKey}] 频道锁已释放`);
                 }
