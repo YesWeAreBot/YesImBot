@@ -1,5 +1,5 @@
 import type { Context, Logger, Schema } from "koishi";
-import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
+import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult, ToolContext } from "./types";
 import type {
     AfterHeartbeatContext,
     BeforeModelInvokeContext,
@@ -9,7 +9,6 @@ import type {
     HookDescriptor,
     HookHandler,
 } from "./types";
-import type { ToolContext } from "@/services/context/types";
 import { Services } from "@/shared/constants";
 import { HookType } from "./types";
 

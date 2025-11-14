@@ -1,5 +1,5 @@
-import type { ToolContext } from "@/services/context/types";
-import type { AnyAgentStimulus, AnyWorldState } from "@/services/worldstate/types";
+import type { AnyStimulus, AnyWorldState } from "@/services/world/types";
+import type { ToolContext } from "./context";
 
 /**
  * Plugin lifecycle hook types.
@@ -36,7 +36,7 @@ export enum HookType {
  */
 export interface BaseHookContext<TConfig = any> {
     /** The stimulus that triggered this processing cycle */
-    stimulus: AnyAgentStimulus;
+    stimulus: AnyStimulus;
     /** The constructed world state */
     worldState: AnyWorldState;
     /** Tool context for capability access */

@@ -1,6 +1,5 @@
-import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
+import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult, ToolContext } from "./types";
 import type { HookDescriptor, HookHandler, HookType } from "./types";
-import type { ToolContext } from "@/services/context/types";
 import { Schema } from "koishi";
 import { ToolType } from "./types";
 
@@ -38,8 +37,7 @@ export function Tool<TParams>(descriptor: Omit<ToolDescriptor<any, TParams>, "ty
         propertyKey: string,
         methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>,
     ) {
-        if (!methodDescriptor.value)
-            return;
+        if (!methodDescriptor.value) return;
 
         target.staticTools ??= [];
 
@@ -64,8 +62,7 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
         propertyKey: string,
         methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>,
     ) {
-        if (!methodDescriptor.value)
-            return;
+        if (!methodDescriptor.value) return;
 
         target.staticActions ??= [];
 
@@ -120,13 +117,8 @@ export function defineAction<TParams>(
  * }
  */
 export function Hook<T extends HookType>(descriptor: HookDescriptor<T>) {
-    return function (
-        target: any,
-        propertyKey: string,
-        methodDescriptor: TypedPropertyDescriptor<HookHandler<T, any>>,
-    ) {
-        if (!methodDescriptor.value)
-            return;
+    return function (target: any, propertyKey: string, methodDescriptor: TypedPropertyDescriptor<HookHandler<T, any>>) {
+        if (!methodDescriptor.value) return;
 
         target.staticHooks ??= [];
 
@@ -154,10 +146,7 @@ export function Hook<T extends HookType>(descriptor: HookDescriptor<T>) {
  *     }
  * );
  */
-export function defineHook<T extends HookType>(
-    descriptor: HookDescriptor<T>,
-    handler: HookHandler<T, any>,
-) {
+export function defineHook<T extends HookType>(descriptor: HookDescriptor<T>, handler: HookHandler<T, any>) {
     return {
         descriptor,
         handler,

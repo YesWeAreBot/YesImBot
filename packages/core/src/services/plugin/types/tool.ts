@@ -1,6 +1,6 @@
 import type { Schema } from "koishi";
 import type { ToolResult } from "./result";
-import type { ContextCapability, ToolContext } from "@/services/context";
+import type { ToolContext } from "./context";
 
 /**
  * Tool type discriminator.
@@ -88,8 +88,6 @@ export interface BaseToolDescriptor<TConfig = any, TParams = any> {
     activators?: Activator<TConfig>[];
     /** Workflow definition */
     workflow?: ToolWorkflow;
-    /** Required context capabilities */
-    requiredContext?: ContextCapability[];
 }
 
 /**
