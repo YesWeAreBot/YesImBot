@@ -1,4 +1,4 @@
-import { ToolCallResult, ToolDefinition, ToolError } from "koishi-plugin-yesimbot/services";
+import { ToolCallResult, ToolDefinition, ToolError } from "koishi-plugin-yesimbot/services/plugin";
 
 /**
  * 代表一个标准化的执行错误结构。

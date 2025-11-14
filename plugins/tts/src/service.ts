@@ -1,5 +1,5 @@
 import { Context, Schema, h } from "koishi";
-import { ActionDefinition, ContextCapability, Failed, InternalError, Success, ToolContext, ToolDefinition, ToolType } from "koishi-plugin-yesimbot/services";
+import { ActionDefinition, Failed, InternalError, requireSession, Success, ToolContext, ToolDefinition, ToolType } from "koishi-plugin-yesimbot/services";
 
 import { TTSAdapter } from "./adapters/base";
 import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";
@@ -94,12 +94,15 @@ export class TTSService {
             description: this.adapter.getToolDescription(),
             parameters: this.adapter.getToolSchema(),
             execute: this.execute.bind(this),
+            activators: [
+                requireSession()
+            ]
         };
     }
 
     private async execute(args: BaseTTSParams, context: ToolContext) {
         const { text } = args;
-        const session = context.require(ContextCapability.Session);
+        const session = context.session;
 
         if (!text?.trim()) {
             return Failed("text is required");

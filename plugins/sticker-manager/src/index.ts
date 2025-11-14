@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { Context, Schema, h } from "koishi";
 import { AssetService, PromptService } from "koishi-plugin-yesimbot/services";
-import { Action, ContextCapability, Failed, Metadata, Success, ToolContext } from "koishi-plugin-yesimbot/services/plugin";
+import { Action, Failed, Metadata, requireSession, Success, ToolContext } from "koishi-plugin-yesimbot/services/plugin";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { StickerConfig } from "./config";
 import { StickerService } from "./service";
@@ -303,11 +303,13 @@ export default class StickerTools {
         parameters: Schema.object({
             image_id: Schema.string().required().description("要偷取的表情图片ID"),
         }),
-        requiredContext: [ContextCapability.Session],
+        activators: [
+            requireSession()
+        ]
     })
     async stealSticker(params: { image_id: string }, context: ToolContext) {
         const { image_id } = params;
-        const session = context.require(ContextCapability.Session);
+        const session = context.session;
         try {
             // 需要两份图片数据
             // 经过处理的，静态的图片供LLM分析
@@ -331,11 +333,13 @@ export default class StickerTools {
         parameters: Schema.object({
             category: Schema.string().required().description("表情包分类名称。当前可用分类: {{ sticker.categories }}"),
         }),
-        requiredContext: [ContextCapability.Session],
+        activators: [
+            requireSession()
+        ]
     })
     async sendRandomSticker(params: { category: string }, context: ToolContext) {
         const { category } = params;
-        const session = context.require(ContextCapability.Session);
+        const session = context.session;
         try {
             const sticker = await this.stickerService.getRandomSticker(category);
 
