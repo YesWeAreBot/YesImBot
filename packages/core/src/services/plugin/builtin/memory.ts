@@ -3,8 +3,8 @@ import type { ToolContext } from "@/services/plugin/types";
 import type { MessageEventData, MessageRecord } from "@/services/world";
 
 import { Schema } from "koishi";
-import { Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Plugin } from "@/services/plugin/base-plugin";
+import { Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services, TableName } from "@/shared";
 import { formatDate, truncate } from "@/shared/utils";
@@ -45,8 +45,10 @@ export default class MemoryPlugin extends Plugin<MemoryConfig> {
 
         try {
             const whereClauses: Query.Expr<MessageRecord>[] = [{ eventCategory: "message" }];
-            if (channel_id) whereClauses.push({ scopeId: { $regex: new RegExp(channel_id, "i") } });
-            if (user_id) whereClauses.push({ eventData: { senderId: user_id } });
+            if (channel_id)
+                whereClauses.push({ scopeId: { $regex: new RegExp(channel_id, "i") } });
+            if (user_id)
+                whereClauses.push({ eventData: { senderId: user_id } });
 
             const finalQuery: Query<MessageRecord> = { $and: whereClauses };
 

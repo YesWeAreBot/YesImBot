@@ -109,7 +109,7 @@ export function Failed(error: ToolError | string): ToolResult<never> & ToolResul
  */
 export function PartialSuccess<T>(result: T, warnings: string[]): ToolResult<T> & ToolResultBuilder<T> {
     const builder = new ToolResultBuilder(ToolStatus.PartialSuccess, result);
-    warnings.forEach(w => builder.withWarning(w));
+    warnings.forEach((w) => builder.withWarning(w));
     const toolResult = builder.build();
 
     return Object.assign(toolResult, {

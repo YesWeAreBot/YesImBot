@@ -1,4 +1,4 @@
-import Sentry from "@sentry/node";
+import type Sentry from "@sentry/node";
 import { Schema } from "koishi";
 
 export interface TelemetryConfig extends Sentry.NodeOptions {

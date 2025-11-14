@@ -1,7 +1,8 @@
-import fs from "fs";
-import { readFile, stat } from "fs/promises";
+import type { Context } from "koishi";
+import fs from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import matter from "gray-matter";
-import { Context, Logger } from "koishi";
+import { Logger } from "koishi";
 
 import { Services } from "@/shared/constants";
 
@@ -26,7 +27,7 @@ export class MemoryBlock {
         private ctx: Context,
         filePath: string,
         data: MemoryBlockData,
-        initialFileMtimeMs: number
+        initialFileMtimeMs: number,
     ) {
         this._filePath = filePath;
         this._metadata = {
@@ -42,21 +43,27 @@ export class MemoryBlock {
     get title(): string {
         return this._metadata.title;
     }
+
     get label(): string {
         return this._metadata.label;
     }
+
     get description(): string {
         return this._metadata.description;
     }
+
     get content(): string {
         return this._content;
     }
+
     get lastModified(): Date {
         return this.lastModifiedInMemory;
     }
+
     get currentSize(): number {
         return this._content.length;
     }
+
     get filePath(): string {
         return this._filePath;
     }
@@ -96,10 +103,12 @@ export class MemoryBlock {
     }
 
     public async startWatching(): Promise<void> {
-        if (this.watcher) return;
+        if (this.watcher)
+            return;
         // this.ctx.logger.debug(`[文件监视] 启动 | 路径: ${this.filePath}`);
         this.watcher = fs.watch(this._filePath, (eventType) => {
-            if (this.debounceTimer) clearTimeout(this.debounceTimer);
+            if (this.debounceTimer)
+                clearTimeout(this.debounceTimer);
             this.debounceTimer = setTimeout(async () => {
                 try {
                     if (!fs.existsSync(this.filePath)) {

@@ -1,7 +1,8 @@
-import { Services } from "@/shared/constants";
+import type { Awaitable, Context } from "koishi";
+import type { TelemetryConfig } from "./config";
 import Sentry from "@sentry/node";
-import { Awaitable, Context, Service } from "koishi";
-import { TelemetryConfig } from "./config";
+import { Service } from "koishi";
+import { Services } from "@/shared/constants";
 
 export { TelemetryConfig } from "./config";
 

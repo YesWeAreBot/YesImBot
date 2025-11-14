@@ -67,8 +67,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                         parsedValue = item.value;
                 }
                 this.customParameters[item.key] = parsedValue;
-            }
-            catch (error: any) {
+            } catch (error: any) {
                 this.logger.warn(`解析自定义参数失败 | 键: "${item.key}" | 值: "${item.value}" | 错误: ${error.message}`);
             }
         }
@@ -133,7 +132,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const duration = Date.now() - stime;
 
         const logMessage = result.toolCalls?.length
-            ? `工具调用: "${result.toolCalls.map(tc => tc.toolName).join(", ")}"`
+            ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
             : `文本长度: ${result.text.length}`;
         this.logger.success(`✅ [请求成功] [非流式] ${logMessage} | 耗时: ${duration}ms`);
         return result;
@@ -200,7 +199,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                             continue;
                         case "tool-call-streaming-start":
                             continue;
-                    };
+                    }
                 }
             })();
 
@@ -208,8 +207,7 @@ export class ChatModel extends BaseModel implements IChatModel {
 
             finalSteps = await steps;
             finalUsage = await totalUsage;
-        }
-        catch (error: any) {
+        } catch (error: any) {
             if (error.name === "XSAIError") {
                 this.logger.error(error.message);
                 switch (error.response.status) {
@@ -225,8 +223,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                         break;
                 }
                 throw error;
-            }
-            else {
+            } else {
                 throw error;
             }
         }

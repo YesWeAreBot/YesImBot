@@ -50,8 +50,7 @@ export default class YesImBot extends Service<Config> {
             if (hasLegacyV1Field) {
                 ctx.logger.info("检测到 v1 版本配置，将尝试迁移");
                 version = "1.0.0";
-            }
-            else {
+            } else {
                 ctx.logger.info("未找到版本号，将视为最新版本配置");
                 version = CONFIG_VERSION;
                 // 写入配置版本号
@@ -68,8 +67,7 @@ export default class YesImBot extends Service<Config> {
                 ctx.scope.update(validatedConfig, false);
                 config = validatedConfig;
                 ctx.logger.success("配置迁移成功");
-            }
-            catch (error: any) {
+            } catch (error: any) {
                 ctx.logger.error("配置迁移失败:", error.message);
                 ctx.logger.debug(error);
                 telemetry.captureException(error);
@@ -121,15 +119,13 @@ export default class YesImBot extends Service<Config> {
                     services.forEach((service) => {
                         try {
                             service.dispose();
-                        }
-                        catch (error: any) {
+                        } catch (error: any) {
                             telemetry.captureException(error);
                         }
                     });
                     this.ctx.stop();
                 });
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.notifier.create("初始化时发生错误");
             // this.ctx.logger.error("初始化时发生错误:", error.message);
             // this.ctx.logger.error(error.stack);
@@ -143,11 +139,11 @@ async function waitForServices(services: ForkScope[]) {
     await sleep(1000);
 
     // 未就绪服务
-    const notReadyServices = new Set(services.map(service => service.ctx.name));
+    const notReadyServices = new Set(services.map((service) => service.ctx.name));
 
     return new Promise<void>((resolve, reject) => {
         setTimeout(() => {
-            if (!services.every(service => service.ready)) {
+            if (!services.every((service) => service.ready)) {
                 reject(new Error(`服务初始化超时: ${Array.from(notReadyServices).join(", ")}`));
             }
         }, 10000);
@@ -159,8 +155,7 @@ async function waitForServices(services: ForkScope[]) {
             }
             if (notReadyServices.size === 0) {
                 resolve();
-            }
-            else {
+            } else {
                 setTimeout(check, 1000);
             }
         };

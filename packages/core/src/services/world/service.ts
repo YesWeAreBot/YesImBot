@@ -129,9 +129,7 @@ export class WorldStateService extends Service<Config> {
                     "history.clear -a private           # 清除所有私聊频道的历史记录",
                 ].join("\n"),
             )
-            .action(async ({ session, options }) => {
-
-            });
+            .action(async ({ session, options }) => {});
 
         // const scheduleCmd = commandService.subcommand(".schedule", "计划任务管理指令集", { authority: 3 });
 

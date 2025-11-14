@@ -1,9 +1,10 @@
-import { Random, type Context, type Session } from "koishi";
+import type { Context, Session } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { EventRecorder } from "./recorder";
 import type { WorldStateService } from "./service";
 import type { UserMessageStimulus } from "./types";
 import type { AssetService } from "@/services/assets";
+import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
 import { StimulusSource } from "./types";
@@ -28,7 +29,7 @@ export class EventListener {
     }
 
     public stop(): void {
-        this.disposers.forEach(dispose => dispose());
+        this.disposers.forEach((dispose) => dispose());
         this.disposers.length = 0;
     }
 
@@ -121,7 +122,7 @@ export class EventListener {
                 senderId: session.author.id,
                 senderName: session.author.nick || session.author.name,
                 content: session.content,
-            }
+            },
         });
     }
 
@@ -140,7 +141,7 @@ export class EventListener {
                 senderId: session.bot.selfId,
                 senderName: session.bot.user.nick || session.bot.user.nick,
                 content: session.content,
-            }
+            },
         });
     }
 
@@ -161,12 +162,10 @@ export class EventListener {
             const existing = await this.ctx.database.get(TableName.Members, memberKey);
             if (existing.length > 0) {
                 await this.ctx.database.set(TableName.Members, memberKey, memberData);
-            }
-            else {
+            } else {
                 await this.ctx.database.create(TableName.Members, { ...memberKey, ...memberData });
             }
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`更新成员信息失败: ${error.message}`);
         }
     }

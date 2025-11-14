@@ -2,10 +2,9 @@ import type { Context } from "koishi";
 import type { SceneAdapter } from "./adapters/base";
 import type { HistoryConfig } from "./config";
 import type { WorldStateService } from "./service";
-
+import type { AnyStimulus, DiaryEntry, Environment, Memory, SelfInfo, WorldState } from "./types";
 import { Time } from "koishi";
 import { ChatSceneAdapter } from "./adapters/chat-adapter";
-import type { AnyStimulus, DiaryEntry, Environment, Memory, SelfInfo, WorldState } from "./types";
 import { isScopedStimulus } from "./types";
 
 /**
@@ -48,8 +47,7 @@ export class WorldStateBuilder {
             }
 
             return this.buildScopedState(stimulus, adapter);
-        }
-        else {
+        } else {
             return this.buildGlobalState(stimulus);
         }
     }
@@ -135,8 +133,7 @@ export class WorldStateBuilder {
      */
     private describeTrigger(stimulus: AnyStimulus): string {
         switch (stimulus.type) {
-            case "user_message":
-            {
+            case "user_message": {
                 const session = stimulus.payload as any;
                 return `用户 ${session.username || session.userId} 在 ${session.channelId} 发送了消息`;
             }
@@ -167,8 +164,7 @@ export class WorldStateBuilder {
                 avatar: user.avatar,
                 platform: bot.platform,
             };
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.debug(`获取机器人自身信息失败: ${error.message}`);
             return {
                 id: bot.selfId,

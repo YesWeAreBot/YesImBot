@@ -1,5 +1,5 @@
-import type { AnyStimulus, AnyWorldState } from "@/services/world/types";
 import type { ToolContext } from "./context";
+import type { AnyStimulus, AnyWorldState } from "@/services/world/types";
 
 /**
  * Plugin lifecycle hook types.

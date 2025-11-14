@@ -3,15 +3,15 @@ import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 import type { ToolContext } from "@/services/plugin/types";
 
 import { h, Schema } from "koishi";
-import { } from "koishi-plugin-adapter-onebot";
+import {} from "koishi-plugin-adapter-onebot";
 import { requirePlatform, requireSession } from "@/services/plugin/activators";
-import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Plugin } from "@/services/plugin/base-plugin";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services } from "@/shared";
 import { formatDate, isEmpty } from "@/shared/utils";
 
-interface InteractionsConfig { }
+interface InteractionsConfig {}
 
 // eslint-disable-next-line ts/no-redeclare
 const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
@@ -39,10 +39,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             message_id: Schema.string().required().description("消息 ID"),
             emoji_id: Schema.number().required().description("表态编号"),
         }),
-        activators: [
-            requirePlatform("onebot", "OneBot platform required"),
-            requireSession("Active session required"),
-        ],
+        activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
     async reactionCreate(params: { message_id: string; emoji_id: number }, context: ToolContext) {
         const { message_id, emoji_id } = params;
@@ -61,8 +58,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
                 return Failed((result as any).message);
             this.ctx.logger.info(`Bot[${selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
             return Failed(`对消息 ${message_id} 进行表态失败： ${error.message}`);
         }
@@ -74,10 +70,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        activators: [
-            requirePlatform("onebot", "OneBot platform required"),
-            requireSession("Active session required"),
-        ],
+        activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
     async essenceCreate(params: { message_id: string }, context: ToolContext) {
         const { message_id } = params;
@@ -90,8 +83,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             await session.onebot.setEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]设置精华消息失败: ${message_id} - `, error.message);
             return Failed(`设置精华消息失败： ${error.message}`);
         }
@@ -103,10 +95,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
         }),
-        activators: [
-            requirePlatform("onebot", "OneBot platform required"),
-            requireSession("Active session required"),
-        ],
+        activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
     async essenceDelete(params: { message_id: string }, context: ToolContext) {
         const { message_id } = params;
@@ -119,8 +108,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             await session.onebot.deleteEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
             return Failed(`从精华中移除消息失败： ${error.message}`);
         }
@@ -133,10 +121,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             user_id: Schema.string().required().description("用户名称"),
             channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        activators: [
-            requirePlatform("onebot", "OneBot platform required"),
-            requireSession("Active session required"),
-        ],
+        activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
     async sendPoke(params: { user_id: string; channel: string }, context: ToolContext) {
         const { user_id, channel } = params;
@@ -157,8 +142,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
 
             this.ctx.logger.info(`Bot[${selfId}]戳了戳 ${user_id}`);
             return Success(result);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
             return Failed(`戳了戳 ${user_id} 失败： ${error.message}`);
         }
@@ -170,10 +154,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         parameters: withInnerThoughts({
             id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
         }),
-        activators: [
-            requirePlatform("onebot", "OneBot platform required"),
-            requireSession("Active session required"),
-        ],
+        activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
     async getForwardMsg(params: { id: string }, context: ToolContext) {
         const { id } = params;
@@ -185,8 +166,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessages);
 
             return Success(formattedResult);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${selfId}]获取转发消息失败: ${id} - `, error.message);
             return Failed(`获取转发消息失败： ${error.message}`);
         }
@@ -226,8 +206,7 @@ async function formatForwardMessage(ctx: Context, session: Session, formatForwar
         );
 
         return formattedMessages.filter(Boolean).join("\n") || "无有效消息内容";
-    }
-    catch (error: any) {
+    } catch (error: any) {
         ctx.logger.error("格式化转发消息失败:", error);
         return "消息格式化失败";
     }

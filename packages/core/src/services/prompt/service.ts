@@ -1,9 +1,10 @@
-import { Context, Logger, Service, Session } from "koishi";
-
-import { Config } from "@/config";
+import type { Context, Session } from "koishi";
+import type { IRenderer } from "./renderer";
+import type { Config } from "@/config";
+import { Service } from "koishi";
 import { Services } from "@/shared/constants";
 import { formatDate, isEmpty } from "@/shared/utils";
-import { IRenderer, MustacheRenderer } from "./renderer";
+import { MustacheRenderer } from "./renderer";
 
 export type Snippet = (currentScope: Record<string, any>) => any | Promise<any>;
 
@@ -119,7 +120,8 @@ export class PromptService extends Service<Config> {
 
         this.registerSnippet("bot", async (scope) => {
             const { session } = scope as { session?: Session };
-            if (!session) return {};
+            if (!session)
+                return {};
             return {
                 id: session.bot.selfId,
                 name: session.bot.user.name,
@@ -130,7 +132,8 @@ export class PromptService extends Service<Config> {
 
         this.registerSnippet("user", async (scope) => {
             const { session } = scope as { session?: Session };
-            if (!session) return {};
+            if (!session)
+                return {};
             return {
                 id: session.author.id,
                 name: session.author.name,
@@ -150,13 +153,14 @@ export class PromptService extends Service<Config> {
                 this.injections.map(async (injection) => {
                     try {
                         const result = await injection.renderFn(scope);
-                        if (!result) return "";
+                        if (!result)
+                            return "";
                         return `<${injection.name}>\n${result}\n</${injection.name}>`;
                     } catch (error: any) {
                         this.ctx.logger.error(`执行注入片段 "${injection.name}" 时出错: ${error.message}`);
                         return `<!-- Error in injection: ${injection.name} -->`;
                     }
-                })
+                }),
             );
 
             // 过滤掉空的片段，并用换行符连接

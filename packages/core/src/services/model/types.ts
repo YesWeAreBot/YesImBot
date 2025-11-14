@@ -129,7 +129,7 @@ export class ModelError extends Error {
             || message.includes("socket")
             || message.includes("fetch failed")
             || message.includes("econnreset")
-            || ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "ERR_NETWORK"].some(k => code.includes(k))
+            || ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT", "ERR_NETWORK"].some((k) => code.includes(k))
         ) {
             return new ModelError(ModelErrorType.NetworkError, err.message, err, true);
         }

@@ -13,10 +13,10 @@ export interface ParseResult<T> {
 }
 
 const defaultLogger: Logger = {
-    // eslint-disable-next-line no-console
-    info: message => console.log(`[INFO] ${message}`),
-    warn: message => console.warn(`[WARN] ${message}`),
-    error: message => console.error(`[ERROR] ${message}`),
+
+    info: (message) => console.log(`[INFO] ${message}`),
+    warn: (message) => console.warn(`[WARN] ${message}`),
+    error: (message) => console.error(`[ERROR] ${message}`),
 } as Logger;
 
 export class JsonParser<T> {
@@ -79,8 +79,7 @@ export class JsonParser<T> {
 
             processedString = content.trim();
             this.log(`从代码块提取并修整后，待处理字符串长度: ${processedString.length}`);
-        }
-        else if (codeBlockStartIndex !== -1) {
+        } else if (codeBlockStartIndex !== -1) {
             const lastCodeBlockIndex = processedString.lastIndexOf("```");
             if (lastCodeBlockIndex > codeBlockStartIndex) {
                 processedString = processedString.substring(codeBlockStartIndex + 3, lastCodeBlockIndex).trim();
@@ -98,18 +97,15 @@ export class JsonParser<T> {
 
         if (firstBrace !== -1 && firstBracket !== -1) {
             startIndex = Math.min(firstBrace, firstBracket);
-        }
-        else if (firstBrace !== -1) {
+        } else if (firstBrace !== -1) {
             startIndex = firstBrace;
-        }
-        else {
+        } else {
             startIndex = firstBracket;
         }
 
         if (startIndex === -1) {
             this.log("未找到 JSON 起始符号，将尝试直接修复整个字符串");
-        }
-        else {
+        } else {
             if (startIndex > 0) {
                 this.log(`在索引 ${startIndex} 处找到 JSON 起始符号，丢弃了前面的 ${startIndex} 个字符`);
                 processedString = processedString.substring(startIndex);
@@ -132,8 +128,7 @@ export class JsonParser<T> {
                 this.log(`JSON 结构平衡，裁剪了结束符号之后的多余文本`);
                 processedString = processedString.substring(0, endIndex + 1);
             }
-        }
-        else {
+        } else {
             /* prettier-ignore */
             this.log(`JSON 结构不平衡 (括号: ${openBrackets}/${closeBrackets}, 大括号: ${openBraces}/${closeBraces})，跳过后缀裁剪以保留可能被截断的数据`);
         }
@@ -146,8 +141,7 @@ export class JsonParser<T> {
             let data: T;
             try {
                 data = JSON.parse(processedString) as T;
-            }
-            catch (e: any) {
+            } catch (e: any) {
                 this.log(`直接解析失败: ${e.message}`);
                 const repaired = jsonrepair(processedString);
                 data = JSON.parse(repaired) as T;
@@ -163,8 +157,7 @@ export class JsonParser<T> {
 
             this.log("解析流程成功完成");
             return { data, error: null, logs: this.logs };
-        }
-        catch (e: any) {
+        } catch (e: any) {
             this.log(`最终解析失败: ${e.message}`);
             if (e instanceof JSONRepairError) {
                 const line = (e as any).line;

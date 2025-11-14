@@ -7,10 +7,11 @@ import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
 import type { PluginService, Properties, ToolContext, ToolSchema } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
-import { StimulusSource, type AnyStimulus, type WorldStateService } from "@/services/world";
+import type { AnyStimulus, WorldStateService } from "@/services/world";
 import { h, Random } from "koishi";
 import { ModelError } from "@/services/model/types";
 import { isAction } from "@/services/plugin";
+import { StimulusSource } from "@/services/world";
 import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
 
@@ -168,7 +169,8 @@ export class HeartbeatProcessor {
                 const controller = new AbortController();
 
                 const timeout = setTimeout(() => {
-                    if (this.config.stream) controller.abort("请求超时");
+                    if (this.config.stream)
+                        controller.abort("请求超时");
                 }, this.config.switchConfig.firstToken);
 
                 llmRawResponse = await model.chat({
@@ -176,8 +178,8 @@ export class HeartbeatProcessor {
                     stream: this.config.stream,
                     abortSignal: AbortSignal.any([AbortSignal.timeout(this.config.switchConfig.requestTimeout), controller.signal]),
                 });
-                const prompt_tokens =
-                    llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
+                const prompt_tokens
+                    = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
                 const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
                 /* prettier-ignore */
                 this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 耗时: ${new Date().getTime() - startTime}ms`);
@@ -234,13 +236,15 @@ export class HeartbeatProcessor {
 
         for (let index = 0; index < actions.length; index++) {
             const action = actions[index];
-            if (!action?.function) continue;
+            if (!action?.function)
+                continue;
 
-            if (!context.metadata) context.metadata = {};
+            if (!context.metadata)
+                context.metadata = {};
 
-            context.metadata["turnId"] = turnId;
-            context.metadata["actionIndex"] = index;
-            context.metadata["actionName"] = action.function;
+            context.metadata.turnId = turnId;
+            context.metadata.actionIndex = index;
+            context.metadata.actionName = action.function;
 
             const result = await this.PluginService.invoke(action.function, action.params ?? {}, context);
 
@@ -275,7 +279,8 @@ export class HeartbeatProcessor {
         //     return null;
         // }
 
-        if (!Array.isArray(data.actions)) return null;
+        if (!Array.isArray(data.actions))
+            return null;
 
         data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
 
@@ -302,7 +307,8 @@ export class HeartbeatProcessor {
  * @returns A string representation of `obj`
  */
 function _toString(obj) {
-    if (typeof obj === "string") return obj;
+    if (typeof obj === "string")
+        return obj;
     return JSON.stringify(obj);
 }
 

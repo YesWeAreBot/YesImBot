@@ -51,7 +51,7 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
     }
 
     public getModel(): T | null {
-        const availableModels = this.models.filter(model => this.isModelAvailable(model));
+        const availableModels = this.models.filter((model) => this.isModelAvailable(model));
 
         if (availableModels.length === 0) {
             return null;
@@ -191,13 +191,11 @@ export abstract class ModelSwitcher<T extends BaseModel> implements IModelSwitch
             if (latency !== undefined) {
                 if (status.averageLatency === 0) {
                     status.averageLatency = latency;
-                }
-                else {
+                } else {
                     status.averageLatency = EMA_ALPHA * latency + (1 - EMA_ALPHA) * status.averageLatency;
                 }
             }
-        }
-        else {
+        } else {
             // Failure
             status.lastFailureTime = Date.now();
             status.failureCount += 1;
@@ -257,12 +255,10 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
                 allModels.push(model);
                 if (model.isVisionModel?.()) {
                     visionModels.push(model);
-                }
-                else {
+                } else {
                     nonVisionModels.push(model);
                 }
-            }
-            else {
+            } else {
                 /* prettier-ignore */
                 logger.warn(`⚠ 无法加载模型 | 提供商: ${descriptor.providerName} | 模型ID: ${descriptor.modelId} | 所属组: ${groupConfig.name}`);
             }
@@ -291,19 +287,17 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         let candidateModels: IChatModel[] = [];
 
         if (type === ChatModelType.Vision) {
-            candidateModels = this.visionModels.filter(m => this.isModelAvailable(m));
+            candidateModels = this.visionModels.filter((m) => this.isModelAvailable(m));
             if (candidateModels.length === 0 && this.nonVisionModels.length > 0) {
                 this.logger.warn("所有视觉模型均不可用，尝试降级到普通模型");
                 // FIXME: 这里应该返回 null, 让调用者决定是否降级
-                candidateModels = this.nonVisionModels.filter(m => this.isModelAvailable(m));
+                candidateModels = this.nonVisionModels.filter((m) => this.isModelAvailable(m));
             }
-        }
-        else if (type === ChatModelType.NonVision) {
-            candidateModels = this.nonVisionModels.filter(m => this.isModelAvailable(m));
-        }
-        else {
+        } else if (type === ChatModelType.NonVision) {
+            candidateModels = this.nonVisionModels.filter((m) => this.isModelAvailable(m));
+        } else {
             // 所有模型
-            candidateModels = this.models.filter(m => this.isModelAvailable(m));
+            candidateModels = this.models.filter((m) => this.isModelAvailable(m));
         }
 
         if (candidateModels.length === 0) {
@@ -322,7 +316,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
     public hasVisionCapability(): boolean {
         let candidateModels: IChatModel[] = [];
         // FIXME: 放宽检测条件，不检查模型可用性
-        candidateModels = this.visionModels.filter(model => this.isModelAvailable(model));
+        candidateModels = this.visionModels.filter((model) => this.isModelAvailable(model));
         return candidateModels.length > 0;
     }
 
@@ -367,8 +361,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
                 this.recordResult(model, true, undefined, latency);
                 this.logger.debug(`模型调用成功 | 模型: ${model.id} | 延迟: ${latency}ms`);
                 return result;
-            }
-            catch (error) {
+            } catch (error) {
                 const latency = Date.now() - startTime;
                 const modelError = ModelError.classify(error);
                 lastError = modelError;
@@ -389,6 +382,6 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
 
     /** 检查消息列表中是否包含图片内容 */
     private hasImages(messages: Message[]): boolean {
-        return messages.some(m => Array.isArray(m.content) && m.content.some((p: any) => p && p.type === "image_url"));
+        return messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p && p.type === "image_url"));
     }
 }

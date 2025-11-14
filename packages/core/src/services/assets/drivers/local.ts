@@ -23,8 +23,7 @@ export class LocalStorageDriver implements StorageDriver {
         try {
             await fs.mkdir(this.baseDir, { recursive: true });
             this.logger.debug(`存储目录已确认: ${this.baseDir}`);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.logger.error(`创建存储目录失败: ${error.message}`);
             throw error;
         }
@@ -39,8 +38,7 @@ export class LocalStorageDriver implements StorageDriver {
         try {
             await fs.writeFile(filePath, buffer);
             this.logger.debug(`资源已写入: ${id} (${buffer.length} bytes)`);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.logger.error(`写入资源失败: ${id} - ${error.message}`);
             throw error;
         }
@@ -52,8 +50,7 @@ export class LocalStorageDriver implements StorageDriver {
             const buffer = await fs.readFile(filePath);
             this.logger.debug(`资源已读取: ${id} (${buffer.length} bytes)`);
             return buffer;
-        }
-        catch (error: any) {
+        } catch (error: any) {
             if (error.code === "ENOENT") {
                 this.logger.warn(`资源文件不存在: ${id}`);
                 // 抛出特定错误，由上层服务处理恢复逻辑
@@ -70,8 +67,7 @@ export class LocalStorageDriver implements StorageDriver {
         try {
             await fs.unlink(filePath);
             this.logger.debug(`资源已删除: ${id}`);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             if (error.code === "ENOENT") {
                 this.logger.debug(`尝试删除不存在的资源，已忽略: ${id}`);
                 return;
@@ -85,8 +81,7 @@ export class LocalStorageDriver implements StorageDriver {
         try {
             await fs.access(this.getPath(id));
             return true;
-        }
-        catch {
+        } catch {
             return false;
         }
     }
@@ -100,8 +95,7 @@ export class LocalStorageDriver implements StorageDriver {
                 modifiedAt: stats.mtime,
                 createdAt: stats.birthtime || stats.mtime,
             };
-        }
-        catch (error: any) {
+        } catch (error: any) {
             if (error.code === "ENOENT") {
                 return null;
             }
@@ -113,9 +107,8 @@ export class LocalStorageDriver implements StorageDriver {
     async listFiles(): Promise<string[]> {
         try {
             const files = await fs.readdir(this.baseDir);
-            return files.filter(file => !file.startsWith("."));
-        }
-        catch (error: any) {
+            return files.filter((file) => !file.startsWith("."));
+        } catch (error: any) {
             if (error.code === "ENOENT") {
                 return [];
             }

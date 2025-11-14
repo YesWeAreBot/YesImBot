@@ -2,11 +2,11 @@ import type { Context } from "koishi";
 import type { ToolContext } from "@/services/plugin/types";
 
 import { Schema } from "koishi";
-import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
+import { requirePlatform, requireSession } from "@/services/plugin/activators";
 import { Plugin } from "@/services/plugin/base-plugin";
+import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { isEmpty } from "@/shared/utils";
-import { requirePlatform, requireSession } from "@/services/plugin/activators";
 
 interface QManagerConfig {}
 
@@ -36,7 +36,8 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
     })
     async delmsg({ message_id, channel_id }: { message_id: string; channel_id?: string }, context: ToolContext) {
         const session = context.session;
-        if (isEmpty(message_id)) return Failed("message_id is required");
+        if (isEmpty(message_id))
+            return Failed("message_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.deleteMessage(targetChannel, message_id);
@@ -62,7 +63,8 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
     })
     async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id?: string }, context: ToolContext) {
         const session = context.session;
-        if (isEmpty(user_id)) return Failed("user_id is required");
+        if (isEmpty(user_id))
+            return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.muteGuildMember(targetChannel, user_id, Number(duration) * 60 * 1000);
@@ -85,7 +87,8 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
     })
     async kick({ user_id, channel_id }: { user_id: string; channel_id?: string }, context: ToolContext) {
         const session = context.session;
-        if (isEmpty(user_id)) return Failed("user_id is required");
+        if (isEmpty(user_id))
+            return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.kickGuildMember(targetChannel, user_id);

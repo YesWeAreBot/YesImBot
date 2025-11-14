@@ -4,8 +4,8 @@ import type { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/
 import type { ToolContext } from "@/services/plugin/types";
 
 import { h, Schema, sleep } from "koishi";
-import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Plugin } from "@/services/plugin/base-plugin";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
@@ -67,12 +67,11 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                     if (!this.modelGroup) {
                         this.ctx.logger.warn(`✖ 模型组未找到 | 模型组: ${visionModel}`);
                     }
-                    const visionModels = this.modelGroup?.getModels().filter(m => m.isVisionModel()) || [];
+                    const visionModels = this.modelGroup?.getModels().filter((m) => m.isVisionModel()) || [];
                     if (visionModels.length === 0) {
                         this.ctx.logger.warn(`✖ 模型组中没有视觉模型 | 模型组: ${visionModel}`);
                     }
-                }
-                else {
+                } else {
                     this.chatModel = this.ctx[Services.Model].getChatModel(visionModel);
                     if (!this.chatModel) {
                         this.ctx.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(visionModel)}`);
@@ -82,8 +81,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                     }
                 }
             }
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`获取视觉模型失败: ${error.message}`);
         }
 
@@ -117,7 +115,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         const session = context.session;
         const bot = session.bot;
 
-        const messages = message.split("<sep/>").filter(msg => msg.trim() !== "");
+        const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
             this.ctx.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
             return Failed("消息内容为空");
@@ -128,7 +126,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             const resolvedBot = targetBot ?? bot;
 
             if (!resolvedBot) {
-                const availablePlatforms = this.ctx.bots.map(b => b.platform).join(", ");
+                const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
                 this.ctx.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
                 return Failed(`未找到平台 ${target} 对应的机器人实例`);
             }
@@ -141,8 +139,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             await this.sendMessagesWithHumanLikeDelay(messages, resolvedBot, targetChannelId, session.isDirect);
 
             return Success();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
         }
     }
@@ -176,9 +173,10 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
 
         const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
 
-        const prompt = imageInfo.mime === "image/gif"
-            ? `这是一张GIF动图的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述，并回答问题：${question}\n\n图片内容：`
-            : `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
+        const prompt
+            = imageInfo.mime === "image/gif"
+                ? `这是一张GIF动图的关键帧序列，你需要结合整体，将其作为一个连续的片段来描述，并回答问题：${question}\n\n图片内容：`
+                : `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
 
         try {
             const model = this.chatModel || this.modelGroup?.getModels()[0];
@@ -200,8 +198,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                 temperature: 0.2,
             });
             return Success(response.text);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`图片描述失败: ${error.message}`);
             return Failed(`图片描述失败: ${error.message}`);
         }
@@ -218,7 +215,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
 
         text = h
             .parse(text)
-            .filter(e => e.type === "text")
+            .filter((e) => e.type === "text")
             .join("");
         if (isEmpty(text))
             return MIN_DELAY;
@@ -249,7 +246,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         const parts = target.split(":");
         const platform = parts[0];
         const channelId = parts.slice(1).join(":");
-        const bot = this.ctx.bots.find(b => b.platform === platform);
+        const bot = this.ctx.bots.find((b) => b.platform === platform);
         return { bot, targetChannelId: channelId };
     }
 

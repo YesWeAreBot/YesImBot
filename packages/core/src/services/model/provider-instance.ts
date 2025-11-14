@@ -26,14 +26,13 @@ export class ProviderInstance {
                 init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
                 return ufetch(input, init);
             }) as unknown as typeof globalThis.fetch;
-        }
-        else {
+        } else {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
         }
     }
 
     public getChatModel(modelId: string): IChatModel | null {
-        const modelConfig = this.config.models.find(m => m.modelId === modelId);
+        const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
             this.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
             return null;
@@ -46,7 +45,7 @@ export class ProviderInstance {
     }
 
     public getEmbedModel(modelId: string): IEmbedModel | null {
-        const modelConfig = this.config.models.find(m => m.modelId === modelId);
+        const modelConfig = this.config.models.find((m) => m.modelId === modelId);
         if (!modelConfig) {
             this.logger.warn(`模型 ${modelId} 不存在于提供商 ${this.name} 的配置中`);
             return null;

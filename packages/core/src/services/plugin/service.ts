@@ -4,20 +4,18 @@ import type {
     ActionDefinition,
     AnyToolDefinition,
     HookDefinition,
+    HookType,
     Properties,
+    ToolContext,
     ToolDefinition,
     ToolResult,
     ToolSchema,
-    ToolContext,
 } from "./types";
-import type { HookType } from "./types";
 import type { Config } from "@/config";
 import type { CommandService } from "@/services/command";
 import type { PromptService } from "@/services/prompt";
-import type { AnyStimulus, UserMessageStimulus } from "@/services/world";
 
 import { h, Schema, Service } from "koishi";
-import { StimulusSource } from "@/services/world";
 import { Services } from "@/shared/constants";
 import { isEmpty, stringify, truncate } from "@/shared/utils";
 
@@ -30,9 +28,11 @@ import { Failed } from "./result-builder";
 import { isAction } from "./types";
 
 function extractMetaFromSchema(schema: Schema | undefined): Properties {
-    if (!schema) return {};
+    if (!schema)
+        return {};
     const meta = schema?.meta as any;
-    if (!meta) return {};
+    if (!meta)
+        return {};
 
     const properties: Properties = {};
     for (const [key, value] of Object.entries(meta)) {
@@ -163,7 +163,8 @@ export class PluginService extends Service<Config> {
             .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等")
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
-                if (!name) return "未指定要查询的工具名称";
+                if (!name)
+                    return "未指定要查询的工具名称";
                 // TODO: Refactor to work without session
                 const renderResult = await this.promptService.render("tool.info", { toolName: name });
 
@@ -178,13 +179,14 @@ export class PluginService extends Service<Config> {
             .usage(
                 [
                     "调用指定的工具并传递参数",
-                    '参数格式为 "key=value"，多个参数用空格分隔。',
-                    '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
+                    "参数格式为 \"key=value\"，多个参数用空格分隔。",
+                    "如果 value 包含空格，请使用引号将其包裹，例如：key=\"some value",
                 ].join("\n"),
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
             .action(async ({ session }, name, ...params) => {
-                if (!name) return "错误：未指定要调用的工具名称";
+                if (!name)
+                    return "错误：未指定要调用的工具名称";
 
                 const parsedParams: Record<string, any> = {};
                 try {
@@ -214,7 +216,8 @@ export class PluginService extends Service<Config> {
                 }
 
                 // TODO: Refactor to work without session. A mock context is needed.
-                if (!session) return "此指令需要在一个会话上下文中使用。";
+                if (!session)
+                    return "此指令需要在一个会话上下文中使用。";
 
                 const context: ToolContext = {
                     session,
@@ -286,7 +289,8 @@ export class PluginService extends Service<Config> {
             const { toolName } = context;
             // TODO: Refactor to work without session
             const tool = await this.getSchema(toolName);
-            if (!tool) return null;
+            if (!tool)
+                return null;
 
             const processParams = (params: Properties, indent = ""): any[] => {
                 return Object.entries(params).map(([key, param]) => {
@@ -513,7 +517,8 @@ export class PluginService extends Service<Config> {
 
     public async getTool(name: string, context?: ToolContext): Promise<AnyToolDefinition | undefined> {
         const tool = this.tools.get(name);
-        if (!tool) return undefined;
+        if (!tool)
+            return undefined;
 
         if (!context) {
             return tool;
@@ -563,7 +568,8 @@ export class PluginService extends Service<Config> {
 
     public getConfig(name: string): any {
         const ext = this.plugins.get(name);
-        if (!ext) return null;
+        if (!ext)
+            return null;
         return ext.config;
     }
 

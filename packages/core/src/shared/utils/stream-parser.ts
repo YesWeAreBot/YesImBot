@@ -1,7 +1,9 @@
 import { JsonParser } from "./json-parser";
 
 type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
-interface Schema { [key: string]: any }
+interface Schema {
+    [key: string]: any;
+}
 
 interface StreamState {
     controller: ReadableStreamDefaultController<any>;
@@ -246,9 +248,8 @@ export class StreamParser {
                 try {
                     // completeStream 应该已经关闭了它，但以防万一
                     state.controller.close();
-                }
-                // eslint-disable-next-line unused-imports/no-unused-vars
-                catch (_e) {
+                } catch (_e) {
+                    // eslint-disable-next-line unused-imports/no-unused-vars
                     /* might already be closed */
                 }
             }

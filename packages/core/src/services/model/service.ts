@@ -28,8 +28,7 @@ export class ModelService extends Service<Config> {
             this.validateConfig();
             this.initializeProviders();
             this.registerSchemas();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.logger.level = this.config.logLevel;
             this.logger.error(`模型服务初始化失败 | ${error.message}`);
             ctx.notifier.create({ type: "danger", content: `模型服务初始化失败 | ${error.message}` });
@@ -52,8 +51,7 @@ export class ModelService extends Service<Config> {
                 const instance = new ProviderInstance(this.logger, providerConfig, client);
                 this.providerInstances.set(instance.name, instance);
                 this.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
-            }
-            catch (error: any) {
+            } catch (error: any) {
                 this.logger.error(`❌ 初始化失败 | 提供商: ${providerId} | 错误: ${error.message}`);
             }
         }
@@ -82,11 +80,11 @@ export class ModelService extends Service<Config> {
 
         if (this.config.modelGroups.length === 0) {
             const models = this.config.providers
-                .map(p => p.models.map(m => ({ providerName: p.name, modelId: m.modelId, modelType: m.modelType })))
+                .map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId, modelType: m.modelType })))
                 .flat();
             const defaultChatGroup = {
                 name: "_default",
-                models: models.filter(m => m.modelType === ModelType.Chat),
+                models: models.filter((m) => m.modelType === ModelType.Chat),
             };
             this.config.modelGroups.push(defaultChatGroup);
             modified = true;
@@ -98,9 +96,9 @@ export class ModelService extends Service<Config> {
             }
         }
 
-        const defaultGroup = this.config.modelGroups.find(g => g.models.length > 0);
+        const defaultGroup = this.config.modelGroups.find((g) => g.models.length > 0);
 
-        const chatGroup = this.config.modelGroups.find(g => g.name === this.config.chatModelGroup);
+        const chatGroup = this.config.modelGroups.find((g) => g.name === this.config.chatModelGroup);
         if (!chatGroup) {
             this.logger.warn(`配置警告: 指定的聊天模型组 "${this.config.chatModelGroup}" 不存在，已重置为默认组 "${defaultGroup.name}"`);
             this.config.chatModelGroup = defaultGroup.name;
@@ -112,26 +110,25 @@ export class ModelService extends Service<Config> {
             if (parent.name === "yesimbot") {
                 parent.scope.update(this.config);
             }
-        }
-        else {
+        } else {
             // this.logger.debug("配置验证通过");
         }
     }
 
     private registerSchemas() {
         const models = this.config.providers
-            .map(p => p.models.map(m => ({ providerName: p.name, modelId: m.modelId, modelType: m.modelType })))
+            .map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId, modelType: m.modelType })))
             .flat();
 
         const selectableModels = models
-            .filter(m => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
+            .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName))
             .map((m) => {
                 /* prettier-ignore */
                 return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
             });
 
         const embeddingModels = models
-            .filter(m => isNotEmpty(m.modelId) && isNotEmpty(m.providerName) && m.modelType === ModelType.Embedding)
+            .filter((m) => isNotEmpty(m.modelId) && isNotEmpty(m.providerName) && m.modelType === ModelType.Embedding)
             .map((m) => {
                 /* prettier-ignore */
                 return Schema.const({ providerName: m.providerName, modelId: m.modelId }).description(`${m.providerName} - ${m.modelId}`);
@@ -200,12 +197,10 @@ export class ModelService extends Service<Config> {
         if (typeof arg1 === "string" && arg2) {
             providerName = arg1;
             modelId = arg2;
-        }
-        else if (typeof arg1 === "object") {
+        } else if (typeof arg1 === "object") {
             providerName = arg1.providerName;
             modelId = arg1.modelId;
-        }
-        else {
+        } else {
             throw new TypeError("无效的参数");
         }
 
@@ -227,12 +222,10 @@ export class ModelService extends Service<Config> {
         if (typeof arg1 === "string" && arg2) {
             providerName = arg1;
             modelId = arg2;
-        }
-        else if (typeof arg1 === "object") {
+        } else if (typeof arg1 === "object") {
             providerName = arg1.providerName;
             modelId = arg1.modelId;
-        }
-        else {
+        } else {
             throw new TypeError("无效的参数");
         }
 
@@ -250,15 +243,14 @@ export class ModelService extends Service<Config> {
         if (!groupName)
             return undefined;
 
-        const group = this.config.modelGroups.find(g => g.name === groupName);
+        const group = this.config.modelGroups.find((g) => g.name === groupName);
         if (!group) {
             this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
         }
         try {
             return new ChatModelSwitcher(this.logger, group, this.getChatModel.bind(this), this.config.switchConfig);
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.logger.error(`创建模型组 "${groupName}" 失败 | ${error.message}`);
             return undefined;
         }

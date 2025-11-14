@@ -1,5 +1,5 @@
 import type { Context, Logger, Schema } from "koishi";
-import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolDefinition, ToolDescriptor, ToolResult, ToolContext } from "./types";
+import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
 import type {
     AfterHeartbeatContext,
     BeforeModelInvokeContext,
@@ -51,8 +51,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
         if (parentClass && parentClass.inject && childClass.inject) {
             if (Array.isArray(childClass.inject)) {
                 childClass.inject = [...new Set([...parentClass.inject, ...childClass.inject])];
-            }
-            else if (typeof childClass.inject === "object") {
+            } else if (typeof childClass.inject === "object") {
                 const parentRequired = Array.isArray(parentClass.inject) ? parentClass.inject : parentClass.inject.required || [];
                 const childRequired = childClass.inject.required || [];
                 const childOptional = childClass.inject.optional || [];
@@ -115,8 +114,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
         // Support both patterns: addTool(descriptor, execute) and addTool({ descriptor, execute })
         if ("execute" in descriptorOrTool) {
             executeFn = descriptorOrTool.execute as any;
-        }
-        else {
+        } else {
             descriptor = descriptorOrTool;
             executeFn = execute!;
         }
@@ -147,8 +145,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
         const descriptor = descriptorOrTool;
         if ("execute" in descriptorOrTool) {
             executeFn = descriptorOrTool.execute as any;
-        }
-        else {
+        } else {
             executeFn = execute!;
         }
 
@@ -186,11 +183,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
      * Programmatically register a hook handler.
      * Supports both descriptor+handler and unified hook object.
      */
-    registerHook<T extends HookType>(
-        typeOrDescriptor: T | HookDescriptor<T>,
-        handler?: HookHandler<T, TConfig>,
-        priority?: number,
-    ): this {
+    registerHook<T extends HookType>(typeOrDescriptor: T | HookDescriptor<T>, handler?: HookHandler<T, TConfig>, priority?: number): this {
         let hookType: T;
         let hookHandler: HookHandler<T, TConfig>;
         let hookPriority: number;
@@ -201,8 +194,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
             hookType = hookObj.type || hookObj.descriptor?.type;
             hookHandler = hookObj.handler || handler!;
             hookPriority = hookObj.priority ?? hookObj.descriptor?.priority ?? 5;
-        }
-        else {
+        } else {
             hookType = typeOrDescriptor as T;
             hookHandler = handler!;
             hookPriority = priority ?? 5;
@@ -253,19 +245,25 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
      * Override this method to handle BeforePromptBuild hook.
      * Called after WorldState construction, before prompt generation.
      */
-    protected async onBeforePromptBuild?(context: BeforePromptBuildContext<TConfig>): Promise<void | Partial<BeforePromptBuildContext<TConfig>>>;
+    protected async onBeforePromptBuild?(
+        context: BeforePromptBuildContext<TConfig>,
+    ): Promise<void | Partial<BeforePromptBuildContext<TConfig>>>;
 
     /**
      * Override this method to handle BeforeModelInvoke hook.
      * Called after prompt generation, before LLM invocation.
      */
-    protected async onBeforeModelInvoke?(context: BeforeModelInvokeContext<TConfig>): Promise<void | Partial<BeforeModelInvokeContext<TConfig>>>;
+    protected async onBeforeModelInvoke?(
+        context: BeforeModelInvokeContext<TConfig>,
+    ): Promise<void | Partial<BeforeModelInvokeContext<TConfig>>>;
 
     /**
      * Override this method to handle BeforeToolExecution hook.
      * Called after LLM response, before tool execution.
      */
-    protected async onBeforeToolExecution?(context: BeforeToolExecutionContext<TConfig>): Promise<void | Partial<BeforeToolExecutionContext<TConfig>>>;
+    protected async onBeforeToolExecution?(
+        context: BeforeToolExecutionContext<TConfig>,
+    ): Promise<void | Partial<BeforeToolExecutionContext<TConfig>>>;
 
     /**
      * Override this method to handle AfterHeartbeat hook.

@@ -1,6 +1,6 @@
 import type { Schema } from "koishi";
-import type { ToolResult } from "./result";
 import type { ToolContext } from "./context";
+import type { ToolResult } from "./result";
 
 /**
  * Tool type discriminator.

@@ -1,10 +1,12 @@
-import fs from "fs/promises";
-import { Context, Service } from "koishi";
-import path from "path";
+import type { Context } from "koishi";
+import type { MemoryBlockData } from "./memory-block";
+import type { Config } from "@/config";
+import fs from "node:fs/promises";
 
-import { Config } from "@/config";
+import path from "node:path";
+import { Service } from "koishi";
 import { RESOURCES_DIR, Services } from "@/shared/constants";
-import { MemoryBlock, MemoryBlockData } from "./memory-block";
+import { MemoryBlock } from "./memory-block";
 
 declare module "koishi" {
     interface Context {
@@ -66,7 +68,7 @@ export class MemoryService extends Service<Config> {
                         this.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'`);
                     }
                 } catch (error: any) {
-                    //this.logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
+                    // this.logger.error(`加载记忆块文件 '${filePath}' 失败: ${error.message}`);
                 }
             }
         } catch (error: any) {

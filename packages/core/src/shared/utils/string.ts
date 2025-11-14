@@ -93,8 +93,7 @@ export function stringify(obj: any, space?: number, fallback: string = ""): stri
         return fallback; // 处理 null 和 undefined
     try {
         return JSON.stringify(obj, null, space);
-    }
-    catch (error: any) {
+    } catch (error: any) {
         console.error("Failed to stringify object:", error);
         // 对于无法序列化的对象（如含循环引用），返回备用值
         return fallback;
@@ -218,14 +217,13 @@ export function parseKeyChain(keyString: string): (string | number)[] {
             // 匹配到如 'items[0]'
             parts.push(arrayMatch[1]); // 键名 'items'
             parts.push(Number.parseInt(arrayMatch[2], 10)); // 索引 0
-        }
-        else {
+        } else {
             // 匹配普通键如 'name'
             parts.push(segment);
         }
     });
     // 验证解析结果，防止空字符串或不符合规范的键
-    if (parts.some(p => typeof p === "string" && p.trim() === "")) {
+    if (parts.some((p) => typeof p === "string" && p.trim() === "")) {
         throw new Error("配置键包含无效的空片段");
     }
     if (parts.length === 0) {
@@ -258,9 +256,8 @@ export function tryParse(value: string): any {
         if ((typeof parsedJSON === "object" && parsedJSON !== null) || Array.isArray(parsedJSON)) {
             return parsedJSON;
         }
-    }
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    catch (e) {
+    } catch (e) {
+
         // 解析失败，不是有效的JSON
     }
     // 4. Fallback: 如果都不是，则认为是普通字符串

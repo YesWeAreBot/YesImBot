@@ -1,6 +1,5 @@
 import type { Context, Query } from "koishi";
-import { Random } from "koishi";
-import { MessageEventData, MessageRecord, TimelineEntry } from "./types";
+import type { MessageRecord, TimelineEntry } from "./types";
 import { TableName } from "@/shared/constants";
 
 /**

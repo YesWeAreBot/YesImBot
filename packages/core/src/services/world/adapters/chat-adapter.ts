@@ -67,6 +67,7 @@ export class ChatSceneAdapter extends SceneAdapter {
         // 获取 L1 历史
         const rawEvents = await this.recorder.getMessages(stimulus.payload.cid, {}, this.config.l1_memory.maxMessages);
 
+        // eslint-disable-next-line array-callback-return
         return rawEvents.map((item) => {
             if (item.eventType === "user_message") {
                 return {
