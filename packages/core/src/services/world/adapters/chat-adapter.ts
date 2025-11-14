@@ -46,7 +46,7 @@ export class ChatSceneAdapter extends SceneAdapter {
             guildId: channelId.split(":")[1],
         });
 
-        return members.map(member => ({
+        return members.map((member) => ({
             type: "user",
             id: member.pid,
             name: member.name,
@@ -65,49 +65,15 @@ export class ChatSceneAdapter extends SceneAdapter {
         const channelId = env.id.split(":")[1];
 
         // 获取 L1 历史
-        const rawEvents = await this.history.getL1History(channelId, { limit: 50 });
+        const rawEvents = await this.recorder.getMessages(stimulus.payload.cid, {}, this.config.l1_memory.maxMessages);
 
         return rawEvents.map((item) => {
-            if (item.type === "message") {
+            if (item.eventType === "user_message") {
                 return {
                     type: "chat_message",
                     timestamp: item.timestamp,
-                    actor: {
-                        type: "user",
-                        id: item.sender.id,
-                        name: item.sender.name,
-                        attributes: {},
-                    },
                     payload: {
-                        content: item.content,
-                        messageId: item.id,
-                        elements: item.elements,
-                    },
-                };
-            }
-            else if (item.type === "channel_event") {
-                return {
-                    type: "chat_event",
-                    timestamp: item.timestamp,
-                    payload: {
-                        eventType: item.eventType,
-                        ...item.data,
-                    },
-                };
-            }
-            else if (item.type === "agent_response") {
-                return {
-                    type: "agent_action",
-                    timestamp: item.timestamp,
-                    actor: {
-                        type: "agent",
-                        id: "self",
-                        name: "Athena",
-                        attributes: {},
-                    },
-                    payload: {
-                        actions: item.actions,
-                        thoughts: item.thoughts,
+                        ...item.eventData,
                     },
                 };
             }
@@ -135,21 +101,21 @@ export class ChatSceneAdapter extends SceneAdapter {
                 channelId: session.channelId,
             };
         }
-        else if (stimulus.type === StimulusSource.ChannelEvent) {
-            return {
-                platform: stimulus.payload.platform,
-                channelId: stimulus.payload.channelId,
-            };
-        }
-        else if (stimulus.type === StimulusSource.ScheduledTask || stimulus.type === StimulusSource.BackgroundTaskCompletion) {
-            const payload = stimulus.payload;
-            if (payload.platform && payload.channelId) {
-                return {
-                    platform: payload.platform,
-                    channelId: payload.channelId,
-                };
-            }
-        }
+        // else if (stimulus.type === StimulusSource.ChannelEvent) {
+        //     return {
+        //         platform: stimulus.payload.platform,
+        //         channelId: stimulus.payload.channelId,
+        //     };
+        // }
+        // else if (stimulus.type === StimulusSource.ScheduledTask || stimulus.type === StimulusSource.BackgroundTaskCompletion) {
+        //     const payload = stimulus.payload;
+        //     if (payload.platform && payload.channelId) {
+        //         return {
+        //             platform: payload.platform,
+        //             channelId: payload.channelId,
+        //         };
+        //     }
+        // }
 
         throw new Error(`Cannot extract channel info from stimulus type: ${stimulus.type}`);
     }
@@ -157,7 +123,10 @@ export class ChatSceneAdapter extends SceneAdapter {
     /**
      * 获取频道信息
      */
-    private async getChannelInfo(platform: string, channelId: string): Promise<{
+    private async getChannelInfo(
+        platform: string,
+        channelId: string,
+    ): Promise<{
         name?: string;
         type?: "private" | "guild";
         memberCount?: number;

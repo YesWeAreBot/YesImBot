@@ -15,7 +15,7 @@ export abstract class SceneAdapter {
     constructor(
         protected ctx: Context,
         protected config: HistoryConfig,
-        protected history: EventRecorder,
+        protected recorder: EventRecorder,
     ) {}
 
     /**

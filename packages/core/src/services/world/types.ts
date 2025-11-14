@@ -1,6 +1,6 @@
 import type { Session } from "koishi";
 
-// region 数据库模型
+// region data models
 
 /**
  * 事件线表
@@ -69,7 +69,7 @@ export interface MemberData {
 
 // endregion
 
-// region WorldState
+// region specific concepts
 
 /**
  * 智能体自身信息
@@ -134,6 +134,10 @@ export interface DiaryEntry {
 
     narrative?: string;
 }
+
+// endregion
+
+// region world state model
 
 /**
  * 环境 - 智能体活动的空间
@@ -239,7 +243,7 @@ export type AnyWorldState = WorldState;
 
 // endregion
 
-// region Stimulus
+// region stimulus model
 
 export enum StimulusSource {
     UserMessage = "user_message",

@@ -1,4 +1,7 @@
 import type { Context, Query } from "koishi";
+import { Random } from "koishi";
+import { MessageEventData, MessageRecord, TimelineEntry } from "./types";
+import { TableName } from "@/shared/constants";
 
 /**
  * 事件记录器
@@ -6,54 +9,30 @@ import type { Context, Query } from "koishi";
 export class EventRecorder {
     constructor(private ctx: Context) {}
 
-    /* prettier-ignore */
-    public async recordMessage(message: MessagePayload & { platform: string; channelId: string }): Promise<void> {
-        await this.ctx.database.create(TableName.Events, {
-            id: Random.id(),
-            type: "message",
-            timestamp: new Date(),
-            platform: message.platform,
-            channelId: message.channelId,
-            // 提取查询优化字段
-            senderId: message.sender.id,
-            senderName: message.sender.name,
-            payload: {
-                id: message.id,
-                sender: message.sender,
-                content: message.content,
-                quoteId: message.quoteId,
-            },
-        });
+    public async record(entry: TimelineEntry): Promise<TimelineEntry> {
+        return await this.ctx.database.create(TableName.Timeline, entry);
     }
 
-    /* prettier-ignore */
-    public async recordEvent(event: Omit<EventData, "id" | "type" | "timestamp"> & { type: "channel_event" | "global_event" }): Promise<void> {
-        await this.ctx.database.create(TableName.Events, {
-            id: Random.id(),
-            type: event.type,
-            timestamp: new Date(),
-            platform: event.platform,
-            channelId: event.channelId,
-            // 提取查询优化字段
-            eventType: (event.payload as ChannelEventPayloadData | GlobalEventPayloadData).eventType,
-            payload: event.payload,
-        });
+    public async recordMessage(message: Omit<MessageRecord, "eventType" | "eventCategory" | "priority">): Promise<MessageRecord> {
+        const fullMessage: MessageRecord = {
+            ...message,
+            eventType: "user_message",
+            eventCategory: "message",
+            priority: 0,
+        };
+        return (await this.ctx.database.create(TableName.Timeline, fullMessage)) as MessageRecord;
     }
 
-    /* prettier-ignore */
-    public async recordChannelEvent(platform: string, channelId: string, eventPayload: ChannelEventPayloadData): Promise<void> {
-        this.recordEvent({
-            type: "channel_event",
-            platform,
-            channelId,
-            payload: eventPayload,
-        });
-    }
+    public async getMessages(scopeId: string, query?: Query.Expr<MessageRecord>, limit?: number): Promise<MessageRecord[]> {
+        const finalQuery: Query.Expr<MessageRecord> = {
+            $and: [{ scopeId }, { eventCategory: "message" }, query || {}],
+        };
 
-    public async recordGlobalEvent(eventPayload: GlobalEventPayloadData): Promise<void> {
-        this.recordEvent({
-            type: "global_event",
-            payload: eventPayload,
-        });
+        return (await this.ctx.database
+            .select(TableName.Timeline)
+            .where(finalQuery)
+            .orderBy("timestamp", "desc")
+            .limit(limit)
+            .execute()) as MessageRecord[];
     }
 }

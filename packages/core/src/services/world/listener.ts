@@ -1,8 +1,8 @@
-import type { Context, Session } from "koishi";
+import { Random, type Context, type Session } from "koishi";
 import type { HistoryConfig } from "./config";
+import type { EventRecorder } from "./recorder";
 import type { WorldStateService } from "./service";
 import type { UserMessageStimulus } from "./types";
-
 import type { AssetService } from "@/services/assets";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
@@ -10,14 +10,17 @@ import { StimulusSource } from "./types";
 
 export class EventListener {
     private readonly disposers: (() => boolean)[] = [];
+
     private assetService: AssetService;
+    private recorder: EventRecorder;
 
     constructor(
         private ctx: Context,
-        private service: WorldStateService,
         private config: HistoryConfig,
+        private service: WorldStateService,
     ) {
         this.assetService = ctx[Services.Asset];
+        this.recorder = service.recorder;
     }
 
     public start(): void {
@@ -109,17 +112,16 @@ export class EventListener {
         const content = await this.assetService.transform(session.content);
         this.ctx.logger.debug(`记录转义后的消息：${content}`);
 
-        await this.service.recordMessage({
-            id: session.messageId,
-            platform: session.platform,
-            channelId: session.channelId,
-            sender: {
-                id: session.userId,
-                name: session.author.nick || session.author.name,
-                roles: session.author.roles,
-            },
-            content,
-            quoteId: session.quote?.id,
+        await this.recorder.recordMessage({
+            id: Random.id(),
+            scopeId: session.cid,
+            timestamp: new Date(session.timestamp),
+            eventData: {
+                id: session.messageId,
+                senderId: session.author.id,
+                senderName: session.author.nick || session.author.name,
+                content: session.content,
+            }
         });
     }
 
@@ -129,12 +131,16 @@ export class EventListener {
 
         this.ctx.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
 
-        await this.service.recordMessage({
-            id: session.messageId,
-            platform: session.platform,
-            channelId: session.channelId,
-            sender: { id: session.bot.selfId, name: session.bot.user.nick || session.bot.user.name },
-            content: session.content,
+        await this.recorder.recordMessage({
+            id: Random.id(),
+            scopeId: session.cid,
+            timestamp: new Date(session.timestamp),
+            eventData: {
+                id: session.messageId,
+                senderId: session.bot.selfId,
+                senderName: session.bot.user.nick || session.bot.user.nick,
+                content: session.content,
+            }
         });
     }
 

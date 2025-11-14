@@ -40,8 +40,8 @@ export class WorldStateService extends Service<Config> {
         this.logger.level = this.config.logLevel;
 
         this.recorder = new EventRecorder(ctx);
-        this.builder = new WorldStateBuilder(ctx, config, this.recorder);
-        this.listener = new EventListener(ctx, this, config);
+        this.builder = new WorldStateBuilder(ctx, config, this);
+        this.listener = new EventListener(ctx, config, this);
     }
 
     protected async start(): Promise<void> {
@@ -96,11 +96,11 @@ export class WorldStateService extends Service<Config> {
             TableName.Timeline,
             {
                 id: "string(255)",
-                timestamp: "timestamp",
                 scopeId: "string(255)",
                 eventType: "string(100)",
                 eventCategory: "string(100)",
                 priority: "unsigned",
+                timestamp: "timestamp",
                 eventData: "json",
             },
             {
@@ -113,50 +113,6 @@ export class WorldStateService extends Service<Config> {
     private registerCommands(): void {
         const commandService = this.ctx.get(Services.Command) as CommandService;
         const historyCmd = commandService.subcommand(".history", "历史记录管理指令集", { authority: 3 });
-
-        historyCmd
-            .subcommand(".count", "统计历史记录中激活的消息数量")
-            .option("platform", "-p <platform:string> 指定平台")
-            .option("channel", "-c <channel:string> 指定频道ID")
-            .option("target", "-t <target:string> 指定目标 'platform:channelId'")
-            .action(async ({ session, options }) => {
-                let platform = options.platform || session.platform;
-                let channelId = options.channel || session.channelId;
-
-                // 从 -t, --target 解析
-                if (options.target) {
-                    const parts = options.target.split(":");
-                    if (parts.length < 2) {
-                        return `目标格式错误: "${options.target}"，已跳过`;
-                    }
-                    platform = parts[0];
-                    channelId = parts.slice(1).join(":");
-                }
-
-                if (channelId) {
-                    if (!platform) {
-                        const messages = await this.ctx.database.get(TableName.Timeline, { scopeId: { $regex: `^${platform}:` } }, { fields: ["platform"] });
-                        const platforms = [...new Set(messages.map(d => d.platform))];
-
-                        if (platforms.length === 0)
-                            return `频道 "${channelId}" 未找到任何历史记录，已跳过`;
-                        if (platforms.length === 1)
-                            platform = platforms[0];
-                        else
-                            /* prettier-ignore */
-                            return `频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}请使用 -p <platform> 来指定`;
-                    }
-
-                    const messageCount = await this.ctx.database.eval(TableName.Events, row => $.count(row.id), {
-                        type: "message",
-                        platform,
-                        channelId,
-                    });
-
-                    /* prettier-ignore */
-                    return `在 ${platform}:${channelId} 中有 ${messageCount} 条消息，上下文中最多保留 ${this.config.l1_memory.maxMessages} 条`;
-                }
-            });
 
         historyCmd
             .subcommand(".clear", "清除指定频道的历史记录", { authority: 3 })
@@ -174,112 +130,7 @@ export class WorldStateService extends Service<Config> {
                 ].join("\n"),
             )
             .action(async ({ session, options }) => {
-                const results: string[] = [];
 
-                const performClear = async (
-                    query: Query.Expr<EventData>,
-                    description: string,
-                    target?: { platform: string; channelId: string },
-                ) => {
-                    try {
-                        const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Events, {
-                            ...query,
-                            type: "message",
-                        });
-                        const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.Events, {
-                            ...query,
-                            type: "channel_event",
-                        });
-
-                        results.push(`${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件`);
-                    }
-                    catch (error: any) {
-                        this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
-                        results.push(`${description} - 操作失败`);
-                    }
-                };
-
-                if (options.all) {
-                    if (options.all === undefined)
-                        return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
-                    let query: Query.Expr<EventData> = {};
-                    let description = "";
-                    switch (options.all) {
-                        case "private":
-                            query = { channelId: { $regex: /^private:/ } };
-                            description = "所有私聊频道";
-                            break;
-                        case "guild":
-                            query = { channelId: { $not: { $regex: /^private:/ } } };
-                            description = "所有群聊频道";
-                            break;
-                        case "all":
-                            query = {};
-                            description = "所有频道";
-                            break;
-                    }
-                    await performClear(query, description);
-                    return results.join("\n");
-                }
-
-                const targetsToProcess: { platform: string; channelId: string }[] = [];
-                const ambiguousChannels: string[] = [];
-
-                if (options.target) {
-                    for (const target of options.target
-                        .split(",")
-                        .map(t => t.trim())
-                        .filter(Boolean)) {
-                        const parts = target.split(":");
-                        if (parts.length < 2) {
-                            results.push(`❌ 格式错误的目标: "${target}"`);
-                            continue;
-                        }
-                        targetsToProcess.push({ platform: parts[0], channelId: parts.slice(1).join(":") });
-                    }
-                }
-
-                if (options.channel) {
-                    for (const channelId of options.channel
-                        .split(",")
-                        .map(c => c.trim())
-                        .filter(Boolean)) {
-                        if (options.platform) {
-                            targetsToProcess.push({ platform: options.platform, channelId });
-                        }
-                        else {
-                            const messages = await this.ctx.database.get(TableName.Events, { channelId }, { fields: ["platform"] });
-                            const platforms = [...new Set(messages.map(d => d.platform))];
-                            if (platforms.length === 0)
-                                results.push(`🟡 频道 "${channelId}" 未找到`);
-                            else if (platforms.length === 1)
-                                targetsToProcess.push({ platform: platforms[0], channelId });
-                            else ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}`);
-                        }
-                    }
-                }
-
-                if (ambiguousChannels.length > 0)
-                    return `操作已中止:\n${ambiguousChannels.join("\n")}\n请使用 -p 或 -t 指定平台`;
-
-                if (targetsToProcess.length === 0 && !options.target && !options.channel) {
-                    if (session.platform && session.channelId)
-                        targetsToProcess.push({ platform: session.platform, channelId: session.channelId });
-                    else return "无法确定当前会话，请使用选项指定频道";
-                }
-
-                if (targetsToProcess.length === 0 && results.length === 0)
-                    return "没有指定任何有效的清理目标";
-
-                for (const target of targetsToProcess) {
-                    await performClear(
-                        { platform: target.platform, channelId: target.channelId },
-                        `目标 "${target.platform}:${target.channelId}"`,
-                        target,
-                    );
-                }
-
-                return `--- 清理报告 ---\n${results.join("\n")}`;
             });
 
         // const scheduleCmd = commandService.subcommand(".schedule", "计划任务管理指令集", { authority: 3 });

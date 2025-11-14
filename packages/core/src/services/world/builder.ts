@@ -1,11 +1,11 @@
 import type { Context } from "koishi";
 import type { SceneAdapter } from "./adapters/base";
 import type { HistoryConfig } from "./config";
-import type { EventRecorder } from "./recorder";
-import type { AnyStimulus, DiaryEntry, Environment, Memory, SelfInfo, WorldState } from "./types";
+import type { WorldStateService } from "./service";
 
 import { Time } from "koishi";
 import { ChatSceneAdapter } from "./adapters/chat-adapter";
+import type { AnyStimulus, DiaryEntry, Environment, Memory, SelfInfo, WorldState } from "./types";
 import { isScopedStimulus } from "./types";
 
 /**
@@ -19,10 +19,10 @@ export class WorldStateBuilder {
     constructor(
         private ctx: Context,
         private config: HistoryConfig,
-        private recorder: EventRecorder,
+        private service: WorldStateService,
     ) {
         // 注册内置适配器
-        this.registerAdapter(new ChatSceneAdapter(ctx, config, recorder));
+        this.registerAdapter(new ChatSceneAdapter(ctx, config, service.recorder));
     }
 
     /**
