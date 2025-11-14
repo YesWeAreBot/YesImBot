@@ -1,12 +1,11 @@
 import type { Bot, Context, Session } from "koishi";
 import type { AssetService } from "@/services";
-import type { ToolContext } from "@/services/context/types";
 import type { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
+import type { ToolContext } from "@/services/plugin/types";
 
 import { h, Schema, sleep } from "koishi";
-import { ContextCapability } from "@/services/context/types";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
-import { Plugin } from "@/services/plugin/plugin";
+import { Plugin } from "@/services/plugin/base-plugin";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
@@ -111,15 +110,12 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             target: Schema.string().description(`Optional. Specifies where to send the message, using \`platform:id\` format.
       Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
-        requiredContext: [ContextCapability.Session, ContextCapability.Platform, ContextCapability.ChannelId, ContextCapability.Bot],
     })
     async sendMessage(params: { message: string; target?: string }, context: ToolContext) {
         const { message, target } = params;
 
-        const session = context.require(ContextCapability.Session);
-        const _currentPlatform = context.require(ContextCapability.Platform);
-        const _currentChannelId = context.require(ContextCapability.ChannelId);
-        const bot = context.require(ContextCapability.Bot);
+        const session = context.session;
+        const bot = session.bot;
 
         const messages = message.split("<sep/>").filter(msg => msg.trim() !== "");
         if (messages.length === 0) {
@@ -241,8 +237,9 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
 
     private determineTarget(context: ToolContext, target?: string): { bot: Bot | undefined; targetChannelId: string } {
         if (!target) {
-            const bot = context.require(ContextCapability.Bot);
-            const channelId = context.require(ContextCapability.ChannelId);
+            const session = context.session;
+            const bot = session.bot;
+            const channelId = session.channelId;
             return {
                 bot,
                 targetChannelId: channelId ?? "",

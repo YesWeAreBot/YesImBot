@@ -1,15 +1,15 @@
 import type { Context, Query } from "koishi";
-import type { ToolContext } from "@/services/context/types";
-import type { MessageData } from "@/services/worldstate";
+import type { ToolContext } from "@/services/plugin/types";
+import type { MessageEventData, MessageRecord } from "@/services/world";
 
 import { Schema } from "koishi";
 import { Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
-import { Plugin } from "@/services/plugin/plugin";
+import { Plugin } from "@/services/plugin/base-plugin";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services, TableName } from "@/shared";
 import { formatDate, truncate } from "@/shared/utils";
 
-interface MemoryConfig { }
+interface MemoryConfig {}
 
 @Metadata({
     name: "memory",
@@ -44,33 +44,29 @@ export default class MemoryPlugin extends Plugin<MemoryConfig> {
         const { query, limit = 10, channel_id, user_id } = args;
 
         try {
-            const whereClauses: Query.Expr<MessageData>[] = [{ payload: { content: { $regex: new RegExp(query, "i") } }, type: "message" }];
-            if (channel_id)
-                whereClauses.push({ channelId: channel_id });
-            if (user_id)
-                whereClauses.push({ payload: { sender: { id: user_id } } });
+            const whereClauses: Query.Expr<MessageRecord>[] = [{ eventCategory: "message" }];
+            if (channel_id) whereClauses.push({ scopeId: { $regex: new RegExp(channel_id, "i") } });
+            if (user_id) whereClauses.push({ eventData: { senderId: user_id } });
 
-            const finalQuery: Query<MessageData> = { $and: whereClauses };
+            const finalQuery: Query<MessageRecord> = { $and: whereClauses };
 
             const results = (await this.ctx.database
-                .select(TableName.Events)
+                .select(TableName.Timeline)
                 .where(finalQuery)
                 .limit(limit)
                 .orderBy("timestamp", "desc")
-                .execute()) as MessageData[];
-
+                .execute()) as MessageRecord[];
             if (!results || results.length === 0) {
                 return Success("No matching messages found in recall memory.");
             }
 
             /* prettier-ignore */
-            const formattedResults = results.map(msg => `[${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm")}|${msg.payload.sender.name || "user"}(${msg.payload.sender.id})] ${truncate(msg.payload.content, 120)}`);
+            const formattedResults = results.map(msg => `[${formatDate(msg.timestamp, "YYYY-MM-DD HH:mm")}|${msg.eventData.senderName || "user"}(${msg.eventData.senderId})] ${truncate(msg.eventData.content, 120)}`);
             return Success({
                 results_count: results.length,
                 results: formattedResults,
             });
-        }
-        catch (e: any) {
+        } catch (e: any) {
             this.ctx.logger.error(`[MemoryTool] Conversation search failed for query "${query}": ${e.message}`);
             return Failed(`Failed to search conversation history: ${e.message}`);
         }

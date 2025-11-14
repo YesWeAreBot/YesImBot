@@ -1,12 +1,12 @@
 import type { Context } from "koishi";
-import type { ToolContext } from "@/services/context/types";
+import type { ToolContext } from "@/services/plugin/types";
 
 import { Schema } from "koishi";
-import { ContextCapability } from "@/services/context/types";
 import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
-import { Plugin } from "@/services/plugin/plugin";
+import { Plugin } from "@/services/plugin/base-plugin";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { isEmpty } from "@/shared/utils";
+import { requirePlatform, requireSession } from "@/services/plugin/activators";
 
 interface QManagerConfig {}
 
@@ -32,19 +32,17 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
             message_id: Schema.string().required().description("要撤回的消息编号"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        requiredContext: [ContextCapability.Session],
+        activators: [requireSession("Active session required")],
     })
     async delmsg({ message_id, channel_id }: { message_id: string; channel_id?: string }, context: ToolContext) {
-        const session = context.require(ContextCapability.Session);
-        if (isEmpty(message_id))
-            return Failed("message_id is required");
+        const session = context.session;
+        if (isEmpty(message_id)) return Failed("message_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.deleteMessage(targetChannel, message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]撤回了消息: ${message_id}`);
             return Success();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${session.selfId}]撤回消息失败: ${message_id} - `, error.message);
             return Failed(`撤回消息失败 - ${error.message}`);
         }
@@ -60,19 +58,17 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
                 .description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        requiredContext: [ContextCapability.Session],
+        activators: [requireSession("Active session required")],
     })
     async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id?: string }, context: ToolContext) {
-        const session = context.require(ContextCapability.Session);
-        if (isEmpty(user_id))
-            return Failed("user_id is required");
+        const session = context.session;
+        if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.muteGuildMember(targetChannel, user_id, Number(duration) * 60 * 1000);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id}`);
             return Success();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id} 失败 - `, error.message);
             return Failed(`禁言用户 ${user_id} 失败 - ${error.message}`);
         }
@@ -85,19 +81,17 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
             user_id: Schema.string().required().description("要踢出的用户 ID"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
         }),
-        requiredContext: [ContextCapability.Session],
+        activators: [requireSession("Active session required")],
     })
     async kick({ user_id, channel_id }: { user_id: string; channel_id?: string }, context: ToolContext) {
-        const session = context.require(ContextCapability.Session);
-        if (isEmpty(user_id))
-            return Failed("user_id is required");
+        const session = context.session;
+        if (isEmpty(user_id)) return Failed("user_id is required");
         const targetChannel = isEmpty(channel_id) ? session.channelId : channel_id;
         try {
             await session.bot.kickGuildMember(targetChannel, user_id);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${targetChannel} 踢出了用户: ${user_id}`);
             return Success();
-        }
-        catch (error: any) {
+        } catch (error: any) {
             this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${targetChannel} 踢出用户: ${user_id} 失败 - `, error.message);
             return Failed(`踢出用户 ${user_id} 失败 - ${error.message}`);
         }

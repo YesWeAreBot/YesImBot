@@ -1,13 +1,12 @@
 import type { Context, Session } from "koishi";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
-import type { ToolContext } from "@/services/context/types";
+import type { ToolContext } from "@/services/plugin/types";
 
 import { h, Schema } from "koishi";
 import { } from "koishi-plugin-adapter-onebot";
-import { ContextCapability } from "@/services/context/types";
 import { requirePlatform, requireSession } from "@/services/plugin/activators";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
-import { Plugin } from "@/services/plugin/plugin";
+import { Plugin } from "@/services/plugin/base-plugin";
 import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services } from "@/shared";
 import { formatDate, isEmpty } from "@/shared/utils";
@@ -44,13 +43,12 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             requirePlatform("onebot", "OneBot platform required"),
             requireSession("Active session required"),
         ],
-        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
     async reactionCreate(params: { message_id: string; emoji_id: number }, context: ToolContext) {
         const { message_id, emoji_id } = params;
 
-        const session = context.require(ContextCapability.Session);
-        const bot = context.require(ContextCapability.Bot);
+        const session = context.session;
+        const bot = session.bot;
         const selfId = bot.selfId;
 
         try {
@@ -80,13 +78,12 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             requirePlatform("onebot", "OneBot platform required"),
             requireSession("Active session required"),
         ],
-        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
     async essenceCreate(params: { message_id: string }, context: ToolContext) {
         const { message_id } = params;
 
-        const session = context.require(ContextCapability.Session);
-        const bot = context.require(ContextCapability.Bot);
+        const session = context.session;
+        const bot = session.bot;
         const selfId = bot.selfId;
 
         try {
@@ -110,13 +107,12 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             requirePlatform("onebot", "OneBot platform required"),
             requireSession("Active session required"),
         ],
-        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
     async essenceDelete(params: { message_id: string }, context: ToolContext) {
         const { message_id } = params;
 
-        const session = context.require(ContextCapability.Session);
-        const bot = context.require(ContextCapability.Bot);
+        const session = context.session;
+        const bot = session.bot;
         const selfId = bot.selfId;
 
         try {
@@ -141,13 +137,12 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             requirePlatform("onebot", "OneBot platform required"),
             requireSession("Active session required"),
         ],
-        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
     async sendPoke(params: { user_id: string; channel: string }, context: ToolContext) {
         const { user_id, channel } = params;
 
-        const session = context.require(ContextCapability.Session);
-        const bot = context.require(ContextCapability.Bot);
+        const session = context.session;
+        const bot = session.bot;
         const selfId = bot.selfId;
         const targetChannel = isEmpty(channel) ? session.channelId : channel;
 
@@ -179,12 +174,10 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
             requirePlatform("onebot", "OneBot platform required"),
             requireSession("Active session required"),
         ],
-        requiredContext: [ContextCapability.Session, ContextCapability.Bot],
     })
     async getForwardMsg(params: { id: string }, context: ToolContext) {
         const { id } = params;
-        const session = context.require(ContextCapability.Session);
-        const bot = context.require(ContextCapability.Bot);
+        const session = context.session;
         const { onebot, selfId } = session;
 
         try {
