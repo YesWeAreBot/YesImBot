@@ -2,22 +2,22 @@ import { Schema } from "koishi";
 
 import { AgentBehaviorConfig } from "@/agent";
 import { AssetServiceConfig } from "@/services/assets";
-import { ToolServiceConfig } from "@/services/plugin";
 import { MemoryConfig } from "@/services/memory";
 import { ModelServiceConfig } from "@/services/model";
+import { ToolServiceConfig } from "@/services/plugin";
 import { PromptServiceConfig } from "@/services/prompt";
 import { TelemetryConfig } from "@/services/telemetry";
-import { HistoryConfig } from "@/services/worldstate";
+import { HistoryConfig } from "@/services/world";
 
 export const CONFIG_VERSION = "2.0.2";
 
-export type Config = ModelServiceConfig &
-    AgentBehaviorConfig &
-    MemoryConfig &
-    HistoryConfig &
-    ToolServiceConfig &
-    AssetServiceConfig &
-    PromptServiceConfig & {
+export type Config = ModelServiceConfig
+    & AgentBehaviorConfig
+    & MemoryConfig
+    & HistoryConfig
+    & ToolServiceConfig
+    & AssetServiceConfig
+    & PromptServiceConfig & {
         telemetry: TelemetryConfig;
         logLevel: 1 | 2 | 3;
         version?: string;

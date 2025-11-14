@@ -15,17 +15,17 @@ type ResolveComputed<T>
     // 如果是函数
     = T extends (session: Session) => infer R
         ? ResolveComputed<R>
-        : // 如果是 Eval.Expr
-        T extends Eval.Expr<infer U, boolean>
+        // 如果是 Eval.Expr
+        : T extends Eval.Expr<infer U, boolean>
             ? ResolveComputed<U>
-            : // 如果是数组
-            T extends Array<infer V>
+            // 如果是数组
+            : T extends Array<infer V>
                 ? ResolveComputed<V>[]
-                : // 如果是对象（排除 null）
-                T extends object
+                // 如果是对象（排除 null）
+                : T extends object
                     ? { [K in keyof T]: ResolveComputed<T[K]> }
-                    : // 基本类型
-                    T;
+                    // 基本类型
+                    : T;
 
 // 从 WillingnessConfig 中解析出所有 Computed 后的纯净类型
 type ResolvedWillingnessConfig = ResolveComputed<WillingnessConfig>;
