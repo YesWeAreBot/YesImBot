@@ -3,55 +3,102 @@ import type { Session } from "koishi";
 // region data models
 
 /**
- * 事件线表
+ * 事件类型枚举
  */
-export interface BaseTimelineEntry<Type extends string, Category extends string, Data extends Record<string, any>> {
+export enum TimelineEventType {
+    Message = "message", // 普通消息 (文本/富文本)
+    Command = "command", // 指令调用 (用户显式触发指令)
+
+    MemberJoin = "notice.member.join", // 成员加入
+    MemberLeave = "notice.member.leave", // 成员离开
+    StateUpdate = "notice.state.update", // 状态变更 (如群名修改、禁言)
+    Reaction = "notice.reaction", // 表态/回应 (点赞等轻量交互)
+
+    AgentThought = "agent.thought", // 思考链 (CoT)
+    AgentTool = "agent.tool", // 工具调用记录
+    AgentAction = "agent.action", // 智能体产生的非消息类行为 (如修改群名片)
+}
+
+/**
+ * 事件线表基类
+ */
+export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends Record<string, any>> {
     id: string;
     timestamp: Date;
     scopeId: string;
+
     eventType: Type;
-    eventCategory: Category;
+
+    // 优先级：用于上下文截断时的保留权重
+    // 0: 噪音 (可丢弃)
+    // 1: 普通 (标准历史)
+    // 2: 重要 (关键事实)
+    // 3: 核心 (永久记忆/系统指令)
     priority: number;
+
+    // 事件发起者 ID (User ID / Bot ID / System ID)
+    actorId: string;
 
     // 直接嵌入事件数据 (JSON)
     eventData: Data;
 }
 
+// 消息事件
 export interface MessageEventData {
-    id: string;
-    // 消息特定字段
-    senderId: string;
     senderName: string;
     content: string;
-
-    // 可选字段
-    replyTo?: string;
-    isDeleted?: boolean;
+    messageId: string; // 平台侧的消息ID
+    replyTo?: string; // 引用回复
+    elements?: any[]; // 结构化消息段 (Koishi Elements)
 }
 
-export type MessageRecord = BaseTimelineEntry<"user_message", "message", MessageEventData>;
+export type MessageRecord = BaseTimelineEntry<TimelineEventType.Message, MessageEventData>;
 
-export interface SystemEventData {
-    eventType: string;
-    actorId?: string;
-    targetId?: string;
-    metadata: Record<string, any>;
-    message?: string;
+// 通知/状态事件
+export interface NoticeEventData {
+    subType: string; // 具体通知类型
+    targetId?: string; // 被操作的目标 (如被踢出的成员)
+    operatorId?: string; // 操作者 (如管理员)
+    details: Record<string, any>; // 变更详情 (如 { oldName: "A", newName: "B" })
+    displayText: string; // 用于构建 Prompt 的自然语言描述
 }
 
-export type SystemEventRecord = BaseTimelineEntry<"system_event", "system", SystemEventData>;
+export type NoticeRecord = BaseTimelineEntry<
+    TimelineEventType.MemberJoin
+    | TimelineEventType.MemberLeave
+    | TimelineEventType.StateUpdate
+    | TimelineEventType.Reaction,
+    NoticeEventData
+>;
 
-export interface AgentResponseData {
-    // Agent 响应特定字段
-    triggerId: string; // 触发的 Timeline Entry ID (索引)
-    actions: any[]; // 执行的动作
-    thoughts?: string; // 思考过程
-    toolCalls?: any[]; // 工具调用记录
+// 智能体执行事件
+export interface AgentActivityData {
+    triggerId?: string; // 触发此行为的事件ID
+
+    // 思考 (Thought)
+    thoughtContent?: string;
+
+    // 工具 (Tool)
+    toolName?: string;
+    toolArgs?: any;
+    toolResult?: any;
+
+    // 消耗统计
+    tokenUsage?: {
+        prompt: number;
+        completion: number;
+    };
 }
 
-export type AgentResponseRecord = BaseTimelineEntry<"agent_response", "agent", AgentResponseData>;
+export type AgentRecord = BaseTimelineEntry<
+    TimelineEventType.AgentThought
+    | TimelineEventType.AgentTool
+    | TimelineEventType.AgentAction,
+    AgentActivityData
+>;
 
-export type TimelineEntry = MessageRecord | SystemEventRecord | AgentResponseRecord;
+// 聚合类型
+export type TimelineEntry = MessageRecord | NoticeRecord | AgentRecord;
 
 /**
  * 成员数据 - 数据库表定义

@@ -117,9 +117,9 @@ export class EventListener {
             id: Random.id(),
             scopeId: session.cid,
             timestamp: new Date(session.timestamp),
+            actorId: session.author.id,
             eventData: {
-                id: session.messageId,
-                senderId: session.author.id,
+                messageId: session.messageId,
                 senderName: session.author.nick || session.author.name,
                 content: session.content,
             },
@@ -136,9 +136,9 @@ export class EventListener {
             id: Random.id(),
             scopeId: session.cid,
             timestamp: new Date(session.timestamp),
+            actorId: session.bot.selfId,
             eventData: {
-                id: session.messageId,
-                senderId: session.bot.selfId,
+                messageId: session.messageId,
                 senderName: session.bot.user.nick || session.bot.user.nick,
                 content: session.content,
             },
