@@ -1,6 +1,6 @@
 import type { Context, Query } from "koishi";
 import type { ToolContext } from "@/services/plugin/types";
-import type { MessageEventData, MessageRecord } from "@/services/world";
+import type { MessageRecord } from "@/services/world";
 
 import { Schema } from "koishi";
 import { Plugin } from "@/services/plugin/base-plugin";

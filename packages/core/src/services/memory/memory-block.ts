@@ -2,9 +2,6 @@ import type { Context } from "koishi";
 import fs from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import matter from "gray-matter";
-import { Logger } from "koishi";
-
-import { Services } from "@/shared/constants";
 
 export interface MemoryBlockData {
     title: string;

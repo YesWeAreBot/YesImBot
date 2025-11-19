@@ -11,7 +11,6 @@ import type { ProviderConfig, ProviderType } from "./config";
 import {
     createAlibaba,
     createAnthropic,
-    createAzure,
     createCerebras,
     createDeepinfra,
     createDeepSeek,

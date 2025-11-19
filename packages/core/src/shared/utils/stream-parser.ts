@@ -249,7 +249,6 @@ export class StreamParser {
                     // completeStream 应该已经关闭了它，但以防万一
                     state.controller.close();
                 } catch (_e) {
-                    // eslint-disable-next-line unused-imports/no-unused-vars
                     /* might already be closed */
                 }
             }

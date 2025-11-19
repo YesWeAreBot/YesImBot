@@ -2,7 +2,7 @@ import type { Context } from "koishi";
 import type { ToolContext } from "@/services/plugin/types";
 
 import { Schema } from "koishi";
-import { requirePlatform, requireSession } from "@/services/plugin/activators";
+import { requireSession } from "@/services/plugin/activators";
 import { Plugin } from "@/services/plugin/base-plugin";
 import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
 import { Failed, Success } from "@/services/plugin/result-builder";

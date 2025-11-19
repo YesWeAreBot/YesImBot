@@ -1,10 +1,10 @@
-import { Computed } from "koishi";
+import type { Computed } from "koishi";
 
-export type ChannelDescriptor = {
+export interface ChannelDescriptor {
     platform: string;
     type: "private" | "guild";
     id: string;
-};
+}
 
 /**
  * 定义日志的详细级别，与 Koishi (reggol) 的模型对齐。
@@ -22,10 +22,10 @@ export enum LogLevel {
 }
 
 /** 描述一个模型在特定提供商中的位置 */
-export type ModelDescriptor = {
+export interface ModelDescriptor {
     providerName: string;
     modelId: string;
-};
+}
 
 /** 模型切换策略 */
 export enum ModelSwitchingStrategy {
@@ -243,7 +243,7 @@ export interface ConfigV201 {
     };
     image: {
         processedCachePath: string;
-        //resizeEnabled: boolean;
+        // resizeEnabled: boolean;
         targetSize: number;
         maxSizeMB: number;
         gifProcessingStrategy: "firstFrame" | "stitch";

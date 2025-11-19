@@ -82,7 +82,7 @@ export function extractMetaFromSchema(schema: Schema): Properties {
             }
 
             return [key, param];
-        })
+        }),
     );
 }
 

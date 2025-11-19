@@ -1,10 +1,11 @@
-import semver from "semver";
+import type { Config } from "./config";
 
+import type { ConfigV1, ConfigV200 } from "./versions";
+import type { ConfigV201 } from "./versions/v201";
+import semver from "semver";
 import { ModelType, SwitchStrategy } from "@/services/model/types";
-import { Config, CONFIG_VERSION } from "./config";
-import { ConfigV1, ConfigV200 } from "./versions";
+import { CONFIG_VERSION } from "./config";
 import * as V201 from "./versions/v201";
-import { ConfigV201 } from "./versions/v201";
 
 /**
  * Migrate a v1 configuration object to the v2.0.0 configuration shape.
@@ -93,8 +94,8 @@ function migrateV201ToV202(configV201: ConfigV201): Config {
             const modelType = model.abilities.includes(V201.ModelAbility.Chat)
                 ? ModelType.Chat
                 : model.abilities.includes(V201.ModelAbility.Embedding)
-                  ? ModelType.Embedding
-                  : ModelType.Image;
+                    ? ModelType.Embedding
+                    : ModelType.Image;
             return { ...model, modelType };
         });
         return { ...provider, models };
@@ -148,7 +149,7 @@ export function migrateConfig(config: any): Config {
     let migratedConfig = { ...config };
     let currentVersion = String(migratedConfig.version);
 
-    if (currentVersion == "2") {
+    if (currentVersion === "2") {
         currentVersion = "2.0.0";
     }
 
