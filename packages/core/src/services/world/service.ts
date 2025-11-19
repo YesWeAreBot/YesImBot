@@ -1,22 +1,20 @@
-import type { Context, Query, Session } from "koishi";
+import type { Context, Session } from "koishi";
 import type { CommandService } from "../command";
-import type { AnyStimulus, MemberData, TimelineEntry, UserMessageStimulus, WorldState } from "./types";
+import type { AnyPercept, MemberData, TimelineEntry, WorldState } from "./types";
 import type { Config } from "@/config";
 
-import { $, Service } from "koishi";
+import { Service } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { WorldStateBuilder } from "./builder";
 import { EventListener } from "./listener";
 import { EventRecorder } from "./recorder";
-import { StimulusSource } from "./types";
 
 declare module "koishi" {
     interface Context {
         [Services.WorldState]: WorldStateService;
     }
     interface Events {
-        "agent/stimulus": (stimulus: AnyStimulus) => void;
-        "agent/stimulus-user-message": (stimulus: UserMessageStimulus) => void;
+        "agent/percept": (percept: AnyPercept) => void;
     }
     interface Tables {
         [TableName.Members]: MemberData;
@@ -61,8 +59,8 @@ export class WorldStateService extends Service<Config> {
         this.ctx.logger.info("服务已停止");
     }
 
-    public async buildWorldState(stimulus: AnyStimulus): Promise<WorldState> {
-        return await this.builder.buildFromStimulus(stimulus);
+    public async buildWorldState(percept: AnyPercept): Promise<WorldState> {
+        return await this.builder.buildFromStimulus(percept);
     }
 
     public isChannelAllowed(session: Session): boolean {
@@ -98,7 +96,6 @@ export class WorldStateService extends Service<Config> {
                 id: "string(255)",
                 scopeId: "string(255)",
                 eventType: "string(100)",
-                eventCategory: "string(100)",
                 priority: "unsigned",
                 timestamp: "timestamp",
                 eventData: "json",
@@ -172,7 +169,7 @@ export class WorldStateService extends Service<Config> {
         //         }
 
         //         this.ctx.setTimeout(() => {
-        //             const stimulus: ScheduledTaskStimulus = {
+        //             const percept: ScheduledTaskStimulus = {
         //                 type: StimulusSource.ScheduledTask,
         //                 priority: 1,
         //                 timestamp: new Date(),
@@ -185,7 +182,7 @@ export class WorldStateService extends Service<Config> {
         //                     message: options.action || "No action specified",
         //                 },
         //             };
-        //             this.ctx.emit("agent/stimulus-scheduled-task", stimulus);
+        //             this.ctx.emit("agent/percept-scheduled-task", percept);
         //         }, options.delay * 1000);
 
         //         return `延迟任务 "${options.name}" 已设置，将在 ${options.delay} 秒后执行`;

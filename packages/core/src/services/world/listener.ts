@@ -2,12 +2,11 @@ import type { Context, Session } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { EventRecorder } from "./recorder";
 import type { WorldStateService } from "./service";
-import type { UserMessageStimulus } from "./types";
+import type { PerceptType, UserMessagePercept } from "./types";
 import type { AssetService } from "@/services/assets";
 import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
-import { StimulusSource } from "./types";
 
 export class EventListener {
     private readonly disposers: (() => boolean)[] = [];
@@ -46,9 +45,9 @@ export class EventListener {
                 await this.recordUserMessage(session);
                 await next();
 
-                const stimulus: UserMessageStimulus = {
+                const percept: UserMessagePercept = {
                     id: Random.id(),
-                    type: StimulusSource.UserMessage,
+                    type: "user.message" as PerceptType.UserMessage,
                     priority: 5,
                     timestamp: new Date(),
                     payload: {
@@ -68,8 +67,8 @@ export class EventListener {
                         session,
                     },
                 };
-                // 统一使用 agent/stimulus 事件通道
-                this.ctx.emit("agent/stimulus", stimulus);
+                // 统一使用 agent/percept 事件通道
+                this.ctx.emit("agent/percept", percept);
             }),
         );
 

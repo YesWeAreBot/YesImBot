@@ -1,7 +1,7 @@
 import type { Context } from "koishi";
 import type { HistoryConfig } from "@/services/world/config";
 import type { EventRecorder } from "@/services/world/recorder";
-import type { AnyStimulus, Entity, Environment, Event } from "@/services/world/types";
+import type { AnyPercept, Entity, Environment, Event } from "@/services/world/types";
 
 /**
  * 场景适配器基类
@@ -21,25 +21,25 @@ export abstract class SceneAdapter {
     /**
      * 判断此适配器是否可以处理给定的刺激
      */
-    abstract canHandle(stimulus: AnyStimulus): boolean;
+    abstract canHandle(percept: AnyPercept): boolean;
 
     /**
      * 构建环境信息
      */
-    abstract buildEnvironment(stimulus: AnyStimulus): Promise<Environment>;
+    abstract buildEnvironment(percept: AnyPercept): Promise<Environment>;
 
     /**
      * 构建实体列表
      */
-    abstract buildEntities(stimulus: AnyStimulus, env: Environment): Promise<Entity[]>;
+    abstract buildEntities(percept: AnyPercept, env: Environment): Promise<Entity[]>;
 
     /**
      * 构建事件历史
      */
-    abstract buildEventHistory(stimulus: AnyStimulus, env: Environment): Promise<Event[]>;
+    abstract buildEventHistory(percept: AnyPercept, env: Environment): Promise<Event[]>;
 
     /**
      * 构建场景特定的扩展数据
      */
-    abstract buildExtensions(stimulus: AnyStimulus, env: Environment): Promise<Record<string, any>>;
+    abstract buildExtensions(percept: AnyPercept, env: Environment): Promise<Record<string, any>>;
 }

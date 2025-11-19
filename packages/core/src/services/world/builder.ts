@@ -2,10 +2,10 @@ import type { Context } from "koishi";
 import type { SceneAdapter } from "./adapters/base";
 import type { HistoryConfig } from "./config";
 import type { WorldStateService } from "./service";
-import type { AnyStimulus, DiaryEntry, Environment, Memory, SelfInfo, WorldState } from "./types";
+import type { AnyPercept, DiaryEntry, Environment, Memory, SelfInfo, WorldState } from "./types";
 import { Time } from "koishi";
 import { ChatSceneAdapter } from "./adapters/chat-adapter";
-import { isScopedStimulus } from "./types";
+import { isScopedPercept, PerceptType } from "./types";
 
 /**
  * WorldState 构建器
@@ -34,55 +34,55 @@ export class WorldStateBuilder {
     /**
      * 从 Stimulus 构建 WorldState
      */
-    async buildFromStimulus(stimulus: AnyStimulus): Promise<WorldState> {
+    async buildFromStimulus(percept: AnyPercept): Promise<WorldState> {
         // 判断是 scoped 还是 global
-        const isScoped = isScopedStimulus(stimulus);
+        const isScoped = isScopedPercept(percept);
 
         if (isScoped) {
             // 选择合适的适配器
-            const adapter = this.selectAdapter(stimulus);
+            const adapter = this.selectAdapter(percept);
 
             if (!adapter) {
-                throw new Error(`No scene adapter found for stimulus: ${stimulus.type}`);
+                throw new Error(`No scene adapter found for percept: ${percept.type}`);
             }
 
-            return this.buildScopedState(stimulus, adapter);
+            return this.buildScopedState(percept, adapter);
         } else {
-            return this.buildGlobalState(stimulus);
+            return this.buildGlobalState(percept);
         }
     }
 
-    private selectAdapter(stimulus: AnyStimulus): SceneAdapter | null {
+    private selectAdapter(percept: AnyPercept): SceneAdapter | null {
         for (const adapter of this.adapters) {
-            if (adapter.canHandle(stimulus)) {
+            if (adapter.canHandle(percept)) {
                 return adapter;
             }
         }
         return null;
     }
 
-    private async buildScopedState(stimulus: AnyStimulus, adapter: SceneAdapter): Promise<WorldState> {
+    private async buildScopedState(percept: AnyPercept, adapter: SceneAdapter): Promise<WorldState> {
         // 构建环境
-        const environment = await adapter.buildEnvironment(stimulus);
+        const environment = await adapter.buildEnvironment(percept);
 
         // 构建实体列表
-        const entities = environment ? await adapter.buildEntities(stimulus, environment) : [];
+        const entities = environment ? await adapter.buildEntities(percept, environment) : [];
 
         // 构建事件历史
-        const eventHistory = environment ? await adapter.buildEventHistory(stimulus, environment) : [];
+        const eventHistory = environment ? await adapter.buildEventHistory(percept, environment) : [];
 
         // 构建扩展数据
-        const extensions = environment ? await adapter.buildExtensions(stimulus, environment) : {};
+        const extensions = environment ? await adapter.buildExtensions(percept, environment) : {};
 
         // 检索记忆 (通用逻辑)
-        const retrievedMemories = await this.retrieveMemories(stimulus, environment);
+        const retrievedMemories = await this.retrieveMemories(percept, environment);
 
         return {
             stateType: "scoped",
             trigger: {
-                type: stimulus.type,
-                timestamp: stimulus.timestamp,
-                description: this.describeTrigger(stimulus),
+                type: percept.type,
+                timestamp: percept.timestamp,
+                description: this.describeTrigger(percept),
             },
             self: await this.getSelfInfo(),
             currentTime: new Date(Time.getDateNumber()),
@@ -94,14 +94,14 @@ export class WorldStateBuilder {
         };
     }
 
-    private async buildGlobalState(stimulus: AnyStimulus): Promise<WorldState> {
+    private async buildGlobalState(percept: AnyPercept): Promise<WorldState> {
         // 全局状态不绑定特定环境
         return {
             stateType: "global",
             trigger: {
-                type: stimulus.type,
-                timestamp: stimulus.timestamp,
-                description: this.describeTrigger(stimulus),
+                type: percept.type,
+                timestamp: percept.timestamp,
+                description: this.describeTrigger(percept),
             },
             self: await this.getSelfInfo(),
             currentTime: new Date(),
@@ -115,7 +115,7 @@ export class WorldStateBuilder {
     /**
      * 检索相关记忆 (L2 语义记忆)
      */
-    private async retrieveMemories(stimulus: AnyStimulus, environment?: Environment): Promise<Memory[]> {
+    private async retrieveMemories(percept: AnyPercept, environment?: Environment): Promise<Memory[]> {
         // TODO: 实现 L2 记忆检索
         return [];
     }
@@ -123,7 +123,7 @@ export class WorldStateBuilder {
     /**
      * 检索日记条目 (L3 自我反思)
      */
-    private async retrieveDiaryEntries(stimulus: AnyStimulus): Promise<DiaryEntry[]> {
+    private async retrieveDiaryEntries(percept: AnyPercept): Promise<DiaryEntry[]> {
         // TODO: 实现 L3 日记检索
         return [];
     }
@@ -131,14 +131,14 @@ export class WorldStateBuilder {
     /**
      * 生成刺激的描述文本
      */
-    private describeTrigger(stimulus: AnyStimulus): string {
-        switch (stimulus.type) {
-            case "user_message": {
-                const session = stimulus.payload as any;
-                return `用户 ${session.username || session.userId} 在 ${session.channelId} 发送了消息`;
+    private describeTrigger(percept: AnyPercept): string {
+        switch (percept.type) {
+            case PerceptType.UserMessage: {
+                const session = percept.runtime?.session;
+                return `用户 ${session?.username || session?.userId} 在 ${session?.channelId} 发送了消息`;
             }
             default:
-                return `未知类型: ${stimulus.type}`;
+                return `未知类型: ${percept.type}`;
         }
     }
 

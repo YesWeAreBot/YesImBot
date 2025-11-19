@@ -1,7 +1,6 @@
-import type { Session } from "koishi";
-import type { AnyStimulus, Entity, Environment, Event, UserMessageStimulus } from "@/services/world/types";
+import type { AnyPercept, Entity, Environment, Event, UserMessagePercept } from "@/services/world/types";
 
-import { StimulusSource } from "@/services/world/types";
+import { PerceptType, TimelineEventType } from "@/services/world/types";
 import { TableName } from "@/shared/constants";
 import { SceneAdapter } from "./base";
 
@@ -13,12 +12,12 @@ import { SceneAdapter } from "./base";
 export class ChatSceneAdapter extends SceneAdapter {
     name = "chat";
 
-    public canHandle(stimulus: AnyStimulus): boolean {
-        return stimulus.type === StimulusSource.UserMessage;
+    public canHandle(percept: AnyPercept): boolean {
+        return percept.type === PerceptType.UserMessage;
     }
 
-    async buildEnvironment(stimulus: UserMessageStimulus): Promise<Environment> {
-        const { platform, channelId } = this.extractChannelInfo(stimulus);
+    async buildEnvironment(percept: UserMessagePercept): Promise<Environment> {
+        const { platform, channelId } = this.extractChannelInfo(percept);
 
         // 从数据库获取频道信息
         const channelInfo = await this.getChannelInfo(platform, channelId);
@@ -38,7 +37,7 @@ export class ChatSceneAdapter extends SceneAdapter {
         };
     }
 
-    async buildEntities(stimulus: UserMessageStimulus, env: Environment): Promise<Entity[]> {
+    async buildEntities(percept: UserMessagePercept, env: Environment): Promise<Entity[]> {
         const channelId = env.id;
 
         // 从数据库获取成员列表
@@ -61,15 +60,15 @@ export class ChatSceneAdapter extends SceneAdapter {
         }));
     }
 
-    async buildEventHistory(stimulus: UserMessageStimulus, env: Environment): Promise<Event[]> {
+    async buildEventHistory(percept: UserMessagePercept, env: Environment): Promise<Event[]> {
         const channelId = env.id.split(":")[1];
 
         // 获取 L1 历史
-        const rawEvents = await this.recorder.getMessages(stimulus.payload.cid, {}, this.config.l1_memory.maxMessages);
+        const rawEvents = await this.recorder.getMessages(percept.runtime?.session.cid, {}, this.config.l1_memory.maxMessages);
 
         // eslint-disable-next-line array-callback-return
         return rawEvents.map((item) => {
-            if (item.eventType === "user_message") {
+            if (item.eventType === TimelineEventType.Message) {
                 return {
                     type: "chat_message",
                     timestamp: item.timestamp,
@@ -81,7 +80,7 @@ export class ChatSceneAdapter extends SceneAdapter {
         });
     }
 
-    async buildExtensions(stimulus: UserMessageStimulus, env: Environment): Promise<Record<string, any>> {
+    async buildExtensions(percept: UserMessagePercept, env: Environment): Promise<Record<string, any>> {
         // 聊天场景的扩展数据
         return {
             // 用户关系图谱
@@ -94,22 +93,22 @@ export class ChatSceneAdapter extends SceneAdapter {
 
     // region 辅助方法
 
-    private extractChannelInfo(stimulus: UserMessageStimulus): { platform: string; channelId: string } {
-        if (stimulus.type === StimulusSource.UserMessage) {
-            const session = stimulus.payload as Session;
+    private extractChannelInfo(percept: UserMessagePercept): { platform: string; channelId: string } {
+        if (percept.type === PerceptType.UserMessage) {
+            const session = percept.runtime?.session;
             return {
                 platform: session.platform,
                 channelId: session.channelId,
             };
         }
-        // else if (stimulus.type === StimulusSource.ChannelEvent) {
+        // else if (percept.type === PerceptType.ChannelEvent) {
         //     return {
-        //         platform: stimulus.payload.platform,
-        //         channelId: stimulus.payload.channelId,
+        //         platform: percept.payload.platform,
+        //         channelId: percept.payload.channelId,
         //     };
         // }
-        // else if (stimulus.type === StimulusSource.ScheduledTask || stimulus.type === StimulusSource.BackgroundTaskCompletion) {
-        //     const payload = stimulus.payload;
+        // else if (percept.type === PerceptType.ScheduledTask || percept.type === PerceptType.BackgroundTaskCompletion) {
+        //     const payload = percept.payload;
         //     if (payload.platform && payload.channelId) {
         //         return {
         //             platform: payload.platform,
@@ -118,7 +117,7 @@ export class ChatSceneAdapter extends SceneAdapter {
         //     }
         // }
 
-        throw new Error(`Cannot extract channel info from stimulus type: ${stimulus.type}`);
+        throw new Error(`Cannot extract channel info from percept type: ${percept.type}`);
     }
 
     /**

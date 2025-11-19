@@ -7,11 +7,10 @@ import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
 import type { PluginService, Properties, ToolContext, ToolSchema } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
-import type { AnyStimulus, WorldStateService } from "@/services/world";
+import type { AnyPercept, WorldStateService } from "@/services/world";
 import { h, Random } from "koishi";
 import { ModelError } from "@/services/model/types";
 import { isAction } from "@/services/plugin";
-import { StimulusSource } from "@/services/world";
 import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
 
@@ -34,7 +33,7 @@ export class HeartbeatProcessor {
         this.memoryService = ctx[Services.Memory];
     }
 
-    public async runCycle(stimulus: AnyStimulus): Promise<boolean> {
+    public async runCycle(percept: AnyPercept): Promise<boolean> {
         const turnId = Random.id();
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
@@ -44,7 +43,7 @@ export class HeartbeatProcessor {
             heartbeatCount++;
             try {
                 this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
-                const result = await this.performSingleHeartbeat(turnId, stimulus);
+                const result = await this.performSingleHeartbeat(turnId, percept);
 
                 if (result) {
                     shouldContinueHeartbeat = result.continue;
@@ -61,7 +60,7 @@ export class HeartbeatProcessor {
         return success;
     }
 
-    private async performSingleHeartbeat(turnId: string, stimulus: AnyStimulus): Promise<{ continue: boolean } | null> {
+    private async performSingleHeartbeat(turnId: string, percept: AnyPercept): Promise<{ continue: boolean } | null> {
         let attempt = 0;
 
         let llmRawResponse: GenerateTextResult | null = null;
@@ -70,11 +69,11 @@ export class HeartbeatProcessor {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
 
-        const worldState = await this.worldState.buildWorldState(stimulus);
+        const worldState = await this.worldState.buildWorldState(percept);
 
         const context: ToolContext = {
-            session: stimulus.type === StimulusSource.UserMessage ? stimulus.runtime?.session : undefined,
-            stimulus,
+            session: percept.type === "user.message" ? percept.runtime?.session : undefined,
+            percept, // 注意：ToolContext 可能还需要更新类型定义，这里暂时保留属性名但传入 percept
             worldState,
         };
 

@@ -3,10 +3,9 @@ import type { Config } from "@/config";
 
 import type { ChatModelSwitcher, ModelService } from "@/services/model";
 import type { PromptService } from "@/services/prompt";
-import type { AnyStimulus, UserMessageStimulus, WorldStateService } from "@/services/world";
+import type { AnyPercept, UserMessagePercept, WorldStateService } from "@/services/world";
 import { Service } from "koishi";
 import { loadTemplate } from "@/services/prompt";
-import { StimulusSource } from "@/services/world";
 import { Services } from "@/shared/constants";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
@@ -34,7 +33,7 @@ export class AgentCore extends Service<Config> {
     private modelSwitcher: ChatModelSwitcher;
 
     private readonly runningTasks = new Set<string>();
-    private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AnyStimulus) => void>>();
+    private readonly debouncedReplyTasks = new Map<string, WithDispose<(percept: AnyPercept) => void>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
 
     constructor(ctx: Context, config: Config) {
@@ -62,9 +61,9 @@ export class AgentCore extends Service<Config> {
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        // 统一监听 stimulus 事件
-        this.ctx.on("agent/stimulus", (stimulus) => {
-            this.dispatch(stimulus);
+        // 统一监听 percept 事件
+        this.ctx.on("agent/percept", (percept) => {
+            this.dispatch(percept);
         });
 
         this.willing.startDecayCycle();
@@ -77,24 +76,24 @@ export class AgentCore extends Service<Config> {
     }
 
     /**
-     * 刺激源分发器
-     * 根据刺激源类型分发到不同的处理逻辑
+     * 感知分发器
+     * 根据感知类型分发到不同的处理逻辑
      */
-    private dispatch(stimulus: AnyStimulus): void {
-        switch (stimulus.type) {
-            case StimulusSource.UserMessage:
-                this.handleUserMessage(stimulus);
+    private dispatch(percept: AnyPercept): void {
+        switch (percept.type) {
+            case "user.message": // PerceptType.UserMessage
+                this.handleUserMessage(percept);
                 break;
-            // case StimulusSource.SystemSignal:
-            //     this.handleSystemSignal(stimulus);
+            // case PerceptType.SystemSignal:
+            //     this.handleSystemSignal(percept);
             //     break;
             default:
-                this.logger.warn(`未知的刺激源类型: ${(stimulus as any).type}`);
+                this.logger.warn(`未知的感知类型: ${(percept as any).type}`);
         }
     }
 
-    private handleUserMessage(stimulus: UserMessageStimulus): void {
-        const { channel, sender } = stimulus.payload;
+    private handleUserMessage(percept: UserMessagePercept): void {
+        const { channel, sender } = percept.payload;
         const channelKey = `${channel.platform}:${channel.id}`;
 
         // 1. 意愿检测 (Willingness)
@@ -102,13 +101,13 @@ export class AgentCore extends Service<Config> {
         try {
             // 注意：这里我们需要传递 session 给 willing 模块，因为它可能依赖 session 的某些属性
             // 如果 willing 模块未来解耦，这里也可以只传 payload
-            if (!stimulus.runtime?.session) {
+            if (!percept.runtime?.session) {
                 this.logger.warn(`[${channelKey}] 缺少运行时 Session，跳过意愿检测`);
                 return;
             }
 
             const willingnessBefore = this.willing.getCurrentWillingness(channelKey);
-            const result = this.willing.shouldReply(stimulus.runtime.session);
+            const result = this.willing.shouldReply(percept.runtime.session);
             const willingnessAfter = this.willing.getCurrentWillingness(channelKey);
 
             decision = result.decision;
@@ -124,7 +123,7 @@ export class AgentCore extends Service<Config> {
         }
 
         // 2. 调度任务
-        this.schedule(stimulus);
+        this.schedule(percept);
     }
 
     private _registerPromptTemplates(): void {
@@ -142,12 +141,12 @@ export class AgentCore extends Service<Config> {
         this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
     }
 
-    public schedule(stimulus: AnyStimulus): void {
-        const { type } = stimulus;
+    public schedule(percept: AnyPercept): void {
+        const { type } = percept;
 
         switch (type) {
-            case StimulusSource.UserMessage: {
-                const { channel } = stimulus.payload;
+            case "user.message": { // PerceptType.UserMessage
+                const { channel } = percept.payload;
                 const channelKey = `${channel.platform}:${channel.id}`;
 
                 if (this.runningTasks.has(channelKey)) {
@@ -158,26 +157,26 @@ export class AgentCore extends Service<Config> {
                 const schedulingStack = new Error("Scheduling context stack").stack;
 
                 // 将堆栈传递给任务
-                this.getDebouncedTask(channelKey, schedulingStack)(stimulus);
+                this.getDebouncedTask(channelKey, schedulingStack)(percept);
                 break;
             }
         }
     }
 
-    private getDebouncedTask(channelKey: string, _schedulingStack?: string): WithDispose<(stimulus: UserMessageStimulus) => void> {
+    private getDebouncedTask(channelKey: string, _schedulingStack?: string): WithDispose<(percept: UserMessagePercept) => void> {
         let debouncedTask = this.debouncedReplyTasks.get(channelKey);
         if (!debouncedTask) {
-            debouncedTask = this.ctx.debounce(async (stimulus: UserMessageStimulus) => {
+            debouncedTask = this.ctx.debounce(async (percept: UserMessagePercept) => {
                 this.runningTasks.add(channelKey);
                 this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
                 try {
-                    const { channel } = stimulus.payload;
+                    const { channel } = percept.payload;
                     const chatKey = `${channel.platform}:${channel.id}`;
                     this.willing.handlePreReply(chatKey);
-                    const success = await this.processor.runCycle(stimulus);
-                    if (success && stimulus.runtime?.session) {
+                    const success = await this.processor.runCycle(percept);
+                    if (success && percept.runtime?.session) {
                         const willingnessBeforeReply = this.willing.getCurrentWillingness(chatKey);
-                        this.willing.handlePostReply(stimulus.runtime.session, chatKey);
+                        this.willing.handlePostReply(percept.runtime.session, chatKey);
                         const willingnessAfterReply = this.willing.getCurrentWillingness(chatKey);
                         /* prettier-ignore */
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);

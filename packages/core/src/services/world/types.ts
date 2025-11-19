@@ -251,9 +251,9 @@ export interface WorldState {
     /** 状态类型标识 */
     stateType: "scoped" | "global";
 
-    /** 触发此状态的刺激 */
+    /** 触发此状态的感知 */
     trigger: {
-        type: StimulusSource;
+        type: PerceptType;
         timestamp: Date;
         description: string;
     };
@@ -290,17 +290,23 @@ export type AnyWorldState = WorldState;
 
 // endregion
 
-// region stimulus model
+// region percept model
 
-export enum StimulusSource {
-    UserMessage = "user_message",
-    SystemSignal = "system_signal", // 例如：定时器、外部API回调
+/**
+ * 感知类型枚举
+ * 命名规范: domain.entity.event (小写点分法)
+ */
+export enum PerceptType {
+    UserMessage = "user.message", // 用户消息
+    SystemSignal = "system.signal", // 系统信号
+    TimerTick = "system.timer.tick", // 定时器触发
 }
 
 /**
- * 基础刺激源接口
+ * 基础感知接口
+ * Percept (感知): 驱动智能体心跳的能量单元
  */
-export interface BaseStimulus<T extends StimulusSource> {
+export interface BasePercept<T extends PerceptType> {
     id: string;
     type: T;
     priority: number;
@@ -308,10 +314,10 @@ export interface BaseStimulus<T extends StimulusSource> {
 }
 
 /**
- * 用户消息刺激源
+ * 用户消息感知
  * 包含构建上下文所需的核心数据，与 Koishi Session 解耦
  */
-export interface UserMessageStimulus extends BaseStimulus<StimulusSource.UserMessage> {
+export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
     payload: {
         messageId: string;
         content: string;
@@ -333,10 +339,10 @@ export interface UserMessageStimulus extends BaseStimulus<StimulusSource.UserMes
     };
 }
 
-export type AnyStimulus = UserMessageStimulus;
+export type AnyPercept = UserMessagePercept;
 
 // endregion
 
-export function isScopedStimulus(stimulus: AnyStimulus): boolean {
-    return stimulus.type === StimulusSource.UserMessage;
+export function isScopedPercept(percept: AnyPercept): boolean {
+    return percept.type === PerceptType.UserMessage;
 }
