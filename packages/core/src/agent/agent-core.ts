@@ -62,40 +62,10 @@ export class AgentCore extends Service<Config> {
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus-user-message", (stimulus) => {
-            const { platform, channelId } = stimulus.payload;
-
-            const channelCid = `${platform}:${channelId}`;
-
-            let decision = false;
-
-            try {
-                const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
-                const result = this.willing.shouldReply(stimulus.payload);
-                const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
-                decision = result.decision;
-
-                /* prettier-ignore */
-                this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
-            } catch (error: any) {
-                this.logger.error(`计算意愿值失败，已阻止本次响应: ${error.message}`);
-                return;
-            }
-
-            if (!decision) {
-                return;
-            }
-
-            this.schedule(stimulus);
+        // 统一监听 stimulus 事件
+        this.ctx.on("agent/stimulus", (stimulus) => {
+            this.dispatch(stimulus);
         });
-
-        // this.ctx.on("agent/stimulus-channel-event", (stimulus) => {
-        //     const { eventType } = stimulus.payload;
-        // });
-
-        // this.ctx.on("agent/stimulus-scheduled-task", (stimulus) => {
-        //     const { taskType } = stimulus.payload;
-        // });
 
         this.willing.startDecayCycle();
     }
@@ -104,6 +74,57 @@ export class AgentCore extends Service<Config> {
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.willing.stopDecayCycle();
+    }
+
+    /**
+     * 刺激源分发器
+     * 根据刺激源类型分发到不同的处理逻辑
+     */
+    private dispatch(stimulus: AnyStimulus): void {
+        switch (stimulus.type) {
+            case StimulusSource.UserMessage:
+                this.handleUserMessage(stimulus);
+                break;
+            // case StimulusSource.SystemSignal:
+            //     this.handleSystemSignal(stimulus);
+            //     break;
+            default:
+                this.logger.warn(`未知的刺激源类型: ${(stimulus as any).type}`);
+        }
+    }
+
+    private handleUserMessage(stimulus: UserMessageStimulus): void {
+        const { channel, sender } = stimulus.payload;
+        const channelKey = `${channel.platform}:${channel.id}`;
+
+        // 1. 意愿检测 (Willingness)
+        let decision = false;
+        try {
+            // 注意：这里我们需要传递 session 给 willing 模块，因为它可能依赖 session 的某些属性
+            // 如果 willing 模块未来解耦，这里也可以只传 payload
+            if (!stimulus.runtime?.session) {
+                this.logger.warn(`[${channelKey}] 缺少运行时 Session，跳过意愿检测`);
+                return;
+            }
+
+            const willingnessBefore = this.willing.getCurrentWillingness(channelKey);
+            const result = this.willing.shouldReply(stimulus.runtime.session);
+            const willingnessAfter = this.willing.getCurrentWillingness(channelKey);
+
+            decision = result.decision;
+            /* prettier-ignore */
+            this.logger.debug(`[${channelKey}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
+        } catch (error: any) {
+            this.logger.error(`计算意愿值失败，已阻止本次响应: ${error.message}`);
+            return;
+        }
+
+        if (!decision) {
+            return;
+        }
+
+        // 2. 调度任务
+        this.schedule(stimulus);
     }
 
     private _registerPromptTemplates(): void {
@@ -126,8 +147,8 @@ export class AgentCore extends Service<Config> {
 
         switch (type) {
             case StimulusSource.UserMessage: {
-                const { platform, channelId } = stimulus.payload;
-                const channelKey = `${platform}:${channelId}`;
+                const { channel } = stimulus.payload;
+                const channelKey = `${channel.platform}:${channel.id}`;
 
                 if (this.runningTasks.has(channelKey)) {
                     this.logger.info(`[${channelKey}] 频道当前有任务在运行，跳过本次响应`);
@@ -150,13 +171,13 @@ export class AgentCore extends Service<Config> {
                 this.runningTasks.add(channelKey);
                 this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
                 try {
-                    const { platform, channelId } = stimulus.payload;
-                    const chatKey = `${platform}:${channelId}`;
+                    const { channel } = stimulus.payload;
+                    const chatKey = `${channel.platform}:${channel.id}`;
                     this.willing.handlePreReply(chatKey);
                     const success = await this.processor.runCycle(stimulus);
-                    if (success) {
+                    if (success && stimulus.runtime?.session) {
                         const willingnessBeforeReply = this.willing.getCurrentWillingness(chatKey);
-                        this.willing.handlePostReply(stimulus.payload, chatKey);
+                        this.willing.handlePostReply(stimulus.runtime.session, chatKey);
                         const willingnessAfterReply = this.willing.getCurrentWillingness(chatKey);
                         /* prettier-ignore */
                         this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);

@@ -73,7 +73,7 @@ export class HeartbeatProcessor {
         const worldState = await this.worldState.buildWorldState(stimulus);
 
         const context: ToolContext = {
-            session: stimulus.type === StimulusSource.UserMessage ? stimulus.payload : undefined,
+            session: stimulus.type === StimulusSource.UserMessage ? stimulus.runtime?.session : undefined,
             stimulus,
             worldState,
         };

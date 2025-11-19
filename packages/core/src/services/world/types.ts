@@ -294,22 +294,44 @@ export type AnyWorldState = WorldState;
 
 export enum StimulusSource {
     UserMessage = "user_message",
+    SystemSignal = "system_signal", // 例如：定时器、外部API回调
 }
 
-export interface UserMessageStimulusPayload extends Session {}
-
-export interface StimulusPayloadMap {
-    [StimulusSource.UserMessage]: UserMessageStimulusPayload;
-}
-
-export interface Stimulus<T extends StimulusSource = StimulusSource> {
+/**
+ * 基础刺激源接口
+ */
+export interface BaseStimulus<T extends StimulusSource> {
+    id: string;
     type: T;
     priority: number;
     timestamp: Date;
-    payload: StimulusPayloadMap[T];
 }
 
-export type UserMessageStimulus = Stimulus<StimulusSource.UserMessage>;
+/**
+ * 用户消息刺激源
+ * 包含构建上下文所需的核心数据，与 Koishi Session 解耦
+ */
+export interface UserMessageStimulus extends BaseStimulus<StimulusSource.UserMessage> {
+    payload: {
+        messageId: string;
+        content: string;
+        sender: {
+            id: string;
+            name: string;
+            role?: string;
+        };
+        channel: {
+            id: string;
+            platform: string;
+            guildId?: string;
+        };
+    };
+    // 运行时上下文 (Optional): 仅在需要执行回复等副作用时使用
+    // 标记为非序列化字段
+    runtime?: {
+        session: Session;
+    };
+}
 
 export type AnyStimulus = UserMessageStimulus;
 

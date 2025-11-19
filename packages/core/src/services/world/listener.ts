@@ -47,12 +47,29 @@ export class EventListener {
                 await next();
 
                 const stimulus: UserMessageStimulus = {
+                    id: Random.id(),
                     type: StimulusSource.UserMessage,
-                    payload: session,
                     priority: 5,
                     timestamp: new Date(),
+                    payload: {
+                        messageId: session.messageId,
+                        content: session.content,
+                        sender: {
+                            id: session.userId,
+                            name: session.author?.name || session.userId,
+                        },
+                        channel: {
+                            id: session.channelId,
+                            platform: session.platform,
+                            guildId: session.guildId,
+                        },
+                    },
+                    runtime: {
+                        session,
+                    },
                 };
-                this.ctx.emit("agent/stimulus-user-message", stimulus);
+                // 统一使用 agent/stimulus 事件通道
+                this.ctx.emit("agent/stimulus", stimulus);
             }),
         );
 
