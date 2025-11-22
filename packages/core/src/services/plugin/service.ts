@@ -21,7 +21,7 @@ import { isEmpty, stringify, truncate } from "@/shared/utils";
 
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
-import MemoryExtension from "./builtin/memory";
+// import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
 
 import { Failed } from "./result-builder";
@@ -87,7 +87,7 @@ export class PluginService extends Service<Config> {
     }
 
     protected async start() {
-        const builtinPlugins = [CoreUtilExtension, MemoryExtension, QManagerExtension, InteractionsExtension];
+        const builtinPlugins = [CoreUtilExtension, QManagerExtension, InteractionsExtension];
         const loadedPlugins = new Map<string, ForkScope>();
 
         for (const Ext of builtinPlugins) {
