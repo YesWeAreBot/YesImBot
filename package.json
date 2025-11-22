@@ -28,7 +28,6 @@
   "devDependencies": {
     "@antfu/eslint-config": "^4.16.2",
     "@changesets/cli": "^2.29.5",
-    "@moeru/eslint-config": "^0.1.0-beta.13",
     "@types/eslint": "^9.6.1",
     "@types/node": "^22.16.2",
     "automd": "^0.4.0",

@@ -85,16 +85,14 @@
   "dependencies": {
     "@miaowfish/gifwrap": "^0.10.1",
     "@sentry/node": "^10.11.0",
-    "@xsai-ext/providers": "^0.4.0-beta.8",
+    "@xsai-ext/providers": "^0.4.0-beta.10",
     "gray-matter": "^4.0.3",
     "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
     "mustache": "^4.2.0",
     "semver": "^7.7.2",
     "undici": "^7.16.0",
-    "xsai": "^0.4.0-beta.8",
-    "xsschema": "^0.4.0-beta.8",
-    "zod": "^4.1.12"
+    "xsai": "^0.4.0-beta.10"
   },
   "devDependencies": {
     "koishi": "^4.18.7"
