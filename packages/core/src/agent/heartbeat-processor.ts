@@ -1,5 +1,4 @@
-import { GenerateTextResult } from "@xsai/generate-text";
-import { Message } from "@xsai/shared-chat";
+import type { GenerateTextResult, Message } from "@/dependencies/xsai";
 import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 

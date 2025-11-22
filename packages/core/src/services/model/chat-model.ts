@@ -1,6 +1,13 @@
-import type { ChatProvider } from "@xsai-ext/shared-providers";
-import type { GenerateTextResult } from "@xsai/generate-text";
-import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
+// 统一从适配层导入 xsai 相关类型与函数，避免直接依赖外部包导致的类型解析问题
+import type {
+    ChatProvider,
+    GenerateTextResult,
+    ChatOptions,
+    CompletionStep,
+    CompletionToolCall,
+    CompletionToolResult,
+    Message,
+} from "@/dependencies/xsai";
 import { Context } from "koishi";
 
 import { generateText, streamText } from "@/dependencies/xsai";
@@ -164,9 +171,34 @@ export class ChatModel extends BaseModel implements IChatModel {
         const result = await generateText(chatOptions);
         const duration = Date.now() - stime;
 
+        const finalText = result.text || "";
+        const hasNonTextOutputs =
+            (result.toolCalls && result.toolCalls.length > 0) ||
+            (result.toolResults && result.toolResults.length > 0) ||
+            // 某些提供方会在非流式下也返回 steps
+            ((result as any).steps && (result as any).steps.length > 0);
+
+        if (isEmpty(finalText) && !hasNonTextOutputs) {
+            const reason = (result.finishReason || "unknown").toString();
+            const abnormal = ["error", "content_filter", "filter", "length", "canceled", "cancelled"].includes(reason);
+            if (abnormal) {
+                const details = `上游以 ${reason} 结束，未产生任何可用文本`;
+                this.logger.warn(`💬 [非流式] 请求未产生文本，判定为请求失败 | 详情: ${details}`);
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                    args: [details],
+                    context: { rawResponse: finalText, finishReason: reason },
+                });
+            }
+
+            this.logger.warn(`💬 [非流式] 模型未输出有效内容（finishReason=${reason}）`);
+            throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
+                context: { rawResponse: finalText, details: "模型未输出有效内容", finishReason: reason },
+            });
+        }
+
         const logMessage = result.toolCalls?.length
-            ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
-            : `文本长度: ${result.text.length}`;
+            ? `工具调用: "${result.toolCalls.map((tc: CompletionToolCall) => tc.toolName).join(", ")}"`
+            : `文本长度: ${finalText.length}`;
         this.logger.success(`✅ [请求成功] [非流式] ${logMessage} | 耗时: ${duration}ms`);
         return result;
     }
@@ -251,11 +283,37 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
+        const hasNonTextOutputs =
+            (finalToolCalls && finalToolCalls.length > 0) ||
+            (finalToolResults && finalToolResults.length > 0) ||
+            (finalSteps && finalSteps.length > 0);
 
-        if (isEmpty(finalText)) {
-            this.logger.warn(`💬 [流式] 模型未输出有效内容`);
+        // 细化“空输出”场景：
+        // - 如果流根本未开始，或 finishReason 暗示了错误/被过滤，则按“请求失败”处理，保留更具体的错误语义
+        // - 仅在确认流已开始且没有其他错误线索时，才判定为 OUTPUT_EMPTY_CONTENT
+        if (isEmpty(finalText) && !hasNonTextOutputs) {
+            const reason = (finalFinishReason || "unknown").toString();
+            const streamInfo = { streamStarted, finishReason: reason };
+
+            // 常见的“非正常结束”理由：error / content_filter / length（被截断但没有内容）/ canceled / cancelled
+            const abnormal =
+                !streamStarted || ["error", "content_filter", "filter", "length", "canceled", "cancelled"].includes(reason);
+
+            if (abnormal) {
+                const details = !streamStarted
+                    ? "未收到任何流数据，可能是网络中断、超时或上游服务错误"
+                    : `上游以 ${reason} 结束，未产生任何可用文本`;
+                this.logger.warn(`💬 [流式] 请求未产生文本，判定为请求失败 | 详情: ${details}`);
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                    args: [details],
+                    context: { rawResponse: finalText, ...streamInfo },
+                });
+            }
+
+            // 正常开始且无异常 finishReason，但最终文本为空，保留原有含义：模型确实返回了空内容
+            this.logger.warn(`💬 [流式] 模型未输出有效内容（流已开始，finishReason=${reason}）`);
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
-                context: { rawResponse: finalText, details: "模型未输出有效内容" },
+                context: { rawResponse: finalText, details: "模型未输出有效内容", ...streamInfo },
             });
         }
 
@@ -263,7 +321,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         this.logger.debug(`🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`);
 
         // 对最终拼接的完整内容进行最后一次验证
-        if (validator) {
+        // 注意：若无任何文本输出但存在工具调用/步骤等非文本产出，则跳过文本验证
+        if (validator && !(isEmpty(finalText) && hasNonTextOutputs)) {
             const finalValidation = validator(finalText, true);
             if (!finalValidation.valid) {
                 const errorMsg = finalValidation.error || "格式不匹配或模型未输出有效内容";

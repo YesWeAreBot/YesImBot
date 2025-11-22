@@ -1,5 +1,5 @@
 import { Services } from "@/shared/constants";
-import { ImagePart, TextPart } from "@xsai/shared-chat";
+import type { ImagePart, TextPart } from "@/dependencies/xsai";
 import { Context, Logger } from "koishi";
 
 import { AssetService } from "@/services/assets";

@@ -4,7 +4,7 @@ import { Config } from "@/config";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isNotEmpty } from "@/shared/utils";
-import { GenerateTextResult } from "@xsai/generate-text";
+import type { GenerateTextResult } from "@/dependencies/xsai";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
 import { CircuitBreakerPolicy, ContentFailureAction, ModelDescriptor, ModelSwitchingStrategy } from "./config";
@@ -333,12 +333,21 @@ class RequestExecutor {
             const attemptLogger = this.logger.extend(`[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
             const controller = new AbortController();
 
-            const firstTokenTimeoutId = setTimeout(() => {
-                const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
-                timeoutError.name = "AbortError";
-                timeoutError["duration"] = timeoutPolicy.firstTokenTimeout;
-                controller.abort(timeoutError);
-            }, timeoutPolicy.firstTokenTimeout * 1000);
+            // 仅当配置了 firstTokenTimeout 时才启用“首个 Token”超时
+            const firstTokenTimeoutMs =
+                typeof (timeoutPolicy as any).firstTokenTimeout === "number" && (timeoutPolicy as any).firstTokenTimeout > 0
+                    ? (timeoutPolicy as any).firstTokenTimeout * 1000
+                    : null;
+
+            const firstTokenTimeoutId = firstTokenTimeoutMs
+                ? setTimeout(() => {
+                      const secs = (timeoutPolicy as any).firstTokenTimeout;
+                      const timeoutError = new Error(`First token not received within ${secs}s`);
+                      timeoutError.name = "AbortError";
+                      (timeoutError as any)["duration"] = secs;
+                      controller.abort(timeoutError);
+                  }, firstTokenTimeoutMs)
+                : undefined as any;
 
             const timeoutId = setTimeout(() => {
                 const timeoutError = new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`);
@@ -352,7 +361,7 @@ class RequestExecutor {
             options_copy.abortSignal = controller.signal;
 
             options_copy.onStreamStart = () => {
-                clearTimeout(firstTokenTimeoutId);
+                if (firstTokenTimeoutId) clearTimeout(firstTokenTimeoutId);
             };
 
             try {
