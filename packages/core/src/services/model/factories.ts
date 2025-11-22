@@ -5,7 +5,7 @@ import type {
     ModelProvider,
     SpeechProvider,
     TranscriptionProvider,
-} from "@xsai-ext/shared-providers";
+} from "@/dependencies/xsai";
 
 import {
     createAnthropic,
