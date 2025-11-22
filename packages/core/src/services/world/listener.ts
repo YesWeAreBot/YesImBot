@@ -1,8 +1,8 @@
-import type { Context, Session } from "koishi";
+import type { Context, Query, Session } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { EventRecorder } from "./recorder";
 import type { WorldStateService } from "./service";
-import type { PerceptType, UserMessagePercept } from "./types";
+import type { MemberEntity, PerceptType, UserMessagePercept } from "./types";
 import type { AssetService } from "@/services/assets";
 import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
@@ -133,9 +133,9 @@ export class EventListener {
             id: Random.id(),
             scopeId: session.cid,
             timestamp: new Date(session.timestamp),
-            actorId: session.author.id,
             eventData: {
                 messageId: session.messageId,
+                senderId: session.author.id,
                 senderName: session.author.nick || session.author.name,
                 content: session.content,
             },
@@ -152,9 +152,9 @@ export class EventListener {
             id: Random.id(),
             scopeId: session.cid,
             timestamp: new Date(session.timestamp),
-            actorId: session.bot.selfId,
             eventData: {
                 messageId: session.messageId,
+                senderId: session.bot.selfId,
                 senderName: session.bot.user.nick || session.bot.user.nick,
                 content: session.content,
             },
@@ -167,19 +167,21 @@ export class EventListener {
             return;
 
         try {
-            const memberKey = { pid: session.userId, platform: session.platform, guildId: session.guildId };
-            const memberData = {
+            const memberKey: Partial<MemberEntity> = { type: "member", id: `${session.platform}:${session.author.id}@guild:${session.guildId}` };
+            const memberData: Partial<MemberEntity> = {
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles,
-                avatar: session.author.avatar,
-                lastActive: new Date(),
+                attributes: {
+                    roles: session.author.roles || [],
+                    platform: session.platform,
+                    avatar: session.author.avatar,
+                },
             };
 
-            const existing = await this.ctx.database.get(TableName.Members, memberKey);
+            const existing = await this.ctx.database.get(TableName.Entity, memberKey);
             if (existing.length > 0) {
-                await this.ctx.database.set(TableName.Members, memberKey, memberData);
+                await this.ctx.database.set(TableName.Entity, memberKey, memberData);
             } else {
-                await this.ctx.database.create(TableName.Members, { ...memberKey, ...memberData });
+                await this.ctx.database.create(TableName.Entity, { ...memberKey, ...memberData });
             }
         } catch (error: any) {
             this.ctx.logger.error(`更新成员信息失败: ${error.message}`);

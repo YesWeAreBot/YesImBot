@@ -1,7 +1,7 @@
 import type { Context, Query } from "koishi";
 import type { MessageRecord, TimelineEntry } from "./types";
 import { TableName } from "@/shared/constants";
-import { TimelineEventType } from "./types";
+import { TimelineEventType, TimelinePriority } from "./types";
 
 /**
  * 事件记录器
@@ -13,11 +13,11 @@ export class EventRecorder {
         return await this.ctx.database.create(TableName.Timeline, entry);
     }
 
-    public async recordMessage(message: Omit<MessageRecord, "eventType" | "eventCategory" | "priority">): Promise<MessageRecord> {
+    public async recordMessage(message: Omit<MessageRecord, "eventType" | "priority">): Promise<MessageRecord> {
         const fullMessage: MessageRecord = {
             ...message,
             eventType: TimelineEventType.Message,
-            priority: 0,
+            priority: TimelinePriority.Normal,
         };
         return (await this.ctx.database.create(TableName.Timeline, fullMessage)) as MessageRecord;
     }

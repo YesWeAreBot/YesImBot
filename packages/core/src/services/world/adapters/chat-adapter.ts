@@ -1,4 +1,4 @@
-import type { AnyPercept, Entity, Environment, Event, UserMessagePercept } from "@/services/world/types";
+import type { AnyPercept, Entity, Environment, MemberEntity, Observation, UserMessagePercept } from "@/services/world/types";
 
 import { PerceptType, TimelineEventType } from "@/services/world/types";
 import { TableName } from "@/shared/constants";
@@ -41,26 +41,22 @@ export class ChatSceneAdapter extends SceneAdapter {
         const channelId = env.id;
 
         // 从数据库获取成员列表
-        const members = await this.ctx.database.get(TableName.Members, {
-            guildId: channelId.split(":")[1],
-        });
+        const members: MemberEntity[] = await this.ctx.database.get(TableName.Entity, {
+            type: "member",
+            parentId: channelId,
+        }) as unknown as MemberEntity[];
 
         return members.map((member) => ({
-            type: "user",
-            id: member.pid,
+            id: member.id,
+            type: "member",
             name: member.name,
             attributes: {
-                roles: member.roles || [],
-                joinedAt: member.joinedAt,
-                lastActive: member.lastActive,
-                // 聊天场景特定的属性
-                avatar: member.avatar,
-                platform: member.platform,
+                ...member.attributes,
             },
         }));
     }
 
-    async buildEventHistory(percept: UserMessagePercept, env: Environment): Promise<Event[]> {
+    async buildEventHistory(percept: UserMessagePercept, env: Environment): Promise<Observation[]> {
         const channelId = env.id.split(":")[1];
 
         // 获取 L1 历史
@@ -70,11 +66,16 @@ export class ChatSceneAdapter extends SceneAdapter {
         return rawEvents.map((item) => {
             if (item.eventType === TimelineEventType.Message) {
                 return {
-                    type: "chat_message",
-                    timestamp: item.timestamp,
-                    payload: {
-                        ...item.eventData,
+                    type: "message",
+                    sender: {
+                        type: "member",
+                        id: item.eventData.senderId,
+                        name: item.eventData.senderName,
+                        attributes: {},
                     },
+                    timestamp: item.timestamp,
+                    content: item.eventData.content,
+                    messageId: item.eventData.messageId,
                 };
             }
         });

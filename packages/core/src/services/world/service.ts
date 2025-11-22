@@ -1,6 +1,6 @@
 import type { Context, Session } from "koishi";
 import type { CommandService } from "../command";
-import type { AnyPercept, MemberData, TimelineEntry, WorldState } from "./types";
+import type { AnyPercept, EntityRecord, TimelineEntry, WorldState } from "./types";
 import type { Config } from "@/config";
 
 import { Service } from "koishi";
@@ -17,7 +17,7 @@ declare module "koishi" {
         "agent/percept": (percept: AnyPercept) => void;
     }
     interface Tables {
-        [TableName.Members]: MemberData;
+        [TableName.Entity]: EntityRecord;
         [TableName.Timeline]: TimelineEntry;
     }
 }
@@ -76,18 +76,18 @@ export class WorldStateService extends Service<Config> {
 
     private registerModels(): void {
         this.ctx.model.extend(
-            TableName.Members,
+            TableName.Entity,
             {
-                pid: "string(255)",
-                platform: "string(255)",
-                guildId: "string(255)",
+                id: "string(255)",
+                type: "string(50)",
                 name: "string(255)",
-                roles: "json",
-                avatar: "string(255)",
-                joinedAt: "timestamp",
-                lastActive: "timestamp",
+                parentId: "string(255)",
+                refId: "string(255)",
+                attributes: "json",
             },
-            { autoInc: false, primary: ["pid", "platform", "guildId"] },
+            {
+                primary: ["id"],
+            },
         );
 
         this.ctx.model.extend(

@@ -17,7 +17,7 @@ export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");
  */
 export enum TableName {
     Timeline = "yesimbot.timeline",
-    Members = "yesimbot.members",
+    Entity = "yesimbot.entity",
     Assets = "yesimbot.assets",
     Stickers = "yesimbot.stickers",
 }

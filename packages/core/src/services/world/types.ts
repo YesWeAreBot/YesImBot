@@ -6,17 +6,43 @@ import type { Session } from "koishi";
  * 事件类型枚举
  */
 export enum TimelineEventType {
-    Message = "message", // 普通消息 (文本/富文本)
-    Command = "command", // 指令调用 (用户显式触发指令)
+    // 普通消息/指令
+    Message = "message", // 普通消息
+    Command = "command", // 指令调用
 
-    MemberJoin = "notice.member.join", // 成员加入
-    MemberLeave = "notice.member.leave", // 成员离开
-    StateUpdate = "notice.state.update", // 状态变更 (如群名修改、禁言)
-    Reaction = "notice.reaction", // 表态/回应 (点赞等轻量交互)
+    // 通知/状态变更
+    MemberJoin = "notice.member.join",
+    MemberLeave = "notice.member.leave",
+    StateUpdate = "notice.state.update",
+    Reaction = "notice.reaction",
 
-    AgentThought = "agent.thought", // 思考链 (CoT)
-    AgentTool = "agent.tool", // 工具调用记录
-    AgentAction = "agent.action", // 智能体产生的非消息类行为 (如修改群名片)
+    // 智能体执行活动
+    AgentThought = "agent.thought",
+    AgentTool = "agent.tool",
+    AgentAction = "agent.action",
+    ToolResult = "tool.result",
+}
+
+/**
+ * 优先级：用于上下文截断时的保留权重
+ */
+export enum TimelinePriority {
+    /**
+     * 0: 噪音 (可丢弃)
+     */
+    Noise = 0,
+    /**
+     * 1: 普通 (标准历史)
+     */
+    Normal = 1,
+    /**
+     * 2: 重要 (关键事实)
+     */
+    Important = 2,
+    /**
+     * 3: 核心 (永久记忆/系统指令)
+     */
+    Core = 3,
 }
 
 /**
@@ -29,15 +55,7 @@ export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends 
 
     eventType: Type;
 
-    // 优先级：用于上下文截断时的保留权重
-    // 0: 噪音 (可丢弃)
-    // 1: 普通 (标准历史)
-    // 2: 重要 (关键事实)
-    // 3: 核心 (永久记忆/系统指令)
-    priority: number;
-
-    // 事件发起者 ID (User ID / Bot ID / System ID)
-    actorId: string;
+    priority: TimelinePriority;
 
     // 直接嵌入事件数据 (JSON)
     eventData: Data;
@@ -45,11 +63,11 @@ export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends 
 
 // 消息事件
 export interface MessageEventData {
+    messageId: string;
+    senderId: string;
     senderName: string;
     content: string;
-    messageId: string; // 平台侧的消息ID
-    replyTo?: string; // 引用回复
-    elements?: any[]; // 结构化消息段 (Koishi Elements)
+    replyTo?: string;
 }
 
 export type MessageRecord = BaseTimelineEntry<TimelineEventType.Message, MessageEventData>;
@@ -64,54 +82,156 @@ export interface NoticeEventData {
 }
 
 export type NoticeRecord = BaseTimelineEntry<
-    TimelineEventType.MemberJoin
-    | TimelineEventType.MemberLeave
-    | TimelineEventType.StateUpdate
-    | TimelineEventType.Reaction,
+    TimelineEventType.MemberJoin | TimelineEventType.MemberLeave | TimelineEventType.StateUpdate | TimelineEventType.Reaction,
     NoticeEventData
 >;
 
-// 智能体执行事件
-export interface AgentActivityData {
-    triggerId?: string; // 触发此行为的事件ID
+// region agent activity types
 
-    // 思考 (Thought)
-    thoughtContent?: string;
-
-    // 工具 (Tool)
-    toolName?: string;
-    toolArgs?: any;
-    toolResult?: any;
-
-    // 消耗统计
-    tokenUsage?: {
-        prompt: number;
-        completion: number;
-    };
+export interface AgentThoughtData {
+    content: string;
 }
 
-export type AgentRecord = BaseTimelineEntry<
-    TimelineEventType.AgentThought
-    | TimelineEventType.AgentTool
-    | TimelineEventType.AgentAction,
-    AgentActivityData
->;
+export type AgentThoughtRecord = BaseTimelineEntry<TimelineEventType.AgentThought, AgentThoughtData>;
+
+export interface AgentToolData {
+    name: string;
+    args: Record<string, any>;
+}
+
+export type AgentToolRecord = BaseTimelineEntry<TimelineEventType.AgentTool, AgentToolData>;
+
+export interface AgentActionData {
+    name: string;
+    args: Record<string, any>;
+}
+
+export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;
+
+export interface ToolResultData {
+    toolCallId: string;
+    status: string;
+    result: Record<string, any>;
+}
+
+export type ToolResultRecord = BaseTimelineEntry<TimelineEventType.ToolResult, ToolResultData>;
+
+export type AgentRecord = AgentThoughtRecord | AgentToolRecord | AgentActionRecord | ToolResultRecord;
+
+// endregion
 
 // 聚合类型
 export type TimelineEntry = MessageRecord | NoticeRecord | AgentRecord;
 
+// endregion
+
+// region observation model
+
+export interface MessageObservation {
+    type: "message";
+    timestamp: Date;
+
+    sender: Entity;
+
+    // 消息内容
+    messageId: string;
+    content: string;
+
+    replyTo?: {
+        messageId: string;
+        content: string;
+        sender: Entity;
+    };
+}
+
+export interface NoticeObservation {
+    type: "notice.member.join" | "notice.member.leave" | "notice.state.update" | "notice.reaction";
+    timestamp: Date;
+
+    actor?: Entity;
+    target?: Entity;
+
+    description: string;
+    details: Record<string, any>;
+}
+
+export type Observation = MessageObservation | NoticeObservation;
+
+// endregion
+
+// region entity model
+
 /**
- * 成员数据 - 数据库表定义
+ * 数据库中的实体记录 (EntityRecord)
+ * 这是一个扁平化的、通用的存储结构
  */
-export interface MemberData {
-    pid: string;
-    platform: string;
-    guildId: string;
+export interface EntityRecord {
+    // 复合主键
+    // User: "user:qq:123456"
+    // Member: "member:qq:123456@guild:789"
+    id: string;
+
+    // 实体类型
+    type: "user" | "member" | string;
+
+    // 基础属性
     name: string;
-    roles: string[];
     avatar?: string;
-    joinedAt?: Date;
-    lastActive?: Date;
+
+    // 关联键
+    // 对于 Member，这里存储 userId 和 guildId
+    // 对于 User，这里可能为空
+    parentId?: string; // e.g. "guild:789"
+    refId?: string; // e.g. "user:qq:123456"
+
+    // 扩展属性 (JSON 字段)
+    // 存放 roles, joinedAt, level 等特定类型的属性
+    attributes: Record<string, any>;
+
+    // 元数据
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+/**
+ * 实体 - 环境中的参与者或对象
+ */
+export interface Entity {
+    id: string;
+    type: string;
+    name: string;
+    description?: string;
+
+    attributes: Record<string, any>;
+}
+
+/**
+ * 用户实体
+ * 对应 type: "user"
+ */
+export interface UserEntity extends Entity {
+    type: "user";
+    attributes: {
+        platform: string;
+        avatar?: string;
+    };
+}
+
+/**
+ * 成员实体
+ * 对应 type: "member"
+ */
+export interface MemberEntity extends Entity {
+    type: "member";
+    // 运行时可能会把关联的 UserEntity 挂载上来方便访问
+    user?: UserEntity;
+
+    attributes: {
+        roles: string[];
+        joinedAt?: Date;
+        lastActive?: Date;
+        [key: string]: unknown;
+    };
 }
 
 // endregion
@@ -129,58 +249,14 @@ export interface SelfInfo {
 }
 
 /**
- * L2 记忆单元（语义记忆）
+ * 记忆单元（语义记忆）
  */
-export interface Memory {
-    id: string;
-    type: "conversation" | "event" | "tool_call";
-
-    content: {
-        summary: string;
-        rawMessages?: string[];
-    };
-
-    metadata: {
-        createdAt: Date;
-        lastAccessed: Date;
-        accessCount: number;
-        participants: string[];
-        channels: string[];
-        importance: number;
-    };
-
-    embedding?: number[];
-}
+export interface Memory {}
 
 /**
  * L3 日记条目（自我反思）
  */
-export interface DiaryEntry {
-    id: string;
-    date: string; // YYYY-MM-DD
-
-    reflection: {
-        significantEvents: Array<{
-            event: string;
-            whySignificant: string;
-        }>;
-
-        learnings: Array<{
-            insight: string;
-            source: string;
-        }>;
-
-        stateChanges?: {
-            moodShift?: string;
-            relationshipUpdates?: Array<{
-                person: string;
-                change: string;
-            }>;
-        };
-    };
-
-    narrative?: string;
-}
+export interface DiaryEntry {}
 
 // endregion
 
@@ -191,7 +267,7 @@ export interface DiaryEntry {
  */
 export interface Environment {
     /** 环境类型 */
-    type: string; // "chat_channel" | "game_room" | "home_zone" | "web_context"
+    type: string;
 
     /** 环境唯一标识 */
     id: string;
@@ -199,42 +275,11 @@ export interface Environment {
     /** 环境名称 */
     name: string;
 
+    /** 环境描述 (主观视角) */
+    description?: string;
+
     /** 环境元数据 (场景特定) */
     metadata: Record<string, any>;
-}
-
-/**
- * 实体 - 环境中的参与者或对象
- */
-export interface Entity {
-    /** 实体类型 */
-    type: string; // "user" | "npc" | "device" | "forum_user"
-
-    /** 实体唯一标识 */
-    id: string;
-
-    /** 实体名称 */
-    name: string;
-
-    /** 实体属性 (场景特定) */
-    attributes: Record<string, any>;
-}
-
-/**
- * 事件 - 环境中发生的事情
- */
-export interface Event {
-    /** 事件类型 */
-    type: string; // "message" | "player_action" | "sensor_data" | "post"
-
-    /** 事件时间戳 */
-    timestamp: Date;
-
-    /** 事件发起者 (可选) */
-    actor?: Entity;
-
-    /** 事件内容 (场景特定) */
-    payload: Record<string, any>;
 }
 
 /**
@@ -271,7 +316,15 @@ export interface WorldState {
     entities?: Entity[];
 
     /** 事件历史 (线性历史) */
-    eventHistory?: Event[];
+    eventHistory?: Observation[];
+
+    /**
+     * 工作记忆 / 执行链 (当前短时记忆)
+     * 包含当前交互回合内产生的思考、工具调用、工具结果
+     * 用于支持多步推理 (CoT) 和工具链 (Tool Chain)
+     * 当回合结束时，这些内容应被归档或清理
+     */
+    workingHistory?: AgentRecord[];
 
     /** 检索到的记忆 (语义记忆) */
     retrievedMemories?: Memory[];
@@ -283,29 +336,18 @@ export interface WorldState {
     extensions: Record<string, any>;
 }
 
-/**
- * 任意 WorldState 类型
- */
 export type AnyWorldState = WorldState;
 
 // endregion
 
 // region percept model
 
-/**
- * 感知类型枚举
- * 命名规范: domain.entity.event (小写点分法)
- */
 export enum PerceptType {
     UserMessage = "user.message", // 用户消息
     SystemSignal = "system.signal", // 系统信号
     TimerTick = "system.timer.tick", // 定时器触发
 }
 
-/**
- * 基础感知接口
- * Percept (感知): 驱动智能体心跳的能量单元
- */
 export interface BasePercept<T extends PerceptType> {
     id: string;
     type: T;
@@ -313,10 +355,6 @@ export interface BasePercept<T extends PerceptType> {
     timestamp: Date;
 }
 
-/**
- * 用户消息感知
- * 包含构建上下文所需的核心数据，与 Koishi Session 解耦
- */
 export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
     payload: {
         messageId: string;
@@ -332,8 +370,6 @@ export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage>
             guildId?: string;
         };
     };
-    // 运行时上下文 (Optional): 仅在需要执行回复等副作用时使用
-    // 标记为非序列化字段
     runtime?: {
         session: Session;
     };
