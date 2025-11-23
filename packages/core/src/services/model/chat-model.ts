@@ -4,7 +4,6 @@ import type { WithUnknown } from "@xsai/shared";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
 import type { Logger } from "koishi";
 import type { ChatModelConfig } from "./config";
-
 import { generateText, streamText } from "xsai";
 import { isEmpty, isNotEmpty, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
@@ -45,8 +44,9 @@ export class ChatModel extends BaseModel implements IChatModel {
     }
 
     private parseCustomParameters(): void {
-        if (!this.config.custom)
+        if (!this.config.custom) {
             return;
+        }
         for (const item of this.config.custom) {
             try {
                 let parsedValue: any;
@@ -68,7 +68,9 @@ export class ChatModel extends BaseModel implements IChatModel {
                 }
                 this.customParameters[item.key] = parsedValue;
             } catch (error: any) {
-                this.logger.warn(`解析自定义参数失败 | 键: "${item.key}" | 值: "${item.value}" | 错误: ${error.message}`);
+                this.logger.warn(
+                    `解析自定义参数失败 | 键: "${item.key}" | 值: "${item.value}" | 错误: ${error.message}`,
+                );
             }
         }
         if (Object.keys(this.customParameters).length > 0) {
@@ -93,7 +95,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             }) as typeof globalThis.fetch;
         }
 
-        this.logger.info(`🚀 [请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
+        this.logger.info(`[请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
 
         return useStream
             ? await this._executeStream(chatOptions, options.onStreamStart, controller)
@@ -118,7 +120,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             topP: this.config.topP,
             ...this.customParameters,
 
-            // 运行时参数 (会覆盖上面的默认值)
+            // 运行时参数
             ...restOptions,
         };
     }
@@ -134,7 +136,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const logMessage = result.toolCalls?.length
             ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
             : `文本长度: ${result.text.length}`;
-        this.logger.success(`✅ [请求成功] [非流式] ${logMessage} | 耗时: ${duration}ms`);
+        this.logger.success(`[请求成功] ${logMessage} | 耗时: ${duration}ms`);
         return result;
     }
 
@@ -150,94 +152,55 @@ export class ChatModel extends BaseModel implements IChatModel {
         let streamStarted = false;
 
         const finalContentParts: string[] = [];
-        let finalSteps: CompletionStep[] = [];
+        const finalSteps: CompletionStep[] = [];
         const finalToolCalls: CompletionToolCall[] = [];
         const finalToolResults: CompletionToolResult[] = [];
         let finalUsage: GenerateTextResult["usage"];
         const finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
         try {
-            const buffer: string[] = [];
-            const { textStream, steps, fullStream, totalUsage } = streamText({
+            const { textStream, fullStream, messages, steps, totalUsage, usage } = streamText({
                 ...chatOptions,
                 abortSignal: controller?.signal,
                 streamOptions: { includeUsage: true },
             });
 
-            const textProcessor = (async () => {
-                for await (const textDelta of textStream) {
-                    if (!streamStarted && isNotEmpty(textDelta)) {
-                        onStreamStart?.();
-                        streamStarted = true;
-                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
-                    }
-                    if (textDelta === "")
-                        continue;
+            totalUsage.catch(() => {});
+            steps.catch(() => {});
+            usage.catch(() => {});
+            messages.catch(() => {});
 
-                    buffer.push(textDelta);
-                    finalContentParts.push(textDelta);
+            const buffer: string[] = [];
+
+            for await (const textDelta of textStream) {
+                if (!streamStarted && isNotEmpty(textDelta)) {
+                    onStreamStart?.();
+                    streamStarted = true;
+                    this.logger.debug(`流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
                 }
-            })();
-
-            const eventProcessor = (async () => {
-                for await (const event of fullStream) {
-                    switch (event.type) {
-                        case "tool-call":
-                            continue;
-                        case "tool-result":
-                            continue;
-                        case "tool-call-delta":
-                            continue;
-                        case "error":
-                            console.warn(event.error);
-                            break;
-                        case "finish":
-                            continue;
-                        case "reasoning-delta":
-                            continue;
-                        case "text-delta":
-                            continue;
-                        case "tool-call-streaming-start":
-                            continue;
-                    }
+                if (textDelta === "") {
+                    continue;
                 }
-            })();
 
-            await Promise.all([textProcessor, eventProcessor]);
-
-            finalSteps = await steps;
-            finalUsage = await totalUsage;
-        } catch (error: any) {
-            if (error.name === "XSAIError") {
-                this.logger.error(error.message);
-                switch (error.response.status) {
-                    case 429:
-                        // error.response.statusText
-                        this.logger.warn(`🟡 [流式] 请求过于频繁，请稍后再试。`);
-                        break;
-                    case 401:
-                        break;
-                    case 503:
-                        break;
-                    default:
-                        break;
-                }
-                throw error;
-            } else {
-                throw error;
+                buffer.push(textDelta);
+                finalContentParts.push(textDelta);
             }
+        } catch (error: any) {
+            this._handleStreamError(error);
+            throw error;
         }
 
+        // 后续处理...
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
 
         if (isEmpty(finalText)) {
-            this.logger.warn(`💬 [流式] 模型未输出有效内容`);
+            this.logger.warn(`模型未输出有效内容`);
             throw new Error("模型未输出有效内容");
         }
 
         /* prettier-ignore */
-        this.logger.debug(`🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`);
+        this.logger.debug(`传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`);
 
         return {
             steps: finalSteps as CompletionStep<true>[],
@@ -248,5 +211,29 @@ export class ChatModel extends BaseModel implements IChatModel {
             usage: finalUsage,
             finishReason: finalFinishReason,
         };
+    }
+
+    private _handleStreamError(error: any): void {
+        if (error.name === "XSAIError") {
+            this.logger.error(`API请求失败: ${error.message}`);
+            switch (error.response?.status) {
+                case 429:
+                    this.logger.warn(`请求过于频繁，请稍后再试`);
+                    break;
+                case 401:
+                    this.logger.error(`认证失败，请检查API密钥`);
+                    break;
+                case 503:
+                    this.logger.error(`服务暂时不可用`);
+                    break;
+                default:
+                    this.logger.error(`请求失败，状态码: ${error.response?.status}`);
+                    break;
+            }
+        } else if (error.name === "AbortError") {
+            this.logger.warn(`请求超时或被取消`);
+        } else {
+            this.logger.error(`未知错误: ${error.message}`);
+        }
     }
 }

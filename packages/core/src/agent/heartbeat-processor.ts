@@ -185,7 +185,6 @@ export class HeartbeatProcessor {
                 this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
                 break; // 成功调用，跳出重试循环
             } catch (error) {
-                this.logger.error(`调用 LLM 失败: ${error instanceof Error ? error.message : error}`);
                 attempt++;
                 this.modelSwitcher.recordResult(
                     model,
@@ -204,7 +203,7 @@ export class HeartbeatProcessor {
         }
 
         // 步骤 6: 解析和验证响应
-        this.logger.debug("步骤 6/7: 解析并验证LLM响应...");
+        this.logger.debug("步骤 6/7: 解析并验证LLM响应");
         const agentResponseData = this.parseAndValidateResponse(llmRawResponse);
         if (!agentResponseData) {
             this.logger.error("LLM响应解析或验证失败，终止本次心跳");
