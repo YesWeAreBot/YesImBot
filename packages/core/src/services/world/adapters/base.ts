@@ -1,7 +1,7 @@
 import type { Context } from "koishi";
 import type { HistoryConfig } from "@/services/world/config";
 import type { EventRecorder } from "@/services/world/recorder";
-import type { AnyPercept, Entity, Environment, Event } from "@/services/world/types";
+import type { AnyPercept, Entity, Environment, Observation } from "@/services/world/types";
 
 /**
  * 场景适配器基类
@@ -19,7 +19,7 @@ export abstract class SceneAdapter {
     ) {}
 
     /**
-     * 判断此适配器是否可以处理给定的刺激
+     * 判断此适配器是否可以处理给定的感知数据
      */
     abstract canHandle(percept: AnyPercept): boolean;
 
@@ -36,7 +36,7 @@ export abstract class SceneAdapter {
     /**
      * 构建事件历史
      */
-    abstract buildEventHistory(percept: AnyPercept, env: Environment): Promise<Event[]>;
+    abstract buildEventHistory(percept: AnyPercept, env: Environment): Promise<Observation[]>;
 
     /**
      * 构建场景特定的扩展数据

@@ -1,5 +1,4 @@
 import type { AnyPercept, Entity, Environment, MemberEntity, Observation, UserMessagePercept } from "@/services/world/types";
-
 import { PerceptType, TimelineEventType } from "@/services/world/types";
 import { TableName } from "@/shared/constants";
 import { SceneAdapter } from "./base";
@@ -41,10 +40,10 @@ export class ChatSceneAdapter extends SceneAdapter {
         const channelId = env.id;
 
         // 从数据库获取成员列表
-        const members: MemberEntity[] = await this.ctx.database.get(TableName.Entity, {
+        const members: MemberEntity[] = (await this.ctx.database.get(TableName.Entity, {
             type: "member",
             parentId: channelId,
-        }) as unknown as MemberEntity[];
+        })) as unknown as MemberEntity[];
 
         return members.map((member) => ({
             id: member.id,
@@ -57,16 +56,14 @@ export class ChatSceneAdapter extends SceneAdapter {
     }
 
     async buildEventHistory(percept: UserMessagePercept, env: Environment): Promise<Observation[]> {
-        const channelId = env.id.split(":")[1];
-
-        // 获取 L1 历史
-        const rawEvents = await this.recorder.getMessages(percept.runtime?.session.cid, {}, this.config.l1_memory.maxMessages);
+        const messages = await this.recorder.getMessages(percept.runtime?.session.cid, {}, this.config.maxMessages);
 
         // eslint-disable-next-line array-callback-return
-        return rawEvents.map((item) => {
+        return messages.map((item) => {
             if (item.eventType === TimelineEventType.Message) {
                 return {
                     type: "message",
+                    isMessage: true,
                     sender: {
                         type: "member",
                         id: item.eventData.senderId,

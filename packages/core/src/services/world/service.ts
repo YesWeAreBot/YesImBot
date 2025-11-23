@@ -37,7 +37,7 @@ export class WorldStateService extends Service<Config> {
         this.logger = this.ctx.logger("worldstate");
         this.logger.level = this.config.logLevel;
 
-        this.recorder = new EventRecorder(ctx);
+        this.recorder = new EventRecorder(ctx, config);
         this.builder = new WorldStateBuilder(ctx, config, this);
         this.listener = new EventListener(ctx, config, this);
     }

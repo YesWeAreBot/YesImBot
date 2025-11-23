@@ -1,4 +1,4 @@
-import type { Context, Query, Session } from "koishi";
+import type { Context, Session } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { EventRecorder } from "./recorder";
 import type { WorldStateService } from "./service";
@@ -167,7 +167,10 @@ export class EventListener {
             return;
 
         try {
-            const memberKey: Partial<MemberEntity> = { type: "member", id: `${session.platform}:${session.author.id}@guild:${session.guildId}` };
+            const memberKey: Partial<MemberEntity> = {
+                type: "member",
+                id: `${session.platform}:${session.author.id}@guild:${session.guildId}`,
+            };
             const memberData: Partial<MemberEntity> = {
                 name: session.author.nick || session.author.name,
                 attributes: {

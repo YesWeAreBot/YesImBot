@@ -129,6 +129,7 @@ export type TimelineEntry = MessageRecord | NoticeRecord | AgentRecord;
 
 export interface MessageObservation {
     type: "message";
+    isMessage: true;
     timestamp: Date;
 
     sender: Entity;
