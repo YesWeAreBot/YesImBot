@@ -249,15 +249,7 @@ export interface SelfInfo {
     platform?: string;
 }
 
-/**
- * 记忆单元（语义记忆）
- */
 export interface Memory {}
-
-/**
- * L3 日记条目（自我反思）
- */
-export interface DiaryEntry {}
 
 // endregion
 
@@ -284,8 +276,6 @@ export interface Environment {
 }
 
 /**
- * 通用 WorldState 结构
- *
  * 描述了智能体所处的世界
  *
  * 所有场景都可以抽象为:
@@ -293,16 +283,15 @@ export interface Environment {
  * - **有谁/什么** (Entity): 环境中的参与者或对象
  * - **发生了什么** (Event): 环境中发生的事情
  */
-export interface WorldState {
-    /** 状态类型标识 */
-    stateType: "scoped" | "global";
+export interface HorizonView {
+    /** 当前模式名称 */
+    mode?: string;
+
+    /** 作用域 ID */
+    scopeId?: string;
 
     /** 触发此状态的感知 */
-    trigger: {
-        type: PerceptType;
-        timestamp: Date;
-        description: string;
-    };
+    percept: AnyPercept;
 
     /** 智能体自身信息 */
     self: SelfInfo;
@@ -310,14 +299,14 @@ export interface WorldState {
     /** 当前时间 */
     currentTime: Date;
 
-    /** 环境信息 (仅 scoped 状态) */
+    /** 环境信息 */
     environment?: Environment;
 
-    /** 实体列表 (仅 scoped 状态) */
+    /** 实体列表 */
     entities?: Entity[];
 
-    /** 事件历史 (线性历史) */
-    eventHistory?: Observation[];
+    /** 事件历史 */
+    history?: Observation[];
 
     /**
      * 工作记忆 / 执行链 (当前短时记忆)
@@ -328,16 +317,13 @@ export interface WorldState {
     workingHistory?: AgentRecord[];
 
     /** 检索到的记忆 (语义记忆) */
-    retrievedMemories?: Memory[];
-
-    /** 反思日记 (自我认知) */
-    diaryEntries?: DiaryEntry[];
+    memories?: Memory[];
 
     /** 场景特定的扩展数据 */
     extensions: Record<string, any>;
-}
 
-export type AnyWorldState = WorldState;
+    [key: string]: any;
+}
 
 // endregion
 
@@ -376,7 +362,17 @@ export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage>
     };
 }
 
-export type AnyPercept = UserMessagePercept;
+export interface TimerTickPercept extends BasePercept<PerceptType.TimerTick> {
+    payload: {
+        taskId: string;
+        taskType: string;
+        params?: Record<string, any>;
+    };
+}
+
+export type AnyPercept = UserMessagePercept | TimerTickPercept;
+
+export type Percept = AnyPercept;
 
 // endregion
 

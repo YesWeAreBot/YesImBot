@@ -1,7 +1,7 @@
 import type { Context, Session } from "koishi";
 import type { HistoryConfig } from "./config";
-import type { EventRecorder } from "./recorder";
-import type { WorldStateService } from "./service";
+import type { EventManager } from "./event-manager";
+import type { HorizonService } from "./service";
 import type { MemberEntity, PerceptType, UserMessagePercept } from "./types";
 import type { AssetService } from "@/services/assets";
 import { Random } from "koishi";
@@ -12,15 +12,15 @@ export class EventListener {
     private readonly disposers: (() => boolean)[] = [];
 
     private assetService: AssetService;
-    private recorder: EventRecorder;
+    private events: EventManager;
 
     constructor(
         private ctx: Context,
         private config: HistoryConfig,
-        private service: WorldStateService,
+        private service: HorizonService,
     ) {
         this.assetService = ctx[Services.Asset];
-        this.recorder = service.recorder;
+        this.events = service.events;
     }
 
     public start(): void {
@@ -67,8 +67,7 @@ export class EventListener {
                         session,
                     },
                 };
-                // 统一使用 agent/percept 事件通道
-                this.ctx.emit("agent/percept", percept);
+                this.ctx.emit("horizon/percept", percept);
             }),
         );
 
@@ -129,7 +128,7 @@ export class EventListener {
         const content = await this.assetService.transform(session.content);
         this.ctx.logger.debug(`记录转义后的消息：${content}`);
 
-        await this.recorder.recordMessage({
+        await this.events.recordMessage({
             id: Random.id(),
             scopeId: session.cid,
             timestamp: new Date(session.timestamp),
@@ -148,7 +147,7 @@ export class EventListener {
 
         this.ctx.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
 
-        await this.recorder.recordMessage({
+        await this.events.recordMessage({
             id: Random.id(),
             scopeId: session.cid,
             timestamp: new Date(session.timestamp),

@@ -1,20 +1,21 @@
 import type { Context, Session } from "koishi";
 import type { CommandService } from "../command";
-import type { AnyPercept, EntityRecord, TimelineEntry, WorldState } from "./types";
-import type { Config } from "@/config";
+import type { ModeResult } from "./chat-mode/types";
+import type { AnyPercept, Entity, EntityRecord, Environment, HorizonView, Percept, TimelineEntry } from "./types";
 
+import type { Config } from "@/config";
 import { Service } from "koishi";
 import { Services, TableName } from "@/shared/constants";
-import { WorldStateBuilder } from "./builder";
+import { ChatModeManager, DefaultChatMode } from "./chat-mode";
+import { EventManager } from "./event-manager";
 import { EventListener } from "./listener";
-import { EventRecorder } from "./recorder";
 
 declare module "koishi" {
     interface Context {
-        [Services.WorldState]: WorldStateService;
+        [Services.Horizon]: HorizonService;
     }
     interface Events {
-        "agent/percept": (percept: AnyPercept) => void;
+        "horizon/percept": (percept: AnyPercept) => void;
     }
     interface Tables {
         [TableName.Entity]: EntityRecord;
@@ -22,24 +23,31 @@ declare module "koishi" {
     }
 }
 
-export class WorldStateService extends Service<Config> {
-    static readonly inject = [Services.Model, Services.Asset, Services.Prompt, Services.Memory, Services.Command, "database"];
+export class HorizonService extends Service<Config> {
+    static readonly inject = [
+        Services.Model,
+        Services.Asset,
+        Services.Prompt,
+        Services.Memory,
+        Services.Command,
+        "database",
+    ];
 
-    public readonly recorder: EventRecorder;
-    private builder: WorldStateBuilder;
+    public readonly events: EventManager;
     private listener: EventListener;
+    private modeManager: ChatModeManager;
 
     private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
     constructor(ctx: Context, config: Config) {
-        super(ctx, Services.WorldState, true);
+        super(ctx, Services.Horizon, true);
         this.config = config;
-        this.logger = this.ctx.logger("worldstate");
+        this.logger = this.ctx.logger("horizon");
         this.logger.level = this.config.logLevel;
 
-        this.recorder = new EventRecorder(ctx, config);
-        this.builder = new WorldStateBuilder(ctx, config, this);
+        this.events = new EventManager(ctx, config);
         this.listener = new EventListener(ctx, config, this);
+        this.modeManager = new ChatModeManager(ctx);
     }
 
     protected async start(): Promise<void> {
@@ -47,6 +55,8 @@ export class WorldStateService extends Service<Config> {
 
         this.listener.start();
         this.registerCommands();
+
+        this.modeManager.register(new DefaultChatMode());
 
         this.ctx.logger.info("服务已启动");
     }
@@ -59,17 +69,37 @@ export class WorldStateService extends Service<Config> {
         this.ctx.logger.info("服务已停止");
     }
 
-    public async buildWorldState(percept: AnyPercept): Promise<WorldState> {
-        return await this.builder.buildFromStimulus(percept);
+    public async build(percept: Percept): Promise<ModeResult> {
+        const mode = await this.modeManager.resolve(percept, this.ctx);
+        return mode;
     }
 
+    /** 获取环境信息 */
+    public async getEnvironment(scopeId: string): Promise<Environment | null> {
+        return null;
+    }
+
+    /** 获取实体列表 */
+    public async getEntities(options: EntityQueryOptions): Promise<Entity[]> {
+        return [];
+    }
+
+    /** 获取单个实体 */
+    public async getEntity(entityId: string): Promise<Entity | null> {
+        return null;
+    }
+
+    /** 判断频道是否允许 */
     public isChannelAllowed(session: Session): boolean {
         const { platform, channelId, guildId, isDirect, userId } = session;
         return this.config.allowedChannels.some((c) => {
             return (
                 c.platform === platform
                 && (c.type === "private" ? isDirect : true)
-                && (c.id === "*" || c.id === channelId || (guildId && c.id === guildId) || (c.type === "private" && c.id === userId))
+                && (c.id === "*"
+                    || c.id === channelId
+                    || (guildId && c.id === guildId)
+                    || (c.type === "private" && c.id === userId))
             );
         });
     }
@@ -169,8 +199,8 @@ export class WorldStateService extends Service<Config> {
         //         }
 
         //         this.ctx.setTimeout(() => {
-        //             const percept: ScheduledTaskStimulus = {
-        //                 type: StimulusSource.ScheduledTask,
+        //             const percept: ScheduledTaskPercept = {
+        //                 type: PerceptSource.ScheduledTask,
         //                 priority: 1,
         //                 timestamp: new Date(),
         //                 payload: {
