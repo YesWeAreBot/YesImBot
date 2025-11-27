@@ -56,11 +56,6 @@
       "import": "./lib/services/index.mjs",
       "require": "./lib/services/index.js"
     },
-    "./services/context": {
-      "types": "./lib/services/context/index.d.ts",
-      "import": "./lib/services/context/index.mjs",
-      "require": "./lib/services/context/index.js"
-    },
     "./services/model": {
       "types": "./lib/services/model/index.d.ts",
       "import": "./lib/services/model/index.mjs",
@@ -71,10 +66,10 @@
       "import": "./lib/services/plugin/index.mjs",
       "require": "./lib/services/plugin/index.js"
     },
-    "./services/world": {
-      "types": "./lib/services/world/index.d.ts",
-      "import": "./lib/services/world/index.mjs",
-      "require": "./lib/services/world/index.js"
+    "./services/horizon": {
+      "types": "./lib/services/horizon/index.d.ts",
+      "import": "./lib/services/horizon/index.mjs",
+      "require": "./lib/services/horizon/index.js"
     },
     "./shared": {
       "types": "./lib/shared/index.d.ts",

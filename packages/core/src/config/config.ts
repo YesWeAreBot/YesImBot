@@ -2,12 +2,12 @@ import { Schema } from "koishi";
 
 import { AgentBehaviorConfig } from "@/agent";
 import { AssetServiceConfig } from "@/services/assets";
+import { HistoryConfig } from "@/services/horizon";
 import { MemoryConfig } from "@/services/memory";
 import { ModelServiceConfig } from "@/services/model";
 import { ToolServiceConfig } from "@/services/plugin";
 import { PromptServiceConfig } from "@/services/prompt";
 import { TelemetryConfig } from "@/services/telemetry";
-import { HistoryConfig } from "@/services/world";
 
 export const CONFIG_VERSION = "2.0.2";
 

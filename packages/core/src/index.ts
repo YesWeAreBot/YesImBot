@@ -1,18 +1,16 @@
 import type { Context, ForkScope } from "koishi";
-import {} from "@koishijs/plugin-notifier";
 import { Service, sleep } from "koishi";
-
 import { AgentCore } from "./agent";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
 import {
     AssetService,
     CommandService,
+    HorizonService,
     MemoryService,
     ModelService,
     PluginService,
     PromptService,
     TelemetryService,
-    WorldStateService,
 } from "./services";
 import { Services } from "./shared";
 
@@ -25,7 +23,7 @@ declare module "koishi" {
 export default class YesImBot extends Service<Config> {
     static readonly Config = Config;
     static readonly inject = {
-        required: ["console", "database", "notifier"],
+        required: ["console", "database"],
     };
 
     static readonly name = "yesimbot";
@@ -75,23 +73,12 @@ export default class YesImBot extends Service<Config> {
         }
 
         try {
-            // 注册资源中心服务
             const assetService = ctx.plugin(AssetService, config);
-
-            // 注册提示词管理器
             const promptService = ctx.plugin(PromptService, config);
-
-            // 注册工具管理器
             const toolService = ctx.plugin(PluginService, config);
-
-            // 注册模型服务
             const modelService = ctx.plugin(ModelService, config);
-
-            // 注册记忆管理层
             const memoryService = ctx.plugin(MemoryService, config);
-
-            // 注册 WorldState 服务
-            const worldStateService = ctx.plugin(WorldStateService, config);
+            const horizonService = ctx.plugin(HorizonService, config);
 
             const agentCore = ctx.plugin(AgentCore, config);
 
@@ -104,7 +91,7 @@ export default class YesImBot extends Service<Config> {
                 promptService,
                 telemetryService,
                 toolService,
-                worldStateService,
+                horizonService,
             ];
 
             waitForServices(services)
@@ -114,8 +101,9 @@ export default class YesImBot extends Service<Config> {
                     this.ctx.logger.info(`Version: ${require("../package.json").version}`);
                 })
                 .catch((err) => {
-                    this.ctx.logger.error(err.message);
-                    this.ctx.notifier.create("初始化时发生错误");
+                    this.ctx.logger.error("服务初始化失败:", err.message);
+                    this.ctx.logger.error(err.stack);
+                    telemetry.captureException(err);
                     services.forEach((service) => {
                         try {
                             service.dispose();
@@ -125,11 +113,10 @@ export default class YesImBot extends Service<Config> {
                     });
                     this.ctx.stop();
                 });
-        } catch (error: any) {
-            this.ctx.notifier.create("初始化时发生错误");
-            // this.ctx.logger.error("初始化时发生错误:", error.message);
-            // this.ctx.logger.error(error.stack);
-            telemetry.captureException(error);
+        } catch (err: any) {
+            this.ctx.logger.error("初始化时发生错误:", err.message);
+            this.ctx.logger.error(err.stack);
+            telemetry.captureException(err);
             this.ctx.stop();
         }
     }

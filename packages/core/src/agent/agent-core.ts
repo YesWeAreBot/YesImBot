@@ -1,9 +1,9 @@
 import type { Context, Session } from "koishi";
 import type { Config } from "@/config";
 
+import type { HorizonService, Percept, UserMessagePercept } from "@/services/horizon";
 import type { ChatModelSwitcher, ModelService } from "@/services/model";
 import type { PromptService } from "@/services/prompt";
-import type { AnyPercept, UserMessagePercept, WorldStateService } from "@/services/world";
 import { Service } from "koishi";
 import { loadTemplate } from "@/services/prompt";
 import { Services } from "@/shared/constants";
@@ -19,10 +19,10 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<Config> {
-    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Plugin, Services.WorldState];
+    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Plugin, Services.Horizon];
 
     // 依赖的服务
-    private readonly worldState: WorldStateService;
+    private readonly horizon: HorizonService;
     private readonly modelService: ModelService;
     private readonly promptService: PromptService;
 
@@ -33,7 +33,7 @@ export class AgentCore extends Service<Config> {
     private modelSwitcher: ChatModelSwitcher;
 
     private readonly runningTasks = new Set<string>();
-    private readonly debouncedReplyTasks = new Map<string, WithDispose<(percept: AnyPercept) => void>>();
+    private readonly debouncedReplyTasks = new Map<string, WithDispose<(percept: Percept) => void>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
 
     constructor(ctx: Context, config: Config) {
@@ -41,16 +41,13 @@ export class AgentCore extends Service<Config> {
         this.config = config;
         this.logger.level = this.config.logLevel;
 
-        this.worldState = this.ctx[Services.WorldState];
+        this.horizon = this.ctx[Services.Horizon];
         this.modelService = this.ctx[Services.Model];
         this.promptService = this.ctx[Services.Prompt];
 
         this.modelSwitcher = this.modelService.useChatGroup(this.config.chatModelGroup);
         if (!this.modelSwitcher) {
-            const _notifier = ctx.notifier.create({
-                type: "danger",
-                content: `未给 '聊天 (Chat)' 任务类型配置任何模型组，请前往“模型服务”设置，并为 '聊天' 任务类型至少配置一个模型`,
-            });
+            throw new Error(`无法找到聊天模型组: ${this.config.chatModelGroup}`);
         }
 
         this.willing = new WillingnessManager(ctx, config);
@@ -61,8 +58,7 @@ export class AgentCore extends Service<Config> {
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        // 统一监听 percept 事件
-        this.ctx.on("agent/percept", (percept) => {
+        this.ctx.on("horizon/percept", (percept) => {
             this.dispatch(percept);
         });
 
@@ -79,7 +75,7 @@ export class AgentCore extends Service<Config> {
      * 感知分发器
      * 根据感知类型分发到不同的处理逻辑
      */
-    private dispatch(percept: AnyPercept): void {
+    private dispatch(percept: Percept): void {
         switch (percept.type) {
             case "user.message": // PerceptType.UserMessage
                 this.handleUserMessage(percept);
@@ -141,7 +137,7 @@ export class AgentCore extends Service<Config> {
         this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
     }
 
-    public schedule(percept: AnyPercept): void {
+    public schedule(percept: Percept): void {
         const { type } = percept;
 
         switch (type) {

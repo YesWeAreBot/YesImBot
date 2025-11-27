@@ -3,11 +3,11 @@ import type { Message } from "@xsai/shared-chat";
 import type { Context, Logger } from "koishi";
 import type { Config } from "@/config";
 
+import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
 import type { PluginService, Properties, ToolContext, ToolSchema } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
-import type { AnyPercept, WorldStateService } from "@/services/world";
 import { h, Random } from "koishi";
 import { ModelError } from "@/services/model/types";
 import { isAction } from "@/services/plugin";
@@ -18,7 +18,7 @@ export class HeartbeatProcessor {
     private logger: Logger;
     private promptService: PromptService;
     private PluginService: PluginService;
-    private worldState: WorldStateService;
+    private horizon: HorizonService;
     private memoryService: MemoryService;
     constructor(
         ctx: Context,
@@ -29,11 +29,11 @@ export class HeartbeatProcessor {
         this.logger.level = config.logLevel;
         this.promptService = ctx[Services.Prompt];
         this.PluginService = ctx[Services.Plugin];
-        this.worldState = ctx[Services.WorldState];
+        this.horizon = ctx[Services.Horizon];
         this.memoryService = ctx[Services.Memory];
     }
 
-    public async runCycle(percept: AnyPercept): Promise<boolean> {
+    public async runCycle(percept: Percept): Promise<boolean> {
         const turnId = Random.id();
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
@@ -60,7 +60,7 @@ export class HeartbeatProcessor {
         return success;
     }
 
-    private async performSingleHeartbeat(turnId: string, percept: AnyPercept): Promise<{ continue: boolean } | null> {
+    private async performSingleHeartbeat(turnId: string, percept: Percept): Promise<{ continue: boolean } | null> {
         let attempt = 0;
 
         let llmRawResponse: GenerateTextResult | null = null;
@@ -69,23 +69,23 @@ export class HeartbeatProcessor {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
 
-        const worldState = await this.worldState.buildWorldState(percept);
+        const { view, templates, partials } = await this.horizon.build(percept);
 
         const context: ToolContext = {
             session: percept.type === "user.message" ? percept.runtime?.session : undefined,
-            percept, // 注意：ToolContext 可能还需要更新类型定义，这里暂时保留属性名但传入 percept
-            worldState,
+            percept,
+            view,
+            horizon: this.horizon,
         };
 
         const toolSchemas = await this.PluginService.getToolSchemas(context);
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
-        const view = {
+        const renderView = {
             TOOL_DEFINITION: prepareDataForTemplate(toolSchemas),
             MEMORY_BLOCKS: this.memoryService.getMemoryBlocksForRendering(),
-            WORLD_STATE: worldState,
-            triggerContext: worldState.trigger,
+            WORLD_STATE: view,
             // 模板辅助函数
             _toString() {
                 try {
@@ -134,8 +134,8 @@ export class HeartbeatProcessor {
 
         // 3. 渲染核心提示词文本
         this.logger.debug("步骤 3/4: 渲染提示词模板...");
-        const systemPrompt = await this.promptService.render("agent.system", view);
-        const userPromptText = await this.promptService.render("agent.user", view);
+        const systemPrompt = await this.promptService.render(templates.system, renderView);
+        const userPromptText = await this.promptService.render(templates.user, renderView);
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
         this.logger.debug("步骤 4/4: 构建最终消息...");

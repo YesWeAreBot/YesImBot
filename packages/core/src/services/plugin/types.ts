@@ -1,5 +1,5 @@
 import type { Schema, Session } from "koishi";
-import type { HorizonView } from "@/services/horizon/types";
+import type { HorizonView, Percept } from "@/services/horizon/types";
 
 export interface PluginMetadata {
     name: string;
@@ -14,6 +14,7 @@ export interface ToolContext<TConfig = any> {
     config?: TConfig;
     session?: Session;
     view?: HorizonView;
+    percept?: Percept;
     [key: string]: any;
 }
 
