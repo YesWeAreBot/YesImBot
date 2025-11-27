@@ -17,7 +17,7 @@ export class DefaultChatMode implements Mode {
         const horizon = ctx[Services.Horizon];
         const memory = ctx[Services.Memory];
 
-        const scopeId = percept.payload.scopeId;
+        const scopeId = percept.scopeId;
 
         const entries = await horizon.events.query({
             scopeId,
@@ -28,6 +28,8 @@ export class DefaultChatMode implements Mode {
         return {
             view: {
                 mode: "casual-chat",
+                percept,
+                self: await horizon.getSelfInfo(),
                 history: horizon.events.toObservations(entries),
                 environment: await horizon.getEnvironment(scopeId),
                 entities: await horizon.getEntities({ scopeId }),

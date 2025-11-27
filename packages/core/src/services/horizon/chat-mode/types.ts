@@ -1,5 +1,5 @@
 import type { Context } from "koishi";
-import type { AnyPercept, HorizonView, PerceptType } from "@/services/horizon/types";
+import type { HorizonView, Percept, PerceptType } from "@/services/horizon/types";
 
 export interface Mode {
     /** 模式名称 */
@@ -14,12 +14,12 @@ export interface Mode {
     /**
      * 判断当前输入是否匹配此模式
      */
-    match: (percept: AnyPercept, ctx: Context) => Promise<boolean> | boolean;
+    match: (percept: Percept, ctx: Context) => Promise<boolean> | boolean;
 
     /**
      * 构建上下文
      */
-    buildContext: (percept: AnyPercept, ctx: Context) => Promise<ModeResult>;
+    buildContext: (percept: Percept, ctx: Context) => Promise<ModeResult>;
 }
 
 export interface ModeResult {

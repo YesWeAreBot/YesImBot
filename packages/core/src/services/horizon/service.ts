@@ -1,7 +1,14 @@
 import type { Context, Session } from "koishi";
 import type { CommandService } from "../command";
 import type { ModeResult } from "./chat-mode/types";
-import type { AnyPercept, Entity, EntityRecord, Environment, HorizonView, Percept, TimelineEntry } from "./types";
+import type {
+    Entity,
+    EntityRecord,
+    Environment,
+    Percept,
+    SelfInfo,
+    TimelineEntry,
+} from "./types";
 
 import type { Config } from "@/config";
 import { Service } from "koishi";
@@ -15,7 +22,7 @@ declare module "koishi" {
         [Services.Horizon]: HorizonService;
     }
     interface Events {
-        "horizon/percept": (percept: AnyPercept) => void;
+        "horizon/percept": (percept: Percept) => void;
     }
     interface Tables {
         [TableName.Entity]: EntityRecord;
@@ -36,8 +43,6 @@ export class HorizonService extends Service<Config> {
     public readonly events: EventManager;
     private listener: EventListener;
     private modeManager: ChatModeManager;
-
-    private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Horizon, true);
@@ -63,9 +68,6 @@ export class HorizonService extends Service<Config> {
 
     protected stop(): void {
         this.listener.stop();
-        if (this.clearTimer) {
-            this.clearTimer();
-        }
         this.ctx.logger.info("服务已停止");
     }
 
@@ -74,13 +76,17 @@ export class HorizonService extends Service<Config> {
         return mode;
     }
 
+    public async getSelfInfo(): Promise<SelfInfo> {
+        throw new Error("Method not implemented.");
+    }
+
     /** 获取环境信息 */
     public async getEnvironment(scopeId: string): Promise<Environment | null> {
         return null;
     }
 
     /** 获取实体列表 */
-    public async getEntities(options: EntityQueryOptions): Promise<Entity[]> {
+    public async getEntities(options: { scopeId: string }): Promise<Entity[]> {
         return [];
     }
 
@@ -98,8 +104,8 @@ export class HorizonService extends Service<Config> {
                 && (c.type === "private" ? isDirect : true)
                 && (c.id === "*"
                     || c.id === channelId
-                    || (guildId && c.id === guildId)
-                    || (c.type === "private" && c.id === userId))
+                    || (guildId && c.id === guildId.trim())
+                    || (c.type === "private" && c.id === userId.trim()))
             );
         });
     }
@@ -235,3 +241,12 @@ export class HorizonService extends Service<Config> {
         //     });
     }
 }
+
+interface Scope {
+    platform: string;
+    channelId?: string;
+    guildId?: string;
+    isDirect?: boolean;
+    userId?: string;
+    scopeId?: string;
+};

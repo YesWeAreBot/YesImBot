@@ -2,11 +2,12 @@ import type { Context, Session } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { EventManager } from "./event-manager";
 import type { HorizonService } from "./service";
-import type { MemberEntity, PerceptType, UserMessagePercept } from "./types";
+import type { MemberEntity, UserMessagePercept } from "./types";
 import type { AssetService } from "@/services/assets";
 import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
+import { PerceptType } from "./types";
 
 export class EventListener {
     private readonly disposers: (() => boolean)[] = [];
@@ -47,8 +48,9 @@ export class EventListener {
 
                 const percept: UserMessagePercept = {
                     id: Random.id(),
-                    type: "user.message" as PerceptType.UserMessage,
+                    type: PerceptType.UserMessage,
                     priority: 5,
+                    scopeId: session.cid,
                     timestamp: new Date(),
                     payload: {
                         messageId: session.messageId,

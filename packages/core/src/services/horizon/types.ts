@@ -291,13 +291,10 @@ export interface HorizonView {
     scopeId?: string;
 
     /** 触发此状态的感知 */
-    percept: AnyPercept;
+    percept: Percept;
 
     /** 智能体自身信息 */
     self: SelfInfo;
-
-    /** 当前时间 */
-    currentTime: Date;
 
     /** 环境信息 */
     environment?: Environment;
@@ -318,9 +315,6 @@ export interface HorizonView {
 
     /** 检索到的记忆 (语义记忆) */
     memories?: Memory[];
-
-    /** 场景特定的扩展数据 */
-    extensions: Record<string, any>;
 
     [key: string]: any;
 }
@@ -343,6 +337,7 @@ export interface BasePercept<T extends PerceptType> {
 }
 
 export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
+    scopeId: string;
     payload: {
         messageId: string;
         content: string;
@@ -370,12 +365,10 @@ export interface TimerTickPercept extends BasePercept<PerceptType.TimerTick> {
     };
 }
 
-export type AnyPercept = UserMessagePercept | TimerTickPercept;
-
-export type Percept = AnyPercept;
+export type Percept = UserMessagePercept | TimerTickPercept;
 
 // endregion
 
-export function isScopedPercept(percept: AnyPercept): boolean {
+export function isScopedPercept(percept: Percept): boolean {
     return percept.type === PerceptType.UserMessage;
 }
