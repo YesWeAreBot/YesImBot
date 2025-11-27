@@ -167,7 +167,13 @@ export function ResourceNotFoundError(message: string) {
 }
 
 export function RateLimitError(message: string, retryAfter?: number) {
-    return new ToolExecutionError(ToolErrorType.RateLimitExceeded, message, true, undefined, retryAfter ? { retryAfter } : undefined);
+    return new ToolExecutionError(
+        ToolErrorType.RateLimitExceeded,
+        message,
+        true,
+        undefined,
+        retryAfter ? { retryAfter } : undefined,
+    );
 }
 
 export function InternalError(message: string) {

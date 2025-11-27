@@ -33,7 +33,7 @@ export enum Services {
     Model = "yesimbot.model",
     Prompt = "yesimbot.prompt",
     Telemetry = "yesimbot.telemetry",
-    WorldState = "yesimbot.world-state",
+    Horizon = "yesimbot.horizon",
     Plugin = "yesimbot.plugin",
     Command = "yesimbot.command",
 }

@@ -3,8 +3,6 @@ import type { Plugin } from "./base-plugin";
 import type {
     ActionDefinition,
     AnyToolDefinition,
-    HookDefinition,
-    HookType,
     Properties,
     ToolContext,
     ToolDefinition,
@@ -75,7 +73,6 @@ export class PluginService extends Service<Config> {
 
     private tools: Map<string, AnyToolDefinition> = new Map();
     private plugins: Map<string, Plugin> = new Map();
-    private hooks: Map<HookType, HookDefinition[]> = new Map();
 
     private promptService: PromptService;
 
@@ -403,16 +400,6 @@ export class PluginService extends Service<Config> {
                     this.tools.set(name, boundAction);
                 }
             }
-
-            // Register hooks (lifecycle interceptors)
-            const allHooks = extensionInstance.getAllHooks();
-            if (allHooks) {
-                for (const [hookType, hookList] of allHooks) {
-                    for (const hook of hookList) {
-                        this.registerHook(hook);
-                    }
-                }
-            }
         } catch (error: any) {
             this.logger.error(`扩展配置验证失败: ${error.message}`);
         }
@@ -434,8 +421,6 @@ export class PluginService extends Service<Config> {
             for (const action of ext.getActions().values()) {
                 this.tools.delete(action.name);
             }
-            // Unregister all hooks
-            this.unregisterPluginHooks(name);
 
             this.logger.info(`已卸载扩展: "${name}"`);
         } catch (error: any) {
@@ -656,83 +641,5 @@ export class PluginService extends Service<Config> {
             type: tool.type,
             hints: hints.length ? hints : undefined,
         };
-    }
-
-    // ============================================================================
-    // Hook Management
-    // ============================================================================
-
-    /**
-     * Register a hook handler.
-     * Hooks are automatically sorted by priority (descending) within each type.
-     */
-    public registerHook<T extends HookType>(hook: HookDefinition<T>): void {
-        if (!this.hooks.has(hook.type)) {
-            this.hooks.set(hook.type, []);
-        }
-
-        const hookList = this.hooks.get(hook.type)!;
-        hookList.push(hook as any);
-
-        // Sort by priority (descending) - higher priority hooks execute first
-        hookList.sort((a, b) => (b.priority ?? 5) - (a.priority ?? 5));
-
-        this.logger.debug(`  -> 注册 Hook: ${hook.type} (优先级: ${hook.priority ?? 5}) from ${hook.pluginName}`);
-    }
-
-    /**
-     * Execute all hooks of a specific type.
-     * Hooks are executed in priority order (highest first).
-     * Each hook can modify the context, and modifications are passed to subsequent hooks.
-     *
-     * @param hookType The type of hook to execute
-     * @param context The initial context
-     * @returns The final context after all hooks have executed
-     */
-    public async executeHooks<T extends HookType>(hookType: T, context: any): Promise<any> {
-        const hookList = this.hooks.get(hookType);
-        if (!hookList || hookList.length === 0) {
-            return context;
-        }
-
-        let currentContext = context;
-
-        for (const hook of hookList) {
-            try {
-                const result = await hook.handler(currentContext);
-
-                // If hook returns a partial context, merge it with current context
-                if (result && typeof result === "object") {
-                    currentContext = { ...currentContext, ...result };
-                }
-            } catch (error: any) {
-                this.logger.warn(`Hook 执行失败 | 类型: ${hookType} | 插件: ${hook.pluginName} | 错误: ${error.message ?? error}`);
-                // Continue executing other hooks even if one fails
-            }
-        }
-
-        return currentContext;
-    }
-
-    /**
-     * Get all registered hooks of a specific type.
-     */
-    public getHooks<T extends HookType>(hookType: T): HookDefinition<T>[] {
-        return (this.hooks.get(hookType) || []) as HookDefinition<T>[];
-    }
-
-    /**
-     * Unregister all hooks from a specific plugin.
-     * Called during plugin unregistration.
-     */
-    private unregisterPluginHooks(pluginName: string): void {
-        for (const [hookType, hookList] of this.hooks) {
-            const filtered = hookList.filter((hook) => hook.pluginName !== pluginName);
-            if (filtered.length === 0) {
-                this.hooks.delete(hookType);
-            } else {
-                this.hooks.set(hookType, filtered);
-            }
-        }
     }
 }

@@ -1,5 +1,4 @@
 import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
-import type { HookDescriptor, HookHandler, HookType } from "./types";
 import { Schema } from "koishi";
 import { ToolType } from "./types";
 
@@ -105,54 +104,6 @@ export function defineAction<TParams>(
     return {
         descriptor: { ...descriptor, type: ToolType.Action } as ActionDescriptor<any, TParams>,
         execute,
-    };
-}
-
-/**
- * @Hook decorator - marks a method as a lifecycle hook handler.
- *
- * Usage:
- * @Hook({ type: HookType.BeforePromptBuild, priority: 10 })
- * async onBeforePromptBuild(context: BeforePromptBuildContext) {
- *     // Modify context.worldState
- *     context.worldState.history.push(...);
- * }
- */
-export function Hook<T extends HookType>(descriptor: HookDescriptor<T>) {
-    return function (target: any, propertyKey: string, methodDescriptor: TypedPropertyDescriptor<HookHandler<T, any>>) {
-        if (!methodDescriptor.value)
-            return;
-
-        target.staticHooks ??= [];
-
-        const hookDefinition = {
-            type: descriptor.type,
-            priority: descriptor.priority ?? 5,
-            handler: methodDescriptor.value,
-            pluginName: "", // Will be set during registration
-        };
-
-        (target.staticHooks as any[]).push(hookDefinition);
-    };
-}
-
-/**
- * Create a typed hook with automatic type inference.
- * RECOMMENDED for programmatic/dynamic hook registration.
- *
- * Usage:
- * const myHook = defineHook(
- *     { type: HookType.BeforePromptBuild, priority: 10 },
- *     async (context) => {
- *         // TypeScript infers context type from HookType
- *         context.worldState.history.push(...);
- *     }
- * );
- */
-export function defineHook<T extends HookType>(descriptor: HookDescriptor<T>, handler: HookHandler<T, any>) {
-    return {
-        descriptor,
-        handler,
     };
 }
 

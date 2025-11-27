@@ -87,6 +87,15 @@ export class PromptService extends Service<Config> {
     }
 
     /**
+     * 检查模板是否已注册
+     * @param name - 模板名称
+     * @returns 模板是否存在
+     */
+    public hasTemplate(name: string): boolean {
+        return this.templates.has(name);
+    }
+
+    /**
      * 渲染一个提示词模板
      * @param templateName - 要渲染的模板名称
      * @param initialScope - 用户在调用时传入的初始数据

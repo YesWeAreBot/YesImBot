@@ -1,6 +1,21 @@
-import type { Schema } from "koishi";
-import type { ToolContext } from "./context";
-import type { ToolResult } from "./result";
+import type { Schema, Session } from "koishi";
+import type { HorizonView } from "@/services/horizon/types";
+
+export interface PluginMetadata {
+    name: string;
+    display?: string;
+    description: string;
+    version?: string;
+    author?: string;
+    builtin?: boolean;
+}
+
+export interface ToolContext<TConfig = any> {
+    config?: TConfig;
+    session?: Session;
+    view?: HorizonView;
+    [key: string]: any;
+}
 
 /**
  * Tool type discriminator.
@@ -113,7 +128,8 @@ export interface ActionDescriptor<TConfig = any, TParams = any> extends BaseTool
     continueHeartbeat?: boolean;
 }
 
-export interface ActionDefinition<TConfig = any, TParams = any, TResult = any> extends ActionDescriptor<TConfig, TParams> {
+export interface ActionDefinition<TConfig = any, TParams = any, TResult = any>
+    extends ActionDescriptor<TConfig, TParams> {
     /** Execution function */
     execute: (params: TParams, context: ToolContext) => Promise<ToolResult<TResult>>;
     /** Parent extension name */
@@ -123,7 +139,9 @@ export interface ActionDefinition<TConfig = any, TParams = any, TResult = any> e
 /**
  * Union of tool descriptors.
  */
-export type AnyToolDescriptor<TConfig = any, TParams = any> = ToolDescriptor<TConfig, TParams> | ActionDescriptor<TConfig, TParams>;
+export type AnyToolDescriptor<TConfig = any, TParams = any>
+    = | ToolDescriptor<TConfig, TParams>
+        | ActionDescriptor<TConfig, TParams>;
 
 /**
  * Complete tool definition with execution function.
@@ -178,3 +196,81 @@ export function isTool<TConfig = any, TParams = any, TResult = any>(
 ): tool is ToolDefinition<TConfig, TParams, TResult> {
     return tool.type === ToolType.Tool;
 }
+
+/**
+ * Tool execution status.
+ */
+export enum ToolStatus {
+    Success = "success",
+    Error = "error",
+    PartialSuccess = "partial_success",
+    Warning = "warning",
+}
+
+/**
+ * Tool error types.
+ */
+export enum ToolErrorType {
+    ValidationError = "validation_error",
+    PermissionDenied = "permission_denied",
+    ResourceNotFound = "resource_not_found",
+    NetworkError = "network_error",
+    RateLimitExceeded = "rate_limit_exceeded",
+    InternalError = "internal_error",
+}
+
+/**
+ * Structured error information.
+ */
+export interface ToolError {
+    /** Error type/category */
+    type: string;
+    /** Human-readable message */
+    message: string;
+    /** Whether error is retryable */
+    retryable?: boolean;
+    /** Error code (for programmatic handling) */
+    code?: string;
+    /** Additional error details */
+    details?: Record<string, unknown>;
+}
+
+/**
+ * Recommended next step.
+ */
+export interface NextStep {
+    toolName: string;
+    description: string;
+    prefilledParams?: Record<string, any>;
+    confidence?: number;
+}
+
+/**
+ * Tool execution result.
+ */
+export interface ToolResult<TResult = any> {
+    /** Execution status */
+    status: ToolStatus;
+    /** Result data (on success/partial success) */
+    result?: TResult;
+    /** Error information (on error) */
+    error?: ToolError;
+    /** Warnings (even on success) */
+    warnings?: string[];
+    /** Metadata (workflow hints, next steps, etc.) */
+    metadata?: {
+        nextSteps?: NextStep[];
+        [key: string]: unknown;
+    };
+}
+
+/**
+ * Alias for backward compatibility.
+ */
+export type ToolCallResult<TResult = any> = ToolResult<TResult>;
+
+/**
+ * Extract TypeScript type from Koishi Schema.
+ * This is a best-effort type extraction utility.
+ */
+export type InferSchemaType<T> = T extends Schema<infer U> ? U : never;
