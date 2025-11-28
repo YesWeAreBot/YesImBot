@@ -61,7 +61,7 @@ export class HorizonService extends Service<Config> {
         this.listener.start();
         this.registerCommands();
 
-        this.modeManager.register(new DefaultChatMode());
+        this.modeManager.register(new DefaultChatMode(this.ctx, this));
 
         this.ctx.logger.info("服务已启动");
     }
