@@ -1,3 +1,0 @@
-path: The file path to the directory where the vector store data will be stored.
-dimension: The dimensionality of the vectors to be stored.
-embeddingModel: The name of the embedding model to be used for generating vectors.
