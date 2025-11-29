@@ -1,7 +1,7 @@
-import { Context, Logger } from "koishi";
-import { IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot/services";
+import type { Context } from "koishi";
+import type { IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot/services";
+import type { DailyPlannerConfig } from ".";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import { DailyPlannerConfig } from ".";
 
 // 时间段接口
 interface TimeSegment {
@@ -29,7 +29,7 @@ export class DailyPlannerService {
 
     constructor(
         private ctx: Context,
-        private config: DailyPlannerConfig
+        private config: DailyPlannerConfig,
     ) {
         this.memoryService = ctx[Services.Memory];
         this.chatModel = ctx[Services.Model].getChatModel(this.config.model.providerName, config.model.modelId);
@@ -48,13 +48,14 @@ export class DailyPlannerService {
             },
             {
                 primary: "date",
-            }
+            },
         );
     }
 
     private registerPromptSnippet() {
         const promptService = this.ctx[Services.Prompt];
-        if (!promptService) return;
+        if (!promptService)
+            return;
 
         // 注册当前日程动态片段
         promptService.registerSnippet("agent.context.currentSchedule", async () => {
@@ -80,11 +81,11 @@ export class DailyPlannerService {
 
         // const recentEvents = await this.ctx[Services.WorldState].l2_manager.search("我");
         const recentEvents = [];
-        
+
         // 2. 构建提示词
         const prompt = this.buildSchedulePrompt(
             coreMemories,
-            recentEvents.map((e) => e.content)
+            recentEvents.map((e) => e.content),
         );
 
         // 3. 调用模型生成日程
@@ -199,7 +200,7 @@ export class DailyPlannerService {
         prompt += "1. 将一天划分为6-10个时间段，每个时间段应有明确的开始和结束时间（HH:mm格式）\n";
         prompt += "2. 每个时间段安排1-2个主要活动，活动内容应具体且有可执行性\n";
         prompt += "3. 合理安排休息时间，避免长时间连续工作\n";
-        prompt += "4. 考虑${this.config.characterName}的习惯和偏好，让日程更人性化\n";
+        prompt += `4. 考虑${this.config.characterName}的习惯和偏好，让日程更人性化\n`;
         prompt += "5. 预留一定的缓冲时间应对突发事件\n\n";
 
         prompt += "## 输出格式要求:\n";
@@ -239,7 +240,7 @@ export class DailyPlannerService {
 
             const parsed = JSON.parse(jsonStr);
             if (!Array.isArray(parsed)) {
-                throw new Error("JSON中缺少数组");
+                throw new TypeError("JSON中缺少数组");
             }
 
             // 验证每个时间段
@@ -250,7 +251,7 @@ export class DailyPlannerService {
                 }
 
                 // 验证时间格式
-                if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(item.start) || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(item.end)) {
+                if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(item.start) || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(item.end)) {
                     throw new Error(`无效的时间格式: ${item.start} 或 ${item.end}`);
                 }
 
@@ -283,7 +284,7 @@ export class DailyPlannerService {
         const segments: TimeSegment[] = [];
 
         // 尝试匹配时间模式：HH:mm-HH:mm 内容
-        const timeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})\s*[:：]?\s*(.+)/g;
+        const timeRegex = /(\d{1,2}:\d{2})\s*(?:[-—]\s*)?(\d{1,2}:\d{2})\s*(?:[:：]\s*)?(.+)/g;
         let match;
 
         while ((match = timeRegex.exec(text)) !== null) {
@@ -302,7 +303,7 @@ export class DailyPlannerService {
         }
 
         // 尝试匹配仅包含时间的行
-        const simpleTimeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})/g;
+        const simpleTimeRegex = /(\d{1,2}:\d{2})\s*(?:[-—]\s*)?(\d{1,2}:\d{2})/g;
         const contentLines = text.split("\n");
         let currentContent = "";
 
@@ -421,7 +422,7 @@ export class DailyPlannerService {
 
 // 辅助函数
 function truncate(text: string, maxLength: number): string {
-    return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
 function formatDate(date: Date): string {

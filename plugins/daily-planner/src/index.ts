@@ -1,6 +1,8 @@
-import { Context, Schema } from "koishi";
+import type { Context } from "koishi";
+import type { ModelDescriptor, PromptService } from "koishi-plugin-yesimbot/services";
+import { Schema } from "koishi";
 import {} from "koishi-plugin-cron";
-import { Metadata, Failed, ModelDescriptor, PromptService, Success, Tool, Plugin } from "koishi-plugin-yesimbot/services";
+import { Failed, Metadata, Plugin, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { DailyPlannerService } from "./service";
 
@@ -28,7 +30,7 @@ export default class DailyPlannerExtension extends Plugin<DailyPlannerConfig> {
         Services.Plugin,
         Services.Model,
         Services.Memory,
-        Services.WorldState,
+        Services.Horizon,
     ];
 
     static readonly Config: Schema<DailyPlannerConfig> = Schema.object({
@@ -42,8 +44,8 @@ export default class DailyPlannerExtension extends Plugin<DailyPlannerConfig> {
     private service: DailyPlannerService;
 
     constructor(
-         ctx: Context,
-         config: DailyPlannerConfig
+        ctx: Context,
+        config: DailyPlannerConfig,
     ) {
         super(ctx, config);
         this.service = new DailyPlannerService(ctx, config);
