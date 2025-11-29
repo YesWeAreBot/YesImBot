@@ -3,7 +3,8 @@
   "description": "为 YesImBot 提供TTS(文本转语音)功能",
   "version": "0.2.2",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "module": "lib/index.mjs",
+  "types": "lib/index.d.ts",
   "homepage": "https://github.com/YesWeAreBot/YesImBot",
   "files": [
     "lib",

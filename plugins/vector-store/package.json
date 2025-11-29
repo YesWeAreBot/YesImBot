@@ -2,10 +2,9 @@
   "name": "@yesimbot/koishi-plugin-vector-store",
   "version": "0.0.1",
   "description": "Vector Store Plugin for Koishi",
-  "type": "module",
-  "main": "lib/index.cjs",
+  "main": "lib/index.js",
   "module": "lib/index.mjs",
-  "typings": "lib/index.d.ts",
+  "types": "lib/index.d.ts",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",

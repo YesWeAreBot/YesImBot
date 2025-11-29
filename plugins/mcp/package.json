@@ -3,7 +3,8 @@
   "description": "Yes! I'm Bot! MCP 扩展插件",
   "version": "1.1.2",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "module": "lib/index.mjs",
+  "types": "lib/index.d.ts",
   "homepage": "https://github.com/HydroGest/YesImBot",
   "files": [
     "lib",

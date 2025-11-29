@@ -3,7 +3,8 @@
   "description": "Yes! I'm Bot! 代码执行器扩展插件",
   "version": "1.2.1",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "module": "lib/index.mjs",
+  "types": "lib/index.d.ts",
   "homepage": "https://github.com/YesWeAreBot/YesImBot",
   "files": [
     "lib",

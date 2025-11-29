@@ -3,7 +3,8 @@
   "description": "YesImBot 表情包管理扩展",
   "version": "1.2.1",
   "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "module": "lib/index.mjs",
+  "types": "lib/index.d.ts",
   "contributors": [
     "HydroGest <2445691453@qq.com>"
   ],
