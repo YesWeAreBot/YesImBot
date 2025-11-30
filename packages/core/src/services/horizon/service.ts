@@ -72,12 +72,15 @@ export class HorizonService extends Service<Config> {
     }
 
     public async build(percept: Percept): Promise<ModeResult> {
-        const mode = await this.modeManager.resolve(percept, this.ctx);
+        const mode = await this.modeManager.resolve(percept);
         return mode;
     }
 
     public async getSelfInfo(scope: Scope): Promise<SelfInfo> {
-        throw new Error("Method not implemented.");
+        return {
+            id: "agent-001",
+            name: "智能体",
+        };
     }
 
     /** 获取环境信息 */

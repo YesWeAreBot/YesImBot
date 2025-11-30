@@ -1,4 +1,3 @@
-import type { Context } from "koishi";
 import type { HorizonView, Percept, PerceptType } from "@/services/horizon/types";
 
 export interface ChatMode {
@@ -14,12 +13,12 @@ export interface ChatMode {
     /**
      * 判断当前输入是否匹配此模式
      */
-    match: (percept: Percept, ctx: Context) => Promise<boolean> | boolean;
+    match: (percept: Percept) => Promise<boolean> | boolean;
 
     /**
      * 构建上下文
      */
-    buildContext: (percept: Percept, ctx: Context) => Promise<ModeResult>;
+    buildContext: (percept: Percept) => Promise<ModeResult>;
 }
 
 export interface ModeResult {

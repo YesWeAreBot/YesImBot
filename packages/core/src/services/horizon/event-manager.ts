@@ -60,7 +60,36 @@ export class EventManager {
 
     // -------- 视图转换 --------
     public toObservations(entries: TimelineEntry[]): Observation[] {
-        throw new Error("Method not implemented.");
+        const observations: Observation[] = [];
+        for (const entry of entries) {
+            switch (entry.eventType) {
+                case TimelineEventType.Message:
+                    observations.push({
+                        type: "message",
+                        isMessage: true,
+                        timestamp: entry.timestamp,
+                        messageId: entry.eventData.messageId,
+                        sender: {
+                            type: "user",
+                            id: entry.eventData.senderId,
+                            name: entry.eventData.senderName,
+                        },
+                        content: entry.eventData.content,
+                    });
+                    break;
+                case TimelineEventType.MemberJoin:
+                case TimelineEventType.MemberLeave:
+                case TimelineEventType.StateUpdate:
+                case TimelineEventType.Reaction:
+                    observations.push({
+                        type: `notice.${entry.eventType.toLowerCase()}` as Observation["type"],
+                        isNotice: true,
+                        timestamp: entry.timestamp,
+                    } as Observation);
+                    break;
+            }
+        }
+        return observations;
     }
 
     public async recordMessage(message: Omit<MessageRecord, "eventType" | "priority">): Promise<MessageRecord> {

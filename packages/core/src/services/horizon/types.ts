@@ -145,6 +145,7 @@ export interface MessageObservation {
 
 export interface NoticeObservation {
     type: "notice.member.join" | "notice.member.leave" | "notice.state.update" | "notice.reaction";
+    isNotice: true;
     timestamp: Date;
 
     actor?: Entity;
@@ -201,7 +202,7 @@ export interface Entity {
     name: string;
     description?: string;
 
-    attributes: Record<string, any>;
+    attributes?: Record<string, any>;
 }
 
 /**

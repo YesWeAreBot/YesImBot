@@ -19,16 +19,16 @@ export class ChatModeManager {
      * 解析并执行匹配的模式
      * @returns 第一个匹配成功的 Mode 的 buildContext 结果
      */
-    resolve(percept: Percept, ctx: Context): Promise<ModeResult> {
+    resolve(percept: Percept): Promise<ModeResult> {
         const sortedModes = Array.from(this.modes.values()).sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50));
 
         for (const mode of sortedModes) {
             if (mode.supportedTypes && !mode.supportedTypes.includes(percept.type)) {
                 continue;
             }
-            if (mode.match(percept, ctx)) {
-                ctx.logger("horizon/chat-mode").info(`匹配到聊天模式：${mode.name}`);
-                return mode.buildContext(percept, ctx);
+            if (mode.match(percept)) {
+                this.ctx.logger("horizon/chat-mode").info(`匹配到聊天模式：${mode.name}`);
+                return mode.buildContext(percept);
             }
         }
 
