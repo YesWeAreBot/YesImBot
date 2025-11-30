@@ -51,10 +51,8 @@ export enum TimelinePriority {
 export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends Record<string, any>> {
     id: string;
     timestamp: Date;
-    scopeId: string;
-
+    scope: Scope;
     eventType: Type;
-
     priority: TimelinePriority;
 
     // 直接嵌入事件数据 (JSON)
@@ -287,9 +285,6 @@ export interface HorizonView {
     /** 当前模式名称 */
     mode?: string;
 
-    /** 作用域 ID */
-    scopeId?: string;
-
     /** 触发此状态的感知 */
     percept: Percept;
 
@@ -332,12 +327,12 @@ export enum PerceptType {
 export interface BasePercept<T extends PerceptType> {
     id: string;
     type: T;
+    scope: Scope;
     priority: number;
     timestamp: Date;
 }
 
 export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
-    scopeId: string;
     payload: {
         messageId: string;
         content: string;
@@ -369,6 +364,10 @@ export type Percept = UserMessagePercept | TimerTickPercept;
 
 // endregion
 
-export function isScopedPercept(percept: Percept): boolean {
-    return percept.type === PerceptType.UserMessage;
+export interface Scope {
+    platform?: string;
+    channelId?: string;
+    guildId?: string;
+    isDirect?: boolean;
+    userId?: string;
 }

@@ -1,16 +1,16 @@
 import type { Context } from "koishi";
 import type { Percept } from "../types";
-import type { Mode, ModeResult } from "./types";
+import type { ChatMode, ModeResult } from "./types";
 
 export class ChatModeManager {
-    private modes: Map<string, Mode> = new Map();
+    private modes: Map<string, ChatMode> = new Map();
 
     constructor(private ctx: Context) {
 
     }
 
     /** 注册聊天模式 */
-    public register(mode: Mode): void {
+    public register(mode: ChatMode): void {
         this.modes.set(mode.name, mode);
         this.ctx.logger("horizon/chat-mode").info(`已注册聊天模式：${mode.name}`);
     }

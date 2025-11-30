@@ -1,7 +1,7 @@
 import type { Context } from "koishi";
 import type { HorizonView, Percept, PerceptType } from "@/services/horizon/types";
 
-export interface Mode {
+export interface ChatMode {
     /** 模式名称 */
     name: string;
 

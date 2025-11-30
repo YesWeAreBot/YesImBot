@@ -50,7 +50,13 @@ export class EventListener {
                     id: Random.id(),
                     type: PerceptType.UserMessage,
                     priority: 5,
-                    scopeId: session.cid,
+                    scope: {
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        guildId: session.guildId,
+                        isDirect: session.isDirect,
+                        userId: session.userId,
+                    },
                     timestamp: new Date(),
                     payload: {
                         messageId: session.messageId,
@@ -132,7 +138,13 @@ export class EventListener {
 
         await this.events.recordMessage({
             id: Random.id(),
-            scopeId: session.cid,
+            scope: {
+                platform: session.platform,
+                channelId: session.channelId,
+                guildId: session.guildId,
+                isDirect: session.isDirect,
+                userId: session.userId,
+            },
             timestamp: new Date(session.timestamp),
             eventData: {
                 messageId: session.messageId,
@@ -151,7 +163,13 @@ export class EventListener {
 
         await this.events.recordMessage({
             id: Random.id(),
-            scopeId: session.cid,
+            scope: {
+                platform: session.platform,
+                channelId: session.channelId,
+                guildId: session.guildId,
+                isDirect: session.isDirect,
+                userId: session.userId,
+            },
             timestamp: new Date(session.timestamp),
             eventData: {
                 messageId: session.messageId,

@@ -76,22 +76,22 @@ export class HorizonService extends Service<Config> {
         return mode;
     }
 
-    public async getSelfInfo(): Promise<SelfInfo> {
+    public async getSelfInfo(scope: Scope): Promise<SelfInfo> {
         throw new Error("Method not implemented.");
     }
 
     /** 获取环境信息 */
-    public async getEnvironment(scopeId: string): Promise<Environment | null> {
+    public async getEnvironment(scope: Scope): Promise<Environment | null> {
         return null;
     }
 
     /** 获取实体列表 */
-    public async getEntities(options: { scopeId: string }): Promise<Entity[]> {
+    public async getEntities(options: { scope: Scope }): Promise<Entity[]> {
         return [];
     }
 
     /** 获取单个实体 */
-    public async getEntity(entityId: string): Promise<Entity | null> {
+    public async getEntity(options: { scope: Scope; entityId: string }): Promise<Entity | null> {
         return null;
     }
 
@@ -130,14 +130,14 @@ export class HorizonService extends Service<Config> {
             TableName.Timeline,
             {
                 id: "string(255)",
-                scopeId: "string(255)",
+                scope: "object",
                 eventType: "string(100)",
                 priority: "unsigned",
                 timestamp: "timestamp",
                 eventData: "json",
             },
             {
-                primary: ["id", "scopeId"],
+                primary: ["id"],
                 autoInc: false,
             },
         );
@@ -243,7 +243,7 @@ export class HorizonService extends Service<Config> {
 }
 
 interface Scope {
-    platform: string;
+    platform?: string;
     channelId?: string;
     guildId?: string;
     isDirect?: boolean;

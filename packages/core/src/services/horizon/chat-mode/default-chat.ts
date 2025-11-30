@@ -1,25 +1,26 @@
 import type { Context } from "koishi";
-import type { Mode, ModeResult } from "./types";
+import type { ModeResult } from "./types";
 import type { HorizonService } from "@/services/horizon/service";
 import type { Percept, UserMessagePercept } from "@/services/horizon/types";
 import { PerceptType } from "@/services/horizon/types";
+import { BaseChatMode } from "./base";
 
-export class DefaultChatMode implements Mode {
+export class DefaultChatMode extends BaseChatMode {
     name = "default-chat";
     priority = 100; // 最低优先级，兜底
 
-    constructor(private ctx: Context, private horizon: HorizonService) {}
+    constructor(ctx: Context, private horizon: HorizonService) {
+        super(ctx);
+    }
 
     match(percept: Percept): boolean {
-        // 只要是用户消息就匹配
         return percept.type === PerceptType.UserMessage;
     }
 
     async buildContext(percept: UserMessagePercept, ctx: Context): Promise<ModeResult> {
-        const scopeId = percept.scopeId;
-
+        const { scope } = percept;
         const entries = await this.horizon.events.query({
-            scopeId,
+            scope,
             limit: 20,
             orderBy: "desc",
         });
@@ -28,10 +29,10 @@ export class DefaultChatMode implements Mode {
             view: {
                 mode: "casual-chat",
                 percept,
-                self: await this.horizon.getSelfInfo(),
+                self: await this.horizon.getSelfInfo(scope),
                 history: this.horizon.events.toObservations(entries),
-                environment: await this.horizon.getEnvironment(scopeId),
-                entities: await this.horizon.getEntities({ scopeId }),
+                environment: await this.horizon.getEnvironment(scope),
+                entities: await this.horizon.getEntities({ scope }),
             },
             templates: {
                 system: "agent.system.chat.default",

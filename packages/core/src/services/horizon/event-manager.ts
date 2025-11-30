@@ -1,11 +1,11 @@
 import type { Context, Query } from "koishi";
 import type { HistoryConfig } from "./config";
-import type { MessageRecord, Observation, TimelineEntry } from "./types";
+import type { MessageRecord, Observation, Scope, TimelineEntry } from "./types";
 import { TableName } from "@/shared/constants";
 import { TimelineEventType, TimelinePriority } from "./types";
 
 interface EventQueryOptions {
-    scopeId?: string;
+    scope: Query.Expr<Scope>;
     types?: string[];
     limit?: number;
     since?: Date;
@@ -28,8 +28,8 @@ export class EventManager {
     public async query(options: EventQueryOptions): Promise<TimelineEntry[]> {
         const query: Query.Expr<TimelineEntry> = {};
 
-        if (options.scopeId) {
-            query.scopeId = options.scopeId;
+        if (options.scope) {
+            query.scope = options.scope;
         }
 
         if (options.types && options.types.length > 0) {
@@ -70,17 +70,17 @@ export class EventManager {
             priority: TimelinePriority.Normal,
         };
         const result = await this.ctx.database.create(TableName.Timeline, fullMessage);
-        this.ctx.logger.debug(`${message.scopeId} ${message.eventData.senderId}: ${message.eventData.content}`);
+        this.ctx.logger.debug(`${message.scope} ${message.eventData.senderId}: ${message.eventData.content}`);
         return result as MessageRecord;
     }
 
     public async getMessages(
-        scopeId: string,
+        scope: Query.Expr<Scope>,
         query?: Query.Expr<MessageRecord>,
         limit?: number,
     ): Promise<MessageRecord[]> {
         const finalQuery: Query.Expr<MessageRecord> = {
-            $and: [{ scopeId }, { eventType: TimelineEventType.Message }, query || {}],
+            $and: [scope, { eventType: TimelineEventType.Message }, query || {}],
         };
 
         return (
