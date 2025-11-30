@@ -6,18 +6,18 @@ import type { Config } from "@/config";
 import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
-import type { PluginService, Properties, ToolContext, ToolSchema } from "@/services/plugin";
+import type { FunctionContext, FunctionSchema, PluginService, Properties } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
 import { h, Random } from "koishi";
 import { ModelError } from "@/services/model/types";
-import { isAction } from "@/services/plugin";
+import { FunctionType } from "@/services/plugin";
 import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
 
 export class HeartbeatProcessor {
     private logger: Logger;
     private promptService: PromptService;
-    private PluginService: PluginService;
+    private pluginService: PluginService;
     private horizon: HorizonService;
     private memoryService: MemoryService;
     constructor(
@@ -28,7 +28,7 @@ export class HeartbeatProcessor {
         this.logger = ctx.logger("heartbeat");
         this.logger.level = config.logLevel;
         this.promptService = ctx[Services.Prompt];
-        this.PluginService = ctx[Services.Plugin];
+        this.pluginService = ctx[Services.Plugin];
         this.horizon = ctx[Services.Horizon];
         this.memoryService = ctx[Services.Memory];
     }
@@ -71,19 +71,21 @@ export class HeartbeatProcessor {
 
         const { view, templates, partials } = await this.horizon.build(percept);
 
-        const context: ToolContext = {
+        const context: FunctionContext = {
             session: percept.type === "user.message" ? percept.runtime?.session : undefined,
             percept,
             view,
             horizon: this.horizon,
         };
 
-        const toolSchemas = await this.PluginService.getToolSchemas(context);
+        const funcs = await this.pluginService.filterAvailableFuncs(context);
+
+        const funcSchemas: FunctionSchema[] = funcs.map((def) => (this.pluginService.toSchema(def)));
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
         const renderView = {
-            TOOL_DEFINITION: prepareDataForTemplate(toolSchemas),
+            TOOL_DEFINITION: prepareDataForTemplate(funcSchemas),
             MEMORY_BLOCKS: this.memoryService.getMemoryBlocksForRendering(),
             WORLD_STATE: view,
             // 模板辅助函数
@@ -237,27 +239,18 @@ export class HeartbeatProcessor {
             if (!action?.function)
                 continue;
 
-            if (!context.metadata)
-                context.metadata = {};
+            const result = await this.pluginService.invoke(action.function, action.params ?? {}, context);
 
-            context.metadata.turnId = turnId;
-            context.metadata.actionIndex = index;
-            context.metadata.actionName = action.function;
-
-            const result = await this.PluginService.invoke(action.function, action.params ?? {}, context);
-
-            // Check if this action has continueHeartbeat property set
-            const toolDef = await this.PluginService.getTool(action.function, context);
-            if (toolDef && isAction(toolDef) && toolDef.continueHeartbeat) {
-                this.logger.debug(`动作 "${action.function}" 请求继续心跳循环`);
+            const def = await this.pluginService.getFunction(action.function, context);
+            if (def && def.type === FunctionType.Tool) {
+                this.logger.debug(`工具 "${action.function}" 触发心跳继续`);
                 actionContinue = true;
             }
         }
 
         this.logger.success("单次心跳成功完成");
 
-        // Combine LLM's request_heartbeat with action-level continueHeartbeat override
-        // If any action sets continueHeartbeat=true, it overrides the LLM's decision
+        // Continue heartbeat if: any Tool was called OR LLM explicitly requests it
         const shouldContinue = agentResponseData.request_heartbeat || actionContinue;
         return { continue: shouldContinue };
     }
@@ -310,7 +303,7 @@ function _toString(obj) {
     return JSON.stringify(obj);
 }
 
-function prepareDataForTemplate(tools: ToolSchema[]) {
+function prepareDataForTemplate(tools: FunctionSchema[]) {
     const processParams = (params: Properties, indent = ""): any[] => {
         return Object.entries(params).map(([key, param]) => {
             const processedParam: any = { ...param, key, indent };

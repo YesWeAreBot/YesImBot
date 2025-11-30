@@ -1,14 +1,7 @@
 import type { Context, ForkScope } from "koishi";
 import type { Plugin } from "./base-plugin";
-import type {
-    ActionDefinition,
-    AnyToolDefinition,
-    Properties,
-    ToolContext,
-    ToolDefinition,
-    ToolResult,
-    ToolSchema,
-} from "./types";
+import type { ToolResult } from "./types";
+import type { Definition, FunctionContext, FunctionSchema, GuardContext, Properties } from "./types";
 import type { Config } from "@/config";
 import type { CommandService } from "@/services/command";
 import type { PromptService } from "@/services/prompt";
@@ -19,18 +12,37 @@ import { isEmpty, stringify, truncate } from "@/shared/utils";
 
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
-// import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
+import { FunctionType } from "./types";
 
-import { Failed } from "./result-builder";
-import { isAction } from "./types";
+declare module "koishi" {
+    interface Context {
+        [Services.Plugin]: PluginService;
+    }
+}
 
-function extractMetaFromSchema(schema: Schema | undefined): Properties {
-    if (!schema)
+export function Failed(message: string): ToolResult {
+    return {
+        status: "failed",
+        error: message,
+    };
+}
+
+export function Success<TResult>(result?: TResult): ToolResult<TResult> {
+    return {
+        status: "success",
+        result,
+    };
+}
+
+function toProperties(schema: Schema<any>): Properties {
+    if (!schema) {
         return {};
+    }
     const meta = schema?.meta as any;
-    if (!meta)
+    if (!meta) {
         return {};
+    }
 
     const properties: Properties = {};
     for (const [key, value] of Object.entries(meta)) {
@@ -41,37 +53,9 @@ function extractMetaFromSchema(schema: Schema | undefined): Properties {
     return properties;
 }
 
-declare module "koishi" {
-    interface Context {
-        [Services.Plugin]: PluginService;
-    }
-}
-
-/**
- * ToolService manages both Tools and Actions in a unified registry.
- *
- * ## Tool vs Action Distinction
- * - **Tools** (ToolType.Tool): Information retrieval operations that don't modify state
- * - **Actions** (ToolType.Action): Concrete operations that modify state
- *
- * ## Unified Registry Design
- * Both tools and actions are stored in the same `tools` Map for simplified management.
- * They are distinguished at runtime by their `type` property (ToolType.Tool vs ToolType.Action).
- * This design allows:
- * - Unified invocation logic (same invoke() method for both)
- * - Simplified registration and lifecycle management
- * - Type-safe discrimination using type guards (isAction(), isTool())
- *
- * ## Heartbeat Behavior
- * Actions can control heartbeat continuation via the `continueHeartbeat` property:
- * - If `continueHeartbeat: true`, the action signals that the heartbeat loop should continue
- * - This overrides the LLM's `request_heartbeat` decision
- * - Useful for actions that trigger follow-up processing
- */
 export class PluginService extends Service<Config> {
     static readonly inject = [Services.Prompt];
 
-    private tools: Map<string, AnyToolDefinition> = new Map();
     private plugins: Map<string, Plugin> = new Map();
 
     private promptService: PromptService;
@@ -94,7 +78,6 @@ export class PluginService extends Service<Config> {
             // @ts-expect-error type checking
             loadedPlugins.set(name, this.ctx.plugin(Ext, config));
         }
-        this.registerPromptTemplates();
         this.registerCommands();
     }
 
@@ -116,26 +99,24 @@ export class PluginService extends Service<Config> {
                 ].join("\n"),
             )
             .action(async ({ session, options }) => {
-                // TODO: This command needs to be refactored to work without a session.
-                // For now, it will list all registered tools.
-                let allTools = Array.from(this.tools.values());
+                let allFuncs = await this.filterAvailableFuncs({ session });
 
-                // 2. 应用过滤器（如果提供了 filter 选项）
                 const filterKeyword = options.filter?.toLowerCase();
                 if (filterKeyword) {
-                    allTools = allTools.filter(
-                        (t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword),
+                    allFuncs = allFuncs.filter(
+                        (t) =>
+                            // eslint-disable-next-line style/operator-linebreak
+                            t.name.toLowerCase().includes(filterKeyword) ||
+                            t.description.toLowerCase().includes(filterKeyword),
                     );
                 }
 
-                const totalCount = allTools.length;
+                const totalCount = allFuncs.length;
 
-                // 3. 处理没有结果的情况
                 if (totalCount === 0) {
                     return options.filter ? `没有找到与 "${options.filter}" 匹配的工具。` : "当前没有可用的工具";
                 }
 
-                // 4. 计算分页参数
                 const { page, size } = options;
                 const totalPages = Math.ceil(totalCount / size);
 
@@ -143,26 +124,23 @@ export class PluginService extends Service<Config> {
                     return `请求的页码 (${page}) 超出范围。总共有 ${totalPages} 页。`;
                 }
 
-                // 5. 获取当前页的数据
                 const startIndex = (page - 1) * size;
-                const pagedTools = allTools.slice(startIndex, startIndex + size);
+                const pagedFuncs = allFuncs.slice(startIndex, startIndex + size);
 
-                // 6. 格式化输出
-                const toolList = pagedTools.map((t) => `- ${t.name}: ${t.description}`).join("\n");
+                const funcList = pagedFuncs.map((t) => `- ${t.name}: ${t.description}`).join("\n");
 
-                /* prettier-ignore */
                 const header = `发现 ${totalCount} 个${options.filter ? "匹配的" : ""}工具。正在显示第 ${page}/${totalPages} 页：\n`;
 
-                return header + toolList;
+                return header + funcList;
             });
 
         cmd.subcommand(".info <name:string>", "显示工具的详细信息")
             .usage("查询并展示指定工具的详细信息，包括名称、描述、参数等")
             .example("tool.info search_web")
             .action(async ({ session }, name) => {
-                if (!name)
+                if (!name) {
                     return "未指定要查询的工具名称";
-                // TODO: Refactor to work without session
+                }
                 const renderResult = await this.promptService.render("tool.info", { toolName: name });
 
                 if (!renderResult) {
@@ -177,14 +155,14 @@ export class PluginService extends Service<Config> {
                 [
                     "调用指定的工具并传递参数",
                     "参数格式为 \"key=value\"，多个参数用空格分隔。",
-                    "如果 value 包含空格，请使用引号将其包裹，例如：key=\"some value",
+                    "如果 value 包含空格，请使用引号将其包裹，例如：key=\"some value\"。",
                 ].join("\n"),
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
             .action(async ({ session }, name, ...params) => {
-                if (!name)
+                if (!name) {
                     return "错误：未指定要调用的工具名称";
-
+                }
                 const parsedParams: Record<string, any> = {};
                 try {
                     // 更健壮的参数解析，支持 "key=value" 和 key="value with spaces"
@@ -216,106 +194,14 @@ export class PluginService extends Service<Config> {
                 if (!session)
                     return "此指令需要在一个会话上下文中使用。";
 
-                const context: ToolContext = {
-                    session,
-                };
-                const result = await this.invoke(name, parsedParams, context);
+                const result = await this.invoke(name, parsedParams, { session });
 
                 if (result.status === "success") {
-                    /* prettier-ignore */
                     return `✅ 工具 ${name} 调用成功！\n执行结果：${isEmpty(result.result) ? "无返回值" : stringify(result.result, 2)}`;
                 } else {
                     return `❌ 工具 ${name} 调用失败。\n原因：${stringify(result.error)}`;
                 }
             });
-    }
-
-    private registerPromptTemplates() {
-        const toolInfoTemplate = `# 工具名称: {{tool.name}}
-## 描述
-{{tool.description}}
-
-## 参数
-{{#tool.parameters}}
-  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
-    - 描述: {{description}}
-{{#default}}
-    - 默认值: {{.}}
-{{/default}}
-{{#enum.length}}
-    - 可选值: {{#enum}}"{{.}}" {{/enum}}
-{{/enum.length}}
-{{#properties}}
-    - 对象属性:
-{{#.}}
-{{> tool.paramDetail}}
-{{/.}}
-{{/properties}}
-{{#items}}
-    - 数组项 (每个项都是一个 '{{type}}'):
-{{> tool.paramDetail}}
-{{/items}}
-{{/tool.parameters}}
-{{^tool.parameters}}
-此工具无需任何参数。
-{{/tool.parameters}}`;
-
-        const paramDetailPartial = `{{indent}}  - {{key}} ({{type}}){{#required}} **(必需)**{{/required}}
-{{indent}}    - 描述: {{description}}
-{{#default}}
-{{indent}}    - 默认值: {{.}}
-{{/default}}
-{{#enum.length}}
-{{indent}}    - 可选值: {{#enum}}"{{.}}" {{/enum}}
-{{/enum.length}}
-{{#properties}}
-{{indent}}    - 对象属性:
-{{#.}}
-{{> tool.paramDetail}}
-{{/.}}
-{{/properties}}
-{{#items}}
-{{indent}}    - 数组项 (每个项都是一个 '{{type}}'):
-{{> tool.paramDetail}}
-{{/items}}`;
-
-        this.promptService.registerTemplate("tool.info", toolInfoTemplate);
-        this.promptService.registerTemplate("tool.paramDetail", paramDetailPartial);
-
-        this.promptService.registerSnippet("tool", async (context) => {
-            const { toolName } = context;
-            // TODO: Refactor to work without session
-            const tool = await this.getSchema(toolName);
-            if (!tool)
-                return null;
-
-            const processParams = (params: Properties, indent = ""): any[] => {
-                return Object.entries(params).map(([key, param]) => {
-                    const processedParam: any = { ...param, key, indent };
-                    if (param.properties) {
-                        processedParam.properties = processParams(param.properties, `${indent}    `);
-                    }
-                    if (param.items) {
-                        processedParam.items = [
-                            {
-                                ...param.items,
-                                key: "item",
-                                indent: `${indent}    `,
-                                ...(param.items.properties && {
-                                    properties: processParams(param.items.properties, `${indent}        `),
-                                }),
-                            },
-                        ];
-                    }
-                    return processedParam;
-                });
-            };
-
-            return {
-                ...tool,
-                parameters: tool.parameters ? processParams(tool.parameters) : [],
-            };
-        });
     }
 
     /**
@@ -324,29 +210,29 @@ export class PluginService extends Service<Config> {
      * @param enabled 是否启用此扩展
      * @param extConfig 传递给扩展实例的配置
      */
-    public register<TConfig = any>(extensionInstance: Plugin<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
-        const validate: Schema<TConfig> = (extensionInstance.constructor as any).Config;
+    public register<TConfig = any>(ext: Plugin<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
+        const validate: Schema<TConfig> = (ext.constructor as any).Config;
         const validatedConfig = validate ? validate(extConfig) : extConfig;
 
-        let availableplugins = this.ctx.schema.get("toolService.availableplugins");
+        let availablePlugins = this.ctx.schema.get("availablePlugins");
 
-        if (availableplugins.type !== "object") {
-            availableplugins = Schema.object({});
+        if (availablePlugins.type !== "object") {
+            availablePlugins = Schema.object({});
         }
 
         try {
-            if (!extensionInstance.metadata || !extensionInstance.metadata.name) {
+            if (!ext.metadata || !ext.metadata.name) {
                 this.logger.warn("一个扩展在注册时缺少元数据或名称，已跳过");
                 return;
             }
 
-            const metadata = extensionInstance.metadata;
+            const metadata = ext.metadata;
 
             if (metadata.builtin) {
                 this.ctx.schema.set(
-                    "toolService.availableplugins",
-                    availableplugins.set(
-                        extensionInstance.metadata.name,
+                    "availablePlugins",
+                    availablePlugins.set(
+                        ext.metadata.name,
                         Schema.intersect([
                             Schema.object({
                                 enabled: Schema.boolean().default(true).description("是否启用此扩展"),
@@ -354,7 +240,8 @@ export class PluginService extends Service<Config> {
                             Schema.union([
                                 Schema.object({
                                     enabled: Schema.const(true),
-                                    ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
+                                    ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({}))
+                                        .dict,
                                 }),
                                 Schema.object({}),
                             ]),
@@ -370,34 +257,20 @@ export class PluginService extends Service<Config> {
             const display = metadata.display || metadata.name;
 
             this.logger.info(`正在注册扩展: "${display}"`);
-            this.plugins.set(metadata.name, extensionInstance);
+            this.plugins.set(metadata.name, ext);
 
-            // Register tools (information retrieval operations)
-            const tools = extensionInstance.getTools();
-            if (tools) {
+            // Log registered tools and actions
+            const tools = ext.getTools();
+            if (tools.size > 0) {
                 for (const [name, tool] of tools) {
                     this.logger.debug(`  -> 注册工具: "${tool.name}"`);
-                    const boundTool: ToolDefinition = {
-                        ...tool,
-                        extensionName: metadata.name,
-                    };
-                    // Store in unified registry - tools and actions share the same storage
-                    this.tools.set(name, boundTool);
                 }
             }
 
-            // Register actions (concrete state-modifying operations)
-            const actions = extensionInstance.getActions();
-            if (actions) {
+            const actions = ext.getActions();
+            if (actions.size > 0) {
                 for (const [name, action] of actions) {
                     this.logger.debug(`  -> 注册动作: "${action.name}"`);
-                    const boundAction: ActionDefinition = {
-                        ...action,
-                        extensionName: metadata.name,
-                    };
-                    // Store in unified registry - tools and actions share the same storage
-                    // This allows unified invocation and management while preserving type distinction
-                    this.tools.set(name, boundAction);
                 }
             }
         } catch (error: any) {
@@ -412,46 +285,36 @@ export class PluginService extends Service<Config> {
             return false;
         }
         this.plugins.delete(name);
-        try {
-            // Unregister all tools
-            for (const tool of ext.getTools().values()) {
-                this.tools.delete(tool.name);
-            }
-            // Unregister all actions
-            for (const action of ext.getActions().values()) {
-                this.tools.delete(action.name);
-            }
-
-            this.logger.info(`已卸载扩展: "${name}"`);
-        } catch (error: any) {
-            this.logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
-        }
+        this.logger.info(`已卸载扩展: "${name}"`);
         return true;
     }
 
-    public async invoke(functionName: string, params: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
-        const tool = await this.getTool(functionName, context);
-        if (!tool) {
-            this.logger.warn(`工具/动作未找到或在当前上下文中不可用 | 名称: ${functionName}`);
-            return Failed(`Tool ${functionName} not found or not supported in this context.`);
+    public async invoke(
+        funcName: string,
+        params: Record<string, unknown>,
+        context: FunctionContext,
+    ): Promise<ToolResult> {
+        const func = await this.getFunction(funcName, context);
+        if (!func) {
+            this.logger.warn(`工具/动作未找到或在当前上下文中不可用 | 名称: ${funcName}`);
+            return Failed(`Tool ${funcName} not found or not supported in this context.`);
         }
 
-        // Determine if this is a tool or action for enhanced logging
-        const isActionType = isAction(tool);
+        const isActionType = func.type === FunctionType.Action;
         const typeLabel = isActionType ? "动作" : "工具";
 
         let validatedParams = params;
-        if (tool.parameters) {
+        if (func.parameters) {
             try {
-                validatedParams = tool.parameters(params);
+                validatedParams = func.parameters(params);
             } catch (error: any) {
-                this.logger.warn(`✖ 参数验证失败 | ${typeLabel}: ${functionName} | 错误: ${error.message}`);
+                this.logger.warn(`✖ 参数验证失败 | ${typeLabel}: ${funcName} | 错误: ${error.message}`);
                 return Failed(`Parameter validation failed: ${error.message}`);
             }
         }
 
         const stringifyParams = stringify(params);
-        this.logger.info(`→ 调用${typeLabel}: ${functionName} | 参数: ${stringifyParams}`);
+        this.logger.info(`→ 调用${typeLabel}: ${funcName} | 参数: ${stringifyParams}`);
         let lastResult: ToolResult = Failed("Tool call did not execute.");
 
         for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
@@ -461,7 +324,7 @@ export class PluginService extends Service<Config> {
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
-                const executionResult = await tool.execute(validatedParams, context);
+                const executionResult = await func.execute(validatedParams, context);
 
                 // Handle both direct ToolResult and builder transparently
                 if (executionResult && "build" in executionResult && typeof executionResult.build === "function") {
@@ -479,76 +342,85 @@ export class PluginService extends Service<Config> {
                     return lastResult;
                 }
                 if (lastResult.error) {
-                    if (!lastResult.error.retryable) {
-                        this.logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
-                        return lastResult;
-                    } else {
-                        this.logger.warn(`⚠ 失败 (可重试) ← 原因: ${stringify(lastResult.error)}`);
-                        continue;
-                    }
-                } else {
+                    this.logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
                     return lastResult;
                 }
             } catch (error: any) {
-                this.logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
+                this.logger.error(`💥 异常 | 调用 ${funcName} 时出错`, error.message);
                 this.logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);
                 return lastResult;
             }
         }
-        this.logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
+        this.logger.error(`✖ 失败 (耗尽重试) | 工具: ${funcName}`);
         return lastResult;
     }
 
-    public async getTool(name: string, context?: ToolContext): Promise<AnyToolDefinition | undefined> {
-        const tool = this.tools.get(name);
-        if (!tool)
+    public async getFunction(name: string, context?: FunctionContext): Promise<Definition | undefined> {
+        const func = this.findFuncByName(name);
+        if (!func)
             return undefined;
-
         if (!context) {
-            return tool;
+            return func;
         }
 
-        const assessment = await this.assessTool(tool, context);
-        if (!assessment.available) {
-            if (assessment.hints.length) {
-                this.logger.debug(`工具不可用 | 名称: ${tool.name} | 原因: ${assessment.hints.join("; ")}`);
+        const result = await this.isFuncAvailable(func, context);
+        if (!result.available) {
+            if (result.reason) {
+                this.logger.debug(`工具不可用 | 名称: ${func.name} | 原因: ${result.reason.join("; ")}`);
             }
             return undefined;
         }
 
-        return tool;
+        return func;
     }
 
-    public getToolsMap() {
-        return this.tools;
+    private findFuncByName(name: string): Definition | undefined {
+        for (const plugin of this.plugins.values()) {
+            const tool = plugin.getTools().get(name);
+            if (tool) {
+                return tool;
+            }
+            const action = plugin.getActions().get(name);
+            if (action) {
+                return action;
+            }
+        }
+        return undefined;
     }
 
-    public async getAvailableTools(context: ToolContext): Promise<AnyToolDefinition[]> {
-        const evaluations = await this.evaluateTools(context);
-
-        return evaluations
-            .filter((record) => record.assessment.available)
-            .sort((a, b) => (b.assessment.priority ?? 0) - (a.assessment.priority ?? 0))
-            .map((record) => record.tool);
+    private getConfigByFunc(def: Definition): any {
+        let plugin: Plugin | undefined;
+        for (const p of this.plugins.values()) {
+            const tool = p.getTools().get(def.name);
+            if (tool) {
+                plugin = p;
+                break;
+            }
+            const action = p.getActions().get(def.name);
+            if (action) {
+                plugin = p;
+                break;
+            }
+        }
+        if (!plugin) {
+            return null;
+        }
+        return this.getConfig(plugin.metadata.name);
     }
 
-    public getExtension(name: string): Plugin | undefined {
-        return this.plugins.get(name);
+    private getAllFuncs(): Definition[] {
+        const result: Definition[] = [];
+        for (const plugin of this.plugins.values()) {
+            result.push(...plugin.getTools().values());
+            result.push(...plugin.getActions().values());
+        }
+        return result;
     }
 
-    public async getSchema(name: string, context?: ToolContext): Promise<ToolSchema | undefined> {
-        const tool = await this.getTool(name, context);
-        return tool ? this.toolDefinitionToSchema(tool) : undefined;
-    }
-
-    public async getToolSchemas(context: ToolContext): Promise<ToolSchema[]> {
-        const evaluations = await this.evaluateTools(context);
-
-        return evaluations
-            .filter((record) => record.assessment.available)
-            .sort((a, b) => (b.assessment.priority ?? 0) - (a.assessment.priority ?? 0))
-            .map((record) => this.toolDefinitionToSchema(record.tool, record.assessment.hints));
+    public async getSchema(name: string, context?: FunctionContext): Promise<FunctionSchema | undefined> {
+        const func = await this.getFunction(name, context);
+        return func ? this.toSchema(func) : undefined;
     }
 
     public getConfig(name: string): any {
@@ -558,88 +430,67 @@ export class PluginService extends Service<Config> {
         return ext.config;
     }
 
-    /* prettier-ignore */
-    private async evaluateTools(context: ToolContext): Promise<{ tool: AnyToolDefinition; assessment: { available: boolean; priority: number; hints: string[] } }[]> {
-        return Promise.all(
-            Array.from(this.tools.values()).map(async tool => ({
-                tool,
-                assessment: await this.assessTool(tool, context),
-            })),
-        );
-    }
+    public async filterAvailableFuncs(context: FunctionContext): Promise<Definition[]> {
+        const allFunc = this.getAllFuncs();
+        const availableFuncs: Definition[] = [];
 
-    /* prettier-ignore */
-    private async assessTool(tool: AnyToolDefinition, context: ToolContext): Promise<{ available: boolean; priority: number; hints: string[] }> {
-        const config = this.getConfig(tool.extensionName);
-        const hints: string[] = [];
-        let priority = 0;
-
-        // Check support guards
-        if (tool.supports?.length) {
-            for (const guard of tool.supports) {
-                try {
-                    const guardContext = { context, config };
-                    const result = guard(guardContext);
-                    if (result === false) {
-                        return { available: false, priority: 0, hints };
-                    }
-                    if (typeof result === "object") {
-                        if (result.reason) {
-                            hints.push(result.reason);
-                        }
-                        if (result.ok === false) {
-                            return { available: false, priority: 0, hints };
-                        }
-                    }
-                }
-                catch (error: any) {
-                    this.logger.warn(`工具支持检查失败 | 工具: ${tool.name} | 错误: ${error.message ?? error}`);
-                    return { available: false, priority: 0, hints };
-                }
+        for (const func of allFunc) {
+            const result = await this.isFuncAvailable(func, context);
+            if (result.available) {
+                availableFuncs.push(func);
             }
         }
 
-        // Check activators
-        if (tool.activators?.length) {
-            for (const activator of tool.activators) {
+        return availableFuncs;
+    }
+
+    /* prettier-ignore */
+    private async isFuncAvailable(def: Definition, context: FunctionContext): Promise<{ available: boolean; reason?: string[] }> {
+        const config = this.getConfigByFunc(def);
+        const reason: string[] = [];
+
+        if (def.support) {
+            try {
+                const guardContext = { context, config };
+                const result = def.support(guardContext);
+                if (!result.ok) {
+                    return { available: false, reason: [result.reason || "不支持此工具"] };
+                }
+            }
+            catch (error: any) {
+                this.logger.warn(`工具支持检查失败 | 工具: ${def.name} | 错误: ${error.message ?? error}`);
+                return { available: false, reason: ["支持检查失败"] };
+            }
+        }
+
+        if (def.activators) {
+            for (const activator of def.activators) {
                 try {
-                    const activatorContext = { context, config };
+                    const activatorContext: GuardContext = { context, config };
                     const result = await activator(activatorContext);
                     if (!result.allow) {
-                        if (result.hints?.length) {
-                            hints.push(...result.hints);
+                        if (result.reason?.length) {
+                            reason.push(...result.reason);
                         }
-                        return { available: false, priority: 0, hints };
-                    }
-                    if (result.hints?.length) {
-                        hints.push(...result.hints);
-                    }
-                    if (typeof result.priority === "number") {
-                        priority = Math.max(priority, result.priority);
+                        return { available: false, reason };
                     }
                 }
                 catch (error: any) {
-                    this.logger.warn(`工具激活器执行失败 | 工具: ${tool.name} | 错误: ${error.message ?? error}`);
-                    return { available: false, priority: 0, hints };
+                    this.logger.warn(`工具激活器执行失败 | 工具: ${def.name} | 错误: ${error.message ?? error}`);
+                    return { available: false, reason };
                 }
             }
         }
 
-        return { available: true, priority, hints };
+        return { available: true, reason };
     }
 
-    /**
-     * 将 ToolDefinition 或 ActionDefinition 转换为 ToolSchema
-     * @param tool 工具或动作定义对象
-     * @returns 工具的 Schema 对象
-     */
-    private toolDefinitionToSchema(tool: AnyToolDefinition, hints: string[] = []): ToolSchema {
+    public toSchema(def: Definition): FunctionSchema {
         return {
-            name: tool.name,
-            description: tool.description,
-            parameters: extractMetaFromSchema(tool.parameters),
-            type: tool.type,
-            hints: hints.length ? hints : undefined,
+            type: def.type,
+            name: def.name,
+            description: def.description,
+            parameters: toProperties(def.parameters),
         };
     }
 }

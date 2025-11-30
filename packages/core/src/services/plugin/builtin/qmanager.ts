@@ -1,11 +1,8 @@
 import type { Context } from "koishi";
-import type { ToolContext } from "@/services/plugin/types";
+import type { FunctionContext } from "@/services/plugin";
 
 import { Schema } from "koishi";
-import { requireSession } from "@/services/plugin/activators";
-import { Plugin } from "@/services/plugin/base-plugin";
-import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
-import { Failed, Success } from "@/services/plugin/result-builder";
+import { Action, Failed, Metadata, Plugin, requireSession, Success, withInnerThoughts } from "@/services/plugin";
 import { isEmpty } from "@/shared/utils";
 
 interface QManagerConfig {}
@@ -13,9 +10,7 @@ interface QManagerConfig {}
 @Metadata({
     name: "qmanager",
     display: "频道管理",
-    version: "1.0.0",
     description: "管理频道内用户和消息",
-    author: "HydroGest",
     builtin: true,
 })
 export default class QManagerPlugin extends Plugin<QManagerConfig> {
@@ -34,7 +29,7 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
         }),
         activators: [requireSession("Active session required")],
     })
-    async delmsg({ message_id, channel_id }: { message_id: string; channel_id?: string }, context: ToolContext) {
+    async delmsg({ message_id, channel_id }: { message_id: string; channel_id?: string }, context: FunctionContext) {
         const session = context.session;
         if (isEmpty(message_id))
             return Failed("message_id is required");
@@ -61,7 +56,10 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
         }),
         activators: [requireSession("Active session required")],
     })
-    async ban({ user_id, duration, channel_id }: { user_id: string; duration: number; channel_id?: string }, context: ToolContext) {
+    async ban(
+        { user_id, duration, channel_id }: { user_id: string; duration: number; channel_id?: string },
+        context: FunctionContext,
+    ) {
         const session = context.session;
         if (isEmpty(user_id))
             return Failed("user_id is required");
@@ -71,7 +69,10 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id}`);
             return Success();
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id} 失败 - `, error.message);
+            this.ctx.logger.error(
+                `Bot[${session.selfId}]在频道 ${targetChannel} 禁言用户: ${user_id} 失败 - `,
+                error.message,
+            );
             return Failed(`禁言用户 ${user_id} 失败 - ${error.message}`);
         }
     }
@@ -85,7 +86,7 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
         }),
         activators: [requireSession("Active session required")],
     })
-    async kick({ user_id, channel_id }: { user_id: string; channel_id?: string }, context: ToolContext) {
+    async kick({ user_id, channel_id }: { user_id: string; channel_id?: string }, context: FunctionContext) {
         const session = context.session;
         if (isEmpty(user_id))
             return Failed("user_id is required");
@@ -95,7 +96,10 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${targetChannel} 踢出了用户: ${user_id}`);
             return Success();
         } catch (error: any) {
-            this.ctx.logger.error(`Bot[${session.selfId}]在频道 ${targetChannel} 踢出用户: ${user_id} 失败 - `, error.message);
+            this.ctx.logger.error(
+                `Bot[${session.selfId}]在频道 ${targetChannel} 踢出用户: ${user_id} 失败 - `,
+                error.message,
+            );
             return Failed(`踢出用户 ${user_id} 失败 - ${error.message}`);
         }
     }

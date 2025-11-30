@@ -1,40 +1,22 @@
-import type { ActionDefinition, ActionDescriptor, PluginMetadata, ToolContext, ToolDefinition, ToolDescriptor, ToolResult } from "./types";
+import type { ActionDefinition, FunctionContext, FunctionInput, PluginMetadata, ToolDefinition } from "./types";
 import { Schema } from "koishi";
-import { ToolType } from "./types";
+import { FunctionType } from "./types";
 
 type Constructor<T = {}> = new (...args: any[]) => T;
 
-/**
- * @Metadata decorator - attaches metadata to an extension class.
- * Alternative to defining static metadata property.
- *
- * Usage:
- * @Metadata({
- *     name: "my-extension",
- *     display: "My Extension",
- *     description: "Extension description",
- * })
- * export default class MyExtension extends Plugin {
- *     static readonly Config = Schema.object({ });
- * }
- */
 export function Metadata(metadata: PluginMetadata): ClassDecorator {
     // @ts-expect-error type checking
     return <T extends Constructor>(TargetClass: T) => {
-        // Simply attach metadata to the class
         (TargetClass as any).metadata = metadata;
         return TargetClass as unknown as T;
     };
 }
 
-/**
- * @Tool decorator - marks a method as a tool (information retrieval).
- */
-export function Tool<TParams>(descriptor: Omit<ToolDescriptor<any, TParams>, "type">) {
+export function Tool<TParams>(descriptor: FunctionInput<any, TParams>) {
     return function (
         target: any,
         propertyKey: string,
-        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>,
+        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: FunctionContext) => Promise<any>>,
     ) {
         if (!methodDescriptor.value)
             return;
@@ -44,23 +26,19 @@ export function Tool<TParams>(descriptor: Omit<ToolDescriptor<any, TParams>, "ty
         const toolDefinition: ToolDefinition<any, TParams> = {
             ...descriptor,
             name: descriptor.name || propertyKey,
-            type: ToolType.Tool,
+            type: FunctionType.Tool,
             execute: methodDescriptor.value,
-            extensionName: "", // Will be set during registration
         };
 
         (target.staticTools as ToolDefinition[]).push(toolDefinition);
     };
 }
 
-/**
- * @Action decorator - marks a method as an action (concrete operation).
- */
-export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>, "type">) {
+export function Action<TParams>(descriptor: FunctionInput<any, TParams>) {
     return function (
         target: any,
         propertyKey: string,
-        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: ToolContext) => Promise<any>>,
+        methodDescriptor: TypedPropertyDescriptor<(params: TParams, context: FunctionContext) => Promise<any>>,
     ) {
         if (!methodDescriptor.value)
             return;
@@ -70,39 +48,34 @@ export function Action<TParams>(descriptor: Omit<ActionDescriptor<any, TParams>,
         const actionDefinition: ActionDefinition<any, TParams> = {
             ...descriptor,
             name: descriptor.name || propertyKey,
-            type: ToolType.Action,
+            type: FunctionType.Action,
             execute: methodDescriptor.value,
-            extensionName: "", // Will be set during registration
         };
 
         (target.staticActions as ActionDefinition[]).push(actionDefinition);
     };
 }
 
-/**
- * Create a typed tool with automatic parameter inference.
- * RECOMMENDED for programmatic/dynamic tool registration.
- */
 export function defineTool<TParams>(
-    descriptor: Omit<ToolDescriptor<any, TParams>, "type">,
-    execute: (params: TParams, context: ToolContext) => Promise<ToolResult>,
-) {
+    descriptor: FunctionInput<any, TParams>,
+    execute: (params: TParams, context: FunctionContext) => Promise<any>,
+): ToolDefinition<any, TParams> {
     return {
-        descriptor: { ...descriptor, type: ToolType.Tool } as ToolDescriptor<any, TParams>,
+        ...descriptor,
+        name: descriptor.name,
+        type: FunctionType.Tool,
         execute,
     };
 }
 
-/**
- * Create a typed action with automatic parameter inference.
- * RECOMMENDED for programmatic/dynamic action registration.
- */
 export function defineAction<TParams>(
-    descriptor: Omit<ActionDescriptor<any, TParams>, "type">,
-    execute: (params: TParams, context: ToolContext) => Promise<ToolResult>,
-) {
+    descriptor: FunctionInput<any, TParams>,
+    execute: (params: TParams, context: FunctionContext) => Promise<any>,
+): ActionDefinition<any, TParams> {
     return {
-        descriptor: { ...descriptor, type: ToolType.Action } as ActionDescriptor<any, TParams>,
+        ...descriptor,
+        name: descriptor.name,
+        type: FunctionType.Action,
         execute,
     };
 }

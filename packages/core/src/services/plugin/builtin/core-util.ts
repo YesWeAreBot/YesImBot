@@ -1,12 +1,12 @@
 import type { Bot, Context, Session } from "koishi";
 import type { AssetService } from "@/services";
 import type { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
-import type { ToolContext } from "@/services/plugin/types";
+import type { FunctionContext } from "@/services/plugin/types";
 
 import { h, Schema, sleep } from "koishi";
+import { Failed, Success } from "@/services";
 import { Plugin } from "@/services/plugin/base-plugin";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
-import { Failed, Success } from "@/services/plugin/result-builder";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
 
@@ -41,7 +41,6 @@ const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     name: "core_util",
     display: "核心工具集",
     description: "必要工具",
-    version: "1.0.0",
     builtin: true,
 })
 export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
@@ -109,7 +108,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
       Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
         }),
     })
-    async sendMessage(params: { message: string; target?: string }, context: ToolContext) {
+    async sendMessage(params: { message: string; target?: string }, context: FunctionContext) {
         const { message, target } = params;
 
         const session = context.session;
@@ -152,7 +151,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             question: Schema.string().required().description("要询问的问题，如'图片中有什么?'"),
         }),
     })
-    async getImageDescription(params: { image_id: string; question: string }, context: ToolContext) {
+    async getImageDescription(params: { image_id: string; question: string }, context: FunctionContext) {
         const { image_id, question } = params;
 
         // Check if vision model is available
@@ -232,7 +231,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         return Math.max(MIN_DELAY, Math.min(calculatedDelay, MAX_DELAY));
     }
 
-    private determineTarget(context: ToolContext, target?: string): { bot: Bot | undefined; targetChannelId: string } {
+    private determineTarget(context: FunctionContext, target?: string): { bot: Bot | undefined; targetChannelId: string } {
         if (!target) {
             const session = context.session;
             const bot = session.bot;

@@ -1,13 +1,10 @@
 import type { Context, Session } from "koishi";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
-import type { ToolContext } from "@/services/plugin/types";
+import type { FunctionContext } from "@/services/plugin";
 
 import { h, Schema } from "koishi";
 import {} from "koishi-plugin-adapter-onebot";
-import { requirePlatform, requireSession } from "@/services/plugin/activators";
-import { Plugin } from "@/services/plugin/base-plugin";
-import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
-import { Failed, Success } from "@/services/plugin/result-builder";
+import { Action, Failed, Metadata, Plugin, requirePlatform, requireSession, Success, Tool, withInnerThoughts } from "@/services/plugin";
 import { Services } from "@/shared";
 import { formatDate, isEmpty } from "@/shared/utils";
 
@@ -19,9 +16,7 @@ const InteractionsConfig: Schema<InteractionsConfig> = Schema.object({});
 @Metadata({
     name: "interactions",
     display: "群内交互",
-    version: "1.1.0",
     description: "允许大模型在群内进行交互",
-    author: "HydroGest",
     builtin: true,
 })
 export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
@@ -41,7 +36,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         }),
         activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
-    async reactionCreate(params: { message_id: string; emoji_id: number }, context: ToolContext) {
+    async reactionCreate(params: { message_id: string; emoji_id: number }, context: FunctionContext) {
         const { message_id, emoji_id } = params;
 
         const session = context.session;
@@ -72,7 +67,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         }),
         activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
-    async essenceCreate(params: { message_id: string }, context: ToolContext) {
+    async essenceCreate(params: { message_id: string }, context: FunctionContext) {
         const { message_id } = params;
 
         const session = context.session;
@@ -97,7 +92,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         }),
         activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
-    async essenceDelete(params: { message_id: string }, context: ToolContext) {
+    async essenceDelete(params: { message_id: string }, context: FunctionContext) {
         const { message_id } = params;
 
         const session = context.session;
@@ -123,7 +118,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         }),
         activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
-    async sendPoke(params: { user_id: string; channel: string }, context: ToolContext) {
+    async sendPoke(params: { user_id: string; channel: string }, context: FunctionContext) {
         const { user_id, channel } = params;
 
         const session = context.session;
@@ -156,7 +151,7 @@ export default class InteractionsPlugin extends Plugin<InteractionsConfig> {
         }),
         activators: [requirePlatform("onebot", "OneBot platform required"), requireSession("Active session required")],
     })
-    async getForwardMsg(params: { id: string }, context: ToolContext) {
+    async getForwardMsg(params: { id: string }, context: FunctionContext) {
         const { id } = params;
         const session = context.session;
         const { onebot, selfId } = session;

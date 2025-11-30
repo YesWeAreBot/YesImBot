@@ -14,7 +14,7 @@ export class CommandService extends Service {
     private command: Command;
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Command, true);
-        this.command = ctx.command("yesimbot", { authority: 3 });
+        this.command = ctx.command("yesimbot", "Yes! I'm Bot! 指令集", { authority: 3 });
 
         this.subcommand(".conf", "配置管理指令集", { authority: 3 });
 
