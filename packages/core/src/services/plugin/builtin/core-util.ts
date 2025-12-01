@@ -4,9 +4,9 @@ import type { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/
 import type { FunctionContext } from "@/services/plugin/types";
 
 import { h, Schema, sleep } from "koishi";
-import { Failed, Success } from "@/services";
 import { Plugin } from "@/services/plugin/base-plugin";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
+import { Failed, Success } from "@/services/plugin/utils";
 import { Services } from "@/shared/constants";
 import { isEmpty } from "@/shared/utils";
 

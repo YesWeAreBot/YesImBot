@@ -1,8 +1,10 @@
 import type { Context } from "koishi";
-import type { FunctionContext } from "@/services/plugin";
-
+import type { FunctionContext } from "@/services/plugin/types";
 import { Schema } from "koishi";
-import { Action, Failed, Metadata, Plugin, requireSession, Success, withInnerThoughts } from "@/services/plugin";
+import { requireSession } from "@/services/plugin/activators";
+import { Plugin } from "@/services/plugin/base-plugin";
+import { Action, Metadata, withInnerThoughts } from "@/services/plugin/decorators";
+import { Failed, Success } from "@/services/plugin/utils";
 import { isEmpty } from "@/shared/utils";
 
 interface QManagerConfig {}

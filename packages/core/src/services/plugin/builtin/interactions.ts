@@ -1,11 +1,13 @@
 import type { Context, Session } from "koishi";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
-import type { FunctionContext } from "@/services/plugin";
-
+import type { FunctionContext } from "@/services/plugin/types";
 import { h, Schema } from "koishi";
 import {} from "koishi-plugin-adapter-onebot";
-import { Action, Failed, Metadata, Plugin, requirePlatform, requireSession, Success, Tool, withInnerThoughts } from "@/services/plugin";
-import { Services } from "@/shared";
+import { requirePlatform, requireSession } from "@/services/plugin/activators";
+import { Plugin } from "@/services/plugin/base-plugin";
+import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
+import { Failed, Success } from "@/services/plugin/utils";
+import { Services } from "@/shared/constants";
 import { formatDate, isEmpty } from "@/shared/utils";
 
 interface InteractionsConfig {}

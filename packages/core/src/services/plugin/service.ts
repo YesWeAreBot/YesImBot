@@ -1,7 +1,7 @@
 import type { Context, ForkScope } from "koishi";
 import type { Plugin } from "./base-plugin";
 import type { ToolResult } from "./types";
-import type { Definition, FunctionContext, FunctionSchema, GuardContext, Properties } from "./types";
+import type { Definition, FunctionContext, FunctionSchema, GuardContext } from "./types";
 import type { Config } from "@/config";
 import type { CommandService } from "@/services/command";
 import type { PromptService } from "@/services/prompt";
@@ -13,44 +13,14 @@ import { isEmpty, stringify, truncate } from "@/shared/utils";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
 import QManagerExtension from "./builtin/qmanager";
+
 import { FunctionType } from "./types";
+import { Failed, toProperties } from "./utils";
 
 declare module "koishi" {
     interface Context {
         [Services.Plugin]: PluginService;
     }
-}
-
-export function Failed(message: string): ToolResult {
-    return {
-        status: "failed",
-        error: message,
-    };
-}
-
-export function Success<TResult>(result?: TResult): ToolResult<TResult> {
-    return {
-        status: "success",
-        result,
-    };
-}
-
-function toProperties(schema: Schema<any>): Properties {
-    if (!schema) {
-        return {};
-    }
-    const meta = schema?.meta as any;
-    if (!meta) {
-        return {};
-    }
-
-    const properties: Properties = {};
-    for (const [key, value] of Object.entries(meta)) {
-        if (typeof value === "object" && value !== null) {
-            properties[key] = value as any;
-        }
-    }
-    return properties;
 }
 
 export class PluginService extends Service<Config> {
