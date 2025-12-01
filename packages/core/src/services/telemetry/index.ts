@@ -1,10 +1,18 @@
 import type { Awaitable, Context } from "koishi";
-import type { TelemetryConfig } from "./config";
 import Sentry from "@sentry/node";
-import { Service } from "koishi";
+import { Schema, Service } from "koishi";
 import { Services } from "@/shared/constants";
 
-export { TelemetryConfig } from "./config";
+export interface TelemetryConfig extends Sentry.NodeOptions {
+    dsn?: string;
+}
+
+export const TelemetryConfig: Schema<TelemetryConfig> = Schema.object({
+    enabled: Schema.boolean().default(true).description("是否启用遥测功能。"),
+    dsn: Schema.string().role("link").default("https://e3d12be336e64e019c08cd7bd17985f2@sentry.nekohouse.cafe/1"),
+    enableLogs: Schema.boolean().default(false).description("是否在控制台打印日志。"),
+    debug: Schema.boolean().default(false).description("是否启用调试模式。"),
+});
 
 declare module "koishi" {
     interface Services {
@@ -13,6 +21,7 @@ declare module "koishi" {
 }
 
 export class TelemetryService extends Service<TelemetryConfig> {
+    private client: Sentry.NodeClient | null = null;
     constructor(ctx: Context, config: TelemetryConfig) {
         super(ctx, Services.Telemetry, true);
         this.config = config;
@@ -20,7 +29,7 @@ export class TelemetryService extends Service<TelemetryConfig> {
 
     start(): Awaitable<void> {
         if (this.config.enabled && this.config.dsn) {
-            Sentry.init({
+            this.client = Sentry.init({
                 ...this.config,
             });
         }
