@@ -78,9 +78,9 @@
     }
   },
   "dependencies": {
-    "@miaowfish/gifwrap": "^0.10.1",
-    "@sentry/node": "^10.11.0",
+    "@sentry/node": "^10.27.0",
     "@xsai-ext/providers": "^0.4.0-beta.10",
+    "gifwrap": "^0.10.1",
     "gray-matter": "^4.0.3",
     "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",

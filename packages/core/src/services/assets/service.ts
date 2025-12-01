@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GifUtil } from "@miaowfish/gifwrap";
+import { GifUtil } from "gifwrap";
 import { Jimp } from "jimp";
 import { h, Service } from "koishi";
 import { v4 as uuidv4 } from "uuid";
