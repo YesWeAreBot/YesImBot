@@ -12,7 +12,7 @@ export interface ToolServiceConfig {
 
 // eslint-disable-next-line ts/no-redeclare
 export const ToolServiceConfig = Schema.object({
-    extra: Schema.dynamic("toolService.availableExtensions").default({}),
+    extra: Schema.dynamic("availablePlugins").default({}),
 
     advanced: Schema.object({
         maxRetry: Schema.number().default(3).description("最大重试次数"),

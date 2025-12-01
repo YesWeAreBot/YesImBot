@@ -174,12 +174,6 @@ export class PluginService extends Service<Config> {
             });
     }
 
-    /**
-     * 注册一个新的扩展
-     * @param ExtConstructor 扩展的构造函数
-     * @param enabled 是否启用此扩展
-     * @param extConfig 传递给扩展实例的配置
-     */
     public register<TConfig = any>(ext: Plugin<TConfig>, enabled: boolean, extConfig: TConfig = {} as TConfig) {
         const validate: Schema<TConfig> = (ext.constructor as any).Config;
         const validatedConfig = validate ? validate(extConfig) : extConfig;
@@ -296,7 +290,6 @@ export class PluginService extends Service<Config> {
 
                 const executionResult = await func.execute(validatedParams, context);
 
-                // Handle both direct ToolResult and builder transparently
                 if (executionResult && "build" in executionResult && typeof executionResult.build === "function") {
                     lastResult = executionResult.build();
                 } else if (executionResult && "status" in executionResult) {

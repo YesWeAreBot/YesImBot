@@ -59,21 +59,11 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
                 const enabled = !Object.hasOwn(config, "enabled") || config.enabled;
                 toolService.register(this, enabled, config);
             });
+
+            ctx.on("dispose", () => {
+                toolService.unregister(this.metadata.name);
+            });
         }
-    }
-
-    public addTool<TParams = any, TResult = any>(
-        inputOrDefinition: FunctionInput<TConfig, TParams> | ToolDefinition<TConfig, TParams, TResult>,
-        execute?: BaseDefinition<TConfig, TParams, TResult>["execute"],
-    ): this {
-        return this.addFunction(FunctionType.Tool, inputOrDefinition, execute);
-    }
-
-    public addAction<TParams = any, TResult = any>(
-        inputOrDefinition: FunctionInput<TConfig, TParams> | ActionDefinition<TConfig, TParams, TResult>,
-        execute?: BaseDefinition<TConfig, TParams, TResult>["execute"],
-    ): this {
-        return this.addFunction(FunctionType.Action, inputOrDefinition, execute);
     }
 
     private addFunction<TParams = any, TResult = any>(
@@ -113,6 +103,20 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
             this.actions.set(name, definition);
         }
         return this;
+    }
+
+    public addTool<TParams = any, TResult = any>(
+        inputOrDefinition: FunctionInput<TConfig, TParams> | ToolDefinition<TConfig, TParams, TResult>,
+        execute?: BaseDefinition<TConfig, TParams, TResult>["execute"],
+    ): this {
+        return this.addFunction(FunctionType.Tool, inputOrDefinition, execute);
+    }
+
+    public addAction<TParams = any, TResult = any>(
+        inputOrDefinition: FunctionInput<TConfig, TParams> | ActionDefinition<TConfig, TParams, TResult>,
+        execute?: BaseDefinition<TConfig, TParams, TResult>["execute"],
+    ): this {
+        return this.addFunction(FunctionType.Action, inputOrDefinition, execute);
     }
 
     getTools(): Map<string, ToolDefinition<TConfig, any>> {
