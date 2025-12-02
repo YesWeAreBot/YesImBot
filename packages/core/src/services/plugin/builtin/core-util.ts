@@ -94,7 +94,6 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         description: "发送消息到指定对象",
         parameters: withInnerThoughts({
             content: Schema.string().required().description(`要发送的消息内容，支持使用 <sep/> 分割为多条消息`),
-            target: Schema.string().description(`（可选）目标对象，格式为 <平台>:<频道ID>，默认为消息来源`),
         }),
     })
     async sendMessage(params: { content: string; target?: string }, context: FunctionContext) {
@@ -270,7 +269,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         const session = bot.session({
             type: "after-send",
             channel: { id: channelId, type: isDirect ? 1 : 0 },
-            guild: { id: channelId },
+            ...(isDirect ? {} : { guild: { id: channelId } }),
             user: bot.user,
             message: {
                 id: messageId,
