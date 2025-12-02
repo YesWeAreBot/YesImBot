@@ -9,6 +9,7 @@ import type { ChatModelSwitcher, IChatModel } from "@/services/model";
 import type { FunctionContext, FunctionSchema, PluginService, Properties } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
 import { h, Random } from "koishi";
+import { TimelineEventType, TimelinePriority } from "@/services/horizon";
 import { ModelError } from "@/services/model/types";
 import { FunctionType } from "@/services/plugin";
 import { Services } from "@/shared";
@@ -264,9 +265,46 @@ export class HeartbeatProcessor {
             const result = await this.pluginService.invoke(action.name, action.params ?? {}, context);
 
             const def = await this.pluginService.getFunction(action.name, context);
+
             if (def && def.type === FunctionType.Tool) {
                 this.logger.debug(`工具 "${action.name}" 触发心跳继续`);
                 actionContinue = true;
+
+                await this.horizon.events.record({
+                    id: Random.id(),
+                    timestamp: new Date(),
+                    scope: percept.scope,
+                    priority: TimelinePriority.Normal,
+                    eventType: TimelineEventType.AgentTool,
+                    eventData: {
+                        name: action.name,
+                        args: action.params || {},
+                    },
+                });
+
+                await this.horizon.events.record({
+                    id: Random.id(),
+                    timestamp: new Date(),
+                    scope: percept.scope,
+                    priority: TimelinePriority.Normal,
+                    eventType: TimelineEventType.ToolResult,
+                    eventData: {
+                        status: result.status,
+                        result: result.result,
+                    },
+                });
+            } else if (def && def.type === FunctionType.Action) {
+                await this.horizon.events.record({
+                    id: Random.id(),
+                    timestamp: new Date(),
+                    scope: percept.scope,
+                    priority: TimelinePriority.Normal,
+                    eventType: TimelineEventType.AgentAction,
+                    eventData: {
+                        name: action.name,
+                        args: action.params || {},
+                    },
+                });
             }
         }
 

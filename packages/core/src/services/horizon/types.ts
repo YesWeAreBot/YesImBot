@@ -107,9 +107,9 @@ export interface AgentActionData {
 export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;
 
 export interface ToolResultData {
-    toolCallId: string;
+    toolCallId?: string;
     status: string;
-    result: Record<string, any>;
+    result: Record<string, any> | string | string[];
 }
 
 export type ToolResultRecord = BaseTimelineEntry<TimelineEventType.ToolResult, ToolResultData>;
