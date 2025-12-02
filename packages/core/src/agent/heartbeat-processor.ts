@@ -84,10 +84,22 @@ export class HeartbeatProcessor {
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
+
+        // 分离 tools 和 actions
+        const tools = funcSchemas.filter((f) => f.type === "tool");
+        const actions = funcSchemas.filter((f) => f.type === "action" || !f.type);
+
         const renderView = {
-            TOOL_DEFINITION: prepareDataForTemplate(funcSchemas),
-            MEMORY_BLOCKS: this.memoryService.getMemoryBlocksForRendering(),
-            WORLD_STATE: view,
+            // 从 ChatMode 构建的视图数据
+            ...view,
+
+            // 工具定义（分离为 tools 和 actions）
+            tools: formatFunction(tools),
+            actions: formatFunction(actions),
+
+            // 记忆块
+            memoryBlocks: this.memoryService.getMemoryBlocksForRendering(),
+
             // 模板辅助函数
             _toString() {
                 try {
@@ -127,6 +139,14 @@ export class HeartbeatProcessor {
             _formatDate() {
                 try {
                     return formatDate(this, "MM-DD HH:mm");
+                } catch (err) {
+                    // FIXME: use external this context
+                    return "";
+                }
+            },
+            _formatTime() {
+                try {
+                    return formatDate(this, "HH:mm");
                 } catch (err) {
                     // FIXME: use external this context
                     return "";
@@ -227,23 +247,23 @@ export class HeartbeatProcessor {
 
         let actionContinue = false;
 
-        const actions = agentResponseData.actions;
+        const agentActions = agentResponseData.actions;
 
-        if (actions.length === 0) {
+        if (agentActions.length === 0) {
             this.logger.info("无动作需要执行");
             actionContinue = false;
         }
 
-        for (let index = 0; index < actions.length; index++) {
-            const action = actions[index];
-            if (!action?.function)
+        for (let index = 0; index < agentActions.length; index++) {
+            const action = agentActions[index];
+            if (!action?.name)
                 continue;
 
-            const result = await this.pluginService.invoke(action.function, action.params ?? {}, context);
+            const result = await this.pluginService.invoke(action.name, action.params ?? {}, context);
 
-            const def = await this.pluginService.getFunction(action.function, context);
+            const def = await this.pluginService.getFunction(action.name, context);
             if (def && def.type === FunctionType.Tool) {
-                this.logger.debug(`工具 "${action.function}" 触发心跳继续`);
+                this.logger.debug(`工具 "${action.name}" 触发心跳继续`);
                 actionContinue = true;
             }
         }
@@ -329,6 +349,16 @@ function prepareDataForTemplate(tools: FunctionSchema[]) {
     }));
 }
 
+function formatFunction(tools: FunctionSchema[]): string[] {
+    return tools.map((tool) => {
+        return JSON.stringify({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+        });
+    });
+}
+
 interface AgentResponse {
     // thoughts: {
     //     observe?: string;
@@ -336,7 +366,7 @@ interface AgentResponse {
     //     plan?: string;
     // };
     actions: Array<{
-        function: string;
+        name: string;
         params?: Record<string, any>;
     }>;
     request_heartbeat: boolean;

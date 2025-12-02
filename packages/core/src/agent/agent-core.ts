@@ -56,8 +56,6 @@ export class AgentCore extends Service<Config> {
     }
 
     protected async start(): Promise<void> {
-        this._registerPromptTemplates();
-
         this.ctx.on("horizon/percept", (percept) => {
             this.dispatch(percept);
         });
@@ -120,19 +118,6 @@ export class AgentCore extends Service<Config> {
 
         // 2. 调度任务
         this.schedule(percept);
-    }
-
-    private _registerPromptTemplates(): void {
-        // 注册所有可重用的局部模板
-        this.promptService.registerTemplate("agent.partial.world_state", loadTemplate("world_state"));
-        this.promptService.registerTemplate("agent.partial.l1_history_item", loadTemplate("l1_history_item"));
-
-        // 注册主模板
-        this.promptService.registerTemplate("agent.system", this.config.systemTemplate);
-        this.promptService.registerTemplate("agent.user", this.config.userTemplate);
-
-        // 注册动态片段
-        this.promptService.registerSnippet("agent.context.currentTime", () => new Date().toISOString());
     }
 
     public schedule(percept: Percept): void {
