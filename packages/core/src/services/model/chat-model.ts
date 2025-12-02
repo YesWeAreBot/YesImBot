@@ -230,7 +230,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                     this.logger.error(`请求失败，状态码: ${error.response?.status}`);
                     break;
             }
-        } else if (error.name === "AbortError") {
+        } else if (error.name === "AbortError" || (typeof error === "string" && error.includes("请求超时"))) {
             this.logger.warn(`请求超时或被取消`);
         } else {
             this.logger.error(`未知错误: ${error.message}`);

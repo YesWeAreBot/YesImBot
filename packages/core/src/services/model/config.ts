@@ -101,7 +101,7 @@ export const ModelConfig: Schema<ModelConfig> = Schema.intersect([
                 .default([])
                 .role("checkbox")
                 .description("模型具备的特殊能力。"),
-            temperature: Schema.number().min(0).max(2).step(0.1).default(0.7).description("控制生成文本的随机性，值越高越随机。"),
+            temperature: Schema.number().min(0).max(2).step(0.1).default(1).description("控制生成文本的随机性，值越高越随机。"),
             topP: Schema.number().min(0).max(1).step(0.05).default(0.95).description("控制生成文本的多样性，也称为核采样。"),
             custom: Schema.array(
                 Schema.object({
