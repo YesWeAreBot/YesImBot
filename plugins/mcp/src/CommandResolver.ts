@@ -1,6 +1,7 @@
-import { Logger } from "koishi";
-import { Config } from "./Config";
-import { SystemUtils } from "./SystemUtils";
+import type { Logger } from "koishi";
+import type { Config } from "./Config";
+import type { SystemUtils } from "./SystemUtils";
+import process from "node:process";
 
 // 命令解析器类
 export class CommandResolver {
@@ -15,7 +16,7 @@ export class CommandResolver {
         systemUtils: SystemUtils,
         config: Config,
         installedUVPath: string | null = null,
-        installedBunPath: string | null = null
+        installedBunPath: string | null = null,
     ) {
         this.logger = logger;
         this.systemUtils = systemUtils;
@@ -31,7 +32,7 @@ export class CommandResolver {
         command: string,
         args: string[],
         enableTransform: boolean = true,
-        additionalEnv: Record<string, string> = {}
+        additionalEnv: Record<string, string> = {},
     ): Promise<[string, string[], Record<string, string>]> {
         let finalCommand = command;
         let finalArgs = [...args];
@@ -120,8 +121,8 @@ export class CommandResolver {
     private setupUVEnvironment(env: Record<string, string>): void {
         if (this.config.uvSettings?.pypiMirror) {
             const mirror = this.config.uvSettings.pypiMirror;
-            env["PIP_INDEX_URL"] = mirror;
-            env["UV_INDEX_URL"] = mirror;
+            env.PIP_INDEX_URL = mirror;
+            env.UV_INDEX_URL = mirror;
             this.logger.debug(`设置 PyPI 镜像: ${mirror}`);
         }
     }

@@ -1,4 +1,4 @@
-import { Session } from "koishi";
+import type { Buffer } from "node:buffer";
 
 /**
  * Result of a synthesis operation.

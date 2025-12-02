@@ -1,12 +1,12 @@
-import fs from "fs/promises";
-import path from "path";
-import { ControlMethod, GenSingleParams, GenSingleEvent, GradioApiError, GradioFileData } from "./types";
-import { Context } from "koishi";
+import type { Context } from "koishi";
+import type { GenSingleEvent, GenSingleParams, GradioApiError, GradioFileData } from "./types";
+import { Buffer } from "node:buffer";
+import fs from "node:fs/promises";
 
 export class GradioAPI {
     constructor(
         public ctx: Context,
-        private baseURL: string
+        private baseURL: string,
     ) {}
 
     /**
@@ -29,12 +29,14 @@ export class GradioAPI {
             const response = await this.ctx.http.post<string[] | { path: string }[]>(
                 `${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`,
                 formData,
-                { responseType: "json", timeout: 60_000 }
+                { responseType: "json", timeout: 60_000 },
             );
             if (Array.isArray(response) && response.length > 0) {
                 const first = response[0] as unknown;
-                if (typeof first === "string") return first;
-                if (first && typeof (first as any).path === "string") return (first as any).path;
+                if (typeof first === "string")
+                    return first;
+                if (first && typeof (first as any).path === "string")
+                    return (first as any).path;
             }
             throw new Error("上传成功，但未返回有效的文件路径");
         } catch (error: any) {
@@ -85,7 +87,7 @@ export class GradioAPI {
             const result = await this.ctx.http.post<GenSingleEvent | GradioApiError>(
                 `${this.baseURL}/gradio_api/call/gen_single`,
                 { data: dataPayload },
-                { responseType: "json", timeout: 120_000 }
+                { responseType: "json", timeout: 120_000 },
             );
 
             if ("error" in result) {

@@ -1,5 +1,5 @@
-import { Awaitable, Context, Schema } from "koishi";
-import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../types";
+import type { Awaitable, Context, Schema } from "koishi";
+import type { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../types";
 
 /**
  * Abstract base class for all TTS adapters.
@@ -20,7 +20,7 @@ export abstract class TTSAdapter<C extends BaseTTSConfig = BaseTTSConfig, P exte
      */
     constructor(
         protected ctx: Context,
-        protected config: C
+        protected config: C,
     ) {}
 
     public stop(): Awaitable<void> {}

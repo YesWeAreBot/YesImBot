@@ -1,9 +1,10 @@
-import fs from "fs/promises";
-import { Logger } from "koishi";
-import path from "path";
-import { FileManager } from "./FileManager";
-import { GitHubAPI } from "./GitHubAPI";
-import { SystemUtils } from "./SystemUtils";
+import type { Logger } from "koishi";
+import type { FileManager } from "./FileManager";
+import type { GitHubAPI } from "./GitHubAPI";
+import type { SystemUtils } from "./SystemUtils";
+import fs from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
 
 // 二进制安装器类
 export class BinaryInstaller {
@@ -20,7 +21,7 @@ export class BinaryInstaller {
         fileManager: FileManager,
         githubAPI: GitHubAPI,
         dataDir: string,
-        cacheDir: string
+        cacheDir: string,
     ) {
         this.logger = logger;
         this.systemUtils = systemUtils;
@@ -37,7 +38,8 @@ export class BinaryInstaller {
         this.logger.info(`开始安装 UV (版本: ${version})`);
 
         const platformMap = this.systemUtils.getPlatformMapping();
-        if (!platformMap) return null;
+        if (!platformMap)
+            return null;
 
         // 解析版本号
         let targetVersion = version;
@@ -92,7 +94,8 @@ export class BinaryInstaller {
         this.logger.info(`开始安装 Bun (版本: ${version})`);
 
         const platformMap = this.systemUtils.getPlatformMapping();
-        if (!platformMap) return null;
+        if (!platformMap)
+            return null;
 
         // 解析版本号
         let targetVersion = version;

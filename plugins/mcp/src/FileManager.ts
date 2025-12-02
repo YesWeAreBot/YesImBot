@@ -1,8 +1,8 @@
-import { createWriteStream } from "fs";
-import fs from "fs/promises";
-import { Logger } from "koishi";
-import path from "path";
-import Stream from "stream";
+import type { Logger } from "koishi";
+import { createWriteStream } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
+import Stream from "node:stream";
 import * as yauzl from "yauzl";
 
 // 文件下载和解压工具类

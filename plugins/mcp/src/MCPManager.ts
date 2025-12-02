@@ -1,18 +1,21 @@
+/* eslint-disable no-case-declarations */
+import type { Context, Logger } from "koishi";
+import type { PluginService } from "koishi-plugin-yesimbot/services";
+import type { CommandResolver } from "./CommandResolver";
+import type { Config } from "./Config";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Context, Logger, Schema } from "koishi";
-import { Failed, Plugin, PluginService, ToolType } from "koishi-plugin-yesimbot/services";
-import { CommandResolver } from "./CommandResolver";
-import { Config } from "./Config";
+import { Schema } from "koishi";
+import { Failed, FunctionType, Plugin } from "koishi-plugin-yesimbot/services";
 
 // MCP 连接管理器
 export class MCPManager {
     private ctx: Context;
     private logger: Logger;
     private commandResolver: CommandResolver;
-    private toolService: PluginService;
+    private pluginService: PluginService;
     private config: Config;
     private clients: Client[] = [];
     private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
@@ -21,11 +24,11 @@ export class MCPManager {
 
     private plugin: Plugin;
 
-    constructor(ctx: Context, logger: Logger, commandResolver: CommandResolver, toolService: PluginService, config: Config) {
+    constructor(ctx: Context, logger: Logger, commandResolver: CommandResolver, pluginService: PluginService, config: Config) {
         this.ctx = ctx;
         this.logger = logger;
         this.commandResolver = commandResolver;
-        this.toolService = toolService;
+        this.pluginService = pluginService;
         this.config = config;
 
         this.plugin = new (class extends Plugin {
@@ -35,7 +38,7 @@ export class MCPManager {
             };
         })(ctx, this.config);
 
-        toolService.register(this.plugin, true, this.config);
+        this.pluginService.register(this.plugin, true, this.config);
     }
 
     /**
@@ -64,7 +67,7 @@ export class MCPManager {
                 Schema.array(Schema.union(this.availableTools.map((tool) => Schema.const(tool).description(tool))))
                     .role("checkbox")
                     .collapse()
-                    .default(this.availableTools)
+                    .default(this.availableTools),
             );
 
             this.logger.success(`成功连接 ${this.clients.length} 个服务器，注册 ${this.registeredTools.length} 个工具`);
@@ -99,7 +102,7 @@ export class MCPManager {
                     server.command,
                     server.args || [],
                     enableTransform,
-                    server.env
+                    server.env,
                 );
 
                 transport = new StdioClientTransport({ command, args, env });
@@ -155,13 +158,13 @@ export class MCPManager {
                     {
                         name: tool.name,
                         description: tool.description,
-                        type: ToolType.Tool,
+                        type: FunctionType.Tool,
                         parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
                     },
                     async (args: any) => {
                         const { session, ...cleanArgs } = args;
                         return await this.executeTool(client, tool.name, cleanArgs);
-                    }
+                    },
                 );
 
                 this.registeredTools.push(tool.name);
@@ -192,15 +195,18 @@ export class MCPManager {
             const parser = { parse: (data: any) => data };
             const result = await client.callTool({ name: toolName, arguments: params }, parser as any, { timeout: this.config.timeout });
 
-            if (timer) clearTimeout(timer);
+            if (timer)
+                clearTimeout(timer);
 
             // 处理返回内容
             let content = "";
             if (Array.isArray(result.content)) {
                 content = result.content
                     .map((item) => {
-                        if (item.type === "text") return item.text;
-                        else if (item.type === "json") return JSON.stringify(item.json);
+                        if (item.type === "text")
+                            return item.text;
+                        else if (item.type === "json")
+                            return JSON.stringify(item.json);
                         else return JSON.stringify(item);
                     })
                     .join("");
@@ -217,7 +223,8 @@ export class MCPManager {
             this.logger.success(`工具 ${toolName} 执行成功`);
             return { status: "success", result: content as any };
         } catch (error: any) {
-            if (timer) clearTimeout(timer);
+            if (timer)
+                clearTimeout(timer);
             this.logger.error(`工具执行异常: ${error.message}`);
             this.logger.error(error);
             return Failed(error.message);
@@ -233,7 +240,7 @@ export class MCPManager {
         // 注销工具
         for (const toolName of this.registeredTools) {
             try {
-                // this.toolService.unregisterTool(toolName);
+                // this.pluginService.unregisterTool(toolName);
                 this.logger.debug(`注销工具: ${toolName}`);
             } catch (error: any) {
                 this.logger.warn(`注销工具失败: ${error.message}`);

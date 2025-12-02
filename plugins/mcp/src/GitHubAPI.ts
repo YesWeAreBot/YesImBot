@@ -1,4 +1,4 @@
-import { Logger } from "koishi";
+import type { Logger } from "koishi";
 
 // GitHub API 工具类
 export class GitHubAPI {

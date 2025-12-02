@@ -1,3 +1,5 @@
+import type { Buffer } from "node:buffer";
+
 /**
  * @enum ControlMethod
  * @description 情感控制方式的枚举

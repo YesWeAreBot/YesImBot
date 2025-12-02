@@ -1,5 +1,6 @@
-import { Context, Schema, Session } from "koishi";
-import { PromptService } from "koishi-plugin-yesimbot/services";
+import type { Context, Session } from "koishi";
+import type { PromptService } from "koishi-plugin-yesimbot/services";
+import { Schema } from "koishi";
 import { Action, Failed, Metadata, Plugin, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services/plugin";
 import { Services } from "koishi-plugin-yesimbot/shared";
 
@@ -29,7 +30,6 @@ export interface FavorTable {
 @Metadata({
     name: "favor",
     display: "好感度管理",
-    version: "1.0.0",
     description: "管理用户的好感度，并提供相应的状态描述。可通过 `{{roleplay.favor}}` 和 `{{roleplay.state}}` 将信息注入提示词。",
 })
 export default class FavorExtension extends Plugin<FavorSystemConfig> {
@@ -43,16 +43,16 @@ export default class FavorExtension extends Plugin<FavorSystemConfig> {
                 description: Schema.string()
                     .role("textarea", { rows: [2, 4] })
                     .description("阶段描述"),
-            })
+            }),
         )
             .default([])
             .description("好感度阶段配置。系统会自动匹配，其描述将通过 `{{roleplay.state}}` 片段提供给 AI。"),
     });
 
     // --- 依赖注入 ---
-    static readonly inject = ["database", Services.Prompt];
+    static readonly inject = ["database", Services.Prompt, Services.Plugin];
 
-    constructor(ctx: Context,config: FavorSystemConfig) {
+    constructor(ctx: Context, config: FavorSystemConfig) {
         super(ctx, config);
         this.logger = ctx.logger("favor-extension");
 
@@ -63,7 +63,7 @@ export default class FavorExtension extends Plugin<FavorSystemConfig> {
                 user_id: "string",
                 amount: "integer",
             },
-            { primary: "user_id", autoInc: false }
+            { primary: "user_id", autoInc: false },
         );
 
         // 在 onMount 中执行异步初始化逻辑
@@ -84,9 +84,11 @@ export default class FavorExtension extends Plugin<FavorSystemConfig> {
         const promptService: PromptService = this.ctx[Services.Prompt];
 
         promptService.inject("roleplay.favor", 10, async (context) => {
+            this.ctx.logger.info("渲染好感度注入片段");
             const { session } = context;
             // 仅在私聊中注入好感度信息
-            if (!(session as Session)?.isDirect) return "";
+            if (!(session as Session)?.isDirect)
+                return "";
             const favorEntry = await this._getOrCreateFavorEntry(session.userId);
             const stageDescription = this._getFavorStage(favorEntry.amount);
             return `## 好感度设定

@@ -1,10 +1,12 @@
-import fs from "fs/promises";
-import { Context, Schema } from "koishi";
+import type { Context } from "koishi";
+import type { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../../types";
+import type { GenSingleParams, IndexTTS2GenSingleParams } from "./types";
 
-import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../../types";
+import { Buffer } from "node:buffer";
+import { Schema } from "koishi";
 import { TTSAdapter } from "../base";
 import { GradioAPI } from "./gradioApi";
-import { ControlMethod, GenSingleParams, IndexTTS2GenSingleParams } from "./types";
+import { ControlMethod } from "./types";
 
 export interface IndexTTS2Config extends BaseTTSConfig, Omit<IndexTTS2GenSingleParams, "emo_control_method" | "prompt_audio" | "text"> {
     baseURL: string;
@@ -133,7 +135,7 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
     }
 
     public override getToolDescription(): string {
-        let description = super.getToolDescription();
+        const description = super.getToolDescription();
         return description;
     }
 }

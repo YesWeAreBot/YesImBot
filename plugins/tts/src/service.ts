@@ -1,12 +1,14 @@
-import { Context, Schema, h } from "koishi";
-import { ActionDefinition, Failed, InternalError, requireSession, Success, ToolContext, ToolDefinition, ToolType } from "koishi-plugin-yesimbot/services";
+import type { Context } from "koishi";
+import type { ActionDefinition, FunctionContext } from "koishi-plugin-yesimbot/services";
+import type { TTSAdapter } from "./adapters/base";
+import type { BaseTTSParams } from "./types";
 
-import { TTSAdapter } from "./adapters/base";
+import { h, Schema } from "koishi";
+import { Failed, FunctionType, requireSession, Success } from "koishi-plugin-yesimbot/services";
 import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";
 import { FishAudioAdapter, FishAudioConfig } from "./adapters/fish-audio";
 import { IndexTTS2Adapter, IndexTTS2Config } from "./adapters/index-tts2";
 import { OpenAudioAdapter, OpenAudioConfig } from "./adapters/open-audio";
-import { BaseTTSParams } from "./types";
 
 export const Config = Schema.intersect([
     Schema.object({
@@ -20,34 +22,34 @@ export const Config = Schema.intersect([
             cosyvoice: CosyVoiceConfig.description("CosyVoice 配置"),
         }),
         Schema.object({
-            provider: Schema.const("index-tts2"),
+            "provider": Schema.const("index-tts2"),
             "index-tts2": IndexTTS2Config,
         }),
         Schema.object({
-            provider: Schema.const("fish-audio"),
+            "provider": Schema.const("fish-audio"),
             "fish-audio": FishAudioConfig,
         }),
         Schema.object({
-            provider: Schema.const("open-audio"),
+            "provider": Schema.const("open-audio"),
             "open-audio": OpenAudioConfig,
         }),
     ]),
 ]);
 
-export type Config = {
-    provider: "cosyvoice" | "index-tts2" | "fish-audio" | "open-audio";
-    cosyvoice: CosyVoiceConfig;
+export interface Config {
+    "provider": "cosyvoice" | "index-tts2" | "fish-audio" | "open-audio";
+    "cosyvoice": CosyVoiceConfig;
     "index-tts2": IndexTTS2Config;
     "fish-audio": FishAudioConfig;
     "open-audio": OpenAudioConfig;
-};
+}
 
 export class TTSService {
     private adapter: TTSAdapter;
 
     constructor(
         private ctx: Context,
-        private config: Config
+        private config: Config,
     ) {
         this.adapter = this.createAdapter();
 
@@ -89,18 +91,17 @@ export class TTSService {
 
         return {
             name: "send_voice",
-            type: ToolType.Action,
-            extensionName: "",
+            type: FunctionType.Action,
             description: this.adapter.getToolDescription(),
             parameters: this.adapter.getToolSchema(),
             execute: this.execute.bind(this),
             activators: [
-                requireSession()
-            ]
+                requireSession(),
+            ],
         };
     }
 
-    private async execute(args: BaseTTSParams, context: ToolContext) {
+    private async execute(args: BaseTTSParams, context: FunctionContext) {
         const { text } = args;
         const session = context.session;
 
@@ -118,7 +119,7 @@ export class TTSService {
         } catch (error: any) {
             this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${error.message}`);
             this.ctx.logger.error(error);
-            return Failed(InternalError(error.message));
+            return Failed(error.message);
         }
     }
 }

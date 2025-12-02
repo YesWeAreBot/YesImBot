@@ -1,11 +1,11 @@
-import fs from "fs/promises";
-import { Context, Logger } from "koishi";
-import { Services } from "koishi-plugin-yesimbot/shared";
-import path from "path";
+import type { Context } from "koishi";
+import type { Config } from "./Config";
+import fs from "node:fs/promises";
+import path from "node:path";
 
+import { Services } from "koishi-plugin-yesimbot/shared";
 import { BinaryInstaller } from "./BinaryInstaller";
 import { CommandResolver } from "./CommandResolver";
-import { Config } from "./Config";
 import { FileManager } from "./FileManager";
 import { GitHubAPI } from "./GitHubAPI";
 import { MCPManager } from "./MCPManager";
@@ -36,8 +36,8 @@ export async function apply(ctx: Context, config: Config) {
 
     const commandResolver = new CommandResolver(logger, systemUtils, config, installedUVPath, installedBunPath);
 
-    const toolService = ctx["yesimbot.tool"];
-    const mcpManager = new MCPManager(ctx, logger, commandResolver, toolService, config);
+    const pluginService = ctx[Services.Plugin];
+    const mcpManager = new MCPManager(ctx, logger, commandResolver, pluginService, config);
 
     // 启动时初始化
     ctx.on("ready", async () => {
@@ -61,7 +61,7 @@ export async function apply(ctx: Context, config: Config) {
             logger.info("开始安装 Bun...");
             installedBunPath = await binaryInstaller.installBun(
                 config.bunSettings.bunVersion || "latest",
-                config.globalSettings?.githubMirror
+                config.globalSettings?.githubMirror,
             );
         }
 

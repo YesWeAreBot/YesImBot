@@ -1,9 +1,8 @@
-import { Context } from "koishi";
+/* eslint-disable ts/no-require-imports */
+import type { Context } from "koishi";
 import { Metadata, Plugin } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { Config, TTSService } from "./service";
-
-
 
 @Metadata({
     name: "tts",
@@ -16,10 +15,7 @@ export default class TTSPlugin extends Plugin<Config> {
         super(ctx, config);
         this.logger = ctx.logger("tts");
 
-
-
         ctx.on("ready", async () => {
-
             ctx.i18n.define("en-US", require("./locales/en-US"));
             ctx.i18n.define("zh-CN", require("./locales/zh-CN"));
 
@@ -35,6 +31,6 @@ export default class TTSPlugin extends Plugin<Config> {
             } catch (error: any) {
                 this.logger.error(`Failed to initialize TTSService: ${error.message}`);
             }
-        })
+        });
     }
 }

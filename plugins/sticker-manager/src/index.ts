@@ -4,7 +4,7 @@ import type { FunctionContext } from "koishi-plugin-yesimbot/services/plugin";
 import type { StickerConfig } from "./config";
 import { readFile } from "node:fs/promises";
 import { h, Schema } from "koishi";
-import { Action, Failed, Metadata, requireSession, Success } from "koishi-plugin-yesimbot/services/plugin";
+import { Action, Failed, Metadata, Plugin, requireSession, Success } from "koishi-plugin-yesimbot/services/plugin";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import { StickerService } from "./service";
 
@@ -13,7 +13,7 @@ import { StickerService } from "./service";
     display: "表情包管理",
     description: "用于偷取和发送表情包",
 })
-export default class StickerTools {
+export default class StickerTools extends Plugin<StickerConfig> {
     static readonly inject = ["database", Services.Asset, Services.Model, Services.Prompt, Services.Plugin];
 
     static readonly Config: Schema<StickerConfig> = Schema.object({
@@ -34,10 +34,8 @@ export default class StickerTools {
 
     private static serviceInstance: StickerService | null = null;
 
-    constructor(
-        public ctx: Context,
-        public config: StickerConfig,
-    ) {
+    constructor(ctx: Context, config: StickerConfig) {
+        super(ctx, config);
         // 确保只创建一个服务实例
         if (!StickerTools.serviceInstance) {
             StickerTools.serviceInstance = new StickerService(ctx, config);
@@ -64,7 +62,10 @@ export default class StickerTools {
 
         const cmd = ctx.command("sticker", "表情包管理相关指令", { authority: 3 });
 
-        cmd.subcommand(".import <sourceDir>", "从外部文件夹导入表情包。该文件夹须包含若干子文件夹作为分类，子文件夹下是表情包的图片文件。")
+        cmd.subcommand(
+            ".import <sourceDir>",
+            "从外部文件夹导入表情包。该文件夹须包含若干子文件夹作为分类，子文件夹下是表情包的图片文件。",
+        )
             .option("force", "-f  强制覆盖已存在的表情包")
             .action(async ({ session, options }, sourceDir) => {
                 if (!sourceDir)
@@ -301,13 +302,12 @@ export default class StickerTools {
 
     @Action({
         name: "steal_sticker",
-        description: "收藏一个表情包。当用户发送表情包时，调用此工具将表情包保存到本地并分类。分类后你也可以使用这些表情包。",
+        description:
+            "收藏一个表情包。当用户发送表情包时，调用此工具将表情包保存到本地并分类。分类后你也可以使用这些表情包。",
         parameters: Schema.object({
             image_id: Schema.string().required().description("要偷取的表情图片ID"),
         }),
-        activators: [
-            requireSession(),
-        ],
+        activators: [requireSession()],
     })
     async stealSticker(params: { image_id: string }, context: FunctionContext) {
         const { image_id } = params;
@@ -335,9 +335,7 @@ export default class StickerTools {
         parameters: Schema.object({
             category: Schema.string().required().description("表情包分类名称。当前可用分类: {{ sticker.categories }}"),
         }),
-        activators: [
-            requireSession(),
-        ],
+        activators: [requireSession()],
     })
     async sendRandomSticker(params: { category: string }, context: FunctionContext) {
         const { category } = params;

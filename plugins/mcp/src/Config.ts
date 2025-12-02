@@ -68,7 +68,7 @@ export const Config: Schema<Config> = Schema.object({
             enableCommandTransform: Schema.boolean()
                 .description("🔄 启用命令转换 (uvx → uv tool run, npx → bun x)")
                 .default(true),
-        }).collapse()
+        }).collapse(),
     ).description("📡 MCP 服务器配置列表"),
     uvSettings: Schema.object({
         autoDownload: Schema.boolean().description("📥 自动下载并安装 UV").default(true),
