@@ -165,7 +165,19 @@ export class HorizonService extends Service<Config> {
                     "history.clear -a private           # 清除所有私聊频道的历史记录",
                 ].join("\n"),
             )
-            .action(async ({ session, options }) => {});
+            .action(async ({ session, options }) => {
+                this.ctx.database.transact(async (db) => {
+                    const result = await db.remove(TableName.Timeline, {
+                        scope: {
+                            platform: options.platform || session.platform,
+                            channelId: options.channel
+                                ? options.channel.split(",").map((id) => id.trim())
+                                : session.channelId,
+                        },
+                    });
+                    this.ctx.logger.info(`已清除 ${result.removed} 条历史记录`);
+                });
+            });
 
         // const scheduleCmd = commandService.subcommand(".schedule", "计划任务管理指令集", { authority: 3 });
 

@@ -20,11 +20,12 @@ export function loadTemplate(name: string, ext: string = "mustache") {
         const fullPath = path.resolve(TEMPLATES_DIR, `${name}.${ext}`);
         return readFileSync(fullPath, "utf-8");
     } catch (error: any) {
-        // this._logger.error(`加载模板失败 "${name}.${ext}": ${error.message}`);
-        // 返回一个包含错误信息的模板，便于调试
-        // return `{{! Error loading template: ${name} }}`;
         throw new Error(`Failed to load template: ${name}.${ext}`);
     }
+}
+
+export function loadPartial(name: string, ext: string = "mustache") {
+    return loadTemplate(`partials/${name}`, ext);
 }
 
 export * from "./config";
