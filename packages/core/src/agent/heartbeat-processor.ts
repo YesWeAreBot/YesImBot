@@ -93,6 +93,8 @@ export class HeartbeatProcessor {
             // 从 ChatMode 构建的视图数据
             ...view,
 
+            session: context.session,
+
             // 工具定义（分离为 tools 和 actions）
             tools: formatFunction(tools),
             actions: formatFunction(actions),

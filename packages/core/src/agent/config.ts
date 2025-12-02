@@ -1,17 +1,6 @@
 /* eslint-disable ts/no-redeclare */
 import type { Computed } from "koishi";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { Schema } from "koishi";
-
-import { PROMPTS_DIR } from "@/shared/constants";
-
-export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
-export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
-export const MultiModalSystemBaseTemplate = `Images that appear in the conversation will be provided first, numbered in the format 'Image #[ID]:'.
-In the subsequent conversation text, placeholders in the format <img id="[ID]" /> will be used to refer to these images.
-Please participate in the conversation considering the full context of both images and text.
-If image data is not provided, use \`get_image_description\` to describe the image.`;
 
 export interface ChannelDescriptor {
     platform: string;
@@ -151,10 +140,6 @@ export const VisionConfig: Schema<VisionConfig> = Schema.object({
 export type AgentBehaviorConfig = ArousalConfig
     & WillingnessConfig
     & VisionConfig & {
-        systemTemplate: string;
-        userTemplate: string;
-        multiModalSystemTemplate: string;
-    } & {
         streamAction: boolean;
         heartbeat: number;
     };
@@ -163,20 +148,6 @@ export const AgentBehaviorConfig: Schema<AgentBehaviorConfig> = Schema.intersect
     ArousalConfig.description("唤醒条件"),
     WillingnessConfig.description("响应意愿"),
     VisionConfig.description("视觉配置"),
-    Schema.object({
-        systemTemplate: Schema.string()
-            .default(SystemBaseTemplate)
-            .role("textarea", { rows: [2, 4] })
-            .description("系统提示词模板"),
-        userTemplate: Schema.string()
-            .default(UserBaseTemplate)
-            .role("textarea", { rows: [2, 4] })
-            .description("用户提示词模板"),
-        multiModalSystemTemplate: Schema.string()
-            .default(MultiModalSystemBaseTemplate)
-            .role("textarea", { rows: [2, 4] })
-            .description("多模态系统提示词 (用于向模型解释图片占位符)"),
-    }).description("提示词模板"),
     Schema.object({
         streamAction: Schema.boolean().default(false).experimental(),
         heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
