@@ -1,11 +1,13 @@
-import { createHash } from "crypto";
-import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
-import { Context, h, Session } from "koishi";
-import { PromptService } from "koishi-plugin-yesimbot/services";
+import type { Context, Session } from "koishi";
+import type { PromptService } from "koishi-plugin-yesimbot/services";
+import type { StickerConfig } from "./config";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { h } from "koishi";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import path from "path";
-import { pathToFileURL } from "url";
-import { StickerConfig } from "./config";
 
 // 添加表情包表结构
 interface StickerRecord {
@@ -48,14 +50,15 @@ export class StickerService {
 
     constructor(
         private ctx: Context,
-        private config: StickerConfig
+        private config: StickerConfig,
     ) {
         this.start();
     }
 
     private async start() {
         // 确保初始化只执行一次
-        if (this.isReady) return;
+        if (this.isReady)
+            return;
 
         await this.initStorage();
         await this.registerModels();
@@ -93,7 +96,7 @@ export class StickerService {
         // 注册动态片段
         promptService.registerSnippet("sticker.categories", async () => {
             const categories = await this.getCategories();
-            return categories.join(", ");
+            return categories.join(", ") || "暂无分类，请先收藏表情包";
         });
 
         this.ctx.logger.debug("表情包分类列表已注册到提示词系统");
@@ -106,7 +109,8 @@ export class StickerService {
 
     private async registerModels() {
         // 确保表只注册一次
-        if (StickerService.tablesRegistered) return;
+        if (StickerService.tablesRegistered)
+            return;
         StickerService.tablesRegistered = true;
 
         try {
@@ -120,7 +124,7 @@ export class StickerService {
                     source: "json",
                     createdAt: "timestamp",
                 },
-                { primary: "id" }
+                { primary: "id" },
             );
 
             this.ctx.logger.debug("表情包表已创建");
@@ -193,7 +197,7 @@ export class StickerService {
 
         if (!model || !model.isVisionModel()) {
             this.ctx.logger.error(`当前模型组中没有支持多模态的模型。`);
-            throw Error();
+            throw new Error("没有可用的多模态模型");
         }
 
         try {
@@ -365,7 +369,8 @@ export class StickerService {
     async getRandomSticker(category: string): Promise<h> {
         const records = await this.ctx.database.select(TableName).where({ category }).execute();
 
-        if (records.length === 0) return null;
+        if (records.length === 0)
+            return null;
 
         const randomIndex = Math.floor(Math.random() * records.length);
         const sticker = records[randomIndex];
@@ -383,7 +388,8 @@ export class StickerService {
     async getStickersByCategory(category: string): Promise<StickerRecord[]> {
         const records = await this.ctx.database.select(TableName).where({ category }).execute();
 
-        if (records.length === 0) return [];
+        if (records.length === 0)
+            return [];
 
         return records;
     }
@@ -530,6 +536,7 @@ export class StickerService {
                 });
         });
     }
+
     /**
      * 清理临时目录
      */
