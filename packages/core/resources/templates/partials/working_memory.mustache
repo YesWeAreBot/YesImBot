@@ -1,0 +1,14 @@
+{{! working_memory.mustache - 工作记忆模块 }}
+{{#workingMemory.length}}
+<working_memory>
+这是你刚才调用工具的结果，请根据这些信息继续行动：
+<tool_results>
+{{#workingMemory}}
+<result tool="{{tool}}" success="{{success}}">
+{{#data}}{{.}}{{/data}}
+{{#error}}<error>{{.}}</error>{{/error}}
+</result>
+{{/workingMemory}}
+</tool_results>
+</working_memory>
+{{/workingMemory.length}}
