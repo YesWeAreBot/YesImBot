@@ -28,5 +28,5 @@ export function loadTemplate(name: string, ext: string = "mustache") {
 }
 
 export * from "./config";
-export * from "./renderer";
+export type { IRenderer } from "./renderer";
 export * from "./service";

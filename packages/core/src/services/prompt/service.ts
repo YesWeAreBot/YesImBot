@@ -107,7 +107,8 @@ export class PromptService extends Service<Config> {
             throw new Error(`未找到模板 "${templateName}"`);
         }
 
-        const scope = await this.buildScope(initialScope);
+        const requiredVariables = this.getRequiredVariables(templateContent);
+        const scope = await this.buildScope(initialScope, requiredVariables);
         const partials = Object.fromEntries(this.templates);
 
         return this.renderer.render(templateContent, scope, partials, { maxDepth: this.config.maxRenderDepth });
@@ -117,7 +118,8 @@ export class PromptService extends Service<Config> {
      * 渲染一个原始的模板字符串，不经过注册
      */
     public async renderRaw(templateContent: string, initialScope: Record<string, any> = {}): Promise<string> {
-        const scope = await this.buildScope(initialScope);
+        const requiredVariables = this.getRequiredVariables(templateContent);
+        const scope = await this.buildScope(initialScope, requiredVariables);
         return this.renderer.render(templateContent, scope, undefined, { maxDepth: this.config.maxRenderDepth });
     }
 
@@ -177,10 +179,13 @@ export class PromptService extends Service<Config> {
         });
     }
 
-    private async buildScope(initialScope: Record<string, any>): Promise<Record<string, any>> {
+    private async buildScope(initialScope: Record<string, any>, requiredVariables?: Set<string>): Promise<Record<string, any>> {
         const scope = { ...initialScope };
 
         for (const [key, snippetFn] of this.snippets.entries()) {
+            if (requiredVariables && !this.isSnippetRequired(key, requiredVariables)) {
+                continue;
+            }
             try {
                 const value = await snippetFn(scope);
                 this.setNestedProperty(scope, key, value);
@@ -189,6 +194,45 @@ export class PromptService extends Service<Config> {
             }
         }
         return scope;
+    }
+
+    private getRequiredVariables(templateContent: string): Set<string> {
+        const visitedPartials = new Set<string>();
+        const allVariables = new Set<string>();
+
+        const process = (content: string) => {
+            const { variables, partials } = this.renderer.parse(content);
+            for (const v of variables) allVariables.add(v);
+
+            for (const p of partials) {
+                if (!visitedPartials.has(p)) {
+                    visitedPartials.add(p);
+                    const partialContent = this.templates.get(p);
+                    if (partialContent) {
+                        process(partialContent);
+                    }
+                }
+            }
+        };
+
+        process(templateContent);
+        return allVariables;
+    }
+
+    private isSnippetRequired(snippetKey: string, requiredVariables: Set<string>): boolean {
+        if (requiredVariables.has(snippetKey))
+            return true;
+
+        for (const req of requiredVariables) {
+            // Snippet is a parent of a required variable (e.g. snippet "user", required "user.name")
+            if (req.startsWith(`${snippetKey}.`))
+                return true;
+            // Snippet is a child of a required variable (e.g. snippet "time.now", required "time")
+            if (snippetKey.startsWith(`${req}.`))
+                return true;
+        }
+
+        return false;
     }
 
     private setNestedProperty(obj: Record<string, any>, path: string, value: any): void {
