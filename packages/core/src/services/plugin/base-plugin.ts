@@ -30,7 +30,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
 
         if (parentClass && parentClass.inject && childClass.inject) {
             if (Array.isArray(childClass.inject)) {
-                childClass.inject = [...new Set([...parentClass.inject, ...childClass.inject])];
+                childClass.inject = [...new Set([...parentClass.inject, ...childClass.inject, Services.Plugin])];
             } else if (typeof childClass.inject === "object") {
                 const parentRequired = Array.isArray(parentClass.inject)
                     ? parentClass.inject
@@ -39,7 +39,7 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
                 const childOptional = childClass.inject.optional || [];
 
                 childClass.inject = {
-                    required: [...new Set([...parentRequired, ...childRequired])],
+                    required: [...new Set([...parentRequired, ...childRequired, Services.Plugin])],
                     optional: childOptional,
                 };
             }
