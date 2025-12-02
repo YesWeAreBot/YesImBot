@@ -74,11 +74,11 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
         let executeFn: BaseDefinition<TConfig, TParams, TResult>["execute"];
         let input: FunctionInput<TConfig, TParams>;
         if ("execute" in inputOrDefinition && typeof inputOrDefinition.execute === "function") {
-            executeFn = inputOrDefinition.execute as any;
+            executeFn = inputOrDefinition.execute?.bind(this) as any;
             input = inputOrDefinition;
         } else {
             input = inputOrDefinition as FunctionInput<TConfig, TParams>;
-            executeFn = execute!;
+            executeFn = execute!.bind(this) as any;
         }
 
         const name = input.name;

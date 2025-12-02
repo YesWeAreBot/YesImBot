@@ -91,32 +91,21 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
 
     @Action({
         name: "send_message",
-        description: "发送消息",
+        description: "发送消息到指定对象",
         parameters: withInnerThoughts({
-            message: Schema.string().required().description(`**Visible message content to the user.**
-      You may embed the platform's XML-style formatting tags **only inside this field**, never outside the JSON.
-      - \`<at id="USER_ID"/>\` : Mention a user. E.g., \`<at id="12345"/> 在吗？\`
-      - \`<quote id="MESSAGE_ID"/>\` : Quote a specific message. Must be the FIRST element in the message. E.g., \`<quote id="abc-def"/>你刚刚说的那个是啥意思\`
-      - \`<img id="INTERNAL_ID"/>\` : Send an image with known ID. E.g., \`<img id="pixiv-12345"/>\`
-      - \`<sep/>\` : Split a long message into multiple parts (natural delays). E.g., \`这个啊<sep/>我看一下...\`
-      Rules:
-        * These tags are part of the message formatting capabilities of this platform.
-        * You MUST only include them inside the \`message\` field of a \`send_message\` action.
-        * NEVER output them at the top-level of your reply or inside "thoughts".
-        * Do not wrap them in Markdown.`),
-            target: Schema.string().description(`Optional. Specifies where to send the message, using \`platform:id\` format.
-      Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
+            content: Schema.string().required().description(`要发送的消息内容，支持使用 <sep/> 分割为多条消息`),
+            target: Schema.string().description(`（可选）目标对象，格式为 <平台>:<频道ID>，默认为消息来源`),
         }),
     })
-    async sendMessage(params: { message: string; target?: string }, context: FunctionContext) {
-        const { message, target } = params;
+    async sendMessage(params: { content: string; target?: string }, context: FunctionContext) {
+        const { content, target } = params;
 
         const session = context.session;
         const bot = session.bot;
 
-        const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
+        const messages = content.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
-            this.ctx.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
+            this.ctx.logger.warn("待发送内容为空 | 原因: 消息分割后无有效内容");
             return Failed("消息内容为空");
         }
 
