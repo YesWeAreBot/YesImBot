@@ -34,6 +34,7 @@
     "koishi",
     "plugin",
     "yesimbot",
+    "athena",
     "ai"
   ],
   "repository": {
@@ -90,6 +91,7 @@
     "xsai": "^0.4.0-beta.10"
   },
   "devDependencies": {
+    "@types/mustache": "^4.2.6",
     "koishi": "^4.18.7"
   },
   "peerDependencies": {
