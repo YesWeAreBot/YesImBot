@@ -102,23 +102,4 @@ export class EventManager {
         this.ctx.logger.debug(`${message.scope} ${message.eventData.senderId}: ${message.eventData.content}`);
         return result as MessageRecord;
     }
-
-    public async getMessages(
-        scope: Query.Expr<Scope>,
-        query?: Query.Expr<MessageRecord>,
-        limit?: number,
-    ): Promise<MessageRecord[]> {
-        const finalQuery: Query.Expr<MessageRecord> = {
-            $and: [scope, { eventType: TimelineEventType.Message }, query || {}],
-        };
-
-        return (
-            await this.ctx.database
-                .select(TableName.Timeline)
-                .where(finalQuery)
-                .orderBy("timestamp", "desc")
-                .limit(limit)
-                .execute()
-        ).reverse() as MessageRecord[];
-    }
 }

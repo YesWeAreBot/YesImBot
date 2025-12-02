@@ -1,7 +1,7 @@
 import type { Context } from "koishi";
 import type { ModeResult } from "./types";
 import type { HorizonService } from "@/services/horizon/service";
-import type { Percept, UserMessagePercept } from "@/services/horizon/types";
+import type { Percept, SelfInfo, UserMessagePercept } from "@/services/horizon/types";
 import { PerceptType } from "@/services/horizon/types";
 import { loadPartial, loadTemplate } from "@/services/prompt";
 import { Services } from "@/shared";
@@ -42,7 +42,11 @@ export class DefaultChatMode extends BaseChatMode {
 
         // 查询历史消息
         const entries = await this.horizon.events.query({
-            scope,
+            scope: {
+                platform: scope.platform,
+                channelId: scope.channelId,
+                isDirect: scope.isDirect,
+            },
             limit: 30, // 30条消息窗口
             orderBy: "desc",
         });
@@ -51,23 +55,29 @@ export class DefaultChatMode extends BaseChatMode {
         const observations = this.horizon.events.toObservations(entries.reverse());
 
         // 获取自身信息
-        const selfInfo = await this.horizon.getSelfInfo(scope);
+        const selfInfo: SelfInfo = {
+            id: percept.runtime.session.selfId,
+            name: percept.runtime.session.bot.user.name,
+        };
 
         // 构建事件列表，标记自己的消息
         const events = observations.map((obs) => {
             if (obs.type === "message") {
                 const isSelf = obs.sender.id === selfInfo.id;
-                return {
-                    ...obs,
-                    isUserMessage: !isSelf,
-                    isSelfMessage: isSelf,
-                    isSystemEvent: false,
-                };
+                if (isSelf) {
+                    return {
+                        ...obs,
+                        isSelfMessage: true,
+                    };
+                } else {
+                    return {
+                        ...obs,
+                        isUserMessage: true,
+                    };
+                }
             }
             return {
                 ...obs,
-                isUserMessage: false,
-                isSelfMessage: false,
                 isSystemEvent: true,
             };
         });

@@ -143,7 +143,6 @@ export class EventListener {
                 channelId: session.channelId,
                 guildId: session.guildId,
                 isDirect: session.isDirect,
-                userId: session.userId,
             },
             timestamp: new Date(session.timestamp),
             eventData: {
@@ -168,7 +167,6 @@ export class EventListener {
                 channelId: session.channelId,
                 guildId: session.guildId,
                 isDirect: session.isDirect,
-                userId: session.userId,
             },
             timestamp: new Date(session.timestamp),
             eventData: {
