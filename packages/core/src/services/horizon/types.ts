@@ -110,6 +110,7 @@ export interface ToolResultData {
     toolCallId?: string;
     status: string;
     result: Record<string, any> | string | string[];
+    error?: string;
 }
 
 export type ToolResultRecord = BaseTimelineEntry<TimelineEventType.ToolResult, ToolResultData>;

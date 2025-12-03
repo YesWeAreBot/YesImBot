@@ -5,10 +5,10 @@
 
 {{#events}}
 {{#isUserMessage}}
-[{{#timestamp}}{{_formatTime}}{{/timestamp}}] {{sender.name}}: {{content}}
+[{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{sender.name}}: {{content}}
 {{/isUserMessage}}
 {{#isSelfMessage}}
-[{{#timestamp}}{{_formatTime}}{{/timestamp}}] [你]: {{content}}
+[{{#timestamp}}{{_formatDate}}{{/timestamp}}] [你]: {{content}}
 {{/isSelfMessage}}
 {{#isSystemEvent}}
 [系统] {{message}}
@@ -21,7 +21,7 @@
 ↓ 以下是触发你响应的新事件
 
 {{#isUserMessage}}
-[{{#timestamp}}{{_formatTime}}{{/timestamp}}] {{sender.name}}: {{content}}
+[{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{sender.name}}: {{content}}
 {{/isUserMessage}}
 {{#isSystemEvent}}
 [系统事件] {{message}}

@@ -2,13 +2,19 @@
 {{#workingMemory.length}}
 <working_memory>
 这是你刚才调用工具的结果，请根据这些信息继续行动：
-<tool_results>
 {{#workingMemory}}
-<result tool="{{tool}}" success="{{success}}">
-{{#data}}{{.}}{{/data}}
-{{#error}}<error>{{.}}</error>{{/error}}
-</result>
+{{#isAction}}
+Action: {{message}}
+{{/isAction}}
+{{#isThought}}
+Thought: {{message}}
+{{/isThought}}
+{{#isTool}}
+Tool: {{message}}
+{{/isTool}}
+{{#isToolResult}}
+ToolResult: {{message}}
+{{/isToolResult}}
 {{/workingMemory}}
-</tool_results>
 </working_memory>
 {{/workingMemory.length}}

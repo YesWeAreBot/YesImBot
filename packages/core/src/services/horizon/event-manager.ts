@@ -6,7 +6,7 @@ import { TimelineEventType, TimelinePriority } from "./types";
 
 interface EventQueryOptions {
     scope: Query.Expr<Scope>;
-    types?: string[];
+    types?: TimelineEventType[];
     limit?: number;
     since?: Date;
     until?: Date;

@@ -1,8 +1,9 @@
 import type { Context } from "koishi";
 import type { ModeResult } from "./types";
 import type { HorizonService } from "@/services/horizon/service";
-import type { Percept, SelfInfo, UserMessagePercept } from "@/services/horizon/types";
-import { PerceptType } from "@/services/horizon/types";
+import type { AgentRecord, Percept, SelfInfo, UserMessagePercept } from "@/services/horizon/types";
+import { message } from "xsai";
+import { PerceptType, TimelineEventType } from "@/services/horizon/types";
 import { loadPartial, loadTemplate } from "@/services/prompt";
 import { Services } from "@/shared";
 import { formatDate } from "@/shared/utils";
@@ -12,7 +13,10 @@ export class DefaultChatMode extends BaseChatMode {
     name = "default-chat";
     priority = 100; // 最低优先级，兜底
 
-    constructor(ctx: Context, private horizon: HorizonService) {
+    constructor(
+        ctx: Context,
+        private horizon: HorizonService,
+    ) {
         super(ctx);
         this.registerTemplates();
     }
@@ -47,12 +51,78 @@ export class DefaultChatMode extends BaseChatMode {
                 channelId: scope.channelId,
                 isDirect: scope.isDirect,
             },
+            types: [TimelineEventType.Message],
             limit: 30, // 30条消息窗口
             orderBy: "desc",
         });
 
         // 转换为 Observation 格式
         const observations = this.horizon.events.toObservations(entries.reverse());
+
+        const working = (await this.horizon.events.query({
+            scope: {
+                platform: scope.platform,
+                channelId: scope.channelId,
+                isDirect: scope.isDirect,
+            },
+            types: [
+                TimelineEventType.AgentAction,
+                TimelineEventType.AgentThought,
+                TimelineEventType.AgentTool,
+                TimelineEventType.ToolResult,
+            ],
+            limit: 10, // 最近10条工作记忆
+            orderBy: "desc",
+        })) as AgentRecord[];
+
+        const workingMemory = working.reverse().map((record) => {
+            switch (record.eventType) {
+                case TimelineEventType.AgentAction:
+                    return {
+                        isAction: true,
+                        name: record.eventData.name,
+                        args: record.eventData.args,
+                        message: JSON.stringify({
+                            name: record.eventData.name,
+                            args: record.eventData.args,
+                        }),
+                    };
+                case TimelineEventType.AgentThought:
+                    return {
+                        isThought: true,
+                        content: record.eventData.content,
+                        message: record.eventData.content,
+                    };
+                case TimelineEventType.AgentTool:
+                    return {
+                        isTool: true,
+                        name: record.eventData.name,
+                        args: record.eventData.args,
+                        message: JSON.stringify({
+                            name: record.eventData.name,
+                            args: record.eventData.args,
+                        }),
+                    };
+                case TimelineEventType.ToolResult:
+                    return {
+                        isToolResult: true,
+                        toolCallId: record.eventData.toolCallId,
+                        status: record.eventData.status,
+                        result: record.eventData.result,
+                        error: record.eventData.error,
+                        message: JSON.stringify({
+                            status: record.eventData.status,
+                            result: record.eventData.result,
+                            error: record.eventData.error,
+                        }),
+                    };
+                default:
+                    return {
+                        isUnknown: true,
+                        message: "未知事件类型",
+                    };
+            }
+        });
 
         // 获取自身信息
         const selfInfo: SelfInfo = {
@@ -128,13 +198,11 @@ export class DefaultChatMode extends BaseChatMode {
                     name: selfInfo.name,
                     platform: channel.platform,
                 },
-                date: {
-                    now: formatDate(new Date(), "YYYY-MM-DD HH:mm:ss"),
-                },
                 channel,
                 participants,
                 events,
                 trigger,
+                workingMemory,
 
                 // 功能开关
                 enableThoughts: false, // MVP 阶段关闭 thoughts
@@ -143,14 +211,7 @@ export class DefaultChatMode extends BaseChatMode {
                 system: "agent.system.chat",
                 user: "agent.user.events",
             },
-            partials: [
-                "identity",
-                "environment",
-                "working_memory",
-                "memories",
-                "tools",
-                "output",
-            ],
+            partials: ["identity", "environment", "working_memory", "memories", "tools", "output"],
         };
     }
 }
