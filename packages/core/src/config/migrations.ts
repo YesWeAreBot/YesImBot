@@ -109,7 +109,7 @@ function migrateV201ToV202(configV201: ConfigV201): Config {
             providerName: embeddingModel?.providerName || "",
             modelId: embeddingModel?.modelId || "",
         },
-        maxMessages: configV201.l1_memory.maxMessages,
+        maxMessages: configV201.l1_memory?.maxMessages,
         // ignoreCommandMessage: false,
         switchConfig: {
             strategy: SwitchStrategy.Failover,
