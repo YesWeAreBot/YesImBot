@@ -45,6 +45,13 @@ export enum TimelinePriority {
     Core = 3,
 }
 
+export enum TimelineStage {
+    New = "new",
+    Active = "active",
+    Archived = "archived",
+    Deleted = "deleted",
+}
+
 /**
  * 事件线表基类
  */
@@ -52,11 +59,12 @@ export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends 
     id: string;
     timestamp: Date;
     scope: Scope;
-    eventType: Type;
+    type: Type;
     priority: TimelinePriority;
+    stage: TimelineStage;
 
     // 直接嵌入事件数据 (JSON)
-    eventData: Data;
+    data: Data;
 }
 
 // 消息事件

@@ -6,10 +6,10 @@ import type { Config } from "@/config";
 import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
-import type { FunctionContext, FunctionSchema, PluginService, Properties } from "@/services/plugin";
+import type { FunctionContext, FunctionSchema, PluginService } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
 import { h, Random } from "koishi";
-import { TimelineEventType, TimelinePriority } from "@/services/horizon";
+import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/horizon";
 import { ModelError } from "@/services/model/types";
 import { FunctionType } from "@/services/plugin";
 import { Services } from "@/shared";
@@ -58,6 +58,8 @@ export class HeartbeatProcessor {
                 shouldContinueHeartbeat = false;
             }
         }
+        // 回合结束后清理工作记忆
+        this.horizon.events.clearWorkingMemory(percept.scope);
         return success;
     }
 
@@ -275,8 +277,9 @@ export class HeartbeatProcessor {
                     timestamp: new Date(),
                     scope: percept.scope,
                     priority: TimelinePriority.Normal,
-                    eventType: TimelineEventType.AgentTool,
-                    eventData: {
+                    type: TimelineEventType.AgentTool,
+                    stage: TimelineStage.New,
+                    data: {
                         name: action.name,
                         args: action.params || {},
                     },
@@ -287,8 +290,9 @@ export class HeartbeatProcessor {
                     timestamp: new Date(),
                     scope: percept.scope,
                     priority: TimelinePriority.Normal,
-                    eventType: TimelineEventType.ToolResult,
-                    eventData: {
+                    type: TimelineEventType.ToolResult,
+                    stage: TimelineStage.New,
+                    data: {
                         status: result.status,
                         result: result.result,
                     },
@@ -299,8 +303,9 @@ export class HeartbeatProcessor {
                     timestamp: new Date(),
                     scope: percept.scope,
                     priority: TimelinePriority.Normal,
-                    eventType: TimelineEventType.AgentAction,
-                    eventData: {
+                    type: TimelineEventType.AgentAction,
+                    stage: TimelineStage.New,
+                    data: {
                         name: action.name,
                         args: action.params || {},
                     },
@@ -309,6 +314,8 @@ export class HeartbeatProcessor {
         }
 
         this.logger.success("单次心跳成功完成");
+
+        await this.horizon.events.markAsActive(percept.scope, new Date());
 
         // Continue heartbeat if: any Tool was called OR LLM explicitly requests it
         const shouldContinue = agentResponseData.request_heartbeat || actionContinue;
@@ -361,32 +368,6 @@ function _toString(obj) {
     if (typeof obj === "string")
         return obj;
     return JSON.stringify(obj);
-}
-
-function prepareDataForTemplate(tools: FunctionSchema[]) {
-    const processParams = (params: Properties, indent = ""): any[] => {
-        return Object.entries(params).map(([key, param]) => {
-            const processedParam: any = { ...param, key, indent };
-            if (param.properties) {
-                processedParam.properties = processParams(param.properties, `${indent}    `);
-            }
-            if (param.items?.properties) {
-                processedParam.items = [
-                    {
-                        ...param.items,
-                        key: "item",
-                        indent: `${indent}    `,
-                        properties: processParams(param.items.properties, `${indent}        `),
-                    },
-                ];
-            }
-            return processedParam;
-        });
-    };
-    return tools.map((tool) => ({
-        ...tool,
-        parameters: tool.parameters ? processParams(tool.parameters) : [],
-    }));
 }
 
 function formatFunction(tools: FunctionSchema[]): string[] {

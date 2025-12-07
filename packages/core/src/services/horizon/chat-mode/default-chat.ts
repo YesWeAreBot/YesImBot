@@ -76,44 +76,44 @@ export class DefaultChatMode extends BaseChatMode {
         })) as AgentRecord[];
 
         const workingMemory = working.reverse().map((record) => {
-            switch (record.eventType) {
+            switch (record.type) {
                 case TimelineEventType.AgentAction:
                     return {
                         isAction: true,
-                        name: record.eventData.name,
-                        args: record.eventData.args,
+                        name: record.data.name,
+                        args: record.data.args,
                         message: JSON.stringify({
-                            name: record.eventData.name,
-                            args: record.eventData.args,
+                            name: record.data.name,
+                            args: record.data.args,
                         }),
                     };
                 case TimelineEventType.AgentThought:
                     return {
                         isThought: true,
-                        content: record.eventData.content,
-                        message: record.eventData.content,
+                        content: record.data.content,
+                        message: record.data.content,
                     };
                 case TimelineEventType.AgentTool:
                     return {
                         isTool: true,
-                        name: record.eventData.name,
-                        args: record.eventData.args,
+                        name: record.data.name,
+                        args: record.data.args,
                         message: JSON.stringify({
-                            name: record.eventData.name,
-                            args: record.eventData.args,
+                            name: record.data.name,
+                            args: record.data.args,
                         }),
                     };
                 case TimelineEventType.ToolResult:
                     return {
                         isToolResult: true,
-                        toolCallId: record.eventData.toolCallId,
-                        status: record.eventData.status,
-                        result: record.eventData.result,
-                        error: record.eventData.error,
+                        toolCallId: record.data.toolCallId,
+                        status: record.data.status,
+                        result: record.data.result,
+                        error: record.data.error,
                         message: JSON.stringify({
-                            status: record.eventData.status,
-                            result: record.eventData.result,
-                            error: record.eventData.error,
+                            status: record.data.status,
+                            result: record.data.result,
+                            error: record.data.error,
                         }),
                     };
                 default:

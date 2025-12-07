@@ -145,7 +145,7 @@ export class EventListener {
                 isDirect: session.isDirect,
             },
             timestamp: new Date(session.timestamp),
-            eventData: {
+            data: {
                 messageId: session.messageId,
                 senderId: session.author.id,
                 senderName: session.author.nick || session.author.name,
@@ -169,7 +169,7 @@ export class EventListener {
                 isDirect: session.isDirect,
             },
             timestamp: new Date(session.timestamp),
-            eventData: {
+            data: {
                 messageId: session.messageId,
                 senderId: session.bot.selfId,
                 senderName: session.bot.user.nick || session.bot.user.nick,

@@ -2,7 +2,7 @@ import type { Context, Query } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { MessageRecord, Observation, Scope, TimelineEntry } from "./types";
 import { TableName } from "@/shared/constants";
-import { TimelineEventType, TimelinePriority } from "./types";
+import { TimelineEventType, TimelinePriority, TimelineStage } from "./types";
 
 interface EventQueryOptions {
     scope: Query.Expr<Scope>;
@@ -62,19 +62,19 @@ export class EventManager {
     public toObservations(entries: TimelineEntry[]): Observation[] {
         const observations: Observation[] = [];
         for (const entry of entries) {
-            switch (entry.eventType) {
+            switch (entry.type) {
                 case TimelineEventType.Message:
                     observations.push({
                         type: "message",
                         isMessage: true,
                         timestamp: entry.timestamp,
-                        messageId: entry.eventData.messageId,
+                        messageId: entry.data.messageId,
                         sender: {
                             type: "user",
-                            id: entry.eventData.senderId,
-                            name: entry.eventData.senderName,
+                            id: entry.data.senderId,
+                            name: entry.data.senderName,
                         },
-                        content: entry.eventData.content,
+                        content: entry.data.content,
                     });
                     break;
                 case TimelineEventType.MemberJoin:
@@ -82,7 +82,7 @@ export class EventManager {
                 case TimelineEventType.StateUpdate:
                 case TimelineEventType.Reaction:
                     observations.push({
-                        type: `notice.${entry.eventType.toLowerCase()}` as Observation["type"],
+                        type: `notice.${entry.type.toLowerCase()}` as Observation["type"],
                         isNotice: true,
                         timestamp: entry.timestamp,
                     } as Observation);
@@ -92,14 +92,34 @@ export class EventManager {
         return observations;
     }
 
-    public async recordMessage(message: Omit<MessageRecord, "eventType" | "priority">): Promise<MessageRecord> {
+    public async markAsActive(scope: Scope, before?: Date): Promise<void> {
+        const query: Query<TimelineEntry> = {
+            scope,
+            stage: TimelineStage.New,
+            timestamp: before ? { $lte: before } : undefined,
+        };
+        await this.ctx.database.set(TableName.Timeline, query, { stage: TimelineStage.Active });
+    }
+
+    public async recordMessage(message: Omit<MessageRecord, "type" | "priority" | "stage">): Promise<MessageRecord> {
         const fullMessage: MessageRecord = {
             ...message,
-            eventType: TimelineEventType.Message,
+            type: TimelineEventType.Message,
             priority: TimelinePriority.Normal,
+            stage: TimelineStage.New,
         };
         const result = await this.ctx.database.create(TableName.Timeline, fullMessage);
-        this.ctx.logger.debug(`${message.scope} ${message.eventData.senderId}: ${message.eventData.content}`);
+        this.ctx.logger.debug(`${message.scope} ${message.data.senderId}: ${message.data.content}`);
         return result as MessageRecord;
+    }
+
+    public async clearWorkingMemory(scope: Scope) {
+        const { AgentAction, AgentThought, AgentTool, ToolResult } = TimelineEventType;
+        const query: Query<TimelineEntry> = {
+            type: { $in: [AgentAction, AgentThought, AgentTool, ToolResult] },
+            scope,
+            stage: TimelineStage.New,
+        } as unknown as Query<TimelineEntry>;
+        await this.ctx.database.set(TableName.Timeline, query, { stage: TimelineStage.Archived });
     }
 }

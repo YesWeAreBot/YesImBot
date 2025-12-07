@@ -1,15 +1,7 @@
 import type { Context, Session } from "koishi";
 import type { CommandService } from "../command";
 import type { ModeResult } from "./chat-mode/types";
-import type {
-    Entity,
-    EntityRecord,
-    Environment,
-    Percept,
-    SelfInfo,
-    TimelineEntry,
-} from "./types";
-
+import type { Entity, EntityRecord, Environment, Percept, SelfInfo, TimelineEntry } from "./types";
 import type { Config } from "@/config";
 import { Service } from "koishi";
 import { Services, TableName } from "@/shared/constants";
@@ -117,8 +109,8 @@ export class HorizonService extends Service<Config> {
         this.ctx.model.extend(
             TableName.Entity,
             {
-                id: "string(255)",
-                type: "string(50)",
+                id: "string(32)",
+                type: "string(32)",
                 name: "string(255)",
                 parentId: "string(255)",
                 refId: "string(255)",
@@ -132,12 +124,13 @@ export class HorizonService extends Service<Config> {
         this.ctx.model.extend(
             TableName.Timeline,
             {
-                id: "string(255)",
+                id: "string(32)",
                 scope: "object",
-                eventType: "string(100)",
+                type: "string(32)",
                 priority: "unsigned",
+                stage: "string(16)",
                 timestamp: "timestamp",
-                eventData: "json",
+                data: "json",
             },
             {
                 primary: ["id"],
@@ -264,4 +257,4 @@ interface Scope {
     isDirect?: boolean;
     userId?: string;
     scopeId?: string;
-};
+}
