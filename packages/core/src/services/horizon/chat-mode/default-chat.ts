@@ -3,7 +3,7 @@ import type { ModeResult } from "./types";
 import type { HorizonService } from "@/services/horizon/service";
 import type { AgentRecord, Percept, SelfInfo, UserMessagePercept } from "@/services/horizon/types";
 import { message } from "xsai";
-import { PerceptType, TimelineEventType } from "@/services/horizon/types";
+import { PerceptType, TimelineEventType, TimelineStage } from "@/services/horizon/types";
 import { loadPartial, loadTemplate } from "@/services/prompt";
 import { Services } from "@/shared";
 import { formatDate } from "@/shared/utils";
@@ -132,24 +132,35 @@ export class DefaultChatMode extends BaseChatMode {
 
         // 构建事件列表，标记自己的消息
         const events = observations.map((obs) => {
+            const event: any = { ...obs };
             if (obs.type === "message") {
                 const isSelf = obs.sender.id === selfInfo.id;
                 if (isSelf) {
-                    return {
-                        ...obs,
-                        isSelfMessage: true,
-                    };
+                    event.isSelfMessage = true;
                 } else {
-                    return {
-                        ...obs,
-                        isUserMessage: true,
-                    };
+                    event.isUserMessage = true;
                 }
+            } else {
+                event.isSystemEvent = true;
             }
-            return {
-                ...obs,
-                isSystemEvent: true,
-            };
+            switch (obs.stage) {
+                case TimelineStage.New:
+                    event.isNew = true;
+                    break;
+                case TimelineStage.Active:
+                    event.isActive = true;
+                    break;
+                case TimelineStage.Archived:
+                    event.isArchived = true;
+                    break;
+                case TimelineStage.Deleted:
+                    event.isDeleted = true;
+                    break;
+                default:
+                    event.isArchived = true;
+                    break;
+            }
+            return event;
         });
 
         // 获取环境信息

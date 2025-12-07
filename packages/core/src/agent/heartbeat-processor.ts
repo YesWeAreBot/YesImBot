@@ -3,6 +3,7 @@ import type { Message } from "@xsai/shared-chat";
 import type { Context, Logger } from "koishi";
 import type { Config } from "@/config";
 
+import type { TelemetryService } from "@/services";
 import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, IChatModel } from "@/services/model";
@@ -17,21 +18,23 @@ import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
 
 export class HeartbeatProcessor {
     private logger: Logger;
-    private promptService: PromptService;
-    private pluginService: PluginService;
+    private prompt: PromptService;
+    private plugin: PluginService;
     private horizon: HorizonService;
-    private memoryService: MemoryService;
+    private memory: MemoryService;
+    private telemetry: TelemetryService;
     constructor(
-        ctx: Context,
+        public ctx: Context,
         private readonly config: Config,
         private readonly modelSwitcher: ChatModelSwitcher,
     ) {
         this.logger = ctx.logger("heartbeat");
         this.logger.level = config.logLevel;
-        this.promptService = ctx[Services.Prompt];
-        this.pluginService = ctx[Services.Plugin];
+        this.prompt = ctx[Services.Prompt];
+        this.plugin = ctx[Services.Plugin];
         this.horizon = ctx[Services.Horizon];
-        this.memoryService = ctx[Services.Memory];
+        this.memory = ctx[Services.Memory];
+        this.telemetry = ctx[Services.Telemetry];
     }
 
     public async runCycle(percept: Percept): Promise<boolean> {
@@ -54,6 +57,8 @@ export class HeartbeatProcessor {
                 }
             } catch (error: any) {
                 this.logger.error(`Heartbeat #${heartbeatCount} 处理失败: ${error.message}`);
+
+                this.telemetry.captureException(error);
 
                 shouldContinueHeartbeat = false;
             }
@@ -81,9 +86,9 @@ export class HeartbeatProcessor {
             horizon: this.horizon,
         };
 
-        const funcs = await this.pluginService.filterAvailableFuncs(context);
+        const funcs = await this.plugin.filterAvailableFuncs(context);
 
-        const funcSchemas: FunctionSchema[] = funcs.map((def) => (this.pluginService.toSchema(def)));
+        const funcSchemas: FunctionSchema[] = funcs.map((def) => this.plugin.toSchema(def));
 
         // 2. 准备模板渲染所需的数据视图 (View)
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
@@ -103,7 +108,7 @@ export class HeartbeatProcessor {
             actions: formatFunction(actions),
 
             // 记忆块
-            memoryBlocks: this.memoryService.getMemoryBlocksForRendering(),
+            memoryBlocks: this.memory.getMemoryBlocksForRendering(),
 
             // 模板辅助函数
             _toString() {
@@ -161,8 +166,8 @@ export class HeartbeatProcessor {
 
         // 3. 渲染核心提示词文本
         this.logger.debug("步骤 3/4: 渲染提示词模板...");
-        const systemPrompt = await this.promptService.render(templates.system, renderView);
-        const userPromptText = await this.promptService.render(templates.user, renderView);
+        const systemPrompt = await this.prompt.render(templates.system, renderView);
+        const userPromptText = await this.prompt.render(templates.user, renderView);
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
         this.logger.debug("步骤 4/4: 构建最终消息...");
@@ -202,11 +207,16 @@ export class HeartbeatProcessor {
                 llmRawResponse = await model.chat({
                     messages,
                     stream: this.config.stream,
-                    abortSignal: AbortSignal.any([AbortSignal.timeout(this.config.switchConfig.requestTimeout), controller.signal]),
+                    abortSignal: AbortSignal.any([
+                        AbortSignal.timeout(this.config.switchConfig.requestTimeout),
+                        controller.signal,
+                    ]),
                 });
                 const prompt_tokens
-                    = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
-                const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
+                    = llmRawResponse.usage?.prompt_tokens
+                        || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
+                const completion_tokens
+                    = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
                 /* prettier-ignore */
                 this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 耗时: ${new Date().getTime() - startTime}ms`);
                 this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
@@ -220,7 +230,9 @@ export class HeartbeatProcessor {
                     Date.now() - startTime,
                 );
                 if (attempt < this.config.switchConfig.maxRetries) {
-                    this.logger.info(`重试调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`);
+                    this.logger.info(
+                        `重试调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`,
+                    );
                     continue;
                 } else {
                     this.logger.error("达到最大重试次数，跳过本次心跳");
@@ -264,9 +276,9 @@ export class HeartbeatProcessor {
             if (!action?.name)
                 continue;
 
-            const result = await this.pluginService.invoke(action.name, action.params ?? {}, context);
+            const result = await this.plugin.invoke(action.name, action.params ?? {}, context);
 
-            const def = await this.pluginService.getFunction(action.name, context);
+            const def = await this.plugin.getFunction(action.name, context);
 
             if (def && def.type === FunctionType.Tool) {
                 this.logger.debug(`工具 "${action.name}" 触发心跳继续`);
@@ -278,7 +290,7 @@ export class HeartbeatProcessor {
                     scope: percept.scope,
                     priority: TimelinePriority.Normal,
                     type: TimelineEventType.AgentTool,
-                    stage: TimelineStage.New,
+                    stage: TimelineStage.Active,
                     data: {
                         name: action.name,
                         args: action.params || {},
@@ -291,7 +303,7 @@ export class HeartbeatProcessor {
                     scope: percept.scope,
                     priority: TimelinePriority.Normal,
                     type: TimelineEventType.ToolResult,
-                    stage: TimelineStage.New,
+                    stage: TimelineStage.Active,
                     data: {
                         status: result.status,
                         result: result.result,
@@ -304,7 +316,7 @@ export class HeartbeatProcessor {
                     scope: percept.scope,
                     priority: TimelinePriority.Normal,
                     type: TimelineEventType.AgentAction,
-                    stage: TimelineStage.New,
+                    stage: TimelineStage.Active,
                     data: {
                         name: action.name,
                         args: action.params || {},

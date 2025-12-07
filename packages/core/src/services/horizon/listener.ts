@@ -7,7 +7,7 @@ import type { AssetService } from "@/services/assets";
 import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
-import { PerceptType } from "./types";
+import { PerceptType, TimelineStage } from "./types";
 
 export class EventListener {
     private readonly disposers: (() => boolean)[] = [];
@@ -55,7 +55,6 @@ export class EventListener {
                         channelId: session.channelId,
                         guildId: session.guildId,
                         isDirect: session.isDirect,
-                        userId: session.userId,
                     },
                     timestamp: new Date(),
                     payload: {
@@ -144,6 +143,7 @@ export class EventListener {
                 guildId: session.guildId,
                 isDirect: session.isDirect,
             },
+            stage: TimelineStage.New,
             timestamp: new Date(session.timestamp),
             data: {
                 messageId: session.messageId,
@@ -168,6 +168,7 @@ export class EventListener {
                 guildId: session.guildId,
                 isDirect: session.isDirect,
             },
+            stage: TimelineStage.Active,
             timestamp: new Date(session.timestamp),
             data: {
                 messageId: session.messageId,

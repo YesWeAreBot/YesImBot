@@ -134,10 +134,15 @@ export type TimelineEntry = MessageRecord | NoticeRecord | AgentRecord;
 
 // region observation model
 
-export interface MessageObservation {
+interface BaseObservation {
+    type: string;
+    timestamp: Date;
+    stage?: TimelineStage;
+}
+
+export interface MessageObservation extends BaseObservation {
     type: "message";
     isMessage: true;
-    timestamp: Date;
 
     sender: Entity;
 
@@ -152,10 +157,9 @@ export interface MessageObservation {
     };
 }
 
-export interface NoticeObservation {
+export interface NoticeObservation extends BaseObservation {
     type: "notice.member.join" | "notice.member.leave" | "notice.state.update" | "notice.reaction";
     isNotice: true;
-    timestamp: Date;
 
     actor?: Entity;
     target?: Entity;

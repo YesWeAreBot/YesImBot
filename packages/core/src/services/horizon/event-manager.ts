@@ -34,7 +34,7 @@ export class EventManager {
 
         if (options.types && options.types.length > 0) {
             // @ts-expect-error typing check
-            query.eventType = { $in: options.types };
+            query.type = { $in: options.types };
         }
 
         if (options.since) {
@@ -66,6 +66,7 @@ export class EventManager {
                 case TimelineEventType.Message:
                     observations.push({
                         type: "message",
+                        stage: entry.stage,
                         isMessage: true,
                         timestamp: entry.timestamp,
                         messageId: entry.data.messageId,
@@ -83,6 +84,7 @@ export class EventManager {
                 case TimelineEventType.Reaction:
                     observations.push({
                         type: `notice.${entry.type.toLowerCase()}` as Observation["type"],
+                        stage: entry.stage,
                         isNotice: true,
                         timestamp: entry.timestamp,
                     } as Observation);
@@ -101,12 +103,11 @@ export class EventManager {
         await this.ctx.database.set(TableName.Timeline, query, { stage: TimelineStage.Active });
     }
 
-    public async recordMessage(message: Omit<MessageRecord, "type" | "priority" | "stage">): Promise<MessageRecord> {
+    public async recordMessage(message: Omit<MessageRecord, "type" | "priority">): Promise<MessageRecord> {
         const fullMessage: MessageRecord = {
             ...message,
             type: TimelineEventType.Message,
             priority: TimelinePriority.Normal,
-            stage: TimelineStage.New,
         };
         const result = await this.ctx.database.create(TableName.Timeline, fullMessage);
         this.ctx.logger.debug(`${message.scope} ${message.data.senderId}: ${message.data.content}`);
@@ -118,7 +119,7 @@ export class EventManager {
         const query: Query<TimelineEntry> = {
             type: { $in: [AgentAction, AgentThought, AgentTool, ToolResult] },
             scope,
-            stage: TimelineStage.New,
+            stage: { $in: [TimelineStage.New, TimelineStage.Active] },
         } as unknown as Query<TimelineEntry>;
         await this.ctx.database.set(TableName.Timeline, query, { stage: TimelineStage.Archived });
     }
