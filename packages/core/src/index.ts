@@ -1,7 +1,7 @@
 import type { Context, ForkScope } from "koishi";
 import { Service, sleep } from "koishi";
 import { AgentCore } from "./agent";
-import { Config, CONFIG_VERSION, migrateConfig } from "./config";
+import { Config } from "./config";
 import {
     AssetService,
     CommandService,
@@ -23,7 +23,7 @@ declare module "koishi" {
 export default class YesImBot extends Service<Config> {
     static readonly Config = Config;
     static readonly inject = {
-        required: ["console", "database"],
+        required: ["database"],
     };
 
     static readonly name = "yesimbot";
@@ -38,39 +38,7 @@ export default class YesImBot extends Service<Config> {
         const commandService = ctx.plugin(CommandService, config);
 
         const telemetryService = ctx.plugin(TelemetryService, config.telemetry);
-
         const telemetry: TelemetryService = ctx.get(Services.Telemetry);
-
-        let version = config.version;
-        const hasLegacyV1Field = Object.hasOwn(config, "modelService");
-
-        if (!version) {
-            if (hasLegacyV1Field) {
-                ctx.logger.info("检测到 v1 版本配置，将尝试迁移");
-                version = "1.0.0";
-            } else {
-                ctx.logger.info("未找到版本号，将视为最新版本配置");
-                version = CONFIG_VERSION;
-                // 写入配置版本号
-                ctx.scope.update({ ...config, version }, false);
-            }
-        }
-
-        if (version !== CONFIG_VERSION) {
-            try {
-                config.version = version;
-                const newConfig = migrateConfig(config);
-
-                const validatedConfig = Config(newConfig, { autofix: true });
-                ctx.scope.update(validatedConfig, false);
-                config = validatedConfig;
-                ctx.logger.success("配置迁移成功");
-            } catch (error: any) {
-                ctx.logger.error("配置迁移失败:", error.message);
-                ctx.logger.debug(error);
-                telemetry.captureException(error);
-            }
-        }
 
         try {
             const assetService = ctx.plugin(AssetService, config);
