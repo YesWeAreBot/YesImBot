@@ -16,6 +16,6 @@
     "strictFunctionTypes": false,
     "jsx": "react-jsx",
     "jsxImportSource": "@satorijs/element",
-    "types": ["node", "bun-types", "yml-register/types"]
+    "types": ["node", "yml-register/types"]
   }
 }
