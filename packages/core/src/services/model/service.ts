@@ -29,7 +29,6 @@ export class ModelService extends Service<Config> {
             this.initializeProviders();
             this.registerSchemas();
         } catch (err: any) {
-            this.logger.level = this.config.logLevel;
             this.logger.error(`模型服务初始化失败 | ${err.message}`);
             this.logger.error(err.stack);
         }

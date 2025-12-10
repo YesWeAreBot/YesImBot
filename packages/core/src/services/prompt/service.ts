@@ -27,7 +27,6 @@ export class PromptService extends Service<Config> {
         super(ctx, Services.Prompt, true);
         this.ctx = ctx;
         this.config = config;
-        this.logger.level = this.config.logLevel;
         this.renderer = new MustacheRenderer();
     }
 

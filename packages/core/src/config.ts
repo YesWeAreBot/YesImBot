@@ -19,8 +19,6 @@ export type Config = ModelServiceConfig
     & AssetServiceConfig
     & PromptServiceConfig & {
         telemetry: TelemetryConfig;
-        logLevel: 1 | 2 | 3;
-        version?: string;
     };
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -35,13 +33,5 @@ export const Config: Schema<Config> = Schema.intersect([
     PromptServiceConfig,
     Schema.object({
         telemetry: TelemetryConfig.description("错误上报配置"),
-        logLevel: Schema.union([
-            Schema.const(1).description("错误"),
-            Schema.const(2).description("信息"),
-            Schema.const(3).description("调试"),
-        ])
-            .default(2)
-            .description("日志等级"),
-        version: Schema.string().hidden(),
     }),
 ]);

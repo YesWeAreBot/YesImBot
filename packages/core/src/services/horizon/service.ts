@@ -39,8 +39,6 @@ export class HorizonService extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Horizon, true);
         this.config = config;
-        this.logger = this.ctx.logger("horizon");
-        this.logger.level = this.config.logLevel;
 
         this.events = new EventManager(ctx, config);
         this.listener = new EventListener(ctx, config, this);

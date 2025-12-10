@@ -68,7 +68,6 @@ export class AssetService extends Service<Config> {
         this.config = config;
         this.config.maxFileSize *= 1024 * 1024; // 转换为字节
         this.assetEndpoint = this.config.assetEndpoint;
-        this.logger.level = this.config.logLevel;
     }
 
     protected async start() {

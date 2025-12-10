@@ -34,7 +34,6 @@ export class PluginService extends Service<Config> {
         super(ctx, Services.Plugin, true);
         this.config = config;
         this.promptService = ctx[Services.Prompt];
-        this.logger.level = this.config.logLevel;
     }
 
     protected async start() {

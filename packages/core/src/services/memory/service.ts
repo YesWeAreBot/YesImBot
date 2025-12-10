@@ -20,7 +20,6 @@ export class MemoryService extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Memory, true);
         this.config = config;
-        this.logger.level = this.config.logLevel;
     }
 
     protected start() {

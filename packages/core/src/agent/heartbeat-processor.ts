@@ -29,7 +29,6 @@ export class HeartbeatProcessor {
         private readonly modelSwitcher: ChatModelSwitcher,
     ) {
         this.logger = ctx.logger("heartbeat");
-        this.logger.level = config.logLevel;
         this.prompt = ctx[Services.Prompt];
         this.plugin = ctx[Services.Plugin];
         this.horizon = ctx[Services.Horizon];

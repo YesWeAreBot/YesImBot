@@ -1,5 +1,4 @@
 import type { Schema, Session } from "koishi";
-import type { ToolExecuteResult } from "xsai";
 import type { HorizonView, Percept } from "@/services/horizon/types";
 
 export interface PluginMetadata {

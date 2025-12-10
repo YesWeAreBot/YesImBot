@@ -39,7 +39,6 @@ export class AgentCore extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Agent, true);
         this.config = config;
-        this.logger.level = this.config.logLevel;
 
         this.horizon = this.ctx[Services.Horizon];
         this.modelService = this.ctx[Services.Model];
