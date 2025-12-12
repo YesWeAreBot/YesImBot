@@ -1,24 +1,3 @@
-// 模型切换器相关类型定义和枚举
-
-export enum ChatModelType {
-    Vision = "vision", // 多模态模型（支持图片）
-    NonVision = "non_vision", // 普通文本模型
-    All = "all", // 所有模型
-}
-
-export enum ModelAbility {
-    Vision = "视觉",
-    WebSearch = "网络搜索",
-    Reasoning = "推理",
-    FunctionCalling = "函数调用",
-}
-
-export enum ModelType {
-    Chat = "Chat",
-    Image = "Image",
-    Embedding = "Embedding",
-}
-
 export enum SwitchStrategy {
     RoundRobin = "round_robin", // 轮询：依次使用每个模型
     Failover = "failover", // 故障转移：按成功率/健康度排序，优先使用最好的
