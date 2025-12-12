@@ -3,12 +3,12 @@ import type { Message } from "@xsai/shared-chat";
 import type { Context, Logger } from "koishi";
 import type { Config } from "@/config";
 
-import type { TelemetryService } from "@/services";
 import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
-import type { ChatModelSwitcher, IChatModel } from "@/services/model";
+import type { ChatModelSwitcher, SelectedChatModel } from "@/services/model";
 import type { FunctionContext, FunctionSchema, PluginService } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
+import { generateText, streamText } from "xsai";
 import { h, Random } from "koishi";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/horizon";
 import { ModelError } from "@/services/model/types";
@@ -22,7 +22,6 @@ export class HeartbeatProcessor {
     private plugin: PluginService;
     private horizon: HorizonService;
     private memory: MemoryService;
-    private telemetry: TelemetryService;
     constructor(
         public ctx: Context,
         private readonly config: Config,
@@ -33,7 +32,6 @@ export class HeartbeatProcessor {
         this.plugin = ctx[Services.Plugin];
         this.horizon = ctx[Services.Horizon];
         this.memory = ctx[Services.Memory];
-        this.telemetry = ctx[Services.Telemetry];
     }
 
     public async runCycle(percept: Percept): Promise<boolean> {
@@ -56,15 +54,64 @@ export class HeartbeatProcessor {
                 }
             } catch (error: any) {
                 this.logger.error(`Heartbeat #${heartbeatCount} 处理失败: ${error.message}`);
-
-                this.telemetry.captureException(error);
-
                 shouldContinueHeartbeat = false;
             }
         }
         // 回合结束后清理工作记忆
         this.horizon.events.clearWorkingMemory(percept.scope);
         return success;
+    }
+
+    private async executeModelChat(selected: SelectedChatModel, options: {
+        messages: Message[];
+        stream: boolean;
+        abortSignal?: AbortSignal;
+        temperature?: number;
+    }): Promise<GenerateTextResult> {
+        if (!options.stream) {
+            return await generateText({
+                ...selected.options,
+                messages: options.messages,
+                abortSignal: options.abortSignal,
+                temperature: options.temperature,
+            } as any);
+        }
+
+        const stime = Date.now();
+        const finalContentParts: string[] = [];
+
+        const { textStream, usage } = streamText({
+            ...selected.options,
+            messages: options.messages,
+            abortSignal: options.abortSignal,
+            temperature: options.temperature,
+            streamOptions: { includeUsage: true },
+        } as any);
+
+        usage.catch(() => {});
+
+        for await (const textDelta of textStream) {
+            if (textDelta === "")
+                continue;
+            finalContentParts.push(textDelta);
+        }
+
+        const finalText = finalContentParts.join("");
+        if (!finalText) {
+            throw new Error("模型未输出有效内容");
+        }
+
+        this.logger.debug(`传输完成 | 总耗时: ${Date.now() - stime}ms`);
+
+        return {
+            steps: [] as any,
+            messages: [],
+            text: finalText,
+            toolCalls: [],
+            toolResults: [],
+            usage: undefined,
+            finishReason: "unknown",
+        };
     }
 
     private async performSingleHeartbeat(turnId: string, percept: Percept): Promise<{ continue: boolean } | null> {
@@ -176,14 +223,14 @@ export class HeartbeatProcessor {
             { role: "user", content: userPromptText },
         ];
 
-        let model: IChatModel | null = null;
+        let selected: SelectedChatModel | null = null;
 
         let startTime: number;
 
         while (attempt < this.config.switchConfig.maxRetries) {
             const parser = new JsonParser<AgentResponse>();
 
-            model = this.modelSwitcher.getModel();
+            selected = this.modelSwitcher.getModel();
 
             // 步骤 5: 调用LLM
             this.logger.info("步骤 5/7: 调用大语言模型...");
@@ -191,7 +238,7 @@ export class HeartbeatProcessor {
             startTime = Date.now();
 
             try {
-                if (!model) {
+                if (!selected) {
                     this.logger.warn("未找到合适的模型，跳过本次心跳");
                     break;
                 }
@@ -203,7 +250,7 @@ export class HeartbeatProcessor {
                         controller.abort("请求超时");
                 }, this.config.switchConfig.firstToken);
 
-                llmRawResponse = await model.chat({
+                llmRawResponse = await this.executeModelChat(selected, {
                     messages,
                     stream: this.config.stream,
                     abortSignal: AbortSignal.any([
@@ -211,6 +258,7 @@ export class HeartbeatProcessor {
                         controller.signal,
                     ]),
                 });
+                clearTimeout(timeout);
                 const prompt_tokens
                     = llmRawResponse.usage?.prompt_tokens
                         || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
@@ -218,12 +266,12 @@ export class HeartbeatProcessor {
                     = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text)}`;
                 /* prettier-ignore */
                 this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 耗时: ${new Date().getTime() - startTime}ms`);
-                this.modelSwitcher.recordResult(model, true, undefined, Date.now() - startTime);
+                this.modelSwitcher.recordResult(selected.fullName, true, undefined, Date.now() - startTime);
                 break; // 成功调用，跳出重试循环
             } catch (error) {
                 attempt++;
                 this.modelSwitcher.recordResult(
-                    model,
+                    selected?.fullName ?? "",
                     false,
                     ModelError.classify(error instanceof Error ? error : new Error(String(error))),
                     Date.now() - startTime,
@@ -246,7 +294,7 @@ export class HeartbeatProcessor {
         if (!agentResponseData) {
             this.logger.error("LLM响应解析或验证失败，终止本次心跳");
             this.modelSwitcher.recordResult(
-                model,
+                selected?.fullName ?? "",
                 false,
                 ModelError.classify(new Error("Invalid LLM response format")),
                 new Date().getTime() - startTime,
@@ -254,7 +302,9 @@ export class HeartbeatProcessor {
             return null;
         }
 
-        this.modelSwitcher.recordResult(model, true, undefined, new Date().getTime() - startTime);
+        if (selected) {
+            this.modelSwitcher.recordResult(selected.fullName, true, undefined, new Date().getTime() - startTime);
+        }
 
         // this.displayThoughts(agentResponseData.thoughts);
 

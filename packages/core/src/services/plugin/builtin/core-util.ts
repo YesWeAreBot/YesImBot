@@ -1,8 +1,8 @@
 import type { Bot, Context, Session } from "koishi";
 import type { AssetService } from "@/services";
-import type { ChatModelSwitcher, IChatModel, ModelDescriptor } from "@/services/model";
 import type { FunctionContext } from "@/services/plugin/types";
 
+import { generateText } from "@yesimbot/shared-model";
 import { h, Schema, sleep } from "koishi";
 import { Plugin } from "@/services/plugin/base-plugin";
 import { Action, Metadata, Tool, withInnerThoughts } from "@/services/plugin/decorators";
@@ -18,7 +18,7 @@ interface CoreUtilConfig {
         maxDelay: number;
     };
     vision: {
-        modelOrGroup: ModelDescriptor | string;
+        modelOrGroup: string;
         detail: "low" | "high" | "auto";
     };
 }
@@ -32,7 +32,7 @@ const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
         maxDelay: Schema.number().default(4000).description("最大延迟 (毫秒)"),
     }),
     vision: Schema.object({
-        modelOrGroup: Schema.dynamic("modelService.chatModelOrGroup").description("用于图片描述的多模态模型或模型组"),
+        modelOrGroup: Schema.dynamic("providerRegistry.chatModelOrGroup").description("用于图片描述的多模态模型或模型组"),
         detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
     }),
 });
@@ -44,14 +44,13 @@ const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     builtin: true,
 })
 export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
-    static readonly inject = [Services.Asset, Services.Model, Services.Plugin];
+    static readonly inject = [Services.Asset, Services.ProviderRegistry, Services.Plugin];
     static readonly Config = CoreUtilConfig;
 
     private readonly assetService: AssetService;
     private disposed: boolean;
 
-    private chatModel: IChatModel | null = null;
-    private modelGroup: ChatModelSwitcher | null = null;
+    private visionModelFullName: string | null = null;
 
     constructor(ctx: Context, config: CoreUtilConfig) {
         super(ctx, config);
@@ -59,26 +58,17 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         this.assetService = ctx[Services.Asset];
 
         try {
-            const visionModel = this.config.vision.modelOrGroup;
-            if (visionModel) {
-                if (typeof visionModel === "string") {
-                    this.modelGroup = this.ctx[Services.Model].useChatGroup(visionModel);
-                    if (!this.modelGroup) {
-                        this.ctx.logger.warn(`✖ 模型组未找到 | 模型组: ${visionModel}`);
-                    }
-                    const visionModels = this.modelGroup?.getModels().filter((m) => m.isVisionModel()) || [];
-                    if (visionModels.length === 0) {
-                        this.ctx.logger.warn(`✖ 模型组中没有视觉模型 | 模型组: ${visionModel}`);
-                    }
-                } else {
-                    this.chatModel = this.ctx[Services.Model].getChatModel(visionModel);
-                    if (!this.chatModel) {
-                        this.ctx.logger.warn(`✖ 模型未找到 | 模型: ${JSON.stringify(visionModel)}`);
-                    }
-                    if (this.chatModel && !this.chatModel.isVisionModel()) {
-                        this.ctx.logger.warn(`✖ 模型不支持多模态 | 模型: ${JSON.stringify(this.chatModel.id)}`);
-                    }
-                }
+            const visionModelOrGroup = String(this.config.vision.modelOrGroup ?? "").trim();
+            if (!visionModelOrGroup)
+                throw new Error("视觉模型未配置");
+
+            const registry = this.ctx[Services.ProviderRegistry] as any;
+            const candidates: string[] = registry.resolveChatModels(visionModelOrGroup);
+            const visionCandidates = candidates.filter((fullName) => registry.isVisionChatModel(fullName));
+            this.visionModelFullName = visionCandidates[0] ?? null;
+
+            if (!this.visionModelFullName) {
+                this.ctx.logger.warn(`✖ 未找到可用的多模态模型 | 配置: ${visionModelOrGroup}`);
             }
         } catch (error: any) {
             this.ctx.logger.error(`获取视觉模型失败: ${error.message}`);
@@ -143,7 +133,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
         const { image_id, question } = params;
 
         // Check if vision model is available
-        if (!this.chatModel && !this.modelGroup) {
+        if (!this.visionModelFullName) {
             this.ctx.logger.warn(`✖ 视觉模型未配置`);
             return Failed(`视觉模型未配置，无法获取图片描述`);
         }
@@ -166,13 +156,13 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                 : `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
 
         try {
-            const model = this.chatModel || this.modelGroup?.getModels()[0];
-            if (!model) {
-                this.ctx.logger.warn(`✖ 无可用的视觉模型`);
-                return Failed(`无可用的视觉模型`);
-            }
+            const registry = this.ctx[Services.ProviderRegistry] as any;
+            const options = registry.getChatModel(this.visionModelFullName);
+            if (!options)
+                return Failed(`视觉模型未注册: ${this.visionModelFullName}`);
 
-            const response = await model.chat({
+            const response = await generateText({
+                ...options,
                 messages: [
                     {
                         role: "user",
@@ -183,7 +173,8 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                     },
                 ],
                 temperature: 0.2,
-            });
+            } as any);
+
             return Success(response.text);
         } catch (error: any) {
             this.ctx.logger.error(`图片描述失败: ${error.message}`);

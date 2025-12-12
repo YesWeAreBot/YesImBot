@@ -2,7 +2,8 @@ import type { Context, Session } from "koishi";
 import type { Config } from "@/config";
 
 import type { HorizonService, Percept, UserMessagePercept } from "@/services/horizon";
-import type { ChatModelSwitcher, ModelService } from "@/services/model";
+import type { ProviderRegistry } from "@/services/model";
+import { ChatModelSwitcher } from "@/services/model";
 import type { PromptService } from "@/services/prompt";
 import { Service } from "koishi";
 import { loadTemplate } from "@/services/prompt";
@@ -19,11 +20,11 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<Config> {
-    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Plugin, Services.Horizon];
+    static readonly inject = [Services.Asset, Services.Memory, Services.ProviderRegistry, Services.Prompt, Services.Plugin, Services.Horizon];
 
     // 依赖的服务
     private readonly horizon: HorizonService;
-    private readonly modelService: ModelService;
+    private readonly registry: ProviderRegistry;
     private readonly promptService: PromptService;
 
     // 核心组件
@@ -41,13 +42,28 @@ export class AgentCore extends Service<Config> {
         this.config = config;
 
         this.horizon = this.ctx[Services.Horizon];
-        this.modelService = this.ctx[Services.Model];
+        this.registry = this.ctx[Services.ProviderRegistry] as any;
         this.promptService = this.ctx[Services.Prompt];
 
-        this.modelSwitcher = this.modelService.useChatGroup(this.config.chatModelGroup);
-        if (!this.modelSwitcher) {
-            throw new Error(`无法找到聊天模型组: ${this.config.chatModelGroup}`);
-        }
+        const separator = (this.registry as any).registryConfig?.separator ?? ">";
+        const groupName = this.config.chatModelGroup || this.config.modelGroups?.[0]?.name;
+        const group = this.config.modelGroups?.find((g) => g.name === groupName);
+        if (!group)
+            throw new Error(`无法找到聊天模型组: ${groupName}`);
+
+        const models = (group.models ?? [])
+            .map((m: any) => {
+                if (typeof m === "string")
+                    return m;
+                const providerName = String(m?.providerName ?? "").trim();
+                const modelId = String(m?.modelId ?? "").trim();
+                if (!providerName || !modelId)
+                    return "";
+                return `${providerName}${separator}${modelId}`;
+            })
+            .filter((s: string) => s.length > 0);
+
+        this.modelSwitcher = new ChatModelSwitcher(this.logger, this.registry as any, { name: group.name, models }, this.config.switchConfig as any);
 
         this.willing = new WillingnessManager(ctx, config);
 

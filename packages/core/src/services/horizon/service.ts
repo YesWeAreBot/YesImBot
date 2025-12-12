@@ -24,7 +24,6 @@ declare module "koishi" {
 
 export class HorizonService extends Service<Config> {
     static readonly inject = [
-        Services.Model,
         Services.Asset,
         Services.Prompt,
         Services.Memory,
