@@ -31,6 +31,7 @@ export enum Services {
     Config = "yesimbot.config",
     Memory = "yesimbot.memory",
     Model = "yesimbot.model",
+    ProviderRegistry = "yesimbot.providerRegistry",
     Prompt = "yesimbot.prompt",
     Telemetry = "yesimbot.telemetry",
     Horizon = "yesimbot.horizon",

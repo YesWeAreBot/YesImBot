@@ -5,4 +5,3 @@ export * from "./memory";
 export * from "./model";
 export * from "./plugin";
 export * from "./prompt";
-export * from "./telemetry";

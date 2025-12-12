@@ -7,10 +7,9 @@ import {
     CommandService,
     HorizonService,
     MemoryService,
-    ModelService,
     PluginService,
     PromptService,
-    TelemetryService,
+    ProviderRegistry,
 } from "./services";
 import { Services } from "./shared";
 
@@ -37,14 +36,11 @@ export default class YesImBot extends Service<Config> {
 
         const commandService = ctx.plugin(CommandService, config);
 
-        const telemetryService = ctx.plugin(TelemetryService, config.telemetry);
-        const telemetry: TelemetryService = ctx.get(Services.Telemetry);
-
         try {
             const assetService = ctx.plugin(AssetService, config);
             const promptService = ctx.plugin(PromptService, config);
             const toolService = ctx.plugin(PluginService, config);
-            const modelService = ctx.plugin(ModelService, config);
+            const providerRegistry = ctx.plugin(ProviderRegistry, config);
             const memoryService = ctx.plugin(MemoryService, config);
             const horizonService = ctx.plugin(HorizonService, config);
 
@@ -55,9 +51,8 @@ export default class YesImBot extends Service<Config> {
                 assetService,
                 commandService,
                 memoryService,
-                modelService,
+                providerRegistry,
                 promptService,
-                telemetryService,
                 toolService,
                 horizonService,
             ];
@@ -71,12 +66,11 @@ export default class YesImBot extends Service<Config> {
                 .catch((err) => {
                     this.ctx.logger.error("服务初始化失败:", err.message);
                     this.ctx.logger.error(err.stack);
-                    telemetry.captureException(err);
                     services.forEach((service) => {
                         try {
                             service.dispose();
                         } catch (error: any) {
-                            telemetry.captureException(error);
+
                         }
                     });
                     this.ctx.stop();
@@ -84,7 +78,6 @@ export default class YesImBot extends Service<Config> {
         } catch (err: any) {
             this.ctx.logger.error("初始化时发生错误:", err.message);
             this.ctx.logger.error(err.stack);
-            telemetry.captureException(err);
             this.ctx.stop();
         }
     }
