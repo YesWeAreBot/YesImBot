@@ -168,12 +168,15 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
         = undefined as any;
 
     public async getOnlineModels(): Promise<string[]> {
-        const baseURL = this.config.baseURL;
+        let baseURL = this.config.baseURL.trim().replace(/\/+$/, "");
         if (!baseURL) {
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }
 
-        const response = await this.fetch(`${baseURL}/v1/models`, {
+        // 智能拼接：如果 baseURL 不以 /v1 结尾，则自动补上
+        const url = baseURL.endsWith("/v1") ? `${baseURL}/models` : `${baseURL}/v1/models`;
+
+        const response = await this.fetch(url, {
             method: "GET",
             headers: { Authorization: `Bearer ${this.config.apiKey}` },
         });

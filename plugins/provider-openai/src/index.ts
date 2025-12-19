@@ -20,7 +20,7 @@ export const usage = "";
 export const inject = ["yesimbot.model"];
 
 export const Config: Schema<Config> = Schema.object({
-    baseURL: Schema.string().default("https://api.openai.com/v1/"),
+    baseURL: Schema.string().default("https://api.openai.com/"),
     apiKey: Schema.string().role("secret").required(),
     proxy: Schema.string().default(""),
     retryDefault: Schema.number().min(0).default(3),
