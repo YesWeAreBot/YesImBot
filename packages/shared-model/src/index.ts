@@ -9,22 +9,12 @@ import type {
 import type { CommonRequestOptions } from "xsai";
 import type { AnyFetch } from "./utils";
 import { fetch as ufetch } from "undici";
-
-import { createFetch } from "xsfetch";
 import { createSharedFetch } from "./utils";
 
-export * from "./koishi-schema";
 export * from "./utils";
 export * from "@xsai-ext/providers";
 export * from "@xsai-ext/providers/create";
-
 export * from "xsai";
-export { createFetch } from "xsfetch";
-
-// Kept for backward compatibility: prefer `createSharedFetch()` from `./utils`.
-export function useProxy(proxy: string): typeof globalThis.fetch {
-    return createSharedFetch({ proxy }) as typeof globalThis.fetch;
-}
 
 export enum ModelType {
     Chat = "chat",
@@ -97,7 +87,8 @@ type UnionProvider
 export abstract class SharedProvider<TProvider extends UnionProvider = any, TModelConfig = {}> {
     public readonly name: string;
 
-    protected fetch: AnyFetch = (typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch));
+    protected fetch: AnyFetch
+        = typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch);
 
     private readonly shouldInjectFetch: boolean;
 
@@ -120,7 +111,7 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
 
         const getOverride = (modelId: string): Partial<TModelConfig> => {
             const override = (this.config as SharedConfig<TModelConfig>).override;
-            return (override && override[modelId]) ? override[modelId]! : {};
+            return override && override[modelId] ? override[modelId]! : {};
         };
 
         // 运行时绑定方法

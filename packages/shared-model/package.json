@@ -18,17 +18,10 @@
     "./package.json": "./package.json"
   },
   "devDependencies": {
-    "koishi": "^4.18.9"
-  },
-  "peerDependencies": {
-    "koishi": "^4.18.9"
+    "xsai": "^0.4.0-beta.10",
+    "@xsai-ext/providers": "^0.4.0-beta.10"
   },
   "dependencies": {
-    "@xsai-ext/providers": "^0.4.0-beta.10",
-    "ai": "^5.0.107",
-    "undici": "^7.16.0",
-    "xsai": "^0.4.0-beta.10",
-    "xsfetch": "^0.4.0-beta.10",
-    "zod": "^4.1.13"
+    "undici": "^7.16.0"
   }
 }

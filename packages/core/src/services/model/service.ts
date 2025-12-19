@@ -1,86 +1,30 @@
 import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, SharedProvider } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
+import type { ModelGroup, ModelServiceConfig } from "./config";
 import { ChatModelAbility } from "@yesimbot/shared-model";
 import { Schema, Service } from "koishi";
 import { Services } from "@/shared/constants";
 
-export interface ModelGroup {
-    name: string;
-    models: string[];
-}
-
-export interface RegistryConfig {
-    separator?: string;
-    groups?: ModelGroup[];
-}
-
-export const RegistryConfig: Schema<RegistryConfig> = Schema.object({
-    separator: Schema.string().default(">").description("用于分隔提供者名称和模型名称的分隔符。"),
-    groups: Schema.array(
-        Schema.object({
-            name: Schema.string().required().description("模型组名称。"),
-            models: Schema.array(Schema.string()).required().description("模型名称列表。"),
-        }),
-    ).description("模型分组配置。"),
-}).description("提供者注册表配置。");
-
 declare module "koishi" {
     interface Context {
-        [Services.ProviderRegistry]: ProviderRegistry;
+        [Services.Model]: ModelService;
     }
 }
 
-export class ProviderRegistry extends Service<any> {
-    public readonly registryConfig: RegistryConfig;
-
+export class ModelService extends Service<ModelServiceConfig> {
+    public static readonly separator = ">";
     private readonly providers: Map<string, SharedProvider> = new Map();
     private readonly chatModelInfos: Map<string, ChatModelInfo> = new Map();
     private readonly embedModelInfos: Map<string, EmbedModelInfo> = new Map();
 
-    constructor(ctx: Context, config: any) {
-        super(ctx, Services.ProviderRegistry, true);
-
-        const resolved: RegistryConfig
-            = config && typeof config === "object" && ("separator" in config || "groups" in config)
-                ? (config as RegistryConfig)
-                : (config?.providerRegistry ?? {});
-
-        const separator = resolved.separator ?? ">";
-
-        const legacyGroups: ModelGroup[] | undefined = Array.isArray(config?.modelGroups)
-            ? config.modelGroups
-                    .filter((g: any) => g && typeof g.name === "string" && Array.isArray(g.models))
-                    .map((g: any) => ({
-                        name: g.name,
-                        models: g.models
-                            .map((m: any) => {
-                                if (typeof m === "string")
-                                    return m;
-                                const providerName = String(m?.providerName ?? "").trim();
-                                const modelId = String(m?.modelId ?? "").trim();
-                                if (!providerName || !modelId)
-                                    return "";
-                                return `${providerName}${separator}${modelId}`;
-                            })
-                            .filter((s: string) => s.length > 0),
-                    }))
-            : undefined;
-
-        this.registryConfig = {
-            separator,
-            groups: (resolved.groups && resolved.groups.length > 0)
-                ? resolved.groups
-                : (legacyGroups ?? []),
-        };
-
+    constructor(ctx: Context, config: ModelServiceConfig) {
+        super(ctx, Services.Model, true);
+        this.config = config;
         this.refreshSchemas();
     }
 
     private parseFullName(fullName: string): { providerName: string; modelName: string } | null {
-        const separator
-            = this.registryConfig.separator && this.registryConfig.separator.length > 0
-                ? this.registryConfig.separator
-                : ">";
+        const separator = ModelService.separator;
         const index = fullName.indexOf(separator);
         if (index <= 0)
             return null;
@@ -95,10 +39,7 @@ export class ProviderRegistry extends Service<any> {
     }
 
     private formatFullName(providerName: string, modelName: string): string {
-        const separator
-            = this.registryConfig.separator && this.registryConfig.separator.length > 0
-                ? this.registryConfig.separator
-                : ">";
+        const separator = ModelService.separator;
         return `${providerName}${separator}${modelName}`;
     }
 
@@ -112,7 +53,7 @@ export class ProviderRegistry extends Service<any> {
     }
 
     public resolveChatModels(nameOrGroup: string): string[] {
-        const group = (this.registryConfig.groups ?? []).find((g) => g.name === nameOrGroup);
+        const group = (this.config.groups ?? []).find((g) => g.name === nameOrGroup);
         if (group)
             return group.models;
         return [nameOrGroup];
@@ -127,44 +68,38 @@ export class ProviderRegistry extends Service<any> {
     private refreshSchemas(): void {
         // Chat models
         const chatOptions = Array.from(this.chatModelInfos.values()).map((m) =>
-            Schema.const(this.formatFullName(m.providerName, m.modelId)).description(
-                `${m.providerName} - ${m.modelId}`,
-            ),
+            Schema.const(this.formatFullName(m.providerName, m.modelId)).description(`${m.providerName} - ${m.modelId}`),
         );
 
         const chatVisionOptions = Array.from(this.chatModelInfos.values())
             .filter((m) => (m.abilities ?? []).includes(ChatModelAbility.ImageInput))
             .map((m) =>
-                Schema.const(this.formatFullName(m.providerName, m.modelId)).description(
-                    `${m.providerName} - ${m.modelId}`,
-                ),
+                Schema.const(this.formatFullName(m.providerName, m.modelId)).description(`${m.providerName} - ${m.modelId}`),
             );
 
         const embedOptions = Array.from(this.embedModelInfos.values()).map((m) =>
-            Schema.const(this.formatFullName(m.providerName, m.modelId)).description(
-                `${m.providerName} - ${m.modelId}`,
-            ),
+            Schema.const(this.formatFullName(m.providerName, m.modelId)).description(`${m.providerName} - ${m.modelId}`),
         );
 
-        const customModel = Schema.string().description("自定义模型 (例如 openai>gpt-4o)");
+        const customModel = Schema.string().description("自定义模型 (例如 google>gemini-3-pro)");
 
-        this.ctx.schema.set("providerRegistry.chatModels", this.createUnion(chatOptions, customModel).default(""));
+        this.ctx.schema.set("registry.chatModels", Schema.union([...chatOptions, customModel]).default(""));
 
         this.ctx.schema.set(
-            "providerRegistry.chatVisionModels",
+            "registry.chatVisionModels",
             this.createUnion(chatVisionOptions, customModel).default(""),
         );
 
-        this.ctx.schema.set("providerRegistry.embedModels", this.createUnion(embedOptions, customModel).default(""));
+        this.ctx.schema.set("registry.embedModels", this.createUnion(embedOptions, customModel).default(""));
 
         // Groups
-        const groupNames = (this.registryConfig.groups ?? []).map((g) => g.name);
+        const groupNames = (this.config.groups ?? []).map((g) => g.name);
         const groupOptions = groupNames.map((name) => Schema.const(name).description(name));
         const customGroup = Schema.string().description("自定义模型组");
 
         this.ctx.schema.set(
-            "providerRegistry.availableGroups",
-            this.createUnion(groupOptions, customGroup).default(groupNames[0] ?? ""),
+            "registry.availableGroups",
+            Schema.union([...groupOptions, customGroup]).default(""),
         );
 
         // Mixed: group or chat model
@@ -174,7 +109,7 @@ export class ProviderRegistry extends Service<any> {
         ];
 
         this.ctx.schema.set(
-            "providerRegistry.chatModelOrGroup",
+            "registry.chatModelOrGroup",
             this.createUnion(groupOrModelOptions, Schema.string().description("模型/模型组")).default(""),
         );
     }
@@ -207,7 +142,7 @@ export class ProviderRegistry extends Service<any> {
 
     /** Replace model group config and refresh schemas. */
     public setGroups(groups: ModelGroup[]): void {
-        this.registryConfig.groups = groups;
+        this.config.groups = groups;
         this.refreshSchemas();
     }
 

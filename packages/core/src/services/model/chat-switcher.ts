@@ -1,25 +1,9 @@
 import type { CommonRequestOptions } from "@yesimbot/shared-model";
 import type { Logger } from "koishi";
-
-import type { ModelGroupConfig } from "./config";
-import type { ProviderRegistry } from "./registry";
+import type { ModelGroup, SwitchConfig } from "./config";
+import type { ModelService } from "./service";
 import type { ModelError } from "./types";
 import { SwitchStrategy } from "./types";
-
-export interface SwitchConfig {
-    strategy: SwitchStrategy;
-    firstToken: number;
-    requestTimeout: number;
-    maxRetries: number;
-    breaker: {
-        enabled: boolean;
-        threshold?: number;
-        cooldown?: number;
-        recoveryTime?: number;
-    };
-
-    modelWeights?: Record<string, number>;
-}
 
 export interface SelectedChatModel {
     fullName: string;
@@ -43,12 +27,13 @@ export class ChatModelSwitcher {
 
     constructor(
         private readonly logger: Logger,
-        private readonly registry: ProviderRegistry,
-        private readonly group: ModelGroupConfig,
+        private readonly registry: ModelService,
+        private readonly group: ModelGroup,
         private readonly switchConfig: SwitchConfig,
     ) {
-        if (!group.models.length)
+        if (!group.models.length) {
             throw new Error(`模型组 "${group.name}" 为空`);
+        }
 
         for (const fullName of group.models) {
             this.states.set(fullName, {
@@ -56,7 +41,7 @@ export class ChatModelSwitcher {
                 totalRequests: 0,
                 successRequests: 0,
                 averageLatency: 0,
-                weight: this.switchConfig.modelWeights?.[fullName] ?? 1,
+                weight: (this.switchConfig as any).modelWeights?.[fullName] ?? 1,
             });
         }
     }
@@ -102,7 +87,7 @@ export class ChatModelSwitcher {
 
                 let r = Math.random() * total;
                 for (const m of pool) {
-                    r -= (this.states.get(m)?.weight ?? 1);
+                    r -= this.states.get(m)?.weight ?? 1;
                     if (r <= 0)
                         return m;
                 }
@@ -157,9 +142,8 @@ export class ChatModelSwitcher {
 
         // EMA latency
         const alpha = 0.2;
-        state.averageLatency = state.averageLatency === 0
-            ? latencyMs
-            : state.averageLatency * (1 - alpha) + latencyMs * alpha;
+        state.averageLatency
+            = state.averageLatency === 0 ? latencyMs : state.averageLatency * (1 - alpha) + latencyMs * alpha;
 
         if (!success) {
             state.failureCount += 1;
@@ -171,7 +155,9 @@ export class ChatModelSwitcher {
 
                 if (state.failureCount >= threshold) {
                     state.openUntil = Date.now() + cooldown;
-                    this.logger.warn(`模型熔断: ${fullName} | cooldown=${cooldown}ms | last=${error?.message ?? "unknown"}`);
+                    this.logger.warn(
+                        `模型熔断: ${fullName} | cooldown=${cooldown}ms | last=${error?.message ?? "unknown"}`,
+                    );
                 }
             }
         } else {

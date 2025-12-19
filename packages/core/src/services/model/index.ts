@@ -1,4 +1,4 @@
 export * from "./chat-switcher";
 export * from "./config";
-export * from "./registry";
+export * from "./service";
 export * from "./types";

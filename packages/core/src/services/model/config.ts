@@ -10,7 +10,6 @@ export interface SharedSwitchConfig {
     requestTimeout: number;
     /** 最大失败重试次数 */
     maxRetries: number;
-
     /** 熔断器设置 */
     breaker: {
         /** 是否启用熔断器 */
@@ -41,14 +40,15 @@ interface WeightedRandomStrategyConfig extends SharedSwitchConfig {
     modelWeights: Record<string, number>;
 }
 
-export type StrategyConfig
+/* prettier-ignore */
+export type SwitchConfig
     = | SharedSwitchConfig
         | FailoverStrategyConfig
         | RoundRobinStrategyConfig
         | RandomStrategyConfig
         | WeightedRandomStrategyConfig;
 
-export const SwitchConfigSchema: Schema<StrategyConfig> = Schema.intersect([
+export const SwitchConfig: Schema<SwitchConfig> = Schema.intersect([
     Schema.object({
         strategy: Schema.union([
             Schema.const(SwitchStrategy.Failover).description("故障转移：按成功率/健康度排序，优先使用最好的。"),
@@ -86,38 +86,31 @@ export const SwitchConfigSchema: Schema<StrategyConfig> = Schema.intersect([
     ]),
 ]);
 
-export interface ModelGroupConfig {
+export interface ModelGroup {
     name: string;
-    /** Full names, e.g. `openai>gpt-4o` */
     models: string[];
 }
 
 export interface ModelServiceConfig {
-    modelGroups: ModelGroupConfig[];
+    groups: ModelGroup[];
     chatModelGroup?: string;
     embeddingModel?: string;
-    switchConfig: StrategyConfig;
+    switchConfig: SwitchConfig;
     stream: boolean;
 }
 
 export const ModelServiceConfig: Schema<ModelServiceConfig> = Schema.object({
-    modelGroups: Schema.array(
+    groups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组的唯一名称。"),
-            models: Schema.array(Schema.dynamic("providerRegistry.chatModels"))
+            models: Schema.array(Schema.dynamic("registry.chatModels"))
                 .required()
-                .role("table")
                 .description("选择要加入此模型组的聊天模型。"),
         }).collapse(),
     )
-        .role("table")
         .description("将聊天模型组合成逻辑分组，用于故障转移或按需调用。"),
-    chatModelGroup: Schema.dynamic("providerRegistry.availableGroups").description(
-        "选择一个模型组作为默认的聊天服务。",
-    ),
-    embeddingModel: Schema.dynamic("providerRegistry.embedModels").description(
-        "指定用于生成文本嵌入 (Embedding) 的特定模型 (例如 openai>text-embedding-3-small)。",
-    ),
-    switchConfig: SwitchConfigSchema,
+    chatModelGroup: Schema.dynamic("registry.availableGroups").description("选择一个模型组作为默认的聊天服务。"),
+    embeddingModel: Schema.dynamic("registry.embedModels").description("指定用于生成文本嵌入的特定模型 (例如 openai>text-embedding-3-small)。"),
+    switchConfig: SwitchConfig,
     stream: Schema.boolean().default(true).description("是否启用流式传输，以获得更快的响应体验。"),
 }).description("模型与切换策略配置");

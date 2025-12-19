@@ -7,11 +7,10 @@ import {
     CommandService,
     HorizonService,
     MemoryService,
+    ModelService,
     PluginService,
     PromptService,
-    ProviderRegistry,
 } from "./services";
-import { Services } from "./shared";
 
 declare module "koishi" {
     interface Context {
@@ -27,7 +26,7 @@ export default class YesImBot extends Service<Config> {
 
     static readonly name = "yesimbot";
     static readonly usage = `"Yes! I'm Bot!" 是一个能让你的机器人激活灵魂的插件。\n
-使用请阅读 [文档](https://docs.yesimbot.chat/) ，推荐使用 [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r) 提供的 \`deepseek-v3\` 模型以获得最高性价比。目前已知效果最佳模型：\`gemini-3-pro\`
+使用请阅读[文档](https://docs.yesimbot.chat/), 推荐使用 [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r) 提供的 \`deepseek-v3.2\` 模型以获得最高性价比。目前已知效果最佳模型：\`gemini-3-pro\`
 \n
 官方交流群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)\n`;
 
@@ -40,7 +39,7 @@ export default class YesImBot extends Service<Config> {
             const assetService = ctx.plugin(AssetService, config);
             const promptService = ctx.plugin(PromptService, config);
             const toolService = ctx.plugin(PluginService, config);
-            const providerRegistry = ctx.plugin(ProviderRegistry, config);
+            const modelService = ctx.plugin(ModelService, config);
             const memoryService = ctx.plugin(MemoryService, config);
             const horizonService = ctx.plugin(HorizonService, config);
 
@@ -51,7 +50,7 @@ export default class YesImBot extends Service<Config> {
                 assetService,
                 commandService,
                 memoryService,
-                providerRegistry,
+                modelService,
                 promptService,
                 toolService,
                 horizonService,

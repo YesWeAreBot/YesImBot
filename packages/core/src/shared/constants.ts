@@ -28,13 +28,12 @@ export enum TableName {
 export enum Services {
     Agent = "yesimbot.agent",
     Asset = "yesimbot.asset",
+    Command = "yesimbot.command",
     Config = "yesimbot.config",
+    Horizon = "yesimbot.horizon",
     Memory = "yesimbot.memory",
     Model = "yesimbot.model",
-    ProviderRegistry = "yesimbot.providerRegistry",
+    Plugin = "yesimbot.plugin",
     Prompt = "yesimbot.prompt",
     Telemetry = "yesimbot.telemetry",
-    Horizon = "yesimbot.horizon",
-    Plugin = "yesimbot.plugin",
-    Command = "yesimbot.command",
 }
