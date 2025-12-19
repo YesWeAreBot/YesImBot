@@ -44,7 +44,7 @@ const CoreUtilConfig: Schema<CoreUtilConfig> = Schema.object({
     builtin: true,
 })
 export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
-    static readonly inject = [Services.Asset, Services.ProviderRegistry, Services.Plugin];
+    static readonly inject = [Services.Asset, Services.Model, Services.Plugin];
     static readonly Config = CoreUtilConfig;
 
     private readonly assetService: AssetService;
@@ -62,7 +62,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
             if (!visionModelOrGroup)
                 throw new Error("视觉模型未配置");
 
-            const registry = this.ctx[Services.ProviderRegistry] as any;
+            const registry = this.ctx[Services.Model];
             const candidates: string[] = registry.resolveChatModels(visionModelOrGroup);
             const visionCandidates = candidates.filter((fullName) => registry.isVisionChatModel(fullName));
             this.visionModelFullName = visionCandidates[0] ?? null;
@@ -156,7 +156,7 @@ export default class CoreUtilPlugin extends Plugin<CoreUtilConfig> {
                 : `请详细描述以下图片，并回答问题：${question}\n\n图片内容：`;
 
         try {
-            const registry = this.ctx[Services.ProviderRegistry] as any;
+            const registry = this.ctx[Services.Model];
             const options = registry.getChatModel(this.visionModelFullName);
             if (!options)
                 return Failed(`视觉模型未注册: ${this.visionModelFullName}`);

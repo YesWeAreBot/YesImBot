@@ -2,11 +2,10 @@ import type { Context, Session } from "koishi";
 import type { Config } from "@/config";
 
 import type { HorizonService, Percept, UserMessagePercept } from "@/services/horizon";
-import type { ProviderRegistry } from "@/services/model";
-import { ChatModelSwitcher } from "@/services/model";
+import type { ModelService } from "@/services/model";
 import type { PromptService } from "@/services/prompt";
 import { Service } from "koishi";
-import { loadTemplate } from "@/services/prompt";
+import { ChatModelSwitcher } from "@/services/model";
 import { Services } from "@/shared/constants";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { WillingnessManager } from "./willing";
@@ -20,12 +19,12 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<Config> {
-    static readonly inject = [Services.Asset, Services.Memory, Services.ProviderRegistry, Services.Prompt, Services.Plugin, Services.Horizon];
+    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Plugin, Services.Horizon];
 
     // 依赖的服务
     private readonly horizon: HorizonService;
-    private readonly registry: ProviderRegistry;
-    private readonly promptService: PromptService;
+    private readonly model: ModelService;
+    private readonly prompt: PromptService;
 
     // 核心组件
     private willing: WillingnessManager;
@@ -42,31 +41,18 @@ export class AgentCore extends Service<Config> {
         this.config = config;
 
         this.horizon = this.ctx[Services.Horizon];
-        this.registry = this.ctx[Services.ProviderRegistry] as any;
-        this.promptService = this.ctx[Services.Prompt];
+        this.model = this.ctx[Services.Model];
+        this.prompt = this.ctx[Services.Prompt];
 
-        const separator = (this.registry as any).registryConfig?.separator ?? ">";
-        const groupName = this.config.chatModelGroup || this.config.modelGroups?.[0]?.name;
-        const group = this.config.modelGroups?.find((g) => g.name === groupName);
+        const groupName = this.config.chatModelGroup || this.config.groups?.[0]?.name;
+        const group = this.config.groups?.find((g) => g.name === groupName);
         if (!group)
             throw new Error(`无法找到聊天模型组: ${groupName}`);
 
-        const models = (group.models ?? [])
-            .map((m: any) => {
-                if (typeof m === "string")
-                    return m;
-                const providerName = String(m?.providerName ?? "").trim();
-                const modelId = String(m?.modelId ?? "").trim();
-                if (!providerName || !modelId)
-                    return "";
-                return `${providerName}${separator}${modelId}`;
-            })
-            .filter((s: string) => s.length > 0);
+        const models = this.model.resolveChatModels(group.name);
 
-        this.modelSwitcher = new ChatModelSwitcher(this.logger, this.registry as any, { name: group.name, models }, this.config.switchConfig as any);
-
+        this.modelSwitcher = new ChatModelSwitcher(this.logger, this.model, { name: group.name, models }, this.config.switchConfig);
         this.willing = new WillingnessManager(ctx, config);
-
         this.processor = new HeartbeatProcessor(ctx, config, this.modelSwitcher);
     }
 
