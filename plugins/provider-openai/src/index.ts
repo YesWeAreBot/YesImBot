@@ -12,8 +12,6 @@ export interface ModelConfig extends ChatModelConfig {
 }
 
 export interface Config extends SharedConfig<ModelConfig> {
-    baseURL: string;
-    apiKey: string;
     proxy?: string;
 }
 
@@ -35,82 +33,59 @@ export const Config: Schema<Config> = Schema.object({
         headers: Schema.dict(String).role("table").default({}),
         reasoning_effort: Schema.union(["none", "minimal", "low", "medium", "high", "xhigh"]).default("medium"),
         max_completion_tokens: Schema.number(),
-    }).description("OpenAI 默认请求参数"),
+    }),
 }).i18n({
     "zh-CN": require("./locales/zh-CN.yml")._config,
     "en-US": require("./locales/en-US.yml")._config,
 });
 
-class OpenAIProvider extends SharedProvider<any, ModelConfig> {
-}
+class OpenAIProvider extends SharedProvider<any, ModelConfig> {}
 
 export function apply(ctx: Context, config: Config) {
-    ctx.on("ready", () => {
+    const providerName = "openai";
+    const provider = new OpenAIProvider("openai", {} as any, config, { proxy: config.proxy });
+    ctx.on("ready", async () => {
         const registry = ctx.get("yesimbot.model");
         if (!registry) {
-            ctx.logger("provider-openai").warn("ProviderRegistry 未就绪，跳过注册");
+            ctx.logger.warn("ProviderRegistry 未就绪，跳过注册");
             return;
         }
 
-        const providerName = "openai";
-
-        const rawProvider = {
-            chat(model: string) {
-                return {
-                    baseURL: config.baseURL,
-                    apiKey: config.apiKey,
-                    model,
-                };
-            },
-            embed(model: string) {
-                return {
-                    baseURL: config.baseURL,
-                    apiKey: config.apiKey,
-                    model,
-                };
-            },
-        };
-
         try {
-            registry.setProvider(
-                providerName,
-                new OpenAIProvider(providerName, rawProvider, config, { proxy: config.proxy }),
-            );
+            registry.setProvider(providerName, provider);
         } catch (err: any) {
-            ctx.logger("provider-openai").warn(`注册 provider 失败: ${err?.message ?? String(err)}`);
+            ctx.logger.warn(`注册 provider 失败: ${err?.message ?? String(err)}`);
         }
 
-        // Minimal built-in catalog for better UX (still allows custom model strings).
         try {
-            registry.addChatModels(providerName, [
-                {
-                    modelId: "gpt-4o",
-                    modelType: ModelType.Chat,
-                    abilities: [ChatModelAbility.ImageInput, ChatModelAbility.ToolUsage],
-                },
-                {
-                    modelId: "gpt-4o-mini",
-                    modelType: ModelType.Chat,
-                    abilities: [ChatModelAbility.ImageInput, ChatModelAbility.ToolUsage],
-                },
-                {
-                    modelId: "gpt-4.1",
-                    modelType: ModelType.Chat,
-                    abilities: [ChatModelAbility.ToolUsage],
-                },
-                {
-                    modelId: "gpt-4.1-mini",
-                    modelType: ModelType.Chat,
-                    abilities: [ChatModelAbility.ToolUsage],
-                },
-            ]);
+            const models = await provider.getOnlineModels();
+            ctx.logger.info(`获取到 ${models.length} 个模型信息`);
+
+            registry.addChatModels(
+                providerName,
+                models
+                    .filter((modelId) => modelId.startsWith("gpt-"))
+                    .map((modelId) => ({ modelId, modelType: ModelType.Chat })),
+            );
 
             registry.addEmbedModels(providerName, [
                 { modelId: "text-embedding-3-small", modelType: ModelType.Embed, dimension: 1536 },
                 { modelId: "text-embedding-3-large", modelType: ModelType.Embed, dimension: 3072 },
             ]);
         } catch (err: any) {
-            ctx.logger("provider-openai").warn(`注册模型目录失败: ${err?.message ?? String(err)}`);
+            ctx.logger.warn(`注册模型目录失败: ${err?.message ?? String(err)}`);
+        }
+    });
+
+    ctx.on("dispose", () => {
+        const registry = ctx.get("yesimbot.model");
+        if (!registry)
+            return;
+
+        try {
+            registry.removeProvider(providerName);
+        } catch (err: any) {
+            ctx.logger.warn(`注销 provider 失败: ${err?.message ?? String(err)}`);
         }
     });
 }

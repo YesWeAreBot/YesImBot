@@ -64,6 +64,8 @@ export interface ChatModelConfig {
 }
 
 export interface SharedConfig<ModelConfig> {
+    baseURL: string;
+    apiKey: string;
     retry?: number;
     retryDelay?: number;
     modelConfig?: ModelConfig;
@@ -77,6 +79,8 @@ type ExtractEmbedModels<T> = T extends EmbedProvider<infer M> ? M : never;
 type ExtractImageModels<T> = T extends ImageProvider<infer M> ? M : never;
 type ExtractSpeechModels<T> = T extends SpeechProvider<infer M> ? M : never;
 type ExtractTranscriptionModels<T> = T extends TranscriptionProvider<infer M> ? M : never;
+
+/* prettier-ignore */
 type UnionProvider
     = | ChatProvider<any>
         | EmbedProvider<any>
@@ -87,6 +91,7 @@ type UnionProvider
 export abstract class SharedProvider<TProvider extends UnionProvider = any, TModelConfig = {}> {
     public readonly name: string;
 
+    /* prettier-ignore */
     protected fetch: AnyFetch
         = typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch);
 
@@ -158,6 +163,24 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
         ? (model: T | (string & {})) => CommonRequestOptions & TModelConfig
         : never = undefined as any;
 
+    /* prettier-ignore */
     model: TProvider extends ModelProvider ? () => Omit<CommonRequestOptions, "model"> & TModelConfig : never
         = undefined as any;
+
+    public async getOnlineModels(): Promise<string[]> {
+        const baseURL = this.config.baseURL;
+        if (!baseURL) {
+            throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
+        }
+
+        const response = await this.fetch(`${baseURL}/v1/models`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        });
+        if (!response.ok) {
+            throw new Error(`获取在线模型列表失败，状态码：${response.status}`);
+        }
+        const data = await response.json();
+        return data.data.map((item: any) => item.id) as string[];
+    }
 }

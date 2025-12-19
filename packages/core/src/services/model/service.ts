@@ -122,6 +122,13 @@ export class ModelService extends Service<ModelServiceConfig> {
         this.providers.set(name, provider);
     }
 
+    public removeProvider(name: string): void {
+        if (!this.providers.has(name)) {
+            throw new Error(`Provider with name "${name}" is not registered.`);
+        }
+        this.providers.delete(name);
+    }
+
     /** Register chat model metadata used for schema filtering (e.g. vision-capable). */
     public addChatModels(providerName: string, models: Array<Omit<ChatModelInfo, "providerName">>): void {
         for (const model of models) {
