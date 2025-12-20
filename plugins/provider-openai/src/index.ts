@@ -1,8 +1,8 @@
 /* eslint-disable ts/no-require-imports */
 /* eslint-disable ts/no-redeclare */
-import type { ChatModelConfig, SharedConfig } from "@yesimbot/shared-model";
+import type { ChatModelConfig, ProviderRuntime, SharedConfig } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
-import { ChatModelAbility, ModelType, SharedProvider } from "@yesimbot/shared-model";
+import { ChatModelAbility, ModelType, SharedProvider, normalizeBaseURL } from "@yesimbot/shared-model";
 import { Schema } from "koishi";
 
 export interface ModelConfig extends ChatModelConfig {
@@ -39,11 +39,22 @@ export const Config: Schema<Config> = Schema.object({
     "en-US": require("./locales/en-US.yml")._config,
 });
 
-class OpenAIProvider extends SharedProvider<any, ModelConfig> {}
+class OpenAIProvider extends SharedProvider<any, ModelConfig> {
+    constructor(name: string, provider: any, config: Config, runtime?: ProviderRuntime) {
+        const processedConfig = { ...config };
+        const baseURL = normalizeBaseURL(processedConfig.baseURL, runtime?.logger);
+
+        if (baseURL) {
+            processedConfig.baseURL = baseURL;
+        }
+
+        super(name, provider, processedConfig, runtime);
+    }
+}
 
 export function apply(ctx: Context, config: Config) {
     const providerName = "openai";
-    const provider = new OpenAIProvider("openai", {} as any, config, { proxy: config.proxy });
+    const provider = new OpenAIProvider("openai", {} as any, config, { proxy: config.proxy, logger: ctx.logger });
     ctx.on("ready", async () => {
         const registry = ctx.get("yesimbot.model");
         if (!registry) {

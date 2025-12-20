@@ -123,3 +123,59 @@ export function deepMerge<T>(base: T, ...overrides: Array<Partial<T> | undefined
 
     return result as T;
 }
+
+/**
+ * 归一化 baseURL
+ * 1. 去除首尾空格
+ * 2. 移除末尾多余斜杠
+ * 3. 智能补全/截断版本号：
+ *    - 如果包含版本号(如 /v1, /v4)，则保留到版本号为止
+ *    - 如果不包含版本号且无路径，会自动补全 /v1
+ *    - 如果不包含版本号但有路径，则截断到域名根部
+ */
+export function normalizeBaseURL(url: string | undefined | null, logger?: { warn: (msg: string) => void }): string {
+    let baseURL = (url || "").trim();
+    if (!baseURL || baseURL.replace(/\/+$/, "") === "") {
+        return "";
+    }
+
+    // 移除末尾斜杠
+    baseURL = baseURL.replace(/\/+$/, "");
+
+    // 检查版本号数量
+    const versionMatches = baseURL.match(/\/v\d+(?=\/|$)/g);
+    if (versionMatches && versionMatches.length > 1) {
+        const msg = `检测到 baseURL 中包含多个版本号: ${baseURL}，将跳过自动截断/补全逻辑。`;
+        if (logger)
+            logger.warn(msg);
+        else console.warn(`[yesimbot] ${msg}`);
+        return baseURL;
+    }
+
+    // 如果包含版本号(如 /v1, /v4)，则截断到版本号为止
+    if (versionMatches) {
+        baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
+    } else {
+        // 如果没有版本号，则根据是否有路径决定补全还是截断
+        const hasProtocol = baseURL.includes("://");
+        try {
+            const urlObj = new URL(hasProtocol ? baseURL : `http://${baseURL}`);
+            if (urlObj.pathname !== "/" && urlObj.pathname !== "") {
+                // 如果有路径（如 /chat/completions），截断到域名根部
+                baseURL = hasProtocol ? urlObj.origin : urlObj.host;
+            } else {
+                // 如果无路径，补上 /v1
+                baseURL = hasProtocol ? urlObj.origin : urlObj.host;
+                baseURL += "/v1";
+            }
+        } catch (err) {
+            const msg = `检测到无效的 baseURL: ${baseURL}，将跳过自动截断/补全逻辑。`;
+            if (logger)
+                logger.warn(msg);
+            else console.warn(`[yesimbot] ${msg}`);
+            return baseURL;
+        }
+    }
+
+    return baseURL;
+}

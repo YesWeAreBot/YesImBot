@@ -9,7 +9,7 @@ import type {
 import type { CommonRequestOptions } from "xsai";
 import type { AnyFetch } from "./utils";
 import { fetch as ufetch } from "undici";
-import { createSharedFetch } from "./utils";
+import { createSharedFetch, normalizeBaseURL } from "./utils";
 
 export * from "./utils";
 export * from "@xsai-ext/providers";
@@ -88,6 +88,12 @@ type UnionProvider
         | SpeechProvider<any>
         | TranscriptionProvider<any>;
 
+export interface ProviderRuntime {
+    fetch?: AnyFetch;
+    proxy?: string;
+    logger?: any;
+}
+
 export abstract class SharedProvider<TProvider extends UnionProvider = any, TModelConfig = {}> {
     public readonly name: string;
 
@@ -95,15 +101,17 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
     protected fetch: AnyFetch
         = typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch);
 
+    protected readonly logger: any;
     private readonly shouldInjectFetch: boolean;
 
     constructor(
         name: string,
         protected readonly provider: TProvider,
         protected readonly config: SharedConfig<TModelConfig>,
-        runtime?: { fetch?: AnyFetch; proxy?: string },
+        runtime?: ProviderRuntime,
     ) {
         this.name = name;
+        this.logger = runtime?.logger;
 
         this.fetch = createSharedFetch({
             fetch: runtime?.fetch,
@@ -168,17 +176,19 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
         = undefined as any;
 
     public async getOnlineModels(): Promise<string[]> {
-        const baseURL = this.config.baseURL;
+        const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
         if (!baseURL) {
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }
 
-        const response = await this.fetch(`${baseURL}/v1/models`, {
+        const url = `${baseURL}/models`;
+
+        const response = await this.fetch(url, {
             method: "GET",
             headers: { Authorization: `Bearer ${this.config.apiKey}` },
         });
         if (!response.ok) {
-            throw new Error(`获取在线模型列表失败，状态码：${response.status}`);
+            throw new Error(`获取在线模型列表失败，状态码：${response.status}，URL：${url}`);
         }
         const data = await response.json();
         return data.data.map((item: any) => item.id) as string[];
