@@ -49,8 +49,10 @@ class OpenAIProvider extends SharedProvider<any, ModelConfig> {
             // 移除末尾斜杠
             baseURL = baseURL.replace(/\/+$/, "");
 
-            // 如果不以版本号(如 /v1, /v4)结尾，则补上 /v1
-            if (!/\/v\d+$/.test(baseURL)) {
+            // 如果包含版本号(如 /v1, /v4)，则保留到版本号为止；否则补上 /v1
+            if (/\/v\d+(?:\/|$)/.test(baseURL)) {
+                baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
+            } else {
                 baseURL += "/v1";
             }
             processedConfig.baseURL = baseURL;
