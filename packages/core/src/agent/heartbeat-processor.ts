@@ -2,14 +2,13 @@ import type { GenerateTextResult } from "@xsai/generate-text";
 import type { Message } from "@xsai/shared-chat";
 import type { Context, Logger } from "koishi";
 import type { Config } from "@/config";
-
 import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, SelectedChatModel } from "@/services/model";
 import type { FunctionContext, FunctionSchema, PluginService } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
-import { generateText, streamText } from "xsai";
 import { h, Random } from "koishi";
+import { generateText, streamText } from "xsai";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/horizon";
 import { ModelError } from "@/services/model/types";
 import { FunctionType } from "@/services/plugin";

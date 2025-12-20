@@ -1,7 +1,7 @@
-import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, SharedProvider } from "@yesimbot/shared-model";
+import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, ModelInfo, SharedProvider } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 import type { ModelGroup, ModelServiceConfig } from "./config";
-import { ChatModelAbility } from "@yesimbot/shared-model";
+import { ChatModelAbility, ModelType } from "@yesimbot/shared-model";
 import { Schema, Service } from "koishi";
 import { Services } from "@/shared/constants";
 
@@ -16,6 +16,7 @@ export class ModelService extends Service<ModelServiceConfig> {
     private readonly providers: Map<string, SharedProvider> = new Map();
     private readonly chatModelInfos: Map<string, ChatModelInfo> = new Map();
     private readonly embedModelInfos: Map<string, EmbedModelInfo> = new Map();
+    private readonly unknownModelInfos: Map<string, ModelInfo> = new Map();
 
     constructor(ctx: Context, config: ModelServiceConfig) {
         super(ctx, Services.Model, true);
@@ -147,14 +148,78 @@ export class ModelService extends Service<ModelServiceConfig> {
         this.refreshSchemas();
     }
 
-    /** Replace model group config and refresh schemas. */
-    public setGroups(groups: ModelGroup[]): void {
-        this.config.groups = groups;
+    /** Register unknown/unclassified models for manual categorization. */
+    public addUnknownModels(providerName: string, modelIds: string[]): void {
+        for (const modelId of modelIds) {
+            const info: ModelInfo = {
+                providerName,
+                modelId,
+                modelType: ModelType.Unknown,
+            };
+            this.unknownModelInfos.set(this.formatFullName(providerName, modelId), info);
+        }
+        // Unknown models don't affect schemas automatically
+    }
+
+    /** Get all unknown models for a provider or all providers. */
+    public getUnknownModels(providerName?: string): ModelInfo[] {
+        const models = Array.from(this.unknownModelInfos.values());
+        if (providerName) {
+            return models.filter((m) => m.providerName === providerName);
+        }
+        return models;
+    }
+
+    /** Promote an unknown model to a specific type with metadata. */
+    public promoteModel(
+        fullName: string,
+        targetType: ModelType.Chat,
+        metadata: Omit<ChatModelInfo, "providerName" | "modelId" | "modelType">,
+    ): void;
+    public promoteModel(
+        fullName: string,
+        targetType: ModelType.Embed,
+        metadata: Omit<EmbedModelInfo, "providerName" | "modelId" | "modelType">,
+    ): void;
+    public promoteModel(fullName: string, targetType: ModelType, metadata: any): void {
+        const unknownModel = this.unknownModelInfos.get(fullName);
+        if (!unknownModel) {
+            throw new Error(`Model "${fullName}" not found in unknown models`);
+        }
+
+        this.unknownModelInfos.delete(fullName);
+
+        switch (targetType) {
+            case ModelType.Chat: {
+                const chatInfo: ChatModelInfo = {
+                    ...metadata,
+                    providerName: unknownModel.providerName,
+                    modelId: unknownModel.modelId,
+                    modelType: ModelType.Chat,
+                };
+                this.chatModelInfos.set(fullName, chatInfo);
+                break;
+            }
+            case ModelType.Embed: {
+                const embedInfo: EmbedModelInfo = {
+                    ...metadata,
+                    providerName: unknownModel.providerName,
+                    modelId: unknownModel.modelId,
+                    modelType: ModelType.Embed,
+                };
+                this.embedModelInfos.set(fullName, embedInfo);
+                break;
+            }
+            default:
+                throw new Error(`Unsupported target type: ${targetType}`);
+        }
+
         this.refreshSchemas();
     }
 
-    // Backward-compatible placeholder (was planned as internal helper).
-    private addModelToSchema() {
+    /** Replace model group config and refresh schemas. */
+    public setGroups(groups: ModelGroup[]): void {
+        this.config.groups = groups;
         this.refreshSchemas();
     }
 
