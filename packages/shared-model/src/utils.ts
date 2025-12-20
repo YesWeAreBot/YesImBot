@@ -158,14 +158,22 @@ export function normalizeBaseURL(url: string | undefined | null, logger?: { warn
     } else {
         // 如果没有版本号，则根据是否有路径决定补全还是截断
         const hasProtocol = baseURL.includes("://");
-        const urlObj = new URL(hasProtocol ? baseURL : `http://${baseURL}`);
-        if (urlObj.pathname !== "/" && urlObj.pathname !== "") {
-            // 如果有路径（如 /chat/completions），截断到域名根部
-            baseURL = hasProtocol ? urlObj.origin : urlObj.host;
-        } else {
-            // 如果无路径，补上 /v1
-            baseURL = hasProtocol ? urlObj.origin : urlObj.host;
-            baseURL += "/v1";
+        try {
+            const urlObj = new URL(hasProtocol ? baseURL : `http://${baseURL}`);
+            if (urlObj.pathname !== "/" && urlObj.pathname !== "") {
+                // 如果有路径（如 /chat/completions），截断到域名根部
+                baseURL = hasProtocol ? urlObj.origin : urlObj.host;
+            } else {
+                // 如果无路径，补上 /v1
+                baseURL = hasProtocol ? urlObj.origin : urlObj.host;
+                baseURL += "/v1";
+            }
+        } catch (err) {
+            const msg = `检测到无效的 baseURL: ${baseURL}，将跳过自动截断/补全逻辑。`;
+            if (logger)
+                logger.warn(msg);
+            else console.warn(`[yesimbot] ${msg}`);
+            return baseURL;
         }
     }
 
