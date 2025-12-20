@@ -20,7 +20,7 @@ export const usage = "";
 export const inject = ["yesimbot.model"];
 
 export const Config: Schema<Config> = Schema.object({
-    baseURL: Schema.string().default("https://api.openai.com/"),
+    baseURL: Schema.string().default("https://api.openai.com/v1/"),
     apiKey: Schema.string().role("secret").required(),
     proxy: Schema.string().default(""),
     retryDefault: Schema.number().min(0).default(3),
@@ -39,7 +39,23 @@ export const Config: Schema<Config> = Schema.object({
     "en-US": require("./locales/en-US.yml")._config,
 });
 
-class OpenAIProvider extends SharedProvider<any, ModelConfig> {}
+class OpenAIProvider extends SharedProvider<any, ModelConfig> {
+    constructor(name: string, provider: any, config: Config, runtime?: { fetch?: any; proxy?: string }) {
+        const processedConfig = { ...config };
+        if (processedConfig.baseURL) {
+            let baseURL = processedConfig.baseURL.trim();
+            if (baseURL.endsWith("/")) {
+                baseURL = baseURL.slice(0, -1);
+            }
+            // 如果不以版本号(如 /v1, /v4)结尾，则补上 /v1
+            if (!/\/v\d+$/.test(baseURL)) {
+                baseURL += "/v1";
+            }
+            processedConfig.baseURL = baseURL;
+        }
+        super(name, provider, processedConfig, runtime);
+    }
+}
 
 export function apply(ctx: Context, config: Config) {
     const providerName = "openai";

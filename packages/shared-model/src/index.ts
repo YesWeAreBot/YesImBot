@@ -173,8 +173,8 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }
 
-        // 智能拼接：如果 baseURL 不以 /v1 结尾，则自动补上
-        const url = baseURL.endsWith("/v1") ? `${baseURL}/models` : `${baseURL}/v1/models`;
+        // 拼接模型列表路径：baseURL 此时应该已经包含了版本号（如 /v1 或 /v4）
+        const url = `${baseURL}/models`;
 
         const response = await this.fetch(url, {
             method: "GET",
