@@ -176,7 +176,7 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
         = undefined as any;
 
     public async getOnlineModels(): Promise<string[]> {
-        const baseURL = normalizeBaseURL(this.config.baseURL);
+        const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
         if (!baseURL) {
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }
