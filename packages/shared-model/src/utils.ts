@@ -130,8 +130,8 @@ export function deepMerge<T>(base: T, ...overrides: Array<Partial<T> | undefined
  * 2. 移除末尾多余斜杠
  * 3. 智能补全/截断版本号：
  *    - 如果包含版本号(如 /v1, /v4)，则保留到版本号为止
- *    - 如果不包含版本号，会自动补全 /v1
- *    - 如果包含 /models 但无版本号，会将其替换为 /v1
+ *    - 如果不包含版本号且无路径，会自动补全 /v1
+ *    - 如果不包含版本号但有路径，则截断到域名根部
  */
 export function normalizeBaseURL(url: string | undefined | null, logger?: { warn: (msg: string) => void }): string {
     let baseURL = (url || "").trim();
@@ -156,15 +156,17 @@ export function normalizeBaseURL(url: string | undefined | null, logger?: { warn
     if (versionMatches) {
         baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
     } else {
-        // 如果没有版本号，但包含路径（如 /chat/completions），则截断到域名根部
-        // 我们通过寻找第一个斜杠（排除协议后的斜杠）之后的内容来尝试识别
-        const urlObj = new URL(baseURL.includes("://") ? baseURL : `http://${baseURL}`);
+        // 如果没有版本号，则根据是否有路径决定补全还是截断
+        const hasProtocol = baseURL.includes("://");
+        const urlObj = new URL(hasProtocol ? baseURL : `http://${baseURL}`);
         if (urlObj.pathname !== "/" && urlObj.pathname !== "") {
-            // 如果路径不为空，我们只保留协议和域名
-            baseURL = `${urlObj.protocol}//${urlObj.host}`;
+            // 如果有路径（如 /chat/completions），截断到域名根部
+            baseURL = hasProtocol ? urlObj.origin : urlObj.host;
+        } else {
+            // 如果无路径，补上 /v1
+            baseURL = hasProtocol ? urlObj.origin : urlObj.host;
+            baseURL += "/v1";
         }
-        // 补上 /v1
-        baseURL += "/v1";
     }
 
     return baseURL;
