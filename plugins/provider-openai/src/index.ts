@@ -52,11 +52,11 @@ class OpenAIProvider extends SharedProvider<any, ModelConfig> {
                 baseURL += "/v1";
             }
             if (!baseURL) {
-                throw new Error("Invalid baseURL: value is empty after normalization.");
+                throw new Error("无效的 baseURL：标准化处理后值为空。");
             }
             processedConfig.baseURL = baseURL;
         } else {
-            throw new Error("Invalid baseURL: value is empty.");
+            throw new Error("无效的 baseURL：值为空。");
         }
         super(name, provider, processedConfig, runtime);
     }
