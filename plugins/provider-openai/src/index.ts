@@ -42,22 +42,22 @@ export const Config: Schema<Config> = Schema.object({
 class OpenAIProvider extends SharedProvider<any, ModelConfig> {
     constructor(name: string, provider: any, config: Config, runtime?: { fetch?: any; proxy?: string }) {
         const processedConfig = { ...config };
-        if (processedConfig.baseURL) {
-            let baseURL = processedConfig.baseURL.trim();
-            if (baseURL.endsWith("/")) {
-                baseURL = baseURL.slice(0, -1);
-            }
-            // 如果不以版本号(如 /v1, /v4)结尾，则补上 /v1
-            if (!/\/v\d+$/.test(baseURL)) {
-                baseURL += "/v1";
-            }
-            if (!baseURL) {
-                throw new Error("无效的 baseURL：标准化处理后值为空。");
-            }
-            processedConfig.baseURL = baseURL;
-        } else {
-            throw new Error("无效的 baseURL：值为空。");
+        let baseURL = (processedConfig.baseURL || "").trim();
+
+        if (!baseURL || baseURL.replace(/\/+$/, "") === "") {
+            throw new Error("无效的 baseURL：值为空或仅包含斜杠。");
         }
+
+        // 移除末尾斜杠
+        baseURL = baseURL.replace(/\/+$/, "");
+
+        // 如果不以版本号(如 /v1, /v4)结尾，则补上 /v1
+        if (!/\/v\d+$/.test(baseURL)) {
+            baseURL += "/v1";
+        }
+
+        processedConfig.baseURL = baseURL;
+
         super(name, provider, processedConfig, runtime);
     }
 }

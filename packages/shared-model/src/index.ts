@@ -173,15 +173,21 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }
 
-        // 拼接模型列表路径：baseURL 此时应该已经包含了版本号（如 /v1 或 /v4）
-        const url = `${baseURL}/models`;
+        // 智能补全 /v1：如果 baseURL 不以 /v{数字} 结尾，且不是以 models 结尾，则尝试补全
+        // 这样可以保持基类的独立性，不依赖于子类的预处理
+        let url = baseURL;
+        if (!/\/v\d+$/.test(baseURL) && !baseURL.endsWith("/models")) {
+            url += "/v1/models";
+        } else if (!baseURL.endsWith("/models")) {
+            url += "/models";
+        }
 
         const response = await this.fetch(url, {
             method: "GET",
             headers: { Authorization: `Bearer ${this.config.apiKey}` },
         });
         if (!response.ok) {
-            throw new Error(`获取在线模型列表失败，状态码：${response.status}`);
+            throw new Error(`获取在线模型列表失败，状态码：${response.status}，URL：${url}`);
         }
         const data = await response.json();
         return data.data.map((item: any) => item.id) as string[];
