@@ -123,3 +123,36 @@ export function deepMerge<T>(base: T, ...overrides: Array<Partial<T> | undefined
 
     return result as T;
 }
+
+/**
+ * 归一化 baseURL
+ * 1. 去除首尾空格
+ * 2. 移除末尾多余斜杠
+ * 3. 智能补全/截断版本号：
+ *    - 如果包含版本号(如 /v1, /v4)，则保留到版本号为止
+ *    - 如果不包含版本号，会自动补全 /v1
+ *    - 如果包含 /models 但无版本号，会将其替换为 /v1
+ */
+export function normalizeBaseURL(url: string | undefined | null): string {
+    let baseURL = (url || "").trim();
+    if (!baseURL || baseURL.replace(/\/+$/, "") === "") {
+        return "";
+    }
+
+    // 移除末尾斜杠
+    baseURL = baseURL.replace(/\/+$/, "");
+
+    // 如果包含版本号(如 /v1, /v4)，则截断到版本号为止
+    if (/\/v\d+(?:\/|$)/.test(baseURL)) {
+        baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
+    } else {
+        // 如果以 /models 结尾但没有版本号，先移除 /models
+        if (baseURL.endsWith("/models")) {
+            baseURL = baseURL.slice(0, -7).replace(/\/+$/, "");
+        }
+        // 补上 /v1
+        baseURL += "/v1";
+    }
+
+    return baseURL;
+}

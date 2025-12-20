@@ -9,7 +9,7 @@ import type {
 import type { CommonRequestOptions } from "xsai";
 import type { AnyFetch } from "./utils";
 import { fetch as ufetch } from "undici";
-import { createSharedFetch } from "./utils";
+import { createSharedFetch, normalizeBaseURL } from "./utils";
 
 export * from "./utils";
 export * from "@xsai-ext/providers";
@@ -168,20 +168,12 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
         = undefined as any;
 
     public async getOnlineModels(): Promise<string[]> {
-        let baseURL = this.config.baseURL.trim().replace(/\/+$/, "");
+        const baseURL = normalizeBaseURL(this.config.baseURL);
         if (!baseURL) {
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }
 
-        // 智能补全 /v1/models：
-        // 1. 如果包含版本号(如 /v1)，则确保指向 /v1/models
-        // 2. 如果不包含版本号且不以 /models 结尾，则补全 /v1/models
-        let url = baseURL;
-        if (/\/v\d+(?:\/|$)/.test(baseURL)) {
-            url = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1/models");
-        } else if (!baseURL.endsWith("/models")) {
-            url = baseURL + "/v1/models";
-        }
+        const url = `${baseURL}/models`;
 
         const response = await this.fetch(url, {
             method: "GET",

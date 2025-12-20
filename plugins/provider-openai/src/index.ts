@@ -2,7 +2,7 @@
 /* eslint-disable ts/no-redeclare */
 import type { ChatModelConfig, SharedConfig } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
-import { ChatModelAbility, ModelType, SharedProvider } from "@yesimbot/shared-model";
+import { ChatModelAbility, ModelType, SharedProvider, normalizeBaseURL } from "@yesimbot/shared-model";
 import { Schema } from "koishi";
 
 export interface ModelConfig extends ChatModelConfig {
@@ -42,19 +42,9 @@ export const Config: Schema<Config> = Schema.object({
 class OpenAIProvider extends SharedProvider<any, ModelConfig> {
     constructor(name: string, provider: any, config: Config, runtime?: { fetch?: any; proxy?: string }) {
         const processedConfig = { ...config };
-        let baseURL = (processedConfig.baseURL || "").trim();
+        const baseURL = normalizeBaseURL(processedConfig.baseURL);
 
-        // 如果 baseURL 有值且不只是斜杠，则进行处理
-        if (baseURL && baseURL.replace(/\/+$/, "") !== "") {
-            // 移除末尾斜杠
-            baseURL = baseURL.replace(/\/+$/, "");
-
-            // 如果包含版本号(如 /v1, /v4)，则保留到版本号为止；否则补上 /v1
-            if (/\/v\d+(?:\/|$)/.test(baseURL)) {
-                baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
-            } else {
-                baseURL += "/v1";
-            }
+        if (baseURL) {
             processedConfig.baseURL = baseURL;
         }
 
