@@ -1,6 +1,6 @@
 /* eslint-disable ts/no-require-imports */
 /* eslint-disable ts/no-redeclare */
-import type { ChatModelConfig, SharedConfig } from "@yesimbot/shared-model";
+import type { ChatModelConfig, ProviderRuntime, SharedConfig } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 import { ChatModelAbility, ModelType, SharedProvider, normalizeBaseURL } from "@yesimbot/shared-model";
 import { Schema } from "koishi";
@@ -40,7 +40,7 @@ export const Config: Schema<Config> = Schema.object({
 });
 
 class OpenAIProvider extends SharedProvider<any, ModelConfig> {
-    constructor(name: string, provider: any, config: Config, runtime?: { fetch?: any; proxy?: string; logger?: any }) {
+    constructor(name: string, provider: any, config: Config, runtime?: ProviderRuntime) {
         const processedConfig = { ...config };
         const baseURL = normalizeBaseURL(processedConfig.baseURL, runtime?.logger);
 

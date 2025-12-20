@@ -156,9 +156,12 @@ export function normalizeBaseURL(url: string | undefined | null, logger?: { warn
     if (versionMatches) {
         baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
     } else {
-        // 如果以 /models 结尾但没有版本号，先移除 /models
-        if (baseURL.endsWith("/models")) {
-            baseURL = baseURL.slice(0, -7).replace(/\/+$/, "");
+        // 如果没有版本号，但包含路径（如 /chat/completions），则截断到域名根部
+        // 我们通过寻找第一个斜杠（排除协议后的斜杠）之后的内容来尝试识别
+        const urlObj = new URL(baseURL.includes("://") ? baseURL : `http://${baseURL}`);
+        if (urlObj.pathname !== "/" && urlObj.pathname !== "") {
+            // 如果路径不为空，我们只保留协议和域名
+            baseURL = `${urlObj.protocol}//${urlObj.host}`;
         }
         // 补上 /v1
         baseURL += "/v1";

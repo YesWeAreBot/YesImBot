@@ -88,6 +88,12 @@ type UnionProvider
         | SpeechProvider<any>
         | TranscriptionProvider<any>;
 
+export interface ProviderRuntime {
+    fetch?: AnyFetch;
+    proxy?: string;
+    logger?: any;
+}
+
 export abstract class SharedProvider<TProvider extends UnionProvider = any, TModelConfig = {}> {
     public readonly name: string;
 
@@ -95,15 +101,17 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
     protected fetch: AnyFetch
         = typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch);
 
+    protected readonly logger: any;
     private readonly shouldInjectFetch: boolean;
 
     constructor(
         name: string,
         protected readonly provider: TProvider,
         protected readonly config: SharedConfig<TModelConfig>,
-        runtime?: { fetch?: AnyFetch; proxy?: string },
+        runtime?: ProviderRuntime,
     ) {
         this.name = name;
+        this.logger = runtime?.logger;
 
         this.fetch = createSharedFetch({
             fetch: runtime?.fetch,
