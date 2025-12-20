@@ -44,19 +44,17 @@ class OpenAIProvider extends SharedProvider<any, ModelConfig> {
         const processedConfig = { ...config };
         let baseURL = (processedConfig.baseURL || "").trim();
 
-        if (!baseURL || baseURL.replace(/\/+$/, "") === "") {
-            throw new Error("无效的 baseURL：值为空或仅包含斜杠。");
+        // 如果 baseURL 有值且不只是斜杠，则进行处理
+        if (baseURL && baseURL.replace(/\/+$/, "") !== "") {
+            // 移除末尾斜杠
+            baseURL = baseURL.replace(/\/+$/, "");
+
+            // 如果不以版本号(如 /v1, /v4)结尾，则补上 /v1
+            if (!/\/v\d+$/.test(baseURL)) {
+                baseURL += "/v1";
+            }
+            processedConfig.baseURL = baseURL;
         }
-
-        // 移除末尾斜杠
-        baseURL = baseURL.replace(/\/+$/, "");
-
-        // 如果不以版本号(如 /v1, /v4)结尾，则补上 /v1
-        if (!/\/v\d+$/.test(baseURL)) {
-            baseURL += "/v1";
-        }
-
-        processedConfig.baseURL = baseURL;
 
         super(name, provider, processedConfig, runtime);
     }
