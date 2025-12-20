@@ -133,7 +133,7 @@ export function deepMerge<T>(base: T, ...overrides: Array<Partial<T> | undefined
  *    - 如果不包含版本号，会自动补全 /v1
  *    - 如果包含 /models 但无版本号，会将其替换为 /v1
  */
-export function normalizeBaseURL(url: string | undefined | null): string {
+export function normalizeBaseURL(url: string | undefined | null, logger?: { warn: (msg: string) => void }): string {
     let baseURL = (url || "").trim();
     if (!baseURL || baseURL.replace(/\/+$/, "") === "") {
         return "";
@@ -142,8 +142,18 @@ export function normalizeBaseURL(url: string | undefined | null): string {
     // 移除末尾斜杠
     baseURL = baseURL.replace(/\/+$/, "");
 
+    // 检查版本号数量
+    const versionMatches = baseURL.match(/\/v\d+(?=\/|$)/g);
+    if (versionMatches && versionMatches.length > 1) {
+        const msg = `检测到 baseURL 中包含多个版本号: ${baseURL}，将跳过自动截断/补全逻辑。`;
+        if (logger)
+            logger.warn(msg);
+        else console.warn(`[yesimbot] ${msg}`);
+        return baseURL;
+    }
+
     // 如果包含版本号(如 /v1, /v4)，则截断到版本号为止
-    if (/\/v\d+(?:\/|$)/.test(baseURL)) {
+    if (versionMatches) {
         baseURL = baseURL.replace(/(\/v\d+)(?:\/.*)?$/, "$1");
     } else {
         // 如果以 /models 结尾但没有版本号，先移除 /models

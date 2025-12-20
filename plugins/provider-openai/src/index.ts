@@ -40,9 +40,9 @@ export const Config: Schema<Config> = Schema.object({
 });
 
 class OpenAIProvider extends SharedProvider<any, ModelConfig> {
-    constructor(name: string, provider: any, config: Config, runtime?: { fetch?: any; proxy?: string }) {
+    constructor(name: string, provider: any, config: Config, runtime?: { fetch?: any; proxy?: string; logger?: any }) {
         const processedConfig = { ...config };
-        const baseURL = normalizeBaseURL(processedConfig.baseURL);
+        const baseURL = normalizeBaseURL(processedConfig.baseURL, runtime?.logger);
 
         if (baseURL) {
             processedConfig.baseURL = baseURL;
@@ -54,7 +54,7 @@ class OpenAIProvider extends SharedProvider<any, ModelConfig> {
 
 export function apply(ctx: Context, config: Config) {
     const providerName = "openai";
-    const provider = new OpenAIProvider("openai", {} as any, config, { proxy: config.proxy });
+    const provider = new OpenAIProvider("openai", {} as any, config, { proxy: config.proxy, logger: ctx.logger });
     ctx.on("ready", async () => {
         const registry = ctx.get("yesimbot.model");
         if (!registry) {
