@@ -1,8 +1,8 @@
 /* eslint-disable ts/no-require-imports */
 /* eslint-disable ts/no-redeclare */
-import type { ChatModelConfig, ProviderRuntime, SharedConfig } from "@yesimbot/shared-model";
+import type { ChatModelAbility, ChatModelConfig, ProviderRuntime, SharedConfig } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
-import { ChatModelAbility, ModelType, SharedProvider, normalizeBaseURL } from "@yesimbot/shared-model";
+import { classifyModels, ModelType, normalizeBaseURL, SharedProvider } from "@yesimbot/shared-model";
 import { Schema } from "koishi";
 
 export interface ModelConfig extends ChatModelConfig {
@@ -72,17 +72,48 @@ export function apply(ctx: Context, config: Config) {
             const models = await provider.getOnlineModels();
             ctx.logger.info(`获取到 ${models.length} 个模型信息`);
 
-            registry.addChatModels(
-                providerName,
-                models
-                    .filter((modelId) => modelId.startsWith("gpt-"))
-                    .map((modelId) => ({ modelId, modelType: ModelType.Chat })),
-            );
+            const classified = classifyModels(models);
 
-            registry.addEmbedModels(providerName, [
-                { modelId: "text-embedding-3-small", modelType: ModelType.Embed, dimension: 1536 },
-                { modelId: "text-embedding-3-large", modelType: ModelType.Embed, dimension: 3072 },
-            ]);
+            const chatModels: Array<{ modelId: string; modelType: ModelType.Chat; abilities?: ChatModelAbility[] }> = [];
+            const embedModels: Array<{ modelId: string; modelType: ModelType.Embed; dimension: number }> = [];
+            const unknownModels: string[] = [];
+
+            classified.forEach((info, modelId) => {
+                switch (info.modelType) {
+                    case ModelType.Chat:
+                        chatModels.push({
+                            modelId,
+                            modelType: ModelType.Chat,
+                            abilities: info.abilities,
+                        });
+                        break;
+                    case ModelType.Embed:
+                        embedModels.push({
+                            modelId,
+                            modelType: ModelType.Embed,
+                            dimension: info.dimension || 1536,
+                        });
+                        break;
+                    case ModelType.Unknown:
+                        unknownModels.push(modelId);
+                        break;
+                }
+            });
+
+            if (chatModels.length > 0) {
+                registry.addChatModels(providerName, chatModels);
+                ctx.logger.info(`注册了 ${chatModels.length} 个 Chat 模型`);
+            }
+
+            if (embedModels.length > 0) {
+                registry.addEmbedModels(providerName, embedModels);
+                ctx.logger.info(`注册了 ${embedModels.length} 个 Embedding 模型`);
+            }
+
+            if (unknownModels.length > 0) {
+                registry.addUnknownModels(providerName, unknownModels);
+                ctx.logger.warn(`发现 ${unknownModels.length} 个未分类模型: ${unknownModels.slice(0, 5).join(", ")}${unknownModels.length > 5 ? "..." : ""}`);
+            }
         } catch (err: any) {
             ctx.logger.warn(`注册模型目录失败: ${err?.message ?? String(err)}`);
         }

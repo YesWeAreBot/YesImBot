@@ -3,8 +3,12 @@
   "version": "0.0.1",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "resources"
+  ],
   "scripts": {
-    "build": "tsc -b && pkgroll --clean-dist --srcdist src:lib --sourcemap",
+    "build": "tsx scripts/fetch-model-info.ts && tsc -b && dumble",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
@@ -17,11 +21,9 @@
     },
     "./package.json": "./package.json"
   },
-  "devDependencies": {
-    "@xsai-ext/providers": "^0.4.0-beta.10",
-    "xsai": "^0.4.0-beta.10"
-  },
   "dependencies": {
-    "undici": "^7.16.0"
+    "@xsai-ext/providers": "^0.4.0-beta.10",
+    "undici": "^7.16.0",
+    "xsai": "^0.4.0-beta.10"
   }
 }

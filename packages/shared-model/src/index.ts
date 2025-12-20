@@ -11,44 +11,12 @@ import type { AnyFetch } from "./utils";
 import { fetch as ufetch } from "undici";
 import { createSharedFetch, normalizeBaseURL } from "./utils";
 
+export * from "./classifier";
+export * from "./types";
 export * from "./utils";
 export * from "@xsai-ext/providers";
 export * from "@xsai-ext/providers/create";
 export * from "xsai";
-
-export enum ModelType {
-    Chat = "chat",
-    Embed = "embed",
-    Image = "image",
-    Speech = "speech",
-    Transcription = "transcription",
-    Unknown = "unknown",
-}
-
-export interface ModelInfo {
-    providerName: string;
-    modelId: string;
-    modelType: ModelType;
-}
-
-export enum ChatModelAbility {
-    ImageInput = "image-input",
-    ObjectGeneration = "object-generation",
-    ToolUsage = "tool-usage",
-    ToolStreaming = "tool-streaming",
-    Reasoning = "reasoning",
-    WebSearch = "web-search",
-}
-
-export interface ChatModelInfo extends ModelInfo {
-    modelType: ModelType.Chat;
-    abilities?: ChatModelAbility[];
-}
-
-export interface EmbedModelInfo extends ModelInfo {
-    modelType: ModelType.Embed;
-    dimension: number;
-}
 
 export interface EmbedConfig {
     dimension?: number;
