@@ -56,7 +56,10 @@ function wrapFetch(fetchFn: AnyFetch): AnyFetch {
 }
 
 export function useProxy(proxy: string): AnyFetch {
-    const agent = new ProxyAgent(proxy);
+    const agent = new ProxyAgent({
+        uri: proxy,
+        connectTimeout: 30000,
+    });
     const customFetch: AnyFetch = (url: any, options?: RequestInit): Promise<Response> => {
         const init: uRequestInit = (options as uRequestInit) || {};
         init.dispatcher = agent;

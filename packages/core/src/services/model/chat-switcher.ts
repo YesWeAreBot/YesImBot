@@ -117,12 +117,16 @@ export class ChatModelSwitcher {
 
     public getModel(): SelectedChatModel | null {
         const fullName = this.pickCandidate(this.group.models);
-        if (!fullName)
+        if (!fullName) {
+            this.logger.warn(`[chat-switcher] 候选模型列表为空，或所有模型均已熔断。模型组: ${this.group.name}`);
             return null;
+        }
 
         const options = this.registry.getChatModel(fullName);
-        if (!options)
+        if (!options) {
+            this.logger.error(`[chat-switcher] 无法获取模型配置: ${fullName}，请检查该模型是否已在 Provider 中正确注册`);
             return null;
+        }
 
         return {
             fullName,

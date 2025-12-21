@@ -23,8 +23,8 @@ export const Config: Schema<Config> = Schema.object({
     baseURL: Schema.string().default("https://api.openai.com/v1/"),
     apiKey: Schema.string().role("secret").required(),
     proxy: Schema.string().default(""),
-    retryDefault: Schema.number().min(0).default(3),
-    retryDelayDefault: Schema.number().min(0).default(1000),
+    retry: Schema.number().min(0).default(3),
+    retryDelay: Schema.number().min(0).default(1000),
     modelConfig: Schema.object({
         temperature: Schema.number().min(0).max(2).step(0.01).role("slider").default(1),
         topP: Schema.number().min(0).max(1).step(0.01).role("slider").default(1),
@@ -41,20 +41,14 @@ export const Config: Schema<Config> = Schema.object({
 
 class OpenAIProvider extends SharedProvider<any, ModelConfig> {
     constructor(name: string, provider: any, config: Config, runtime?: ProviderRuntime) {
-        const processedConfig = { ...config };
-        const baseURL = normalizeBaseURL(processedConfig.baseURL, runtime?.logger);
-
-        if (baseURL) {
-            processedConfig.baseURL = baseURL;
-        }
-
-        super(name, provider, processedConfig, runtime);
+        super(name, provider, config, runtime);
     }
 }
 
 export function apply(ctx: Context, config: Config) {
     const providerName = "openai";
-    const provider = new OpenAIProvider("openai", {} as any, config, { proxy: config.proxy, logger: ctx.logger });
+    const { createOpenAI } = require("@yesimbot/shared-model");
+    const provider = new OpenAIProvider("openai", createOpenAI(config.apiKey, config.baseURL), config, { proxy: config.proxy, logger: ctx.logger });
     ctx.on("ready", async () => {
         const registry = ctx.get("yesimbot.model");
         if (!registry) {

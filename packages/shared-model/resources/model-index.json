@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2025-12-20T15:22:12.966Z",
+  "generatedAt": "2025-12-21T14:57:00.271Z",
   "models": {
     "kimi-k2-thinking-turbo": {
       "id": "kimi-k2-thinking-turbo",
@@ -2119,6 +2119,29 @@
       },
       "aliases": [
         "nvidia/llama-embed-nemotron-8b"
+      ]
+    },
+    "nemotron-3-nano-30b-a3b": {
+      "id": "nemotron-3-nano-30b-a3b",
+      "name": "nemotron-3-nano-30b-a3b",
+      "family": "nemotron",
+      "modelType": "chat",
+      "abilities": [
+        "tool-usage",
+        "tool-streaming",
+        "reasoning"
+      ],
+      "knowledge": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "aliases": [
+        "nvidia/nemotron-3-nano-30b-a3b"
       ]
     },
     "parakeet-tdt-0.6b-v2": {
@@ -6206,27 +6229,6 @@
         "reasoning"
       ],
       "knowledge": "2025-08-31",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "aliases": []
-    },
-    "qwen3-235b": {
-      "id": "qwen3-235b",
-      "name": "Venice Large 1.1",
-      "family": "qwen3",
-      "modelType": "chat",
-      "abilities": [
-        "tool-usage",
-        "tool-streaming",
-        "reasoning"
-      ],
-      "knowledge": "2024-10",
       "modalities": {
         "input": [
           "text"
@@ -14767,6 +14769,27 @@
       },
       "aliases": []
     },
+    "qwen3-235b": {
+      "id": "qwen3-235b",
+      "name": "Qwen3-235B-A22B",
+      "family": "qwen3",
+      "modelType": "chat",
+      "abilities": [
+        "tool-usage",
+        "tool-streaming",
+        "reasoning"
+      ],
+      "knowledge": "2024-10",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "aliases": []
+    },
     "deepseek-v3.2-chat": {
       "id": "deepseek-v3.2-chat",
       "name": "DeepSeek-V3.2",
@@ -18719,7 +18742,6 @@
       "qwen3-next-80b-a3b-thinking",
       "qwen3-32b",
       "qwen3-235b-a22b-instruct-2507",
-      "qwen3-235b",
       "qwen3-4b",
       "qwen3-next-80b",
       "qwen-qwen3-next-80b-a3b-instruct",
@@ -18749,6 +18771,7 @@
       "deepseek-r1-0528-qwen3-8b",
       "qwen3-30b-a3b-instruct-2507",
       "qwen3-235b-a22b-07-25",
+      "qwen3-235b",
       "qwen3-235b-a22b-instruct",
       "qwen3-max-preview",
       "qwen3-embedding-4b",
@@ -18902,6 +18925,7 @@
     "nemotron": [
       "nvidia-nemotron-nano-9b-v2",
       "cosmos-nemotron-34b",
+      "nemotron-3-nano-30b-a3b",
       "nemotron-nano-9b-v2",
       "nvidia.nemotron-nano-12b-v2",
       "nvidia.nemotron-nano-9b-v2"
@@ -19962,6 +19986,7 @@
     "nvidia/nvidia-nemotron-nano-9b-v2": "nvidia-nemotron-nano-9b-v2",
     "nvidia/cosmos-nemotron-34b": "cosmos-nemotron-34b",
     "nvidia/llama-embed-nemotron-8b": "llama-embed-nemotron-8b",
+    "nvidia/nemotron-3-nano-30b-a3b": "nemotron-3-nano-30b-a3b",
     "nvidia/parakeet-tdt-0.6b-v2": "parakeet-tdt-0.6b-v2",
     "nvidia/nemoretriever-ocr-v1": "nemoretriever-ocr-v1",
     "nvidia/llama-3.1-nemotron-ultra-253b-v1": "llama-3.1-nemotron-ultra-253b-v1",

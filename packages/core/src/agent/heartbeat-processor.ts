@@ -237,7 +237,7 @@ export class HeartbeatProcessor {
             try {
                 if (!selected) {
                     this.logger.warn("未找到合适的模型，跳过本次心跳");
-                    break;
+                    return { continue: false };
                 }
 
                 const controller = new AbortController();
@@ -383,7 +383,9 @@ export class HeartbeatProcessor {
     /**
      * 解析并验证来自LLM的响应
      */
-    private parseAndValidateResponse(llmRawResponse: GenerateTextResult): AgentResponse | null {
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult | null): AgentResponse | null {
+        if (!llmRawResponse)
+            return null;
         const parser = this.config.promptFormat === "toon"
             ? new ToonParser<AgentResponse>({ logger: this.logger, debug: true })
             : new JsonParser<AgentResponse>({ logger: this.logger, debug: true });

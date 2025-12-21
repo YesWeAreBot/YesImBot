@@ -90,31 +90,43 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
 
         this.shouldInjectFetch = Boolean((config.retry && config.retry > 0) || runtime?.fetch || runtime?.proxy);
 
-        const getOverride = (modelId: string): Partial<TModelConfig> => {
-            const override = (this.config as SharedConfig<TModelConfig>).override;
-            return override && override[modelId] ? override[modelId]! : {};
-        };
-
         // 运行时绑定方法
         const methods = ["chat", "embed", "image", "speech", "transcription"] as const;
 
         methods.forEach((method) => {
             if (method in provider && typeof (provider as any)[method] === "function") {
-                (this as any)[method] = (model: string) => ({
-                    ...(provider as any)[method](model),
-                    ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
-                    ...(this.config.modelConfig ?? {}),
-                    ...getOverride(model),
-                });
+                (this as any)[method] = (model: string) => {
+                    const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
+                    const apiKey = this.config.apiKey;
+                    const getOverride = (modelId: string): Partial<TModelConfig> => {
+                        const override = (this.config as SharedConfig<TModelConfig>).override;
+                        return override && override[modelId] ? override[modelId]! : {};
+                    };
+
+                    return {
+                        ...(provider as any)[method](model),
+                        baseURL,
+                        apiKey,
+                        ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
+                        ...(this.config.modelConfig ?? {}),
+                        ...getOverride(model),
+                    };
+                };
             }
         });
 
         if ("model" in provider && typeof (provider as any).model === "function") {
-            (this as any).model = () => ({
-                ...(provider as any).model(),
-                ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
-                ...(this.config.modelConfig ?? {}),
-            });
+            (this as any).model = () => {
+                const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
+                const apiKey = this.config.apiKey;
+                return {
+                    ...(provider as any).model(),
+                    baseURL,
+                    apiKey,
+                    ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
+                    ...(this.config.modelConfig ?? {}),
+                };
+            };
         }
     }
 
