@@ -13,7 +13,7 @@ import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/h
 import { ModelError } from "@/services/model/types";
 import { FunctionType } from "@/services/plugin";
 import { Services } from "@/shared";
-import { estimateTokensByRegex, formatDate, JsonParser } from "@/shared/utils";
+import { estimateTokensByRegex, formatDate, JsonParser, ToonParser } from "@/shared/utils";
 
 export class HeartbeatProcessor {
     private logger: Logger;
@@ -227,8 +227,6 @@ export class HeartbeatProcessor {
         let startTime: number;
 
         while (attempt < this.config.switchConfig.maxRetries) {
-            const parser = new JsonParser<AgentResponse>();
-
             selected = this.modelSwitcher.getModel();
 
             // 步骤 5: 调用LLM
@@ -386,19 +384,29 @@ export class HeartbeatProcessor {
      * 解析并验证来自LLM的响应
      */
     private parseAndValidateResponse(llmRawResponse: GenerateTextResult): AgentResponse | null {
-        const parser = new JsonParser<AgentResponse>();
+        const parser = this.config.promptFormat === "toon"
+            ? new ToonParser<AgentResponse>({ logger: this.logger, debug: true })
+            : new JsonParser<AgentResponse>({ logger: this.logger, debug: true });
 
-        const { data, error } = parser.parse(llmRawResponse.text);
+        const { data, error, logs } = parser.parse(llmRawResponse.text);
         if (error || !data) {
+            this.logger.error(`[解析失败] 格式: ${this.config.promptFormat}, 错误: ${error}`);
+            this.logger.error(`[解析日志]\n${logs.join("\n")}`);
             return null;
         }
 
-        // if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
-        //     return null;
-        // }
-
-        if (!Array.isArray(data.actions))
+        if (!Array.isArray(data.actions)) {
+            this.logger.error("[验证失败] actions 字段缺失或不是数组");
             return null;
+        }
+
+        for (let i = 0; i < data.actions.length; i++) {
+            const action = data.actions[i];
+            if (!action || typeof action !== "object" || !action.name) {
+                this.logger.error(`[验证失败] 第 ${i + 1} 个 action 格式不正确或缺少名称`);
+                return null;
+            }
+        }
 
         data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
 

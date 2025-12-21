@@ -101,14 +101,34 @@ export class PromptService extends Service<Config> {
      * @returns 一个 Promise，解析为最终渲染好的提示词字符串
      */
     public async render(templateName: string, initialScope: Record<string, any> = {}): Promise<string> {
-        const templateContent = this.templates.get(templateName);
+        let nameToUse = templateName;
+        if (this.config.promptFormat === "toon" && this.templates.has(`${templateName}.toon`)) {
+            nameToUse = `${templateName}.toon`;
+        }
+
+        const templateContent = this.templates.get(nameToUse);
         if (!templateContent) {
-            throw new Error(`未找到模板 "${templateName}"`);
+            throw new Error(`未找到模板 "${nameToUse}"`);
         }
 
         const requiredVariables = this.getRequiredVariables(templateContent);
         const scope = await this.buildScope(initialScope, requiredVariables);
-        const partials = Object.fromEntries(this.templates);
+
+        const partials: Record<string, string> = {};
+        for (const [name, content] of this.templates) {
+            if (this.config.promptFormat === "toon") {
+                if (name.endsWith(".toon")) {
+                    const baseName = name.slice(0, -5);
+                    partials[baseName] = content;
+                } else if (!partials[name]) {
+                    partials[name] = content;
+                }
+            } else {
+                if (!name.endsWith(".toon")) {
+                    partials[name] = content;
+                }
+            }
+        }
 
         return this.renderer.render(templateContent, scope, partials, { maxDepth: this.config.maxRenderDepth });
     }

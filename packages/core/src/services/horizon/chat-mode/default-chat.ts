@@ -27,6 +27,9 @@ export class DefaultChatMode extends BaseChatMode {
         // 注册主模板
         promptService.registerTemplate("agent.system.chat", loadTemplate("agent.system.chat"));
         promptService.registerTemplate("agent.user.events", loadTemplate("agent.user.events"));
+        try {
+            promptService.registerTemplate("agent.user.events.toon", loadTemplate("agent.user.events.toon"));
+        } catch {}
 
         // 注册 partials
         promptService.registerTemplate("identity", loadPartial("identity"));
@@ -35,6 +38,9 @@ export class DefaultChatMode extends BaseChatMode {
         promptService.registerTemplate("memories", loadPartial("memories"));
         promptService.registerTemplate("tools", loadPartial("tools"));
         promptService.registerTemplate("output", loadPartial("output"));
+        try {
+            promptService.registerTemplate("output.toon", loadPartial("output.toon"));
+        } catch {}
     }
 
     match(percept: Percept): boolean {
