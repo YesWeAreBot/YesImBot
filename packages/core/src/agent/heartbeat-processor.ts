@@ -429,8 +429,8 @@ export class HeartbeatProcessor {
         if (!llmRawResponse)
             return null;
         const parser = this.config.promptFormat === "toon"
-            ? new ToonParser<AgentResponse>({ logger: this.logger, debug: true })
-            : new JsonParser<AgentResponse>({ logger: this.logger, debug: true });
+            ? new ToonParser<AgentResponse>({ logger: this.logger })
+            : new JsonParser<AgentResponse>({ logger: this.logger });
 
         const { data, error, logs } = parser.parse(llmRawResponse.text);
         if (error || !data) {

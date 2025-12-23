@@ -25,6 +25,10 @@ export const Config: Schema<Config> = Schema.object({
     proxy: Schema.string().default(""),
     retry: Schema.number().min(0).default(3),
     retryDelay: Schema.number().min(0).default(1000),
+    // @ts-ignore
+    retryDefault: Schema.number().hidden(),
+    // @ts-ignore
+    retryDelayDefault: Schema.number().hidden(),
     modelConfig: Schema.object({
         temperature: Schema.number().min(0).max(2).step(0.01).role("slider").default(1),
         topP: Schema.number().min(0).max(1).step(0.01).role("slider").default(1),
@@ -34,6 +38,16 @@ export const Config: Schema<Config> = Schema.object({
         reasoning_effort: Schema.union(["none", "minimal", "low", "medium", "high", "xhigh"]).default("medium"),
         max_completion_tokens: Schema.number(),
     }),
+}).transform((config: any) => {
+    if (config.retryDefault !== undefined && config.retry === 3) {
+        config.retry = config.retryDefault;
+        delete config.retryDefault;
+    }
+    if (config.retryDelayDefault !== undefined && config.retryDelay === 1000) {
+        config.retryDelay = config.retryDelayDefault;
+        delete config.retryDelayDefault;
+    }
+    return config;
 }).i18n({
     "zh-CN": require("./locales/zh-CN.yml")._config,
     "en-US": require("./locales/en-US.yml")._config,
