@@ -69,8 +69,18 @@ export class HorizonService extends Service<Config> {
             const content = await fs.readFile(stateFile, "utf-8");
             const state = JSON.parse(content);
             lastFormat = state.promptFormat;
-        } catch {
+        } catch (err: any) {
             // 文件不存在或解析失败，视为首次运行或无状态
+            const fsError = err as NodeJS.ErrnoException;
+            if (fsError && fsError.code === "ENOENT") {
+                // 状态文件不存在：静默处理
+                return;
+            }
+            if (err instanceof SyntaxError) {
+                this.ctx.logger.warn(`状态文件格式无效，视为无历史状态: ${err.message}`);
+                return;
+            }
+            this.ctx.logger.warn(`读取状态文件时发生错误，视为无历史状态: ${err?.message ?? err}`);
         }
 
         if (lastFormat && lastFormat !== currentFormat) {

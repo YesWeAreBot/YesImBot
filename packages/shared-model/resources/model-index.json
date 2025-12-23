@@ -13501,7 +13501,7 @@
     },
     "claude-3-sonnet": {
       "id": "claude-3-sonnet",
-      "name": "Claude Sonnet 3",
+      "name": "Claude 3 Sonnet",
       "family": "claude-sonnet",
       "modelType": "chat",
       "abilities": [
