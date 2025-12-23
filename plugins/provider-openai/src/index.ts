@@ -38,16 +38,6 @@ export const Config: Schema<Config> = Schema.object({
         reasoning_effort: Schema.union(["none", "minimal", "low", "medium", "high", "xhigh"]).default("medium"),
         max_completion_tokens: Schema.number(),
     }),
-}).transform((config: any) => {
-    if (config.retryDefault !== undefined && config.retry === 3) {
-        config.retry = config.retryDefault;
-        delete config.retryDefault;
-    }
-    if (config.retryDelayDefault !== undefined && config.retryDelay === 1000) {
-        config.retryDelay = config.retryDelayDefault;
-        delete config.retryDelayDefault;
-    }
-    return config;
 }).i18n({
     "zh-CN": require("./locales/zh-CN.yml")._config,
     "en-US": require("./locales/en-US.yml")._config,
@@ -55,7 +45,14 @@ export const Config: Schema<Config> = Schema.object({
 
 class OpenAIProvider extends SharedProvider<any, ModelConfig> {
     constructor(name: string, provider: any, config: Config, runtime?: ProviderRuntime) {
-        super(name, provider, config, runtime);
+        const cfg = { ...config } as any;
+        if (cfg.retryDefault !== undefined && cfg.retry === 3) {
+            cfg.retry = cfg.retryDefault;
+        }
+        if (cfg.retryDelayDefault !== undefined && cfg.retryDelay === 1000) {
+            cfg.retryDelay = cfg.retryDelayDefault;
+        }
+        super(name, provider, cfg, runtime);
     }
 }
 
