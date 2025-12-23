@@ -124,7 +124,7 @@ export class ChatModelSwitcher {
 
         const options = this.registry.getChatModel(fullName);
         if (!options) {
-            this.logger.error(`[chat-switcher] 无法获取模型配置: ${fullName}，请检查该模型是否已在 Provider 中正确注册`);
+            this.logger.error(`[chat-switcher] 无法获取模型配置: ${fullName}。可能原因包括：模型未在对应 Provider 中注册、Provider 未正确加载、模型已被移除，或模型名称/ID 格式与 Provider 要求不匹配。`);
             return null;
         }
 
