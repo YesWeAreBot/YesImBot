@@ -185,7 +185,9 @@ export class ToonParser<T> {
                 if (value.startsWith('{') || value.startsWith('[')) {
                     try {
                         value = JSON.parse(value);
-                    } catch {}
+                    } catch (e) {
+                        defaultLogger.warn(`Failed to parse JSON value "${value}": ${e instanceof Error ? e.message : String(e)}`);
+                    }
                 }
                 result[key] = value;
             }
