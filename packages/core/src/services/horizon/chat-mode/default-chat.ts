@@ -1,12 +1,12 @@
 import type { Context } from "koishi";
 import type { ModeResult } from "./types";
 import type { HorizonService } from "@/services/horizon/service";
-import type { AgentRecord, Percept, SelfInfo, UserMessagePercept } from "@/services/horizon/types";
+import type { AgentActionData, AgentRecord, AgentThoughtData, AgentToolData, Percept, SelfInfo, ToolResultData, UserMessagePercept } from "@/services/horizon/types";
 import { message } from "xsai";
 import { PerceptType, TimelineEventType, TimelineStage } from "@/services/horizon/types";
 import { loadPartial, loadTemplate } from "@/services/prompt";
 import { Services } from "@/shared";
-import { formatDate } from "@/shared/utils";
+import { formatDate, ToonParser } from "@/shared/utils";
 import { BaseChatMode } from "./base";
 
 export class DefaultChatMode extends BaseChatMode {
@@ -39,6 +39,11 @@ export class DefaultChatMode extends BaseChatMode {
         promptService.registerTemplate("tools", loadPartial("tools"));
         promptService.registerTemplate("output", loadPartial("output"));
         try {
+            promptService.registerTemplate("identity.toon", loadPartial("identity.toon"));
+            promptService.registerTemplate("environment.toon", loadPartial("environment.toon"));
+            promptService.registerTemplate("working_memory.toon", loadPartial("working_memory.toon"));
+            promptService.registerTemplate("memories.toon", loadPartial("memories.toon"));
+            promptService.registerTemplate("tools.toon", loadPartial("tools.toon"));
             promptService.registerTemplate("output.toon", loadPartial("output.toon"));
         } catch {}
     }
@@ -58,6 +63,7 @@ export class DefaultChatMode extends BaseChatMode {
                 isDirect: scope.isDirect,
             },
             types: [TimelineEventType.Message],
+            stage: [TimelineStage.Active, TimelineStage.New],
             limit: 30, // 30条消息窗口
             orderBy: "desc",
         });
@@ -77,51 +83,78 @@ export class DefaultChatMode extends BaseChatMode {
                 TimelineEventType.AgentTool,
                 TimelineEventType.ToolResult,
             ],
+            stage: [TimelineStage.Active, TimelineStage.New],
             limit: 10, // 最近10条工作记忆
             orderBy: "desc",
         })) as AgentRecord[];
 
+        const isToon = this.horizon.config.promptFormat === "toon";
+
         const workingMemory = working.reverse().map((record) => {
+            if (typeof record.data === "string") {
+                return {
+                    isAction: record.type === TimelineEventType.AgentAction,
+                    isThought: record.type === TimelineEventType.AgentThought,
+                    isTool: record.type === TimelineEventType.AgentTool,
+                    isToolResult: record.type === TimelineEventType.ToolResult,
+                    message: record.data,
+                };
+            }
+
             switch (record.type) {
-                case TimelineEventType.AgentAction:
+                case TimelineEventType.AgentAction: {
+                    const data = record.data as AgentActionData;
                     return {
                         isAction: true,
-                        name: record.data.name,
-                        args: record.data.args,
-                        message: JSON.stringify({
-                            name: record.data.name,
-                            args: record.data.args,
-                        }),
+                        name: data.name,
+                        args: data.args,
+                        message: isToon
+                            ? ToonParser.stringify({ actions: [{ name: data.name, params: data.args }] }, "  ", false)
+                            : JSON.stringify({
+                                name: data.name,
+                                args: data.args,
+                            }),
                     };
-                case TimelineEventType.AgentThought:
+                }
+                case TimelineEventType.AgentThought: {
+                    const data = record.data as AgentThoughtData;
                     return {
                         isThought: true,
-                        content: record.data.content,
-                        message: record.data.content,
+                        content: data.content,
+                        message: data.content,
                     };
-                case TimelineEventType.AgentTool:
+                }
+                case TimelineEventType.AgentTool: {
+                    const data = record.data as AgentToolData;
                     return {
                         isTool: true,
-                        name: record.data.name,
-                        args: record.data.args,
-                        message: JSON.stringify({
-                            name: record.data.name,
-                            args: record.data.args,
-                        }),
+                        name: data.name,
+                        args: data.args,
+                        message: isToon
+                            ? ToonParser.stringify({ actions: [{ name: data.name, params: data.args }] }, "  ", false)
+                            : JSON.stringify({
+                                name: data.name,
+                                args: data.args,
+                            }),
                     };
-                case TimelineEventType.ToolResult:
+                }
+                case TimelineEventType.ToolResult: {
+                    const data = record.data as ToolResultData;
                     return {
                         isToolResult: true,
-                        toolCallId: record.data.toolCallId,
-                        status: record.data.status,
-                        result: record.data.result,
-                        error: record.data.error,
-                        message: JSON.stringify({
-                            status: record.data.status,
-                            result: record.data.result,
-                            error: record.data.error,
-                        }),
+                        toolCallId: data.toolCallId,
+                        status: data.status,
+                        result: data.result,
+                        error: data.error,
+                        message: isToon
+                            ? `  status: ${data.status}\n  result: ${typeof data.result === "object" ? JSON.stringify(data.result) : data.result}`
+                            : JSON.stringify({
+                                status: data.status,
+                                result: data.result,
+                                error: data.error,
+                            }),
                     };
+                }
                 default:
                     return {
                         isUnknown: true,

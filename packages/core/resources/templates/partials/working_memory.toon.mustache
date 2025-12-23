@@ -1,0 +1,23 @@
+{{! working_memory.toon.mustache - 工作记忆模块 (Toon 格式) }}
+{{#workingMemory.length}}
+<working_memory>
+这是你刚才执行记录，请根据这些信息继续行动：
+{{#workingMemory}}
+{{#isAction}}
++ executed_action:
+{{message}}
+{{/isAction}}
+{{#isThought}}
++ previous_thought: {{message}}
+{{/isThought}}
+{{#isTool}}
++ called_tool:
+{{message}}
+{{/isTool}}
+{{#isToolResult}}
++ tool_result:
+{{message}}
+{{/isToolResult}}
+{{/workingMemory}}
+</working_memory>
+{{/workingMemory.length}}

@@ -55,15 +55,16 @@ export enum TimelineStage {
 /**
  * 事件线表基类
  */
-export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends Record<string, any>> {
+export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends Record<string, any> | string> {
     id: string;
     timestamp: Date;
     scope: Scope;
     type: Type;
     priority: TimelinePriority;
     stage: TimelineStage;
+    format?: string;
 
-    // 直接嵌入事件数据 (JSON)
+    // 直接嵌入事件数据 (JSON 或 Toon 字符串)
     data: Data;
 }
 
@@ -98,21 +99,21 @@ export interface AgentThoughtData {
     content: string;
 }
 
-export type AgentThoughtRecord = BaseTimelineEntry<TimelineEventType.AgentThought, AgentThoughtData>;
+export type AgentThoughtRecord = BaseTimelineEntry<TimelineEventType.AgentThought, AgentThoughtData | string>;
 
 export interface AgentToolData {
     name: string;
     args: Record<string, any>;
 }
 
-export type AgentToolRecord = BaseTimelineEntry<TimelineEventType.AgentTool, AgentToolData>;
+export type AgentToolRecord = BaseTimelineEntry<TimelineEventType.AgentTool, AgentToolData | string>;
 
 export interface AgentActionData {
     name: string;
     args: Record<string, any>;
 }
 
-export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;
+export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData | string>;
 
 export interface ToolResultData {
     toolCallId?: string;
@@ -121,7 +122,7 @@ export interface ToolResultData {
     error?: string;
 }
 
-export type ToolResultRecord = BaseTimelineEntry<TimelineEventType.ToolResult, ToolResultData>;
+export type ToolResultRecord = BaseTimelineEntry<TimelineEventType.ToolResult, ToolResultData | string>;
 
 export type AgentRecord = AgentThoughtRecord | AgentToolRecord | AgentActionRecord | ToolResultRecord;
 

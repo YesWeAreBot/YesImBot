@@ -1,20 +1,20 @@
 {{! agent.user.events.toon.mustache - User Prompt 模板 (Toon 格式) }}
 <conversation>
 + now: {{date.now}}
-+ history:
++ history_events:
 {{#events}}
 {{#isActive}}
-  - time: {{#timestamp}}{{_formatDate}}{{/timestamp}}
-    sender: {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSelfMessage}}你{{/isSelfMessage}}{{#isSystemEvent}}系统{{/isSystemEvent}}
-    content: {{content}}{{^content}}{{message}}{{/content}}
+  - [{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSelfMessage}}你(Agent){{/isSelfMessage}} {{#isSystemEvent}}System{{/isSystemEvent}}: {{content}}{{^content}}{{message}}{{/content}}
 {{/isActive}}
 {{/events}}
-+ new_events:
+---
+↑ 以上是历史消息 (History)
+↓ 以下是触发你响应的新事件 (New Events)
+
++ incoming_events:
 {{#events}}
 {{#isNew}}
-  - time: {{#timestamp}}{{_formatDate}}{{/timestamp}}
-    sender: {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSystemEvent}}系统事件{{/isSystemEvent}}
-    content: {{content}}{{^content}}{{message}}{{/content}}
+  - [{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSystemEvent}}SystemEvent{{/isSystemEvent}}: {{content}}{{^content}}{{message}}{{/content}}
 {{/isNew}}
 {{/events}}
 </conversation>

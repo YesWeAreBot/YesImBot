@@ -3,6 +3,8 @@ import type { CommandService } from "../command";
 import type { ModeResult } from "./chat-mode/types";
 import type { Entity, EntityRecord, Environment, Percept, SelfInfo, TimelineEntry } from "./types";
 import type { Config } from "@/config";
+import { promises as fs } from "node:fs";
+import { resolve } from "node:path";
 import { Service } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { ChatModeManager, DefaultChatMode } from "./chat-mode";
@@ -47,12 +49,46 @@ export class HorizonService extends Service<Config> {
     protected async start(): Promise<void> {
         this.registerModels();
 
+        await this.checkPromptFormatChange();
+
         this.listener.start();
         this.registerCommands();
 
         this.modeManager.register(new DefaultChatMode(this.ctx, this));
 
         this.ctx.logger.info("服务已启动");
+    }
+
+    private async checkPromptFormatChange(): Promise<void> {
+        const stateDir = resolve(this.ctx.baseDir, "data/yesimbot");
+        const stateFile = resolve(stateDir, "state.json");
+        const currentFormat = this.config.promptFormat;
+        let lastFormat: string | undefined;
+
+        try {
+            const content = await fs.readFile(stateFile, "utf-8");
+            const state = JSON.parse(content);
+            lastFormat = state.promptFormat;
+        } catch {
+            // 文件不存在或解析失败，视为首次运行或无状态
+        }
+
+        if (lastFormat && lastFormat !== currentFormat) {
+            this.ctx.logger.warn(`检测到提示词格式变更 (${lastFormat} -> ${currentFormat})，正在清理历史记录...`);
+
+            // 执行清理逻辑
+            await this.ctx.database.remove(TableName.Timeline, {});
+
+            this.ctx.logger.info("历史记录已清理完成。");
+        }
+
+        // 更新状态文件
+        try {
+            await fs.mkdir(stateDir, { recursive: true });
+            await fs.writeFile(stateFile, JSON.stringify({ promptFormat: currentFormat }, null, 2));
+        } catch (err: any) {
+            this.ctx.logger.warn(`无法保存状态文件: ${err.message}`);
+        }
     }
 
     protected stop(): void {
@@ -126,8 +162,9 @@ export class HorizonService extends Service<Config> {
                 type: "string(32)",
                 priority: "unsigned",
                 stage: "string(16)",
+                format: "string(16)",
                 timestamp: "timestamp",
-                data: "json",
+                data: "text",
             },
             {
                 primary: ["id"],

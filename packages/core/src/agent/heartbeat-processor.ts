@@ -66,6 +66,7 @@ export class HeartbeatProcessor {
         stream: boolean;
         abortSignal?: AbortSignal;
         temperature?: number;
+        onChunk?: (chunk: string) => void;
     }): Promise<GenerateTextResult> {
         if (!options.stream) {
             return await generateText({
@@ -93,6 +94,9 @@ export class HeartbeatProcessor {
             if (textDelta === "")
                 continue;
             finalContentParts.push(textDelta);
+            if (options.onChunk) {
+                options.onChunk(textDelta);
+            }
         }
 
         const finalText = finalContentParts.join("");
@@ -114,6 +118,20 @@ export class HeartbeatProcessor {
     }
 
     private async performSingleHeartbeat(turnId: string, percept: Percept): Promise<{ continue: boolean } | null> {
+        // 步骤 0: 检查提示词格式切换
+        const lastRecords = await this.horizon.events.query({
+            scope: percept.scope,
+            types: [TimelineEventType.AgentAction, TimelineEventType.AgentThought, TimelineEventType.AgentTool],
+            stage: [TimelineStage.Active, TimelineStage.New],
+            limit: 1,
+            orderBy: "desc",
+        });
+
+        if (lastRecords.length > 0 && lastRecords[0].format && lastRecords[0].format !== this.config.promptFormat) {
+            this.logger.info(`检测到提示词格式从 ${lastRecords[0].format} 切换为 ${this.config.promptFormat}，清空上下文历史`);
+            await this.horizon.events.clearHistory(percept.scope);
+        }
+
         let attempt = 0;
 
         let llmRawResponse: GenerateTextResult | null = null;
@@ -142,6 +160,8 @@ export class HeartbeatProcessor {
         const tools = funcSchemas.filter((f) => f.type === "tool");
         const actions = funcSchemas.filter((f) => f.type === "action" || !f.type);
 
+        const isToon = this.config.promptFormat === "toon";
+
         const renderView = {
             // 从 ChatMode 构建的视图数据
             ...view,
@@ -149,8 +169,8 @@ export class HeartbeatProcessor {
             session: context.session,
 
             // 工具定义（分离为 tools 和 actions）
-            tools: formatFunction(tools),
-            actions: formatFunction(actions),
+            tools: formatFunction(tools, this.config.promptFormat),
+            actions: formatFunction(actions, this.config.promptFormat),
 
             // 记忆块
             memoryBlocks: this.memory.getMemoryBlocksForRendering(),
@@ -312,6 +332,19 @@ export class HeartbeatProcessor {
 
         const agentActions = agentResponseData.actions;
 
+        if (agentResponseData.thoughts) {
+            await this.horizon.events.record({
+                id: Random.id(),
+                timestamp: new Date(),
+                scope: percept.scope,
+                priority: TimelinePriority.Normal,
+                type: TimelineEventType.AgentThought,
+                stage: TimelineStage.Active,
+                format: this.config.promptFormat,
+                data: isToon ? agentResponseData.thoughts : { content: agentResponseData.thoughts },
+            });
+        }
+
         if (agentActions.length === 0) {
             this.logger.info("无动作需要执行");
             actionContinue = false;
@@ -337,10 +370,13 @@ export class HeartbeatProcessor {
                     priority: TimelinePriority.Normal,
                     type: TimelineEventType.AgentTool,
                     stage: TimelineStage.Active,
-                    data: {
-                        name: action.name,
-                        args: action.params || {},
-                    },
+                    format: this.config.promptFormat,
+                    data: isToon
+                        ? ToonParser.stringify({ actions: [{ name: action.name, params: action.params || {} }] }, "  ", false)
+                        : {
+                            name: action.name,
+                            args: action.params || {},
+                        },
                 });
 
                 await this.horizon.events.record({
@@ -350,10 +386,13 @@ export class HeartbeatProcessor {
                     priority: TimelinePriority.Normal,
                     type: TimelineEventType.ToolResult,
                     stage: TimelineStage.Active,
-                    data: {
-                        status: result.status,
-                        result: result.result,
-                    },
+                    format: this.config.promptFormat,
+                    data: isToon
+                        ? `  status: ${result.status}\n  result: ${typeof result.result === "object" ? JSON.stringify(result.result) : result.result}`
+                        : {
+                            status: result.status,
+                            result: result.result,
+                        },
                 });
             } else if (def && def.type === FunctionType.Action) {
                 await this.horizon.events.record({
@@ -363,10 +402,13 @@ export class HeartbeatProcessor {
                     priority: TimelinePriority.Normal,
                     type: TimelineEventType.AgentAction,
                     stage: TimelineStage.Active,
-                    data: {
-                        name: action.name,
-                        args: action.params || {},
-                    },
+                    format: this.config.promptFormat,
+                    data: isToon
+                        ? ToonParser.stringify({ actions: [{ name: action.name, params: action.params || {} }] }, "  ", false)
+                        : {
+                            name: action.name,
+                            args: action.params || {},
+                        },
                 });
             }
         }
@@ -440,8 +482,11 @@ function _toString(obj) {
     return JSON.stringify(obj);
 }
 
-function formatFunction(tools: FunctionSchema[]): string[] {
+function formatFunction(tools: FunctionSchema[], format: string = "json"): string[] {
     return tools.map((tool) => {
+        if (format === "toon") {
+            return ToonParser.formatFunction(tool);
+        }
         return JSON.stringify({
             name: tool.name,
             description: tool.description,
@@ -451,11 +496,7 @@ function formatFunction(tools: FunctionSchema[]): string[] {
 }
 
 interface AgentResponse {
-    // thoughts: {
-    //     observe?: string;
-    //     analyze_infer?: string;
-    //     plan?: string;
-    // };
+    thoughts?: string;
     actions: Array<{
         name: string;
         params?: Record<string, any>;

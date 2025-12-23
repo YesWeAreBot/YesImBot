@@ -29,5 +29,5 @@ export const PromptFormatConfig: Schema<PromptFormatConfig> = Schema.object({
     promptFormat: Schema.union([
         Schema.const("json").description("JSON 格式"),
         Schema.const("toon").description("Toon 格式"),
-    ]).default("json").description("提示词输出格式"),
+    ]).default("json").description("提示词输出格式<br/>注意：切换格式后请执行“yesimbot.history.clear”防止历史记录格式混乱。<br/>此操作将会清理上下文"),
 });

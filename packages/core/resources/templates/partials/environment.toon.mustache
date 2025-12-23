@@ -1,0 +1,22 @@
+{{! environment.toon.mustache - 环境模块 (Toon 格式) }}
+<environment>
++ channel:
+  - name: {{channel.name}}
+    type: {{#_isGroup}}group{{/_isGroup}}{{#_isPrivate}}private{{/_isPrivate}}
+    platform: {{channel.platform}}
+    id: {{channel.id}}
+
+{{#participants.length}}
++ participants:
+{{#participants}}
+  - id: {{id}}
+    name: {{name}}
+    {{#relationship}}
+    relationship:
+      {{#intimacy}}intimacy: {{.}}{{/intimacy}}
+      {{#notes}}notes: {{.}}{{/notes}}
+    {{/relationship}}
+    {{#recentImpression}}recent_impression: {{.}}{{/recentImpression}}
+{{/participants}}
+{{/participants.length}}
+</environment>

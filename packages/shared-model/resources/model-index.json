@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2025-12-21T14:57:00.271Z",
+  "generatedAt": "2025-12-23T10:05:55.617Z",
   "models": {
     "kimi-k2-thinking-turbo": {
       "id": "kimi-k2-thinking-turbo",
@@ -154,6 +154,29 @@
         ]
       },
       "aliases": []
+    },
+    "glm-4.7": {
+      "id": "glm-4.7",
+      "name": "GLM-4.7",
+      "family": "glm-4.7",
+      "modelType": "chat",
+      "abilities": [
+        "tool-usage",
+        "tool-streaming",
+        "reasoning"
+      ],
+      "knowledge": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "aliases": [
+        "z-ai/glm-4.7"
+      ]
     },
     "glm-4.5-flash": {
       "id": "glm-4.5-flash",
@@ -4505,7 +4528,6 @@
       },
       "aliases": [
         "deepseek/deepseek-r1",
-        "replicate/deepseek-ai/deepseek-r1",
         "deepseek/deepseek-r1:free"
       ]
     },
@@ -6270,25 +6292,6 @@
         "tool-streaming"
       ],
       "knowledge": "2025-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "aliases": []
-    },
-    "devstral-2-2512": {
-      "id": "devstral-2-2512",
-      "name": "Devstral 2",
-      "family": "devstral",
-      "modelType": "chat",
-      "abilities": [
-        "tool-usage",
-        "tool-streaming"
-      ],
       "modalities": {
         "input": [
           "text"
@@ -9646,8 +9649,7 @@
         ]
       },
       "aliases": [
-        "meta/meta-llama-3.1-405b-instruct",
-        "replicate/meta/meta-llama-3.1-405b-instruct"
+        "meta/meta-llama-3.1-405b-instruct"
       ]
     },
     "llama-4-maverick-17b-128e-instruct-fp8": {
@@ -9695,8 +9697,7 @@
         ]
       },
       "aliases": [
-        "meta/meta-llama-3-70b-instruct",
-        "replicate/meta/meta-llama-3-70b-instruct"
+        "meta/meta-llama-3-70b-instruct"
       ]
     },
     "meta-llama-3.1-70b-instruct": {
@@ -9792,8 +9793,7 @@
         ]
       },
       "aliases": [
-        "meta/meta-llama-3-8b-instruct",
-        "replicate/meta/meta-llama-3-8b-instruct"
+        "meta/meta-llama-3-8b-instruct"
       ]
     },
     "meta-llama-3.1-8b-instruct": {
@@ -11418,6 +11418,29 @@
           "text"
         ]
       },
+      "aliases": [
+        "anthropic/claude-3-5-haiku"
+      ]
+    },
+    "glm-4.7-free": {
+      "id": "glm-4.7-free",
+      "name": "GLM-4.7",
+      "family": "glm-free",
+      "modelType": "chat",
+      "abilities": [
+        "tool-usage",
+        "tool-streaming",
+        "reasoning"
+      ],
+      "knowledge": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "aliases": []
     },
     "grok-code": {
@@ -11510,7 +11533,9 @@
           "text"
         ]
       },
-      "aliases": []
+      "aliases": [
+        "minimax/minimax-m2.1"
+      ]
     },
     "claude-opus-4.1": {
       "id": "claude-opus-4.1",
@@ -11971,9 +11996,7 @@
           "audio"
         ]
       },
-      "aliases": [
-        "workers-ai/aura-1"
-      ]
+      "aliases": []
     },
     "mistral-7b-instruct-v0.2": {
       "id": "mistral-7b-instruct-v0.2",
@@ -12085,9 +12108,7 @@
           "text"
         ]
       },
-      "aliases": [
-        "workers-ai/whisper"
-      ]
+      "aliases": []
     },
     "stable-diffusion-xl-base-1.0": {
       "id": "stable-diffusion-xl-base-1.0",
@@ -12777,9 +12798,7 @@
           "text"
         ]
       },
-      "aliases": [
-        "workers-ai/whisper-large-v3-turbo"
-      ]
+      "aliases": []
     },
     "starling-lm-7b-beta": {
       "id": "starling-lm-7b-beta",
@@ -13482,12 +13501,20 @@
     },
     "claude-3-sonnet": {
       "id": "claude-3-sonnet",
-      "name": "Claude 3 Sonnet",
+      "name": "Claude Sonnet 3",
       "family": "claude-sonnet",
       "modelType": "chat",
+      "abilities": [
+        "image-input",
+        "tool-usage",
+        "tool-streaming"
+      ],
+      "knowledge": "2023-08-31",
       "modalities": {
         "input": [
-          "text"
+          "text",
+          "image",
+          "pdf"
         ],
         "output": [
           "text"
@@ -14940,6 +14967,29 @@
       },
       "aliases": [
         "hf:meta-llama/Llama-3.1-405B-Instruct"
+      ]
+    },
+    "GLM-4.7": {
+      "id": "GLM-4.7",
+      "name": "GLM 4.7",
+      "family": "glm-4.7",
+      "modelType": "chat",
+      "abilities": [
+        "tool-usage",
+        "tool-streaming",
+        "reasoning"
+      ],
+      "knowledge": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "aliases": [
+        "hf:zai-org/GLM-4.7"
       ]
     },
     "Qwen3-Coder-480B-A35B-Instruct-Turbo": {
@@ -18593,6 +18643,10 @@
       "nova-2-lite-v1",
       "nova-premier-v1"
     ],
+    "glm-4.7": [
+      "glm-4.7",
+      "GLM-4.7"
+    ],
     "glm-4.5-flash": [
       "glm-4.5-flash"
     ],
@@ -19003,7 +19057,6 @@
     ],
     "devstral": [
       "devstral-2-123b-instruct-2512",
-      "devstral-2-2512",
       "Devstral-2-123B-Instruct-2512"
     ],
     "mistral-large": [
@@ -19632,6 +19685,9 @@
     "big-pickle": [
       "big-pickle"
     ],
+    "glm-free": [
+      "glm-4.7-free"
+    ],
     "doubao": [
       "alpha-doubao-seed-code"
     ],
@@ -19920,6 +19976,7 @@
     "accounts/fireworks/models/kimi-k2-thinking": "kimi-k2-thinking",
     "moonshot.kimi-k2-thinking": "kimi-k2-thinking",
     "novita/kimi-k2-thinking": "kimi-k2-thinking",
+    "z-ai/glm-4.7": "glm-4.7",
     "zai/glm-4.5": "glm-4.5",
     "zai-org/glm-4.5": "glm-4.5",
     "z-ai/glm-4.5": "glm-4.5",
@@ -20070,7 +20127,6 @@
     "deepseek/deepseek-v3.2-exp-thinking": "deepseek-v3.2-exp-thinking",
     "deepseek/deepseek-v3.2-exp": "deepseek-v3.2-exp",
     "deepseek/deepseek-r1": "deepseek-r1",
-    "replicate/deepseek-ai/deepseek-r1": "deepseek-r1",
     "deepseek/deepseek-r1:free": "deepseek-r1",
     "google/gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
     "google/gemini-2.5-flash-preview-09-2025": "gemini-2.5-flash-preview-09-2025",
@@ -20231,16 +20287,13 @@
     "workers-ai/llama-3.2-11b-vision-instruct": "llama-3.2-11b-vision-instruct",
     "meta-llama/llama-3.2-11b-vision-instruct": "llama-3.2-11b-vision-instruct",
     "meta/meta-llama-3.1-405b-instruct": "meta-llama-3.1-405b-instruct",
-    "replicate/meta/meta-llama-3.1-405b-instruct": "meta-llama-3.1-405b-instruct",
     "meta/llama-4-maverick-17b-128e-instruct-fp8": "llama-4-maverick-17b-128e-instruct-fp8",
     "meta/meta-llama-3-70b-instruct": "meta-llama-3-70b-instruct",
-    "replicate/meta/meta-llama-3-70b-instruct": "meta-llama-3-70b-instruct",
     "meta/meta-llama-3.1-70b-instruct": "meta-llama-3.1-70b-instruct",
     "meta/llama-3.3-70b-instruct": "llama-3.3-70b-instruct",
     "meta-llama/llama-3.3-70b-instruct:free": "llama-3.3-70b-instruct",
     "meta/llama-3.2-90b-vision-instruct": "llama-3.2-90b-vision-instruct",
     "meta/meta-llama-3-8b-instruct": "meta-llama-3-8b-instruct",
-    "replicate/meta/meta-llama-3-8b-instruct": "meta-llama-3-8b-instruct",
     "meta/meta-llama-3.1-8b-instruct": "meta-llama-3.1-8b-instruct",
     "ai21-labs/ai21-jamba-1.5-large": "ai21-jamba-1.5-large",
     "ai21-labs/ai21-jamba-1.5-mini": "ai21-jamba-1.5-mini",
@@ -20278,12 +20331,12 @@
     "Qwen/Qwen3-Next-80B-A3B-Thinking": "Qwen3-Next-80B-A3B-Thinking",
     "deepseek-ai/Deepseek-V3-0324": "Deepseek-V3-0324",
     "google/gemini-3-pro": "gemini-3-pro",
+    "anthropic/claude-3-5-haiku": "claude-3-5-haiku",
+    "minimax/minimax-m2.1": "minimax-m2.1",
     "anthropic/claude-opus-4.1": "claude-opus-4.1",
     "google/gemini-2.5-pro-preview-05-06": "gemini-2.5-pro-preview-05-06",
     "google/gemini-2.5-pro-preview-06-05": "gemini-2.5-pro-preview-06-05",
-    "workers-ai/aura-1": "aura-1",
     "workers-ai/llama-3.1-8b-instruct-fp8": "llama-3.1-8b-instruct-fp8",
-    "workers-ai/whisper": "whisper",
     "workers-ai/llama-2-7b-chat-fp16": "llama-2-7b-chat-fp16",
     "workers-ai/llama-3-8b-instruct": "llama-3-8b-instruct",
     "workers-ai/bart-large-cnn": "bart-large-cnn",
@@ -20299,7 +20352,6 @@
     "workers-ai/llama-3-8b-instruct-awq": "llama-3-8b-instruct-awq",
     "workers-ai/llama-3.2-1b-instruct": "llama-3.2-1b-instruct",
     "meta/llama-3.2-1b-instruct": "llama-3.2-1b-instruct",
-    "workers-ai/whisper-large-v3-turbo": "whisper-large-v3-turbo",
     "workers-ai/mistral-7b-instruct-v0.1": "mistral-7b-instruct-v0.1",
     "workers-ai/melotts": "melotts",
     "workers-ai/nova-3": "nova-3",
@@ -20380,6 +20432,7 @@
     "hf:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": "Llama-4-Maverick-17B-128E-Instruct-FP8",
     "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": "Llama-4-Maverick-17B-128E-Instruct-FP8",
     "hf:meta-llama/Llama-3.1-405B-Instruct": "Llama-3.1-405B-Instruct",
+    "hf:zai-org/GLM-4.7": "GLM-4.7",
     "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo": "Qwen3-Coder-480B-A35B-Instruct-Turbo",
     "zai-org/GLM-4.5-FP8": "GLM-4.5-FP8",
     "mistral/mistral-nemo-12b-instruct": "mistral-nemo-12b-instruct",
