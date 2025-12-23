@@ -118,7 +118,7 @@ export class ModelService extends Service<ModelServiceConfig> {
     /** Register a provider implementation for request options generation. */
     public setProvider(name: string, provider: SharedProvider): void {
         if (this.providers.has(name)) {
-            this.ctx.logger.info(`更新已存在的 provider: ${name}`);
+            this.ctx.logger.warn(`更新已存在的 provider: ${name}`);
         }
         this.providers.set(name, provider);
     }
