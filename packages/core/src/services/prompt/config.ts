@@ -29,5 +29,5 @@ export const PromptFormatConfig: Schema<PromptFormatConfig> = Schema.object({
     promptFormat: Schema.union([
         Schema.const("json").description("JSON 格式"),
         Schema.const("toon").description("Toon 格式"),
-    ]).default("json").description("提示词输出格式<br/>注意：若切换将会清理上下文（记忆）<br/>请谨慎操作！"),
+    ]).default("json").description("提示词输出格式<br/>Toon理论上会比JSON减少Tonken"),
 });
