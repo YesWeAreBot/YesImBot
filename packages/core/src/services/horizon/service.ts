@@ -84,12 +84,7 @@ export class HorizonService extends Service<Config> {
         }
 
         if (lastFormat && lastFormat !== currentFormat) {
-            this.ctx.logger.warn(`检测到提示词格式变更 (${lastFormat} -> ${currentFormat})，正在清理历史记录...`);
-
-            // 执行清理逻辑
-            await this.ctx.database.remove(TableName.Timeline, {});
-
-            this.ctx.logger.info("历史记录已清理完成。");
+            this.ctx.logger.info(`检测到提示词格式变更 (${lastFormat} -> ${currentFormat})。由于现在统一存储原始数据，不再需要清理历史记录。`);
         }
 
         // 更新状态文件

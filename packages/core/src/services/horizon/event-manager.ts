@@ -24,30 +24,18 @@ export class EventManager {
 
     // -------- 写入 --------
     public async record(entry: TimelineEntry): Promise<TimelineEntry> {
-        const format = entry.format || this.config.promptFormat;
-
         let data = entry.data;
+        // 确保存入数据库的是字符串
         if (typeof data === "object") {
-            if (format === "toon") {
-                // 尝试转换为 toon 格式
-                if (entry.type === TimelineEventType.Message) {
-                    // 特殊处理消息类型
-                    const d = data as any;
-                    data = `+ message:\n  messageId: ${d.messageId}\n  senderId: ${d.senderId}\n  senderName: ${d.senderName}\n  content: ${JSON.stringify(d.content)}`;
-                } else {
-                    // 尝试通用转换
-                    data = ToonParser.stringify(data, "  ", false);
-                }
-            } else {
-                data = JSON.stringify(data);
-            }
+            data = JSON.stringify(data);
         }
 
         const result = (await this.ctx.database.create(TableName.Timeline, {
             ...entry,
-            format,
             data,
         } as any)) as TimelineEntry;
+
+        // 返回原始对象数据，方便调用者直接使用
         return { ...result, data: entry.data } as TimelineEntry;
     }
 

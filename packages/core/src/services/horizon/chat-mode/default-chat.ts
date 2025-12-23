@@ -259,9 +259,11 @@ export class DefaultChatMode extends BaseChatMode {
             },
             templates: {
                 system: "agent.system.chat",
-                user: "agent.user.events",
+                user: isToon ? "agent.user.events.toon" : "agent.user.events",
             },
-            partials: ["identity", "environment", "working_memory", "memories", "tools", "output"],
+            partials: isToon
+                ? ["identity.toon", "environment.toon", "working_memory.toon", "memories.toon", "tools.toon", "output.toon"]
+                : ["identity", "environment", "working_memory", "memories", "tools", "output"],
         };
     }
 }
