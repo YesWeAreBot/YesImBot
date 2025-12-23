@@ -260,7 +260,7 @@ async function main() {
         await fs.mkdir(resourcesDir, { recursive: true });
 
         const outputPath = path.join(resourcesDir, "model-index.json");
-        await fs.writeFile(outputPath, JSON.stringify(modelIndex, null, 2), "utf-8");
+        await fs.writeFile(outputPath, JSON.stringify(modelIndex), "utf-8");
 
         console.log(`\n✓ Model index generated successfully!`);
         console.log(`  Output: ${outputPath}`);
