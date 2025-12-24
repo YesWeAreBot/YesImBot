@@ -9,7 +9,7 @@ import type {
 import type { CommonRequestOptions } from "xsai";
 import type { AnyFetch } from "./utils";
 import { fetch as ufetch } from "undici";
-import { createSharedFetch, normalizeBaseURL } from "./utils";
+import { normalizeBaseURL } from "./utils";
 
 export * from "./classifier";
 export * from "./types";
@@ -42,91 +42,48 @@ export interface SharedConfig<ModelConfig> {
     };
 }
 
-type ExtractChatModels<T> = T extends ChatProvider<infer M> ? M : never;
-type ExtractEmbedModels<T> = T extends EmbedProvider<infer M> ? M : never;
-type ExtractImageModels<T> = T extends ImageProvider<infer M> ? M : never;
-type ExtractSpeechModels<T> = T extends SpeechProvider<infer M> ? M : never;
-type ExtractTranscriptionModels<T> = T extends TranscriptionProvider<infer M> ? M : never;
-
 /* prettier-ignore */
-type UnionProvider
+export type UnionProvider
     = | ChatProvider<any>
         | EmbedProvider<any>
         | ImageProvider<any>
         | SpeechProvider<any>
         | TranscriptionProvider<any>;
 
-export interface ProviderRuntime {
-    fetch?: AnyFetch;
-    proxy?: string;
-    logger?: any;
-}
-
-export abstract class SharedProvider<TProvider extends UnionProvider = any, TModelConfig = {}> {
+export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvider<any>, TModelConfig = {}> {
     public readonly name: string;
+    protected readonly config: SharedConfig<TModelConfig>;
 
     /* prettier-ignore */
     protected fetch: AnyFetch
         = typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch);
 
-    protected readonly logger: any;
-    private readonly shouldInjectFetch: boolean;
-
     constructor(
         name: string,
-        protected readonly provider: TProvider,
-        protected readonly config: SharedConfig<TModelConfig>,
-        runtime?: ProviderRuntime,
+        config: SharedConfig<TModelConfig>,
+        protected readonly provider: UnionProvider,
     ) {
         this.name = name;
-        this.logger = runtime?.logger;
-
-        this.fetch = createSharedFetch({
-            fetch: runtime?.fetch,
-            proxy: runtime?.proxy,
-            retry: config.retry,
-            retryDelay: config.retryDelay,
-        });
-
-        this.shouldInjectFetch = Boolean((config.retry && config.retry > 0) || runtime?.fetch || runtime?.proxy);
+        this.config = config;
 
         // 运行时绑定方法
         const methods = ["chat", "embed", "image", "speech", "transcription"] as const;
 
         methods.forEach((method) => {
             if (method in provider && typeof (provider as any)[method] === "function") {
-                (this as any)[method] = (model: string) => {
-                    const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
-                    const apiKey = this.config.apiKey;
-                    const getOverride = (modelId: string): Partial<TModelConfig> => {
-                        const override = (this.config as SharedConfig<TModelConfig>).override;
-                        return override && override[modelId] ? override[modelId]! : {};
-                    };
-
-                    return {
-                        ...(provider as any)[method](model),
-                        baseURL,
-                        apiKey,
-                        ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
-                        ...(this.config.modelConfig ?? {}),
-                        ...getOverride(model),
-                    };
-                };
+                (this as any)[method] = (model: string) => ({
+                    ...(provider as any)[method](model),
+                    ...(this.config.modelConfig ?? {}),
+                    ...getOverride(model),
+                });
             }
         });
 
         if ("model" in provider && typeof (provider as any).model === "function") {
-            (this as any).model = () => {
-                const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
-                const apiKey = this.config.apiKey;
-                return {
-                    ...(provider as any).model(),
-                    baseURL,
-                    apiKey,
-                    ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
-                    ...(this.config.modelConfig ?? {}),
-                };
-            };
+            (this as any).model = () => ({
+                ...(provider as any).model(),
+                ...(this.config.modelConfig ?? {}),
+            });
         }
     }
 
@@ -156,7 +113,7 @@ export abstract class SharedProvider<TProvider extends UnionProvider = any, TMod
         = undefined as any;
 
     public async getOnlineModels(): Promise<string[]> {
-        const baseURL = normalizeBaseURL(this.config.baseURL, this.logger);
+        const baseURL = normalizeBaseURL(this.config.baseURL);
         if (!baseURL) {
             throw new Error("无法获取在线模型列表：缺少 baseURL 配置");
         }

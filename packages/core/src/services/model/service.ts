@@ -1,4 +1,4 @@
-import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, ModelInfo, SharedProvider } from "@yesimbot/shared-model";
+import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, ModelInfo, SharedProvider, UnionProvider } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 import type { ModelGroup, ModelServiceConfig } from "./config";
 import { ChatModelAbility, ModelType } from "@yesimbot/shared-model";
@@ -13,7 +13,7 @@ declare module "koishi" {
 
 export class ModelService extends Service<ModelServiceConfig> {
     public static readonly separator = ">";
-    private readonly providers: Map<string, SharedProvider> = new Map();
+    private readonly providers: Map<string, SharedProvider<UnionProvider>> = new Map();
     private readonly chatModelInfos: Map<string, ChatModelInfo> = new Map();
     private readonly embedModelInfos: Map<string, EmbedModelInfo> = new Map();
     private readonly unknownModelInfos: Map<string, ModelInfo> = new Map();

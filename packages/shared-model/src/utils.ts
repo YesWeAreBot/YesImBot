@@ -136,7 +136,7 @@ export function deepMerge<T>(base: T, ...overrides: Array<Partial<T> | undefined
  *    - 如果不包含版本号且无路径，会自动补全 /v1
  *    - 如果不包含版本号但有路径，则截断到域名根部
  */
-export function normalizeBaseURL(url: string | undefined | null, logger?: { warn: (msg: string) => void }): string {
+export function normalizeBaseURL(url: string | undefined | null): string {
     let baseURL = (url || "").trim();
     if (!baseURL || baseURL.replace(/\/+$/, "") === "") {
         return "";
@@ -148,10 +148,6 @@ export function normalizeBaseURL(url: string | undefined | null, logger?: { warn
     // 检查版本号数量
     const versionMatches = baseURL.match(/\/v\d+(?=\/|$)/g);
     if (versionMatches && versionMatches.length > 1) {
-        const msg = `检测到 baseURL 中包含多个版本号: ${baseURL}，将跳过自动截断/补全逻辑。`;
-        if (logger)
-            logger.warn(msg);
-        else console.warn(`[yesimbot] ${msg}`);
         return baseURL;
     }
 
@@ -172,10 +168,6 @@ export function normalizeBaseURL(url: string | undefined | null, logger?: { warn
                 baseURL += "/v1";
             }
         } catch (err) {
-            const msg = `检测到无效的 baseURL: ${baseURL}，将跳过自动截断/补全逻辑。`;
-            if (logger)
-                logger.warn(msg);
-            else console.warn(`[yesimbot] ${msg}`);
             return baseURL;
         }
     }
