@@ -8,11 +8,12 @@
     "resources"
   ],
   "scripts": {
-    "build": "tsx scripts/fetch-model-info.ts && tsc -b && dumble",
+    "build": "tsc -b && dumble",
+    "build:bundle": "tsc -b && pkgroll --clean-dist --srcdist src:lib --sourcemap",
+    "sync": "tsx scripts/fetch-model-info.ts",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "lint": "eslint",
-    "lint:fix": "eslint --fix",
-    "pack": "bun pm pack"
+    "lint:fix": "eslint --fix"
   },
   "exports": {
     ".": {
@@ -22,8 +23,8 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@xsai-ext/providers": "^0.4.0-beta.10",
+    "@xsai-ext/providers": "^0.4.0-beta.12",
     "undici": "^7.16.0",
-    "xsai": "^0.4.0-beta.10"
+    "xsai": "^0.4.0-beta.12"
   }
 }

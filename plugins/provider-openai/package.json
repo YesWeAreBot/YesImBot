@@ -7,8 +7,7 @@
     "build": "tsc -b && dumble",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "lint": "eslint",
-    "lint:fix": "eslint --fix",
-    "pack": "bun pm pack"
+    "lint:fix": "eslint --fix"
   },
   "exports": {
     ".": {
