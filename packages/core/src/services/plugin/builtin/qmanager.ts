@@ -51,7 +51,7 @@ export default class QManagerPlugin extends Plugin<QManagerConfig> {
         description: `禁言用户。`,
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要禁言的用户 ID"),
-            duration: Schema.union([String, Number])
+            duration: Schema.number()
                 .required()
                 .description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
             channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),

@@ -1,21 +1,19 @@
+import type { Tool } from "@yesimbot/shared-model";
 import type { Context, ForkScope } from "koishi";
 import type { Plugin } from "./base-plugin";
 import type { ToolResult } from "./types";
-import type { Definition, FunctionContext, FunctionSchema, GuardContext } from "./types";
+import type { Definition, FunctionContext, GuardContext } from "./types";
 import type { Config } from "@/config";
 import type { CommandService } from "@/services/command";
 import type { PromptService } from "@/services/prompt";
-
 import { h, Schema, Service } from "koishi";
 import { Services } from "@/shared/constants";
-import { isEmpty, stringify, truncate } from "@/shared/utils";
-
+import { isEmpty, schemaToJSONSchema, stringify, truncate } from "@/shared/utils";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
 import QManagerExtension from "./builtin/qmanager";
-
 import { FunctionType } from "./types";
-import { Failed, toProperties } from "./utils";
+import { Failed } from "./utils";
 
 declare module "koishi" {
     interface Context {
@@ -380,11 +378,6 @@ export class PluginService extends Service<Config> {
         return result;
     }
 
-    public async getSchema(name: string, context?: FunctionContext): Promise<FunctionSchema | undefined> {
-        const func = await this.getFunction(name, context);
-        return func ? this.toSchema(func) : undefined;
-    }
-
     public getConfig(name: string): any {
         const ext = this.plugins.get(name);
         if (!ext)
@@ -447,12 +440,30 @@ export class PluginService extends Service<Config> {
         return { available: true, reason };
     }
 
-    public toSchema(def: Definition): FunctionSchema {
-        return {
-            type: def.type,
-            name: def.name,
-            description: def.description,
-            parameters: toProperties(def.parameters),
-        };
+    public async getTools(context?: FunctionContext): Promise<Tool[]> {
+        const tools: Tool[] = [];
+        for (const plugin of this.plugins.values()) {
+            for (const toolDef of plugin.getFunctions().values()) {
+                if (context) {
+                    const result = await this.isFuncAvailable(toolDef, context);
+                    if (!result.available) {
+                        continue;
+                    }
+                }
+                tools.push({
+                    type: "function",
+                    function: {
+                        name: toolDef.name,
+                        description: toolDef.description,
+                        parameters: schemaToJSONSchema(toolDef.parameters) || {},
+                    },
+                    execute: async (input: Record<string, unknown>, options) => {
+                        const result = await this.invoke(toolDef.name, input, context);
+                        return result;
+                    },
+                });
+            }
+        }
+        return tools;
     }
 }

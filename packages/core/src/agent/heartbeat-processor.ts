@@ -6,7 +6,7 @@ import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, SelectedChatModel } from "@/services/model";
 import type { FunctionContext, FunctionSchema, PluginService } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
-import { streamText } from "@yesimbot/shared-model";
+import { generateText, streamText } from "@yesimbot/shared-model";
 import { h, Random } from "koishi";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/horizon";
 import { ModelError } from "@/services/model/types";
@@ -74,17 +74,11 @@ export class HeartbeatProcessor {
                 view,
                 horizon: this.horizon,
             };
-            const funcs = await this.plugin.filterAvailableFuncs(context);
-            const funcSchemas: FunctionSchema[] = funcs.map((def) => this.plugin.toSchema(def));
-            const tools = funcSchemas.filter((f) => f.type === "tool");
-            const actions = funcSchemas.filter((f) => f.type === "action" || !f.type);
+            const tools = await this.plugin.getTools(context);
             const renderView = {
                 // 从 ChatMode 构建的视图数据
                 ...view,
                 session: context.session,
-                // 工具定义（分离为 tools 和 actions）
-                tools: formatFunction(tools),
-                actions: formatFunction(actions),
                 // 记忆块
                 memoryBlocks: this.memory.getMemoryBlocksForRendering(),
                 // 模板辅助函数
@@ -168,6 +162,8 @@ export class HeartbeatProcessor {
                     const streaming = streamText({
                         ...selected.options,
                         messages,
+                        tools,
+                        toolChoice: "required",
                         abortSignal: AbortSignal.any([
                             AbortSignal.timeout(this.config.switchConfig.requestTimeout),
                             controller.signal,
@@ -204,7 +200,14 @@ export class HeartbeatProcessor {
                             }
                         },
                     });
-                    const { textStream, steps, usage: usageStream, totalUsage, fullStream, messages: messageStream } = streaming;
+                    const {
+                        textStream,
+                        steps,
+                        usage: usageStream,
+                        totalUsage,
+                        fullStream,
+                        messages: messageStream,
+                    } = streaming;
                     const chunks: string[] = [];
                     steps.catch(() => null);
                     usageStream.catch(() => null);
@@ -289,7 +292,42 @@ export class HeartbeatProcessor {
                     const shouldContinue = agentResponseData.request_heartbeat || actionContinue;
                     return { continue: shouldContinue };
                 } else {
-                    throw new Error("仅支持流式响应模式");
+                    try {
+                        let stepStartTime: number = Date.now();
+                        const logger = this.ctx.logger;
+                        const response = await generateText({
+                            ...selected.options,
+                            messages,
+                            tools,
+                            toolChoice: "required",
+                            abortSignal: AbortSignal.timeout(this.config.switchConfig.requestTimeout),
+                            onStepFinish(step) {
+                                const stepEndTime = Date.now();
+                                logger.info(
+                                    `步骤完成 | 类型: ${step.stepType} | 用时: ${stepEndTime - stepStartTime} ms`,
+                                );
+                                stepStartTime = Date.now();
+                                if (step.finishReason === "tool_calls") {
+                                    logger.info("模型请求调用工具");
+                                    if (
+                                        step.toolCalls
+                                        && step.toolCalls.every((call) => call.toolName === "send_message")
+                                    ) {
+                                        logger.info("模型调用了发送消息工具，跳过本次心跳");
+                                        throw new Error("Send message tool called");
+                                    }
+                                }
+                            },
+                        });
+                    } catch (e) {
+                        if (e instanceof Error && e.message === "Send message tool called") {
+                            this.modelSwitcher.recordResult(selected.fullName, true, undefined, Date.now() - startTime);
+                            this.logger.success("单次心跳成功完成（发送消息工具调用）");
+                            return { continue: false };
+                        } else {
+                            throw e;
+                        }
+                    }
                 }
             } catch (error) {
                 clearTimeout(firstTokenTimeout);

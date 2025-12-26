@@ -1,5 +1,5 @@
 import type { Context, Logger, Schema } from "koishi";
-import type { BaseDefinition } from "./types";
+import type { BaseDefinition, Definition } from "./types";
 import type { ActionDefinition, FunctionInput, PluginMetadata, ToolDefinition } from "./types";
 import { Services } from "@/shared/constants";
 import { FunctionType } from "./types";
@@ -125,5 +125,16 @@ export abstract class Plugin<TConfig extends Record<string, any> = {}> {
 
     getActions(): Map<string, ActionDefinition<TConfig, any>> {
         return this.actions;
+    }
+
+    getFunctions(): Map<string, Definition<TConfig, any, any>> {
+        const functions = new Map<string, Definition<TConfig, any, any>>();
+        for (const [name, tool] of this.tools) {
+            functions.set(name, tool);
+        }
+        for (const [name, action] of this.actions) {
+            functions.set(name, action);
+        }
+        return functions;
     }
 }
