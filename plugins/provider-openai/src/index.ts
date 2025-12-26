@@ -40,6 +40,7 @@ export default class OpenAIProvider extends SharedProvider<any, ModelConfig> {
     static name = "provider-openai";
     static usage = "";
     static inject = ["yesimbot.model"];
+    static reusable = true;
 
     constructor(ctx: Context, config: Config) {
         const { baseURL } = config;
