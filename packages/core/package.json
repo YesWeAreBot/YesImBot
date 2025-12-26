@@ -80,6 +80,7 @@
     "mustache": "^4.2.0"
   },
   "devDependencies": {
+    "@types/json-schema": "^7.0.15",
     "@types/mustache": "^4.2.6",
     "koishi": "^4.18.7"
   },
