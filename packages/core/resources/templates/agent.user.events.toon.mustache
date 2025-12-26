@@ -1,20 +1,23 @@
 {{! agent.user.events.toon.mustache - User Prompt 模板 (Toon 格式) }}
 <conversation>
-+ now: {{date.now}}
++ context:
+  - now: {{date.now}}
+  - description: 以下是最近的对话记录。标记为 [你] 的是你之前的发言。
+
 + history_events:
 {{#events}}
 {{#isActive}}
-  - [{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSelfMessage}}你(Agent){{/isSelfMessage}} {{#isSystemEvent}}System{{/isSystemEvent}}: {{content}}{{^content}}{{message}}{{/content}}
+  - [{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSelfMessage}}[你]{{/isSelfMessage}}{{#isSystemEvent}}[系统]{{/isSystemEvent}}: {{content}}{{^content}}{{message}}{{/content}}
 {{/isActive}}
 {{/events}}
 ---
-↑ 以上是历史消息 (History)
-↓ 以下是触发你响应的新事件 (New Events)
+↑ 以上是历史消息
+↓ 以下是触发你响应的新事件
 
 + incoming_events:
 {{#events}}
 {{#isNew}}
-  - [{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSystemEvent}}SystemEvent{{/isSystemEvent}}: {{content}}{{^content}}{{message}}{{/content}}
+  - [{{#timestamp}}{{_formatDate}}{{/timestamp}}] {{#isUserMessage}}{{sender.name}}{{/isUserMessage}}{{#isSystemEvent}}[系统事件]{{/isSystemEvent}}: {{content}}{{^content}}{{message}}{{/content}}
 {{/isNew}}
 {{/events}}
 </conversation>

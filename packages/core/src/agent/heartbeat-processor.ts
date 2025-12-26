@@ -12,7 +12,7 @@ import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/h
 import { ModelError } from "@/services/model/types";
 import { FunctionType } from "@/services/plugin";
 import { Services } from "@/shared";
-import { estimateTokensByRegex, formatDate, isNotEmpty, JsonParser } from "@/shared/utils";
+import { estimateTokensByRegex, formatDate, isNotEmpty, JsonParser, ToonParser } from "@/shared/utils";
 
 export class HeartbeatProcessor {
     private logger: Logger;
@@ -97,8 +97,8 @@ export class HeartbeatProcessor {
                 ...view,
                 session: context.session,
                 // 工具定义（分离为 tools 和 actions）
-                tools: formatFunction(tools),
-                actions: formatFunction(actions),
+                tools: formatFunction(tools, this.config.promptFormat),
+                actions: formatFunction(actions, this.config.promptFormat),
                 // 记忆块
                 memoryBlocks: this.memory.getMemoryBlocksForRendering(),
                 // 模板辅助函数
@@ -161,7 +161,7 @@ export class HeartbeatProcessor {
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPromptText },
             ];
-            const parser = new JsonParser<AgentResponse>();
+            const parser = this.config.promptFormat === "toon" ? new ToonParser<AgentResponse>() : new JsonParser<AgentResponse>();
             selected = this.modelSwitcher.getModel();
             startTime = Date.now();
             try {

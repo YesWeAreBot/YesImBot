@@ -21,8 +21,8 @@ export default class OpenAIProvider extends SharedProvider<any, ModelConfig> {
         baseURL: Schema.string().default("https://api.openai.com/v1/"),
         apiKey: Schema.string().role("secret").required(),
         proxy: Schema.string().default(""),
-        retryDefault: Schema.number().min(0).default(3),
-        retryDelayDefault: Schema.number().min(0).default(1000),
+        retry: Schema.number().min(0).default(3),
+        retryDelay: Schema.number().min(0).default(1000),
         modelConfig: Schema.object({
             temperature: Schema.number().min(0).max(2).step(0.01).role("slider").default(1),
             topP: Schema.number().min(0).max(1).step(0.01).role("slider").default(1),
@@ -47,7 +47,7 @@ export default class OpenAIProvider extends SharedProvider<any, ModelConfig> {
         if (baseURLNormalized) {
             config.baseURL = baseURLNormalized;
         }
-        super(config.name, config, createOpenAI(config.apiKey, config.baseURL));
+        super(config.name, config, createOpenAI(config.apiKey, config.baseURL), { proxy: config.proxy, logger: ctx.logger });
         ctx.on("ready", async () => {
             const registry = ctx.get("yesimbot.model");
             if (!registry) {

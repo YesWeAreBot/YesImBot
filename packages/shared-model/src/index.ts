@@ -9,7 +9,7 @@ import type {
 import type { CommonRequestOptions } from "xsai";
 import type { AnyFetch } from "./utils";
 import { fetch as ufetch } from "undici";
-import { normalizeBaseURL } from "./utils";
+import { createSharedFetch, normalizeBaseURL } from "./utils";
 
 export * from "./classifier";
 export * from "./types";
@@ -42,6 +42,12 @@ export interface SharedConfig<ModelConfig> {
     };
 }
 
+type ExtractChatModels<T> = T extends ChatProvider<infer M> ? M : never;
+type ExtractEmbedModels<T> = T extends EmbedProvider<infer M> ? M : never;
+type ExtractImageModels<T> = T extends ImageProvider<infer M> ? M : never;
+type ExtractSpeechModels<T> = T extends SpeechProvider<infer M> ? M : never;
+type ExtractTranscriptionModels<T> = T extends TranscriptionProvider<infer M> ? M : never;
+
 /* prettier-ignore */
 export type UnionProvider
     = | ChatProvider<any>
@@ -49,6 +55,12 @@ export type UnionProvider
         | ImageProvider<any>
         | SpeechProvider<any>
         | TranscriptionProvider<any>;
+
+export interface ProviderRuntime {
+    fetch?: AnyFetch;
+    proxy?: string;
+    logger?: any;
+}
 
 export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvider<any>, TModelConfig = {}> {
     public readonly name: string;
@@ -58,21 +70,41 @@ export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvi
     protected fetch: AnyFetch
         = typeof globalThis.fetch === "function" ? globalThis.fetch : (ufetch as unknown as AnyFetch);
 
+    protected readonly logger: any;
+    private readonly shouldInjectFetch: boolean;
+
     constructor(
         name: string,
         config: SharedConfig<TModelConfig>,
         protected readonly provider: UnionProvider,
+        runtime?: ProviderRuntime,
     ) {
         this.name = name;
         this.config = config;
+        this.logger = runtime?.logger;
+
+        this.fetch = createSharedFetch({
+            fetch: runtime?.fetch,
+            proxy: runtime?.proxy,
+            retry: config.retry,
+            retryDelay: config.retryDelay,
+        });
+
+        this.shouldInjectFetch = Boolean((config.retry && config.retry > 0) || runtime?.fetch || runtime?.proxy);
 
         // 运行时绑定方法
         const methods = ["chat", "embed", "image", "speech", "transcription"] as const;
+
+        const getOverride = (modelId: string): Partial<TModelConfig> => {
+            const override = (this.config as SharedConfig<TModelConfig>).override;
+            return override && override[modelId] ? override[modelId]! : {};
+        };
 
         methods.forEach((method) => {
             if (method in provider && typeof (provider as any)[method] === "function") {
                 (this as any)[method] = (model: string) => ({
                     ...(provider as any)[method](model),
+                    ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
                     ...(this.config.modelConfig ?? {}),
                     ...getOverride(model),
                 });
@@ -82,6 +114,7 @@ export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvi
         if ("model" in provider && typeof (provider as any).model === "function") {
             (this as any).model = () => ({
                 ...(provider as any).model(),
+                ...(this.shouldInjectFetch ? { fetch: this.fetch } : {}),
                 ...(this.config.modelConfig ?? {}),
             });
         }
