@@ -1,0 +1,47 @@
+{
+  "name": "@root/yesimbot",
+  "version": "0.0.0",
+  "private": true,
+  "homepage": "github:HydroGest/YesImBot",
+  "license": "MIT",
+  "contributors": [
+    "HydroGest <2445691453@qq.com>",
+    "Dispure <3116716016@qq.com>",
+    "MiaowFISH <1293865264@qq.com>",
+    "Touch-Night <1762918301@qq.com>"
+  ],
+  "workspaces": [
+    "packages/*",
+    "plugins/*",
+    "providers/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "bump": "bumpp",
+    "clean": "turbo run clean && rimraf .turbo",
+    "fmt": "turbo run fmt",
+    "fmt:check": "yarn fmt -- --check",
+    "lint": "turbo run lint",
+    "lint:fix": "yarn lint -- --fix",
+    "prepare": "husky install",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.2",
+    "bumpp": "^10.2.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "oxfmt": "^0.33.0",
+    "oxlint": "^1.48.0",
+    "pkgroll": "^2.21.4",
+    "rimraf": "^6.1.2",
+    "turbo": "^2.8.9",
+    "typescript": "^5.9.3",
+    "yml-register": "^1.2.5"
+  },
+  "lint-staged": {
+    "*": "yarn fmt -- --no-error-on-unmatched-pattern",
+    "*.{js,jsx,ts,tsx,mjs,cjs}": "yarn lint"
+  },
+  "packageManager": "yarn@4.12.0"
+}
