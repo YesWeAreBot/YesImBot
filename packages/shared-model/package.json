@@ -1,0 +1,32 @@
+{
+  "name": "@yesimbot/shared-model",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "pkgroll",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@types/json-schema": "^7.0.15",
+    "ai": "^4.1.10",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "zod": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  }
+}
