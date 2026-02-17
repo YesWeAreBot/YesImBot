@@ -71,26 +71,26 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODEL-01 | — | Pending |
-| MODEL-02 | — | Pending |
-| MODEL-03 | — | Pending |
-| AGENT-01 | — | Pending |
-| AGENT-02 | — | Pending |
-| AGENT-03 | — | Pending |
-| HORIZON-01 | — | Pending |
-| HORIZON-02 | — | Pending |
-| HORIZON-03 | — | Pending |
-| HORIZON-04 | — | Pending |
-| TOOL-01 | — | Pending |
-| TOOL-02 | — | Pending |
-| PROMPT-01 | — | Pending |
-| PLATFORM-01 | — | Pending |
+| MODEL-01 | Phase 2 | Pending |
+| MODEL-02 | Phase 2 | Pending |
+| MODEL-03 | Phase 2 | Pending |
+| AGENT-01 | Phase 5 | Pending |
+| AGENT-02 | Phase 6 | Pending |
+| AGENT-03 | Phase 5 | Pending |
+| HORIZON-01 | Phase 3 | Pending |
+| HORIZON-02 | Phase 3 | Pending |
+| HORIZON-03 | Phase 3 | Pending |
+| HORIZON-04 | Phase 3 | Pending |
+| TOOL-01 | Phase 4 | Pending |
+| TOOL-02 | Phase 4 | Pending |
+| PROMPT-01 | Phase 4 | Pending |
+| PLATFORM-01 | Phase 1, Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14 ⚠️ (pending roadmap creation)
+- Mapped to phases: 14
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-17*
-*Last updated: 2026-02-17 after initial definition*
+*Last updated: 2026-02-17 after roadmap creation*
