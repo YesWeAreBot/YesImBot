@@ -17,15 +17,13 @@
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "@types/json-schema": "^7.0.15",
-    "ai": "^4.1.10",
-    "zod": "^3.24.1"
+    "@ai-sdk/provider": "^3.0.8"
   },
   "peerDependencies": {
-    "zod": "^3.0.0"
+    "@ai-sdk/provider": "^3.0.0"
   },
   "peerDependenciesMeta": {
-    "zod": {
+    "@ai-sdk/provider": {
       "optional": true
     }
   }

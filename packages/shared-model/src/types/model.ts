@@ -1,9 +1,9 @@
-import type { LanguageModelV1 } from 'ai'
+import type { LanguageModelV3 } from '@ai-sdk/provider'
 
 export interface IModelProvider {
   readonly id: string
   readonly name: string
-  getModel(modelId: string): LanguageModelV1
+  getModel(modelId: string): LanguageModelV3
 }
 
 export interface ModelConfig {
@@ -13,4 +13,4 @@ export interface ModelConfig {
   maxTokens?: number
 }
 
-export type { LanguageModelV1 }
+export type { LanguageModelV3 }
