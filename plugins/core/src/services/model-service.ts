@@ -24,18 +24,17 @@ export interface ModelServiceConfig {
   concurrency?: number
 }
 
-export class ModelService extends Service implements IModelService {
+export class ModelService extends Service<ModelServiceConfig> implements IModelService {
   private providers = new Map<string, IModelProvider>()
   private queue: PQueue
   private usage = new Map<string, { tokens: number; requests: number }>()
 
-  constructor(ctx: Context, config: ModelServiceConfig) {
+  static inject = ['console']
+
+  constructor(ctx: Context, config: ModelServiceConfig = {}) {
     super(ctx, 'model-service', true)
     this.queue = new PQueue({ concurrency: config.concurrency || 5 })
-    this.config = config
   }
-
-  private config: ModelServiceConfig
 
   registerProvider(name: string, provider: IModelProvider): void {
     this.providers.set(name, provider)

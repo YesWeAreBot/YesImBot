@@ -24,7 +24,8 @@
     "lint": "turbo run lint",
     "lint:fix": "yarn lint -- --fix",
     "prepare": "husky install",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.16.2",

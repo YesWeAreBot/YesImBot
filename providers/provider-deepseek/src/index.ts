@@ -1,6 +1,12 @@
 import { Context, Schema } from 'koishi'
 import { createOpenAI } from '@ai-sdk/openai'
-import type { IModelProvider, ModelInfo, ModelDefaultParams, ModelCapability } from '@yesimbot/shared-model'
+import type { IModelProvider, ModelInfo, ModelDefaultParams, ModelCapability, IModelService } from '@yesimbot/shared-model'
+
+declare module 'koishi' {
+  interface Context {
+    'model-service': IModelService
+  }
+}
 
 export const name = 'yesimbot-provider-deepseek'
 export const inject = ['model-service']
@@ -25,10 +31,10 @@ export const Config: Schema<Config> = Schema.object({
     { id: 'deepseek-reasoner', capabilities: ['streaming'] }
   ]),
   defaultParams: Schema.object({
-    temperature: Schema.number(),
-    maxTokens: Schema.number(),
-    topP: Schema.number()
-  }).default({})
+    temperature: Schema.number().default(0.7),
+    maxTokens: Schema.number().default(4096),
+    topP: Schema.number().default(1.0)
+  })
 })
 
 class DeepSeekProvider implements IModelProvider {

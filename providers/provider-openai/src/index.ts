@@ -1,6 +1,12 @@
 import { Context, Schema } from 'koishi'
 import { createOpenAI } from '@ai-sdk/openai'
-import { IModelProvider, ModelInfo, ModelCapability, ModelDefaultParams } from '@yesimbot/shared-model'
+import { IModelProvider, ModelInfo, ModelCapability, ModelDefaultParams, IModelService } from '@yesimbot/shared-model'
+
+declare module 'koishi' {
+  interface Context {
+    'model-service': IModelService
+  }
+}
 
 export const name = 'yesimbot-provider-openai'
 export const inject = ['model-service']
@@ -22,10 +28,10 @@ export const Config: Schema<Config> = Schema.object({
     capabilities: Schema.array(Schema.string())
   })).default([{ id: 'gpt-4o', capabilities: ['toolCalling', 'vision', 'jsonMode', 'streaming'] }]),
   defaultParams: Schema.object({
-    temperature: Schema.number(),
-    maxTokens: Schema.number(),
-    topP: Schema.number()
-  }).default({})
+    temperature: Schema.number().default(0.7),
+    maxTokens: Schema.number().default(2048),
+    topP: Schema.number().default(1.0)
+  })
 })
 
 class OpenAIProvider implements IModelProvider {

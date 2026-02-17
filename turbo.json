@@ -5,9 +5,14 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "lib/**"]
     },
-    "dev": {
-      "cache": false,
-      "persistent": true
+    "clean": {
+      "cache": false
+    },
+    "fmt": {
+      "outputs": []
+    },
+    "fmt:check": {
+      "outputs": []
     },
     "lint": {
       "outputs": []
@@ -15,10 +20,11 @@
     "lint:fix": {
       "outputs": []
     },
-    "clean": {
-      "cache": false
-    },
     "test": {
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
       "outputs": []
     }
   }

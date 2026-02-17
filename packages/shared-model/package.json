@@ -13,8 +13,11 @@
     }
   },
   "scripts": {
-    "build": "pkgroll",
-    "clean": "rimraf dist"
+    "build": "tsc --noEmit && pkgroll",
+    "clean": "rimraf dist && rimraf .turbo",
+    "fmt": "oxfmt",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@ai-sdk/provider": "^3.0.8"
