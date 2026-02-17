@@ -20,7 +20,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@yesimbot/shared-model": "workspace:*"
+    "@yesimbot/shared-model": "workspace:*",
+    "ai": "^4.1.0",
+    "p-queue": "^8.0.0"
   },
   "peerDependencies": {
     "koishi": "^4.0.0"
