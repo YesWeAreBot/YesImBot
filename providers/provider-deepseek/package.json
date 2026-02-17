@@ -1,0 +1,32 @@
+{
+  "name": "@yesimbot/provider-deepseek",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pkgroll",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.0",
+    "@yesimbot/shared-model": "workspace:*"
+  },
+  "peerDependencies": {
+    "koishi": "^4.0.0"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.3"
+  }
+}
