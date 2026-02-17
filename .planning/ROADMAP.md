@@ -45,12 +45,12 @@ Plans:
   2. OpenAI provider plugin successfully calls OpenAI-compatible APIs via ai-sdk
   3. DeepSeek provider plugin successfully calls DeepSeek API via ai-sdk
   4. Core plugin can invoke registered models through ModelService abstraction
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md — Shared-model types expansion + ModelService implementation in core
+- [ ] 02-02-PLAN.md — OpenAI provider plugin
+- [ ] 02-03-PLAN.md — DeepSeek provider plugin
 
 ### Phase 3: Horizon Context System
 **Goal**: Provide framework-agnostic context abstraction that AgentCore consumes
