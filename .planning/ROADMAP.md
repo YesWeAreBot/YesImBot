@@ -30,11 +30,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. shared-model package exports core types (IModelProvider, IModel, ModelConfig interfaces)
   3. Core plugin package exists with Koishi 4.x plugin structure and can be loaded by Koishi
   4. TypeScript compilation works across all packages with proper module resolution
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — Monorepo infrastructure update + shared-model package with core types
+- [ ] 01-02-PLAN.md — Koishi core plugin skeleton with lifecycle hooks
 
 ### Phase 2: Model Service & Providers
 **Goal**: Enable multiple LLM providers to register and be called through unified ModelService
