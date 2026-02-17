@@ -23,7 +23,7 @@
     "fmt:check": "yarn fmt -- --check",
     "lint": "turbo run lint",
     "lint:fix": "yarn lint -- --fix",
-    "prepare": "husky install",
+    "prepare": "husky",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },
@@ -41,8 +41,13 @@
     "yml-register": "^1.2.5"
   },
   "lint-staged": {
-    "*": "yarn fmt -- --no-error-on-unmatched-pattern",
-    "*.{js,jsx,ts,tsx,mjs,cjs}": "yarn lint"
+    "*.{ts,tsx,mjs,cjs,js,jsx}": [
+      "oxlint --fix",
+      "oxfmt --write"
+    ],
+    "*.{json,yml,yaml,md}": [
+      "oxfmt --write"
+    ]
   },
   "packageManager": "yarn@4.12.0"
 }

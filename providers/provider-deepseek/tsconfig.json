@@ -4,8 +4,6 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "references": [
-    { "path": "../../packages/shared-model" }
-  ],
+  "references": [{ "path": "../../packages/shared-model" }],
   "include": ["src"]
 }
