@@ -61,3 +61,26 @@ export function apply(ctx: Context) {
 - **Always run `typecheck` before `build`** — Use `turbo run build` which automatically runs typecheck via turbo task dependencies
 - Individual package typecheck: `yarn typecheck` (runs `tsc --noEmit` via turbo)
 - Turbo pipeline ensures typecheck completes for all dependencies before build starts
+
+## Logger Pattern
+
+**MUST** create logger once, then use it. **NEVER** chain `.info()` on `ctx.logger()` call.
+
+```ts
+// ✓ Correct
+const logger = ctx.logger('my-plugin')
+logger.info('message')
+
+// ✓ Also correct (uses default logger)
+ctx.logger.info('message')
+
+// ✗ Wrong - creates new logger each call
+ctx.logger('my-plugin').info('message')
+```
+
+## Service Typing
+
+When extending `Service` with config:
+- Use generic parameter: `class MyService extends Service<MyConfig>`
+- Don't declare duplicate `private config` field (inherited from base class)
+- Koishi plugin system resolves config injection automatically
