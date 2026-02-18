@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit && pkgroll",
-    "clean": "rimraf dist && rimraf .turbo",
+    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit"
