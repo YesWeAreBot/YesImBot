@@ -1,4 +1,4 @@
-import { Context, Random } from "koishi";
+import { Context, Random, Logger, Query } from "koishi";
 
 import type {
   AgentSummaryRecord,
@@ -12,27 +12,28 @@ import type {
 import { TimelineEventType, TimelinePriority, TimelineStage } from "./types";
 
 // Table name constant — schema declared in horizon service (Plan 03)
-const TIMELINE_TABLE = "yesimbot.timeline" as any;
+const TIMELINE_TABLE = "yesimbot.timeline";
 
 export class EventManager {
-  private logger: ReturnType<Context["logger"]>;
+  private logger: Logger;
 
   constructor(private ctx: Context) {
     this.logger = ctx.logger("horizon");
   }
 
   async record(entry: TimelineEntry): Promise<TimelineEntry> {
-    return (this.ctx.database.create as any)(TIMELINE_TABLE, entry) as Promise<TimelineEntry>;
+    return this.ctx.database.create(TIMELINE_TABLE, entry) as Promise<TimelineEntry>;
   }
 
   async query(options: EventQueryOptions): Promise<TimelineEntry[]> {
-    const query: Record<string, any> = {};
+    const query: Query.Expr<TimelineEntry> = {};
     if (options.scope) query.scope = options.scope;
-    if (options.types?.length) query.type = { $in: options.types };
+    if (options.types?.length)
+      query.type = { $in: options.types } as unknown as Query.Expr<TimelineEntry>["type"];
     if (options.since) query.timestamp = { $gte: options.since };
-    if (options.until) query.timestamp = { ...query.timestamp, $lte: options.until };
+    if (options.until) query.timestamp = { ...(query.timestamp as object), $lte: options.until };
 
-    let q = (this.ctx.database.select as any)(TIMELINE_TABLE).where(query);
+    let q = this.ctx.database.select(TIMELINE_TABLE).where(query);
     if (options.orderBy) q = q.orderBy("timestamp", options.orderBy);
     if (options.limit) q = q.limit(options.limit);
     return q.execute() as Promise<TimelineEntry[]>;
@@ -91,9 +92,9 @@ export class EventManager {
   }
 
   async markAsActive(scope: Scope, before?: Date): Promise<void> {
-    const query: any = { scope, stage: TimelineStage.New };
+    const query: Record<string, unknown> = { scope, stage: TimelineStage.New };
     if (before) query.timestamp = { $lte: before };
-    await (this.ctx.database.set as any)(TIMELINE_TABLE, query, {
+    await this.ctx.database.set(TIMELINE_TABLE, query, {
       stage: TimelineStage.Active,
     });
   }

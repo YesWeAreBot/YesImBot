@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@yesimbot/shared-model": "workspace:*",
-    "ai": "^4.1.0",
+    "ai": "^6.0.0",
     "p-queue": "^8.0.0"
   },
   "devDependencies": {

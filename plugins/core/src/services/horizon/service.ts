@@ -1,5 +1,4 @@
 import { Context, Service } from "koishi";
-import type { Tables } from "koishi";
 
 import { EventManager } from "./event-manager";
 import { EventListener } from "./listener";
@@ -35,16 +34,19 @@ export interface HorizonConfig {
 export class HorizonService extends Service<HorizonConfig> {
   static inject = ["database"];
 
-  events: EventManager;
+  public events: EventManager;
+  public listener: EventListener;
 
   constructor(ctx: Context, config: HorizonConfig) {
     super(ctx, "yesimbot.horizon", false);
+    this.config = config;
     this.events = new EventManager(ctx);
+    this.listener = new EventListener(ctx, this.events, this.config);
   }
 
   protected async start(): Promise<void> {
     this.ctx.model.extend(
-      "yesimbot.timeline" as any,
+      "yesimbot.timeline",
       {
         id: "string(32)",
         scope: "json",
@@ -53,12 +55,12 @@ export class HorizonService extends Service<HorizonConfig> {
         stage: "string(16)",
         timestamp: "timestamp",
         data: "json",
-      } as any,
+      },
       { primary: "id", autoInc: false },
     );
 
     this.ctx.model.extend(
-      "yesimbot.entity" as any,
+      "yesimbot.entity",
       {
         id: "string(64)",
         type: "string(32)",
@@ -67,11 +69,11 @@ export class HorizonService extends Service<HorizonConfig> {
         refId: "string(255)",
         attributes: "json",
         updatedAt: "timestamp",
-      } as any,
+      },
       { primary: "id" },
     );
 
-    new EventListener(this.ctx, this.events, this.config).start();
+    this.listener.start();
     this.logger.info("HorizonService started");
   }
 
@@ -101,7 +103,7 @@ export class HorizonService extends Service<HorizonConfig> {
   async getEnvironment(scope: Scope): Promise<Environment | null> {
     if (!scope.channelId) return null;
     const id = `${scope.platform}:${scope.channelId}`;
-    const rows = await (this.ctx.database.get as any)("yesimbot.entity" as any, {
+    const rows = await this.ctx.database.get("yesimbot.entity", {
       id,
       type: "channel",
     });
@@ -111,7 +113,7 @@ export class HorizonService extends Service<HorizonConfig> {
       type: "channel",
       id: row.id,
       name: row.name,
-      description: row.attributes?.description,
+      description: row.attributes?.description as string,
       metadata: row.attributes ?? {},
     };
   }
@@ -119,7 +121,7 @@ export class HorizonService extends Service<HorizonConfig> {
   async getEntities(scope: Scope): Promise<Entity[]> {
     if (!scope.guildId) return [];
     const parentId = `guild:${scope.guildId}`;
-    const rows: EntityRecord[] = await (this.ctx.database.get as any)("yesimbot.entity" as any, {
+    const rows: EntityRecord[] = await this.ctx.database.get("yesimbot.entity", {
       parentId,
     });
     return (rows ?? []).map((r) => ({

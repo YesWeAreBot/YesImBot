@@ -1,4 +1,4 @@
-import { Context, Random } from "koishi";
+import { Context, Random, Logger } from "koishi";
 import type { Session } from "koishi";
 
 import type { EventManager } from "./event-manager";
@@ -13,7 +13,7 @@ declare module "koishi" {
 }
 
 // Table name constant — schema declared in horizon service (Plan 03)
-const ENTITY_TABLE = "yesimbot.entity" as any;
+const ENTITY_TABLE = "yesimbot.entity";
 
 type AllowedChannel = { platform: string; type: string; id: string };
 
@@ -31,13 +31,15 @@ const TRIGGER_PRIORITY: Record<string, number> = {
   random: 0,
 };
 
+interface PreceptTimer {
+  clearTimer: ReturnType<typeof Context.prototype.setTimeout>;
+  percept: UserMessagePercept;
+}
+
 export class EventListener {
-  private logger: ReturnType<Context["logger"]>;
+  private logger: Logger;
   private disposers: (() => void)[] = [];
-  private pendingPercepts = new Map<
-    string,
-    { timer: ReturnType<typeof setTimeout>; percept: UserMessagePercept }
-  >();
+  private pendingPercepts = new Map<string, PreceptTimer>();
 
   constructor(
     private ctx: Context,
@@ -71,7 +73,7 @@ export class EventListener {
   stop(): void {
     this.disposers.forEach((d) => d());
     this.disposers.length = 0;
-    for (const { timer } of this.pendingPercepts.values()) clearTimeout(timer);
+    for (const { clearTimer } of this.pendingPercepts.values()) clearTimer();
     this.pendingPercepts.clear();
   }
 
@@ -89,7 +91,7 @@ export class EventListener {
   private classifyTrigger(session: Session): UserMessagePercept["triggerType"] {
     if (session.isDirect) return "direct";
     if (session.quote?.user?.id === session.bot.selfId) return "reply";
-    if (session.elements?.some((el: any) => el.type === "at" && el.attrs?.id === session.selfId))
+    if (session.elements?.some((el) => el.type === "at" && el.attrs?.id === session.selfId))
       return "mention";
     if (this.config.keywords?.some((kw) => session.content?.includes(kw))) return "keyword";
     return "random";
@@ -155,8 +157,8 @@ export class EventListener {
       } else {
         await this.ctx.database.create(ENTITY_TABLE, data);
       }
-    } catch (err: any) {
-      this.logger.error(`updateMemberInfo failed: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(`updateMemberInfo failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -198,18 +200,18 @@ export class EventListener {
 
     const existing = this.pendingPercepts.get(channelKey);
     if (existing) {
-      clearTimeout(existing.timer);
+      existing.clearTimer();
       const existingPriority = TRIGGER_PRIORITY[existing.percept.triggerType] ?? 0;
       const newPriority = TRIGGER_PRIORITY[percept.triggerType] ?? 0;
       if (existingPriority > newPriority) percept = existing.percept;
     }
 
     const window = this.config.aggregationWindow ?? 1500;
-    const timer = this.ctx.setTimeout(() => {
+    const clearTimer = this.ctx.setTimeout(() => {
       this.pendingPercepts.delete(channelKey);
       this.ctx.emit("horizon/percept", percept);
-    }, window) as unknown as ReturnType<typeof setTimeout>;
+    }, window);
 
-    this.pendingPercepts.set(channelKey, { timer, percept });
+    this.pendingPercepts.set(channelKey, { clearTimer, percept });
   }
 }

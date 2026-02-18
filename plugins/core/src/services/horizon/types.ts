@@ -30,10 +30,7 @@ export enum TimelineStage {
   Deleted = "deleted",
 }
 
-export interface BaseTimelineEntry<
-  Type extends TimelineEventType,
-  Data extends Record<string, any>,
-> {
+export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends object> {
   id: string;
   timestamp: Date;
   scope: Scope;
@@ -72,7 +69,7 @@ export interface EntityRecord {
   name: string;
   parentId?: string;
   refId?: string;
-  attributes: Record<string, any>;
+  attributes: Record<string, unknown>;
   updatedAt: Date;
 }
 
@@ -80,7 +77,7 @@ export interface Entity {
   id: string;
   type: string;
   name: string;
-  attributes?: Record<string, any>;
+  attributes?: Record<string, unknown>;
 }
 
 export interface Environment {
@@ -88,7 +85,7 @@ export interface Environment {
   id: string;
   name: string;
   description?: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface SelfInfo {
