@@ -20,7 +20,7 @@
 ### Horizon (Context Management)
 
 - [x] **HORIZON-01**: Horizon 上下文架构 — Environment/Entity/Event 三元组抽象，替代 per-channel 会话隔离
-- [x] **HORIZON-02**: Timeline 存储 — Event 按时间序列的数据库存储架构
+- [ ] **HORIZON-02**: Timeline 存储 — Event 按时间序列的数据库存储架构
 - [x] **HORIZON-03**: Observation 生成 — Event 展开为 LLM 可直接阅读的 Observation 数据
 - [x] **HORIZON-04**: Percept 触发机制 — 描述智能体被触发的原因（消息、定时任务等），驱动 AgentCore 处理
 
@@ -31,7 +31,7 @@
 
 ### Prompt System
 
-- [x] **PROMPT-01**: 基础提示词配置 — 人设/性格配置，系统提示词模板加载与渲染
+- [ ] **PROMPT-01**: 基础提示词配置 — 人设/性格配置，系统提示词模板加载与渲染
 
 ### Platform Integration
 
@@ -74,16 +74,16 @@
 | MODEL-01    | Phase 2          | Pending  |
 | MODEL-02    | Phase 2          | Pending  |
 | MODEL-03    | Phase 2          | Pending  |
-| AGENT-01    | Phase 5          | Pending  |
+| AGENT-01    | Phase 5, Phase 7 | Pending  |
 | AGENT-02    | Phase 6          | Complete |
-| AGENT-03    | Phase 5          | Pending  |
+| AGENT-03    | Phase 5, Phase 8 | Pending  |
 | HORIZON-01  | Phase 3          | Complete |
-| HORIZON-02  | Phase 3          | Complete |
+| HORIZON-02  | Phase 3, Phase 8 | Pending  |
 | HORIZON-03  | Phase 3          | Complete |
 | HORIZON-04  | Phase 3          | Complete |
 | TOOL-01     | Phase 4          | Complete |
 | TOOL-02     | Phase 4          | Complete |
-| PROMPT-01   | Phase 4          | Complete |
+| PROMPT-01   | Phase 4, Phase 7 | Pending  |
 | PLATFORM-01 | Phase 1, Phase 5 | Pending  |
 
 **Coverage:**
@@ -95,4 +95,4 @@
 ---
 
 _Requirements defined: 2026-02-17_
-_Last updated: 2026-02-17 after roadmap creation_
+_Last updated: 2026-02-19 after gap closure phase creation_

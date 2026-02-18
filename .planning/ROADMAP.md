@@ -19,6 +19,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Prompt & Tool Services** - PromptService for templates, PluginService for tool registration and execution (completed 2026-02-18)
 - [ ] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging
 - [x] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing (completed 2026-02-18)
+- [ ] **Phase 7: Core Wiring Fixes** - AgentIdentity prompt injection, default system template, gap closure
+- [ ] **Phase 8: Stream Support & Dead Code Cleanup** - Activate streamMode path, remove dead code, traceability fixes
 
 ## Phase Details
 
@@ -132,16 +134,45 @@ Plans:
 - [ ] 06-01-PLAN.md — WillingnessCalculator with rule scoring, LLM judgment, and AgentCore integration
 - [ ] 06-02-PLAN.md — Error handling, channel reporting, and reply delay polish
 
+### Phase 7: Core Wiring Fixes
+
+**Goal**: Wire missing runtime connections identified by milestone audit
+**Depends on**: Phase 5, Phase 4
+**Requirements**: AGENT-01, PROMPT-01
+**Gap Closure:** Closes gaps from v1 audit
+**Success Criteria** (what must be TRUE):
+
+1. AgentIdentity config is read by ThinkActLoop and injected into prompt template scope
+2. A default "system" template is bundled so LLM never receives empty system prompt
+3. PromptService warns when render() returns empty string for a template key
+   **Plans**: TBD
+
+### Phase 8: Stream Support & Dead Code Cleanup
+
+**Goal**: Activate streaming path and clean up dead code from audit findings
+**Depends on**: Phase 7
+**Requirements**: AGENT-03, HORIZON-02
+**Gap Closure:** Closes gaps from v1 audit
+**Success Criteria** (what must be TRUE):
+
+1. ThinkActLoop reads config.streamMode and uses streamText() when enabled
+2. ModelService.streamCall() uses PQueue concurrency control like call()
+3. markAsActive() dead code removed or stage transitions activated
+4. REQUIREMENTS.md traceability table accurately reflects implementation status
+   **Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
-| Phase                        | Plans Complete | Status   | Completed  |
-| ---------------------------- | -------------- | -------- | ---------- |
-| 1. Foundation & Shared Model | 0/2            | Complete | 2026-02-17 |
-| 2. Model Service & Providers | 3/3            | Complete | 2026-02-18 |
-| 3. Horizon Context System    | 3/3            | Complete | 2026-02-18 |
-| 4. Prompt & Tool Services    | 2/2            | Complete | 2026-02-18 |
-| 5. Agent Core & Integration  | 2/2            | Complete | 2026-02-18 |
-| 6. Willingness & Polish      | 2/2            | Complete | 2026-02-18 |
+| Phase                         | Plans Complete | Status   | Completed  |
+| ----------------------------- | -------------- | -------- | ---------- |
+| 1. Foundation & Shared Model  | 0/2            | Complete | 2026-02-17 |
+| 2. Model Service & Providers  | 3/3            | Complete | 2026-02-18 |
+| 3. Horizon Context System     | 3/3            | Complete | 2026-02-18 |
+| 4. Prompt & Tool Services     | 2/2            | Complete | 2026-02-18 |
+| 5. Agent Core & Integration   | 2/2            | Complete | 2026-02-18 |
+| 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
+| 7. Core Wiring Fixes          | 0/0            | Pending  |            |
+| 8. Stream & Dead Code Cleanup | 0/0            | Pending  |            |
