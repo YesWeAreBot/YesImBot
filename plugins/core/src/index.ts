@@ -22,6 +22,13 @@ export interface Config
   streamMode?: boolean;
   globalTimeout?: number;
   maxToolResultLength?: number;
+  willingnessProvider?: string;
+  willingnessModel?: string;
+  willingnessRejectThreshold?: number;
+  willingnessAcceptThreshold?: number;
+  willingCooldownMessages?: number;
+  willingCooldownMs?: number;
+  willingSoftDecayMs?: number;
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -56,6 +63,13 @@ export const Config: Schema<Config> = Schema.object({
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
+  willingnessProvider: Schema.string(),
+  willingnessModel: Schema.string(),
+  willingnessRejectThreshold: Schema.number().default(0.15),
+  willingnessAcceptThreshold: Schema.number().default(0.75),
+  willingCooldownMessages: Schema.number().default(3),
+  willingCooldownMs: Schema.number().default(60000),
+  willingSoftDecayMs: Schema.number().default(300000),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -76,6 +90,13 @@ export function apply(ctx: Context, config: Config) {
     streamMode: config.streamMode,
     globalTimeout: config.globalTimeout,
     maxToolResultLength: config.maxToolResultLength,
+    willingnessProvider: config.willingnessProvider,
+    willingnessModel: config.willingnessModel,
+    willingnessRejectThreshold: config.willingnessRejectThreshold,
+    willingnessAcceptThreshold: config.willingnessAcceptThreshold,
+    willingCooldownMessages: config.willingCooldownMessages,
+    willingCooldownMs: config.willingCooldownMs,
+    willingSoftDecayMs: config.willingSoftDecayMs,
   });
 
   ctx.on("ready", () => {
