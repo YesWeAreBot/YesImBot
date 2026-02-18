@@ -1,0 +1,90 @@
+import { Context, Service } from "koishi";
+
+import { Plugin } from "./base-plugin";
+import { schemaToJSONSchema } from "./schema";
+import type { FunctionContext, FunctionDefinition, PluginServiceConfig, ToolResult } from "./types";
+import { Failed } from "./utils";
+
+declare module "koishi" {
+  interface Context {
+    "yesimbot.plugin": PluginService;
+  }
+}
+
+export { PluginServiceConfig };
+
+export class PluginService extends Service<PluginServiceConfig> {
+  private plugins: Map<string, Plugin> = new Map();
+
+  constructor(ctx: Context, config: PluginServiceConfig) {
+    super(ctx, "yesimbot.plugin", true);
+    this.config = config;
+  }
+
+  register(plugin: Plugin): void {
+    this.plugins.set(plugin.metadata.name, plugin);
+    const logger = this.ctx.logger("yesimbot.plugin");
+    logger.info(`Registered plugin: ${plugin.metadata.name}`);
+  }
+
+  unregister(name: string): void {
+    this.plugins.delete(name);
+  }
+
+  private findFunction(name: string): FunctionDefinition | undefined {
+    for (const plugin of this.plugins.values()) {
+      const fn = plugin.getFunctions().get(name);
+      if (fn) return fn;
+    }
+    return undefined;
+  }
+
+  async invoke(
+    name: string,
+    params: Record<string, unknown>,
+    context?: FunctionContext,
+  ): Promise<ToolResult> {
+    const fn = this.findFunction(name);
+    if (!fn) return Failed(`Function not found: ${name}`);
+
+    const timeout = this.config?.defaultTimeout ?? 30000;
+    try {
+      return await Promise.race([
+        fn.handler(params, context ?? {}),
+        new Promise<ToolResult>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout")), timeout),
+        ),
+      ]);
+    } catch (e) {
+      return Failed(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  getDefinition(name: string): FunctionDefinition | undefined {
+    return this.findFunction(name);
+  }
+
+  getTools(): Array<{
+    type: "function";
+    function: { name: string; description: string; parameters: Record<string, unknown> };
+  }> {
+    const result = [];
+    for (const plugin of this.plugins.values()) {
+      for (const fn of plugin.getFunctions().values()) {
+        result.push({
+          type: "function" as const,
+          function: {
+            name: fn.name,
+            description: fn.description,
+            parameters: schemaToJSONSchema(fn.parameters),
+          },
+        });
+      }
+    }
+    return result;
+  }
+
+  listPlugins(): string[] {
+    return [...this.plugins.keys()];
+  }
+}
