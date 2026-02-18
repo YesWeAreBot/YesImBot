@@ -1,13 +1,16 @@
+import { generateText, type StepResult, type ToolSet } from "ai";
 import { Context } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { Percept, UserMessagePercept } from "../horizon/types";
 import { PerceptType } from "../horizon/types";
-import type { CallParams, ModelService } from "../model/service";
+import type { ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
 import type { AgentCoreConfig } from "./config";
-import { buildAiSdkTools, buildStopCondition, finishTool } from "./tools";
+import { buildAiSdkTools, buildStopCondition } from "./tools";
+
+class LoopAbort extends Error {}
 
 export class ThinkActLoop {
   private logger;
@@ -33,48 +36,79 @@ export class ThinkActLoop {
     const contextText = horizon.formatHorizonText(view);
 
     const fnCtx = { session: userPercept.runtime?.session, view, percept: userPercept };
-    const allTools = {
-      ...buildAiSdkTools(pluginService, fnCtx, config.maxToolResultLength ?? 4000),
-      finish: finishTool,
-    };
+    const { tools: allTools, toolNames: infoToolNames } = buildAiSdkTools(
+      pluginService,
+      fnCtx,
+      config.maxToolResultLength ?? 4000,
+    );
     const messages = [{ role: "user" as const, content: contextText }];
     const stopWhen = buildStopCondition(config.maxRounds ?? 3);
 
-    const agentParams = {
-      system: systemPrompt,
-      messages,
-      tools: allTools,
-      toolChoice: "required" as const,
-      stopWhen,
-    } as CallParams;
+    // Direct generateText call for step-level control
+    if (!config.provider || !config.model) {
+      this.logger.warn("Missing provider or model in config");
+      return;
+    }
+    const { model, defaultParams } = modelService.getModel(config.provider, config.model);
+    const collectedSteps: StepResult<ToolSet>[] = [];
+    let fallbackText = "";
 
     const timeoutMs = config.globalTimeout ?? 120000;
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Global loop timeout")), timeoutMs),
     );
 
-    let steps: { toolCalls?: Array<{ toolName: string; args?: Record<string, unknown> }> }[] = [];
+    try {
+      const result = await Promise.race([
+        generateText({
+          model,
+          ...defaultParams,
+          system: systemPrompt,
+          messages,
+          tools: allTools as ToolSet,
+          toolChoice: "required",
+          stopWhen,
+          onStepFinish: (step: StepResult<ToolSet>) => {
+            this.logger.info(
+              `Step #${collectedSteps.length + 1} finished. Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. ${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
+            );
+            collectedSteps.push(step);
+            const calls = step.toolCalls ?? [];
+            if (calls.length && !calls.some((t) => infoToolNames.has(t.toolName))) {
+              throw new LoopAbort();
+            }
+          },
+        }),
+        timeoutPromise,
+      ]);
 
-    if (config.streamMode) {
-      const result = await Promise.race([
-        modelService.streamCall(config.provider, config.model, agentParams),
-        timeoutPromise,
-      ]);
-      await result.text;
-      steps = (await result.steps) as typeof steps;
-    } else {
-      const result = await Promise.race([
-        modelService.call(config.provider, config.model, agentParams),
-        timeoutPromise,
-      ]);
-      steps = (result?.steps ?? []) as typeof steps;
+      if (result.text) {
+        this.logger.info(`Model output: ${result.text}`);
+        fallbackText = result.text;
+      }
+    } catch (e) {
+      if (e instanceof LoopAbort) {
+        this.logger.info("Loop aborted by stop condition");
+      } else {
+        throw e;
+      }
     }
 
-    const toolNames = steps.flatMap((s) => (s.toolCalls ?? []).map((t) => t.toolName));
-    const sentContent = steps
-      .flatMap((s) => (s.toolCalls ?? []).filter((t) => t.toolName === "send_message"))
-      .map((t) => String(t.args?.["content"] ?? ""))
-      .join(" ");
+    const toolNames = collectedSteps.flatMap((s) => (s.toolCalls ?? []).map((t) => t.toolName));
+    const hasSent = collectedSteps.some((s) =>
+      (s.toolCalls ?? []).some((t) => t.toolName === "send_message"),
+    );
+    if (!hasSent && fallbackText.trim()) {
+      this.logger.info("No send_message called, sending model text as fallback");
+      await userPercept.runtime?.session?.send(fallbackText.trim());
+    }
+
+    const sentContent = hasSent
+      ? collectedSteps
+          .flatMap((s) => (s.toolCalls ?? []).filter((t) => t.toolName === "send_message"))
+          .map((t) => String((t.input as Record<string, unknown>)?.["content"] ?? ""))
+          .join(" ")
+      : fallbackText.trim();
 
     const summary = `Tools: [${toolNames.join(", ")}]. Sent: [${sentContent || "nothing"}]`;
     await horizon.events.recordAgentSummary({
@@ -82,6 +116,10 @@ export class ThinkActLoop {
       timestamp: new Date(),
       summary,
     });
-    this.logger.info(`Loop complete: ${steps.length} steps`);
+    this.logger.info(`Loop complete: ${collectedSteps.length} steps`);
   }
+}
+
+function isEmptyString(str: unknown): boolean {
+  return typeof str === "string" && str.trim() === "";
 }

@@ -41,7 +41,7 @@ export class CorePlugin extends Plugin {
       } else {
         for (const part of effectiveParts) await ctx.session?.send(part);
       }
-      return Success();
+      return Success(`Sent ${effectiveParts.length} message(s)`);
     } catch (e) {
       return Failed(e instanceof Error ? e.message : String(e));
     }

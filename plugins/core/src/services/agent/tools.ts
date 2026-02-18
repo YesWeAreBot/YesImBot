@@ -2,7 +2,7 @@ import { hasToolCall, jsonSchema, stepCountIs } from "ai";
 import type { ToolSet } from "ai";
 
 import type { PluginService } from "../plugin/service";
-import type { FunctionContext } from "../plugin/types";
+import { FunctionType, type FunctionContext } from "../plugin/types";
 
 export const finishTool = {
   description: "Signal that you have completed your response. Call this when done.",
@@ -17,10 +17,12 @@ export function buildAiSdkTools(
   pluginService: PluginService,
   fnCtx: FunctionContext,
   maxResultLength: number,
-): ToolSet {
+): { tools: ToolSet; toolNames: Set<string> } {
   const tools: ToolSet = { finish: finishTool };
+  const toolNames = new Set<string>();
   for (const entry of pluginService.getTools()) {
     const name = entry.function.name;
+    if (entry.functionType === FunctionType.Tool) toolNames.add(name);
     tools[name] = {
       description: entry.function.description,
       inputSchema: jsonSchema(entry.function.parameters),
@@ -33,7 +35,7 @@ export function buildAiSdkTools(
       },
     };
   }
-  return tools;
+  return { tools, toolNames };
 }
 
 export function buildStopCondition(maxRounds: number) {

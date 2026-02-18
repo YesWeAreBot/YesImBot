@@ -3,7 +3,12 @@ import { Context, Service } from "koishi";
 import { Plugin } from "./base-plugin";
 import { CorePlugin, SessionInfoPlugin } from "./builtin";
 import { schemaToJSONSchema } from "./schema";
-import type { FunctionContext, FunctionDefinition, ToolResult } from "./types";
+import {
+  FunctionType,
+  type FunctionContext,
+  type FunctionDefinition,
+  type ToolResult,
+} from "./types";
 import { Failed } from "./utils";
 
 declare module "koishi" {
@@ -71,6 +76,7 @@ export class PluginService extends Service<PluginServiceConfig> {
 
   getTools(): Array<{
     type: "function";
+    functionType: FunctionType;
     function: { name: string; description: string; parameters: Record<string, unknown> };
   }> {
     const result = [];
@@ -78,6 +84,7 @@ export class PluginService extends Service<PluginServiceConfig> {
       for (const fn of plugin.getFunctions().values()) {
         result.push({
           type: "function" as const,
+          functionType: fn.type,
           function: {
             name: fn.name,
             description: fn.description,
