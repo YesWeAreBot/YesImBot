@@ -14,7 +14,7 @@ interface DecoratorOpts {
   parameters: Schema;
 }
 
-interface StaticEntry extends DecoratorOpts {
+export interface StaticEntry extends DecoratorOpts {
   type: FunctionType;
   methodKey: string;
 }

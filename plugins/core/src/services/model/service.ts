@@ -5,7 +5,7 @@ import {
   IModelService,
   ModelInfo,
 } from "@yesimbot/shared-model";
-import { CallSettings, generateText, Prompt, streamText } from "ai";
+import { type CallSettings, type Prompt, generateText, streamText } from "ai";
 import { Context, Service } from "koishi";
 import PQueue from "p-queue";
 
@@ -36,27 +36,28 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   constructor(ctx: Context, config: ModelServiceConfig = {}) {
     super(ctx, "model-service", true);
     this.queue = new PQueue({ concurrency: config.concurrency || 5 });
+    this.logger = ctx.logger("model-service");
   }
 
-  registerProvider(name: string, provider: IModelProvider): void {
+  public registerProvider(name: string, provider: IModelProvider): void {
     this.providers.set(name, provider);
-    this.ctx.logger("model-service").info(`Provider registered: ${name}`);
+    this.logger.info(`Provider registered: ${name}`);
   }
 
-  unregisterProvider(name: string): void {
+  public unregisterProvider(name: string): void {
     this.providers.delete(name);
-    this.ctx.logger("model-service").info(`Provider unregistered: ${name}`);
+    this.logger.info(`Provider unregistered: ${name}`);
   }
 
-  getProvider(name: string): IModelProvider | undefined {
+  public getProvider(name: string): IModelProvider | undefined {
     return this.providers.get(name);
   }
 
-  listProviders(): string[] {
+  public listProviders(): string[] {
     return Array.from(this.providers.keys());
   }
 
-  getModelInfo(providerName: string, modelId: string): ModelInfo | undefined {
+  public getModelInfo(providerName: string, modelId: string): ModelInfo | undefined {
     const provider = this.providers.get(providerName);
     return provider?.models.find((m) => m.id === modelId);
   }
@@ -131,7 +132,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     }
   }
 
-  getModel(providerName: string, modelId: string) {
+  public getModel(providerName: string, modelId: string) {
     const provider = this.providers.get(providerName);
     if (!provider) throw new Error(`Provider not found: ${providerName}`);
 
@@ -141,7 +142,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     };
   }
 
-  getUsage() {
+  public getUsage() {
     return new Map(this.usage);
   }
 

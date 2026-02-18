@@ -1,5 +1,5 @@
 {
-  "name": "@yesimbot/provider-openai",
+  "name": "@yesimbot/koishi-plugin-provider-openai",
   "version": "0.0.0",
   "files": [
     "dist"
@@ -13,7 +13,8 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.cjs",
       "import": "./dist/index.mjs"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsc --noEmit && pkgroll",

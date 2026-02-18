@@ -1,8 +1,9 @@
 import { Context, Service } from "koishi";
 
 import { Plugin } from "./base-plugin";
+import { CorePlugin, SessionInfoPlugin } from "./builtin";
 import { schemaToJSONSchema } from "./schema";
-import type { FunctionContext, FunctionDefinition, PluginServiceConfig, ToolResult } from "./types";
+import type { FunctionContext, FunctionDefinition, ToolResult } from "./types";
 import { Failed } from "./utils";
 
 declare module "koishi" {
@@ -11,7 +12,9 @@ declare module "koishi" {
   }
 }
 
-export { PluginServiceConfig };
+export interface PluginServiceConfig {
+  defaultTimeout?: number;
+}
 
 export class PluginService extends Service<PluginServiceConfig> {
   private plugins: Map<string, Plugin> = new Map();
@@ -19,6 +22,8 @@ export class PluginService extends Service<PluginServiceConfig> {
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
     this.config = config;
+    this.register(new CorePlugin(ctx));
+    this.register(new SessionInfoPlugin());
   }
 
   register(plugin: Plugin): void {

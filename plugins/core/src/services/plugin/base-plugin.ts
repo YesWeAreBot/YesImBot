@@ -1,12 +1,5 @@
+import { StaticEntry } from "./decorators";
 import type { FunctionDefinition, PluginMetadata } from "./types";
-
-interface StaticEntry {
-  name: string;
-  description: string;
-  parameters: import("koishi").Schema;
-  type: import("./types").FunctionType;
-  methodKey: string;
-}
 
 export abstract class Plugin {
   metadata: PluginMetadata;

@@ -26,7 +26,7 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
-  instanceName: Schema.string().required().description("Unique instance name"),
+  instanceName: Schema.string().default("openai"),
   apiKey: Schema.string().role("secret").required(),
   baseURL: Schema.string().default("https://api.openai.com/v1"),
   models: Schema.array(
@@ -34,7 +34,9 @@ export const Config: Schema<Config> = Schema.object({
       id: Schema.string().required(),
       capabilities: Schema.array(Schema.string()),
     }),
-  ).default([{ id: "gpt-4o", capabilities: ["toolCalling", "vision", "jsonMode", "streaming"] }]),
+  )
+    .default([{ id: "gpt-4o", capabilities: ["toolCalling", "vision", "jsonMode", "streaming"] }])
+    .role("table"),
   defaultParams: Schema.object({
     temperature: Schema.number().default(0.7),
     maxTokens: Schema.number().default(2048),

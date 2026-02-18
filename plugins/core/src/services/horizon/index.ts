@@ -1,4 +1,5 @@
 export * from "./types";
-export { EventManager } from "./event-manager";
+export { EventManager } from "./manager";
 export { EventListener } from "./listener";
-export { HorizonService, type HorizonConfig } from "./service";
+export { HorizonService } from "./service";
+export type { HorizonServiceConfig } from "./config";

@@ -9,7 +9,7 @@ export enum FunctionType {
 
 export interface ToolResult<T = unknown> {
   status: "success" | "failed";
-  result?: T;
+  content?: T;
   error?: string;
 }
 
@@ -32,8 +32,4 @@ export interface PluginMetadata {
   name: string;
   description: string;
   builtin?: boolean;
-}
-
-export interface PluginServiceConfig {
-  defaultTimeout?: number;
 }

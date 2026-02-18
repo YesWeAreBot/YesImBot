@@ -1,20 +1,16 @@
 import { Context, Schema } from "koishi";
 
-import { HorizonService, type HorizonConfig } from "./services/horizon";
-import { ModelService } from "./services/model-service";
-import {
-  CorePlugin,
-  PluginService,
-  type PluginServiceConfig,
-  SessionInfoPlugin,
-} from "./services/plugin";
+import { HorizonService, type HorizonServiceConfig } from "./services/horizon";
+import { ModelService, type ModelServiceConfig } from "./services/model";
+import { PluginService, type PluginServiceConfig } from "./services/plugin";
 import { PromptService, type PromptServiceConfig } from "./services/prompt";
 
 export const name = "yesimbot-core";
 
 export const inject = ["database"];
 
-export interface Config extends HorizonConfig, PromptServiceConfig, PluginServiceConfig {
+export interface Config
+  extends HorizonServiceConfig, PromptServiceConfig, PluginServiceConfig, ModelServiceConfig {
   defaultProvider?: string;
   defaultModel?: string;
   fallbackChains?: Record<string, Array<{ provider: string; model: string }>>;
@@ -36,10 +32,12 @@ export const Config: Schema<Config> = Schema.object({
   allowedChannels: Schema.array(
     Schema.object({
       platform: Schema.string().required(),
-      type: Schema.string().required(),
+      type: Schema.union(["private", "guild"]).required(),
       id: Schema.string().required(),
     }),
-  ).default([]),
+  )
+    .default([])
+    .role("table"),
   keywords: Schema.array(Schema.string()).default([]),
   aggregationWindow: Schema.number().default(1500),
   historyLimit: Schema.number().default(30),
@@ -48,6 +46,7 @@ export const Config: Schema<Config> = Schema.object({
 });
 
 export function apply(ctx: Context, config: Config) {
+  const logger = ctx.logger("yesimbot-core");
   ctx.plugin(ModelService, config);
   ctx.plugin(HorizonService, {
     allowedChannels: config.allowedChannels ?? [],
@@ -59,13 +58,10 @@ export function apply(ctx: Context, config: Config) {
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
 
   ctx.on("ready", () => {
-    ctx["yesimbot.plugin"].register(new CorePlugin(ctx));
-    ctx["yesimbot.plugin"].register(new SessionInfoPlugin());
-    const logger = ctx.logger("yesimbot-core");
     logger.info("YesImBot core plugin initialized");
   });
 
   ctx.on("dispose", () => {
-    ctx.logger("yesimbot-core").info("YesImBot core plugin disposed");
+    logger.info("YesImBot core plugin disposed");
   });
 }

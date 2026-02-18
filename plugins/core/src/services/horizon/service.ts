@@ -1,7 +1,8 @@
 import { Context, Service } from "koishi";
 
-import { EventManager } from "./event-manager";
+import { HorizonServiceConfig } from "./config";
 import { EventListener } from "./listener";
+import { EventManager } from "./manager";
 import type {
   Entity,
   EntityRecord,
@@ -24,20 +25,13 @@ declare module "koishi" {
   }
 }
 
-export interface HorizonConfig {
-  allowedChannels: Array<{ platform: string; type: string; id: string }>;
-  keywords?: string[];
-  aggregationWindow?: number;
-  historyLimit?: number;
-}
-
-export class HorizonService extends Service<HorizonConfig> {
+export class HorizonService extends Service<HorizonServiceConfig> {
   static inject = ["database"];
 
   public events: EventManager;
   public listener: EventListener;
 
-  constructor(ctx: Context, config: HorizonConfig) {
+  constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
     this.config = config;
     this.events = new EventManager(ctx);

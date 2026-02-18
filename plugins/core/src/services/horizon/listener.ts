@@ -1,7 +1,8 @@
-import { Context, Random, Logger } from "koishi";
 import type { Session } from "koishi";
+import { Context, Logger, Random } from "koishi";
 
-import type { EventManager } from "./event-manager";
+import { ListenerConfig } from "./config";
+import type { EventManager } from "./manager";
 import type { Percept, UserMessagePercept } from "./types";
 import { PerceptType, TimelineStage } from "./types";
 
@@ -14,14 +15,6 @@ declare module "koishi" {
 
 // Table name constant — schema declared in horizon service (Plan 03)
 const ENTITY_TABLE = "yesimbot.entity";
-
-type AllowedChannel = { platform: string; type: string; id: string };
-
-interface ListenerConfig {
-  allowedChannels: AllowedChannel[];
-  keywords?: string[];
-  aggregationWindow?: number;
-}
 
 const TRIGGER_PRIORITY: Record<string, number> = {
   mention: 4,
