@@ -107,13 +107,12 @@ Plans:
 2. Think-act loop executes: context build → LLM call → tool execution → response generation
 3. Koishi plugin receives messages, creates Percepts, and sends agent responses back to platform
 4. Agent can participate in basic conversation with @mention detection
-   **Plans**: TBD
+   **Plans**: 2 plans
 
 Plans:
 
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
-- [ ] 05-03: TBD
+- [ ] 05-01-PLAN.md — AgentCore service skeleton, ai-sdk tool adapter, finish tool
+- [ ] 05-02-PLAN.md — Think-act loop, send_message enhancement, core plugin wiring
 
 ### Phase 6: Willingness & Polish
 
@@ -144,5 +143,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Model Service & Providers | 3/3            | Complete    | 2026-02-18 |
 | 3. Horizon Context System    | 3/3            | Complete    | 2026-02-18 |
 | 4. Prompt & Tool Services    | 2/2            | Complete    | 2026-02-18 |
-| 5. Agent Core & Integration  | 0/3            | Not started | -          |
+| 5. Agent Core & Integration  | 0/2            | Planning    | -          |
 | 6. Willingness & Polish      | 0/2            | Not started | -          |
