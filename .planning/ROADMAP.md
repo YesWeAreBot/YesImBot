@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Shared Model** - Monorepo structure, shared-model package, Koishi plugin skeleton (completed 2026-02-17)
 - [x] **Phase 2: Model Service & Providers** - ModelService with provider registry, OpenAI and DeepSeek provider plugins (completed 2026-02-18)
-- [ ] **Phase 3: Horizon Context System** - Environment/Entity/Event abstractions, Timeline storage, Observation generation, Percept mechanism
+- [x] **Phase 3: Horizon Context System** - Environment/Entity/Event abstractions, Timeline storage, Observation generation, Percept mechanism (completed 2026-02-18)
 - [ ] **Phase 4: Prompt & Tool Services** - PromptService for templates, ToolService for registration and execution
 - [ ] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging
 - [ ] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing
@@ -142,7 +142,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | ---------------------------- | -------------- | ----------- | ---------- |
 | 1. Foundation & Shared Model | 0/2            | Complete    | 2026-02-17 |
 | 2. Model Service & Providers | 3/3            | Complete    | 2026-02-18 |
-| 3. Horizon Context System    | 2/3            | In Progress |            |
+| 3. Horizon Context System    | 3/3            | Complete    | 2026-02-18 |
 | 4. Prompt & Tool Services    | 0/2            | Not started | -          |
 | 5. Agent Core & Integration  | 0/3            | Not started | -          |
 | 6. Willingness & Polish      | 0/2            | Not started | -          |
