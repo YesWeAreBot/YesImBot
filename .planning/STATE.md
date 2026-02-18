@@ -10,19 +10,19 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 4 of 6 (Prompt & Tool Services)
-Plan: 0 of 2 in current phase
-Status: Context gathered, ready for planning
-Last activity: 2026-02-18 — Phase 4 context gathered
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-18 — Completed 04-01 PromptService
 
-Progress: [██████░░░░] 50%
+Progress: [███████░░░] 58%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
-- Average duration: 2.7 minutes
-- Total execution time: 0.25 hours
+- Total plans completed: 6
+- Average duration: 2.8 minutes
+- Total execution time: 0.28 hours
 
 **By Phase:**
 
@@ -31,6 +31,7 @@ Progress: [██████░░░░] 50%
 | 01    | 2     | 392s  | 196s     |
 | 02    | 2     | 268s  | 134s     |
 | 03    | 1     | 84s   | 84s      |
+| 04    | 1     | 300s  | 300s     |
 
 **Recent Trend:**
 
@@ -76,6 +77,10 @@ Recent decisions affecting current work:
 - [03-02]: Direct messages bypass aggregation window and emit Percept immediately
 - [03-03]: Config interface extends HorizonConfig to merge sub-plugin config into parent schema
 - [03-03]: Service base class logger used directly — no private logger field override
+- [04-01]: Config-provided templates override built-in defaults (config > registerTemplate priority)
+- [04-01]: Snippets evaluated lazily — only those whose keys appear in the template are called
+- [04-01]: Injections sorted ascending by priority, joined with double newline into scope.injections
+- [04-01]: MustacheRenderer sets Mustache.escape = identity to disable HTML escaping globally
 
 ### Pending Todos
 
@@ -88,5 +93,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-prompt-tool-services/04-CONTEXT.md
+Stopped at: Completed 04-01-PLAN.md
+Resume file: .planning/phases/04-prompt-tool-services/04-01-SUMMARY.md

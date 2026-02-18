@@ -31,7 +31,7 @@
 
 ### Prompt System
 
-- [ ] **PROMPT-01**: 基础提示词配置 — 人设/性格配置，系统提示词模板加载与渲染
+- [x] **PROMPT-01**: 基础提示词配置 — 人设/性格配置，系统提示词模板加载与渲染
 
 ### Platform Integration
 
@@ -83,7 +83,7 @@
 | HORIZON-04  | Phase 3          | Complete |
 | TOOL-01     | Phase 4          | Pending  |
 | TOOL-02     | Phase 4          | Pending  |
-| PROMPT-01   | Phase 4          | Pending  |
+| PROMPT-01   | Phase 4          | Complete |
 | PLATFORM-01 | Phase 1, Phase 5 | Pending  |
 
 **Coverage:**
