@@ -29,6 +29,7 @@ export interface Config
   willingCooldownMessages?: number;
   willingCooldownMs?: number;
   willingSoftDecayMs?: number;
+  errorReportChannel?: string;
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -70,6 +71,9 @@ export const Config: Schema<Config> = Schema.object({
   willingCooldownMessages: Schema.number().default(3),
   willingCooldownMs: Schema.number().default(60000),
   willingSoftDecayMs: Schema.number().default(300000),
+  errorReportChannel: Schema.string().description(
+    "Error report channel in platform:channelId format",
+  ),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -97,6 +101,7 @@ export function apply(ctx: Context, config: Config) {
     willingCooldownMessages: config.willingCooldownMessages,
     willingCooldownMs: config.willingCooldownMs,
     willingSoftDecayMs: config.willingSoftDecayMs,
+    errorReportChannel: config.errorReportChannel,
   });
 
   ctx.on("ready", () => {

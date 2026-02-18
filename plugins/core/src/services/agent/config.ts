@@ -18,4 +18,5 @@ export interface AgentCoreConfig {
   willingCooldownMessages?: number;
   willingCooldownMs?: number;
   willingSoftDecayMs?: number;
+  errorReportChannel?: string;
 }

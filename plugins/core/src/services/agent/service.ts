@@ -81,6 +81,18 @@ export class AgentCore extends Service<AgentCoreConfig> {
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
       this.logger.error(err);
+      await this.reportError(err, percept).catch(() => {});
     }
+  }
+
+  private async reportError(err: unknown, percept: Percept): Promise<void> {
+    if (!this.config.errorReportChannel) return;
+    const colonIdx = this.config.errorReportChannel.indexOf(":");
+    const platform = this.config.errorReportChannel.slice(0, colonIdx);
+    const channelId = this.config.errorReportChannel.slice(colonIdx + 1);
+    const bot = this.ctx.bots.find((b) => b.platform === platform);
+    if (!bot) return;
+    const summary = `[Error] ${percept.scope.channelId}: ${err instanceof Error ? err.message : String(err)}`;
+    await bot.sendMessage(channelId, summary).catch(() => {});
   }
 }
