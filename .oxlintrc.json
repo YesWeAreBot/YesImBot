@@ -1,17 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "eslint",
-    "import",
-    "node",
-    "oxc",
-    "promise",
-    "typescript",
-    "vitest",
-    "vue"
-  ],
+  "plugins": ["eslint", "import", "node", "oxc", "promise", "typescript", "vitest", "vue"],
   "categories": {},
-  "rules": {},
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "error"
+  },
   "settings": {
     "jsx-a11y": {
       "polymorphicPropName": null,
