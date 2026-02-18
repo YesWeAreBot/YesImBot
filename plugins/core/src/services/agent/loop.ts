@@ -1,5 +1,5 @@
 import { generateText, type StepResult, type ToolSet } from "ai";
-import { Context } from "koishi";
+import { Context, sleep } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { Percept, UserMessagePercept } from "../horizon/types";
@@ -25,6 +25,7 @@ export class ThinkActLoop {
       return;
     }
     const userPercept = percept as UserMessagePercept;
+    const loopStartTime = Date.now();
 
     const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
@@ -100,6 +101,10 @@ export class ThinkActLoop {
     );
     if (!hasSent && fallbackText.trim()) {
       this.logger.info("No send_message called, sending model text as fallback");
+      const elapsed = Date.now() - loopStartTime;
+      const typingMs = Math.min(fallbackText.trim().length * 50, 3000);
+      const delay = Math.max(0, typingMs - elapsed);
+      if (delay > 0) await sleep(delay);
       await userPercept.runtime?.session?.send(fallbackText.trim());
     }
 

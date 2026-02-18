@@ -1,4 +1,4 @@
-import { Context, Schema } from "koishi";
+import { Context, Schema, sleep } from "koishi";
 
 import { Plugin } from "../base-plugin";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
@@ -37,9 +37,15 @@ export class CorePlugin extends Plugin {
         const channelId = target.slice(colonIdx + 1);
         const bot = this.ctx.bots.find((b) => b.platform === platform);
         if (!bot) return Failed(`Bot not found for platform: ${platform}`);
-        for (const part of effectiveParts) await bot.sendMessage(channelId, part);
+        for (let i = 0; i < effectiveParts.length; i++) {
+          if (i > 0) await sleep(1000);
+          await bot.sendMessage(channelId, effectiveParts[i]!);
+        }
       } else {
-        for (const part of effectiveParts) await ctx.session?.send(part);
+        for (let i = 0; i < effectiveParts.length; i++) {
+          if (i > 0) await sleep(1000);
+          await ctx.session?.send(effectiveParts[i]);
+        }
       }
       return Success(`Sent ${effectiveParts.length} message(s)`);
     } catch (e) {
