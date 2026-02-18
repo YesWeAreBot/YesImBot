@@ -143,5 +143,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Model Service & Providers | 3/3            | Complete    | 2026-02-18 |
 | 3. Horizon Context System    | 3/3            | Complete    | 2026-02-18 |
 | 4. Prompt & Tool Services    | 2/2            | Complete    | 2026-02-18 |
-| 5. Agent Core & Integration  | 0/2            | Planning    | -          |
+| 5. Agent Core & Integration  | 1/2            | In progress | -          |
 | 6. Willingness & Polish      | 0/2            | Not started | -          |

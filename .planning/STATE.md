@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 5 of 6 (Agent Core & Integration)
-Plan: 0 of 3 in current phase
-Status: Context gathered
-Last activity: 2026-02-18 — Phase 5 context gathered
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-18 — Completed 05-01 AgentCore skeleton
 
 Progress: [████████░░] 67%
 
@@ -85,6 +85,10 @@ Recent decisions affecting current work:
 - [04-02]: Schema.dict (not schema.list) stores object properties in Koishi Schema
 - [04-02]: Plugin base class reads **staticTools/**staticActions from prototype in constructor
 - [04-02]: Promise.race with setTimeout for invoke() timeout — no external dependency
+- [05-01]: ai-sdk v6 has no tool() function — Tool is plain object with inputSchema field
+- [05-01]: ToolSet from ai used as return type for buildAiSdkTools (avoids transitive @ai-sdk/provider-utils import)
+- [05-01]: finishTool included in buildAiSdkTools output under 'finish' key
+- [05-01]: enqueue uses .finally() with reference equality to avoid premature queue cleanup
 
 ### Pending Todos
 
@@ -97,5 +101,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-agent-core-integration/05-CONTEXT.md
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/05-agent-core-integration/05-01-SUMMARY.md
