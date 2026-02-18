@@ -9,12 +9,12 @@ Koishi 4.x plugin monorepo. See `.planning/PROJECT.md` for full context.
 ### Providing a service
 
 ```ts
-import { Context, Service } from 'koishi'
+import { Context, Service } from "koishi";
 
 // 1. Declaration merging (required for type safety)
-declare module 'koishi' {
+declare module "koishi" {
   interface Context {
-    'my-service': MyService
+    "my-service": MyService;
   }
 }
 
@@ -22,13 +22,13 @@ declare module 'koishi' {
 class MyService extends Service {
   constructor(ctx: Context, config: Config) {
     // immediate=true if no async init needed, false to wait for ready event
-    super(ctx, 'my-service', true)
+    super(ctx, "my-service", true);
   }
 }
 
 // 3. Load as sub-plugin in parent
 export function apply(ctx: Context, config: Config) {
-  ctx.plugin(MyService, config)
+  ctx.plugin(MyService, config);
 }
 ```
 
@@ -68,19 +68,25 @@ export function apply(ctx: Context) {
 
 ```ts
 // ✓ Correct
-const logger = ctx.logger('my-plugin')
-logger.info('message')
+const logger = ctx.logger("my-plugin");
+logger.info("message");
 
 // ✓ Also correct (uses default logger)
-ctx.logger.info('message')
+ctx.logger.info("message");
 
 // ✗ Wrong - creates new logger each call
-ctx.logger('my-plugin').info('message')
+ctx.logger("my-plugin").info("message");
 ```
 
 ## Service Typing
 
 When extending `Service` with config:
+
 - Use generic parameter: `class MyService extends Service<MyConfig>`
 - Don't declare duplicate `private config` field (inherited from base class)
 - Koishi plugin system resolves config injection automatically
+
+## Type Lint Rules
+
+- **No explicit `any`** — Use proper types or `ReturnType<T>` / `Awaited<T>` to extract from functions
+- **Prefer type inference** — Let TypeScript infer return types; annotate only when necessary for public APIs
