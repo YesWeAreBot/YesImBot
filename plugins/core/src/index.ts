@@ -1,5 +1,6 @@
 import { Context, Schema } from "koishi";
 
+import { AgentCore } from "./services/agent";
 import { HorizonService, type HorizonServiceConfig } from "./services/horizon";
 import { ModelService, type ModelServiceConfig } from "./services/model";
 import { PluginService, type PluginServiceConfig } from "./services/plugin";
@@ -15,6 +16,12 @@ export interface Config
   defaultModel?: string;
   fallbackChains?: Record<string, Array<{ provider: string; model: string }>>;
   concurrency?: number;
+  agentProvider?: string;
+  agentModel?: string;
+  maxRounds?: number;
+  streamMode?: boolean;
+  globalTimeout?: number;
+  maxToolResultLength?: number;
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -43,6 +50,12 @@ export const Config: Schema<Config> = Schema.object({
   historyLimit: Schema.number().default(30),
   templates: Schema.dict(Schema.string()),
   defaultTimeout: Schema.number().default(30000),
+  agentProvider: Schema.string(),
+  agentModel: Schema.string(),
+  maxRounds: Schema.number().default(3),
+  streamMode: Schema.boolean().default(false),
+  globalTimeout: Schema.number().default(120000),
+  maxToolResultLength: Schema.number().default(4000),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -56,6 +69,14 @@ export function apply(ctx: Context, config: Config) {
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
+  ctx.plugin(AgentCore, {
+    provider: config.agentProvider,
+    model: config.agentModel,
+    maxRounds: config.maxRounds,
+    streamMode: config.streamMode,
+    globalTimeout: config.globalTimeout,
+    maxToolResultLength: config.maxToolResultLength,
+  });
 
   ctx.on("ready", () => {
     logger.info("YesImBot core plugin initialized");

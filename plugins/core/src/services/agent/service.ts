@@ -2,6 +2,7 @@ import { Context, Service } from "koishi";
 
 import type { Percept } from "../horizon/types";
 import type { AgentCoreConfig } from "./config";
+import { ThinkActLoop } from "./loop";
 
 declare module "koishi" {
   interface Context {
@@ -14,12 +15,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, Percept>();
+  private loop!: ThinkActLoop;
 
   constructor(ctx: Context, config: AgentCoreConfig) {
     super(ctx, "yesimbot.agent", false);
   }
 
   protected async start(): Promise<void> {
+    this.loop = new ThinkActLoop(this.ctx);
     this.ctx.on("horizon/percept", (percept) => this.handlePercept(percept));
     this.logger.info("AgentCore started");
   }
@@ -51,7 +54,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
   }
 
   protected async runLoop(percept: Percept): Promise<void> {
-    const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
-    this.logger.info(`runLoop called for ${channelKey}`);
+    try {
+      await this.loop.run(percept, this.config);
+    } catch (err: unknown) {
+      this.logger.error(`runLoop error: ${err}`);
+    }
   }
 }
