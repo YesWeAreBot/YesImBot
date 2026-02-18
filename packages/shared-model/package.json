@@ -20,13 +20,18 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@ai-sdk/provider": "^3.0.8"
+    "@ai-sdk/provider": "^3.0.8",
+    "ai": "^6.0.0"
   },
   "peerDependencies": {
-    "@ai-sdk/provider": "^3.0.0"
+    "@ai-sdk/provider": "^3.0.0",
+    "ai": "^6.0.0"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/provider": {
+      "optional": true
+    },
+    "ai": {
       "optional": true
     }
   }

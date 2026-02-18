@@ -1,4 +1,4 @@
-import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { LanguageModel, CallSettings } from "ai";
 
 export enum ModelCapability {
   ToolCalling = "tool-calling",
@@ -8,9 +8,14 @@ export enum ModelCapability {
 }
 
 export interface ModelDefaultParams {
+  maxOutputTokens?: number;
   temperature?: number;
-  maxTokens?: number;
   topP?: number;
+  topK?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  stopSequences?: string[];
+  seed?: number;
 }
 
 export interface ModelInfo {
@@ -23,7 +28,7 @@ export interface IModelProvider {
   readonly instanceName: string;
   readonly providerType: string;
   readonly models: ModelInfo[];
-  getModel(modelId: string): LanguageModelV3;
+  getModel(modelId: string): LanguageModel;
   getDefaultParams(modelId: string): ModelDefaultParams;
 }
 
@@ -42,4 +47,4 @@ export interface ModelConfig {
   maxTokens?: number;
 }
 
-export type { LanguageModelV3 };
+export type { LanguageModel };

@@ -21,7 +21,7 @@ export class ModelError extends Error {
 export function classifyError(error: unknown): ErrorCategory {
   if (!error) return ErrorCategory.PERMANENT;
 
-  const err = error as any;
+  const err = error as Error & { name?: string; status?: number; statusCode?: number };
   const name = err.name || "";
   const status = err.status || err.statusCode || 0;
 
