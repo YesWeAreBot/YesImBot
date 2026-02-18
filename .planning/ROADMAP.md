@@ -125,12 +125,12 @@ Plans:
 2. LLM-based willingness judgment refines rule-based decisions when needed
 3. Agent participation feels natural (not always-on, not purely random)
 4. Error handling prevents crashes from API failures or tool execution errors
-   **Plans**: TBD
+   **Plans**: 2 plans
 
 Plans:
 
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01-PLAN.md — WillingnessCalculator with rule scoring, LLM judgment, and AgentCore integration
+- [ ] 06-02-PLAN.md — Error handling, channel reporting, and reply delay polish
 
 ## Progress
 
