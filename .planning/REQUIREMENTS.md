@@ -22,7 +22,7 @@
 - [ ] **HORIZON-01**: Horizon 上下文架构 — Environment/Entity/Event 三元组抽象，替代 per-channel 会话隔离
 - [ ] **HORIZON-02**: Timeline 存储 — Event 按时间序列的数据库存储架构
 - [ ] **HORIZON-03**: Observation 生成 — Event 展开为 LLM 可直接阅读的 Observation 数据
-- [ ] **HORIZON-04**: Percept 触发机制 — 描述智能体被触发的原因（消息、定时任务等），驱动 AgentCore 处理
+- [x] **HORIZON-04**: Percept 触发机制 — 描述智能体被触发的原因（消息、定时任务等），驱动 AgentCore 处理
 
 ### Tool System
 
@@ -56,41 +56,43 @@
 
 ## Out of Scope
 
-| Feature | Reason |
-|---------|--------|
-| 三级记忆系统（L1/L2/L3） | v1 聚焦核心骨架，记忆系统复杂度高，后续迭代 |
-| 生命周期管理（RoutineScheduler、TaskManager） | 高级特性，需要稳定的 AgentCore 基础 |
-| 唤醒机制（ArousalHandler、离线回顾） | 依赖生命周期管理，后续迭代 |
-| 知识图谱与用户画像 | 依赖记忆系统，后续迭代 |
-| TTS/STT、RAG 记忆库 | 非核心功能，后续迭代 |
-| 多智能体协作 | v1 预留扩展点但不实现，后续迭代 |
-| Always-on 回复模式 | 反特性：导致刷屏，不自然 |
-| 无限工具调用深度 | 反特性：导致循环和成本失控 |
+| Feature                                       | Reason                                      |
+| --------------------------------------------- | ------------------------------------------- |
+| 三级记忆系统（L1/L2/L3）                      | v1 聚焦核心骨架，记忆系统复杂度高，后续迭代 |
+| 生命周期管理（RoutineScheduler、TaskManager） | 高级特性，需要稳定的 AgentCore 基础         |
+| 唤醒机制（ArousalHandler、离线回顾）          | 依赖生命周期管理，后续迭代                  |
+| 知识图谱与用户画像                            | 依赖记忆系统，后续迭代                      |
+| TTS/STT、RAG 记忆库                           | 非核心功能，后续迭代                        |
+| 多智能体协作                                  | v1 预留扩展点但不实现，后续迭代             |
+| Always-on 回复模式                            | 反特性：导致刷屏，不自然                    |
+| 无限工具调用深度                              | 反特性：导致循环和成本失控                  |
 
 ## Traceability
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| MODEL-01 | Phase 2 | Pending |
-| MODEL-02 | Phase 2 | Pending |
-| MODEL-03 | Phase 2 | Pending |
-| AGENT-01 | Phase 5 | Pending |
-| AGENT-02 | Phase 6 | Pending |
-| AGENT-03 | Phase 5 | Pending |
-| HORIZON-01 | Phase 3 | Pending |
-| HORIZON-02 | Phase 3 | Pending |
-| HORIZON-03 | Phase 3 | Pending |
-| HORIZON-04 | Phase 3 | Pending |
-| TOOL-01 | Phase 4 | Pending |
-| TOOL-02 | Phase 4 | Pending |
-| PROMPT-01 | Phase 4 | Pending |
-| PLATFORM-01 | Phase 1, Phase 5 | Pending |
+| Requirement | Phase            | Status   |
+| ----------- | ---------------- | -------- |
+| MODEL-01    | Phase 2          | Pending  |
+| MODEL-02    | Phase 2          | Pending  |
+| MODEL-03    | Phase 2          | Pending  |
+| AGENT-01    | Phase 5          | Pending  |
+| AGENT-02    | Phase 6          | Pending  |
+| AGENT-03    | Phase 5          | Pending  |
+| HORIZON-01  | Phase 3          | Pending  |
+| HORIZON-02  | Phase 3          | Pending  |
+| HORIZON-03  | Phase 3          | Pending  |
+| HORIZON-04  | Phase 3          | Complete |
+| TOOL-01     | Phase 4          | Pending  |
+| TOOL-02     | Phase 4          | Pending  |
+| PROMPT-01   | Phase 4          | Pending  |
+| PLATFORM-01 | Phase 1, Phase 5 | Pending  |
 
 **Coverage:**
+
 - v1 requirements: 14 total
 - Mapped to phases: 14
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-02-17*
-*Last updated: 2026-02-17 after roadmap creation*
+
+_Requirements defined: 2026-02-17_
+_Last updated: 2026-02-17 after roadmap creation_

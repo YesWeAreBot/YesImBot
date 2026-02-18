@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 3 of 6 (Horizon Context System)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing plans
-Last activity: 2026-02-18 — Completed 03-01 (types + EventManager)
+Last activity: 2026-02-18 — Completed 03-02 (EventListener)
 
-Progress: [████░░░░░░] 38%
+Progress: [█████░░░░░] 44%
 
 ## Performance Metrics
 
@@ -70,6 +70,9 @@ Recent decisions affecting current work:
 - [Phase 03]: Message aggregation before trigger (prevent bot spam in group chat)
 - [03-01]: as any casts for yesimbot.timeline — schema declared in Plan 03 service
 - [03-01]: TimelineEventType limited to Message + AgentSummary per v4 scope
+- [03-02]: Declaration merging extends Koishi Events for after-send and horizon/percept type safety
+- [03-02]: ctx.setTimeout (not raw setTimeout) for aggregation timers — auto-cancelled on dispose
+- [03-02]: Direct messages bypass aggregation window and emit Percept immediately
 
 ### Pending Todos
 
@@ -82,5 +85,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 03-01-PLAN.md
-Resume file: .planning/phases/03-horizon-context-system/03-01-SUMMARY.md
+Stopped at: Completed 03-02-PLAN.md
+Resume file: .planning/phases/03-horizon-context-system/03-02-SUMMARY.md
