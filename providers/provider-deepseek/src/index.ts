@@ -1,4 +1,4 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import type {
   IModelProvider,
   ModelInfo,
@@ -49,11 +49,11 @@ class DeepSeekProvider implements IModelProvider {
   readonly id: string;
   readonly providerType = "deepseek";
   readonly models: ModelInfo[];
-  private client: ReturnType<typeof createOpenAI>;
+  private client: ReturnType<typeof createDeepSeek>;
 
   constructor(config: Config) {
     this.id = config.id;
-    this.client = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
+    this.client = createDeepSeek({ apiKey: config.apiKey, baseURL: config.baseURL });
     this.models = config.models.map((m) => ({
       id: m.id,
       capabilities: m.capabilities as ModelCapability[],
@@ -62,7 +62,7 @@ class DeepSeekProvider implements IModelProvider {
   }
 
   getModel(modelId: string) {
-    return this.client(modelId);
+    return this.client.chat(modelId);
   }
 
   getDefaultParams(modelId: string): ModelDefaultParams {

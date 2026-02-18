@@ -69,7 +69,7 @@ class OpenAIProvider implements IModelProvider {
   }
 
   getModel(modelId: string) {
-    return this.client(modelId);
+    return this.client.chat(modelId);
   }
 
   getDefaultParams(modelId: string): ModelDefaultParams {
