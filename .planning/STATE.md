@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 5 of 6 (Agent Core & Integration)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-18 — Completed 05-01 AgentCore skeleton
+Last activity: 2026-02-18 — Completed 05-02 ThinkActLoop and AgentCore wiring
 
 Progress: [████████░░] 67%
 
@@ -89,6 +89,9 @@ Recent decisions affecting current work:
 - [05-01]: ToolSet from ai used as return type for buildAiSdkTools (avoids transitive @ai-sdk/provider-utils import)
 - [05-01]: finishTool included in buildAiSdkTools output under 'finish' key
 - [05-01]: enqueue uses .finally() with reference equality to avoid premature queue cleanup
+- [05-02]: Config interface does not extend AgentCoreConfig — fields declared inline to avoid Schema type inference conflict
+- [05-02]: ThinkActLoop.run() takes Percept with PerceptType.UserMessage type guard before buildView()
+- [05-02]: as CallParams cast passes tools/toolChoice/stopWhen through ModelService spread at runtime
 
 ### Pending Todos
 
@@ -101,5 +104,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 05-01-PLAN.md
-Resume file: .planning/phases/05-agent-core-integration/05-01-SUMMARY.md
+Stopped at: Completed 05-02-PLAN.md
+Resume file: .planning/phases/05-agent-core-integration/05-02-SUMMARY.md
