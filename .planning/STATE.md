@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 4 of 6 (Prompt & Tool Services)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-18 — Completed 04-01 PromptService
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-18 — Completed 04-02 PluginService
 
-Progress: [███████░░░] 58%
+Progress: [████████░░] 67%
 
 ## Performance Metrics
 
@@ -81,6 +81,10 @@ Recent decisions affecting current work:
 - [04-01]: Snippets evaluated lazily — only those whose keys appear in the template are called
 - [04-01]: Injections sorted ascending by priority, joined with double newline into scope.injections
 - [04-01]: MustacheRenderer sets Mustache.escape = identity to disable HTML escaping globally
+- [04-02]: experimentalDecorators added to tsconfig.base.json for legacy TS decorator support
+- [04-02]: Schema.dict (not schema.list) stores object properties in Koishi Schema
+- [04-02]: Plugin base class reads **staticTools/**staticActions from prototype in constructor
+- [04-02]: Promise.race with setTimeout for invoke() timeout — no external dependency
 
 ### Pending Todos
 
@@ -93,5 +97,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 04-01-PLAN.md
-Resume file: .planning/phases/04-prompt-tool-services/04-01-SUMMARY.md
+Stopped at: Completed 04-02-PLAN.md
+Resume file: .planning/phases/04-prompt-tool-services/04-02-SUMMARY.md

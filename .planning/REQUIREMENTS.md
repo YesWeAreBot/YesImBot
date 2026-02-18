@@ -26,8 +26,8 @@
 
 ### Tool System
 
-- [ ] **TOOL-01**: 工具注册与执行 — 注册工具、Schema 验证、执行调度、结果返回
-- [ ] **TOOL-02**: 可扩展工具框架 — 装饰器注册模式，Agent loop 中的工具调用集成
+- [x] **TOOL-01**: 工具注册与执行 — 注册工具、Schema 验证、执行调度、结果返回
+- [x] **TOOL-02**: 可扩展工具框架 — 装饰器注册模式，Agent loop 中的工具调用集成
 
 ### Prompt System
 
@@ -81,8 +81,8 @@
 | HORIZON-02  | Phase 3          | Complete |
 | HORIZON-03  | Phase 3          | Complete |
 | HORIZON-04  | Phase 3          | Complete |
-| TOOL-01     | Phase 4          | Pending  |
-| TOOL-02     | Phase 4          | Pending  |
+| TOOL-01     | Phase 4          | Complete |
+| TOOL-02     | Phase 4          | Complete |
 | PROMPT-01   | Phase 4          | Complete |
 | PLATFORM-01 | Phase 1, Phase 5 | Pending  |
 
