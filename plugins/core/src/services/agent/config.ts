@@ -11,4 +11,11 @@ export interface AgentCoreConfig {
   globalTimeout?: number;
   maxToolResultLength?: number;
   identity?: AgentIdentity;
+  willingnessProvider?: string;
+  willingnessModel?: string;
+  willingnessRejectThreshold?: number;
+  willingnessAcceptThreshold?: number;
+  willingCooldownMessages?: number;
+  willingCooldownMs?: number;
+  willingSoftDecayMs?: number;
 }
