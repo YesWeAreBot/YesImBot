@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 5 - Agent Core & Integration
+**Current focus:** Phase 6 - Willingness & Polish
 
 ## Current Position
 
-Phase: 5 of 6 (Agent Core & Integration)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-18 — Completed 05-02 ThinkActLoop and AgentCore wiring
+Phase: 6 of 6 (Willingness & Polish)
+Plan: 0 of 2 in current phase
+Status: Context gathered
+Last activity: 2026-02-19 — Phase 6 context gathered
 
-Progress: [████████░░] 67%
+Progress: [█████████░] 83%
 
 ## Performance Metrics
 
@@ -103,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-18
-Stopped at: Completed 05-02-PLAN.md
-Resume file: .planning/phases/05-agent-core-integration/05-02-SUMMARY.md
+Last session: 2026-02-19
+Stopped at: Phase 6 context gathered
+Resume file: .planning/phases/06-willingness-polish/06-CONTEXT.md
