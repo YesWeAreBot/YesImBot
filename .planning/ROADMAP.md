@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Prompt & Tool Services** - PromptService for templates, PluginService for tool registration and execution (completed 2026-02-18)
 - [ ] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging
 - [x] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing (completed 2026-02-18)
-- [ ] **Phase 7: Core Wiring Fixes** - AgentIdentity prompt injection, default system template, gap closure
+- [ ] **Phase 7: Core Wiring Fixes** - Default system template, empty-render warnings, gap closure
 - [ ] **Phase 8: Stream Support & Dead Code Cleanup** - Activate streamMode path, remove dead code, traceability fixes
 
 ## Phase Details
@@ -136,16 +136,20 @@ Plans:
 
 ### Phase 7: Core Wiring Fixes
 
-**Goal**: Wire missing runtime connections identified by milestone audit
+**Goal**: Bundle default system template and add empty-render warnings in PromptService
 **Depends on**: Phase 5, Phase 4
 **Requirements**: AGENT-01, PROMPT-01
 **Gap Closure:** Closes gaps from v1 audit
 **Success Criteria** (what must be TRUE):
 
-1. AgentIdentity config is read by ThinkActLoop and injected into prompt template scope
-2. A default "system" template is bundled so LLM never receives empty system prompt
-3. PromptService warns when render() returns empty string for a template key
-   **Plans**: TBD
+1. A default "system" template is bundled so LLM never receives empty system prompt
+2. PromptService warns when render() returns empty string for a template key
+3. User-provided config.templates.system still overrides the default template
+   **Plans**: 1 plan
+
+Plans:
+
+- [ ] 07-01-PLAN.md — Default system template + empty-render warnings in PromptService
 
 ### Phase 8: Stream Support & Dead Code Cleanup
 
@@ -174,5 +178,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Prompt & Tool Services     | 2/2            | Complete | 2026-02-18 |
 | 5. Agent Core & Integration   | 2/2            | Complete | 2026-02-18 |
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
-| 7. Core Wiring Fixes          | 0/0            | Pending  |            |
+| 7. Core Wiring Fixes          | 0/1            | Pending  |            |
 | 8. Stream & Dead Code Cleanup | 0/0            | Pending  |            |
