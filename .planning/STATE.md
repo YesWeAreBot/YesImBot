@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 6 of 6 (Willingness & Polish)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-19 — Completed 06-01 WillingnessCalculator and gate
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-19 — Completed 06-02 error handling and typing delays
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -95,6 +95,9 @@ Recent decisions affecting current work:
 - [06-01]: maxOutputTokens (not maxTokens) for ai-sdk v6 LLM judge call
 - [06-01]: WillingnessCalculator is plain class, not Koishi Service — no lifecycle overhead needed
 - [06-01]: gateAndEnqueue wraps entire body in try/catch to prevent unhandled rejections
+- [06-02]: reportError swallows its own send errors to prevent infinite error loops
+- [06-02]: Fallback delay uses fallbackText.trim().length — sentContent declared after the check
+- [06-02]: Inter-part delay in send_message tool, not in loop — separation of concerns
 
 ### Pending Todos
 
@@ -107,5 +110,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 06-01-PLAN.md
-Resume file: .planning/phases/06-willingness-polish/06-01-SUMMARY.md
+Stopped at: Completed 06-02-PLAN.md
+Resume file: .planning/phases/06-willingness-polish/06-02-SUMMARY.md
