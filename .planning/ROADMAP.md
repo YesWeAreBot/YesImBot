@@ -74,7 +74,7 @@ Plans:
 
 Plans:
 
-- [ ] 03-01-PLAN.md — Horizon type definitions + EventManager for Timeline persistence
+- [x] 03-01-PLAN.md — Horizon type definitions + EventManager for Timeline persistence
 - [ ] 03-02-PLAN.md — EventListener with message capture, trigger classification, and aggregation
 - [ ] 03-03-PLAN.md — HorizonService facade, Observation/HorizonView building, core plugin wiring
 
@@ -142,7 +142,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | ---------------------------- | -------------- | ----------- | ---------- |
 | 1. Foundation & Shared Model | 0/2            | Complete    | 2026-02-17 |
 | 2. Model Service & Providers | 3/3            | Complete    | 2026-02-18 |
-| 3. Horizon Context System    | 0/3            | Not started | -          |
+| 3. Horizon Context System    | 1/3            | In progress | -          |
 | 4. Prompt & Tool Services    | 0/2            | Not started | -          |
 | 5. Agent Core & Integration  | 0/3            | Not started | -          |
 | 6. Willingness & Polish      | 0/2            | Not started | -          |
