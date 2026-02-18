@@ -1,13 +1,11 @@
 import {
+  classifyError,
+  ErrorCategory,
   IModelProvider,
   IModelService,
   ModelInfo,
-  ModelError,
-  ErrorCategory,
-  classifyError,
-  ModelDefaultParams,
 } from "@yesimbot/shared-model";
-import { generateText, streamText } from "ai";
+import { CallSettings, generateText, Prompt, streamText } from "ai";
 import { Context, Service } from "koishi";
 import PQueue from "p-queue";
 
@@ -16,6 +14,10 @@ declare module "koishi" {
     "model-service": ModelService;
   }
 }
+
+type CallParams = CallSettings & Prompt;
+export type GenerateResult = Awaited<ReturnType<typeof generateText>>;
+export type StreamResult = Awaited<ReturnType<typeof streamText>>;
 
 export interface ModelServiceConfig {
   defaultProvider?: string;
@@ -59,12 +61,16 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     return provider?.models.find((m) => m.id === modelId);
   }
 
-  async call(providerName?: string, modelId?: string, params: any = {}) {
+  public async call(
+    providerName: string | undefined,
+    modelId: string | undefined,
+    params: CallParams,
+  ): Promise<GenerateResult | undefined> {
     const provider = providerName || this.config.defaultProvider;
     const model = modelId || this.config.defaultModel;
     if (!provider || !model) throw new Error("Provider and model required");
 
-    return this.queue.add(async () => {
+    const result = await this.queue.add(async () => {
       try {
         return await this.executeCall(provider, model, params);
       } catch (error) {
@@ -75,9 +81,10 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
         throw error;
       }
     });
+    return result ?? undefined;
   }
 
-  private async executeCall(providerName: string, modelId: string, params: any) {
+  private async executeCall(providerName: string, modelId: string, params: CallParams) {
     const provider = this.providers.get(providerName);
     if (!provider) throw new Error(`Provider not found: ${providerName}`);
 
@@ -97,7 +104,11 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     return result;
   }
 
-  async streamCall(providerName?: string, modelId?: string, params: any = {}) {
+  public async streamCall(
+    providerName: string | undefined,
+    modelId: string | undefined,
+    params: CallParams,
+  ): Promise<StreamResult> {
     const provider = providerName || this.config.defaultProvider;
     const model = modelId || this.config.defaultModel;
     if (!provider || !model) throw new Error("Provider and model required");
@@ -137,7 +148,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   private async handleFallback(
     primaryProvider: string,
     primaryModel: string,
-    params: any,
+    params: CallParams,
     error: unknown,
   ) {
     const key = `${primaryProvider}:${primaryModel}`;
@@ -159,7 +170,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   private async handleStreamFallback(
     primaryProvider: string,
     primaryModel: string,
-    params: any,
+    params: CallParams,
     error: unknown,
   ) {
     const key = `${primaryProvider}:${primaryModel}`;
