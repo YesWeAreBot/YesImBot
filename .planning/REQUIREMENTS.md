@@ -14,7 +14,7 @@
 ### Agent Core
 
 - [ ] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
-- [ ] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
+- [x] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
 - [ ] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程
 
 ### Horizon (Context Management)
@@ -75,7 +75,7 @@
 | MODEL-02    | Phase 2          | Pending  |
 | MODEL-03    | Phase 2          | Pending  |
 | AGENT-01    | Phase 5          | Pending  |
-| AGENT-02    | Phase 6          | Pending  |
+| AGENT-02    | Phase 6          | Complete |
 | AGENT-03    | Phase 5          | Pending  |
 | HORIZON-01  | Phase 3          | Complete |
 | HORIZON-02  | Phase 3          | Complete |

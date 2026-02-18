@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 6 of 6 (Willingness & Polish)
-Plan: 0 of 2 in current phase
-Status: Context gathered
-Last activity: 2026-02-19 — Phase 6 context gathered
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-19 — Completed 06-01 WillingnessCalculator and gate
 
-Progress: [█████████░] 83%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -92,6 +92,9 @@ Recent decisions affecting current work:
 - [05-02]: Config interface does not extend AgentCoreConfig — fields declared inline to avoid Schema type inference conflict
 - [05-02]: ThinkActLoop.run() takes Percept with PerceptType.UserMessage type guard before buildView()
 - [05-02]: as CallParams cast passes tools/toolChoice/stopWhen through ModelService spread at runtime
+- [06-01]: maxOutputTokens (not maxTokens) for ai-sdk v6 LLM judge call
+- [06-01]: WillingnessCalculator is plain class, not Koishi Service — no lifecycle overhead needed
+- [06-01]: gateAndEnqueue wraps entire body in try/catch to prevent unhandled rejections
 
 ### Pending Todos
 
@@ -104,5 +107,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-willingness-polish/06-CONTEXT.md
+Stopped at: Completed 06-01-PLAN.md
+Resume file: .planning/phases/06-willingness-polish/06-01-SUMMARY.md
