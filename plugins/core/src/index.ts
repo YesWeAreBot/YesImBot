@@ -1,4 +1,4 @@
-import { Context, Schema } from "koishi";
+import { Context, Schema, sleep } from "koishi";
 
 import { AgentCore } from "./services/agent";
 import { HorizonService, type HorizonServiceConfig } from "./services/horizon";
@@ -80,9 +80,43 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.on("ready", () => {
     logger.info("YesImBot core plugin initialized");
+    waitForServiceReady(ctx)
+      .then(() => {
+        logger.info("All services are ready");
+      })
+      .catch((err) => {
+        logger.error("Error while waiting for services to be ready:", err);
+      });
   });
 
   ctx.on("dispose", () => {
     logger.info("YesImBot core plugin disposed");
   });
+}
+
+async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void> {
+  const services = [
+    "yesimbot.agent",
+    "yesimbot.horizon",
+    "yesimbot.model",
+    "yesimbot.plugin",
+    "yesimbot.prompt",
+  ];
+  const resolvedServices = new Set<string>();
+  const startTime = Date.now();
+
+  while (resolvedServices.size < services.length) {
+    for (const service of services) {
+      if (!resolvedServices.has(service) && ctx.get(service)) {
+        resolvedServices.add(service);
+      }
+    }
+    if (Date.now() - startTime > timeout) {
+      const unresolvedServices = services.filter((s) => !resolvedServices.has(s));
+      throw new Error(
+        `Timeout while waiting for services to be ready: ${unresolvedServices.join(", ")}`,
+      );
+    }
+    await sleep(100);
+  }
 }

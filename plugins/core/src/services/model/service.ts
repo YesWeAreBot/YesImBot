@@ -11,11 +11,11 @@ import PQueue from "p-queue";
 
 declare module "koishi" {
   interface Context {
-    "model-service": ModelService;
+    "yesimbot.model": ModelService;
   }
 }
 
-type CallParams = CallSettings & Prompt;
+export type CallParams = CallSettings & Prompt;
 export type GenerateResult = Awaited<ReturnType<typeof generateText>>;
 export type StreamResult = Awaited<ReturnType<typeof streamText>>;
 
@@ -33,10 +33,11 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
 
   static inject = ["console"];
 
-  constructor(ctx: Context, config: ModelServiceConfig = {}) {
-    super(ctx, "model-service", true);
+  constructor(ctx: Context, config: ModelServiceConfig) {
+    super(ctx, "yesimbot.model", true);
+    this.config = config;
     this.queue = new PQueue({ concurrency: config.concurrency || 5 });
-    this.logger = ctx.logger("model-service");
+    this.logger = ctx.logger("yesimbot.model");
   }
 
   public registerProvider(name: string, provider: IModelProvider): void {

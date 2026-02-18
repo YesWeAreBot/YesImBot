@@ -10,15 +10,15 @@ import { Context, Schema } from "koishi";
 
 declare module "koishi" {
   interface Context {
-    "model-service": IModelService;
+    "yesimbot.model": IModelService;
   }
 }
 
 export const name = "yesimbot-provider-deepseek";
-export const inject = ["model-service"];
+export const inject = ["yesimbot.model"];
 
 export interface Config {
-  instanceName: string;
+  id: string;
   apiKey: string;
   baseURL: string;
   models: Array<{ id: string; capabilities: string[] }>;
@@ -26,7 +26,7 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
-  instanceName: Schema.string().required().description("Unique instance name"),
+  id: Schema.string().default("deepseek"),
   apiKey: Schema.string().role("secret").required(),
   baseURL: Schema.string().default("https://api.deepseek.com/v1"),
   models: Schema.array(
@@ -46,13 +46,13 @@ export const Config: Schema<Config> = Schema.object({
 });
 
 class DeepSeekProvider implements IModelProvider {
-  readonly instanceName: string;
+  readonly id: string;
   readonly providerType = "deepseek";
   readonly models: ModelInfo[];
   private client: ReturnType<typeof createOpenAI>;
 
   constructor(config: Config) {
-    this.instanceName = config.instanceName;
+    this.id = config.id;
     this.client = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
     this.models = config.models.map((m) => ({
       id: m.id,
@@ -72,6 +72,12 @@ class DeepSeekProvider implements IModelProvider {
 
 export function apply(ctx: Context, config: Config) {
   const provider = new DeepSeekProvider(config);
-  ctx["model-service"].registerProvider(config.instanceName, provider);
-  ctx.on("dispose", () => ctx["model-service"].unregisterProvider(config.instanceName));
+  const logger = ctx.logger("provider-deepseek");
+  const modelService = ctx.get("yesimbot.model") as IModelService;
+  if (!modelService) {
+    logger.error("ModelService not found in context");
+    return;
+  }
+  modelService.registerProvider(config.id, provider);
+  ctx.on("dispose", () => modelService.unregisterProvider(config.id));
 }

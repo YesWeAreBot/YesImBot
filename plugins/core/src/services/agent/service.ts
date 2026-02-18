@@ -11,7 +11,7 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<AgentCoreConfig> {
-  static inject = ["yesimbot.horizon", "yesimbot.plugin", "yesimbot.prompt", "model-service"];
+  static inject = ["yesimbot.horizon", "yesimbot.plugin", "yesimbot.prompt", "yesimbot.model"];
 
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, Percept>();
@@ -19,6 +19,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   constructor(ctx: Context, config: AgentCoreConfig) {
     super(ctx, "yesimbot.agent", false);
+    this.config = config;
+    this.logger = ctx.logger("agent");
   }
 
   protected async start(): Promise<void> {
@@ -58,6 +60,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       await this.loop.run(percept, this.config);
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
+      this.logger.error(err);
     }
   }
 }

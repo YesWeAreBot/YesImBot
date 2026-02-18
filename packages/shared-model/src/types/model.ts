@@ -25,7 +25,7 @@ export interface ModelInfo {
 }
 
 export interface IModelProvider {
-  readonly instanceName: string;
+  readonly id: string;
   readonly providerType: string;
   readonly models: ModelInfo[];
   getModel(modelId: string): LanguageModel;

@@ -1,16 +1,13 @@
-import type { CallSettings, Prompt } from "ai";
 import { Context } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { Percept, UserMessagePercept } from "../horizon/types";
 import { PerceptType } from "../horizon/types";
-import type { ModelService } from "../model/service";
+import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
 import type { AgentCoreConfig } from "./config";
 import { buildAiSdkTools, buildStopCondition, finishTool } from "./tools";
-
-type CallParams = CallSettings & Prompt;
 
 export class ThinkActLoop {
   private logger;
@@ -29,7 +26,7 @@ export class ThinkActLoop {
     const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
     const prompt = this.ctx["yesimbot.prompt"] as PromptService;
-    const modelService = this.ctx["model-service"] as ModelService;
+    const modelService = this.ctx["yesimbot.model"] as ModelService;
 
     const view = await horizon.buildView(userPercept);
     const systemPrompt = await prompt.render("system", { view });
