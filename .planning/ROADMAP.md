@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation & Shared Model** - Monorepo structure, shared-model package, Koishi plugin skeleton (completed 2026-02-17)
 - [x] **Phase 2: Model Service & Providers** - ModelService with provider registry, OpenAI and DeepSeek provider plugins (completed 2026-02-18)
 - [x] **Phase 3: Horizon Context System** - Environment/Entity/Event abstractions, Timeline storage, Observation generation, Percept mechanism (completed 2026-02-18)
-- [ ] **Phase 4: Prompt & Tool Services** - PromptService for templates, ToolService for registration and execution
+- [ ] **Phase 4: Prompt & Tool Services** - PromptService for templates, PluginService for tool registration and execution
 - [ ] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging
 - [ ] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing
 
@@ -87,14 +87,14 @@ Plans:
 
 1. PromptService loads and renders system prompt templates with personality configuration
 2. Tools can be registered with schema validation using decorator pattern
-3. ToolService dispatches tool calls and returns results to agent loop
+3. PluginService dispatches tool calls and returns results to agent loop
 4. At least one built-in utility tool is registered and executable
-   **Plans**: TBD
+   **Plans**: 2 plans
 
 Plans:
 
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md — PromptService with Mustache rendering, Snippet/Injection mechanism
+- [ ] 04-02-PLAN.md — PluginService with decorator registration, built-in tools, core wiring
 
 ### Phase 5: Agent Core & Integration
 
