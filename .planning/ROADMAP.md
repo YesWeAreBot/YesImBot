@@ -184,4 +184,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Agent Core & Integration   | 2/2            | Complete | 2026-02-18 |
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
 | 7. Core Wiring Fixes          | 0/1            | Pending  |            |
-| 8. Stream & Dead Code Cleanup | 0/2            | Pending  |            |
+| 8. Stream & Dead Code Cleanup | 1/2 | In Progress|  |

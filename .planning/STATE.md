@@ -40,6 +40,7 @@ Progress: [░░░░░░░░░░] 0%
 
 _Updated after each plan completion_
 | Phase 03-horizon-context-system P03 | 300 | 2 tasks | 3 files |
+| Phase 08-stream-support-dead-code-cleanup P02 | 56 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ Recent decisions affecting current work:
 - [07-01]: Private field named 'log' not 'logger' — Service base class already exposes public 'logger' property
 - [07-01]: DEFAULT_SYSTEM_TEMPLATE uses {{view.self.name}} and {{#view.environment}} matching v4 HorizonView scope
 - [07-01]: Warn-only on empty render, no fallback — caller (ThinkActLoop) decides how to handle empty prompt
+- [Phase 08]: MODEL-01/02/03 corrected from Pending to Complete — provider packages exist and are functional
+- [Phase 08]: AGENT-03 and HORIZON-02 marked Partial — Phase 8 Plan 01 will complete them
+- [Phase 08]: PLATFORM-01 marked Partial — Koishi Service pattern used throughout but no formal integration test
 
 ### Pending Todos
 
