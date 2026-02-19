@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging
 - [x] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing (completed 2026-02-18)
 - [ ] **Phase 7: Core Wiring Fixes** - Default system template, empty-render warnings, gap closure
-- [ ] **Phase 8: Stream Support & Dead Code Cleanup** - Activate streamMode path, remove dead code, traceability fixes
+- [x] **Phase 8: Stream Support & Dead Code Cleanup** - Activate streamMode path, remove dead code, traceability fixes (completed 2026-02-19)
 
 ## Phase Details
 
@@ -184,4 +184,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Agent Core & Integration   | 2/2            | Complete | 2026-02-18 |
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
 | 7. Core Wiring Fixes          | 0/1            | Pending  |            |
-| 8. Stream & Dead Code Cleanup | 1/2 | In Progress|  |
+| 8. Stream & Dead Code Cleanup | 2/2 | Complete   | 2026-02-19 |

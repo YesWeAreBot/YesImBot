@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 8 of 8 (Stream Support & Dead Code Cleanup)
-Plan: 0 of 0 in current phase
-Status: Context gathered, ready for planning
-Last activity: 2026-02-19 — Phase 8 context gathered
+Plan: 1 of 1 in current phase
+Status: Plan 08-01 complete
+Last activity: 2026-02-19 — Stream support and timeline lifecycle wired
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -101,7 +101,9 @@ Recent decisions affecting current work:
 - [06-02]: Inter-part delay in send_message tool, not in loop — separation of concerns
 - [07-01]: Private field named 'log' not 'logger' — Service base class already exposes public 'logger' property
 - [07-01]: DEFAULT_SYSTEM_TEMPLATE uses {{view.self.name}} and {{#view.environment}} matching v4 HorizonView scope
-- [07-01]: Warn-only on empty render, no fallback — caller (ThinkActLoop) decides how to handle empty prompt
+- [08-01]: streamCall queue slot released when streamText() returns — stream is lazy, HTTP established not fully consumed
+- [08-01]: callParams assembled once before stream/generate branch — both paths share same params object
+- [08-01]: Lifecycle order after response: markAsActive → archiveStale → recordAgentSummary
 - [Phase 08]: MODEL-01/02/03 corrected from Pending to Complete — provider packages exist and are functional
 - [Phase 08]: AGENT-03 and HORIZON-02 marked Partial — Phase 8 Plan 01 will complete them
 - [Phase 08]: PLATFORM-01 marked Partial — Koishi Service pattern used throughout but no formal integration test
@@ -117,5 +119,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-stream-support-dead-code-cleanup/08-CONTEXT.md
+Stopped at: Completed 08-01-PLAN.md
+Resume file: .planning/phases/08-stream-support-dead-code-cleanup/08-01-SUMMARY.md

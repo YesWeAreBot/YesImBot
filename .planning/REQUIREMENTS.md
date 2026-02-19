@@ -15,12 +15,12 @@
 
 - [x] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
 - [x] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
-- [ ] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程
+- [x] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程
 
 ### Horizon (Context Management)
 
 - [x] **HORIZON-01**: Horizon 上下文架构 — Environment/Entity/Event 三元组抽象，替代 per-channel 会话隔离
-- [ ] **HORIZON-02**: Timeline 存储 — Event 按时间序列的数据库存储架构
+- [x] **HORIZON-02**: Timeline 存储 — Event 按时间序列的数据库存储架构
 - [x] **HORIZON-03**: Observation 生成 — Event 展开为 LLM 可直接阅读的 Observation 数据
 - [x] **HORIZON-04**: Percept 触发机制 — 描述智能体被触发的原因（消息、定时任务等），驱动 AgentCore 处理
 
