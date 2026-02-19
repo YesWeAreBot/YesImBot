@@ -2,19 +2,17 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-17)
+See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 8 - Stream Support & Dead Code Cleanup
+**Current focus:** Milestone v2 — 功能平替
 
 ## Current Position
 
-Phase: 8 of 8 (Stream Support & Dead Code Cleanup)
-Plan: 1 of 1 in current phase
-Status: Plan 08-01 complete
-Last activity: 2026-02-19 — Stream support and timeline lifecycle wired
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-19 — Milestone v2 started
 
 ## Performance Metrics
 
