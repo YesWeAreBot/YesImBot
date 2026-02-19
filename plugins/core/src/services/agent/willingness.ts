@@ -1,80 +1,117 @@
-import { parseModelId } from "@yesimbot/shared-model";
-import { generateText } from "ai";
+import type { TriggerType } from "../horizon/types";
+import type { WillingnessConfig } from "./willingness-config";
 
-import type { UserMessagePercept } from "../horizon/types";
-import type { ModelService } from "../model/service";
-import type { AgentCoreConfig } from "./config";
-
-interface CooldownState {
-  lastReplyAt: number;
-  messagesSinceReply: number;
+interface ChannelState {
+  willingness: number;
+  lastMessageAt: number;
+  botReplyTimestamps: number[];
 }
 
-export class WillingnessCalculator {
-  private cooldowns = new Map<string, CooldownState>();
+function computeDecayFactor(
+  baseFactor: number,
+  willingness: number,
+  elasticThreshold: number,
+  maxWillingness: number,
+  silenceMs: number,
+): number {
+  let factor = baseFactor;
 
-  async shouldReply(
-    percept: UserMessagePercept,
-    config: AgentCoreConfig,
-    modelService: ModelService,
-  ): Promise<boolean> {
-    const key = `${percept.scope.platform}:${percept.scope.channelId}`;
-    if (percept.triggerType === "mention" || percept.triggerType === "reply") return true;
-    if (this.isInHardCooldown(key, config)) return false;
-    const score = this.computeScore(percept, key, config);
-    if (score < (config.willingnessRejectThreshold ?? 0.15)) return false;
-    if (score >= (config.willingnessAcceptThreshold ?? 0.75)) return true;
-    return this.llmJudge(percept, config, modelService);
+  if (willingness > elasticThreshold * maxWillingness) {
+    factor = 1.0 - (1.0 - factor) * 0.5;
   }
 
-  private computeScore(percept: UserMessagePercept, key: string, config: AgentCoreConfig): number {
-    const weights: Record<string, number> = { direct: 0.9, keyword: 0.6, random: 0.2 };
-    let score = weights[percept.triggerType] ?? 0.2;
-    const state = this.cooldowns.get(key);
-    if (state) {
-      const elapsed = Date.now() - state.lastReplyAt;
-      const decayFactor = Math.min(1, elapsed / (config.willingSoftDecayMs ?? 300000));
-      score *= 0.5 + 0.5 * decayFactor;
+  if (silenceMs <= 5000) {
+    factor = 1.0 - (1.0 - factor) * 0.1;
+  } else if (silenceMs <= 15000) {
+    factor = 1.0 - (1.0 - factor) * 0.3;
+  } else if (silenceMs <= 60000) {
+    factor = 1.0 - (1.0 - factor) * 0.7;
+  }
+
+  return factor;
+}
+
+function sigmoidGainMultiplier(current: number, max: number, midpoint: number, steepness: number): number {
+  const ratio = current / max;
+  const raw = 1 / (1 + Math.exp(steepness * (ratio - midpoint)));
+  return raw * 2;
+}
+
+function computeFatiguePenalty(
+  botReplyTimestamps: number[],
+  now: number,
+  windowMs: number,
+  threshold: number,
+  penaltyBase: number,
+): number {
+  const recent = botReplyTimestamps.filter(t => now - t < windowMs);
+  const excess = recent.length - threshold;
+  if (excess <= 0) return 1.0;
+  return Math.pow(penaltyBase, excess);
+}
+
+function applyMentionBoost(baseProbability: number, mentionBoost: number): number {
+  return baseProbability + (1 - baseProbability) * mentionBoost;
+}
+
+export class WillingnessEngine {
+  private channels = new Map<string, ChannelState>();
+  private baseFactor: number;
+
+  constructor(private config: WillingnessConfig) {
+    this.baseFactor = Math.pow(0.5, 1 / config.decay.halfLife);
+  }
+
+  tick(): void {
+    const now = Date.now();
+    for (const [key, state] of this.channels) {
+      const silenceMs = now - state.lastMessageAt;
+      const factor = computeDecayFactor(
+        this.baseFactor,
+        state.willingness,
+        this.config.decay.elasticThreshold,
+        this.config.maxWillingness,
+        silenceMs,
+      );
+      state.willingness *= factor;
+      state.botReplyTimestamps = state.botReplyTimestamps.filter(t => now - t < this.config.fatigue.windowMs);
+      if (state.willingness < 0.01 && state.botReplyTimestamps.length === 0) {
+        this.channels.delete(key);
+      }
     }
-    return Math.max(0, Math.min(1, score));
   }
 
-  private isInHardCooldown(key: string, config: AgentCoreConfig): boolean {
-    const state = this.cooldowns.get(key);
-    if (!state) return false;
-    const msgOk = state.messagesSinceReply >= (config.willingCooldownMessages ?? 3);
-    const timeOk = Date.now() - state.lastReplyAt >= (config.willingCooldownMs ?? 60000);
-    return !(msgOk && timeOk);
-  }
+  processMessage(
+    channelKey: string,
+    triggerType: TriggerType,
+    content: string,
+  ): { probability: number; shouldReply: boolean } {
+    const state = this.channels.get(channelKey) ?? { willingness: 0, lastMessageAt: 0, botReplyTimestamps: [] };
+    this.channels.set(channelKey, state);
 
-  private async llmJudge(
-    percept: UserMessagePercept,
-    config: AgentCoreConfig,
-    modelService: ModelService,
-  ): Promise<boolean> {
-    const fullId = config.willingnessModel ?? config.model;
-    if (!fullId) return false;
-    try {
-      const { model, defaultParams } = modelService.getModel(fullId);
-      const { text } = await generateText({
-        ...defaultParams,
-        model,
-        system: "You decide if a chatbot should reply to this message. Answer only 'yes' or 'no'.",
-        prompt: `Message: "${percept.payload.content}"\nTrigger: ${percept.triggerType}\nShould the bot reply?`,
-        maxOutputTokens: 5,
-      });
-      return text.trim().toLowerCase().startsWith("yes");
-    } catch {
-      return false;
+    state.lastMessageAt = Date.now();
+
+    let gain = this.config.gain.baseGain;
+    if (this.config.gain.keywords.some(pattern => new RegExp(pattern).test(content))) {
+      gain *= this.config.gain.keywordMultiplier;
     }
+    gain *= sigmoidGainMultiplier(state.willingness, this.config.maxWillingness, this.config.sigmoid.midpoint, this.config.sigmoid.steepness);
+
+    state.willingness = Math.min(this.config.maxWillingness, Math.max(0, state.willingness + gain));
+
+    let probability = state.willingness / this.config.maxWillingness;
+    probability *= computeFatiguePenalty(state.botReplyTimestamps, Date.now(), this.config.fatigue.windowMs, this.config.fatigue.threshold, this.config.fatigue.penaltyBase);
+
+    if (triggerType === "mention" || triggerType === "reply") {
+      probability = applyMentionBoost(probability, this.config.mentionBoost);
+    }
+
+    const shouldReply = Math.random() < probability;
+    return { probability, shouldReply };
   }
 
-  recordReply(key: string): void {
-    this.cooldowns.set(key, { lastReplyAt: Date.now(), messagesSinceReply: 0 });
-  }
-
-  incrementMessageCount(key: string): void {
-    const state = this.cooldowns.get(key);
-    if (state) state.messagesSinceReply++;
+  recordBotReply(channelKey: string): void {
+    const state = this.channels.get(channelKey);
+    if (state) state.botReplyTimestamps.push(Date.now());
   }
 }

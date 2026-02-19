@@ -1,10 +1,9 @@
 import { Context, Service } from "koishi";
 
 import type { Percept, UserMessagePercept } from "../horizon/types";
-import type { ModelService } from "../model/service";
 import type { AgentCoreConfig } from "./config";
 import { ThinkActLoop } from "./loop";
-import { WillingnessCalculator } from "./willingness";
+import { WillingnessEngine } from "./willingness";
 
 declare module "koishi" {
   interface Context {
@@ -18,7 +17,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, Percept>();
   private loop!: ThinkActLoop;
-  private willingness = new WillingnessCalculator();
+  private willingness = new WillingnessEngine({
+    decay: { halfLife: 300, elasticThreshold: 0.7 },
+    gain: { baseGain: 15, keywordMultiplier: 1.5, keywords: [] },
+    sigmoid: { midpoint: 0.5, steepness: 10 },
+    fatigue: { windowMs: 120000, threshold: 3, penaltyBase: 0.5 },
+    maxWillingness: 100,
+    mentionBoost: 0.8,
+  });
 
   constructor(ctx: Context, config: AgentCoreConfig) {
     super(ctx, "yesimbot.agent", false);
@@ -39,14 +45,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
   private async gateAndEnqueue(percept: Percept): Promise<void> {
     try {
       const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
-      this.willingness.incrementMessageCount(channelKey);
-      const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const allowed = await this.willingness.shouldReply(
-        percept as UserMessagePercept,
-        this.config,
-        modelService,
-      );
-      if (!allowed) return;
+      const up = percept as UserMessagePercept;
+      const { shouldReply } = this.willingness.processMessage(channelKey, up.triggerType, up.payload?.content ?? "");
+      if (!shouldReply) return;
       if (this.queues.has(channelKey)) {
         this.pending.set(channelKey, percept);
       } else {
@@ -77,7 +78,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
   protected async runLoop(channelKey: string, percept: Percept): Promise<void> {
     try {
       await this.loop.run(percept, this.config);
-      this.willingness.recordReply(channelKey);
+      this.willingness.recordBotReply(channelKey);
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
       this.logger.error(err);

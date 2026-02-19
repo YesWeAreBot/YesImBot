@@ -1,3 +1,3 @@
 export { AgentCore } from "./service";
-export { WillingnessCalculator } from "./willingness";
+export { WillingnessEngine } from "./willingness";
 export type { AgentCoreConfig, AgentIdentity } from "./config";
