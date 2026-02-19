@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 ## Current Position
 
 Phase: 9 (Dynamic Schema Linkage)
-Plan: 1 complete
-Status: Plan 09-01 complete
-Last activity: 2026-02-20 — 09-01 executed (listModels + refreshSchemas)
+Plan: 2 complete
+Status: Plan 09-02 complete — Phase 09 complete
+Last activity: 2026-02-20 — 09-02 executed (Schema.dynamic dropdowns + parseModelId wiring)
 
 ## Performance Metrics
 
@@ -40,6 +40,7 @@ _Updated after each plan completion_
 | Phase 03-horizon-context-system P03 | 300 | 2 tasks | 3 files |
 | Phase 08-stream-support-dead-code-cleanup P02 | 56 | 1 tasks | 1 files |
 | Phase 09-dynamic-schema-linkage P01 | 178 | 2 tasks | 4 files |
+| Phase 09-dynamic-schema-linkage P02 | 240 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,9 @@ Recent decisions affecting current work:
 - [Phase 08]: PLATFORM-01 marked Partial — Koishi Service pattern used throughout but no formal integration test
 - [Phase 09-dynamic-schema-linkage]: Schema<string>[] typed array allows mixing Schema.const and Schema.string in union without type errors
 - [Phase 09-dynamic-schema-linkage]: Context.current gives caller context for dispose hook — auto-unregisters provider on plugin unload
+- [Phase 09-02]: parseModelId added to shared-model — single source of truth for splitting provider:model strings
+- [Phase 09-02]: AgentCoreConfig.provider/willingnessProvider removed; model field now holds full provider:model string
+- [Phase 09-02]: Fallback in loop.ts is parse-time — if config.model invalid, try config.fallbackModel before returning
 
 ### Pending Todos
 
@@ -120,5 +124,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 09-01-PLAN.md
-Resume file: .planning/phases/09-dynamic-schema-linkage/09-01-SUMMARY.md
+Stopped at: Completed 09-02-PLAN.md
+Resume file: .planning/phases/09-dynamic-schema-linkage/09-02-SUMMARY.md

@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing (completed 2026-02-18)
 - [x] **Phase 7: Core Wiring Fixes** - Default system template, empty-render warnings, gap closure (completed 2026-02-19)
 - [x] **Phase 8: Stream Support & Dead Code Cleanup** - Activate streamMode path, remove dead code, traceability fixes (completed 2026-02-19)
-- [ ] **Phase 9: Dynamic Schema Linkage** - Provider-registered models appear as dropdown options in main plugin config
+- [x] **Phase 9: Dynamic Schema Linkage** - Provider-registered models appear as dropdown options in main plugin config (completed 2026-02-19)
 - [ ] **Phase 10: Willingness System Migration** - Full v3 decay + heat + S-curve algorithm replacing v1 skeleton
 - [ ] **Phase 11: Horizon Context Filling** - Populate Environment and Entity from live Koishi session data
 - [ ] **Phase 12: Memory & Prompt Snippets** - Filesystem memory blocks loaded and injected via built-in prompt snippets
@@ -236,7 +236,7 @@ v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
 | 7. Core Wiring Fixes          | 1/1            | Complete | 2026-02-19 |
 | 8. Stream & Dead Code Cleanup | 2/2            | Complete | 2026-02-19 |
-| 9. Dynamic Schema Linkage     | 1/2 | In Progress|  |
+| 9. Dynamic Schema Linkage     | 2/2 | Complete   | 2026-02-19 |
 | 10. Willingness System Migration | 0/TBD       | Not started |         |
 | 11. Horizon Context Filling   | 0/TBD          | Not started |         |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
