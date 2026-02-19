@@ -26,14 +26,16 @@ export class AgentCore extends Service<AgentCoreConfig> {
   }
 
   protected async start(): Promise<void> {
-    this.willingness = new WillingnessEngine(this.config.willingness ?? {
-      decay: { halfLife: 300, elasticThreshold: 0.7 },
-      gain: { baseGain: 15, keywordMultiplier: 1.5, keywords: [] },
-      sigmoid: { midpoint: 0.5, steepness: 10 },
-      fatigue: { windowMs: 120000, threshold: 3, penaltyBase: 0.5 },
-      maxWillingness: 100,
-      mentionBoost: 0.8,
-    });
+    this.willingness = new WillingnessEngine(
+      this.config.willingness ?? {
+        decay: { halfLife: 300, elasticThreshold: 0.7 },
+        gain: { baseGain: 15, keywordMultiplier: 1.5, keywords: [] },
+        sigmoid: { midpoint: 0.5, steepness: 10 },
+        fatigue: { windowMs: 120000, threshold: 3, penaltyBase: 0.5 },
+        maxWillingness: 100,
+        mentionBoost: 0.8,
+      },
+    );
     this.ctx.setInterval(() => this.willingness.tick(), 1000);
     this.loop = new ThinkActLoop(this.ctx);
     this.ctx.on("horizon/percept", (percept) => this.handlePercept(percept));
@@ -48,8 +50,16 @@ export class AgentCore extends Service<AgentCoreConfig> {
     try {
       const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
       const up = percept as UserMessagePercept;
-      const { shouldReply } = this.willingness.processMessage(channelKey, up.triggerType, up.payload?.content ?? "");
-      if (!shouldReply) return;
+      const result = this.willingness.processMessage(
+        channelKey,
+        up.triggerType,
+        up.payload?.content ?? "",
+      );
+      const d = result.debug;
+      this.logger.info(
+        `[willingness] ${channelKey} | ${d.prevWillingness.toFixed(1)} → ${d.newWillingness.toFixed(1)} (+${d.gain.toFixed(1)}) | P=${result.probability.toFixed(3)} fatigue=${d.fatigue.toFixed(2)} kw=${d.keywordHit} trigger=${d.triggerType} → ${result.shouldReply ? "REPLY" : "SKIP"}`,
+      );
+      if (!result.shouldReply) return;
       if (this.queues.has(channelKey)) {
         this.pending.set(channelKey, percept);
       } else {

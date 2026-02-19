@@ -31,19 +31,27 @@ export const WillingnessSchema = Schema.intersect([
   Schema.object({
     decay: Schema.object({
       halfLife: Schema.number().default(300).description("Willingness half-life in seconds"),
-      elasticThreshold: Schema.number().default(0.7).description("Ratio of max above which decay is halved"),
+      elasticThreshold: Schema.number()
+        .default(0.7)
+        .description("Ratio of max above which decay is halved"),
     }).description("Decay settings"),
   }),
   Schema.object({
     gain: Schema.object({
       baseGain: Schema.number().default(15).description("Willingness added per message"),
-      keywordMultiplier: Schema.number().default(1.5).description("Gain multiplier when keyword matches"),
-      keywords: Schema.array(Schema.string()).default([]).description("Regex patterns that boost gain"),
+      keywordMultiplier: Schema.number()
+        .default(1.5)
+        .description("Gain multiplier when keyword matches"),
+      keywords: Schema.array(Schema.string())
+        .default([])
+        .description("Regex patterns that boost gain"),
     }).description("Gain settings"),
   }),
   Schema.object({
     sigmoid: Schema.object({
-      midpoint: Schema.number().default(0.5).description("Willingness ratio where gain multiplier = 1"),
+      midpoint: Schema.number()
+        .default(0.5)
+        .description("Willingness ratio where gain multiplier = 1"),
       steepness: Schema.number().default(10).description("Sigmoid curve steepness"),
     }).description("Sigmoid gain curve settings"),
   }),
@@ -51,7 +59,9 @@ export const WillingnessSchema = Schema.intersect([
     fatigue: Schema.object({
       windowMs: Schema.number().default(120000).description("Sliding window duration in ms"),
       threshold: Schema.number().default(3).description("Bot replies before fatigue penalty"),
-      penaltyBase: Schema.number().default(0.5).description("Exponential penalty base per excess reply"),
+      penaltyBase: Schema.number()
+        .default(0.5)
+        .description("Exponential penalty base per excess reply"),
     }).description("Fatigue settings"),
   }),
 ]);
