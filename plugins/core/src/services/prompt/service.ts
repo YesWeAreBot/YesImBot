@@ -39,6 +39,7 @@ export class PromptService extends Service<PromptServiceConfig> {
   private snippets = new Map<string, Snippet>();
   private injections: Injection[] = [];
   private renderer = new MustacheRenderer();
+  private log = this.ctx.logger("yesimbot.prompt");
 
   constructor(ctx: Context, config: PromptServiceConfig) {
     super(ctx, "yesimbot.prompt", true);
@@ -65,7 +66,10 @@ export class PromptService extends Service<PromptServiceConfig> {
   async render(templateName: string, initialScope?: Record<string, unknown>): Promise<string> {
     const templateContent =
       this.config.templates?.[templateName] ?? this.templates.get(templateName);
-    if (!templateContent) return "";
+    if (!templateContent) {
+      this.log.warn(`No template found for key "${templateName}"`);
+      return "";
+    }
 
     const requiredVars = this.getRequiredVariables(templateContent);
     const scope = await this.buildScope(initialScope ?? {}, requiredVars);
@@ -79,7 +83,9 @@ export class PromptService extends Service<PromptServiceConfig> {
     if (fragments.length) scope["injections"] = fragments.join("\n\n");
 
     const partials = Object.fromEntries(this.templates);
-    return this.renderer.render(templateContent, scope, partials);
+    const result = this.renderer.render(templateContent, scope, partials);
+    if (!result) this.log.warn(`Template "${templateName}" rendered to empty string`);
+    return result;
   }
 
   private getRequiredVariables(template: string): Set<string> {
