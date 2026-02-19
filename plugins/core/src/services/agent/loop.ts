@@ -8,6 +8,7 @@ import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
 import type { AgentCoreConfig } from "./config";
+import { parseModelId } from "@yesimbot/shared-model";
 import { buildAiSdkTools, buildStopCondition } from "./tools";
 
 class LoopAbort extends Error {}
@@ -20,6 +21,7 @@ export class ThinkActLoop {
   }
 
   async run(percept: Percept, config: AgentCoreConfig): Promise<void> {
+    this.logger.info(`Starting loop for percept ${percept.id} of type ${percept.type}`);
     if (percept.type !== PerceptType.UserMessage) {
       this.logger.warn(`Ignoring non-UserMessage percept: ${percept.type}`);
       return;
@@ -46,11 +48,16 @@ export class ThinkActLoop {
     const stopWhen = buildStopCondition(config.maxRounds ?? 3);
 
     // Direct generateText call for step-level control
-    if (!config.provider || !config.model) {
-      this.logger.warn("Missing provider or model in config");
+    let parsed = config.model ? parseModelId(config.model) : null;
+    if (!parsed && config.fallbackModel) {
+      this.logger.warn(`Primary model "${config.model}" missing or invalid, trying fallback`);
+      parsed = parseModelId(config.fallbackModel);
+    }
+    if (!parsed) {
+      this.logger.warn("Missing or invalid model config");
       return;
     }
-    const { model, defaultParams } = modelService.getModel(config.provider, config.model);
+    const { model, defaultParams } = modelService.getModel(parsed.provider, parsed.model);
     const collectedSteps: StepResult<ToolSet>[] = [];
     let fallbackText = "";
 
@@ -86,7 +93,7 @@ export class ThinkActLoop {
       let resultText: string | undefined;
       if (config.streamMode) {
         const streamResult = await Promise.race([
-          modelService.streamCall(config.provider, config.model, callParams),
+          modelService.streamCall(parsed.provider, parsed.model, callParams),
           timeoutPromise,
         ]);
         resultText = await streamResult.text;
