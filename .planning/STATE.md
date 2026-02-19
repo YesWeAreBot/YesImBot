@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 7 - Core Wiring Fixes
+**Current focus:** Phase 8 - Stream Support & Dead Code Cleanup
 
 ## Current Position
 
-Phase: 7 of 7 (Core Wiring Fixes)
-Plan: 1 of 1 in current phase
-Status: Complete
-Last activity: 2026-02-19 — Completed 07-01 DEFAULT_SYSTEM_TEMPLATE and empty-render warnings
+Phase: 8 of 8 (Stream Support & Dead Code Cleanup)
+Plan: 0 of 0 in current phase
+Status: Context gathered, ready for planning
+Last activity: 2026-02-19 — Phase 8 context gathered
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -113,5 +113,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 07-01-PLAN.md
-Resume file: .planning/phases/07-core-wiring-fixes/07-01-SUMMARY.md
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-stream-support-dead-code-cleanup/08-CONTEXT.md
