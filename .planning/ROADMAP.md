@@ -4,6 +4,8 @@
 
 Athena v4 is a complete rewrite of YesImBot as a Koishi plugin, enabling AI agents to participate naturally in IM platform conversations. The roadmap progresses from foundational architecture (monorepo, shared models) through core services (model abstraction, context management) to agent orchestration and intelligent decision-making. The journey delivers a functional skeleton with provider plugins, Horizon context architecture, and hybrid willingness system—establishing the foundation for future memory and lifecycle features.
 
+v2 (功能平替) extends the v1 skeleton with the core features needed to reach v3 parity: dynamic schema linkage, willingness algorithm migration, Horizon context filling, and memory/prompt snippet injection.
+
 ## Phases
 
 **Phase Numbering:**
@@ -17,10 +19,14 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Model Service & Providers** - ModelService with provider registry, OpenAI and DeepSeek provider plugins (completed 2026-02-18)
 - [x] **Phase 3: Horizon Context System** - Environment/Entity/Event abstractions, Timeline storage, Observation generation, Percept mechanism (completed 2026-02-18)
 - [x] **Phase 4: Prompt & Tool Services** - PromptService for templates, PluginService for tool registration and execution (completed 2026-02-18)
-- [ ] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging
+- [x] **Phase 5: Agent Core & Integration** - AgentCore orchestrator, think-act loop, Koishi integration, basic messaging (completed 2026-02-18)
 - [x] **Phase 6: Willingness & Polish** - Hybrid willingness system, error handling, final integration testing (completed 2026-02-18)
-- [ ] **Phase 7: Core Wiring Fixes** - Default system template, empty-render warnings, gap closure
+- [x] **Phase 7: Core Wiring Fixes** - Default system template, empty-render warnings, gap closure (completed 2026-02-19)
 - [x] **Phase 8: Stream Support & Dead Code Cleanup** - Activate streamMode path, remove dead code, traceability fixes (completed 2026-02-19)
+- [ ] **Phase 9: Dynamic Schema Linkage** - Provider-registered models appear as dropdown options in main plugin config
+- [ ] **Phase 10: Willingness System Migration** - Full v3 decay + heat + S-curve algorithm replacing v1 skeleton
+- [ ] **Phase 11: Horizon Context Filling** - Populate Environment and Entity from live Koishi session data
+- [ ] **Phase 12: Memory & Prompt Snippets** - Filesystem memory blocks loaded and injected via built-in prompt snippets
 
 ## Phase Details
 
@@ -30,12 +36,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on**: Nothing (first phase)
 **Requirements**: PLATFORM-01 (partial - plugin skeleton only)
 **Success Criteria** (what must be TRUE):
-
-1. Monorepo builds successfully with Turborepo and Yarn workspaces
-2. shared-model package exports core types (IModelProvider, IModel, ModelConfig interfaces)
-3. Core plugin package exists with Koishi 4.x plugin structure and can be loaded by Koishi
-4. TypeScript compilation works across all packages with proper module resolution
-   **Plans**: 2 plans
+  1. Monorepo builds successfully with Turborepo and Yarn workspaces
+  2. shared-model package exports core types (IModelProvider, IModel, ModelConfig interfaces)
+  3. Core plugin package exists with Koishi 4.x plugin structure and can be loaded by Koishi
+  4. TypeScript compilation works across all packages with proper module resolution
+**Plans**: 2 plans
 
 Plans:
 
@@ -48,12 +53,11 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: MODEL-01, MODEL-02, MODEL-03
 **Success Criteria** (what must be TRUE):
-
-1. Provider plugins can register models to ModelService with independent configurations
-2. OpenAI provider plugin successfully calls OpenAI-compatible APIs via ai-sdk
-3. DeepSeek provider plugin successfully calls DeepSeek API via ai-sdk
-4. Core plugin can invoke registered models through ModelService abstraction
-   **Plans**: 3 plans
+  1. Provider plugins can register models to ModelService with independent configurations
+  2. OpenAI provider plugin successfully calls OpenAI-compatible APIs via ai-sdk
+  3. DeepSeek provider plugin successfully calls DeepSeek API via ai-sdk
+  4. Core plugin can invoke registered models through ModelService abstraction
+**Plans**: 3 plans
 
 Plans:
 
@@ -67,12 +71,11 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: HORIZON-01, HORIZON-02, HORIZON-03, HORIZON-04
 **Success Criteria** (what must be TRUE):
-
-1. Environment/Entity/Event abstractions exist and can represent IM platform contexts
-2. Events are stored in Timeline with timestamp-based retrieval
-3. Events can be expanded into Observation objects readable by LLMs
-4. Percept objects describe agent triggers (messages, mentions) and drive AgentCore processing
-   **Plans**: 3 plans
+  1. Environment/Entity/Event abstractions exist and can represent IM platform contexts
+  2. Events are stored in Timeline with timestamp-based retrieval
+  3. Events can be expanded into Observation objects readable by LLMs
+  4. Percept objects describe agent triggers (messages, mentions) and drive AgentCore processing
+**Plans**: 3 plans
 
 Plans:
 
@@ -86,12 +89,11 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: PROMPT-01, TOOL-01, TOOL-02
 **Success Criteria** (what must be TRUE):
-
-1. PromptService loads and renders system prompt templates with personality configuration
-2. Tools can be registered with schema validation using decorator pattern
-3. PluginService dispatches tool calls and returns results to agent loop
-4. At least one built-in utility tool is registered and executable
-   **Plans**: 2 plans
+  1. PromptService loads and renders system prompt templates with personality configuration
+  2. Tools can be registered with schema validation using decorator pattern
+  3. PluginService dispatches tool calls and returns results to agent loop
+  4. At least one built-in utility tool is registered and executable
+**Plans**: 2 plans
 
 Plans:
 
@@ -104,12 +106,11 @@ Plans:
 **Depends on**: Phase 2, Phase 3, Phase 4
 **Requirements**: AGENT-01, AGENT-03, PLATFORM-01 (complete)
 **Success Criteria** (what must be TRUE):
-
-1. AgentCore accepts Percept input and retrieves Observation from Horizon
-2. Think-act loop executes: context build → LLM call → tool execution → response generation
-3. Koishi plugin receives messages, creates Percepts, and sends agent responses back to platform
-4. Agent can participate in basic conversation with @mention detection
-   **Plans**: 2 plans
+  1. AgentCore accepts Percept input and retrieves Observation from Horizon
+  2. Think-act loop executes: context build → LLM call → tool execution → response generation
+  3. Koishi plugin receives messages, creates Percepts, and sends agent responses back to platform
+  4. Agent can participate in basic conversation with @mention detection
+**Plans**: 2 plans
 
 Plans:
 
@@ -122,12 +123,11 @@ Plans:
 **Depends on**: Phase 5
 **Requirements**: AGENT-02
 **Success Criteria** (what must be TRUE):
-
-1. WillingnessCalculator evaluates whether to reply using deterministic rules
-2. LLM-based willingness judgment refines rule-based decisions when needed
-3. Agent participation feels natural (not always-on, not purely random)
-4. Error handling prevents crashes from API failures or tool execution errors
-   **Plans**: 2 plans
+  1. WillingnessCalculator evaluates whether to reply using deterministic rules
+  2. LLM-based willingness judgment refines rule-based decisions when needed
+  3. Agent participation feels natural (not always-on, not purely random)
+  4. Error handling prevents crashes from API failures or tool execution errors
+**Plans**: 2 plans
 
 Plans:
 
@@ -141,11 +141,10 @@ Plans:
 **Requirements**: AGENT-01, PROMPT-01
 **Gap Closure:** Closes gaps from v1 audit
 **Success Criteria** (what must be TRUE):
-
-1. A default "system" template is bundled so LLM never receives empty system prompt
-2. PromptService warns when render() returns empty string for a template key
-3. User-provided config.templates.system still overrides the default template
-   **Plans**: 1 plan
+  1. A default "system" template is bundled so LLM never receives empty system prompt
+  2. PromptService warns when render() returns empty string for a template key
+  3. User-provided config.templates.system still overrides the default template
+**Plans**: 1 plan
 
 Plans:
 
@@ -158,22 +157,69 @@ Plans:
 **Requirements**: AGENT-03, HORIZON-02
 **Gap Closure:** Closes gaps from v1 audit
 **Success Criteria** (what must be TRUE):
-
-1. ThinkActLoop reads config.streamMode and uses streamText() when enabled
-2. ModelService.streamCall() uses PQueue concurrency control like call()
-3. markAsActive() dead code removed or stage transitions activated
-4. REQUIREMENTS.md traceability table accurately reflects implementation status
-   **Plans**: 2 plans
+  1. ThinkActLoop reads config.streamMode and uses streamText() when enabled
+  2. ModelService.streamCall() uses PQueue concurrency control like call()
+  3. markAsActive() dead code removed or stage transitions activated
+  4. REQUIREMENTS.md traceability table accurately reflects implementation status
+**Plans**: 2 plans
 
 Plans:
 
 - [ ] 08-01-PLAN.md — Stream support + PQueue wrap + lifecycle activation (markAsActive/archiveStale)
 - [ ] 08-02-PLAN.md — REQUIREMENTS.md traceability audit with accurate statuses and Notes column
 
+### Phase 9: Dynamic Schema Linkage
+
+**Goal**: Provider-registered models appear as selectable dropdown options in the main plugin config UI
+**Depends on**: Phase 8
+**Requirements**: MODEL-04, MODEL-05
+**Success Criteria** (what must be TRUE):
+  1. After a provider plugin registers a model, that model ID appears in the main plugin's model selection dropdown without restart
+  2. When a provider plugin is unloaded or hot-reloaded, the model list in the config UI updates automatically
+  3. Selecting a model from the dropdown correctly wires it as the active model for the agent loop
+**Plans**: TBD
+
+### Phase 10: Willingness System Migration
+
+**Goal**: Replace the v1 willingness skeleton with the full v3 decay + heat + S-curve algorithm
+**Depends on**: Phase 8
+**Requirements**: WILLING-01, WILLING-02, WILLING-03
+**Success Criteria** (what must be TRUE):
+  1. Willingness value decays exponentially over time with a configurable half-life; cold/warm/hot conversation states are detected correctly
+  2. Repeated replies in a short window trigger S-curve saturation and eventually negative feedback, preventing over-activity
+  3. Replying costs willingness points; messages containing configured keywords raise the interest multiplier
+  4. All three algorithm parameters (decay, S-curve, cost/keywords) are exposed as user-configurable fields
+**Plans**: TBD
+
+### Phase 11: Horizon Context Filling
+
+**Goal**: Populate Environment and Entity with real data from the live Koishi session
+**Depends on**: Phase 8
+**Requirements**: HORIZON-05, HORIZON-06
+**Success Criteria** (what must be TRUE):
+  1. Environment fields (channel name, platform, channel type) are populated from the Koishi session when a Percept is processed
+  2. The sender's Entity (nickname, role) is populated from session user data
+  3. The bot's own Entity (name, ID) is populated from the Koishi bot object
+  4. LLM-visible Observation output reflects the real channel and user names rather than placeholder values
+**Plans**: TBD
+
+### Phase 12: Memory & Prompt Snippets
+
+**Goal**: Load filesystem memory blocks and inject them alongside dynamic context snippets into every prompt
+**Depends on**: Phase 9, Phase 11
+**Requirements**: MEMORY-01, MEMORY-02, PROMPT-02
+**Success Criteria** (what must be TRUE):
+  1. MemoryService scans a configured directory and loads all .md/.txt files, respecting YAML frontmatter priority and tag fields
+  2. Loaded memory blocks are injected into the prompt scope so the LLM receives them in every system prompt
+  3. When no memory files are found, a built-in default persona block is used as fallback
+  4. Built-in snippets supply current time, sender nickname/ID, channel name/platform, and bot name/ID to every rendered prompt
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+v1 phases: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 
 | Phase                         | Plans Complete | Status   | Completed  |
 | ----------------------------- | -------------- | -------- | ---------- |
@@ -183,5 +229,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 4. Prompt & Tool Services     | 2/2            | Complete | 2026-02-18 |
 | 5. Agent Core & Integration   | 2/2            | Complete | 2026-02-18 |
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
-| 7. Core Wiring Fixes          | 0/1            | Pending  |            |
-| 8. Stream & Dead Code Cleanup | 2/2 | Complete   | 2026-02-19 |
+| 7. Core Wiring Fixes          | 1/1            | Complete | 2026-02-19 |
+| 8. Stream & Dead Code Cleanup | 2/2            | Complete | 2026-02-19 |
+| 9. Dynamic Schema Linkage     | 0/TBD          | Not started |         |
+| 10. Willingness System Migration | 0/TBD       | Not started |         |
+| 11. Horizon Context Filling   | 0/TBD          | Not started |         |
+| 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |

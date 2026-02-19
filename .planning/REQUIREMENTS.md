@@ -99,6 +99,16 @@
 | TOOL-02     | Phase 4          | Complete | Decorator pattern in base-plugin.ts                                                        |
 | PROMPT-01   | Phase 4, Phase 7 | Complete | PromptService + DEFAULT_SYSTEM_TEMPLATE + empty-render warnings implemented                |
 | PLATFORM-01 | Phase 1, Phase 5 | Partial  | Koishi Service pattern used throughout; plugin loads but no formal integration test        |
+| MODEL-04    | Phase 9          | Pending  |                                                                                            |
+| MODEL-05    | Phase 9          | Pending  |                                                                                            |
+| WILLING-01  | Phase 10         | Pending  |                                                                                            |
+| WILLING-02  | Phase 10         | Pending  |                                                                                            |
+| WILLING-03  | Phase 10         | Pending  |                                                                                            |
+| HORIZON-05  | Phase 11         | Pending  |                                                                                            |
+| HORIZON-06  | Phase 11         | Pending  |                                                                                            |
+| MEMORY-01   | Phase 12         | Pending  |                                                                                            |
+| MEMORY-02   | Phase 12         | Pending  |                                                                                            |
+| PROMPT-02   | Phase 12         | Pending  |                                                                                            |
 
 **Coverage:**
 
@@ -107,10 +117,10 @@
 - Unmapped: 0 ✓
 
 - v2 requirements: 10 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 10
+- Mapped to phases: 10
+- Unmapped: 0 ✓
 
 ---
 
 _Requirements defined: 2026-02-17_
-_Last updated: 2026-02-19 after v2 milestone requirements definition_
+_Last updated: 2026-02-19 after v2 roadmap creation (phases 9-12)_
