@@ -4,7 +4,7 @@ import { Context, sleep } from "koishi";
 import type { HorizonService } from "../horizon/service";
 import type { Percept, UserMessagePercept } from "../horizon/types";
 import { PerceptType } from "../horizon/types";
-import type { ModelService } from "../model/service";
+import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
 import type { AgentCoreConfig } from "./config";
@@ -59,35 +59,48 @@ export class ThinkActLoop {
       setTimeout(() => reject(new Error("Global loop timeout")), timeoutMs),
     );
 
-    try {
-      const result = await Promise.race([
-        generateText({
-          model,
-          ...defaultParams,
-          system: systemPrompt,
-          messages,
-          tools: allTools as ToolSet,
-          toolChoice: "required",
-          stopWhen,
-          onStepFinish: (step: StepResult<ToolSet>) => {
-            this.logger.info(
-              `Step #${collectedSteps.length + 1} finished. \
-              Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. \
-              ${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
-            );
-            collectedSteps.push(step);
-            const calls = step.toolCalls ?? [];
-            if (calls.length && !calls.some((t) => infoToolNames.has(t.toolName))) {
-              throw new LoopAbort();
-            }
-          },
-        }),
-        timeoutPromise,
-      ]);
+    const onStepFinish = (step: StepResult<ToolSet>) => {
+      this.logger.info(
+        `Step #${collectedSteps.length + 1} finished. \
+        Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. \
+        ${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
+      );
+      collectedSteps.push(step);
+      const calls = step.toolCalls ?? [];
+      if (calls.length && !calls.some((t) => infoToolNames.has(t.toolName))) {
+        throw new LoopAbort();
+      }
+    };
 
-      if (result.text) {
-        this.logger.info(`Model output: ${result.text}`);
-        fallbackText = result.text;
+    const callParams = {
+      ...defaultParams,
+      system: systemPrompt,
+      messages,
+      tools: allTools as ToolSet,
+      toolChoice: "required",
+      stopWhen,
+      onStepFinish,
+    } as CallParams;
+
+    try {
+      let resultText: string | undefined;
+      if (config.streamMode) {
+        const streamResult = await Promise.race([
+          modelService.streamCall(config.provider, config.model, callParams),
+          timeoutPromise,
+        ]);
+        resultText = await streamResult.text;
+      } else {
+        const result = await Promise.race([
+          generateText({ model, ...callParams }),
+          timeoutPromise,
+        ]);
+        resultText = result.text;
+      }
+
+      if (resultText) {
+        this.logger.info(`Model output: ${resultText}`);
+        fallbackText = resultText;
         if (fallbackText.indexOf("</think>") >= 0) {
           fallbackText = fallbackText.split("</think>").slice(-1)[0];
         }
@@ -119,6 +132,10 @@ export class ThinkActLoop {
           .map((t) => String((t.input as Record<string, unknown>)?.["content"] ?? ""))
           .join(" ")
       : fallbackText.trim();
+
+    await horizon.events.markAsActive(userPercept.scope, new Date());
+    const archiveMs = (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
+    await horizon.events.archiveStale(userPercept.scope, archiveMs);
 
     const summary = `Tools: [${toolNames.join(", ")}]. Sent: [${sentContent || "nothing"}]`;
     await horizon.events.recordAgentSummary({
