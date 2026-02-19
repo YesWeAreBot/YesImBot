@@ -163,7 +163,12 @@ Plans:
 2. ModelService.streamCall() uses PQueue concurrency control like call()
 3. markAsActive() dead code removed or stage transitions activated
 4. REQUIREMENTS.md traceability table accurately reflects implementation status
-   **Plans**: TBD
+   **Plans**: 2 plans
+
+Plans:
+
+- [ ] 08-01-PLAN.md — Stream support + PQueue wrap + lifecycle activation (markAsActive/archiveStale)
+- [ ] 08-02-PLAN.md — REQUIREMENTS.md traceability audit with accurate statuses and Notes column
 
 ## Progress
 
@@ -179,4 +184,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 5. Agent Core & Integration   | 2/2            | Complete | 2026-02-18 |
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
 | 7. Core Wiring Fixes          | 0/1            | Pending  |            |
-| 8. Stream & Dead Code Cleanup | 0/0            | Pending  |            |
+| 8. Stream & Dead Code Cleanup | 0/2            | Pending  |            |
