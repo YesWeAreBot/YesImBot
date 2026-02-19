@@ -177,7 +177,12 @@ Plans:
   1. After a provider plugin registers a model, that model ID appears in the main plugin's model selection dropdown without restart
   2. When a provider plugin is unloaded or hot-reloaded, the model list in the config UI updates automatically
   3. Selecting a model from the dropdown correctly wires it as the active model for the agent loop
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 09-01-PLAN.md — IModelProvider.listModels() type + ModelService refreshSchemas() engine
+- [ ] 09-02-PLAN.md — Core plugin dynamic Schema.dynamic dropdowns + agent loop provider:model parsing
 
 ### Phase 10: Willingness System Migration
 
@@ -231,7 +236,7 @@ v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 | 6. Willingness & Polish       | 2/2            | Complete | 2026-02-18 |
 | 7. Core Wiring Fixes          | 1/1            | Complete | 2026-02-19 |
 | 8. Stream & Dead Code Cleanup | 2/2            | Complete | 2026-02-19 |
-| 9. Dynamic Schema Linkage     | 0/TBD          | Not started |         |
+| 9. Dynamic Schema Linkage     | 0/2            | Not started |         |
 | 10. Willingness System Migration | 0/TBD       | Not started |         |
 | 11. Horizon Context Filling   | 0/TBD          | Not started |         |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
