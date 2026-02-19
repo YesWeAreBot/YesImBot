@@ -115,22 +115,26 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     const model = modelId || this.config.defaultModel;
     if (!provider || !model) throw new Error("Provider and model required");
 
-    try {
-      const p = this.providers.get(provider);
-      if (!p) throw new Error(`Provider not found: ${provider}`);
+    const result = await this.queue.add(async () => {
+      try {
+        const p = this.providers.get(provider);
+        if (!p) throw new Error(`Provider not found: ${provider}`);
 
-      const m = p.getModel(model);
-      const defaults = p.getDefaultParams(model);
-      const merged = { ...defaults, ...params };
+        const m = p.getModel(model);
+        const defaults = p.getDefaultParams(model);
+        const merged = { ...defaults, ...params };
 
-      return await streamText({ model: m, ...merged });
-    } catch (error) {
-      const category = classifyError(error);
-      if (category === ErrorCategory.TRANSIENT || category === ErrorCategory.RATE_LIMIT) {
-        return await this.handleStreamFallback(provider, model, params, error);
+        return await streamText({ model: m, ...merged });
+      } catch (error) {
+        const category = classifyError(error);
+        if (category === ErrorCategory.TRANSIENT || category === ErrorCategory.RATE_LIMIT) {
+          return await this.handleStreamFallback(provider, model, params, error);
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
+    if (!result) throw new Error("Queue returned undefined for stream call");
+    return result;
   }
 
   public getModel(providerName: string, modelId: string) {

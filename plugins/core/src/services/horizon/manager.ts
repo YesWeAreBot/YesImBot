@@ -98,4 +98,14 @@ export class EventManager {
       stage: TimelineStage.Active,
     });
   }
+
+  async archiveStale(scope: Scope, olderThanMs: number): Promise<void> {
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const query = {
+      scope,
+      stage: TimelineStage.Active,
+      timestamp: { $lte: cutoff },
+    } as unknown as Query.Expr<TimelineEntry>;
+    await this.ctx.database.set(TIMELINE_TABLE, query, { stage: TimelineStage.Archived });
+  }
 }

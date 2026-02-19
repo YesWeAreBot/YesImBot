@@ -56,6 +56,7 @@ export const Config: Schema<Config> = Schema.object({
   keywords: Schema.array(Schema.string()).default([]),
   aggregationWindow: Schema.number().default(1500),
   historyLimit: Schema.number().default(30),
+  archiveThresholdMs: Schema.number().default(86400000),
   templates: Schema.dict(Schema.string()),
   defaultTimeout: Schema.number().default(30000),
   agentProvider: Schema.string(),
@@ -84,6 +85,7 @@ export function apply(ctx: Context, config: Config) {
     keywords: config.keywords,
     aggregationWindow: config.aggregationWindow,
     historyLimit: config.historyLimit,
+    archiveThresholdMs: config.archiveThresholdMs,
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
