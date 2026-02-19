@@ -3,9 +3,12 @@ import {
   ErrorCategory,
   IModelProvider,
   IModelService,
+  ModelDefaultParams,
   ModelInfo,
+  ModelSelector,
 } from "@yesimbot/shared-model";
-import { type CallSettings, type Prompt, generateText, streamText } from "ai";
+import { parseModelId } from "@yesimbot/shared-model";
+import { type CallSettings, LanguageModel, type Prompt, generateText, streamText } from "ai";
 import { Context, Schema, Service } from "koishi";
 import PQueue from "p-queue";
 
@@ -20,9 +23,8 @@ export type GenerateResult = Awaited<ReturnType<typeof generateText>>;
 export type StreamResult = Awaited<ReturnType<typeof streamText>>;
 
 export interface ModelServiceConfig {
-  defaultProvider?: string;
   defaultModel?: string;
-  fallbackChains?: Record<string, Array<{ provider: string; model: string }>>;
+  fallbackChains?: string[];
   concurrency?: number;
 }
 
@@ -46,7 +48,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     for (const [name, provider] of this.providers) {
       const models = provider.listModels();
       for (const [modelId, info] of Object.entries(models)) {
-        options.push(Schema.const(`${name}:${modelId}` as string).description(info.description ?? modelId));
+        options.push(Schema.const(`${name}:${modelId}` as string).description(modelId));
       }
     }
     options.push(Schema.string().description("Custom model (provider:model)"));
@@ -83,21 +85,33 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   }
 
   public async call(
-    providerName: string | undefined,
-    modelId: string | undefined,
+    model: string | ModelSelector,
     params: CallParams,
   ): Promise<GenerateResult | undefined> {
-    const provider = providerName || this.config.defaultProvider;
-    const model = modelId || this.config.defaultModel;
-    if (!provider || !model) throw new Error("Provider and model required");
+    let provider: string;
+    let modelId: string;
+    if (typeof model === "string") {
+      const parsed = parseModelId(model);
+      if (!parsed) {
+        throw new Error("Invalid model format");
+      }
+      provider = parsed.provider;
+      modelId = parsed.model;
+    } else {
+      provider = model.provider;
+      modelId = model.model;
+    }
+    if (!provider || !modelId) {
+      throw new Error("Provider and model required");
+    }
 
     const result = await this.queue.add(async () => {
       try {
-        return await this.executeCall(provider, model, params);
+        return await this.executeCall(provider, modelId, params);
       } catch (error) {
         const category = classifyError(error);
         if (category === ErrorCategory.TRANSIENT || category === ErrorCategory.RATE_LIMIT) {
-          return await this.handleFallback(provider, model, params, error);
+          return await this.handleFallback(params, error);
         }
         throw error;
       }
@@ -110,7 +124,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     if (!provider) throw new Error(`Provider not found: ${providerName}`);
 
     const model = provider.getModel(modelId);
-    const defaults = provider.getDefaultParams(modelId);
+    const defaults = provider.getDefaultParams();
     const merged = { ...defaults, ...params };
 
     const result = await generateText({ model, ...merged });
@@ -126,28 +140,38 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   }
 
   public async streamCall(
-    providerName: string | undefined,
-    modelId: string | undefined,
+    model: string | ModelSelector,
     params: CallParams,
   ): Promise<StreamResult> {
-    const provider = providerName || this.config.defaultProvider;
-    const model = modelId || this.config.defaultModel;
-    if (!provider || !model) throw new Error("Provider and model required");
+    let provider: string;
+    let modelId: string;
+    if (typeof model === "string") {
+      const parsed = parseModelId(model);
+      if (!parsed) {
+        throw new Error("Invalid model format");
+      }
+      provider = parsed.provider;
+      modelId = parsed.model;
+    } else {
+      provider = model.provider;
+      modelId = model.model;
+    }
+    if (!provider || !modelId) throw new Error("Provider and model required");
 
     const result = await this.queue.add(async () => {
       try {
         const p = this.providers.get(provider);
         if (!p) throw new Error(`Provider not found: ${provider}`);
 
-        const m = p.getModel(model);
-        const defaults = p.getDefaultParams(model);
+        const m = p.getModel(modelId);
+        const defaults = p.getDefaultParams();
         const merged = { ...defaults, ...params };
 
         return await streamText({ model: m, ...merged });
       } catch (error) {
         const category = classifyError(error);
         if (category === ErrorCategory.TRANSIENT || category === ErrorCategory.RATE_LIMIT) {
-          return await this.handleStreamFallback(provider, model, params, error);
+          return await this.handleStreamFallback(params, error);
         }
         throw error;
       }
@@ -156,13 +180,33 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     return result;
   }
 
-  public getModel(providerName: string, modelId: string) {
-    const provider = this.providers.get(providerName);
-    if (!provider) throw new Error(`Provider not found: ${providerName}`);
+  public getModel(model: string | ModelSelector): {
+    model: LanguageModel;
+    defaultParams: ModelDefaultParams;
+  } {
+    let provider: string;
+    let modelId: string;
+    if (typeof model === "string") {
+      const parsed = parseModelId(model);
+      if (!parsed) {
+        throw new Error("Invalid model format");
+      }
+      provider = parsed.provider;
+      modelId = parsed.model;
+    } else {
+      provider = model.provider;
+      modelId = model.model;
+    }
+    if (!provider || !modelId) {
+      throw new Error("Provider and model required");
+    }
+
+    const p = this.providers.get(provider);
+    if (!p) throw new Error(`Provider not found: ${provider}`);
 
     return {
-      model: provider.getModel(modelId),
-      defaultParams: provider.getDefaultParams(modelId),
+      model: p.getModel(modelId),
+      defaultParams: p.getDefaultParams(),
     };
   }
 
@@ -170,20 +214,18 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     return new Map(this.usage);
   }
 
-  private async handleFallback(
-    primaryProvider: string,
-    primaryModel: string,
-    params: CallParams,
-    error: unknown,
-  ) {
-    const key = `${primaryProvider}:${primaryModel}`;
-    const chain = this.config.fallbackChains?.[key];
+  private async handleFallback(params: CallParams, error: unknown) {
+    const chain = this.config.fallbackChains;
 
     if (!chain || chain.length === 0) throw error;
 
     for (const fallback of chain) {
+      const parsed = parseModelId(fallback);
+      if (!parsed) continue;
+      const { provider, model } = parsed;
+      if (!provider || !model) continue;
       try {
-        return await this.executeCall(fallback.provider, fallback.model, params);
+        return await this.executeCall(provider, model, params);
       } catch (e) {
         continue;
       }
@@ -192,24 +234,22 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     throw error;
   }
 
-  private async handleStreamFallback(
-    primaryProvider: string,
-    primaryModel: string,
-    params: CallParams,
-    error: unknown,
-  ) {
-    const key = `${primaryProvider}:${primaryModel}`;
-    const chain = this.config.fallbackChains?.[key];
+  private async handleStreamFallback(params: CallParams, error: unknown) {
+    const chain = this.config.fallbackChains;
 
     if (!chain || chain.length === 0) throw error;
 
     for (const fallback of chain) {
+      const parsed = parseModelId(fallback);
+      if (!parsed) continue;
+      const { provider, model } = parsed;
+      if (!provider || !model) continue;
       try {
-        const p = this.providers.get(fallback.provider);
+        const p = this.providers.get(provider);
         if (!p) continue;
 
-        const m = p.getModel(fallback.model);
-        const defaults = p.getDefaultParams(fallback.model);
+        const m = p.getModel(model);
+        const defaults = p.getDefaultParams();
         const merged = { ...defaults, ...params };
 
         return await streamText({ model: m, ...merged });

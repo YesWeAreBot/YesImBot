@@ -12,9 +12,6 @@ export const inject = ["database"];
 
 export interface Config
   extends HorizonServiceConfig, PromptServiceConfig, PluginServiceConfig, ModelServiceConfig {
-  defaultProvider?: string;
-  defaultModel?: string;
-  fallbackChains?: Record<string, Array<{ provider: string; model: string }>>;
   concurrency?: number;
   model?: string;
   fallbackModel?: string;
@@ -32,16 +29,8 @@ export interface Config
 }
 
 export const Config: Schema<Config> = Schema.object({
-  defaultProvider: Schema.string(),
   defaultModel: Schema.string(),
-  fallbackChains: Schema.dict(
-    Schema.array(
-      Schema.object({
-        provider: Schema.string().required(),
-        model: Schema.string().required(),
-      }),
-    ),
-  ),
+  fallbackChains: Schema.array(Schema.string()),
   concurrency: Schema.number().default(5),
   allowedChannels: Schema.array(
     Schema.object({
@@ -59,12 +48,16 @@ export const Config: Schema<Config> = Schema.object({
   templates: Schema.dict(Schema.string()),
   defaultTimeout: Schema.number().default(30000),
   model: Schema.dynamic("registry.chatModels").description("Agent chat model (provider:model)"),
-  fallbackModel: Schema.dynamic("registry.chatModels").description("Fallback model when primary unavailable"),
+  fallbackModel: Schema.dynamic("registry.chatModels").description(
+    "Fallback model when primary unavailable",
+  ),
   maxRounds: Schema.number().default(3),
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
-  willingnessModel: Schema.dynamic("registry.chatModels").description("Model for willingness LLM judge"),
+  willingnessModel: Schema.dynamic("registry.chatModels").description(
+    "Model for willingness LLM judge",
+  ),
   willingnessRejectThreshold: Schema.number().default(0.15),
   willingnessAcceptThreshold: Schema.number().default(0.75),
   willingCooldownMessages: Schema.number().default(3),

@@ -2,9 +2,9 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   IModelProvider,
   ModelInfo,
-  ModelCapability,
-  ModelDefaultParams,
+  Modality,
   IModelService,
+  ModelDefaultParams,
 } from "@yesimbot/shared-model";
 import { Context, Schema } from "koishi";
 
@@ -21,8 +21,12 @@ export interface Config {
   id: string;
   apiKey: string;
   baseURL: string;
-  models: Array<{ id: string; capabilities: string[] }>;
-  defaultParams: ModelDefaultParams;
+  models: Array<ModelInfo>;
+  defaultParams: {
+    temperature: number;
+    maxTokens: number;
+    topP: number;
+  };
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -32,10 +36,29 @@ export const Config: Schema<Config> = Schema.object({
   models: Schema.array(
     Schema.object({
       id: Schema.string().required(),
-      capabilities: Schema.array(Schema.string()),
+      tool_call: Schema.boolean().default(true),
+      reasoning: Schema.boolean().default(false),
+      modalities: Schema.array(
+        Schema.union([
+          Schema.const(Modality.Audio),
+          Schema.const(Modality.Image),
+          Schema.const(Modality.Pdf),
+          Schema.const(Modality.Text),
+          Schema.const(Modality.Video),
+        ]),
+      )
+        .default([Modality.Text])
+        .role("checkbox"),
     }),
   )
-    .default([{ id: "gpt-4o", capabilities: ["toolCalling", "vision", "jsonMode", "streaming"] }])
+    .default([
+      {
+        id: "gpt-4o",
+        tool_call: true,
+        reasoning: false,
+        modalities: [Modality.Text, Modality.Image],
+      },
+    ])
     .role("table"),
   defaultParams: Schema.object({
     temperature: Schema.number().default(0.7),
@@ -48,22 +71,18 @@ class OpenAIProvider implements IModelProvider {
   readonly id: string;
   readonly providerType = "openai";
   readonly models: ModelInfo[];
+  readonly defaultParams: ModelDefaultParams;
   private client: ReturnType<typeof createOpenAI>;
 
   constructor(config: Config) {
     this.id = config.id;
+    this.defaultParams = config.defaultParams;
     this.client = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
     this.models = config.models.map((m) => ({
       id: m.id,
-      capabilities: m.capabilities.map((c) => {
-        const map: Record<string, ModelCapability> = {
-          toolCalling: ModelCapability.ToolCalling,
-          vision: ModelCapability.Vision,
-          jsonMode: ModelCapability.JsonMode,
-          streaming: ModelCapability.Streaming,
-        };
-        return map[c] || (c as ModelCapability);
-      }),
+      tool_call: m.tool_call,
+      reasoning: m.reasoning,
+      modalities: m.modalities,
       defaultParams: config.defaultParams,
     }));
   }
@@ -76,8 +95,8 @@ class OpenAIProvider implements IModelProvider {
     return Object.fromEntries(this.models.map((m) => [m.id, m]));
   }
 
-  getDefaultParams(modelId: string): ModelDefaultParams {
-    return this.models.find((m) => m.id === modelId)?.defaultParams || {};
+  getDefaultParams(): ModelDefaultParams {
+    return this.defaultParams;
   }
 }
 

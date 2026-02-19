@@ -1,5 +1,5 @@
-import { generateText } from "ai";
 import { parseModelId } from "@yesimbot/shared-model";
+import { generateText } from "ai";
 
 import type { UserMessagePercept } from "../horizon/types";
 import type { ModelService } from "../model/service";
@@ -53,10 +53,9 @@ export class WillingnessCalculator {
     modelService: ModelService,
   ): Promise<boolean> {
     const fullId = config.willingnessModel ?? config.model;
-    const parsed = fullId ? parseModelId(fullId) : null;
-    if (!parsed) return false;
+    if (!fullId) return false;
     try {
-      const { model, defaultParams } = modelService.getModel(parsed.provider, parsed.model);
+      const { model, defaultParams } = modelService.getModel(fullId);
       const { text } = await generateText({
         ...defaultParams,
         model,

@@ -1,3 +1,4 @@
+import { parseModelId } from "@yesimbot/shared-model";
 import { generateText, type StepResult, type ToolSet } from "ai";
 import { Context, sleep } from "koishi";
 
@@ -8,7 +9,6 @@ import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
 import type { AgentCoreConfig } from "./config";
-import { parseModelId } from "@yesimbot/shared-model";
 import { buildAiSdkTools, buildStopCondition } from "./tools";
 
 class LoopAbort extends Error {}
@@ -48,16 +48,7 @@ export class ThinkActLoop {
     const stopWhen = buildStopCondition(config.maxRounds ?? 3);
 
     // Direct generateText call for step-level control
-    let parsed = config.model ? parseModelId(config.model) : null;
-    if (!parsed && config.fallbackModel) {
-      this.logger.warn(`Primary model "${config.model}" missing or invalid, trying fallback`);
-      parsed = parseModelId(config.fallbackModel);
-    }
-    if (!parsed) {
-      this.logger.warn("Missing or invalid model config");
-      return;
-    }
-    const { model, defaultParams } = modelService.getModel(parsed.provider, parsed.model);
+    const { model, defaultParams } = modelService.getModel(config.model ?? "") ?? {};
     const collectedSteps: StepResult<ToolSet>[] = [];
     let fallbackText = "";
 
@@ -93,15 +84,12 @@ export class ThinkActLoop {
       let resultText: string | undefined;
       if (config.streamMode) {
         const streamResult = await Promise.race([
-          modelService.streamCall(parsed.provider, parsed.model, callParams),
+          modelService.streamCall(config.model ?? "", callParams),
           timeoutPromise,
         ]);
         resultText = await streamResult.text;
       } else {
-        const result = await Promise.race([
-          generateText({ model, ...callParams }),
-          timeoutPromise,
-        ]);
+        const result = await Promise.race([generateText({ model, ...callParams }), timeoutPromise]);
         resultText = result.text;
       }
 
@@ -141,7 +129,8 @@ export class ThinkActLoop {
       : fallbackText.trim();
 
     await horizon.events.markAsActive(userPercept.scope, new Date());
-    const archiveMs = (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
+    const archiveMs =
+      (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
     await horizon.events.archiveStale(userPercept.scope, archiveMs);
 
     const summary = `Tools: [${toolNames.join(", ")}]. Sent: [${sentContent || "nothing"}]`;

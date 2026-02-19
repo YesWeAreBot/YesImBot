@@ -1,10 +1,13 @@
-import type { LanguageModel, CallSettings } from "ai";
+import type { LanguageModel } from "ai";
 
-export enum ModelCapability {
-  ToolCalling = "tool-calling",
-  Vision = "vision",
-  JsonMode = "json-mode",
-  Streaming = "streaming",
+export type ModelSelector = { provider: string; model: string };
+
+export enum Modality {
+  Audio = "audio",
+  Image = "image",
+  Pdf = "pdf",
+  Text = "text",
+  Video = "video",
 }
 
 export interface ModelDefaultParams {
@@ -20,18 +23,34 @@ export interface ModelDefaultParams {
 
 export interface ModelInfo {
   id: string;
-  capabilities: ModelCapability[];
-  defaultParams?: ModelDefaultParams;
-  description?: string;
+  tool_call?: boolean;
+  reasoning?: boolean;
+  modalities?: Modality[];
+  cost?: {
+    input: number;
+    output: number;
+    cache_read?: number;
+    cache_write?: number;
+    context_over_200k: {
+      input: number;
+      output: number;
+      cache_read?: number;
+      cache_write?: number;
+    };
+  };
+  limit?: { context: number; input: number; output: number };
+  headers?: Record<string, unknown>;
+  options?: Record<string, unknown>;
 }
 
 export interface IModelProvider {
   readonly id: string;
   readonly providerType: string;
   readonly models: ModelInfo[];
+  readonly defaultParams?: ModelDefaultParams;
   listModels(): Record<string, ModelInfo>;
   getModel(modelId: string): LanguageModel;
-  getDefaultParams(modelId: string): ModelDefaultParams;
+  getDefaultParams(): ModelDefaultParams;
 }
 
 export interface IModelService {
@@ -40,13 +59,6 @@ export interface IModelService {
   getProvider(name: string): IModelProvider | undefined;
   listProviders(): string[];
   getModelInfo(providerName: string, modelId: string): ModelInfo | undefined;
-}
-
-export interface ModelConfig {
-  provider: string;
-  model: string;
-  temperature?: number;
-  maxTokens?: number;
 }
 
 export type { LanguageModel };

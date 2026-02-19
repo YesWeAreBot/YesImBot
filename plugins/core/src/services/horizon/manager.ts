@@ -51,7 +51,7 @@ export class EventManager {
       priority: TimelinePriority.Normal,
       ...data,
     };
-    this.logger.debug(`record message ${data.data.senderId}: ${data.data.content}`);
+    this.logger.info(`record message ${data.data.senderId}: ${data.data.content}`);
     return this.record(entry) as Promise<MessageRecord>;
   }
 
