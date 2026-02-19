@@ -1,6 +1,7 @@
 import { Context, Schema, sleep } from "koishi";
 
 import { AgentCore } from "./services/agent";
+import { WillingnessSchema, type WillingnessConfig } from "./services/agent/willingness-config";
 import { HorizonService, type HorizonServiceConfig } from "./services/horizon";
 import { ModelService, type ModelServiceConfig } from "./services/model";
 import { PluginService, type PluginServiceConfig } from "./services/plugin";
@@ -19,12 +20,7 @@ export interface Config
   streamMode?: boolean;
   globalTimeout?: number;
   maxToolResultLength?: number;
-  willingnessModel?: string;
-  willingnessRejectThreshold?: number;
-  willingnessAcceptThreshold?: number;
-  willingCooldownMessages?: number;
-  willingCooldownMs?: number;
-  willingSoftDecayMs?: number;
+  willingness?: WillingnessConfig;
   errorReportChannel?: string;
 }
 
@@ -55,14 +51,7 @@ export const Config: Schema<Config> = Schema.object({
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
-  willingnessModel: Schema.dynamic("registry.chatModels").description(
-    "Model for willingness LLM judge",
-  ),
-  willingnessRejectThreshold: Schema.number().default(0.15),
-  willingnessAcceptThreshold: Schema.number().default(0.75),
-  willingCooldownMessages: Schema.number().default(3),
-  willingCooldownMs: Schema.number().default(60000),
-  willingSoftDecayMs: Schema.number().default(300000),
+  willingness: WillingnessSchema,
   errorReportChannel: Schema.string().description(
     "Error report channel in platform:channelId format",
   ),
@@ -87,12 +76,7 @@ export function apply(ctx: Context, config: Config) {
     streamMode: config.streamMode,
     globalTimeout: config.globalTimeout,
     maxToolResultLength: config.maxToolResultLength,
-    willingnessModel: config.willingnessModel,
-    willingnessRejectThreshold: config.willingnessRejectThreshold,
-    willingnessAcceptThreshold: config.willingnessAcceptThreshold,
-    willingCooldownMessages: config.willingCooldownMessages,
-    willingCooldownMs: config.willingCooldownMs,
-    willingSoftDecayMs: config.willingSoftDecayMs,
+    willingness: config.willingness,
     errorReportChannel: config.errorReportChannel,
   });
 
