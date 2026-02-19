@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 ## Current Position
 
 Phase: 9 (Dynamic Schema Linkage)
-Plan: —
-Status: Roadmap defined, ready to plan Phase 9
-Last activity: 2026-02-19 — v2 roadmap created (phases 9-12)
+Plan: 1 complete
+Status: Plan 09-01 complete
+Last activity: 2026-02-20 — 09-01 executed (listModels + refreshSchemas)
 
 ## Performance Metrics
 
@@ -39,6 +39,7 @@ Last activity: 2026-02-19 — v2 roadmap created (phases 9-12)
 _Updated after each plan completion_
 | Phase 03-horizon-context-system P03 | 300 | 2 tasks | 3 files |
 | Phase 08-stream-support-dead-code-cleanup P02 | 56 | 1 tasks | 1 files |
+| Phase 09-dynamic-schema-linkage P01 | 178 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,8 @@ Recent decisions affecting current work:
 - [Phase 08]: MODEL-01/02/03 corrected from Pending to Complete — provider packages exist and are functional
 - [Phase 08]: AGENT-03 and HORIZON-02 marked Partial — Phase 8 Plan 01 will complete them
 - [Phase 08]: PLATFORM-01 marked Partial — Koishi Service pattern used throughout but no formal integration test
+- [Phase 09-dynamic-schema-linkage]: Schema<string>[] typed array allows mixing Schema.const and Schema.string in union without type errors
+- [Phase 09-dynamic-schema-linkage]: Context.current gives caller context for dispose hook — auto-unregisters provider on plugin unload
 
 ### Pending Todos
 
@@ -117,5 +120,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-dynamic-schema-linkage/09-CONTEXT.md
+Stopped at: Completed 09-01-PLAN.md
+Resume file: .planning/phases/09-dynamic-schema-linkage/09-01-SUMMARY.md

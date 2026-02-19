@@ -41,8 +41,8 @@
 
 ### Model Service
 
-- [ ] **MODEL-04**: 动态 Schema 联动 — Provider 注册的模型自动出现在主插件配置下拉列表中
-- [ ] **MODEL-05**: Schema 热更新 — Provider 热插拔时配置界面自动刷新可选模型列表
+- [x] **MODEL-04**: 动态 Schema 联动 — Provider 注册的模型自动出现在主插件配置下拉列表中
+- [x] **MODEL-05**: Schema 热更新 — Provider 热插拔时配置界面自动刷新可选模型列表
 
 ### Willingness（意愿值系统）
 
@@ -99,8 +99,8 @@
 | TOOL-02     | Phase 4          | Complete | Decorator pattern in base-plugin.ts                                                        |
 | PROMPT-01   | Phase 4, Phase 7 | Complete | PromptService + DEFAULT_SYSTEM_TEMPLATE + empty-render warnings implemented                |
 | PLATFORM-01 | Phase 1, Phase 5 | Partial  | Koishi Service pattern used throughout; plugin loads but no formal integration test        |
-| MODEL-04    | Phase 9          | Pending  |                                                                                            |
-| MODEL-05    | Phase 9          | Pending  |                                                                                            |
+| MODEL-04    | Phase 9          | Complete |                                                                                            |
+| MODEL-05    | Phase 9          | Complete |                                                                                            |
 | WILLING-01  | Phase 10         | Pending  |                                                                                            |
 | WILLING-02  | Phase 10         | Pending  |                                                                                            |
 | WILLING-03  | Phase 10         | Pending  |                                                                                            |
