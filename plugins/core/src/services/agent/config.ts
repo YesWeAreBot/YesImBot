@@ -4,14 +4,13 @@ export interface AgentIdentity {
 }
 
 export interface AgentCoreConfig {
-  provider?: string;
   model?: string;
+  fallbackModel?: string;
   maxRounds?: number;
   streamMode?: boolean;
   globalTimeout?: number;
   maxToolResultLength?: number;
   identity?: AgentIdentity;
-  willingnessProvider?: string;
   willingnessModel?: string;
   willingnessRejectThreshold?: number;
   willingnessAcceptThreshold?: number;

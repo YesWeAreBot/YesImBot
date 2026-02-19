@@ -16,13 +16,12 @@ export interface Config
   defaultModel?: string;
   fallbackChains?: Record<string, Array<{ provider: string; model: string }>>;
   concurrency?: number;
-  agentProvider?: string;
-  agentModel?: string;
+  model?: string;
+  fallbackModel?: string;
   maxRounds?: number;
   streamMode?: boolean;
   globalTimeout?: number;
   maxToolResultLength?: number;
-  willingnessProvider?: string;
   willingnessModel?: string;
   willingnessRejectThreshold?: number;
   willingnessAcceptThreshold?: number;
@@ -59,14 +58,13 @@ export const Config: Schema<Config> = Schema.object({
   archiveThresholdMs: Schema.number().default(86400000),
   templates: Schema.dict(Schema.string()),
   defaultTimeout: Schema.number().default(30000),
-  agentProvider: Schema.string(),
-  agentModel: Schema.string(),
+  model: Schema.dynamic("registry.chatModels").description("Agent chat model (provider:model)"),
+  fallbackModel: Schema.dynamic("registry.chatModels").description("Fallback model when primary unavailable"),
   maxRounds: Schema.number().default(3),
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
-  willingnessProvider: Schema.string(),
-  willingnessModel: Schema.string(),
+  willingnessModel: Schema.dynamic("registry.chatModels").description("Model for willingness LLM judge"),
   willingnessRejectThreshold: Schema.number().default(0.15),
   willingnessAcceptThreshold: Schema.number().default(0.75),
   willingCooldownMessages: Schema.number().default(3),
@@ -90,13 +88,12 @@ export function apply(ctx: Context, config: Config) {
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
   ctx.plugin(AgentCore, {
-    provider: config.agentProvider,
-    model: config.agentModel,
+    model: config.model,
+    fallbackModel: config.fallbackModel,
     maxRounds: config.maxRounds,
     streamMode: config.streamMode,
     globalTimeout: config.globalTimeout,
     maxToolResultLength: config.maxToolResultLength,
-    willingnessProvider: config.willingnessProvider,
     willingnessModel: config.willingnessModel,
     willingnessRejectThreshold: config.willingnessRejectThreshold,
     willingnessAcceptThreshold: config.willingnessAcceptThreshold,
