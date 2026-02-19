@@ -173,4 +173,4 @@ yarn-error.log
 
 # Add here any additional files/directories you want to ignore in your project
 yarn.lock
-.claude/settings.local.json
+.claude/

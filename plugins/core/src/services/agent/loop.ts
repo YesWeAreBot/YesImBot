@@ -71,7 +71,9 @@ export class ThinkActLoop {
           stopWhen,
           onStepFinish: (step: StepResult<ToolSet>) => {
             this.logger.info(
-              `Step #${collectedSteps.length + 1} finished. Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. ${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
+              `Step #${collectedSteps.length + 1} finished. \
+              Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. \
+              ${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
             );
             collectedSteps.push(step);
             const calls = step.toolCalls ?? [];
@@ -86,6 +88,9 @@ export class ThinkActLoop {
       if (result.text) {
         this.logger.info(`Model output: ${result.text}`);
         fallbackText = result.text;
+        if (fallbackText.indexOf("</think>") >= 0) {
+          fallbackText = fallbackText.split("</think>").slice(-1)[0];
+        }
       }
     } catch (e) {
       if (e instanceof LoopAbort) {

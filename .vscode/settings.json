@@ -1,7 +1,5 @@
 {
-  "cSpell.words": [
-    "yesimbot"
-  ],
+  "cSpell.words": ["yesimbot"],
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.expand": false,
   "explorer.fileNesting.patterns": {
@@ -28,5 +26,5 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true
-  },
+  }
 }
