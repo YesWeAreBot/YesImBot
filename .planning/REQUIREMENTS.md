@@ -7,9 +7,9 @@
 
 ### Model Service
 
-- [ ] **MODEL-01**: Provider 插件可向核心 ModelService 注册模型，支持独立配置
-- [ ] **MODEL-02**: OpenAI Provider 插件实现，可通过 ai-sdk 调用 OpenAI 兼容 API
-- [ ] **MODEL-03**: DeepSeek Provider 插件实现，可通过 ai-sdk 调用 DeepSeek API
+- [x] **MODEL-01**: Provider 插件可向核心 ModelService 注册模型，支持独立配置
+- [x] **MODEL-02**: OpenAI Provider 插件实现，可通过 ai-sdk 调用 OpenAI 兼容 API
+- [x] **MODEL-03**: DeepSeek Provider 插件实现，可通过 ai-sdk 调用 DeepSeek API
 
 ### Agent Core
 
@@ -69,22 +69,22 @@
 
 ## Traceability
 
-| Requirement | Phase            | Status   |
-| ----------- | ---------------- | -------- |
-| MODEL-01    | Phase 2          | Pending  |
-| MODEL-02    | Phase 2          | Pending  |
-| MODEL-03    | Phase 2          | Pending  |
-| AGENT-01    | Phase 5, Phase 7 | Complete |
-| AGENT-02    | Phase 6          | Complete |
-| AGENT-03    | Phase 5, Phase 8 | Pending  |
-| HORIZON-01  | Phase 3          | Complete |
-| HORIZON-02  | Phase 3, Phase 8 | Pending  |
-| HORIZON-03  | Phase 3          | Complete |
-| HORIZON-04  | Phase 3          | Complete |
-| TOOL-01     | Phase 4          | Complete |
-| TOOL-02     | Phase 4          | Complete |
-| PROMPT-01   | Phase 4, Phase 7 | Complete |
-| PLATFORM-01 | Phase 1, Phase 5 | Pending  |
+| Requirement | Phase            | Status   | Notes                                                                                      |
+| ----------- | ---------------- | -------- | ------------------------------------------------------------------------------------------ |
+| MODEL-01    | Phase 2          | Complete | ModelService.registerProvider() implemented; provider plugins register via it              |
+| MODEL-02    | Phase 2          | Complete | provider-openai package at providers/provider-openai/src/index.ts                         |
+| MODEL-03    | Phase 2          | Complete | provider-deepseek package at providers/provider-deepseek/src/index.ts                     |
+| AGENT-01    | Phase 5, Phase 7 | Complete | AgentCore + ThinkActLoop + DEFAULT_SYSTEM_TEMPLATE fully implemented                       |
+| AGENT-02    | Phase 6          | Complete | WillingnessCalculator with rule scoring + LLM judge implemented                            |
+| AGENT-03    | Phase 5, Phase 8 | Partial  | Loop exists; streamMode config unused until Phase 8 activates it                          |
+| HORIZON-01  | Phase 3          | Complete | Environment/Entity/Event schema in place                                                   |
+| HORIZON-02  | Phase 3, Phase 8 | Partial  | Schema + records work; stage transitions (markAsActive/archiveStale) not called until Phase 8 |
+| HORIZON-03  | Phase 3          | Complete | toObservations() implemented in EventManager                                               |
+| HORIZON-04  | Phase 3          | Complete | EventListener + percept emission implemented                                               |
+| TOOL-01     | Phase 4          | Complete | PluginService + buildAiSdkTools implemented                                                |
+| TOOL-02     | Phase 4          | Complete | Decorator pattern in base-plugin.ts                                                        |
+| PROMPT-01   | Phase 4, Phase 7 | Complete | PromptService + DEFAULT_SYSTEM_TEMPLATE + empty-render warnings implemented                |
+| PLATFORM-01 | Phase 1, Phase 5 | Partial  | Koishi Service pattern used throughout; plugin loads but no formal integration test        |
 
 **Coverage:**
 
@@ -95,4 +95,4 @@
 ---
 
 _Requirements defined: 2026-02-17_
-_Last updated: 2026-02-19 after gap closure phase creation_
+_Last updated: 2026-02-19 after Phase 8 traceability audit_
