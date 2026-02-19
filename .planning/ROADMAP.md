@@ -186,15 +186,20 @@ Plans:
 
 ### Phase 10: Willingness System Migration
 
-**Goal**: Replace the v1 willingness skeleton with the full v3 decay + heat + S-curve algorithm
+**Goal**: Replace the v1 willingness skeleton with the full v3-derived algorithmic willingness system (decay + heat + sigmoid + fatigue)
 **Depends on**: Phase 8
 **Requirements**: WILLING-01, WILLING-02, WILLING-03
 **Success Criteria** (what must be TRUE):
-  1. Willingness value decays exponentially over time with a configurable half-life; cold/warm/hot conversation states are detected correctly
-  2. Repeated replies in a short window trigger S-curve saturation and eventually negative feedback, preventing over-activity
-  3. Replying costs willingness points; messages containing configured keywords raise the interest multiplier
-  4. All three algorithm parameters (decay, S-curve, cost/keywords) are exposed as user-configurable fields
-**Plans**: TBD
+  1. Willingness value decays exponentially over time with a configurable half-life; four-tier heat detection (boiling/hot/warm/cold) modulates decay rate
+  2. Sigmoid gain multiplier amplifies willingness at low values and diminishes at high values; fatigue mechanism suppresses over-activity via sliding window
+  3. Keywords matched via regex boost willingness gain; @mention uses probability boost formula
+  4. All algorithm parameters exposed as nested config groups (decay, gain, sigmoid, fatigue)
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 10-01-PLAN.md — WillingnessConfig + WillingnessEngine (decay, heat, sigmoid, fatigue, keywords)
+- [ ] 10-02-PLAN.md — AgentCore integration + root Config/Schema migration
 
 ### Phase 11: Horizon Context Filling
 
@@ -237,6 +242,6 @@ v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 | 7. Core Wiring Fixes          | 1/1            | Complete | 2026-02-19 |
 | 8. Stream & Dead Code Cleanup | 2/2            | Complete | 2026-02-19 |
 | 9. Dynamic Schema Linkage     | 2/2 | Complete    | 2026-02-19 |
-| 10. Willingness System Migration | 0/TBD       | Not started |         |
+| 10. Willingness System Migration | 0/2         | Planning |            |
 | 11. Horizon Context Filling   | 0/TBD          | Not started |         |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
