@@ -57,9 +57,11 @@ function applyMentionBoost(baseProbability: number, mentionBoost: number): numbe
 export class WillingnessEngine {
   private channels = new Map<string, ChannelState>();
   private baseFactor: number;
+  private keywordRegexes: RegExp[];
 
   constructor(private config: WillingnessConfig) {
     this.baseFactor = Math.pow(0.5, 1 / config.decay.halfLife);
+    this.keywordRegexes = config.gain.keywords.map(p => new RegExp(p));
   }
 
   tick(): void {
@@ -92,7 +94,7 @@ export class WillingnessEngine {
     state.lastMessageAt = Date.now();
 
     let gain = this.config.gain.baseGain;
-    if (this.config.gain.keywords.some(pattern => new RegExp(pattern).test(content))) {
+    if (this.keywordRegexes.some(re => re.test(content))) {
       gain *= this.config.gain.keywordMultiplier;
     }
     gain *= sigmoidGainMultiplier(state.willingness, this.config.maxWillingness, this.config.sigmoid.midpoint, this.config.sigmoid.steepness);
