@@ -6,7 +6,7 @@ import {
   ModelInfo,
 } from "@yesimbot/shared-model";
 import { type CallSettings, type Prompt, generateText, streamText } from "ai";
-import { Context, Service } from "koishi";
+import { Context, Schema, Service } from "koishi";
 import PQueue from "p-queue";
 
 declare module "koishi" {
@@ -38,16 +38,35 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     this.config = config;
     this.queue = new PQueue({ concurrency: config.concurrency || 5 });
     this.logger = ctx.logger("yesimbot.model");
+    this.refreshSchemas();
+  }
+
+  private refreshSchemas(): void {
+    const options: Schema<string>[] = [];
+    for (const [name, provider] of this.providers) {
+      const models = provider.listModels();
+      for (const [modelId, info] of Object.entries(models)) {
+        options.push(Schema.const(`${name}:${modelId}` as string).description(info.description ?? modelId));
+      }
+    }
+    options.push(Schema.string().description("Custom model (provider:model)"));
+    this.ctx.schema.set("registry.chatModels", Schema.union(options).default(""));
   }
 
   public registerProvider(name: string, provider: IModelProvider): void {
     this.providers.set(name, provider);
     this.logger.info(`Provider registered: ${name}`);
+    const caller = this[Context.current];
+    caller.on("dispose", () => {
+      this.unregisterProvider(name);
+    });
+    this.refreshSchemas();
   }
 
   public unregisterProvider(name: string): void {
     this.providers.delete(name);
     this.logger.info(`Provider unregistered: ${name}`);
+    this.refreshSchemas();
   }
 
   public getProvider(name: string): IModelProvider | undefined {

@@ -72,6 +72,10 @@ class OpenAIProvider implements IModelProvider {
     return this.client.chat(modelId);
   }
 
+  listModels(): Record<string, ModelInfo> {
+    return Object.fromEntries(this.models.map((m) => [m.id, m]));
+  }
+
   getDefaultParams(modelId: string): ModelDefaultParams {
     return this.models.find((m) => m.id === modelId)?.defaultParams || {};
   }
