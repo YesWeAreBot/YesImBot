@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 6 - Willingness & Polish
+**Current focus:** Phase 7 - Core Wiring Fixes
 
 ## Current Position
 
-Phase: 6 of 6 (Willingness & Polish)
-Plan: 2 of 2 in current phase
+Phase: 7 of 7 (Core Wiring Fixes)
+Plan: 1 of 1 in current phase
 Status: Complete
-Last activity: 2026-02-19 — Completed 06-02 error handling and typing delays
+Last activity: 2026-02-19 — Completed 07-01 DEFAULT_SYSTEM_TEMPLATE and empty-render warnings
 
 Progress: [██████████] 100%
 
@@ -98,6 +98,9 @@ Recent decisions affecting current work:
 - [06-02]: reportError swallows its own send errors to prevent infinite error loops
 - [06-02]: Fallback delay uses fallbackText.trim().length — sentContent declared after the check
 - [06-02]: Inter-part delay in send_message tool, not in loop — separation of concerns
+- [07-01]: Private field named 'log' not 'logger' — Service base class already exposes public 'logger' property
+- [07-01]: DEFAULT_SYSTEM_TEMPLATE uses {{view.self.name}} and {{#view.environment}} matching v4 HorizonView scope
+- [07-01]: Warn-only on empty render, no fallback — caller (ThinkActLoop) decides how to handle empty prompt
 
 ### Pending Todos
 
@@ -110,5 +113,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 06-02-PLAN.md
-Resume file: .planning/phases/06-willingness-polish/06-02-SUMMARY.md
+Stopped at: Completed 07-01-PLAN.md
+Resume file: .planning/phases/07-core-wiring-fixes/07-01-SUMMARY.md
