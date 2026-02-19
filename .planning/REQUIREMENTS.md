@@ -41,31 +41,45 @@
 
 ### Model Service
 
-- **MODEL-04**: 模型组与负载均衡 — 为不同任务配置模型组，支持故障转移
-- **MODEL-05**: Provider 健康检查与熔断 — Circuit breaker 模式处理 API 故障
+- [ ] **MODEL-04**: 动态 Schema 联动 — Provider 注册的模型自动出现在主插件配置下拉列表中
+- [ ] **MODEL-05**: Schema 热更新 — Provider 热插拔时配置界面自动刷新可选模型列表
 
-### Prompt System
+### Willingness（意愿值系统）
 
-- **PROMPT-02**: 模板渲染与动态注入 — Mustache 模板、变量注入、动态片段、记忆块集成
+- [ ] **WILLING-01**: 意愿值衰减 — 指数衰减算法，支持半衰期配置，对话热度检测（hot/warm/cold）
+- [ ] **WILLING-02**: S 曲线增益 — activation → saturation → negative feedback，防止过度活跃
+- [ ] **WILLING-03**: 回复成本与关键词兴趣 — 回复后意愿值扣减，关键词匹配提升兴趣乘数
 
-### Platform Integration
+### Memory（核心记忆块）
 
-- **PLATFORM-02**: 错误处理与优雅降级 — API 失败重试、graceful degradation
-- **PLATFORM-03**: 限流与成本控制 — 请求限流、token 限制、成本追踪
-- **PLATFORM-04**: 流式响应支持 — Streaming API 集成与平台适配
+- [ ] **MEMORY-01**: 文件系统记忆加载 — 从配置路径扫描 .md/.txt 文件，解析 YAML frontmatter（优先级、标签）
+- [ ] **MEMORY-02**: 记忆注入 Prompt — 加载的记忆块注入 Prompt scope，支持内置默认记忆块 fallback
+
+### Horizon（上下文填充）
+
+- [ ] **HORIZON-05**: Environment 填充 — 从 Koishi session 填充频道/群组实际数据（名称、平台、类型）
+- [ ] **HORIZON-06**: Entity 填充 — 从 session 填充用户信息（昵称、角色）和 bot 自身 Entity
+
+### Prompt（内置 snippet）
+
+- [ ] **PROMPT-02**: 内置动态 snippet — 时间（当前时间/日期）、用户信息（发送者昵称/ID）、频道信息（频道名/平台）、机器人信息（bot 名称/ID）
 
 ## Out of Scope
 
-| Feature                                       | Reason                                      |
-| --------------------------------------------- | ------------------------------------------- |
-| 三级记忆系统（L1/L2/L3）                      | v1 聚焦核心骨架，记忆系统复杂度高，后续迭代 |
-| 生命周期管理（RoutineScheduler、TaskManager） | 高级特性，需要稳定的 AgentCore 基础         |
-| 唤醒机制（ArousalHandler、离线回顾）          | 依赖生命周期管理，后续迭代                  |
-| 知识图谱与用户画像                            | 依赖记忆系统，后续迭代                      |
-| TTS/STT、RAG 记忆库                           | 非核心功能，后续迭代                        |
-| 多智能体协作                                  | v1 预留扩展点但不实现，后续迭代             |
-| Always-on 回复模式                            | 反特性：导致刷屏，不自然                    |
-| 无限工具调用深度                              | 反特性：导致循环和成本失控                  |
+| Feature                                       | Reason                                          |
+| --------------------------------------------- | ----------------------------------------------- |
+| 三级记忆系统（L1/L2/L3）                      | 核心记忆块是 L0，L1/L2/L3 后续迭代             |
+| 生命周期管理（RoutineScheduler、TaskManager） | 高级特性，需要稳定的 AgentCore 基础             |
+| 唤醒机制（ArousalHandler、离线回顾）          | 依赖生命周期管理，后续迭代                      |
+| 知识图谱与用户画像                            | 依赖记忆系统，后续迭代                          |
+| TTS/STT、RAG 记忆库                           | 非核心功能，后续迭代                            |
+| 多智能体协作                                  | v1 预留扩展点但不实现，后续迭代                 |
+| Always-on 回复模式                            | 反特性：导致刷屏，不自然                        |
+| 无限工具调用深度                              | 反特性：导致循环和成本失控                      |
+| ChatMode 机制                                 | v2 先补齐基础上下文，Mode 系统后续迭代          |
+| 内置工具迁移（CoreUtil/QManager 等）          | v2 聚焦核心体验，工具后续迁移                   |
+| 模型组与负载均衡                              | v2 聚焦功能平替，高级模型管理后续迭代           |
+| Circuit breaker 熔断                          | v2 聚焦功能平替，生产级容错后续迭代             |
 
 ## Traceability
 
@@ -92,7 +106,11 @@
 - Mapped to phases: 14
 - Unmapped: 0 ✓
 
+- v2 requirements: 10 total
+- Mapped to phases: 0 (pending roadmap)
+- Unmapped: 10
+
 ---
 
 _Requirements defined: 2026-02-17_
-_Last updated: 2026-02-19 after Phase 8 traceability audit_
+_Last updated: 2026-02-19 after v2 milestone requirements definition_
