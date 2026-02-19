@@ -15,7 +15,7 @@
 
 - [x] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
 - [x] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
-- [x] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程
+- [x] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程（含 streamMode 分支）
 
 ### Horizon (Context Management)
 
@@ -76,9 +76,9 @@
 | MODEL-03    | Phase 2          | Complete | provider-deepseek package at providers/provider-deepseek/src/index.ts                     |
 | AGENT-01    | Phase 5, Phase 7 | Complete | AgentCore + ThinkActLoop + DEFAULT_SYSTEM_TEMPLATE fully implemented                       |
 | AGENT-02    | Phase 6          | Complete | WillingnessCalculator with rule scoring + LLM judge implemented                            |
-| AGENT-03    | Phase 5, Phase 8 | Partial  | Loop exists; streamMode config unused until Phase 8 activates it                          |
+| AGENT-03    | Phase 5, Phase 8 | Complete | streamMode branch wired in ThinkActLoop; streamCall uses PQueue concurrency control        |
 | HORIZON-01  | Phase 3          | Complete | Environment/Entity/Event schema in place                                                   |
-| HORIZON-02  | Phase 3, Phase 8 | Partial  | Schema + records work; stage transitions (markAsActive/archiveStale) not called until Phase 8 |
+| HORIZON-02  | Phase 3, Phase 8 | Complete | Schema + records + stage transitions (markAsActive/archiveStale) wired after agent response |
 | HORIZON-03  | Phase 3          | Complete | toObservations() implemented in EventManager                                               |
 | HORIZON-04  | Phase 3          | Complete | EventListener + percept emission implemented                                               |
 | TOOL-01     | Phase 4          | Complete | PluginService + buildAiSdkTools implemented                                                |
