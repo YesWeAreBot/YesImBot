@@ -1,3 +1,5 @@
+import type { WillingnessConfig } from "./willingness-config";
+
 export interface AgentIdentity {
   name?: string;
   description?: string;
@@ -11,11 +13,6 @@ export interface AgentCoreConfig {
   globalTimeout?: number;
   maxToolResultLength?: number;
   identity?: AgentIdentity;
-  willingnessModel?: string;
-  willingnessRejectThreshold?: number;
-  willingnessAcceptThreshold?: number;
-  willingCooldownMessages?: number;
-  willingCooldownMs?: number;
-  willingSoftDecayMs?: number;
+  willingness?: WillingnessConfig;
   errorReportChannel?: string;
 }
