@@ -22,12 +22,14 @@ export interface ModelInfo {
   id: string;
   capabilities: ModelCapability[];
   defaultParams?: ModelDefaultParams;
+  description?: string;
 }
 
 export interface IModelProvider {
   readonly id: string;
   readonly providerType: string;
   readonly models: ModelInfo[];
+  listModels(): Record<string, ModelInfo>;
   getModel(modelId: string): LanguageModel;
   getDefaultParams(modelId: string): ModelDefaultParams;
 }
