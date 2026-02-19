@@ -131,5 +131,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 10-02-PLAN.md
-Resume file: .planning/phases/10-willingness-system-migration/10-02-SUMMARY.md
+Stopped at: Phase 11 context gathered
+Resume file: .planning/phases/11-horizon-context-filling/11-CONTEXT.md
