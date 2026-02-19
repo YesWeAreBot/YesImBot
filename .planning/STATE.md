@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 ## Current Position
 
 Phase: 10 (Willingness System Migration)
-Plan: 0
-Status: Context gathered — ready for planning
-Last activity: 2026-02-20 — Phase 10 context discussion complete
+Plan: 1
+Status: In progress
+Last activity: 2026-02-20 — Phase 10 Plan 01 complete
 
 ## Performance Metrics
 
@@ -41,6 +41,7 @@ _Updated after each plan completion_
 | Phase 08-stream-support-dead-code-cleanup P02 | 56 | 1 tasks | 1 files |
 | Phase 09-dynamic-schema-linkage P01 | 178 | 2 tasks | 4 files |
 | Phase 09-dynamic-schema-linkage P02 | 240 | 2 tasks | 5 files |
+| Phase 10-willingness-system-migration P01 | 100 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,8 @@ Recent decisions affecting current work:
 - [Phase 09-02]: parseModelId added to shared-model — single source of truth for splitting provider:model strings
 - [Phase 09-02]: AgentCoreConfig.provider/willingnessProvider removed; model field now holds full provider:model string
 - [Phase 09-02]: Fallback in loop.ts is parse-time — if config.model invalid, try config.fallbackModel before returning
+- [Phase 10-willingness-system-migration]: WillingnessEngine replaces WillingnessCalculator — pure algorithmic, no LLM judge
+- [Phase 10-willingness-system-migration]: processMessage() is synchronous — returns { probability, shouldReply } immediately, no async LLM call
 
 ### Pending Todos
 

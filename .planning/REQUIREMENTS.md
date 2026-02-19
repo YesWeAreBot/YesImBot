@@ -46,9 +46,9 @@
 
 ### Willingness（意愿值系统）
 
-- [ ] **WILLING-01**: 意愿值衰减 — 指数衰减算法，支持半衰期配置，对话热度检测（hot/warm/cold）
-- [ ] **WILLING-02**: S 曲线增益 — activation → saturation → negative feedback，防止过度活跃
-- [ ] **WILLING-03**: 回复成本与关键词兴趣 — 回复后意愿值扣减，关键词匹配提升兴趣乘数
+- [x] **WILLING-01**: 意愿值衰减 — 指数衰减算法，支持半衰期配置，对话热度检测（hot/warm/cold）
+- [x] **WILLING-02**: S 曲线增益 — activation → saturation → negative feedback，防止过度活跃
+- [x] **WILLING-03**: 回复成本与关键词兴趣 — 回复后意愿值扣减，关键词匹配提升兴趣乘数
 
 ### Memory（核心记忆块）
 
@@ -101,9 +101,9 @@
 | PLATFORM-01 | Phase 1, Phase 5 | Partial  | Koishi Service pattern used throughout; plugin loads but no formal integration test        |
 | MODEL-04    | Phase 9          | Complete |                                                                                            |
 | MODEL-05    | Phase 9          | Complete |                                                                                            |
-| WILLING-01  | Phase 10         | Pending  |                                                                                            |
-| WILLING-02  | Phase 10         | Pending  |                                                                                            |
-| WILLING-03  | Phase 10         | Pending  |                                                                                            |
+| WILLING-01  | Phase 10         | Complete |                                                                                            |
+| WILLING-02  | Phase 10         | Complete |                                                                                            |
+| WILLING-03  | Phase 10         | Complete |                                                                                            |
 | HORIZON-05  | Phase 11         | Pending  |                                                                                            |
 | HORIZON-06  | Phase 11         | Pending  |                                                                                            |
 | MEMORY-01   | Phase 12         | Pending  |                                                                                            |

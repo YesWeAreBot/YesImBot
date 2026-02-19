@@ -242,6 +242,6 @@ v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 | 7. Core Wiring Fixes          | 1/1            | Complete | 2026-02-19 |
 | 8. Stream & Dead Code Cleanup | 2/2            | Complete | 2026-02-19 |
 | 9. Dynamic Schema Linkage     | 2/2 | Complete    | 2026-02-19 |
-| 10. Willingness System Migration | 0/2         | Planning |            |
+| 10. Willingness System Migration | 1/2 | In Progress|  |
 | 11. Horizon Context Filling   | 0/TBD          | Not started |         |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
