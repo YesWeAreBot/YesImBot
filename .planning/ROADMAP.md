@@ -306,4 +306,4 @@ gap closure: 13 → 14; 15 can run in parallel with 14 (both depend on 13)
 | 12. Memory & Prompt Snippets  | 2/2 | Complete    | 2026-02-20 |
 | 13. Non-stream Path & Fallback | 2/2 | Complete    | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | 1/1     | Complete    | 2026-02-20 |
-| 15. LLM Deferred Judgment & Config | 2/2 | Complete   | 2026-02-20 |
+| 15. LLM Deferred Judgment & Config | 2/2 | Complete    | 2026-02-20 |
