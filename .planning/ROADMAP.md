@@ -298,7 +298,7 @@ gap closure: 13 → 14; 15 can run in parallel with 14 (both depend on 13)
 | 9. Dynamic Schema Linkage     | 2/2 | Complete    | 2026-02-19 |
 | 10. Willingness System Migration | 2/2 | Complete    | 2026-02-19 |
 | 11. Horizon Context Filling   | 1/1 | Complete    | 2026-02-20 |
-| 12. Memory & Prompt Snippets  | 2/2 | Complete   | 2026-02-20 |
+| 12. Memory & Prompt Snippets  | 2/2 | Complete    | 2026-02-20 |
 | 13. Non-stream Path & Fallback | 2/2 | Complete    | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | 1/1     | Complete    | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | 0/TBD     | Not started |         |
