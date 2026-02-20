@@ -23,8 +23,6 @@ export type GenerateResult = Awaited<ReturnType<typeof generateText>>;
 export type StreamResult = Awaited<ReturnType<typeof streamText>>;
 
 export interface ModelServiceConfig {
-  defaultModel?: string;
-  fallbackChains?: string[];
   concurrency?: number;
 }
 
@@ -114,6 +112,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     model: string | ModelSelector,
     params: CallParams,
     fallbackModel?: string | ModelSelector,
+    fallbackChain?: string[],
   ): Promise<GenerateResult | undefined> {
     const { provider, modelId } = this.resolveModel(model);
 
@@ -129,10 +128,10 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
             try {
               return await this.executeCall(fb.provider, fb.modelId, params);
             } catch {
-              return await this.handleFallback(params, error);
+              return await this.handleFallback(params, error, fallbackChain);
             }
           }
-          return await this.handleFallback(params, error);
+          return await this.handleFallback(params, error, fallbackChain);
         }
         throw error;
       }
@@ -175,6 +174,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     model: string | ModelSelector,
     params: CallParams,
     fallbackModel?: string | ModelSelector,
+    fallbackChain?: string[],
   ): Promise<StreamResult> {
     const { provider, modelId } = this.resolveModel(model);
 
@@ -190,10 +190,10 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
             try {
               return await this.executeStreamCall(fb.provider, fb.modelId, params);
             } catch {
-              return await this.handleStreamFallback(params, error);
+              return await this.handleStreamFallback(params, error, fallbackChain);
             }
           }
-          return await this.handleStreamFallback(params, error);
+          return await this.handleStreamFallback(params, error, fallbackChain);
         }
         throw error;
       }
@@ -220,8 +220,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     return new Map(this.usage);
   }
 
-  private async handleFallback(params: CallParams, error: unknown) {
-    const chain = this.config.fallbackChains;
+  private async handleFallback(params: CallParams, error: unknown, chain?: string[]) {
 
     if (!chain || chain.length === 0) throw error;
 
@@ -241,8 +240,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     throw error;
   }
 
-  private async handleStreamFallback(params: CallParams, error: unknown) {
-    const chain = this.config.fallbackChains;
+  private async handleStreamFallback(params: CallParams, error: unknown, chain?: string[]) {
 
     if (!chain || chain.length === 0) throw error;
 
