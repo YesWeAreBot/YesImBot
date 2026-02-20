@@ -5,6 +5,7 @@ import { WillingnessSchema, type WillingnessConfig } from "./services/agent/will
 import { HorizonService, type HorizonServiceConfig } from "./services/horizon";
 import { ModelService, type ModelServiceConfig } from "./services/model";
 import { PluginService, type PluginServiceConfig } from "./services/plugin";
+import { MemoryService, type MemoryConfig } from "./services/memory";
 import { PromptService, type PromptServiceConfig } from "./services/prompt";
 
 export const name = "yesimbot-core";
@@ -12,7 +13,7 @@ export const name = "yesimbot-core";
 export const inject = ["database"];
 
 export interface Config
-  extends HorizonServiceConfig, PromptServiceConfig, PluginServiceConfig, ModelServiceConfig {
+  extends HorizonServiceConfig, PromptServiceConfig, PluginServiceConfig, ModelServiceConfig, MemoryConfig {
   concurrency?: number;
   model?: string;
   fallbackModel?: string;
@@ -58,6 +59,8 @@ export const Config: Schema<Config> = Schema.object({
   botName: Schema.string().description("Bot display name (overrides platform name)"),
   entityCacheTtl: Schema.number().default(3600000).description("Entity cache TTL in ms"),
   maxActiveEntities: Schema.number().default(15).description("Max entities shown to LLM"),
+  coreMemoryPath: Schema.path({ filters: ["directory"] }).description("Directory containing memory block files (.md/.txt)"),
+  memoryCharLimit: Schema.number().default(4000).description("Maximum characters for memory block injection"),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -74,6 +77,7 @@ export function apply(ctx: Context, config: Config) {
     maxActiveEntities: config.maxActiveEntities,
   });
   ctx.plugin(PromptService, { templates: config.templates });
+  ctx.plugin(MemoryService, { coreMemoryPath: config.coreMemoryPath, memoryCharLimit: config.memoryCharLimit });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
   ctx.plugin(AgentCore, {
     model: config.model,
@@ -109,6 +113,7 @@ async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void>
     "yesimbot.model",
     "yesimbot.plugin",
     "yesimbot.prompt",
+    "yesimbot.memory",
   ];
   const resolvedServices = new Set<string>();
   const startTime = Date.now();
