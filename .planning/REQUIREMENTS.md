@@ -61,29 +61,29 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROMPT-01 | — | Pending |
-| PROMPT-02 | — | Pending |
-| PROMPT-03 | — | Pending |
-| PROMPT-04 | — | Pending |
-| PROMPT-05 | — | Pending |
-| HVIEW-01 | — | Pending |
-| HVIEW-02 | — | Pending |
-| TRAIT-01 | — | Pending |
-| TRAIT-02 | — | Pending |
-| TRAIT-03 | — | Pending |
-| TRAIT-04 | — | Pending |
-| TRAIT-05 | — | Pending |
-| SKILL-01 | — | Pending |
-| SKILL-02 | — | Pending |
-| SKILL-03 | — | Pending |
-| SKILL-04 | — | Pending |
-| SKILL-05 | — | Pending |
+| PROMPT-01 | Phase 16 | Pending |
+| PROMPT-02 | Phase 16 | Pending |
+| PROMPT-03 | Phase 16 | Pending |
+| PROMPT-04 | Phase 16 | Pending |
+| PROMPT-05 | Phase 16 | Pending |
+| HVIEW-01 | Phase 16 | Pending |
+| HVIEW-02 | Phase 16 | Pending |
+| TRAIT-01 | Phase 17 | Pending |
+| TRAIT-02 | Phase 17 | Pending |
+| TRAIT-03 | Phase 17 | Pending |
+| TRAIT-04 | Phase 17 | Pending |
+| TRAIT-05 | Phase 17 | Pending |
+| SKILL-01 | Phase 18 | Pending |
+| SKILL-02 | Phase 18 | Pending |
+| SKILL-03 | Phase 18 | Pending |
+| SKILL-04 | Phase 18 | Pending |
+| SKILL-05 | Phase 19 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17 ⚠️
+- Mapped to phases: 17
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-21*
-*Last updated: 2026-02-21 after initial definition*
+*Last updated: 2026-02-21 after roadmap creation*

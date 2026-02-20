@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Foundation + Feature Parity** — Phases 1-15 (shipped 2026-02-21)
+- 🚧 **v2.0 Context-Aware Architecture** — Phases 16-19 (in progress)
 
 ## Phases
 
@@ -27,7 +28,66 @@
 
 </details>
 
+### 🚧 v2.0 Context-Aware Architecture
+
+**Milestone Goal:** 重设计提示词服务架构，建立模块化提示词结构，引入 Trait + Skill 上下文感知行为调整体系——替代 ChatMode 的离散模式切换。
+
+- [ ] **Phase 16: PromptService Redesign + HorizonView** - Multi-section prompt architecture with named injection points, partial composition, and structured context rendering
+- [ ] **Phase 17: Trait Perception** - Multi-dimensional context analysis framework with scene and heat detectors
+- [ ] **Phase 18: Skill Response** - File-based skill definitions with trait-conditional activation and layered effect merging
+- [ ] **Phase 19: Integration & Validation** - End-to-end pipeline wiring with example skills proving the full Trait-Skill loop
+
+## Phase Details
+
+### Phase 16: PromptService Redesign + HorizonView
+**Goal**: Plugins can compose multi-section prompts through named injection points and modular partials, with HorizonView rendering structured context
+**Depends on**: v1.0 complete
+**Requirements**: PROMPT-01, PROMPT-02, PROMPT-03, PROMPT-04, PROMPT-05, HVIEW-01, HVIEW-02
+**Success Criteria** (what must be TRUE):
+  1. A plugin can register injections at named points (identity/environment/style/memories/tools/output) with priority ordering, and the rendered prompt reflects correct section placement
+  2. A plugin can register a custom partial and reference it via `{{>partial}}` in templates, with the rendered output including the partial content
+  3. When a sub-plugin is unloaded, its registered injections and partials are automatically removed from the prompt without manual cleanup
+  4. HorizonView output uses structured tagged sections (environment/members/history) that the prompt template consumes as distinct partials
+  5. The default system template renders all named sections with sensible defaults when no custom injections are registered
+**Plans**: TBD
+
+### Phase 17: Trait Perception
+**Goal**: The system can analyze conversation context across multiple dimensions in parallel, producing typed signals that downstream consumers can react to
+**Depends on**: Phase 16
+**Requirements**: TRAIT-01, TRAIT-02, TRAIT-03, TRAIT-04, TRAIT-05
+**Success Criteria** (what must be TRUE):
+  1. Multiple TraitDetectors run in parallel against a HorizonView and each produces typed TraitSignal results without blocking each other
+  2. SceneTrait correctly identifies group chat, private chat, direct mention, and being-ignored scenarios from conversation context
+  3. HeatTrait tracks conversation activity rate and trend direction (heating/cooling/stable) per channel
+  4. TraitSignal protocol is defined such that a consumer can match against signals without importing detector implementations (decoupled)
+  5. Stateful traits persist per-channel and update incrementally across conversations
+**Plans**: TBD
+
+### Phase 18: Skill Response
+**Goal**: Skills defined as file-based folders activate against trait signals and modify prompt sections, style, and tool availability through layered effect merging
+**Depends on**: Phase 17
+**Requirements**: SKILL-01, SKILL-02, SKILL-03, SKILL-04
+**Success Criteria** (what must be TRUE):
+  1. A skill folder (SKILL.md + scripts/ + references/) with YAML frontmatter is loaded by SkillRegistry and its metadata is accessible at runtime
+  2. SkillRegistry detects file changes and hot-reloads skill definitions without restarting the bot
+  3. Skills activate when their declared trait-signal conditions match, supporting both declarative YAML conditions and programmatic activators
+  4. When multiple skills activate simultaneously, their prompt injections and tool additions stack additively while style effects resolve by priority
+**Plans**: TBD
+
+### Phase 19: Integration & Validation
+**Goal**: The full Trait-Skill pipeline is wired into ThinkActLoop, with example skills demonstrating end-to-end context-aware behavior adaptation
+**Depends on**: Phase 18
+**Requirements**: SKILL-05
+**Success Criteria** (what must be TRUE):
+  1. ThinkActLoop invokes TraitAnalyzer and SkillRegistry between buildView() and prompt rendering, with active skill effects reflected in the LLM call
+  2. At least one example skill demonstrably changes bot behavior (prompt content, style, or available tools) based on detected trait signals in a real conversation flow
+  3. Existing v1.0 functionality (willingness gate, tool calling, memory injection) continues working unchanged through the new pipeline
+**Plans**: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 16 → 17 → 18 → 19
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -46,7 +106,7 @@
 | 13. Non-stream Path & Fallback | v1.0 | 2/2 | Complete | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | v1.0 | 1/1 | Complete | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | v1.0 | 2/2 | Complete | 2026-02-20 |
-
----
-
-_Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`_
+| 16. PromptService Redesign + HorizonView | v2.0 | 0/? | Not started | - |
+| 17. Trait Perception | v2.0 | 0/? | Not started | - |
+| 18. Skill Response | v2.0 | 0/? | Not started | - |
+| 19. Integration & Validation | v2.0 | 0/? | Not started | - |
