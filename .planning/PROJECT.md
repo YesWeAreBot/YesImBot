@@ -8,7 +8,16 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
 
-## Current Milestone: Planning next milestone
+## Current Milestone: v2.0 Context-Aware Architecture
+
+**Goal:** 重设计提示词服务架构，建立模块化提示词结构，引入 Trait + Skill 上下文感知行为调整体系——替代 ChatMode 的离散模式切换。
+
+**Target features:**
+- PromptService 架构重设计：多注入点、上下文感知、生命周期管理
+- 模块化提示词结构：partial 组合（identity / environment / working_memory / memories / tools / output）
+- HorizonView 渲染优化：结构化上下文编排
+- Trait 感知层：多维度并行分析上下文（场景、话题、热度等）
+- Skill 响应层：文件夹规范定义、条件激活、分层效果叠加
 
 ## Requirements
 
@@ -31,7 +40,11 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ### Active
 
-(None yet — define in next milestone)
+- [ ] PromptService 架构重设计：多注入点、上下文感知渲染、生命周期管理
+- [ ] 模块化提示词结构：partial 组合替代单体模板
+- [ ] HorizonView 渲染优化：结构化上下文编排
+- [ ] Trait 感知层：多维度并行上下文分析
+- [ ] Skill 响应层：文件夹规范定义、条件激活、分层效果叠加
 
 ### Out of Scope
 
@@ -39,7 +52,7 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - 生命周期管理（RoutineScheduler、TaskManager）— 高级特性，后续迭代
 - 唤醒机制（ArousalHandler、离线回顾）— 后续迭代
 - 知识图谱与用户画像 — 后续迭代
-- ChatMode 机制 — v2 先补齐基础上下文，Mode 系统后续迭代
+- ChatMode 机制 — 已被 Trait + Skill 体系替代（v2.0 架构决策）
 - 内置工具迁移（CoreUtil/QManager/Interactions）— v2 聚焦核心体验，工具后续迁移
 - 模型组与负载均衡 — v2 聚焦功能平替，高级模型管理后续迭代
 - TTS/STT、RAG 记忆库 — 后续迭代
@@ -78,6 +91,9 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | Horizon 三元组架构 | Environment/Entity/Event 替代 per-channel 隔离 | ✓ Good — 支持跨频道 Entity 连续性 |
 | PQueue 并发控制 | 防止 LLM API 过载 | ✓ Good — call/streamCall 统一队列化 |
 | per-module fallbackChain | 替代全局 defaultModel，更灵活 | ✓ Good — agent/willingness 独立 fallback |
+| Trait + Skill 替代 ChatMode | ChatMode 是离散模式切换，无法描述多维度叠加的真实场景；Trait 感知 + Skill 响应解耦更灵活 | — Pending |
+| PromptService 重设计 | v1 的 Injection 是为插件工具注入临时加的 hack，不支持多注入点和上下文感知 | — Pending |
+| Skill 分层效果叠加 | Prompt/Tools 层叠加，Style 层优先级覆盖，Willingness 不直接干预 | — Pending |
 
 ---
-*Last updated: 2026-02-21 after v1.0 milestone*
+*Last updated: 2026-02-21 after v2.0 milestone started*
