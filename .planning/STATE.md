@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 ## Current Position
 
-Phase: 12 (Memory Prompt Snippets)
-Plan: 2 of 2
+Phase: 14 (Provider Pattern & PLATFORM-01)
+Plan: 1 of 1
 Status: Phase Complete
-Last activity: 2026-02-20 — Phase 12 Plan 02 complete
+Last activity: 2026-02-21 — Phase 14 Plan 01 complete
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ _Updated after each plan completion_
 | Phase 13-non-stream-path-fallback-wiring P02 | 105 | 2 tasks | 2 files |
 | Phase 12-memory-prompt-snippets P01 | 179 | 2 tasks | 5 files |
 | Phase 12-memory-prompt-snippets P02 | 103 | 2 tasks | 2 files |
+| Phase 14-provider-pattern-platform01 P01 | 250 | 4 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,7 @@ Recent decisions affecting current work:
 - [Phase 12-02]: Intl.DateTimeFormat zh-CN for Chinese-friendly time (no external date library)
 - [Phase 12-02]: HorizonView cast from scope.view with optional chaining for safe access
 - [Phase 12-02]: Schema.path with directory filter for coreMemoryPath config UI
+- [Phase 14-01]: Provider declaration merging blocks are required — providers don't depend on core plugin at compile time
 
 ### Pending Todos
 
@@ -151,6 +153,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-20
-Stopped at: Completed 12-02-PLAN.md
-Resume file: .planning/phases/12-memory-prompt-snippets/12-02-SUMMARY.md
+Last session: 2026-02-21
+Stopped at: Completed 14-01-PLAN.md
+Resume file: .planning/phases/14-provider-pattern-platform01/14-01-SUMMARY.md
