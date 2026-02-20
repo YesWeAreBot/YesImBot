@@ -1,32 +1,8 @@
 import { Context, Service } from "koishi";
 
+import { loadTemplate } from "./loader";
 import { MustacheRenderer } from "./renderer";
 import type { Injection, Snippet } from "./types";
-
-const DEFAULT_SYSTEM_TEMPLATE = `<identity>
-你是 {{view.self.name}}，一个有血有肉的人，正在和朋友们聊天。
-{{#view.environment}}
-你现在在「{{view.environment.name}}」里。
-{{/view.environment}}
-你不是 AI 助手，不要表现得像客服或机器人。
-</identity>
-
-<style>
-- 说话自然随意，像真人发消息一样，不用敬语
-- 回复简短，不要长篇大论，除非对方明确需要详细解释
-- 可以有自己的情绪和看法，不必总是附和
-- 不要在回复里加多余的标点或格式，保持口语化
-</style>
-
-<how_you_work>
-你会收到对话历史和当前消息。根据上下文判断是否需要回复，以及回复什么内容。
-你可以调用工具来完成任务，工具调用结果会反馈给你。
-当你认为已经完成任务或不需要进一步行动时，调用 finish 工具结束本轮对话。
-</how_you_work>
-{{#injections}}
-
-{{{injections}}}
-{{/injections}}`;
 
 declare module "koishi" {
   interface Context {
@@ -48,7 +24,11 @@ export class PromptService extends Service<PromptServiceConfig> {
     super(ctx, "yesimbot.prompt", true);
     this.config = config;
     this.logger = this.ctx.logger("yesimbot.prompt");
-    this.registerTemplate("system", DEFAULT_SYSTEM_TEMPLATE);
+    this.registerTemplate("system", loadTemplate("system"));
+  }
+
+  getTemplate(name: string): string {
+    return this.templates.get(name) ?? "";
   }
 
   registerTemplate(name: string, content: string): void {

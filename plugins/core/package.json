@@ -2,7 +2,8 @@
   "name": "koishi-plugin-yesimbot",
   "version": "0.0.0",
   "files": [
-    "dist"
+    "dist",
+    "resources"
   ],
   "type": "module",
   "main": "./dist/index.cjs",

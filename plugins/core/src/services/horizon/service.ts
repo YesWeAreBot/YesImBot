@@ -1,8 +1,10 @@
+import Mustache from "mustache";
 import { Context, Service } from "koishi";
 
 import { HorizonServiceConfig } from "./config";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
+import { loadPartial } from "../prompt/loader";
 import type {
   Entity,
   EntityRecord,
@@ -183,40 +185,37 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return `[${hhmm}] [Bot Summary]: ${obs.summary}`;
   }
 
-  formatHorizonText(view: HorizonView): string {
-    const lines: string[] = [];
+  private horizonViewTpl = loadPartial("horizon-view");
 
+  formatHorizonText(view: HorizonView): string {
+    let environment = "";
     if (view.environment) {
       const env = view.environment;
       const platform = (env.metadata?.platform as string) || "";
       const typeLabel = env.type === "private" ? "Private" : "Group";
-      if (platform && !env.name.includes(":")) {
-        lines.push(`Environment: ${env.name} (${platform}, ${typeLabel})`);
-      } else {
-        lines.push(`Environment: ${env.name} (${typeLabel})`);
-      }
+      environment = platform && !env.name.includes(":")
+        ? `${env.name} (${platform}, ${typeLabel})`
+        : `${env.name} (${typeLabel})`;
     }
 
+    let activeMembers = "";
     if (view.entities?.length) {
-      const names = view.entities.map((e) => {
+      activeMembers = view.entities.map((e) => {
         const badge = this.getRoleBadge(e.attributes);
         return badge ? `${e.name} [${badge.trim().slice(1, -1)}]` : e.name;
-      });
-      lines.push(`Active members: ${names.join(", ")}`);
+      }).join(", ");
     }
 
-    if (view.history?.length) {
-      lines.push("--- Message History ---");
-      for (const obs of view.history) {
-        lines.push(this.formatObservation(obs, view.self.id));
-      }
-    }
-
+    const observations = view.history?.map((obs) => this.formatObservation(obs, view.self.id)) ?? [];
     const p = view.percept as UserMessagePercept;
-    lines.push("--- Trigger ---");
-    lines.push(`Type: ${p.triggerType}`);
-    lines.push(`Message: ${p.payload.content}`);
 
-    return lines.join("\n");
+    return Mustache.render(this.horizonViewTpl, {
+      environment,
+      activeMembers,
+      hasHistory: observations.length > 0,
+      observations,
+      triggerType: p.triggerType,
+      triggerMessage: p.payload.content,
+    }).trim();
   }
 }

@@ -1,0 +1,15 @@
+{{#environment}}
+Environment: {{environment}}
+{{/environment}}
+{{#activeMembers}}
+Active members: {{activeMembers}}
+{{/activeMembers}}
+{{#hasHistory}}
+--- Message History ---
+{{#observations}}
+{{{.}}}
+{{/observations}}
+{{/hasHistory}}
+--- Trigger ---
+Type: {{triggerType}}
+Message: {{triggerMessage}}

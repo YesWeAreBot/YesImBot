@@ -7,17 +7,10 @@ import Mustache from "mustache";
 import { Context, Service } from "koishi";
 
 import type { HorizonView } from "../horizon/types";
+import { loadTemplate, loadPartial } from "../prompt/loader";
 import type { MemoryBlock, MemoryConfig } from "./types";
 
-const DEFAULT_PERSONA = `## 关于我
-
-我是一个友好的聊天伙伴。我会根据对话内容自然地回应，保持真诚和适度的好奇心。
-
-## 交流风格
-
-- 自然对话，不过度正式也不过度随意
-- 根据对方的语气和话题调整回应方式
-- 有自己的想法，但尊重不同观点`;
+const DEFAULT_PERSONA = loadTemplate("default-persona");
 
 declare module "koishi" {
   interface Context {
@@ -155,28 +148,27 @@ export class MemoryService extends Service<MemoryConfig> {
   private registerInjection(): void {
     const log = this.ctx.logger("yesimbot.memory");
     const limit = this.config.memoryCharLimit ?? 4000;
+    const coreMemoryTpl = loadTemplate("core-memory");
+    const partials = { "memory-block": loadPartial("memory-block") };
 
     this.ctx["yesimbot.prompt"].inject("core-memory", 10, (scope) => {
       if (!this.blocks.length) return "";
 
       let used = 0;
-      const parts: string[] = [];
+      const blocks: { label: string; title?: string; rendered: string }[] = [];
 
       for (const block of this.blocks) {
         const rendered = Mustache.render(block.content, scope);
-        const blockXml = block.title
-          ? `<${block.label}>\n<title>${block.title}</title>\n${rendered}\n</${block.label}>`
-          : `<${block.label}>\n${rendered}\n</${block.label}>`;
-
-        if (used + blockXml.length > limit && parts.length > 0) {
+        const est = `<${block.label}>${rendered}</${block.label}>`.length;
+        if (used + est > limit && blocks.length > 0) {
           log.warn("Memory char limit reached, skipping remaining blocks");
           break;
         }
-        parts.push(blockXml);
-        used += blockXml.length;
+        blocks.push({ label: block.label, title: block.title, rendered });
+        used += est;
       }
 
-      return parts.length ? `<core_memory>\n${parts.join("\n\n")}\n</core_memory>` : "";
+      return blocks.length ? Mustache.render(coreMemoryTpl, { blocks }, partials) : "";
     });
   }
 }
