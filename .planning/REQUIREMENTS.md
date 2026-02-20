@@ -52,8 +52,8 @@
 
 ### Memory（核心记忆块）
 
-- [ ] **MEMORY-01**: 文件系统记忆加载 — 从配置路径扫描 .md/.txt 文件，解析 YAML frontmatter（优先级、标签）
-- [ ] **MEMORY-02**: 记忆注入 Prompt — 加载的记忆块注入 Prompt scope，支持内置默认记忆块 fallback
+- [x] **MEMORY-01**: 文件系统记忆加载 — 从配置路径扫描 .md/.txt 文件，解析 YAML frontmatter（优先级、标签）
+- [x] **MEMORY-02**: 记忆注入 Prompt — 加载的记忆块注入 Prompt scope，支持内置默认记忆块 fallback
 
 ### Horizon（上下文填充）
 
@@ -106,8 +106,8 @@
 | WILLING-03  | Phase 10         | Complete |                                                                                            |
 | HORIZON-05  | Phase 11         | Complete |                                                                                            |
 | HORIZON-06  | Phase 11         | Complete |                                                                                            |
-| MEMORY-01   | Phase 12         | Pending  |                                                                                            |
-| MEMORY-02   | Phase 12         | Pending  |                                                                                            |
+| MEMORY-01   | Phase 12         | Complete |                                                                                            |
+| MEMORY-02   | Phase 12         | Complete |                                                                                            |
 | PROMPT-02   | Phase 12         | Pending  |                                                                                            |
 
 **Coverage:**

@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 ## Current Position
 
-Phase: 13 (Non-stream Path & Fallback Wiring)
-Plan: 2 of 2
-Status: Phase Complete
-Last activity: 2026-02-20 — Phase 13 Plan 02 complete
+Phase: 12 (Memory Prompt Snippets)
+Plan: 1 of 2
+Status: In Progress
+Last activity: 2026-02-20 — Phase 12 Plan 01 complete
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ _Updated after each plan completion_
 | Phase 11-horizon-context-filling P01 | 290 | 2 tasks | 4 files |
 | Phase 13-non-stream-path-fallback-wiring P01 | 107 | 1 tasks | 2 files |
 | Phase 13-non-stream-path-fallback-wiring P02 | 105 | 2 tasks | 2 files |
+| Phase 12-memory-prompt-snippets P01 | 179 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,9 @@ Recent decisions affecting current work:
 - [Phase 13-01]: Fallback chain order: primary (with retry) -> per-call fallback -> global chain -> throw
 - [Phase 13-02]: No defaultParams in loop.ts — ModelService merges provider defaults internally via executeCall/executeStreamCall
 - [Phase 13-02]: finishTool appended after plugin tool loop (last-wins) instead of pre-seeded (first-loses)
+- [Phase 12-01]: js-yaml added as direct dependency with @types/js-yaml for type safety
+- [Phase 12-01]: Hand-rolled frontmatter parsing with regex + js-yaml (no gray-matter)
+- [Phase 12-01]: Default persona fallback is inline constant, not loaded from file
 
 ### Pending Todos
 
@@ -144,5 +148,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 13-02-PLAN.md
-Resume file: .planning/phases/13-non-stream-path-fallback-wiring/13-02-SUMMARY.md
+Stopped at: Completed 12-01-PLAN.md
+Resume file: .planning/phases/12-memory-prompt-snippets/12-01-SUMMARY.md
