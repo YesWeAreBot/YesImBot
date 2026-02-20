@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 ## Current Position
 
 Phase: 12 (Memory Prompt Snippets)
-Plan: 1 of 2
-Status: In Progress
-Last activity: 2026-02-20 — Phase 12 Plan 01 complete
+Plan: 2 of 2
+Status: Phase Complete
+Last activity: 2026-02-20 — Phase 12 Plan 02 complete
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ _Updated after each plan completion_
 | Phase 13-non-stream-path-fallback-wiring P01 | 107 | 1 tasks | 2 files |
 | Phase 13-non-stream-path-fallback-wiring P02 | 105 | 2 tasks | 2 files |
 | Phase 12-memory-prompt-snippets P01 | 179 | 2 tasks | 5 files |
+| Phase 12-memory-prompt-snippets P02 | 103 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,9 @@ Recent decisions affecting current work:
 - [Phase 12-01]: js-yaml added as direct dependency with @types/js-yaml for type safety
 - [Phase 12-01]: Hand-rolled frontmatter parsing with regex + js-yaml (no gray-matter)
 - [Phase 12-01]: Default persona fallback is inline constant, not loaded from file
+- [Phase 12-02]: Intl.DateTimeFormat zh-CN for Chinese-friendly time (no external date library)
+- [Phase 12-02]: HorizonView cast from scope.view with optional chaining for safe access
+- [Phase 12-02]: Schema.path with directory filter for coreMemoryPath config UI
 
 ### Pending Todos
 
@@ -148,5 +152,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 12-01-PLAN.md
-Resume file: .planning/phases/12-memory-prompt-snippets/12-01-SUMMARY.md
+Stopped at: Completed 12-02-PLAN.md
+Resume file: .planning/phases/12-memory-prompt-snippets/12-02-SUMMARY.md

@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Dynamic Schema Linkage** - Provider-registered models appear as dropdown options in main plugin config (completed 2026-02-19)
 - [x] **Phase 10: Willingness System Migration** - Full v3 decay + heat + S-curve algorithm replacing v1 skeleton (completed 2026-02-19)
 - [x] **Phase 11: Horizon Context Filling** - Populate Environment and Entity from live Koishi session data (completed 2026-02-20)
-- [ ] **Phase 12: Memory & Prompt Snippets** - Filesystem memory blocks loaded and injected via built-in prompt snippets
+- [x] **Phase 12: Memory & Prompt Snippets** - Filesystem memory blocks loaded and injected via built-in prompt snippets (completed 2026-02-20)
 
 ## Phase Details
 
@@ -298,7 +298,7 @@ gap closure: 13 → 14; 15 can run in parallel with 14 (both depend on 13)
 | 9. Dynamic Schema Linkage     | 2/2 | Complete    | 2026-02-19 |
 | 10. Willingness System Migration | 2/2 | Complete    | 2026-02-19 |
 | 11. Horizon Context Filling   | 1/1 | Complete    | 2026-02-20 |
-| 12. Memory & Prompt Snippets  | 1/2 | In Progress|  |
+| 12. Memory & Prompt Snippets  | 2/2 | Complete   | 2026-02-20 |
 | 13. Non-stream Path & Fallback | 2/2 | Complete    | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | 1/1     | Complete    | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | 0/TBD     | Not started |         |

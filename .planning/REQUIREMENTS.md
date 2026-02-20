@@ -62,7 +62,7 @@
 
 ### Prompt（内置 snippet）
 
-- [ ] **PROMPT-02**: 内置动态 snippet — 时间（当前时间/日期）、用户信息（发送者昵称/ID）、频道信息（频道名/平台）、机器人信息（bot 名称/ID）
+- [x] **PROMPT-02**: 内置动态 snippet — 时间（当前时间/日期）、用户信息（发送者昵称/ID）、频道信息（频道名/平台）、机器人信息（bot 名称/ID）
 
 ## Out of Scope
 
@@ -108,7 +108,7 @@
 | HORIZON-06  | Phase 11         | Complete |                                                                                            |
 | MEMORY-01   | Phase 12         | Complete |                                                                                            |
 | MEMORY-02   | Phase 12         | Complete |                                                                                            |
-| PROMPT-02   | Phase 12         | Pending  |                                                                                            |
+| PROMPT-02   | Phase 12         | Complete |                                                                                            |
 
 **Coverage:**
 
