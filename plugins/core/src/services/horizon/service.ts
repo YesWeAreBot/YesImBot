@@ -84,40 +84,74 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       orderBy: "asc",
     });
     const history = this.events.toObservations(entries);
-    const environment = await this.getEnvironment(percept.scope);
+    const environment = await this.getOrCreateEnvironment(percept.scope, percept);
     const entities = await this.getEntities(percept.scope);
     const session = percept.runtime?.session;
     const self = {
       id: session?.bot?.selfId ?? "",
-      name: session?.bot?.user?.name ?? session?.bot?.selfId ?? "",
+      name: this.config.botName || session?.bot?.user?.name || session?.bot?.selfId || "",
     };
     return { percept, self, environment: environment ?? undefined, entities, history };
   }
 
-  async getEnvironment(scope: Scope): Promise<Environment | null> {
+  private async getOrCreateEnvironment(
+    scope: Scope,
+    percept: UserMessagePercept,
+  ): Promise<Environment | null> {
     if (!scope.channelId) return null;
     const id = `${scope.platform}:${scope.channelId}`;
-    const rows = await this.ctx.database.get("yesimbot.entity", {
+    const ttl = this.config.entityCacheTtl ?? 3600000;
+    const rows = await this.ctx.database.get("yesimbot.entity", { id, type: "channel" });
+    if (rows?.length) {
+      const row = rows[0];
+      if (Date.now() - new Date(row.updatedAt).getTime() < ttl) {
+        return {
+          type: scope.isDirect ? "private" : "group",
+          id: row.id,
+          name: row.name,
+          metadata: row.attributes ?? {},
+        };
+      }
+    }
+    const session = percept.runtime?.session;
+    let channelName =
+      session?.event?.channel?.name || session?.event?.guild?.name || null;
+    if (!channelName && session?.bot) {
+      try {
+        const ch = await session.bot.getChannel(scope.channelId, scope.guildId);
+        channelName = ch?.name || null;
+      } catch {}
+    }
+    if (!channelName) channelName = `${scope.platform}:${scope.channelId}`;
+    await this.ctx.database.upsert("yesimbot.entity", [{
       id,
       type: "channel",
-    });
-    if (!rows?.length) return null;
-    const row: EntityRecord = rows[0];
+      name: channelName,
+      attributes: { platform: scope.platform, isDirect: scope.isDirect, guildId: scope.guildId },
+      updatedAt: new Date(),
+    }]);
     return {
-      type: "channel",
-      id: row.id,
-      name: row.name,
-      description: row.attributes?.description as string,
-      metadata: row.attributes ?? {},
+      type: scope.isDirect ? "private" : "group",
+      id,
+      name: channelName,
+      metadata: { platform: scope.platform },
     };
   }
 
   async getEntities(scope: Scope): Promise<Entity[]> {
-    if (!scope.guildId) return [];
-    const parentId = `guild:${scope.guildId}`;
-    const rows: EntityRecord[] = await this.ctx.database.get("yesimbot.entity", {
-      parentId,
-    });
+    const parentId = scope.guildId
+      ? `guild:${scope.guildId}`
+      : scope.isDirect
+        ? `direct:${scope.platform}`
+        : null;
+    if (!parentId) return [];
+    const limit = this.config.maxActiveEntities ?? 15;
+    const rows: EntityRecord[] = await this.ctx.database
+      .select("yesimbot.entity")
+      .where({ parentId })
+      .orderBy("updatedAt", "desc")
+      .limit(limit)
+      .execute();
     return (rows ?? []).map((r) => ({
       id: r.id,
       type: r.type,

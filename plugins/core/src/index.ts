@@ -55,6 +55,9 @@ export const Config: Schema<Config> = Schema.object({
   errorReportChannel: Schema.string().description(
     "Error report channel in platform:channelId format",
   ),
+  botName: Schema.string().description("Bot display name (overrides platform name)"),
+  entityCacheTtl: Schema.number().default(3600000).description("Entity cache TTL in ms"),
+  maxActiveEntities: Schema.number().default(15).description("Max entities shown to LLM"),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -66,6 +69,9 @@ export function apply(ctx: Context, config: Config) {
     aggregationWindow: config.aggregationWindow,
     historyLimit: config.historyLimit,
     archiveThresholdMs: config.archiveThresholdMs,
+    botName: config.botName,
+    entityCacheTtl: config.entityCacheTtl,
+    maxActiveEntities: config.maxActiveEntities,
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });

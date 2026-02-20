@@ -33,6 +33,7 @@ export class EventListener {
   private logger: Logger;
   private disposers: (() => void)[] = [];
   private pendingPercepts = new Map<string, PreceptTimer>();
+  private lastEntityUpdate = new Map<string, number>();
 
   constructor(
     private ctx: Context,
@@ -94,7 +95,11 @@ export class EventListener {
     this.logger.info(
       `user message | ${session.author?.name} | ${session.cid} | ${session.content}`,
     );
-    if (session.guildId) await this.updateMemberInfo(session);
+    if (session.guildId) {
+      await this.updateMemberInfo(session, `guild:${session.guildId}`);
+    } else if (session.isDirect) {
+      await this.updateMemberInfo(session, `direct:${session.platform}`);
+    }
     await this.events.recordMessage({
       scope: {
         platform: session.platform,
@@ -133,23 +138,27 @@ export class EventListener {
     });
   }
 
-  private async updateMemberInfo(session: Session): Promise<void> {
-    if (!session.guildId || !session.author) return;
+  private async updateMemberInfo(session: Session, parentId: string): Promise<void> {
+    if (!session.author) return;
+    const id = `${session.platform}:${session.author.id}@${parentId}`;
+    const now = Date.now();
+    const last = this.lastEntityUpdate.get(id);
+    if (last && now - last < 60000) return;
+    this.lastEntityUpdate.set(id, now);
     try {
-      const id = `${session.platform}:${session.author.id}@guild:${session.guildId}`;
-      const data = {
+      await this.ctx.database.upsert(ENTITY_TABLE, [{
         id,
         type: "member",
         name: session.author.nick || session.author.name || "",
-        attributes: { roles: session.author.roles ?? [], platform: session.platform },
+        parentId,
+        attributes: {
+          roles: session.author.roles ?? [],
+          platform: session.platform,
+          avatar: session.author.avatar,
+          lastActive: new Date(),
+        },
         updatedAt: new Date(),
-      };
-      const existing = await this.ctx.database.get(ENTITY_TABLE, { id, type: "member" });
-      if (existing.length > 0) {
-        await this.ctx.database.set(ENTITY_TABLE, { id }, data);
-      } else {
-        await this.ctx.database.create(ENTITY_TABLE, data);
-      }
+      }]);
     } catch (err: unknown) {
       this.logger.error(`updateMemberInfo failed: ${err instanceof Error ? err.message : err}`);
     }

@@ -8,4 +8,7 @@ export interface ListenerConfig {
 export interface HorizonServiceConfig extends ListenerConfig {
   historyLimit?: number;
   archiveThresholdMs?: number;
+  botName?: string;
+  entityCacheTtl?: number;
+  maxActiveEntities?: number;
 }
