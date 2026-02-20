@@ -160,11 +160,25 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     }));
   }
 
+  private getRoleBadge(attributes?: Record<string, unknown>): string {
+    const roles = attributes?.roles;
+    if (!Array.isArray(roles)) return "";
+    const special = roles.find((r) =>
+      typeof r === "string" && /^(owner|admin|administrator)$/i.test(r),
+    );
+    if (!special) return "";
+    const lower = (special as string).toLowerCase();
+    return lower === "owner" ? "[Owner] " : "[Admin] ";
+  }
+
   formatObservation(obs: Observation, selfId?: string): string {
     const hhmm = obs.timestamp.toTimeString().slice(0, 5);
     if (obs.type === "message") {
-      const prefix = selfId && obs.sender.id === selfId ? "[Bot] " : "";
-      return `[${hhmm}] ${prefix}${obs.sender.name}: ${obs.content}`;
+      if (selfId && obs.sender.id === selfId) {
+        return `[${hhmm}] [Bot] ${obs.sender.name}: ${obs.content}`;
+      }
+      const badge = this.getRoleBadge(obs.sender.attributes);
+      return `[${hhmm}] ${badge}${obs.sender.name}: ${obs.content}`;
     }
     return `[${hhmm}] [Bot Summary]: ${obs.summary}`;
   }
@@ -173,12 +187,22 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const lines: string[] = [];
 
     if (view.environment) {
-      lines.push(`Environment: ${view.environment.name}`);
-      if (view.environment.description) lines.push(view.environment.description);
+      const env = view.environment;
+      const platform = (env.metadata?.platform as string) || "";
+      const typeLabel = env.type === "private" ? "Private" : "Group";
+      if (platform && !env.name.includes(":")) {
+        lines.push(`Environment: ${env.name} (${platform}, ${typeLabel})`);
+      } else {
+        lines.push(`Environment: ${env.name} (${typeLabel})`);
+      }
     }
 
     if (view.entities?.length) {
-      lines.push(`Active members: ${view.entities.map((e) => e.name).join(", ")}`);
+      const names = view.entities.map((e) => {
+        const badge = this.getRoleBadge(e.attributes);
+        return badge ? `${e.name} [${badge.trim().slice(1, -1)}]` : e.name;
+      });
+      lines.push(`Active members: ${names.join(", ")}`);
     }
 
     if (view.history?.length) {
