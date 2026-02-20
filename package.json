@@ -11,6 +11,7 @@
     "Touch-Night <1762918301@qq.com>"
   ],
   "workspaces": [
+    "core",
     "packages/*",
     "plugins/*",
     "providers/*"
