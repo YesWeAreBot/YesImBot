@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 ## Current Position
 
-Phase: 14 (Provider Pattern & PLATFORM-01)
-Plan: 1 of 1
-Status: Phase Complete
-Last activity: 2026-02-21 — Phase 14 Plan 01 complete
+Phase: 15 (LLM Deferred Judgment Config)
+Plan: 1 of 2
+Status: Plan 01 Complete
+Last activity: 2026-02-21 — Phase 15 Plan 01 complete
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ _Updated after each plan completion_
 | Phase 12-memory-prompt-snippets P01 | 179 | 2 tasks | 5 files |
 | Phase 12-memory-prompt-snippets P02 | 103 | 2 tasks | 2 files |
 | Phase 14-provider-pattern-platform01 P01 | 250 | 4 tasks | 0 files |
+| Phase 15-llm-deferred-judgment-config P01 | 169 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -142,6 +143,9 @@ Recent decisions affecting current work:
 - [Phase 12-02]: HorizonView cast from scope.view with optional chaining for safe access
 - [Phase 12-02]: Schema.path with directory filter for coreMemoryPath config UI
 - [Phase 14-01]: Provider declaration merging blocks are required — providers don't depend on core plugin at compile time
+- [Phase 15-01]: ModelService becomes pure execution layer — no global defaultModel or fallbackChains in its config
+- [Phase 15-01]: Per-module fallbackChain arrays replace single fallbackModel string
+- [Phase 15-01]: DeferredJudgmentConfig added to WillingnessConfig for Plan 02 foundation
 
 ### Pending Todos
 
@@ -154,5 +158,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 14-01-PLAN.md
-Resume file: .planning/phases/14-provider-pattern-platform01/14-01-SUMMARY.md
+Stopped at: Completed 15-01-PLAN.md
+Resume file: .planning/phases/15-llm-deferred-judgment-config/15-01-SUMMARY.md
