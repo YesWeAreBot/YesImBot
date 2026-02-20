@@ -239,7 +239,12 @@ Plans:
   1. Non-stream path calls modelService.call() instead of raw generateText(), gaining PQueue concurrency and fallback chain
   2. parseModelId is used or removed; fallbackModel is consulted on primary model failure
   3. finishTool double-inclusion is cleaned up
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 13-01-PLAN.md — ModelService hardening: 503 classification, retry-before-fallback, per-call fallbackModel parameter, shared helpers
+- [ ] 13-02-PLAN.md — Loop.ts non-stream path rewire to modelService.call() + finishTool collision guard
 
 ### Phase 14: Provider Pattern Cleanup & PLATFORM-01
 
