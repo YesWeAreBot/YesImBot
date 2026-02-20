@@ -276,7 +276,12 @@ Plans:
   2. If no new message arrives before the delay expires, LLM judges whether to reply; if a new message arrives, the deferred judgment is cancelled and normal willingness processing resumes
   3. Top-level defaultModel and fallbackChains removed from Config/Schema; AgentCoreConfig.fallbackModel and WillingnessConfig gain fallbackChain (array) with Schema.dynamic list UI
   4. fallbackChain fields use Schema.dynamic("registry.chatModels") and render as editable lists in Koishi config
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 15-01-PLAN.md — Model config refactor: remove global defaultModel/fallbackChains, add per-module fallbackChain arrays and DeferredJudgmentConfig type
+- [ ] 15-02-PLAN.md — Deferred LLM judgment: timer map, delay computation, binary yes/no LLM call in AgentCore
 
 ## Progress
 
@@ -301,4 +306,4 @@ gap closure: 13 → 14; 15 can run in parallel with 14 (both depend on 13)
 | 12. Memory & Prompt Snippets  | 2/2 | Complete    | 2026-02-20 |
 | 13. Non-stream Path & Fallback | 2/2 | Complete    | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | 1/1     | Complete    | 2026-02-20 |
-| 15. LLM Deferred Judgment & Config | 0/TBD     | Not started |         |
+| 15. LLM Deferred Judgment & Config | 0/2     | Not started |         |
