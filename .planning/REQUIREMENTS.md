@@ -13,9 +13,9 @@
 
 ### Agent Core
 
-- [ ] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
+- [x] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
 - [ ] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
-- [ ] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程（含 streamMode 分支）
+- [x] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程（含 streamMode 分支）
 
 ### Horizon (Context Management)
 
@@ -88,9 +88,9 @@
 | MODEL-01    | Phase 2          | Complete | ModelService.registerProvider() implemented; provider plugins register via it              |
 | MODEL-02    | Phase 2          | Complete | provider-openai package at providers/provider-openai/src/index.ts                         |
 | MODEL-03    | Phase 2          | Complete | provider-deepseek package at providers/provider-deepseek/src/index.ts                     |
-| AGENT-01    | Phase 5, 7, 13   | Pending  | Non-stream path bypasses ModelService.call(); gap closure in Phase 13                      |
+| AGENT-01    | Phase 5, 7, 13   | Complete | Non-stream path bypasses ModelService.call(); gap closure in Phase 13                      |
 | AGENT-02    | Phase 6, 15      | Pending  | Rule scoring complete; LLM deferred judgment for borderline SKIP in Phase 15               |
-| AGENT-03    | Phase 5, 8, 13   | Pending  | Stream path complete; non-stream bypasses ModelService — gap closure in Phase 13           |
+| AGENT-03    | Phase 5, 8, 13   | Complete | Stream path complete; non-stream bypasses ModelService — gap closure in Phase 13           |
 | HORIZON-01  | Phase 3          | Complete | Environment/Entity/Event schema in place                                                   |
 | HORIZON-02  | Phase 3, Phase 8 | Complete | Schema + records + stage transitions (markAsActive/archiveStale) wired after agent response |
 | HORIZON-03  | Phase 3          | Complete | toObservations() implemented in EventManager                                               |
