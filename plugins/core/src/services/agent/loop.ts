@@ -1,5 +1,4 @@
-import { parseModelId } from "@yesimbot/shared-model";
-import { generateText, type StepResult, type ToolSet } from "ai";
+import { type StepResult, type ToolSet } from "ai";
 import { Context, sleep } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
@@ -47,8 +46,7 @@ export class ThinkActLoop {
     const messages = [{ role: "user" as const, content: contextText }];
     const stopWhen = buildStopCondition(config.maxRounds ?? 3);
 
-    // Direct generateText call for step-level control
-    const { model, defaultParams } = modelService.getModel(config.model ?? "") ?? {};
+    // ModelService handles model resolution and default params internally
     const collectedSteps: StepResult<ToolSet>[] = [];
     let fallbackText = "";
 
@@ -71,7 +69,6 @@ export class ThinkActLoop {
     };
 
     const callParams = {
-      ...defaultParams,
       system: systemPrompt,
       messages,
       tools: allTools as ToolSet,
@@ -84,13 +81,16 @@ export class ThinkActLoop {
       let resultText: string | undefined;
       if (config.streamMode) {
         const streamResult = await Promise.race([
-          modelService.streamCall(config.model ?? "", callParams),
+          modelService.streamCall(config.model ?? "", callParams, config.fallbackModel),
           timeoutPromise,
         ]);
         resultText = await streamResult.text;
       } else {
-        const result = await Promise.race([generateText({ model, ...callParams }), timeoutPromise]);
-        resultText = result.text;
+        const result = await Promise.race([
+          modelService.call(config.model ?? "", callParams, config.fallbackModel),
+          timeoutPromise,
+        ]);
+        resultText = result?.text;
       }
 
       if (resultText) {
