@@ -211,7 +211,11 @@ Plans:
   2. The sender's Entity (nickname, role) is populated from session user data
   3. The bot's own Entity (name, ID) is populated from the Koishi bot object
   4. LLM-visible Observation output reflects the real channel and user names rather than placeholder values
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+
+- [ ] 11-01-PLAN.md — Environment lazy-load, Entity enrichment, bot self info, LLM output formatting
 
 ### Phase 12: Memory & Prompt Snippets
 
@@ -243,5 +247,5 @@ v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 | 8. Stream & Dead Code Cleanup | 2/2            | Complete | 2026-02-19 |
 | 9. Dynamic Schema Linkage     | 2/2 | Complete    | 2026-02-19 |
 | 10. Willingness System Migration | 2/2 | Complete    | 2026-02-19 |
-| 11. Horizon Context Filling   | 0/TBD          | Not started |         |
+| 11. Horizon Context Filling   | 0/1            | Planned     |         |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
