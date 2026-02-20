@@ -2,165 +2,34 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-19)
+See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Milestone v2 — 功能平替
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 15 (LLM Deferred Judgment Config)
-Plan: 2 of 2
-Status: Phase 15 Complete
-Last activity: 2026-02-21 — Phase 15 Plan 02 complete
-
-## Performance Metrics
-
-**Velocity:**
-
-- Total plans completed: 6
-- Average duration: 2.8 minutes
-- Total execution time: 0.28 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-| ----- | ----- | ----- | -------- |
-| 01    | 2     | 392s  | 196s     |
-| 02    | 2     | 268s  | 134s     |
-| 03    | 1     | 84s   | 84s      |
-| 04    | 1     | 300s  | 300s     |
-
-**Recent Trend:**
-
-- Last 5 plans: 01-02 (134s), 02-01 (160s), 02-03 (108s), 03-01 (84s)
-- Trend: Improving
-
-_Updated after each plan completion_
-| Phase 03-horizon-context-system P03 | 300 | 2 tasks | 3 files |
-| Phase 08-stream-support-dead-code-cleanup P02 | 56 | 1 tasks | 1 files |
-| Phase 09-dynamic-schema-linkage P01 | 178 | 2 tasks | 4 files |
-| Phase 09-dynamic-schema-linkage P02 | 240 | 2 tasks | 5 files |
-| Phase 10-willingness-system-migration P01 | 100 | 2 tasks | 4 files |
-| Phase 10-willingness-system-migration P02 | 67 | 2 tasks | 4 files |
-| Phase 11-horizon-context-filling P01 | 290 | 2 tasks | 4 files |
-| Phase 13-non-stream-path-fallback-wiring P01 | 107 | 1 tasks | 2 files |
-| Phase 13-non-stream-path-fallback-wiring P02 | 105 | 2 tasks | 2 files |
-| Phase 12-memory-prompt-snippets P01 | 179 | 2 tasks | 5 files |
-| Phase 12-memory-prompt-snippets P02 | 103 | 2 tasks | 2 files |
-| Phase 14-provider-pattern-platform01 P01 | 250 | 4 tasks | 0 files |
-| Phase 15-llm-deferred-judgment-config P01 | 169 | 2 tasks | 5 files |
-| Phase 15-llm-deferred-judgment-config P02 | 89 | 1 tasks | 1 files |
+Phase: —
+Plan: —
+Status: v1.0 milestone complete
+Last activity: 2026-02-21 — v1.0 milestone archived
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- ai-sdk replaces xsai for better ecosystem support
-- Provider plugin pattern to avoid configuration complexity
-- Horizon architecture for context management (Environment/Entity/Event)
-- v1 focuses on functional skeleton without memory system
-- Type-only ai-sdk dependency to prevent runtime bundling (01-01)
-- Optional zod peer dependency to avoid forcing consumers to install it (01-01)
-- Koishi 4.x plugin structure with name/Config/apply exports (01-02)
-- workspace:\* protocol for shared-model dependency (01-02)
-- TypeScript project references for cross-package compilation (01-02)
-- pkgroll for consistent build tooling across packages (01-02)
-- Service subclass pattern for auto-registration (02-01)
-- p-queue for concurrency control with default 5 (02-01)
-- Fallback chain keyed by provider:model format (02-01)
-- Usage tracking per provider:model (02-01)
-- [Phase 02]: DeepSeek uses OpenAI-compatible API via createOpenAI with custom baseURL
-- [Phase 02]: Default models: deepseek-chat (with tool calling), deepseek-reasoner (streaming only)
-- [Phase 03]: No complex Observation transform layer — simple message history concatenation
-- [Phase 03]: Environment/Entity/Event as "enriched cache" of Koishi session, not redundant abstraction
-- [Phase 03]: Hybrid prompt: Horizon view (aggregated context) + standard multi-turn (tool calls)
-- [Phase 03]: Entity carries cross-channel continuity, Environment stays channel-isolated
-- [Phase 03]: Agent response compressed to single summary Event in Timeline
-- [Phase 03]: Message aggregation before trigger (prevent bot spam in group chat)
-- [03-01]: as any casts for yesimbot.timeline — schema declared in Plan 03 service
-- [03-01]: TimelineEventType limited to Message + AgentSummary per v4 scope
-- [03-02]: Declaration merging extends Koishi Events for after-send and horizon/percept type safety
-- [03-02]: ctx.setTimeout (not raw setTimeout) for aggregation timers — auto-cancelled on dispose
-- [03-02]: Direct messages bypass aggregation window and emit Percept immediately
-- [03-03]: Config interface extends HorizonConfig to merge sub-plugin config into parent schema
-- [03-03]: Service base class logger used directly — no private logger field override
-- [04-01]: Config-provided templates override built-in defaults (config > registerTemplate priority)
-- [04-01]: Snippets evaluated lazily — only those whose keys appear in the template are called
-- [04-01]: Injections sorted ascending by priority, joined with double newline into scope.injections
-- [04-01]: MustacheRenderer sets Mustache.escape = identity to disable HTML escaping globally
-- [04-02]: experimentalDecorators added to tsconfig.base.json for legacy TS decorator support
-- [04-02]: Schema.dict (not schema.list) stores object properties in Koishi Schema
-- [04-02]: Plugin base class reads **staticTools/**staticActions from prototype in constructor
-- [04-02]: Promise.race with setTimeout for invoke() timeout — no external dependency
-- [05-01]: ai-sdk v6 has no tool() function — Tool is plain object with inputSchema field
-- [05-01]: ToolSet from ai used as return type for buildAiSdkTools (avoids transitive @ai-sdk/provider-utils import)
-- [05-01]: finishTool included in buildAiSdkTools output under 'finish' key
-- [05-01]: enqueue uses .finally() with reference equality to avoid premature queue cleanup
-- [05-02]: Config interface does not extend AgentCoreConfig — fields declared inline to avoid Schema type inference conflict
-- [05-02]: ThinkActLoop.run() takes Percept with PerceptType.UserMessage type guard before buildView()
-- [05-02]: as CallParams cast passes tools/toolChoice/stopWhen through ModelService spread at runtime
-- [06-01]: maxOutputTokens (not maxTokens) for ai-sdk v6 LLM judge call
-- [06-01]: WillingnessCalculator is plain class, not Koishi Service — no lifecycle overhead needed
-- [06-01]: gateAndEnqueue wraps entire body in try/catch to prevent unhandled rejections
-- [06-02]: reportError swallows its own send errors to prevent infinite error loops
-- [06-02]: Fallback delay uses fallbackText.trim().length — sentContent declared after the check
-- [06-02]: Inter-part delay in send_message tool, not in loop — separation of concerns
-- [07-01]: Private field named 'log' not 'logger' — Service base class already exposes public 'logger' property
-- [07-01]: DEFAULT_SYSTEM_TEMPLATE uses {{view.self.name}} and {{#view.environment}} matching v4 HorizonView scope
-- [08-01]: streamCall queue slot released when streamText() returns — stream is lazy, HTTP established not fully consumed
-- [08-01]: callParams assembled once before stream/generate branch — both paths share same params object
-- [08-01]: Lifecycle order after response: markAsActive → archiveStale → recordAgentSummary
-- [Phase 08]: MODEL-01/02/03 corrected from Pending to Complete — provider packages exist and are functional
-- [Phase 08]: AGENT-03 and HORIZON-02 marked Partial — Phase 8 Plan 01 will complete them
-- [Phase 08]: PLATFORM-01 marked Partial — Koishi Service pattern used throughout but no formal integration test
-- [Phase 09-dynamic-schema-linkage]: Schema<string>[] typed array allows mixing Schema.const and Schema.string in union without type errors
-- [Phase 09-dynamic-schema-linkage]: Context.current gives caller context for dispose hook — auto-unregisters provider on plugin unload
-- [Phase 09-02]: parseModelId added to shared-model — single source of truth for splitting provider:model strings
-- [Phase 09-02]: AgentCoreConfig.provider/willingnessProvider removed; model field now holds full provider:model string
-- [Phase 09-02]: Fallback in loop.ts is parse-time — if config.model invalid, try config.fallbackModel before returning
-- [Phase 10-willingness-system-migration]: WillingnessEngine replaces WillingnessCalculator — pure algorithmic, no LLM judge
-- [Phase 10-willingness-system-migration]: processMessage() is synchronous — returns { probability, shouldReply } immediately, no async LLM call
-- [Phase 10-02]: WillingnessEngine instantiated in start() from config.willingness with fallback defaults
-- [Phase 10-02]: ctx.setInterval (not raw setInterval) for decay timer — auto-cancelled on dispose
-- [Phase 10-02]: WillingnessSchema nested directly in root Schema.object — creates grouped UI in Koishi
-- [Phase 11-01]: session.event.channel.name used instead of runtime-only channelName accessor (not in type declarations)
-- [Phase 11-01]: getRoleBadge matches owner/admin/administrator case-insensitively
-- [Phase 11-01]: Environment fallback name uses platform:channelId when real name unavailable
-- [Phase 11-01]: Throttled entity writes via Map<id, timestamp> with 60s window
-- [Phase 13-01]: 1 retry before fallback (not 2) — balances reliability vs latency for transient errors
-- [Phase 13-01]: executeStreamCall extracted as private method parallel to executeCall for DRY stream fallback
-- [Phase 13-01]: resolveModel helper eliminates duplicated model-string parsing across call/streamCall/getModel
-- [Phase 13-01]: Fallback chain order: primary (with retry) -> per-call fallback -> global chain -> throw
-- [Phase 13-02]: No defaultParams in loop.ts — ModelService merges provider defaults internally via executeCall/executeStreamCall
-- [Phase 13-02]: finishTool appended after plugin tool loop (last-wins) instead of pre-seeded (first-loses)
-- [Phase 12-01]: js-yaml added as direct dependency with @types/js-yaml for type safety
-- [Phase 12-01]: Hand-rolled frontmatter parsing with regex + js-yaml (no gray-matter)
-- [Phase 12-01]: Default persona fallback is inline constant, not loaded from file
-- [Phase 12-02]: Intl.DateTimeFormat zh-CN for Chinese-friendly time (no external date library)
-- [Phase 12-02]: HorizonView cast from scope.view with optional chaining for safe access
-- [Phase 12-02]: Schema.path with directory filter for coreMemoryPath config UI
-- [Phase 14-01]: Provider declaration merging blocks are required — providers don't depend on core plugin at compile time
-- [Phase 15-01]: ModelService becomes pure execution layer — no global defaultModel or fallbackChains in its config
-- [Phase 15-01]: Per-module fallbackChain arrays replace single fallbackModel string
-- [Phase 15-01]: DeferredJudgmentConfig added to WillingnessConfig for Plan 02 foundation
-- [Phase 15-02]: ctx.setTimeout for deferred timers — auto-cancelled on Koishi dispose
-- [Phase 15-02]: LLM judgment failure defaults to SKIP (no reply) — safe fallback
-- [Phase 15-02]: Judgment model resolution chain: deferred.judgmentModel > willingness.judgmentModel > config.model
+Full decision log in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-None yet.
+None.
 
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 15-02-PLAN.md
-Resume file: .planning/phases/15-llm-deferred-judgment-config/15-02-SUMMARY.md
+Stopped at: v1.0 milestone completion
+Resume file: .planning/MILESTONES.md

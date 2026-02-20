@@ -2,22 +2,13 @@
 
 ## What This Is
 
-Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它不是一个问答工具，而是一个具备性格、记忆和动态响应能力的智能体——一个独一无二的、专属于社群的虚拟成员。本次是基于 YesImBot-v3 的完全重写，目标是改进架构、提升可维护性和可扩展性。
+Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用和 Horizon 上下文管理——一个独一无二的、专属于社群的虚拟成员。基于 YesImBot-v3 完全重写，v1.0 已达到 v3 功能平替水平。
 
 ## Core Value
 
 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
 
-## Current Milestone: v2 功能平替
-
-**Goal:** 补齐 v3 核心功能，让 v4 达到 v3 的可用水平，体现架构优势
-
-**Target features:**
-- 动态 Schema 联动 — Provider 注册的模型在主插件配置中可下拉选择
-- 意愿值系统迁移 — 从 v3/dev 移植完整的衰减+热度+S 曲线算法
-- 核心记忆块 — 文件系统加载人设/知识块(.md/.txt)
-- 补齐 Horizon 上下文 — 从平台数据填充 Environment/Entity
-- 补齐内置 snippet — 时间、用户信息、频道信息等动态数据注入
+## Current Milestone: Planning next milestone
 
 ## Requirements
 
@@ -32,14 +23,15 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - ✓ Horizon 骨架：Environment/Entity/Event 三元组、Timeline 存储 — v1
 - ✓ 混合回复决策骨架：规则引擎 + LLM judge — v1
 - ✓ PQueue 并发控制：ModelService call/streamCall 队列化 — v1
+- ✓ 动态 Schema 联动：Provider 注册的模型在配置下拉列表中可选 — v1.0
+- ✓ 意愿值系统：完整算法（指数衰减、对话热度、S 曲线增益、回复成本、LLM 延迟判断）— v1.0
+- ✓ 核心记忆块：文件系统加载人设/知识块，注入 Prompt scope — v1.0
+- ✓ Horizon 上下文填充：从 Koishi session 填充 Environment/Entity 实际数据 — v1.0
+- ✓ 内置 Prompt snippet：时间、用户信息、频道信息、机器人信息动态数据 — v1.0
 
 ### Active
 
-- [ ] 动态 Schema 联动：Provider 注册的模型在主插件配置项中可下拉选择
-- [ ] 意愿值系统：从 v3/dev 迁移完整算法（指数衰减、对话热度、S 曲线增益、回复成本）
-- [ ] 核心记忆块：文件系统加载人设/知识块，注入 Prompt scope
-- [ ] Horizon 上下文填充：从 Koishi session 填充 Environment/Entity 实际数据
-- [ ] 内置 Prompt snippet：时间、用户信息、频道信息、机器人信息等动态数据
+(None yet — define in next milestone)
 
 ### Out of Scope
 
@@ -54,13 +46,13 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ## Context
 
+- **v1.0 shipped:** 2026-02-21, 3,470 LOC TypeScript, 15 phases, 29 plans
+- **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
+- **包结构:** packages/shared-model + plugins/core + providers/provider-openai + providers/provider-deepseek
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
-- **设计文档**：`books/` 目录为作者架构思考（仅人类发言），`docs/` 为完整架构讨论
-- **设计文档定位**：体现对系统的核心愿景（连续性/关系性/主体性），作为需求对齐参考
-- **技术栈演进**：xsai → ai-sdk，统一配置 → Provider 插件化
-- **v3 已验证的模式**：意愿值系统（衰减+S 曲线）、动态 Schema 联动、Mustache 模板、核心记忆块
-- **v1 架构突破**：原生 agentic loop、原生 tool call、PQueue 并发控制
-- **v2 迁移策略**：从 v3/dev 迁移已验证功能，适配 v4 新架构，不重新造轮子
+- **设计文档**：`books/` 目录为作者架构思考，`docs/` 为完整架构讨论
+- **v1.0 达成:** v3 功能平替 — 动态 Schema、意愿值系统、核心记忆块、Horizon 上下文填充
+- **已知技术债:** Schema 在首个 Provider 注册前为空（by design）
 
 ## Constraints
 
@@ -77,12 +69,15 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 |----------|-----------|---------|
 | 使用 ai-sdk 替代 xsai | xsai 过于精简缺少功能，ai-sdk 生态更完善 | ✓ Good |
 | 保持 monorepo 结构 | 与 v3 一致，团队熟悉，Turbo 构建成熟 | ✓ Good |
-| 混合回复决策（规则+LLM） | 纯随机不够智能，纯 LLM 成本太高 | ⚠️ Revisit — v2 迁移 v3 完整意愿值算法 |
+| 混合回复决策（规则+LLM） | 纯随机不够智能，纯 LLM 成本太高 | ✓ Good — v1.0 完成完整意愿值 + LLM 延迟判断 |
 | 模型服务优先开发 | 是所有其他子系统的基础依赖 | ✓ Good |
-| Provider 插件化 | 避免统一配置窗口过于复杂，支持独立参数 | ✓ Good — 需补动态 Schema 联动 |
-| v1 不含记忆系统 | 聚焦核心骨架，降低复杂度，后续迭代 | ✓ Good — v2 引入核心记忆块 |
-| 原生 tool call | ai-sdk tool calling 替代 JSON 文本解析，发展趋势 | ✓ Good — 待实战验证 |
-| v2 迁移而非重写 | v3/dev 已验证功能直接适配新架构 | — Pending |
+| Provider 插件化 | 避免统一配置窗口过于复杂，支持独立参数 | ✓ Good — 动态 Schema 联动已完成 |
+| v1 不含记忆系统 | 聚焦核心骨架，降低复杂度，后续迭代 | ✓ Good — v1.0 引入核心记忆块 |
+| 原生 tool call | ai-sdk tool calling 替代 JSON 文本解析 | ✓ Good |
+| v2 迁移而非重写 | v3/dev 已验证功能直接适配新架构 | ✓ Good — 4 天完成 15 phases |
+| Horizon 三元组架构 | Environment/Entity/Event 替代 per-channel 隔离 | ✓ Good — 支持跨频道 Entity 连续性 |
+| PQueue 并发控制 | 防止 LLM API 过载 | ✓ Good — call/streamCall 统一队列化 |
+| per-module fallbackChain | 替代全局 defaultModel，更灵活 | ✓ Good — agent/willingness 独立 fallback |
 
 ---
-*Last updated: 2026-02-19 after v2 milestone start*
+*Last updated: 2026-02-21 after v1.0 milestone*

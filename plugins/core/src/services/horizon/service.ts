@@ -52,7 +52,6 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
   aggregationWindow: Schema.number().default(1500),
   historyLimit: Schema.number().default(30),
   archiveThresholdMs: Schema.number().default(86400000),
-  defaultTimeout: Schema.number().default(30000),
   botName: Schema.string().description("Bot display name (overrides platform name)"),
   entityCacheTtl: Schema.number().default(3600000).description("Entity cache TTL in ms"),
   maxActiveEntities: Schema.number().default(15).description("Max entities shown to LLM"),

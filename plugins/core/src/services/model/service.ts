@@ -35,8 +35,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   private queue: PQueue;
   private usage = new Map<string, { tokens: number; requests: number }>();
 
-  static inject = ["console"];
-
   constructor(ctx: Context, config: ModelServiceConfig) {
     super(ctx, "yesimbot.model", true);
     this.config = config;
@@ -50,7 +48,9 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     for (const [name, provider] of this.providers) {
       const models = provider.listModels();
       for (const [modelId, info] of Object.entries(models)) {
-        options.push(Schema.const(`${name}:${modelId}` as string).description(modelId));
+        options.push(
+          Schema.const(`${name}:${modelId}` as string).description(`${name}:${modelId}`),
+        );
       }
     }
     options.push(Schema.string().description("Custom model (provider:model)"));
@@ -116,7 +116,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   public async call(
     model: string | ModelSelector,
     params: CallParams,
-    fallbackModel?: string | ModelSelector,
     fallbackChain?: string[],
   ): Promise<GenerateResult | undefined> {
     const { provider, modelId } = this.resolveModel(model);
@@ -127,15 +126,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
       } catch (error) {
         const category = classifyError(error);
         if (category === ErrorCategory.TRANSIENT || category === ErrorCategory.RATE_LIMIT) {
-          if (fallbackModel) {
-            const fb = this.resolveModel(fallbackModel);
-            this.logger.warn(`Primary model failed, trying fallback: ${fb.provider}:${fb.modelId}`);
-            try {
-              return await this.executeCall(fb.provider, fb.modelId, params);
-            } catch {
-              return await this.handleFallback(params, error, fallbackChain);
-            }
-          }
           return await this.handleFallback(params, error, fallbackChain);
         }
         throw error;
@@ -178,7 +168,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   public async streamCall(
     model: string | ModelSelector,
     params: CallParams,
-    fallbackModel?: string | ModelSelector,
     fallbackChain?: string[],
   ): Promise<StreamResult> {
     const { provider, modelId } = this.resolveModel(model);
@@ -189,15 +178,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
       } catch (error) {
         const category = classifyError(error);
         if (category === ErrorCategory.TRANSIENT || category === ErrorCategory.RATE_LIMIT) {
-          if (fallbackModel) {
-            const fb = this.resolveModel(fallbackModel);
-            this.logger.warn(`Primary model failed, trying fallback: ${fb.provider}:${fb.modelId}`);
-            try {
-              return await this.executeStreamCall(fb.provider, fb.modelId, params);
-            } catch {
-              return await this.handleStreamFallback(params, error, fallbackChain);
-            }
-          }
           return await this.handleStreamFallback(params, error, fallbackChain);
         }
         throw error;

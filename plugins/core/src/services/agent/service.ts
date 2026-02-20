@@ -174,17 +174,22 @@ export class AgentCore extends Service<AgentCoreConfig> {
       const modelService = this.ctx["yesimbot.model"] as ModelService;
       const view = await horizon.buildView(percept as UserMessagePercept);
       const contextText = horizon.formatHorizonText(view);
-      const judgmentModel = this.config.willingness?.deferred?.model ?? this.config.model ?? "";
-      const result = await modelService.call(judgmentModel, {
-        system: JUDGMENT_PROMPT,
-        messages: [
-          {
-            role: "user" as const,
-            content: `Willingness score: ${probability.toFixed(3)}\n\n${contextText}`,
-          },
-        ],
-        maxOutputTokens: 8,
-      });
+      const judgmentModel = this.config.willingness?.deferred?.model ?? "";
+      const fallbackChain = this.config.willingness?.deferred?.fallbackChain ?? [];
+      const result = await modelService.call(
+        judgmentModel,
+        {
+          system: JUDGMENT_PROMPT,
+          messages: [
+            {
+              role: "user" as const,
+              content: `Willingness score: ${probability.toFixed(3)}\n\n${contextText}`,
+            },
+          ],
+          maxOutputTokens: 8,
+        },
+        fallbackChain,
+      );
       const answer = (result?.text ?? "").trim().toLowerCase();
       if (answer.startsWith("yes")) {
         this.logger.info(`[deferred] ${channelKey} | LLM judged YES — entering agent loop`);
