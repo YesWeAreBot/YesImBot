@@ -1,14 +1,13 @@
 import type { Session } from "koishi";
 import { Context, Logger, Random } from "koishi";
 
-import { ListenerConfig } from "./config";
 import type { EventManager } from "./manager";
+import type { HorizonServiceConfig } from "./service";
 import type { Percept, UserMessagePercept } from "./types";
 import { PerceptType, TimelineStage } from "./types";
 
 declare module "koishi" {
   interface Events {
-    "after-send": (session: Session) => void;
     "horizon/percept": (percept: Percept) => void;
   }
 }
@@ -38,7 +37,7 @@ export class EventListener {
   constructor(
     private ctx: Context,
     private events: EventManager,
-    private config: ListenerConfig,
+    private config: HorizonServiceConfig,
   ) {
     this.logger = ctx.logger("horizon");
   }
@@ -55,19 +54,14 @@ export class EventListener {
         this.schedulePercept(channelKey, percept);
       }),
     );
-
-    this.disposers.push(
-      this.ctx.on("after-send", (session) => {
-        if (!this.isChannelAllowed(session)) return;
-        this.recordBotSentMessage(session);
-      }),
-    );
   }
 
   stop(): void {
     this.disposers.forEach((d) => d());
     this.disposers.length = 0;
-    for (const { clearTimer } of this.pendingPercepts.values()) clearTimer();
+    for (const { clearTimer } of this.pendingPercepts.values()) {
+      clearTimer();
+    }
     this.pendingPercepts.clear();
   }
 
@@ -146,19 +140,21 @@ export class EventListener {
     if (last && now - last < 60000) return;
     this.lastEntityUpdate.set(id, now);
     try {
-      await this.ctx.database.upsert(ENTITY_TABLE, [{
-        id,
-        type: "member",
-        name: session.author.nick || session.author.name || "",
-        parentId,
-        attributes: {
-          roles: session.author.roles ?? [],
-          platform: session.platform,
-          avatar: session.author.avatar,
-          lastActive: new Date(),
+      await this.ctx.database.upsert(ENTITY_TABLE, [
+        {
+          id,
+          type: "member",
+          name: session.author.nick || session.author.name || "",
+          parentId,
+          attributes: {
+            roles: session.author.roles ?? [],
+            platform: session.platform,
+            avatar: session.author.avatar,
+            lastActive: new Date(),
+          },
+          updatedAt: new Date(),
         },
-        updatedAt: new Date(),
-      }]);
+      ]);
     } catch (err: unknown) {
       this.logger.error(`updateMemberInfo failed: ${err instanceof Error ? err.message : err}`);
     }

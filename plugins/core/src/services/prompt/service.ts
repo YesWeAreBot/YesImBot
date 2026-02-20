@@ -1,4 +1,4 @@
-import { Context, Service } from "koishi";
+import { Context, Schema, Service } from "koishi";
 
 import { loadTemplate } from "./loader";
 import { MustacheRenderer } from "./renderer";
@@ -13,6 +13,10 @@ declare module "koishi" {
 export interface PromptServiceConfig {
   templates?: Record<string, string>;
 }
+
+export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
+  templates: Schema.dict(Schema.string()),
+});
 
 export class PromptService extends Service<PromptServiceConfig> {
   private templates = new Map<string, string>();

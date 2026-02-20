@@ -5,8 +5,3 @@ export interface MemoryBlock {
   content: string;
   filename: string;
 }
-
-export interface MemoryConfig {
-  coreMemoryPath?: string;
-  memoryCharLimit?: number;
-}

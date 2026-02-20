@@ -1,14 +1,14 @@
-import { readdir, readFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { join, extname, basename } from "node:path";
 
 import { load as yamlLoad } from "js-yaml";
+import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
-import { Context, Service } from "koishi";
 
 import type { HorizonView } from "../horizon/types";
 import { loadTemplate, loadPartial } from "../prompt/loader";
-import type { MemoryBlock, MemoryConfig } from "./types";
+import type { MemoryBlock } from "./types";
 
 const DEFAULT_PERSONA = loadTemplate("default-persona");
 
@@ -18,14 +18,28 @@ declare module "koishi" {
   }
 }
 
-export class MemoryService extends Service<MemoryConfig> {
+export interface MemoryServiceConfig {
+  coreMemoryPath?: string;
+  memoryCharLimit?: number;
+}
+
+export const MemoryServiceConfigSchema: Schema<MemoryServiceConfig> = Schema.object({
+  coreMemoryPath: Schema.path({ filters: ["directory"] }).description(
+    "Directory containing memory block files (.md/.txt)",
+  ),
+  memoryCharLimit: Schema.number()
+    .default(4000)
+    .description("Maximum characters for memory block injection"),
+});
+
+export class MemoryService extends Service<MemoryServiceConfig> {
   static inject = ["yesimbot.prompt"];
 
   private blocks: MemoryBlock[] = [];
   private watcher: FSWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(ctx: Context, config: MemoryConfig) {
+  constructor(ctx: Context, config: MemoryServiceConfig) {
     super(ctx, "yesimbot.memory", false);
     this.config = config;
   }
@@ -48,9 +62,7 @@ export class MemoryService extends Service<MemoryConfig> {
 
     try {
       const entries = await readdir(this.config.coreMemoryPath);
-      const files = entries
-        .filter((f) => /\.(md|txt)$/.test(f))
-        .sort();
+      const files = entries.filter((f) => /\.(md|txt)$/.test(f)).sort();
 
       if (!files.length) {
         this.blocks = [{ label: "persona", content: DEFAULT_PERSONA, filename: "__default__" }];
@@ -111,19 +123,28 @@ export class MemoryService extends Service<MemoryConfig> {
   private registerSnippets(): void {
     const prompt = this.ctx["yesimbot.prompt"];
     const fmt = new Intl.DateTimeFormat("zh-CN", {
-      year: "numeric", month: "long", day: "numeric",
-      weekday: "long", hour: "numeric", minute: "2-digit", hour12: true,
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
     });
 
     prompt.registerSnippet("date.now", () => fmt.format(new Date()));
 
     prompt.registerSnippet("sender.name", (scope) => {
       const view = scope.view as HorizonView | undefined;
-      return (view?.percept as { payload?: { sender?: { name?: string } } })?.payload?.sender?.name ?? "";
+      return (
+        (view?.percept as { payload?: { sender?: { name?: string } } })?.payload?.sender?.name ?? ""
+      );
     });
     prompt.registerSnippet("sender.id", (scope) => {
       const view = scope.view as HorizonView | undefined;
-      return (view?.percept as { payload?: { sender?: { id?: string } } })?.payload?.sender?.id ?? "";
+      return (
+        (view?.percept as { payload?: { sender?: { id?: string } } })?.payload?.sender?.id ?? ""
+      );
     });
 
     prompt.registerSnippet("channel.name", (scope) => {
@@ -172,5 +193,3 @@ export class MemoryService extends Service<MemoryConfig> {
     });
   }
 }
-
-export type { MemoryConfig } from "./types";

@@ -1,2 +1,3 @@
 export * from "./types";
-export { MemoryService, type MemoryConfig } from "./service";
+export { MemoryService, MemoryServiceConfigSchema } from "./service";
+export type { MemoryServiceConfig } from "./service";

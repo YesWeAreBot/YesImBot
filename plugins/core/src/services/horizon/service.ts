@@ -1,11 +1,11 @@
+import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
-import { Context, Service } from "koishi";
 
-import { HorizonServiceConfig } from "./config";
+import { loadPartial } from "../prompt/loader";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
-import { loadPartial } from "../prompt/loader";
 import type {
+  AllowedChannel,
   Entity,
   EntityRecord,
   Environment,
@@ -26,6 +26,37 @@ declare module "koishi" {
     "yesimbot.entity": EntityRecord;
   }
 }
+
+export interface HorizonServiceConfig {
+  allowedChannels: AllowedChannel[];
+  keywords?: string[];
+  aggregationWindow?: number;
+  historyLimit?: number;
+  archiveThresholdMs?: number;
+  botName?: string;
+  entityCacheTtl?: number;
+  maxActiveEntities?: number;
+}
+
+export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
+  allowedChannels: Schema.array(
+    Schema.object({
+      platform: Schema.string().required(),
+      type: Schema.union(["private", "guild"]).required(),
+      id: Schema.string().required(),
+    }),
+  )
+    .default([])
+    .role("table"),
+  keywords: Schema.array(Schema.string()).default([]),
+  aggregationWindow: Schema.number().default(1500),
+  historyLimit: Schema.number().default(30),
+  archiveThresholdMs: Schema.number().default(86400000),
+  defaultTimeout: Schema.number().default(30000),
+  botName: Schema.string().description("Bot display name (overrides platform name)"),
+  entityCacheTtl: Schema.number().default(3600000).description("Entity cache TTL in ms"),
+  maxActiveEntities: Schema.number().default(15).description("Max entities shown to LLM"),
+});
 
 export class HorizonService extends Service<HorizonServiceConfig> {
   static inject = ["database"];
@@ -116,8 +147,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       }
     }
     const session = percept.runtime?.session;
-    let channelName =
-      session?.event?.channel?.name || session?.event?.guild?.name || null;
+    let channelName = session?.event?.channel?.name || session?.event?.guild?.name || null;
     if (!channelName && session?.bot) {
       try {
         const ch = await session.bot.getChannel(scope.channelId, scope.guildId);
@@ -125,13 +155,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       } catch {}
     }
     if (!channelName) channelName = `${scope.platform}:${scope.channelId}`;
-    await this.ctx.database.upsert("yesimbot.entity", [{
-      id,
-      type: "channel",
-      name: channelName,
-      attributes: { platform: scope.platform, isDirect: scope.isDirect, guildId: scope.guildId },
-      updatedAt: new Date(),
-    }]);
+    await this.ctx.database.upsert("yesimbot.entity", [
+      {
+        id,
+        type: "channel",
+        name: channelName,
+        attributes: { platform: scope.platform, isDirect: scope.isDirect, guildId: scope.guildId },
+        updatedAt: new Date(),
+      },
+    ]);
     return {
       type: scope.isDirect ? "private" : "group",
       id,
@@ -165,8 +197,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private getRoleBadge(attributes?: Record<string, unknown>): string {
     const roles = attributes?.roles;
     if (!Array.isArray(roles)) return "";
-    const special = roles.find((r) =>
-      typeof r === "string" && /^(owner|admin|administrator)$/i.test(r),
+    const special = roles.find(
+      (r) => typeof r === "string" && /^(owner|admin|administrator)$/i.test(r),
     );
     if (!special) return "";
     const lower = (special as string).toLowerCase();
@@ -193,20 +225,24 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       const env = view.environment;
       const platform = (env.metadata?.platform as string) || "";
       const typeLabel = env.type === "private" ? "Private" : "Group";
-      environment = platform && !env.name.includes(":")
-        ? `${env.name} (${platform}, ${typeLabel})`
-        : `${env.name} (${typeLabel})`;
+      environment =
+        platform && !env.name.includes(":")
+          ? `${env.name} (${platform}, ${typeLabel})`
+          : `${env.name} (${typeLabel})`;
     }
 
     let activeMembers = "";
     if (view.entities?.length) {
-      activeMembers = view.entities.map((e) => {
-        const badge = this.getRoleBadge(e.attributes);
-        return badge ? `${e.name} [${badge.trim().slice(1, -1)}]` : e.name;
-      }).join(", ");
+      activeMembers = view.entities
+        .map((e) => {
+          const badge = this.getRoleBadge(e.attributes);
+          return badge ? `${e.name} [${badge.trim().slice(1, -1)}]` : e.name;
+        })
+        .join(", ");
     }
 
-    const observations = view.history?.map((obs) => this.formatObservation(obs, view.self.id)) ?? [];
+    const observations =
+      view.history?.map((obs) => this.formatObservation(obs, view.self.id)) ?? [];
     const p = view.percept as UserMessagePercept;
 
     return Mustache.render(this.horizonViewTpl, {

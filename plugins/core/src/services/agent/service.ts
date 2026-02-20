@@ -1,11 +1,10 @@
-import { Context, Service } from "koishi";
+import { Context, Schema, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { Percept, UserMessagePercept } from "../horizon/types";
 import type { ModelService } from "../model/service";
-import type { AgentCoreConfig } from "./config";
 import { ThinkActLoop } from "./loop";
-import { WillingnessEngine } from "./willingness";
+import { WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
 
 const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
 Answer with exactly one word: "yes" or "no".`;
@@ -15,6 +14,32 @@ declare module "koishi" {
     "yesimbot.agent": AgentCore;
   }
 }
+
+export interface AgentCoreConfig {
+  model?: string;
+  fallbackChain?: string[];
+  maxRounds?: number;
+  streamMode?: boolean;
+  globalTimeout?: number;
+  maxToolResultLength?: number;
+  willingness?: WillingnessConfig;
+  errorReportChannel?: string;
+}
+
+export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
+  model: Schema.dynamic("registry.chatModels").description("Agent chat model (provider:model)"),
+  fallbackChain: Schema.array(Schema.dynamic("registry.chatModels"))
+    .default([])
+    .description("Agent fallback chain (provider:model)"),
+  maxRounds: Schema.number().default(3),
+  streamMode: Schema.boolean().default(false),
+  globalTimeout: Schema.number().default(120000),
+  maxToolResultLength: Schema.number().default(4000),
+  willingness: WillingnessSchema,
+  errorReportChannel: Schema.string().description(
+    "Error report channel in platform:channelId format",
+  ),
+});
 
 export class AgentCore extends Service<AgentCoreConfig> {
   static inject = ["yesimbot.horizon", "yesimbot.plugin", "yesimbot.prompt", "yesimbot.model"];
@@ -120,11 +145,17 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private scheduleDeferredJudgment(channelKey: string, percept: Percept, probability: number): void {
+  private scheduleDeferredJudgment(
+    channelKey: string,
+    percept: Percept,
+    probability: number,
+  ): void {
     const { threshold, minDelayMs = 3000, maxDelayMs = 15000 } = this.config.willingness!.deferred!;
     const normalized = (probability - threshold) / (1 - threshold);
     const delay = maxDelayMs - normalized * (maxDelayMs - minDelayMs);
-    this.logger.info(`[deferred] ${channelKey} | scheduling LLM judgment in ${delay}ms (P=${probability.toFixed(3)})`);
+    this.logger.info(
+      `[deferred] ${channelKey} | scheduling LLM judgment in ${delay}ms (P=${probability.toFixed(3)})`,
+    );
     const cancel = this.ctx.setTimeout(async () => {
       if (!this.deferredTimers.has(channelKey)) return;
       this.deferredTimers.delete(channelKey);
@@ -133,19 +164,25 @@ export class AgentCore extends Service<AgentCoreConfig> {
     this.deferredTimers.set(channelKey, cancel);
   }
 
-  private async executeDeferredJudgment(channelKey: string, percept: Percept, probability: number): Promise<void> {
+  private async executeDeferredJudgment(
+    channelKey: string,
+    percept: Percept,
+    probability: number,
+  ): Promise<void> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
       const modelService = this.ctx["yesimbot.model"] as ModelService;
       const view = await horizon.buildView(percept as UserMessagePercept);
       const contextText = horizon.formatHorizonText(view);
-      const judgmentModel = this.config.willingness?.deferred?.judgmentModel
-        ?? this.config.willingness?.judgmentModel
-        ?? this.config.model
-        ?? "";
+      const judgmentModel = this.config.willingness?.deferred?.model ?? this.config.model ?? "";
       const result = await modelService.call(judgmentModel, {
         system: JUDGMENT_PROMPT,
-        messages: [{ role: "user" as const, content: `Willingness score: ${probability.toFixed(3)}\n\n${contextText}` }],
+        messages: [
+          {
+            role: "user" as const,
+            content: `Willingness score: ${probability.toFixed(3)}\n\n${contextText}`,
+          },
+        ],
         maxOutputTokens: 8,
       });
       const answer = (result?.text ?? "").trim().toLowerCase();

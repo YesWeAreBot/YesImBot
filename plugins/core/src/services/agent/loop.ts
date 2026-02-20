@@ -7,7 +7,7 @@ import { PerceptType } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
-import type { AgentCoreConfig } from "./config";
+import type { AgentCoreConfig } from "./service";
 import { buildAiSdkTools, buildStopCondition } from "./tools";
 
 class LoopAbort extends Error {}

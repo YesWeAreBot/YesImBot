@@ -1,62 +1,36 @@
 import { Context, Schema, sleep } from "koishi";
 
-import { AgentCore } from "./services/agent";
-import { WillingnessSchema, type WillingnessConfig } from "./services/agent/willingness-config";
-import { HorizonService, type HorizonServiceConfig } from "./services/horizon";
+import { AgentCore, AgentCoreConfig } from "./services/agent";
+import { AgentCoreConfigSchema } from "./services/agent/service";
+import { HorizonService, HorizonServiceConfigSchema } from "./services/horizon";
+import type { HorizonServiceConfig } from "./services/horizon/service";
+import { MemoryService, MemoryServiceConfigSchema } from "./services/memory";
+import type { MemoryServiceConfig } from "./services/memory/service";
 import { ModelService, type ModelServiceConfig } from "./services/model";
-import { PluginService, type PluginServiceConfig } from "./services/plugin";
-import { MemoryService, type MemoryConfig } from "./services/memory";
-import { PromptService, type PromptServiceConfig } from "./services/prompt";
+import { ModelServiceConfigSchema } from "./services/model/service";
+import { PluginService, PluginServiceConfigSchema } from "./services/plugin";
+import type { PluginServiceConfig } from "./services/plugin/service";
+import { PromptService, PromptServiceConfigSchema } from "./services/prompt";
+import type { PromptServiceConfig } from "./services/prompt/service";
 
 export const name = "yesimbot-core";
-
 export const inject = ["database"];
 
-export interface Config
-  extends HorizonServiceConfig, PromptServiceConfig, PluginServiceConfig, ModelServiceConfig, MemoryConfig {
-  model?: string;
-  fallbackChain?: string[];
-  maxRounds?: number;
-  streamMode?: boolean;
-  globalTimeout?: number;
-  maxToolResultLength?: number;
-  willingness?: WillingnessConfig;
-  errorReportChannel?: string;
-}
+export type Config = AgentCoreConfig &
+  HorizonServiceConfig &
+  MemoryServiceConfig &
+  ModelServiceConfig &
+  PluginServiceConfig &
+  PromptServiceConfig;
 
-export const Config: Schema<Config> = Schema.object({
-  concurrency: Schema.number().default(5),
-  allowedChannels: Schema.array(
-    Schema.object({
-      platform: Schema.string().required(),
-      type: Schema.union(["private", "guild"]).required(),
-      id: Schema.string().required(),
-    }),
-  )
-    .default([])
-    .role("table"),
-  keywords: Schema.array(Schema.string()).default([]),
-  aggregationWindow: Schema.number().default(1500),
-  historyLimit: Schema.number().default(30),
-  archiveThresholdMs: Schema.number().default(86400000),
-  templates: Schema.dict(Schema.string()),
-  defaultTimeout: Schema.number().default(30000),
-  model: Schema.dynamic("registry.chatModels").description("Agent chat model (provider:model)"),
-  fallbackChain: Schema.array(Schema.string()).default([]).description("Agent fallback chain (provider:model)"),
-  maxRounds: Schema.number().default(3),
-  streamMode: Schema.boolean().default(false),
-  globalTimeout: Schema.number().default(120000),
-  maxToolResultLength: Schema.number().default(4000),
-  willingness: WillingnessSchema,
-  errorReportChannel: Schema.string().description(
-    "Error report channel in platform:channelId format",
-  ),
-  botName: Schema.string().description("Bot display name (overrides platform name)"),
-  entityCacheTtl: Schema.number().default(3600000).description("Entity cache TTL in ms"),
-  maxActiveEntities: Schema.number().default(15).description("Max entities shown to LLM"),
-  coreMemoryPath: Schema.path({ filters: ["directory"] }).description("Directory containing memory block files (.md/.txt)"),
-  memoryCharLimit: Schema.number().default(4000).description("Maximum characters for memory block injection"),
-});
+export const Config: Schema<Config> = Schema.intersect([
+  AgentCoreConfigSchema,
+  HorizonServiceConfigSchema,
+  MemoryServiceConfigSchema,
+  ModelServiceConfigSchema,
+  PluginServiceConfigSchema,
+  PromptServiceConfigSchema,
+]);
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger("yesimbot-core");
@@ -72,7 +46,10 @@ export function apply(ctx: Context, config: Config) {
     maxActiveEntities: config.maxActiveEntities,
   });
   ctx.plugin(PromptService, { templates: config.templates });
-  ctx.plugin(MemoryService, { coreMemoryPath: config.coreMemoryPath, memoryCharLimit: config.memoryCharLimit });
+  ctx.plugin(MemoryService, {
+    coreMemoryPath: config.coreMemoryPath,
+    memoryCharLimit: config.memoryCharLimit,
+  });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
   ctx.plugin(AgentCore, {
     model: config.model,

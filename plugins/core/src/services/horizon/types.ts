@@ -1,5 +1,7 @@
 import type { Session } from "koishi";
 
+export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
+
 // ---- Scope ----
 
 export interface Scope {

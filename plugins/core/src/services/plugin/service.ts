@@ -1,4 +1,4 @@
-import { Context, Service } from "koishi";
+import { Context, Schema, Service } from "koishi";
 
 import { Plugin } from "./base-plugin";
 import { CorePlugin, SessionInfoPlugin } from "./builtin";
@@ -20,6 +20,12 @@ declare module "koishi" {
 export interface PluginServiceConfig {
   defaultTimeout?: number;
 }
+
+export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.object({
+  defaultTimeout: Schema.number()
+    .default(30000)
+    .description("Default function execution timeout in ms"),
+});
 
 export class PluginService extends Service<PluginServiceConfig> {
   private plugins: Map<string, Plugin> = new Map();

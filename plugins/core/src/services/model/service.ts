@@ -26,6 +26,10 @@ export interface ModelServiceConfig {
   concurrency?: number;
 }
 
+export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
+  concurrency: Schema.number().default(5),
+});
+
 export class ModelService extends Service<ModelServiceConfig> implements IModelService {
   private providers = new Map<string, IModelProvider>();
   private queue: PQueue;
@@ -101,7 +105,8 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
       } catch (error) {
         lastError = error;
         const category = classifyError(error);
-        if (category !== ErrorCategory.TRANSIENT && category !== ErrorCategory.RATE_LIMIT) throw error;
+        if (category !== ErrorCategory.TRANSIENT && category !== ErrorCategory.RATE_LIMIT)
+          throw error;
         if (i < retries) this.logger.warn(`Retry ${i + 1}/${retries} after transient error`);
       }
     }
@@ -221,7 +226,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   }
 
   private async handleFallback(params: CallParams, error: unknown, chain?: string[]) {
-
     if (!chain || chain.length === 0) throw error;
 
     for (const fallback of chain) {
@@ -241,7 +245,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
   }
 
   private async handleStreamFallback(params: CallParams, error: unknown, chain?: string[]) {
-
     if (!chain || chain.length === 0) throw error;
 
     for (const fallback of chain) {
