@@ -227,7 +227,12 @@ Plans:
   2. Loaded memory blocks are injected into the prompt scope so the LLM receives them in every system prompt
   3. When no memory files are found, a built-in default persona block is used as fallback
   4. Built-in snippets supply current time, sender nickname/ID, channel name/platform, and bot name/ID to every rendered prompt
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 12-01-PLAN.md — MemoryService with filesystem loading, YAML frontmatter parsing, hot-reload, prompt injection, default persona fallback
+- [ ] 12-02-PLAN.md — Built-in dynamic snippets (time, sender, channel, bot) and core Config/Schema wiring
 
 ### Phase 13: Non-stream Path & Fallback Wiring
 
