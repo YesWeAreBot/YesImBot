@@ -14,9 +14,8 @@ export const inject = ["database"];
 
 export interface Config
   extends HorizonServiceConfig, PromptServiceConfig, PluginServiceConfig, ModelServiceConfig, MemoryConfig {
-  concurrency?: number;
   model?: string;
-  fallbackModel?: string;
+  fallbackChain?: string[];
   maxRounds?: number;
   streamMode?: boolean;
   globalTimeout?: number;
@@ -26,8 +25,6 @@ export interface Config
 }
 
 export const Config: Schema<Config> = Schema.object({
-  defaultModel: Schema.string(),
-  fallbackChains: Schema.array(Schema.string()),
   concurrency: Schema.number().default(5),
   allowedChannels: Schema.array(
     Schema.object({
@@ -45,9 +42,7 @@ export const Config: Schema<Config> = Schema.object({
   templates: Schema.dict(Schema.string()),
   defaultTimeout: Schema.number().default(30000),
   model: Schema.dynamic("registry.chatModels").description("Agent chat model (provider:model)"),
-  fallbackModel: Schema.dynamic("registry.chatModels").description(
-    "Fallback model when primary unavailable",
-  ),
+  fallbackChain: Schema.array(Schema.string()).default([]).description("Agent fallback chain (provider:model)"),
   maxRounds: Schema.number().default(3),
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
@@ -65,7 +60,7 @@ export const Config: Schema<Config> = Schema.object({
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger("yesimbot-core");
-  ctx.plugin(ModelService, config);
+  ctx.plugin(ModelService, { concurrency: config.concurrency });
   ctx.plugin(HorizonService, {
     allowedChannels: config.allowedChannels ?? [],
     keywords: config.keywords,
@@ -81,7 +76,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
   ctx.plugin(AgentCore, {
     model: config.model,
-    fallbackModel: config.fallbackModel,
+    fallbackChain: config.fallbackChain,
     maxRounds: config.maxRounds,
     streamMode: config.streamMode,
     globalTimeout: config.globalTimeout,

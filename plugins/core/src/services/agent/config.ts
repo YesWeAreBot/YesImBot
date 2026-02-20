@@ -7,7 +7,7 @@ export interface AgentIdentity {
 
 export interface AgentCoreConfig {
   model?: string;
-  fallbackModel?: string;
+  fallbackChain?: string[];
   maxRounds?: number;
   streamMode?: boolean;
   globalTimeout?: number;

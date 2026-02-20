@@ -1,5 +1,12 @@
 import { Schema } from "koishi";
 
+export interface DeferredJudgmentConfig {
+  threshold: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+  judgmentModel?: string;
+}
+
 export interface WillingnessConfig {
   decay: {
     halfLife: number;
@@ -21,6 +28,9 @@ export interface WillingnessConfig {
   };
   maxWillingness: number;
   mentionBoost: number;
+  deferred?: DeferredJudgmentConfig;
+  judgmentModel?: string;
+  fallbackChain?: string[];
 }
 
 export const WillingnessSchema = Schema.intersect([
@@ -63,5 +73,15 @@ export const WillingnessSchema = Schema.intersect([
         .default(0.5)
         .description("Exponential penalty base per excess reply"),
     }).description("Fatigue settings"),
+  }),
+  Schema.object({
+    judgmentModel: Schema.dynamic("registry.chatModels").description("Model for willingness LLM judgment"),
+    fallbackChain: Schema.array(Schema.string()).default([]).description("Willingness fallback chain (provider:model)"),
+    deferred: Schema.object({
+      threshold: Schema.number().default(0.3).description("Probability threshold to trigger deferred judgment"),
+      minDelayMs: Schema.number().default(3000).description("Minimum delay before LLM judgment (ms)"),
+      maxDelayMs: Schema.number().default(15000).description("Maximum delay before LLM judgment (ms)"),
+      judgmentModel: Schema.dynamic("registry.chatModels").description("Model for deferred LLM judgment (overrides willingness model)"),
+    }).description("Deferred LLM judgment for borderline SKIP decisions"),
   }),
 ]);

@@ -81,13 +81,13 @@ export class ThinkActLoop {
       let resultText: string | undefined;
       if (config.streamMode) {
         const streamResult = await Promise.race([
-          modelService.streamCall(config.model ?? "", callParams, config.fallbackModel),
+          modelService.streamCall(config.model ?? "", callParams, undefined, config.fallbackChain),
           timeoutPromise,
         ]);
         resultText = await streamResult.text;
       } else {
         const result = await Promise.race([
-          modelService.call(config.model ?? "", callParams, config.fallbackModel),
+          modelService.call(config.model ?? "", callParams, undefined, config.fallbackChain),
           timeoutPromise,
         ]);
         resultText = result?.text;
