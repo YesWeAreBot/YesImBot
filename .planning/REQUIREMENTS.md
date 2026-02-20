@@ -13,9 +13,9 @@
 
 ### Agent Core
 
-- [x] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
-- [x] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
-- [x] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程（含 streamMode 分支）
+- [ ] **AGENT-01**: AgentCore 作为框架无关的编排器，接受 Percept 输入，通过 Horizon 获取 Observation，驱动 think-act 循环；预留 AgentIdentity 扩展点
+- [ ] **AGENT-02**: 混合回复决策 — 规则引擎快速筛选 + LLM 精细判断，WillingnessCalculator 为纯算法，IM 属性通过 Percept 元数据传入
+- [ ] **AGENT-03**: 心跳循环 — stimulus → context build → LLM → tool exec → respond → continue 流程（含 streamMode 分支）
 
 ### Horizon (Context Management)
 
@@ -88,9 +88,9 @@
 | MODEL-01    | Phase 2          | Complete | ModelService.registerProvider() implemented; provider plugins register via it              |
 | MODEL-02    | Phase 2          | Complete | provider-openai package at providers/provider-openai/src/index.ts                         |
 | MODEL-03    | Phase 2          | Complete | provider-deepseek package at providers/provider-deepseek/src/index.ts                     |
-| AGENT-01    | Phase 5, Phase 7 | Complete | AgentCore + ThinkActLoop + DEFAULT_SYSTEM_TEMPLATE fully implemented                       |
-| AGENT-02    | Phase 6          | Complete | WillingnessCalculator with rule scoring + LLM judge implemented                            |
-| AGENT-03    | Phase 5, Phase 8 | Complete | streamMode branch wired in ThinkActLoop; streamCall uses PQueue concurrency control        |
+| AGENT-01    | Phase 5, 7, 13   | Pending  | Non-stream path bypasses ModelService.call(); gap closure in Phase 13                      |
+| AGENT-02    | Phase 6, 15      | Pending  | Rule scoring complete; LLM deferred judgment for borderline SKIP in Phase 15               |
+| AGENT-03    | Phase 5, 8, 13   | Pending  | Stream path complete; non-stream bypasses ModelService — gap closure in Phase 13           |
 | HORIZON-01  | Phase 3          | Complete | Environment/Entity/Event schema in place                                                   |
 | HORIZON-02  | Phase 3, Phase 8 | Complete | Schema + records + stage transitions (markAsActive/archiveStale) wired after agent response |
 | HORIZON-03  | Phase 3          | Complete | toObservations() implemented in EventManager                                               |
@@ -98,7 +98,7 @@
 | TOOL-01     | Phase 4          | Complete | PluginService + buildAiSdkTools implemented                                                |
 | TOOL-02     | Phase 4          | Complete | Decorator pattern in base-plugin.ts                                                        |
 | PROMPT-01   | Phase 4, Phase 7 | Complete | PromptService + DEFAULT_SYSTEM_TEMPLATE + empty-render warnings implemented                |
-| PLATFORM-01 | Phase 1, Phase 5 | Partial  | Koishi Service pattern used throughout; plugin loads but no formal integration test        |
+| PLATFORM-01 | Phase 1, 5, 14   | Pending  | Koishi Service pattern used; providers use redundant ctx.get() — cleanup in Phase 14      |
 | MODEL-04    | Phase 9          | Complete |                                                                                            |
 | MODEL-05    | Phase 9          | Complete |                                                                                            |
 | WILLING-01  | Phase 10         | Complete |                                                                                            |
@@ -112,15 +112,15 @@
 
 **Coverage:**
 
-- v1 requirements: 14 total
+- v1 requirements: 14 total, 10 complete, 4 pending (AGENT-01, AGENT-02, AGENT-03, PLATFORM-01)
 - Mapped to phases: 14
 - Unmapped: 0 ✓
 
-- v2 requirements: 10 total
+- v2 requirements: 10 total, 7 complete, 3 pending (MEMORY-01, MEMORY-02, PROMPT-02)
 - Mapped to phases: 10
 - Unmapped: 0 ✓
 
 ---
 
 _Requirements defined: 2026-02-17_
-_Last updated: 2026-02-19 after v2 roadmap creation (phases 9-12)_
+_Last updated: 2026-02-20 after gap closure phases 13-15 creation_

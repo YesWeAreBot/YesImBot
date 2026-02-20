@@ -229,11 +229,47 @@ Plans:
   4. Built-in snippets supply current time, sender nickname/ID, channel name/platform, and bot name/ID to every rendered prompt
 **Plans**: TBD
 
+### Phase 13: Non-stream Path & Fallback Wiring
+
+**Goal**: Route non-stream generateText() through ModelService.call() and wire parseModelId + fallbackModel
+**Depends on**: Phase 12
+**Requirements**: AGENT-01, AGENT-03, MODEL-01, MODEL-04, MODEL-05
+**Gap Closure:** Closes integration/flow gaps from v1.0 audit
+**Success Criteria** (what must be TRUE):
+  1. Non-stream path calls modelService.call() instead of raw generateText(), gaining PQueue concurrency and fallback chain
+  2. parseModelId is used or removed; fallbackModel is consulted on primary model failure
+  3. finishTool double-inclusion is cleaned up
+**Plans**: TBD
+
+### Phase 14: Provider Pattern Cleanup & PLATFORM-01
+
+**Goal**: Remove redundant ctx.get() from providers and close PLATFORM-01
+**Depends on**: Phase 13
+**Requirements**: PLATFORM-01, MODEL-01
+**Gap Closure:** Closes requirement/integration gaps from v1.0 audit
+**Success Criteria** (what must be TRUE):
+  1. provider-openai and provider-deepseek use only inject pattern, no ctx.get()
+  2. PLATFORM-01 marked complete — all Koishi Service patterns are idiomatic
+**Plans**: TBD
+
+### Phase 15: LLM Deferred Judgment & Model Config Refactor
+
+**Goal**: Add LLM deferred willingness judgment for borderline SKIP decisions; refactor model config to use fallbackChain lists with dynamic schema linkage
+**Depends on**: Phase 13
+**Requirements**: AGENT-02
+**Success Criteria** (what must be TRUE):
+  1. When willingness SKIP occurs and base willingness exceeds a configurable threshold, a deferred LLM judgment is scheduled after a delay inversely proportional to willingness
+  2. If no new message arrives before the delay expires, LLM judges whether to reply; if a new message arrives, the deferred judgment is cancelled and normal willingness processing resumes
+  3. Top-level defaultModel and fallbackChains removed from Config/Schema; AgentCoreConfig.fallbackModel and WillingnessConfig gain fallbackChain (array) with Schema.dynamic list UI
+  4. fallbackChain fields use Schema.dynamic("registry.chatModels") and render as editable lists in Koishi config
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
 v1 phases: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
+gap closure: 13 → 14; 15 can run in parallel with 14 (both depend on 13)
 
 | Phase                         | Plans Complete | Status   | Completed  |
 | ----------------------------- | -------------- | -------- | ---------- |
@@ -249,3 +285,6 @@ v2 phases: 9 → 10 → 11 → 12 (10 and 11 can run in parallel after 8)
 | 10. Willingness System Migration | 2/2 | Complete    | 2026-02-19 |
 | 11. Horizon Context Filling   | 1/1 | Complete    | 2026-02-20 |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
+| 13. Non-stream Path & Fallback | 0/TBD         | Not started |         |
+| 14. Provider Pattern & PLATFORM-01 | 0/TBD     | Not started |         |
+| 15. LLM Deferred Judgment & Config | 0/TBD     | Not started |         |
