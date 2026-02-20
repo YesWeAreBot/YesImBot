@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 ## Current Position
 
-Phase: 11 (Horizon Context Filling)
-Plan: 1
-Status: Complete
-Last activity: 2026-02-20 — Phase 11 Plan 01 complete
+Phase: 13 (Non-stream Path & Fallback Wiring)
+Plan: 1 of 2
+Status: In Progress
+Last activity: 2026-02-20 — Phase 13 Plan 01 complete
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ _Updated after each plan completion_
 | Phase 10-willingness-system-migration P01 | 100 | 2 tasks | 4 files |
 | Phase 10-willingness-system-migration P02 | 67 | 2 tasks | 4 files |
 | Phase 11-horizon-context-filling P01 | 290 | 2 tasks | 4 files |
+| Phase 13-non-stream-path-fallback-wiring P01 | 107 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,10 @@ Recent decisions affecting current work:
 - [Phase 11-01]: getRoleBadge matches owner/admin/administrator case-insensitively
 - [Phase 11-01]: Environment fallback name uses platform:channelId when real name unavailable
 - [Phase 11-01]: Throttled entity writes via Map<id, timestamp> with 60s window
+- [Phase 13-01]: 1 retry before fallback (not 2) — balances reliability vs latency for transient errors
+- [Phase 13-01]: executeStreamCall extracted as private method parallel to executeCall for DRY stream fallback
+- [Phase 13-01]: resolveModel helper eliminates duplicated model-string parsing across call/streamCall/getModel
+- [Phase 13-01]: Fallback chain order: primary (with retry) -> per-call fallback -> global chain -> throw
 
 ### Pending Todos
 
@@ -136,5 +141,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 11-01-PLAN.md
-Resume file: .planning/phases/11-horizon-context-filling/11-01-SUMMARY.md
+Stopped at: Completed 13-01-PLAN.md
+Resume file: .planning/phases/13-non-stream-path-fallback-wiring/13-01-SUMMARY.md
