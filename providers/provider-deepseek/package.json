@@ -32,5 +32,10 @@
   },
   "peerDependencies": {
     "koishi": "^4.0.0"
+  },
+  "koishi": {
+    "service": {
+      "required": ["yesimbot.model"]
+    }
   }
 }

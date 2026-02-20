@@ -107,12 +107,6 @@ class DeepSeekProvider implements IModelProvider {
 
 export function apply(ctx: Context, config: Config) {
   const provider = new DeepSeekProvider(config);
-  const logger = ctx.logger("provider-deepseek");
-  const modelService = ctx.get("yesimbot.model") as IModelService;
-  if (!modelService) {
-    logger.error("ModelService not found in context");
-    return;
-  }
-  modelService.registerProvider(config.id, provider);
-  ctx.on("dispose", () => modelService.unregisterProvider(config.id));
+  ctx["yesimbot.model"].registerProvider(config.id, provider);
+  ctx.on("dispose", () => ctx["yesimbot.model"].unregisterProvider(config.id));
 }
