@@ -6,6 +6,7 @@ import { load as yamlLoad } from "js-yaml";
 import Mustache from "mustache";
 import { Context, Service } from "koishi";
 
+import type { HorizonView } from "../horizon/types";
 import type { MemoryBlock, MemoryConfig } from "./types";
 
 const DEFAULT_PERSONA = `## 关于我
@@ -41,6 +42,7 @@ export class MemoryService extends Service<MemoryConfig> {
     await this.loadBlocks();
     this.startWatching();
     this.registerInjection();
+    this.registerSnippets();
     log.info("MemoryService started, %d blocks loaded", this.blocks.length);
   }
 
@@ -110,6 +112,43 @@ export class MemoryService extends Service<MemoryConfig> {
     this.ctx.on("dispose", () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.watcher?.close();
+    });
+  }
+
+  private registerSnippets(): void {
+    const prompt = this.ctx["yesimbot.prompt"];
+    const fmt = new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric", month: "long", day: "numeric",
+      weekday: "long", hour: "numeric", minute: "2-digit", hour12: true,
+    });
+
+    prompt.registerSnippet("date.now", () => fmt.format(new Date()));
+
+    prompt.registerSnippet("sender.name", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return (view?.percept as { payload?: { sender?: { name?: string } } })?.payload?.sender?.name ?? "";
+    });
+    prompt.registerSnippet("sender.id", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return (view?.percept as { payload?: { sender?: { id?: string } } })?.payload?.sender?.id ?? "";
+    });
+
+    prompt.registerSnippet("channel.name", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return view?.environment?.name ?? "";
+    });
+    prompt.registerSnippet("channel.platform", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return (view?.environment?.metadata?.platform as string) ?? "";
+    });
+
+    prompt.registerSnippet("bot.name", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return view?.self?.name ?? "";
+    });
+    prompt.registerSnippet("bot.id", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return view?.self?.id ?? "";
     });
   }
 
