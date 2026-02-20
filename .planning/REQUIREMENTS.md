@@ -57,8 +57,8 @@
 
 ### Horizon（上下文填充）
 
-- [ ] **HORIZON-05**: Environment 填充 — 从 Koishi session 填充频道/群组实际数据（名称、平台、类型）
-- [ ] **HORIZON-06**: Entity 填充 — 从 session 填充用户信息（昵称、角色）和 bot 自身 Entity
+- [x] **HORIZON-05**: Environment 填充 — 从 Koishi session 填充频道/群组实际数据（名称、平台、类型）
+- [x] **HORIZON-06**: Entity 填充 — 从 session 填充用户信息（昵称、角色）和 bot 自身 Entity
 
 ### Prompt（内置 snippet）
 
@@ -104,8 +104,8 @@
 | WILLING-01  | Phase 10         | Complete |                                                                                            |
 | WILLING-02  | Phase 10         | Complete |                                                                                            |
 | WILLING-03  | Phase 10         | Complete |                                                                                            |
-| HORIZON-05  | Phase 11         | Pending  |                                                                                            |
-| HORIZON-06  | Phase 11         | Pending  |                                                                                            |
+| HORIZON-05  | Phase 11         | Complete |                                                                                            |
+| HORIZON-06  | Phase 11         | Complete |                                                                                            |
 | MEMORY-01   | Phase 12         | Pending  |                                                                                            |
 | MEMORY-02   | Phase 12         | Pending  |                                                                                            |
 | PROMPT-02   | Phase 12         | Pending  |                                                                                            |

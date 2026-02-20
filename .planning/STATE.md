@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 ## Current Position
 
-Phase: 10 (Willingness System Migration)
-Plan: 2
+Phase: 11 (Horizon Context Filling)
+Plan: 1
 Status: Complete
-Last activity: 2026-02-20 — Phase 10 Plan 02 complete
+Last activity: 2026-02-20 — Phase 11 Plan 01 complete
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ _Updated after each plan completion_
 | Phase 09-dynamic-schema-linkage P02 | 240 | 2 tasks | 5 files |
 | Phase 10-willingness-system-migration P01 | 100 | 2 tasks | 4 files |
 | Phase 10-willingness-system-migration P02 | 67 | 2 tasks | 4 files |
+| Phase 11-horizon-context-filling P01 | 290 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,10 @@ Recent decisions affecting current work:
 - [Phase 10-02]: WillingnessEngine instantiated in start() from config.willingness with fallback defaults
 - [Phase 10-02]: ctx.setInterval (not raw setInterval) for decay timer — auto-cancelled on dispose
 - [Phase 10-02]: WillingnessSchema nested directly in root Schema.object — creates grouped UI in Koishi
+- [Phase 11-01]: session.event.channel.name used instead of runtime-only channelName accessor (not in type declarations)
+- [Phase 11-01]: getRoleBadge matches owner/admin/administrator case-insensitively
+- [Phase 11-01]: Environment fallback name uses platform:channelId when real name unavailable
+- [Phase 11-01]: Throttled entity writes via Map<id, timestamp> with 60s window
 
 ### Pending Todos
 
@@ -131,5 +136,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-horizon-context-filling/11-CONTEXT.md
+Stopped at: Completed 11-01-PLAN.md
+Resume file: .planning/phases/11-horizon-context-filling/11-01-SUMMARY.md
