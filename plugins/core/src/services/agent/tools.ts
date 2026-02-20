@@ -18,7 +18,7 @@ export function buildAiSdkTools(
   fnCtx: FunctionContext,
   maxResultLength: number,
 ): { tools: ToolSet; toolNames: Set<string> } {
-  const tools: ToolSet = { finish: finishTool };
+  const tools: ToolSet = {};
   const toolNames = new Set<string>();
   for (const entry of pluginService.getTools()) {
     const name = entry.function.name;
@@ -35,6 +35,7 @@ export function buildAiSdkTools(
       },
     };
   }
+  tools["finish"] = finishTool;
   return { tools, toolNames };
 }
 
