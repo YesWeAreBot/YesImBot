@@ -22,7 +22,11 @@ const DEFAULT_SYSTEM_TEMPLATE = `<identity>
 你会收到对话历史和当前消息。根据上下文判断是否需要回复，以及回复什么内容。
 你可以调用工具来完成任务，工具调用结果会反馈给你。
 当你认为已经完成任务或不需要进一步行动时，调用 finish 工具结束本轮对话。
-</how_you_work>`;
+</how_you_work>
+{{#injections}}
+
+{{{injections}}}
+{{/injections}}`;
 
 declare module "koishi" {
   interface Context {
