@@ -35,7 +35,7 @@
 
 ### Platform Integration
 
-- [ ] **PLATFORM-01**: Koishi 集成 — 作为 Koishi 4.x 插件运行，Service 注入体系，生命周期管理
+- [x] **PLATFORM-01**: Koishi 集成 — 作为 Koishi 4.x 插件运行，Service 注入体系，生命周期管理
 
 ## v2 Requirements
 
@@ -98,7 +98,7 @@
 | TOOL-01     | Phase 4          | Complete | PluginService + buildAiSdkTools implemented                                                |
 | TOOL-02     | Phase 4          | Complete | Decorator pattern in base-plugin.ts                                                        |
 | PROMPT-01   | Phase 4, Phase 7 | Complete | PromptService + DEFAULT_SYSTEM_TEMPLATE + empty-render warnings implemented                |
-| PLATFORM-01 | Phase 1, 5, 14   | Pending  | Koishi Service pattern used; providers use redundant ctx.get() — cleanup in Phase 14      |
+| PLATFORM-01 | Phase 1, 5, 14   | Complete | Idiomatic inject pattern in all providers; ctx.get() removed                               |
 | MODEL-04    | Phase 9          | Complete |                                                                                            |
 | MODEL-05    | Phase 9          | Complete |                                                                                            |
 | WILLING-01  | Phase 10         | Complete |                                                                                            |
@@ -112,7 +112,7 @@
 
 **Coverage:**
 
-- v1 requirements: 14 total, 10 complete, 4 pending (AGENT-01, AGENT-02, AGENT-03, PLATFORM-01)
+- v1 requirements: 14 total, 11 complete, 3 pending (AGENT-01, AGENT-02, AGENT-03)
 - Mapped to phases: 14
 - Unmapped: 0 ✓
 

@@ -255,7 +255,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. provider-openai and provider-deepseek use only inject pattern, no ctx.get()
   2. PLATFORM-01 marked complete — all Koishi Service patterns are idiomatic
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+
+- [x] 14-01-PLAN.md — Replace ctx.get() with inject pattern, add koishi.service metadata
 
 ### Phase 15: LLM Deferred Judgment & Model Config Refactor
 
@@ -291,5 +295,5 @@ gap closure: 13 → 14; 15 can run in parallel with 14 (both depend on 13)
 | 11. Horizon Context Filling   | 1/1 | Complete    | 2026-02-20 |
 | 12. Memory & Prompt Snippets  | 0/TBD          | Not started |         |
 | 13. Non-stream Path & Fallback | 2/2 | Complete    | 2026-02-20 |
-| 14. Provider Pattern & PLATFORM-01 | 0/TBD     | Not started |         |
+| 14. Provider Pattern & PLATFORM-01 | 1/1     | Complete    | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | 0/TBD     | Not started |         |
