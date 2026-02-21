@@ -1,7 +1,7 @@
-import { Context, Schema, Service } from "koishi";
+import { Context, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
-import { PerceptInput, Scope } from "../shared/types";
+import { Scope } from "../shared/types";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
@@ -12,6 +12,7 @@ import type {
   HorizonView,
   Observation,
   TimelineEntry,
+  ViewOptions,
 } from "./types";
 import { TimelineEventType } from "./types";
 
@@ -105,8 +106,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.logger.info("HorizonService stopped");
   }
 
-  async buildView(percept: PerceptInput): Promise<HorizonView> {
-    const { platform, channelId } = percept.scope;
+  async buildView(scope: Scope, options?: ViewOptions): Promise<HorizonView> {
+    const { platform, channelId } = scope;
     const entries = await this.events.query({
       scope: { platform, channelId },
       types: [TimelineEventType.Message, TimelineEventType.AgentSummary],
@@ -114,19 +115,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       orderBy: "asc",
     });
     const history = this.events.toObservations(entries);
-    const environment = await this.getOrCreateEnvironment(percept.scope, percept.runtime);
-    const entities = await this.getEntities(percept.scope);
-    const session = percept.runtime?.session;
+    const environment = await this.getOrCreateEnvironment(scope, options?.session);
+    const entities = await this.getEntities(scope);
     const self = {
-      id: session?.bot?.selfId ?? "",
-      name: this.config.botName || session?.bot?.user?.name || session?.bot?.selfId || "",
+      id: options?.selfId ?? "",
+      name: this.config.botName || options?.selfName || options?.selfId || "",
     };
-    return { percept, self, environment: environment ?? undefined, entities, history };
+    return { self, environment: environment ?? undefined, entities, history };
   }
 
   private async getOrCreateEnvironment(
     scope: Scope,
-    runtime?: PerceptInput["runtime"],
+    session?: Session,
   ): Promise<Environment | null> {
     if (!scope.channelId) return null;
     const id = `${scope.platform}:${scope.channelId}`;
@@ -143,7 +143,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         };
       }
     }
-    const session = runtime?.session;
     let channelName = session?.event?.channel?.name || session?.event?.guild?.name || null;
     if (!channelName && session?.bot) {
       try {
