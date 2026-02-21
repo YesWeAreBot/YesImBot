@@ -7,6 +7,7 @@ import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
 import type { HorizonView } from "../horizon";
+import type { Percept } from "../shared/types";
 import { PromptService } from "../prompt";
 import type { MemoryBlock } from "./types";
 
@@ -139,16 +140,12 @@ export class MemoryService extends Service<MemoryServiceConfig> {
     this.prompt.registerSnippet("date.now", () => fmt.format(new Date()));
 
     this.prompt.registerSnippet("sender.name", (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      return (
-        (view?.percept as { payload?: { sender?: { name?: string } } })?.payload?.sender?.name ?? ""
-      );
+      const percept = scope.percept as Percept | undefined;
+      return (percept?.metadata?.senderName as string) ?? "";
     });
     this.prompt.registerSnippet("sender.id", (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      return (
-        (view?.percept as { payload?: { sender?: { id?: string } } })?.payload?.sender?.id ?? ""
-      );
+      const percept = scope.percept as Percept | undefined;
+      return (percept?.metadata?.senderId as string) ?? "";
     });
 
     this.prompt.registerSnippet("channel.name", (scope) => {

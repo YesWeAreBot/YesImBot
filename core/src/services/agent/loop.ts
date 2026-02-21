@@ -5,9 +5,10 @@ import type { HorizonService } from "../horizon/service";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
+import type { ToolExecutionContext } from "../plugin/types";
+import type { Percept } from "../shared/types";
 import type { AgentCoreConfig } from "./service";
 import { buildAiSdkTools, buildStopCondition } from "./tools";
-import { Percept, PerceptType, UserMessagePercept } from "./types";
 
 class LoopAbort extends Error {}
 
@@ -21,13 +22,8 @@ export class ThinkActLoop {
     this.logger = ctx.logger("agent");
   }
 
-  async run(percept: Percept): Promise<void> {
+  async run(percept: Percept, toolCtx: ToolExecutionContext): Promise<void> {
     this.logger.info(`Starting loop for percept ${percept.id} of type ${percept.type}`);
-    if (percept.type !== PerceptType.UserMessage) {
-      this.logger.warn(`Ignoring non-UserMessage percept: ${percept.type}`);
-      return;
-    }
-    const userPercept = percept as UserMessagePercept;
     const loopStartTime = Date.now();
 
     const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
@@ -35,16 +31,20 @@ export class ThinkActLoop {
     const prompt = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    const view = await horizon.buildView(userPercept);
+    const view = await horizon.buildView(percept.scope, {
+      session: toolCtx.session,
+      selfId: toolCtx.bot?.selfId,
+      selfName: toolCtx.bot?.user?.name,
+    });
 
-    const systemPrompt = await prompt.renderToString("system", { view });
+    const systemPrompt = await prompt.renderToString("system", { view, percept });
 
     const userContent = horizon.formatHorizonText(view);
 
-    const fnCtx = { session: userPercept.runtime?.session, view, percept: userPercept };
+    const toolCtxWithPercept = { ...toolCtx, percept };
     const { tools: allTools, toolNames: infoToolNames } = buildAiSdkTools(
       pluginService,
-      fnCtx,
+      toolCtxWithPercept,
       this.config.maxToolResultLength ?? 4000,
     );
     const messages = [{ role: "user" as const, content: userContent }];
@@ -124,7 +124,7 @@ export class ThinkActLoop {
       const typingMs = Math.min(fallbackText.trim().length * 50, 3000);
       const delay = Math.max(0, typingMs - elapsed);
       if (delay > 0) await sleep(delay);
-      await userPercept.runtime?.session?.send(fallbackText.trim());
+      await toolCtx.session?.send(fallbackText.trim());
     }
 
     const sentContent = hasSent
@@ -134,14 +134,14 @@ export class ThinkActLoop {
           .join(" ")
       : fallbackText.trim();
 
-    await horizon.events.markAsActive(userPercept.scope, new Date());
+    await horizon.events.markAsActive(percept.scope, new Date());
     const archiveMs =
       (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
-    await horizon.events.archiveStale(userPercept.scope, archiveMs);
+    await horizon.events.archiveStale(percept.scope, archiveMs);
 
     const summary = `Tools: [${toolNames.join(", ")}]. Sent: [${sentContent || "nothing"}]`;
     await horizon.events.recordAgentSummary({
-      scope: userPercept.scope,
+      scope: percept.scope,
       timestamp: new Date(),
       summary,
     });

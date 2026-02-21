@@ -3,8 +3,9 @@ import { Context, Random, Schema, Service } from "koishi";
 import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
+import type { ToolExecutionContext } from "../plugin/types";
+import type { Percept } from "../shared/types";
 import { ThinkActLoop } from "./loop";
-import { PerceptType, UserMessagePercept } from "./types";
 import { WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
 
 const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
@@ -50,7 +51,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
   static inject = ["yesimbot.horizon", "yesimbot.plugin", "yesimbot.prompt", "yesimbot.model"];
 
   private queues = new Map<string, Promise<void>>();
-  private pending = new Map<string, UserMessagePercept>();
+  private pending = new Map<string, { percept: Percept; toolCtx: ToolExecutionContext }>();
   private pendingWindows = new Map<
     string,
     { cancel: () => void; lastEvent: HorizonMessageEvent }
@@ -99,17 +100,17 @@ export class AgentCore extends Service<AgentCoreConfig> {
       if (!result.shouldReply) {
         const deferred = this.config.willingness?.deferred;
         if (deferred && result.probability >= deferred.threshold) {
-          const percept = this.buildPercept(event);
-          this.scheduleDeferredJudgment(channelKey, percept, result.probability);
+          const built = this.buildPercept(event);
+          this.scheduleDeferredJudgment(channelKey, built, result.probability);
         }
         return;
       }
       if (event.scope.isDirect) {
-        const percept = this.buildPercept(event);
+        const built = this.buildPercept(event);
         if (this.queues.has(channelKey)) {
-          this.pending.set(channelKey, percept);
+          this.pending.set(channelKey, built);
         } else {
-          this.enqueue(channelKey, percept);
+          this.enqueue(channelKey, built);
         }
         return;
       }
@@ -131,31 +132,28 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private buildPercept(event: HorizonMessageEvent): UserMessagePercept {
+  private buildPercept(event: HorizonMessageEvent): { percept: Percept; toolCtx: ToolExecutionContext } {
+    const session = event.runtime?.session;
     return {
-      id: Random.id(),
-      type: PerceptType.UserMessage,
-      scope: event.scope,
-      priority: 5,
-      timestamp: event.timestamp,
-      triggerType: event.triggerType,
-      payload: {
-        messageId: event.payload.messageId,
-        content: event.payload.content,
-        sender: { id: event.payload.senderId, name: event.payload.senderName },
-        channel: {
-          id: event.scope.channelId ?? "",
-          platform: event.scope.platform ?? "",
-          guildId: event.scope.guildId,
+      percept: {
+        id: Random.id(),
+        type: event.triggerType,
+        scope: event.scope,
+        timestamp: event.timestamp,
+        metadata: {
+          messageId: event.payload.messageId,
+          content: event.payload.content,
+          senderId: event.payload.senderId,
+          senderName: event.payload.senderName,
         },
       },
-      runtime: event.runtime,
+      toolCtx: { scope: event.scope, session, bot: session?.bot },
     };
   }
 
-  private enqueue(channelKey: string, percept: UserMessagePercept): void {
+  private enqueue(channelKey: string, built: { percept: Percept; toolCtx: ToolExecutionContext }): void {
     const chain = (this.queues.get(channelKey) ?? Promise.resolve())
-      .then(() => this.runLoop(channelKey, percept))
+      .then(() => this.runLoop(channelKey, built))
       .then(() => {
         const next = this.pending.get(channelKey);
         if (next) {
@@ -170,14 +168,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
     this.queues.set(channelKey, chain);
   }
 
-  protected async runLoop(channelKey: string, percept: UserMessagePercept): Promise<void> {
+  protected async runLoop(channelKey: string, built: { percept: Percept; toolCtx: ToolExecutionContext }): Promise<void> {
     try {
-      await this.loop.run(percept);
+      await this.loop.run(built.percept, built.toolCtx);
       this.willingness.recordBotReply(channelKey);
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
       this.logger.error(err);
-      await this.reportError(err, percept).catch(() => {});
+      await this.reportError(err, built.percept).catch(() => {});
     }
   }
 
@@ -193,7 +191,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private scheduleDeferredJudgment(
     channelKey: string,
-    percept: UserMessagePercept,
+    built: { percept: Percept; toolCtx: ToolExecutionContext },
     probability: number,
   ): void {
     const { threshold, minDelayMs = 3000, maxDelayMs = 15000 } = this.config.willingness!.deferred!;
@@ -207,21 +205,25 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const cancel = this.ctx.setTimeout(async () => {
       if (!this.deferredTimers.has(channelKey)) return;
       this.deferredTimers.delete(channelKey);
-      await this.executeDeferredJudgment(channelKey, percept, probability, gen);
+      await this.executeDeferredJudgment(channelKey, built, probability, gen);
     }, delay);
     this.deferredTimers.set(channelKey, cancel);
   }
 
   private async executeDeferredJudgment(
     channelKey: string,
-    percept: UserMessagePercept,
+    built: { percept: Percept; toolCtx: ToolExecutionContext },
     probability: number,
     gen: number,
   ): Promise<void> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
       const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const view = await horizon.buildView(percept);
+      const view = await horizon.buildView(built.percept.scope, {
+        session: built.toolCtx.session,
+        selfId: built.toolCtx.bot?.selfId,
+        selfName: built.toolCtx.bot?.user?.name,
+      });
       const contextText = horizon.formatHorizonText(view);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";
       const fallbackChain = this.config.willingness?.deferred?.fallbackChain ?? [];
@@ -246,7 +248,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       const answer = (result?.text ?? "").trim().toLowerCase();
       if (answer.startsWith("yes")) {
         this.logger.info(`[deferred] ${channelKey} | LLM judged YES — entering agent loop`);
-        this.enqueue(channelKey, percept);
+        this.enqueue(channelKey, built);
       } else {
         this.logger.info(`[deferred] ${channelKey} | LLM judged NO — staying silent`);
       }
@@ -255,7 +257,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private async reportError(err: unknown, percept: UserMessagePercept): Promise<void> {
+  private async reportError(err: unknown, percept: Percept): Promise<void> {
     if (!this.config.errorReportChannel) return;
     const colonIdx = this.config.errorReportChannel.indexOf(":");
     const platform = this.config.errorReportChannel.slice(0, colonIdx);
