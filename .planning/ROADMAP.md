@@ -54,6 +54,65 @@ Plans:
 - [ ] 16-01-PLAN.md — PromptService core: types, renderer, named injection points, ctx lifecycle, Section[] render
 - [ ] 16-02-PLAN.md — Templates, HorizonView structured output, consumer migration (MemoryService, ThinkActLoop)
 
+### Phase 16.1: Percept Ownership & User Message Context Refactor (INSERTED)
+
+**Goal:** Percept 构造从 horizon 移到 agent 模块，horizon 只负责数据记录和事件广播；user message 承载全部工作负载（环境、成员、历史），system prompt 变为纯静态；统一使用模板路径渲染上下文
+**Depends on:** Phase 16
+**Plans:** 2 plans
+
+Plans:
+- [ ] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
+- [ ] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
+
+**Architecture Decisions (from discussion):**
+
+1. **System prompt 纯静态，user message 承载工作负载：**
+   - system prompt 只定义"你是谁"（identity/style/memories），不包含动态环境数据
+   - 每次响应的上下文（environment、members、history、trigger info）全部放入 user message
+   - 当前 loop.ts:42-65 的 envLines 构建 + environment partial 注入需要移到 user message 侧
+
+2. **统一模板路径：**
+   - 当前存在两条并行路径：toStructured() + 手工拼接 envLines（loop.ts 使用）和 formatHorizonText() + horizon-view.mustache（仅 deferred judgment 使用）
+   - 统一为 horizon-view.mustache 模板路径，删除手工拼接代码
+   - formatHorizonText() 的输出作为 user message content
+
+3. **Percept 归属重构：**
+   - 当前：horizon/listener.ts 构造 Percept → emit("horizon/percept") → agent 订阅并做意愿判断
+   - 目标：horizon/listener.ts 广播原始事件（不构造 Percept）→ agent 订阅 horizon 事件 → agent 内部做意愿计算/聚合 → agent 构造 Percept → loop.run(percept)
+   - Percept 语义变为"已决定要响应的触发源"，一旦构造就必定触发一次响应
+   - aggregation window（schedulePercept）逻辑从 listener 移到 agent，因为这是调度决策
+
+4. **Percept 不是单条消息：**
+   - 有意愿系统存在，agent 响应不是由某条消息触发，而是多条消息共同促进
+   - 但 Percept 也不能包含多条消息（避免把意愿计算职责迁移到 horizon）
+   - Percept 在 agent 模块中构造，代表"决定响应"这个事实，携带触发上下文
+
+5. **horizon 职责边界：**
+   - horizon 只负责：接收 koishi 事件 → 记录 timeline → 广播 horizon event 回调
+   - horizon 不参与决策（不构造 Percept，不做意愿判断）
+   - buildView() 仍在 horizon（数据访问层），但由 agent/loop 调用
+
+**Key files affected:**
+- `core/src/services/horizon/listener.ts` — 移除 buildPercept()、schedulePercept()，改为广播原始事件
+- `core/src/services/horizon/types.ts` — Percept 类型可能移到 agent 模块
+- `core/src/services/agent/service.ts` — 接管聚合窗口、Percept 构造
+- `core/src/services/agent/loop.ts` — user message 重写，使用 formatHorizonText() 模板
+- `core/resources/templates/system.mustache` — 移除 environment partial 引用
+- `core/resources/templates/partials/environment.mustache` — 可能删除或重新定位
+- `core/resources/templates/partials/horizon-view.mustache` — 成为 user message 的主模板
+
+**Success Criteria** (what must be TRUE):
+  1. horizon/listener 不再构造 Percept，只广播原始事件（新事件名，非 "horizon/percept"）
+  2. agent 模块订阅 horizon 事件，内部完成意愿计算 + 聚合窗口 + Percept 构造
+  3. LLM 收到的 user message 包含完整上下文（environment、members、history、trigger），通过 horizon-view.mustache 模板渲染
+  4. system prompt 不包含任何动态环境数据（纯静态：identity + style + memories）
+  5. formatHorizonText() 是唯一的上下文渲染路径，toStructured() + 手工 envLines 拼接被移除
+  6. deferred judgment（executeDeferredJudgment）继续工作，使用统一的模板路径
+
+Plans:
+- [ ] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
+- [ ] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
+
 ### Phase 17: Trait Perception
 **Goal**: The system can analyze conversation context across multiple dimensions in parallel, producing typed signals that downstream consumers can react to
 **Depends on**: Phase 16
