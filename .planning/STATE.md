@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 16.2 (Percept Type Cleanup & Session Decoupling)
-Plan: 1/2
-Status: In Progress
-Last activity: 2026-02-21 - Completed 16.2-01: type foundation (Percept, ToolExecutionContext, ViewOptions, buildView decoupling)
+Plan: 2/2
+Status: Complete
+Last activity: 2026-02-21 - Completed 16.2-02: agent + plugin consumer refactor (ToolExecutionContext wiring, activator filtering)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -61,6 +61,9 @@ Recent decisions affecting current work:
 - [16.2-01]: ToolExecutionContext has index signature for extensibility
 - [16.2-01]: buildView accepts Scope + ViewOptions instead of PerceptInput wrapper
 - [16.2-01]: agent/types.ts emptied rather than deleted for import path compatibility
+- [16.2-02]: buildPercept returns {percept, toolCtx} pair, not separate methods
+- [16.2-02]: toolCtxWithPercept spread in loop adds percept reference for tool handlers
+- [16.2-02]: memory/service.ts sender snippets read from Percept.metadata instead of removed HorizonView.percept
 
 ### Pending Todos
 
@@ -85,5 +88,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 16.2-01-PLAN.md (Type Foundation)
+Stopped at: Completed 16.2-02-PLAN.md (Agent + Plugin Consumer Refactor)
 Resume file: None

@@ -117,7 +117,7 @@ Plans:
 
 **Goal:** 彻底清理 16.1 遗留的类型问题：移除临时方案 BasePerceptRef，将 session 从 PerceptInput 核心结构中解耦，建立 Percept 在 agent/horizon/plugin 三层的清晰职责边界
 **Depends on:** Phase 16.1
-**Plans:** 1/2 plans complete
+**Plans:** 2/2 plans complete
 
 **Background (from 16.1 / quick-1):**
 - quick-1 将 TriggerType, Scope, BasePerceptRef 提取到 shared/types.ts，解决了循环引用
@@ -201,7 +201,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 15. LLM Deferred Judgment & Config | v1.0 | 2/2 | Complete | 2026-02-20 |
 | 16. PromptService Redesign + HorizonView | v2.0 | 2/2 | Complete | 2026-02-21 |
 | 16.1. Percept Ownership & User Message Context Refactor | v2.0 | Complete    | 2026-02-21 | 2026-02-21 |
-| 16.2. Percept Type Cleanup & Session Decoupling | v2.0 | 1/2 | In Progress | - |
+| 16.2. Percept Type Cleanup & Session Decoupling | 2/2 | Complete   | 2026-02-21 | - |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |

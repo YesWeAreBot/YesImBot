@@ -1,0 +1,1 @@
+- memory/service.ts: references HorizonView.percept which was removed in Plan 01 — needs update to get sender info from a different source
