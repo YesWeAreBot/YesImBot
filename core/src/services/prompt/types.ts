@@ -1,4 +1,10 @@
-export type InjectionPoint = "identity" | "style" | "core_memories" | "working_memory" | "environment" | "extra";
+export type InjectionPoint =
+  | "identity"
+  | "style"
+  | "core_memories"
+  | "working_memory"
+  | "environment"
+  | "extra";
 
 export const INJECTION_POINTS: InjectionPoint[] = [
   "identity",

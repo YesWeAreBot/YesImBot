@@ -1,7 +1,6 @@
 import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
-import { loadPartial } from "../prompt/loader";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
@@ -59,7 +58,7 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
-  static inject = ["database"];
+  static inject = ["database", "yesimbot.prompt"];
 
   public events: EventManager;
   public listener: EventListener;
@@ -242,9 +241,10 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return `[${hhmm}] [Bot Summary]: ${obs.summary}`;
   }
 
-  private horizonViewTpl = loadPartial("horizon-view");
+  private horizonViewTpl?: string;
 
   formatHorizonText(view: HorizonView): string {
+    this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
     let environment = "";
     if (view.environment) {
       const env = view.environment;

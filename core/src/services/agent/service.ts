@@ -47,6 +47,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, Percept>();
   private deferredTimers = new Map<string, () => void>();
+  private deferredGen = new Map<string, number>();
   private loop!: ThinkActLoop;
   private willingness!: WillingnessEngine;
 
@@ -68,7 +69,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       },
     );
     this.ctx.setInterval(() => this.willingness.tick(), 1000);
-    this.loop = new ThinkActLoop(this.ctx);
+    this.loop = new ThinkActLoop(this.ctx, this.config);
     this.ctx.on("horizon/percept", (percept) => this.handlePercept(percept));
     this.logger.info("AgentCore started");
   }
@@ -127,7 +128,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   protected async runLoop(channelKey: string, percept: Percept): Promise<void> {
     try {
-      await this.loop.run(percept, this.config);
+      await this.loop.run(percept);
       this.willingness.recordBotReply(channelKey);
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
@@ -143,6 +144,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       this.deferredTimers.delete(channelKey);
       this.logger.info(`[deferred] ${channelKey} | cancelled pending judgment`);
     }
+    this.deferredGen.set(channelKey, (this.deferredGen.get(channelKey) ?? 0) + 1);
   }
 
   private scheduleDeferredJudgment(
@@ -154,12 +156,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const normalized = (probability - threshold) / (1 - threshold);
     const delay = maxDelayMs - normalized * (maxDelayMs - minDelayMs);
     this.logger.info(
-      `[deferred] ${channelKey} | scheduling LLM judgment in ${delay}ms (P=${probability.toFixed(3)})`,
+      `[deferred] ${channelKey} | scheduling LLM judgment in ${delay.toFixed(0)}ms (P=${probability.toFixed(3)})`,
     );
+    const gen = (this.deferredGen.get(channelKey) ?? 0) + 1;
+    this.deferredGen.set(channelKey, gen);
     const cancel = this.ctx.setTimeout(async () => {
       if (!this.deferredTimers.has(channelKey)) return;
       this.deferredTimers.delete(channelKey);
-      await this.executeDeferredJudgment(channelKey, percept, probability);
+      await this.executeDeferredJudgment(channelKey, percept, probability, gen);
     }, delay);
     this.deferredTimers.set(channelKey, cancel);
   }
@@ -168,6 +172,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     channelKey: string,
     percept: Percept,
     probability: number,
+    gen: number,
   ): Promise<void> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
@@ -190,6 +195,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
         },
         fallbackChain,
       );
+      if (this.deferredGen.get(channelKey) !== gen) {
+        this.logger.info(`[deferred] ${channelKey} | stale judgment (gen ${gen}), discarding`);
+        return;
+      }
       const answer = (result?.text ?? "").trim().toLowerCase();
       if (answer.startsWith("yes")) {
         this.logger.info(`[deferred] ${channelKey} | LLM judged YES — entering agent loop`);

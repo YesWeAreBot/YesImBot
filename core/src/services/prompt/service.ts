@@ -1,6 +1,8 @@
+import { cpSync, existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { Context, Schema, Service } from "koishi";
 
-import { loadPartial, loadTemplate } from "./loader";
 import { MustacheRenderer } from "./renderer";
 import type { InjectionEntry, InjectionPoint, Section, Snippet } from "./types";
 import { INJECTION_POINTS } from "./types";
@@ -14,11 +16,13 @@ declare module "koishi" {
 export interface PromptServiceConfig {
   templates?: Record<string, string>;
   timeout?: number;
+  resourcesDir?: string;
 }
 
 export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
   templates: Schema.dict(Schema.string()),
   timeout: Schema.number().default(5000).description("Injection render timeout (ms)"),
+  resourcesDir: Schema.string().description("Custom templates directory"),
 });
 
 const CACHEABLE_POINTS = new Set<InjectionPoint>(["identity", "style", "core_memories"]);
@@ -29,15 +33,27 @@ export class PromptService extends Service<PromptServiceConfig> {
   private injections = new Map<InjectionPoint, InjectionEntry[]>();
   private partials = new Map<string, string>();
   private renderer = new MustacheRenderer();
+  readonly resourcesDir: string;
 
   constructor(ctx: Context, config: PromptServiceConfig) {
     super(ctx, "yesimbot.prompt", true);
     this.config = config;
     this.logger = this.ctx.logger("yesimbot.prompt");
+
+    // Resolve resources directory; seed from builtin if custom dir lacks templates
+    this.resourcesDir = config.resourcesDir ?? builtinResourcesDir;
+    if (
+      this.resourcesDir !== builtinResourcesDir &&
+      !existsSync(resolve(this.resourcesDir, "system.mustache"))
+    ) {
+      cpSync(builtinResourcesDir, this.resourcesDir, { recursive: true });
+      this.logger.info(`Seeded templates to "${this.resourcesDir}"`);
+    }
+
     for (const point of INJECTION_POINTS) {
       this.injections.set(point, []);
     }
-    this.registerTemplate("system", loadTemplate("system"));
+    this.registerTemplate("system", this.loadTemplate("system"));
 
     // Register section partials (hyphenated filenames -> underscored partial names)
     const partialMap: Record<string, string> = {
@@ -49,7 +65,7 @@ export class PromptService extends Service<PromptServiceConfig> {
       extra: "extra",
     };
     for (const [name, file] of Object.entries(partialMap)) {
-      this.registerPartial(name, loadPartial(file));
+      this.registerPartial(name, this.loadPartial(file));
     }
 
     // Default identity injection
@@ -72,17 +88,26 @@ export class PromptService extends Service<PromptServiceConfig> {
     // Default style injection
     this.inject(this.ctx, "style", {
       name: "__default_style",
-      renderFn: () => [
-        "- 说话自然随意，像真人发消息一样，不用敬语",
-        "- 回复简短，不要长篇大论，除非对方明确需要详细解释",
-        "- 可以有自己的情绪和看法，不必总是附和",
-        "- 不要在回复里加多余的标点或格式，保持口语化",
-      ].join("\n"),
+      renderFn: () =>
+        [
+          "- 说话自然随意，像真人发消息一样，不用敬语",
+          "- 回复简短，不要长篇大论，除非对方明确需要详细解释",
+          "- 可以有自己的情绪和看法，不必总是附和",
+          "- 不要在回复里加多余的标点或格式，保持口语化",
+        ].join("\n"),
     });
   }
 
   getTemplate(name: string): string {
     return this.templates.get(name) ?? "";
+  }
+
+  loadTemplate(name: string): string {
+    return readFileSync(resolve(this.resourcesDir, `${name}.mustache`), "utf-8");
+  }
+
+  loadPartial(name: string): string {
+    return this.loadTemplate(`partials/${name}`);
   }
 
   registerTemplate(name: string, content: string): void {
@@ -148,11 +173,16 @@ export class PromptService extends Service<PromptServiceConfig> {
         }
       }
       const content = fragments.join("\n\n");
-      scope[`${point}_content`] = content;
-      scope[`has_${point}`] = content.length > 0;
+      if (content || !(`${point}_content` in scope)) {
+        scope[`${point}_content`] = content;
+        scope[`has_${point}`] = content.length > 0;
+      }
     }
 
-    const allPartials = { ...Object.fromEntries(this.templates), ...Object.fromEntries(this.partials) };
+    const allPartials = {
+      ...Object.fromEntries(this.templates),
+      ...Object.fromEntries(this.partials),
+    };
 
     const sections: Section[] = [];
     for (const point of INJECTION_POINTS) {
@@ -174,7 +204,10 @@ export class PromptService extends Service<PromptServiceConfig> {
     return sections;
   }
 
-  async renderToString(templateName: string, initialScope?: Record<string, unknown>): Promise<string> {
+  async renderToString(
+    templateName: string,
+    initialScope?: Record<string, unknown>,
+  ): Promise<string> {
     const sections = await this.render(templateName, initialScope);
     return sections.map((s) => s.content).join("\n\n");
   }
@@ -221,7 +254,9 @@ export class PromptService extends Service<PromptServiceConfig> {
 
     if (sorted.length !== entries.length) {
       const missing = entries.filter((e) => !sorted.includes(e)).map((e) => e.name);
-      this.logger.warn(`Cycle detected in injection ordering: [${missing.join(", ")}], using registration order`);
+      this.logger.warn(
+        `Cycle detected in injection ordering: [${missing.join(", ")}], using registration order`,
+      );
       return [...entries];
     }
 
@@ -241,17 +276,48 @@ export class PromptService extends Service<PromptServiceConfig> {
     ]);
   }
 
+  private getRequiredVariables(templateContent: string): Set<string> {
+    const visited = new Set<string>();
+    const allVars = new Set<string>();
+    const allPartials = {
+      ...Object.fromEntries(this.templates),
+      ...Object.fromEntries(this.partials),
+    };
+
+    const process = (content: string) => {
+      const { variables, partials } = this.renderer.parse(content);
+      for (const v of variables) allVars.add(v);
+      for (const p of partials) {
+        if (!visited.has(p)) {
+          visited.add(p);
+          const pc = allPartials[p];
+          if (pc) process(pc);
+        }
+      }
+    };
+
+    process(templateContent);
+    return allVars;
+  }
+
+  private isSnippetRequired(key: string, required: Set<string>): boolean {
+    if (required.has(key)) return true;
+    for (const req of required) {
+      if (req.startsWith(`${key}.`) || key.startsWith(`${req}.`)) return true;
+    }
+    return false;
+  }
+
   private async buildScope(
     initialScope: Record<string, unknown>,
     templateContent: string,
   ): Promise<Record<string, unknown>> {
-    const { variables } = this.renderer.parse(templateContent);
+    const required = this.getRequiredVariables(templateContent);
     const scope: Record<string, unknown> = { ...initialScope };
     for (const [key, fn] of this.snippets) {
-      if (variables.has(key)) {
-        const result = await fn(scope);
-        this.setNestedProperty(scope, key, result);
-      }
+      if (!this.isSnippetRequired(key, required)) continue;
+      const result = await fn(scope);
+      this.setNestedProperty(scope, key, result);
     }
     return scope;
   }
@@ -268,3 +334,9 @@ export class PromptService extends Service<PromptServiceConfig> {
     cur[parts[parts.length - 1]] = value;
   }
 }
+
+export const builtinResourcesDir = resolve(
+  __dirname,
+  "../".repeat(__dirname.includes("dist") ? 1 : 2),
+  "resources/templates",
+);

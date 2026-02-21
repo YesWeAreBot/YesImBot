@@ -15,11 +15,14 @@ class LoopAbort extends Error {}
 export class ThinkActLoop {
   private logger;
 
-  constructor(private ctx: Context) {
+  constructor(
+    private ctx: Context,
+    private config: AgentCoreConfig,
+  ) {
     this.logger = ctx.logger("agent");
   }
 
-  async run(percept: Percept, config: AgentCoreConfig): Promise<void> {
+  async run(percept: Percept): Promise<void> {
     this.logger.info(`Starting loop for percept ${percept.id} of type ${percept.type}`);
     if (percept.type !== PerceptType.UserMessage) {
       this.logger.warn(`Ignoring non-UserMessage percept: ${percept.type}`);
@@ -43,7 +46,9 @@ export class ThinkActLoop {
       envLines.push(`Location: ${e.name} (${e.type}${e.platform ? `, ${e.platform}` : ""})`);
     }
     if (structured.members.length) {
-      envLines.push(`Active members: ${structured.members.map(m => m.badge ? `${m.name} [${m.badge}]` : m.name).join(", ")}`);
+      envLines.push(
+        `Active members: ${structured.members.map((m) => (m.badge ? `${m.name} [${m.badge}]` : m.name)).join(", ")}`,
+      );
     }
     if (structured.history.length) {
       envLines.push("--- Message History ---");
@@ -63,16 +68,21 @@ export class ThinkActLoop {
     const { tools: allTools, toolNames: infoToolNames } = buildAiSdkTools(
       pluginService,
       fnCtx,
-      config.maxToolResultLength ?? 4000,
+      this.config.maxToolResultLength ?? 4000,
     );
-    const messages = [{ role: "user" as const, content: `[${userPercept.triggerType}] ${userPercept.payload.content}` }];
-    const stopWhen = buildStopCondition(config.maxRounds ?? 3);
+    const messages = [
+      {
+        role: "user" as const,
+        content: `[${userPercept.triggerType}] ${userPercept.payload.content}`,
+      },
+    ];
+    const stopWhen = buildStopCondition(this.config.maxRounds ?? 3);
 
     // ModelService handles model resolution and default params internally
     const collectedSteps: StepResult<ToolSet>[] = [];
     let fallbackText = "";
 
-    const timeoutMs = config.globalTimeout ?? 120000;
+    const timeoutMs = this.config.globalTimeout ?? 120000;
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Global loop timeout")), timeoutMs),
     );
@@ -90,6 +100,8 @@ export class ThinkActLoop {
       }
     };
 
+    this.logger.info(JSON.stringify({ systemPrompt, messages }, null, 2));
+
     const callParams = {
       system: systemPrompt,
       messages,
@@ -101,15 +113,15 @@ export class ThinkActLoop {
 
     try {
       let resultText: string | undefined;
-      if (config.streamMode) {
+      if (this.config.streamMode) {
         const streamResult = await Promise.race([
-          modelService.streamCall(config.model ?? "", callParams, config.fallbackChain),
+          modelService.streamCall(this.config.model ?? "", callParams, this.config.fallbackChain),
           timeoutPromise,
         ]);
         resultText = await streamResult.text;
       } else {
         const result = await Promise.race([
-          modelService.call(config.model ?? "", callParams, config.fallbackChain),
+          modelService.call(this.config.model ?? "", callParams, this.config.fallbackChain),
           timeoutPromise,
         ]);
         resultText = result?.text;

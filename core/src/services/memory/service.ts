@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from "node:fs";
+import { readFileSync, watch, type FSWatcher } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, extname, basename } from "node:path";
 
@@ -6,11 +6,9 @@ import { load as yamlLoad } from "js-yaml";
 import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
-import type { HorizonView } from "../horizon/types";
-import { loadTemplate, loadPartial } from "../prompt/loader";
+import type { HorizonView } from "../horizon";
+import { PromptService } from "../prompt";
 import type { MemoryBlock } from "./types";
-
-const DEFAULT_PERSONA = loadTemplate("default-persona");
 
 declare module "koishi" {
   interface Context {
@@ -38,25 +36,32 @@ export class MemoryService extends Service<MemoryServiceConfig> {
   private blocks: MemoryBlock[] = [];
   private watcher: FSWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private defaultPersona: string;
+  private prompt: PromptService;
 
   constructor(ctx: Context, config: MemoryServiceConfig) {
     super(ctx, "yesimbot.memory", false);
     this.config = config;
+    this.logger = ctx.logger("memory");
+    this.prompt = ctx["yesimbot.prompt"];
+    this.defaultPersona = readFileSync(
+      join(this.prompt.resourcesDir, "default-persona.mustache"),
+      "utf-8",
+    );
   }
 
   protected async start(): Promise<void> {
-    const log = this.ctx.logger("yesimbot.memory");
     await this.loadBlocks();
     this.startWatching();
     this.registerInjection();
     this.registerSnippets();
-    log.info("MemoryService started, %d blocks loaded", this.blocks.length);
+    this.logger.info("MemoryService started, %d blocks loaded", this.blocks.length);
   }
 
   private async loadBlocks(): Promise<void> {
     const log = this.ctx.logger("yesimbot.memory");
     if (!this.config.coreMemoryPath) {
-      this.blocks = [{ label: "persona", content: DEFAULT_PERSONA, filename: "__default__" }];
+      this.blocks = [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
       return;
     }
 
@@ -65,7 +70,7 @@ export class MemoryService extends Service<MemoryServiceConfig> {
       const files = entries.filter((f) => /\.(md|txt)$/.test(f)).sort();
 
       if (!files.length) {
-        this.blocks = [{ label: "persona", content: DEFAULT_PERSONA, filename: "__default__" }];
+        this.blocks = [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
         return;
       }
 
@@ -82,15 +87,15 @@ export class MemoryService extends Service<MemoryServiceConfig> {
             filename: file,
           });
         } catch (e) {
-          log.warn("Failed to load memory file %s: %s", file, e);
+          this.logger.warn("Failed to load memory file %s: %s", file, e);
         }
       }
       this.blocks = blocks.length
         ? blocks
-        : [{ label: "persona", content: DEFAULT_PERSONA, filename: "__default__" }];
+        : [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
     } catch (e) {
-      log.warn("Failed to read memory directory: %s", e);
-      this.blocks = [{ label: "persona", content: DEFAULT_PERSONA, filename: "__default__" }];
+      this.logger.warn("Failed to read memory directory: %s", e);
+      this.blocks = [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
     }
   }
 
@@ -121,7 +126,6 @@ export class MemoryService extends Service<MemoryServiceConfig> {
   }
 
   private registerSnippets(): void {
-    const prompt = this.ctx["yesimbot.prompt"];
     const fmt = new Intl.DateTimeFormat("zh-CN", {
       year: "numeric",
       month: "long",
@@ -132,47 +136,46 @@ export class MemoryService extends Service<MemoryServiceConfig> {
       hour12: true,
     });
 
-    prompt.registerSnippet("date.now", () => fmt.format(new Date()));
+    this.prompt.registerSnippet("date.now", () => fmt.format(new Date()));
 
-    prompt.registerSnippet("sender.name", (scope) => {
+    this.prompt.registerSnippet("sender.name", (scope) => {
       const view = scope.view as HorizonView | undefined;
       return (
         (view?.percept as { payload?: { sender?: { name?: string } } })?.payload?.sender?.name ?? ""
       );
     });
-    prompt.registerSnippet("sender.id", (scope) => {
+    this.prompt.registerSnippet("sender.id", (scope) => {
       const view = scope.view as HorizonView | undefined;
       return (
         (view?.percept as { payload?: { sender?: { id?: string } } })?.payload?.sender?.id ?? ""
       );
     });
 
-    prompt.registerSnippet("channel.name", (scope) => {
+    this.prompt.registerSnippet("channel.name", (scope) => {
       const view = scope.view as HorizonView | undefined;
       return view?.environment?.name ?? "";
     });
-    prompt.registerSnippet("channel.platform", (scope) => {
+    this.prompt.registerSnippet("channel.platform", (scope) => {
       const view = scope.view as HorizonView | undefined;
       return (view?.environment?.metadata?.platform as string) ?? "";
     });
 
-    prompt.registerSnippet("bot.name", (scope) => {
+    this.prompt.registerSnippet("bot.name", (scope) => {
       const view = scope.view as HorizonView | undefined;
       return view?.self?.name ?? "";
     });
-    prompt.registerSnippet("bot.id", (scope) => {
+    this.prompt.registerSnippet("bot.id", (scope) => {
       const view = scope.view as HorizonView | undefined;
       return view?.self?.id ?? "";
     });
   }
 
   private registerInjection(): void {
-    const log = this.ctx.logger("yesimbot.memory");
     const limit = this.config.memoryCharLimit ?? 4000;
-    const coreMemoryTpl = loadTemplate("core-memory");
-    const partials = { "memory-block": loadPartial("memory-block") };
+    const coreMemoryTpl = this.prompt.loadTemplate("core-memory");
+    const partials = { "memory-block": this.prompt.loadPartial("memory-block") };
 
-    this.ctx["yesimbot.prompt"].inject(this.ctx, "core_memories", {
+    this.prompt.inject(this.ctx, "core_memories", {
       name: "core-memory",
       renderFn: (scope: Record<string, unknown>) => {
         if (!this.blocks.length) return "";
@@ -184,7 +187,7 @@ export class MemoryService extends Service<MemoryServiceConfig> {
           const rendered = Mustache.render(block.content, scope);
           const est = `<${block.label}>${rendered}</${block.label}>`.length;
           if (used + est > limit && blocks.length > 0) {
-            log.warn("Memory char limit reached, skipping remaining blocks");
+            this.logger.warn("Memory char limit reached, skipping remaining blocks");
             break;
           }
           blocks.push({ label: block.label, title: block.title, rendered });
