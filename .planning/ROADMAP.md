@@ -113,6 +113,36 @@ Plans:
 - [x] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
 - [x] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
 
+### Phase 16.2: Percept Type Cleanup & Session Decoupling (INSERTED)
+
+**Goal:** 彻底清理 16.1 遗留的类型问题：移除临时方案 BasePerceptRef，将 session 从 PerceptInput 核心结构中解耦，建立 Percept 在 agent/horizon/plugin 三层的清晰职责边界
+**Depends on:** Phase 16.1
+**Plans:** 0 plans
+
+**Background (from 16.1 / quick-1):**
+- quick-1 将 TriggerType, Scope, BasePerceptRef 提取到 shared/types.ts，解决了循环引用
+- 但 BasePerceptRef 是临时妥协方案（HorizonView.percept 用它避免循环导入），需要彻底移除
+- PerceptInput 包含 `runtime?: { session: Session }`，但 Percept 设计为支持多事件源（定时器、内部触发等），这些没有 session
+- 部分 PluginTool（如 send_message）依赖 session，但实际可从 ctx 获取 bot 对象
+
+**Key problems:**
+1. BasePerceptRef 是 Percept 的子集投影，造成类型冗余和语义模糊
+2. session 耦合在 PerceptInput 核心结构中，限制了非消息事件源的 Percept 构造
+3. Plugin 工具的 session 依赖边界不清晰 — 哪些工具真正需要 session，哪些可以用 ctx 替代
+
+**Reference implementations:**
+- v3: `isSupported` 守卫模式 — 工具声明平台+session 前置条件（references/YesImBot-v3/packages/core/src/services/extension/builtin/memory.ts）
+- dev: `requireSession` 工具激活器 — 运行时判断环境是否满足工具启用条件（references/YesImBot-dev/packages/core/src/services/plugin/builtin/interactions.ts）
+
+**Scope:**
+- 移除 BasePerceptRef，统一为完整 Percept 类型引用
+- 将 session 从 PerceptInput 核心结构移到可选的事件源上下文
+- 设计工具可用性守卫机制（参考 v3/dev 方案）
+- 明确 Percept 在三层的职责：agent 构造、horizon 记录/广播、plugin 消费
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 16.2 to break down)
+
 ### Phase 17: Trait Perception
 **Goal**: The system can analyze conversation context across multiple dimensions in parallel, producing typed signals that downstream consumers can react to
 **Depends on**: Phase 16
