@@ -152,6 +152,27 @@ export interface HorizonView {
   history?: Observation[];
 }
 
+// ---- Structured View ----
+
+export interface StructuredHorizonView {
+  environment: {
+    name: string;
+    type: "private" | "group";
+    platform?: string;
+  };
+  members: Array<{
+    name: string;
+    badge?: string;
+  }>;
+  history: Array<{
+    time: string;
+    sender: string;
+    content: string;
+    isBot?: boolean;
+    isSummary?: boolean;
+  }>;
+}
+
 // ---- Query ----
 
 export interface EventQueryOptions {

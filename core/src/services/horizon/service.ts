@@ -12,6 +12,7 @@ import type {
   HorizonView,
   Observation,
   Scope,
+  StructuredHorizonView,
   TimelineEntry,
   UserMessagePercept,
 } from "./types";
@@ -124,6 +125,31 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       name: this.config.botName || session?.bot?.user?.name || session?.bot?.selfId || "",
     };
     return { percept, self, environment: environment ?? undefined, entities, history };
+  }
+
+  toStructured(view: HorizonView): StructuredHorizonView {
+    const env = view.environment;
+    const environment = {
+      name: env?.name ?? "",
+      type: (env?.type === "private" ? "private" : "group") as "private" | "group",
+      platform: (env?.metadata?.platform as string) || undefined,
+    };
+
+    const members = (view.entities ?? []).map((e) => {
+      const badge = this.getRoleBadge(e.attributes);
+      return { name: e.name, badge: badge ? badge.trim().slice(1, -1) : undefined };
+    });
+
+    const history = (view.history ?? []).map((obs) => {
+      const time = obs.timestamp.toTimeString().slice(0, 5);
+      if (obs.type === "message") {
+        const isBot = view.self?.id ? obs.sender.id === view.self.id : false;
+        return { time, sender: obs.sender.name, content: obs.content, isBot: isBot || undefined };
+      }
+      return { time, sender: "", content: obs.summary, isSummary: true };
+    });
+
+    return { environment, members, history };
   }
 
   private async getOrCreateEnvironment(

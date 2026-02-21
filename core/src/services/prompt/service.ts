@@ -1,6 +1,6 @@
 import { Context, Schema, Service } from "koishi";
 
-import { loadTemplate } from "./loader";
+import { loadPartial, loadTemplate } from "./loader";
 import { MustacheRenderer } from "./renderer";
 import type { InjectionEntry, InjectionPoint, Section, Snippet } from "./types";
 import { INJECTION_POINTS } from "./types";
@@ -38,6 +38,47 @@ export class PromptService extends Service<PromptServiceConfig> {
       this.injections.set(point, []);
     }
     this.registerTemplate("system", loadTemplate("system"));
+
+    // Register section partials (hyphenated filenames -> underscored partial names)
+    const partialMap: Record<string, string> = {
+      identity: "identity",
+      style: "style",
+      core_memories: "core-memories",
+      working_memory: "working-memory",
+      environment: "environment",
+      extra: "extra",
+    };
+    for (const [name, file] of Object.entries(partialMap)) {
+      this.registerPartial(name, loadPartial(file));
+    }
+
+    // Default identity injection
+    this.inject(this.ctx, "identity", {
+      name: "__default_identity",
+      renderFn: (scope) => {
+        const view = scope.view as { self?: { name?: string }; environment?: { name?: string } };
+        const name = view?.self?.name ?? "";
+        const env = view?.environment?.name;
+        let text = `你是 ${name}，一个有血有肉的人，正在和朋友们聊天。`;
+        if (env) text += `\n你现在在「${env}」里。`;
+        text += "\n你不是 AI 助手，不要表现得像客服或机器人。";
+        text += "\n你会收到对话历史和当前消息。根据上下文判断是否需要回复，以及回复什么内容。";
+        text += "\n你可以调用工具来完成任务，工具调用结果会反馈给你。";
+        text += "\n当你认为已经完成任务或不需要进一步行动时，调用 finish 工具结束本轮对话。";
+        return text;
+      },
+    });
+
+    // Default style injection
+    this.inject(this.ctx, "style", {
+      name: "__default_style",
+      renderFn: () => [
+        "- 说话自然随意，像真人发消息一样，不用敬语",
+        "- 回复简短，不要长篇大论，除非对方明确需要详细解释",
+        "- 可以有自己的情绪和看法，不必总是附和",
+        "- 不要在回复里加多余的标点或格式，保持口语化",
+      ].join("\n"),
+    });
   }
 
   getTemplate(name: string): string {
