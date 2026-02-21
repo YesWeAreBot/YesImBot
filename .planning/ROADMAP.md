@@ -109,7 +109,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 13. Non-stream Path & Fallback | v1.0 | 2/2 | Complete | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | v1.0 | 1/1 | Complete | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | v1.0 | 2/2 | Complete | 2026-02-20 |
-| 16. PromptService Redesign + HorizonView | 2/2 | Complete   | 2026-02-21 | - |
+| 16. PromptService Redesign + HorizonView | 2/2 | Complete    | 2026-02-21 | - |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |
