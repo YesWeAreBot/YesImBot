@@ -37,13 +37,10 @@ export class ThinkActLoop {
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
     const view = await horizon.buildView(userPercept, userPercept.runtime);
-    const environmentText = horizon.formatHorizonText(view);
 
-    const systemPrompt = await prompt.renderToString("system", {
-      view,
-      environment_content: environmentText,
-      has_environment: environmentText.length > 0,
-    });
+    const systemPrompt = await prompt.renderToString("system", { view });
+
+    const userContent = horizon.formatHorizonText(view);
 
     const fnCtx = { session: userPercept.runtime?.session, view, percept: userPercept };
     const { tools: allTools, toolNames: infoToolNames } = buildAiSdkTools(
@@ -52,10 +49,7 @@ export class ThinkActLoop {
       this.config.maxToolResultLength ?? 4000,
     );
     const messages = [
-      {
-        role: "user" as const,
-        content: `[${userPercept.triggerType}] ${userPercept.payload.content}`,
-      },
+      { role: "user" as const, content: userContent },
     ];
     const stopWhen = buildStopCondition(this.config.maxRounds ?? 3);
 

@@ -61,7 +61,6 @@ export class PromptService extends Service<PromptServiceConfig> {
       style: "style",
       core_memories: "core-memories",
       working_memory: "working-memory",
-      environment: "environment",
       extra: "extra",
     };
     for (const [name, file] of Object.entries(partialMap)) {
