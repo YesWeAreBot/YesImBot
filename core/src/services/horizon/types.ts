@@ -2,6 +2,24 @@ import type { Session } from "koishi";
 
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
+// ---- Horizon Event ----
+
+export interface HorizonMessageEvent {
+  scope: Scope;
+  timestamp: Date;
+  payload: { messageId: string; senderId: string; senderName: string; content: string };
+  triggerType: TriggerType;
+  runtime?: { session: Session };
+}
+
+export interface HorizonEventMap {
+  "horizon/message": (event: HorizonMessageEvent) => void;
+}
+
+declare module "koishi" {
+  interface Events extends HorizonEventMap {}
+}
+
 // ---- Scope ----
 
 export interface Scope {
@@ -117,60 +135,21 @@ export type Observation = MessageObservation | AgentSummaryObservation;
 
 export type TriggerType = "mention" | "reply" | "keyword" | "random" | "direct";
 
-export enum PerceptType {
-  UserMessage = "user.message",
-}
-
-export interface BasePercept<T extends PerceptType> {
+export interface BasePerceptRef {
   id: string;
-  type: T;
+  type: string;
   scope: Scope;
-  priority: number;
   timestamp: Date;
 }
-
-export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
-  payload: {
-    messageId: string;
-    content: string;
-    sender: { id: string; name: string; role?: string };
-    channel: { id: string; platform: string; guildId?: string };
-  };
-  triggerType: TriggerType;
-  runtime?: { session: Session };
-}
-
-export type Percept = UserMessagePercept;
 
 // ---- HorizonView ----
 
 export interface HorizonView {
-  percept: Percept;
+  percept: BasePerceptRef;
   self: SelfInfo;
   environment?: Environment;
   entities?: Entity[];
   history?: Observation[];
-}
-
-// ---- Structured View ----
-
-export interface StructuredHorizonView {
-  environment: {
-    name: string;
-    type: "private" | "group";
-    platform?: string;
-  };
-  members: Array<{
-    name: string;
-    badge?: string;
-  }>;
-  history: Array<{
-    time: string;
-    sender: string;
-    content: string;
-    isBot?: boolean;
-    isSummary?: boolean;
-  }>;
 }
 
 // ---- Query ----

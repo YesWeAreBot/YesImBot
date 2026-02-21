@@ -5,15 +5,15 @@ import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
   AllowedChannel,
+  BasePerceptRef,
   Entity,
   EntityRecord,
   Environment,
+  HorizonMessageEvent,
   HorizonView,
   Observation,
   Scope,
-  StructuredHorizonView,
   TimelineEntry,
-  UserMessagePercept,
 } from "./types";
 import { TimelineEventType } from "./types";
 
@@ -107,7 +107,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.logger.info("HorizonService stopped");
   }
 
-  async buildView(percept: UserMessagePercept): Promise<HorizonView> {
+  async buildView(percept: BasePerceptRef, runtime?: HorizonMessageEvent["runtime"]): Promise<HorizonView> {
     const { platform, channelId } = percept.scope;
     const entries = await this.events.query({
       scope: { platform, channelId },
@@ -116,9 +116,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       orderBy: "asc",
     });
     const history = this.events.toObservations(entries);
-    const environment = await this.getOrCreateEnvironment(percept.scope, percept);
+    const environment = await this.getOrCreateEnvironment(percept.scope, runtime);
     const entities = await this.getEntities(percept.scope);
-    const session = percept.runtime?.session;
+    const session = runtime?.session;
     const self = {
       id: session?.bot?.selfId ?? "",
       name: this.config.botName || session?.bot?.user?.name || session?.bot?.selfId || "",
@@ -126,34 +126,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return { percept, self, environment: environment ?? undefined, entities, history };
   }
 
-  toStructured(view: HorizonView): StructuredHorizonView {
-    const env = view.environment;
-    const environment = {
-      name: env?.name ?? "",
-      type: (env?.type === "private" ? "private" : "group") as "private" | "group",
-      platform: (env?.metadata?.platform as string) || undefined,
-    };
-
-    const members = (view.entities ?? []).map((e) => {
-      const badge = this.getRoleBadge(e.attributes);
-      return { name: e.name, badge: badge ? badge.trim().slice(1, -1) : undefined };
-    });
-
-    const history = (view.history ?? []).map((obs) => {
-      const time = obs.timestamp.toTimeString().slice(0, 5);
-      if (obs.type === "message") {
-        const isBot = view.self?.id ? obs.sender.id === view.self.id : false;
-        return { time, sender: obs.sender.name, content: obs.content, isBot: isBot || undefined };
-      }
-      return { time, sender: "", content: obs.summary, isSummary: true };
-    });
-
-    return { environment, members, history };
-  }
-
   private async getOrCreateEnvironment(
     scope: Scope,
-    percept: UserMessagePercept,
+    runtime?: HorizonMessageEvent["runtime"],
   ): Promise<Environment | null> {
     if (!scope.channelId) return null;
     const id = `${scope.platform}:${scope.channelId}`;
@@ -170,7 +145,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         };
       }
     }
-    const session = percept.runtime?.session;
+    const session = runtime?.session;
     let channelName = session?.event?.channel?.name || session?.event?.guild?.name || null;
     if (!channelName && session?.bot) {
       try {
@@ -268,15 +243,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
     const observations =
       view.history?.map((obs) => this.formatObservation(obs, view.self.id)) ?? [];
-    const p = view.percept as UserMessagePercept;
+    const p = view.percept as BasePerceptRef & Record<string, unknown>;
 
     return Mustache.render(this.horizonViewTpl, {
       environment,
       activeMembers,
       hasHistory: observations.length > 0,
       observations,
-      triggerType: p.triggerType,
-      triggerMessage: p.payload.content,
+      triggerType: p["triggerType"] ?? "",
+      triggerMessage: ((p["payload"] as Record<string, unknown>)?.["content"] as string) ?? "",
     }).trim();
   }
 }
