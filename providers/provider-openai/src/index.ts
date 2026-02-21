@@ -15,6 +15,7 @@ declare module "koishi" {
 }
 
 export const name = "yesimbot-provider-openai";
+export const reusable = true;
 export const inject = ["yesimbot.model"];
 
 export interface Config {
