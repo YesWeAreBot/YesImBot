@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 16 of 19 (PromptService Redesign + HorizonView)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-02-21 — v2.0 roadmap created
+Plan: 1 of 2 complete (16-01 done, 16-02 remaining)
+Status: Executing
+Last activity: 2026-02-21 — Completed 16-01 (PromptService core redesign)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -37,6 +37,9 @@ Recent decisions affecting current work:
 - [v2.0]: Trait + Skill replaces ChatMode (continuous multi-dimensional vs discrete mode switching)
 - [v2.0]: PromptService redesign is critical-path dependency — must come first
 - [v2.0]: No new dependencies needed (Mustache, js-yaml, node:fs sufficient)
+- [16-01]: Kahn's algorithm for before/after chain ordering with cycle fallback to registration order
+- [16-01]: Promise.allSettled with per-entry timeout for parallel injection rendering
+- [16-01]: Cacheable: identity/style/core_memories=true, working_memory/environment/extra=false
 
 ### Pending Todos
 
@@ -51,5 +54,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: v2.0 roadmap created, ready to plan Phase 16
+Stopped at: Completed 16-01-PLAN.md (PromptService core redesign)
 Resume file: None

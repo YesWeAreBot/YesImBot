@@ -7,10 +7,10 @@
 
 ### Prompt Architecture
 
-- [ ] **PROMPT-01**: PromptService 支持命名注入点（identity/environment/style/memories/tools/output），每个注入点独立管理优先级队列
-- [ ] **PROMPT-02**: PromptService 支持模块化 partial 注册和组合，模板通过 `{{>partial}}` 引用可替换的子模板
-- [ ] **PROMPT-03**: Injection 跟随 Koishi ctx 生命周期自动清理，子插件卸载时其注册的 injection 自动移除
-- [ ] **PROMPT-04**: PromptService renderer 支持递归 partial 变量收集和多轮渲染
+- [x] **PROMPT-01**: PromptService 支持命名注入点（identity/environment/style/memories/tools/output），每个注入点独立管理优先级队列
+- [x] **PROMPT-02**: PromptService 支持模块化 partial 注册和组合，模板通过 `{{>partial}}` 引用可替换的子模板
+- [x] **PROMPT-03**: Injection 跟随 Koishi ctx 生命周期自动清理，子插件卸载时其注册的 injection 自动移除
+- [x] **PROMPT-04**: PromptService renderer 支持递归 partial 变量收集和多轮渲染
 - [ ] **PROMPT-05**: 提供开箱即用的 section-based 系统提示词模板，包含所有命名注入点的默认 partial
 
 ### HorizonView
@@ -61,10 +61,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROMPT-01 | Phase 16 | Pending |
-| PROMPT-02 | Phase 16 | Pending |
-| PROMPT-03 | Phase 16 | Pending |
-| PROMPT-04 | Phase 16 | Pending |
+| PROMPT-01 | Phase 16 | Complete |
+| PROMPT-02 | Phase 16 | Complete |
+| PROMPT-03 | Phase 16 | Complete |
+| PROMPT-04 | Phase 16 | Complete |
 | PROMPT-05 | Phase 16 | Pending |
 | HVIEW-01 | Phase 16 | Pending |
 | HVIEW-02 | Phase 16 | Pending |
