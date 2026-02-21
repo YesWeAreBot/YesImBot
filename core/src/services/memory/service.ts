@@ -172,24 +172,27 @@ export class MemoryService extends Service<MemoryServiceConfig> {
     const coreMemoryTpl = loadTemplate("core-memory");
     const partials = { "memory-block": loadPartial("memory-block") };
 
-    this.ctx["yesimbot.prompt"].inject("core-memory", 10, (scope) => {
-      if (!this.blocks.length) return "";
+    this.ctx["yesimbot.prompt"].inject(this.ctx, "core_memories", {
+      name: "core-memory",
+      renderFn: (scope: Record<string, unknown>) => {
+        if (!this.blocks.length) return "";
 
-      let used = 0;
-      const blocks: { label: string; title?: string; rendered: string }[] = [];
+        let used = 0;
+        const blocks: { label: string; title?: string; rendered: string }[] = [];
 
-      for (const block of this.blocks) {
-        const rendered = Mustache.render(block.content, scope);
-        const est = `<${block.label}>${rendered}</${block.label}>`.length;
-        if (used + est > limit && blocks.length > 0) {
-          log.warn("Memory char limit reached, skipping remaining blocks");
-          break;
+        for (const block of this.blocks) {
+          const rendered = Mustache.render(block.content, scope);
+          const est = `<${block.label}>${rendered}</${block.label}>`.length;
+          if (used + est > limit && blocks.length > 0) {
+            log.warn("Memory char limit reached, skipping remaining blocks");
+            break;
+          }
+          blocks.push({ label: block.label, title: block.title, rendered });
+          used += est;
         }
-        blocks.push({ label: block.label, title: block.title, rendered });
-        used += est;
-      }
 
-      return blocks.length ? Mustache.render(coreMemoryTpl, { blocks }, partials) : "";
+        return blocks.length ? Mustache.render(coreMemoryTpl, { blocks }, partials) : "";
+      },
     });
   }
 }

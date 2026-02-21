@@ -34,8 +34,30 @@ export class ThinkActLoop {
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
     const view = await horizon.buildView(userPercept);
-    const systemPrompt = await prompt.render("system", { view });
-    const contextText = horizon.formatHorizonText(view);
+    const structured = horizon.toStructured(view);
+
+    // Format environment text for the prompt scope
+    const envLines: string[] = [];
+    if (structured.environment) {
+      const e = structured.environment;
+      envLines.push(`Location: ${e.name} (${e.type}${e.platform ? `, ${e.platform}` : ""})`);
+    }
+    if (structured.members.length) {
+      envLines.push(`Active members: ${structured.members.map(m => m.badge ? `${m.name} [${m.badge}]` : m.name).join(", ")}`);
+    }
+    if (structured.history.length) {
+      envLines.push("--- Message History ---");
+      for (const h of structured.history) {
+        const prefix = h.isSummary ? "[Bot Summary]" : h.isBot ? `[Bot] ${h.sender}` : h.sender;
+        envLines.push(`[${h.time}] ${prefix}: ${h.content}`);
+      }
+    }
+
+    const systemPrompt = await prompt.renderToString("system", {
+      view,
+      environment_content: envLines.join("\n"),
+      has_environment: envLines.length > 0,
+    });
 
     const fnCtx = { session: userPercept.runtime?.session, view, percept: userPercept };
     const { tools: allTools, toolNames: infoToolNames } = buildAiSdkTools(
@@ -43,7 +65,7 @@ export class ThinkActLoop {
       fnCtx,
       config.maxToolResultLength ?? 4000,
     );
-    const messages = [{ role: "user" as const, content: contextText }];
+    const messages = [{ role: "user" as const, content: `[${userPercept.triggerType}] ${userPercept.payload.content}` }];
     const stopWhen = buildStopCondition(config.maxRounds ?? 3);
 
     // ModelService handles model resolution and default params internally
