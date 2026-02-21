@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from "koishi";
 
 import { Plugin } from "./base-plugin";
-import { CorePlugin, SessionInfoPlugin } from "./builtin";
+import { CorePlugin, OnebotPlugin, SessionInfoPlugin } from "./builtin";
 import { schemaToJSONSchema } from "./schema";
 import {
   FunctionType,
@@ -34,7 +34,8 @@ export class PluginService extends Service<PluginServiceConfig> {
     super(ctx, "yesimbot.plugin", true);
     this.config = config;
     this.register(new CorePlugin(ctx));
-    this.register(new SessionInfoPlugin());
+    this.register(new SessionInfoPlugin(ctx));
+    this.register(new OnebotPlugin(ctx));
   }
 
   register(plugin: Plugin): void {
@@ -89,7 +90,7 @@ export class PluginService extends Service<PluginServiceConfig> {
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
         if (execCtx && fn.activators?.length) {
-          const failed = fn.activators.find(a => !a.check(execCtx));
+          const failed = fn.activators.find((a) => !a.check(execCtx));
           if (failed) {
             if (failed.onFail === "hint") {
               result.push({

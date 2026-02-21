@@ -1,3 +1,5 @@
+import { Context } from "koishi";
+
 import { requireSession } from "../activators";
 import { Plugin } from "../base-plugin";
 import { Metadata, Tool, withInnerThoughts } from "../decorators";
@@ -6,6 +8,9 @@ import { Success } from "../utils";
 
 @Metadata({ name: "session-info", description: "Session information tools" })
 export class SessionInfoPlugin extends Plugin {
+  constructor(private ctx: Context) {
+    super();
+  }
   @Tool({
     name: "get_session_info",
     description: "Get information about the current chat session",
