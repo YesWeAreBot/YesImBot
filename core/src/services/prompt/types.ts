@@ -1,20 +1,29 @@
-export type Snippet = (currentScope: Record<string, unknown>) => unknown | Promise<unknown>;
+export type InjectionPoint = "identity" | "style" | "core_memories" | "working_memory" | "environment" | "extra";
 
-export interface Injection {
+export const INJECTION_POINTS: InjectionPoint[] = [
+  "identity",
+  "style",
+  "core_memories",
+  "working_memory",
+  "environment",
+  "extra",
+];
+
+export interface InjectionEntry {
   name: string;
-  priority: number;
-  renderFn: Snippet;
+  renderFn: (scope: Record<string, unknown>) => string | Promise<string>;
+  before?: string;
+  after?: string;
 }
+
+export interface Section {
+  name: string;
+  content: string;
+  cacheable?: boolean;
+}
+
+export type Snippet = (currentScope: Record<string, unknown>) => unknown | Promise<unknown>;
 
 export interface RenderOptions {
   maxDepth?: number;
-}
-
-export interface IRenderer {
-  render(
-    template: string,
-    scope: Record<string, unknown>,
-    partials?: Record<string, string>,
-    options?: RenderOptions,
-  ): string;
 }
