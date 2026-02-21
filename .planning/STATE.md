@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 16.1 — Percept Ownership & User Message Context Refactor (IN PROGRESS)
+**Current focus:** Phase 16.1 — Percept Ownership & User Message Context Refactor (COMPLETE)
 
 ## Current Position
 
 Phase: 16.1 (Percept Ownership & User Message Context Refactor)
-Plan: 1/2
-Status: In progress
-Last activity: 2026-02-21 — Completed 16.1-01-PLAN.md (Percept Ownership Refactor)
+Plan: 2/2
+Status: Complete
+Last activity: 2026-02-21 — Completed 16.1-02-PLAN.md (Rendering Pipeline Refactor)
 
-Progress: [█████-----] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -52,6 +52,9 @@ Recent decisions affecting current work:
 - [16.1-01]: HorizonView.percept narrowed to BasePerceptRef to avoid circular imports
 - [16.1-01]: toStructured() removed; loop.ts uses formatHorizonText() directly
 - [16.1-01]: buildView() accepts BasePerceptRef + optional runtime instead of UserMessagePercept
+- [16.1-02]: Observations split by stage: active/undefined->history, new->trigger
+- [16.1-02]: environment.mustache emptied not deleted; environment kept in INJECTION_POINTS for future Skill reuse
+- [16.1-02]: Single rendering path: all dynamic context via formatHorizonText -> horizon-view.mustache
 
 ### Pending Todos
 
@@ -69,5 +72,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 16.1-01-PLAN.md (Percept Ownership Refactor)
+Stopped at: Completed 16.1-02-PLAN.md (Rendering Pipeline Refactor) — Phase 16.1 complete
 Resume file: None

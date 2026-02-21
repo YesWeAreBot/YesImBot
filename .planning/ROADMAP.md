@@ -58,11 +58,11 @@ Plans:
 
 **Goal:** Percept 构造从 horizon 移到 agent 模块，horizon 只负责数据记录和事件广播；user message 承载全部工作负载（环境、成员、历史），system prompt 变为纯静态；统一使用模板路径渲染上下文
 **Depends on:** Phase 16
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
-- [ ] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
+- [x] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
+- [x] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
 
 **Architecture Decisions (from discussion):**
 
@@ -110,8 +110,8 @@ Plans:
   6. deferred judgment（executeDeferredJudgment）继续工作，使用统一的模板路径
 
 Plans:
-- [ ] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
-- [ ] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
+- [x] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
+- [x] 16.1-02-PLAN.md — Static system prompt, user message context via template, history/trigger stage split
 
 ### Phase 17: Trait Perception
 **Goal**: The system can analyze conversation context across multiple dimensions in parallel, producing typed signals that downstream consumers can react to
@@ -168,7 +168,8 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 13. Non-stream Path & Fallback | v1.0 | 2/2 | Complete | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | v1.0 | 1/1 | Complete | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | v1.0 | 2/2 | Complete | 2026-02-20 |
-| 16. PromptService Redesign + HorizonView | 2/2 | Complete    | 2026-02-21 | - |
+| 16. PromptService Redesign + HorizonView | v2.0 | 2/2 | Complete | 2026-02-21 |
+| 16.1. Percept Ownership & User Message Context Refactor | v2.0 | 2/2 | Complete | 2026-02-21 |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |
