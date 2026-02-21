@@ -1,19 +1,19 @@
 import { Context, Schema, sleep } from "koishi";
 
-import { AgentCore, AgentCoreConfig } from "./services/agent";
-import { AgentCoreConfigSchema } from "./services/agent/service";
+import type { AgentCoreConfig } from "./services/agent";
+import { AgentCore, AgentCoreConfigSchema } from "./services/agent";
+import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService, HorizonServiceConfigSchema } from "./services/horizon";
-import type { HorizonServiceConfig } from "./services/horizon/service";
+import type { MemoryServiceConfig } from "./services/memory";
 import { MemoryService, MemoryServiceConfigSchema } from "./services/memory";
-import type { MemoryServiceConfig } from "./services/memory/service";
-import { ModelService, type ModelServiceConfig } from "./services/model";
-import { ModelServiceConfigSchema } from "./services/model/service";
+import type { ModelServiceConfig } from "./services/model";
+import { ModelService, ModelServiceConfigSchema } from "./services/model";
+import type { PluginServiceConfig } from "./services/plugin";
 import { PluginService, PluginServiceConfigSchema } from "./services/plugin";
-import type { PluginServiceConfig } from "./services/plugin/service";
+import type { PromptServiceConfig } from "./services/prompt";
 import { PromptService, PromptServiceConfigSchema } from "./services/prompt";
-import type { PromptServiceConfig } from "./services/prompt/service";
 
-export const name = "yesimbot-core";
+export const name = "yesimbot";
 export const inject = ["database"];
 
 export type Config = AgentCoreConfig &
@@ -33,7 +33,7 @@ export const Config: Schema<Config> = Schema.intersect([
 ]);
 
 export function apply(ctx: Context, config: Config) {
-  const logger = ctx.logger("yesimbot-core");
+  const logger = ctx.logger("yesimbot");
   ctx.plugin(ModelService, { concurrency: config.concurrency });
   ctx.plugin(HorizonService, {
     allowedChannels: config.allowedChannels ?? [],
