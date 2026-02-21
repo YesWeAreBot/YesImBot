@@ -32,7 +32,7 @@
 
 **Milestone Goal:** 重设计提示词服务架构，建立模块化提示词结构，引入 Trait + Skill 上下文感知行为调整体系——替代 ChatMode 的离散模式切换。
 
-- [ ] **Phase 16: PromptService Redesign + HorizonView** - Multi-section prompt architecture with named injection points, partial composition, and structured context rendering
+- [x] **Phase 16: PromptService Redesign + HorizonView** - Multi-section prompt architecture with named injection points, partial composition, and structured context rendering (completed 2026-02-21)
 - [ ] **Phase 17: Trait Perception** - Multi-dimensional context analysis framework with scene and heat detectors
 - [ ] **Phase 18: Skill Response** - File-based skill definitions with trait-conditional activation and layered effect merging
 - [ ] **Phase 19: Integration & Validation** - End-to-end pipeline wiring with example skills proving the full Trait-Skill loop
@@ -49,7 +49,7 @@
   3. When a sub-plugin is unloaded, its registered injections and partials are automatically removed from the prompt without manual cleanup
   4. HorizonView output uses structured tagged sections (environment/members/history) that the prompt template consumes as distinct partials
   5. The default system template renders all named sections with sensible defaults when no custom injections are registered
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 16-01-PLAN.md — PromptService core: types, renderer, named injection points, ctx lifecycle, Section[] render
 - [ ] 16-02-PLAN.md — Templates, HorizonView structured output, consumer migration (MemoryService, ThinkActLoop)
@@ -109,7 +109,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 13. Non-stream Path & Fallback | v1.0 | 2/2 | Complete | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | v1.0 | 1/1 | Complete | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | v1.0 | 2/2 | Complete | 2026-02-20 |
-| 16. PromptService Redesign + HorizonView | 1/2 | In Progress|  | - |
+| 16. PromptService Redesign + HorizonView | 2/2 | Complete   | 2026-02-21 | - |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |

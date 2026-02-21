@@ -11,12 +11,12 @@
 - [x] **PROMPT-02**: PromptService 支持模块化 partial 注册和组合，模板通过 `{{>partial}}` 引用可替换的子模板
 - [x] **PROMPT-03**: Injection 跟随 Koishi ctx 生命周期自动清理，子插件卸载时其注册的 injection 自动移除
 - [x] **PROMPT-04**: PromptService renderer 支持递归 partial 变量收集和多轮渲染
-- [ ] **PROMPT-05**: 提供开箱即用的 section-based 系统提示词模板，包含所有命名注入点的默认 partial
+- [x] **PROMPT-05**: 提供开箱即用的 section-based 系统提示词模板，包含所有命名注入点的默认 partial
 
 ### HorizonView
 
-- [ ] **HVIEW-01**: HorizonView 渲染输出使用结构化标签分区（environment/members/history）
-- [ ] **HVIEW-02**: 提示词模板重做为模块化 partial 组合（identity/environment/working_memory/memories/tools/output）
+- [x] **HVIEW-01**: HorizonView 渲染输出使用结构化标签分区（environment/members/history）
+- [x] **HVIEW-02**: 提示词模板重做为模块化 partial 组合（identity/environment/working_memory/memories/tools/output）
 
 ### Trait Perception
 
@@ -65,9 +65,9 @@
 | PROMPT-02 | Phase 16 | Complete |
 | PROMPT-03 | Phase 16 | Complete |
 | PROMPT-04 | Phase 16 | Complete |
-| PROMPT-05 | Phase 16 | Pending |
-| HVIEW-01 | Phase 16 | Pending |
-| HVIEW-02 | Phase 16 | Pending |
+| PROMPT-05 | Phase 16 | Complete |
+| HVIEW-01 | Phase 16 | Complete |
+| HVIEW-02 | Phase 16 | Complete |
 | TRAIT-01 | Phase 17 | Pending |
 | TRAIT-02 | Phase 17 | Pending |
 | TRAIT-03 | Phase 17 | Pending |
