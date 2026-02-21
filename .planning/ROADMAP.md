@@ -49,7 +49,10 @@
   3. When a sub-plugin is unloaded, its registered injections and partials are automatically removed from the prompt without manual cleanup
   4. HorizonView output uses structured tagged sections (environment/members/history) that the prompt template consumes as distinct partials
   5. The default system template renders all named sections with sensible defaults when no custom injections are registered
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 16-01-PLAN.md — PromptService core: types, renderer, named injection points, ctx lifecycle, Section[] render
+- [ ] 16-02-PLAN.md — Templates, HorizonView structured output, consumer migration (MemoryService, ThinkActLoop)
 
 ### Phase 17: Trait Perception
 **Goal**: The system can analyze conversation context across multiple dimensions in parallel, producing typed signals that downstream consumers can react to
@@ -106,7 +109,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 13. Non-stream Path & Fallback | v1.0 | 2/2 | Complete | 2026-02-20 |
 | 14. Provider Pattern & PLATFORM-01 | v1.0 | 1/1 | Complete | 2026-02-20 |
 | 15. LLM Deferred Judgment & Config | v1.0 | 2/2 | Complete | 2026-02-20 |
-| 16. PromptService Redesign + HorizonView | v2.0 | 0/? | Not started | - |
+| 16. PromptService Redesign + HorizonView | v2.0 | 0/2 | Planned | - |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |
