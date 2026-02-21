@@ -1,8 +1,6 @@
-import type { Session } from "koishi";
-
 // ---- Shared Types ----
 
-export type TriggerType = "mention" | "reply" | "keyword" | "random" | "direct";
+export type TriggerType = "mention" | "reply" | "keyword" | "random" | "direct" | "timer" | "internal";
 
 export interface Scope {
   platform?: string;
@@ -11,13 +9,10 @@ export interface Scope {
   isDirect?: boolean;
 }
 
-export interface BasePerceptRef {
+export interface Percept {
   id: string;
-  type: string;
+  type: TriggerType;
   scope: Scope;
   timestamp: Date;
-}
-
-export interface PerceptInput extends BasePerceptRef {
-  runtime?: { session: Session };
+  metadata?: Record<string, unknown>;
 }

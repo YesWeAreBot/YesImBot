@@ -1,6 +1,6 @@
 import type { Session } from "koishi";
 
-import { TriggerType, Scope, BasePerceptRef } from "../shared/types";
+import { TriggerType, Scope } from "../shared/types";
 
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
@@ -123,10 +123,17 @@ export interface AgentSummaryObservation {
 
 export type Observation = MessageObservation | AgentSummaryObservation;
 
+// ---- ViewOptions ----
+
+export interface ViewOptions {
+  session?: Session;
+  selfId?: string;
+  selfName?: string;
+}
+
 // ---- HorizonView ----
 
 export interface HorizonView {
-  percept: BasePerceptRef;
   self: SelfInfo;
   environment?: Environment;
   entities?: Entity[];

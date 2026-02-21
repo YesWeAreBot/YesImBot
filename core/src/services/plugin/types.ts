@@ -1,7 +1,6 @@
-import type { Schema, Session } from "koishi";
+import type { Bot, Schema, Session } from "koishi";
 
-import { Percept } from "../agent/types";
-import type { HorizonView } from "../horizon/types";
+import type { Percept, Scope } from "../shared/types";
 
 export enum FunctionType {
   Tool = "tool",
@@ -14,11 +13,20 @@ export interface ToolResult<T = unknown> {
   error?: string;
 }
 
-export interface FunctionContext {
+export interface ToolExecutionContext {
+  scope: Scope;
   session?: Session;
-  view?: HorizonView;
+  bot?: Bot;
   percept?: Percept;
   [key: string]: unknown;
+}
+
+export type ActivatorFn = (ctx: ToolExecutionContext) => boolean;
+
+export interface Activator {
+  check: ActivatorFn;
+  reason?: string;
+  onFail?: "remove" | "hint";
 }
 
 export interface FunctionDefinition {
@@ -26,7 +34,8 @@ export interface FunctionDefinition {
   description: string;
   type: FunctionType;
   parameters: Schema;
-  handler: (params: Record<string, unknown>, ctx: FunctionContext) => Promise<ToolResult>;
+  handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>;
+  activators?: Activator[];
 }
 
 export interface PluginMetadata {
