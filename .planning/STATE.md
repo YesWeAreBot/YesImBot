@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 16.1 — Percept Ownership & User Message Context Refactor (NOT STARTED)
+**Current focus:** Phase 16.1 — Percept Ownership & User Message Context Refactor (IN PROGRESS)
 
 ## Current Position
 
 Phase: 16.1 (Percept Ownership & User Message Context Refactor)
-Plan: 0/? (not planned yet)
-Status: Not started
-Last activity: 2026-02-21 — Inserted Phase 16.1 (urgent architectural refactor)
+Plan: 1/2
+Status: In progress
+Last activity: 2026-02-21 — Completed 16.1-01-PLAN.md (Percept Ownership Refactor)
 
-Progress: [██████████] 100%
+Progress: [█████-----] 50%
 
 ## Performance Metrics
 
@@ -48,6 +48,10 @@ Recent decisions affecting current work:
 - [16.1]: Percept 构造从 horizon 移到 agent 模块；horizon 只广播原始事件，不参与决策
 - [16.1]: Percept 语义 = "已决定要响应的触发源"，一旦构造必定触发响应
 - [16.1]: aggregation window 从 listener 移到 agent（属于调度决策，非数据层职责）
+- [16.1-01]: Percept types placed in agent/service.ts for locality, not separate types file
+- [16.1-01]: HorizonView.percept narrowed to BasePerceptRef to avoid circular imports
+- [16.1-01]: toStructured() removed; loop.ts uses formatHorizonText() directly
+- [16.1-01]: buildView() accepts BasePerceptRef + optional runtime instead of UserMessagePercept
 
 ### Pending Todos
 
@@ -65,5 +69,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 16-02-PLAN.md (Templates, HorizonView, Consumer Migration) — Phase 16 complete
+Stopped at: Completed 16.1-01-PLAN.md (Percept Ownership Refactor)
 Resume file: None

@@ -58,7 +58,7 @@ Plans:
 
 **Goal:** Percept 构造从 horizon 移到 agent 模块，horizon 只负责数据记录和事件广播；user message 承载全部工作负载（环境、成员、历史），system prompt 变为纯静态；统一使用模板路径渲染上下文
 **Depends on:** Phase 16
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 16.1-01-PLAN.md — Horizon event broadcast refactor + agent Percept ownership & aggregation window
