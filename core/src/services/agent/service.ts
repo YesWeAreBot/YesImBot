@@ -1,10 +1,37 @@
-import { Context, Schema, Service } from "koishi";
+import { Context, Random, Schema, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
-import type { Percept, UserMessagePercept } from "../horizon/types";
+import type { HorizonMessageEvent, Scope, TriggerType } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ThinkActLoop } from "./loop";
 import { WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
+
+// ---- Percept types (moved from horizon/types) ----
+
+export enum PerceptType {
+  UserMessage = "user.message",
+}
+
+export interface BasePercept<T extends PerceptType> {
+  id: string;
+  type: T;
+  scope: Scope;
+  priority: number;
+  timestamp: Date;
+}
+
+export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
+  payload: {
+    messageId: string;
+    content: string;
+    sender: { id: string; name: string; role?: string };
+    channel: { id: string; platform: string; guildId?: string };
+  };
+  triggerType: TriggerType;
+  runtime?: { session: import("koishi").Session };
+}
+
+export type Percept = UserMessagePercept;
 
 const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
 Answer with exactly one word: "yes" or "no".`;
@@ -23,6 +50,7 @@ export interface AgentCoreConfig {
   globalTimeout?: number;
   maxToolResultLength?: number;
   willingness?: WillingnessConfig;
+  aggregationWindow?: number;
   errorReportChannel?: string;
 }
 
@@ -36,6 +64,7 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
   willingness: WillingnessSchema,
+  aggregationWindow: Schema.number().default(1500).description("Aggregation window duration in ms for group messages"),
   errorReportChannel: Schema.string().description(
     "Error report channel in platform:channelId format",
   ),
@@ -45,7 +74,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
   static inject = ["yesimbot.horizon", "yesimbot.plugin", "yesimbot.prompt", "yesimbot.model"];
 
   private queues = new Map<string, Promise<void>>();
-  private pending = new Map<string, Percept>();
+  private pending = new Map<string, UserMessagePercept>();
+  private pendingWindows = new Map<string, { cancel: () => void; lastEvent: HorizonMessageEvent }>();
   private deferredTimers = new Map<string, () => void>();
   private deferredGen = new Map<string, number>();
   private loop!: ThinkActLoop;
@@ -70,23 +100,18 @@ export class AgentCore extends Service<AgentCoreConfig> {
     );
     this.ctx.setInterval(() => this.willingness.tick(), 1000);
     this.loop = new ThinkActLoop(this.ctx, this.config);
-    this.ctx.on("horizon/percept", (percept) => this.handlePercept(percept));
+    this.ctx.on("horizon/message", (event) => this.handleEvent(event));
     this.logger.info("AgentCore started");
   }
 
-  private handlePercept(percept: Percept): void {
-    void this.gateAndEnqueue(percept);
-  }
-
-  private async gateAndEnqueue(percept: Percept): Promise<void> {
+  private handleEvent(event: HorizonMessageEvent): void {
     try {
-      const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
+      const channelKey = `${event.scope.platform}:${event.scope.channelId}`;
       this.cancelDeferred(channelKey);
-      const up = percept as UserMessagePercept;
       const result = this.willingness.processMessage(
         channelKey,
-        up.triggerType,
-        up.payload?.content ?? "",
+        event.triggerType,
+        event.payload.content,
       );
       const d = result.debug;
       this.logger.info(
@@ -95,21 +120,57 @@ export class AgentCore extends Service<AgentCoreConfig> {
       if (!result.shouldReply) {
         const deferred = this.config.willingness?.deferred;
         if (deferred && result.probability >= deferred.threshold) {
+          const percept = this.buildPercept(event);
           this.scheduleDeferredJudgment(channelKey, percept, result.probability);
         }
         return;
       }
-      if (this.queues.has(channelKey)) {
-        this.pending.set(channelKey, percept);
-      } else {
-        this.enqueue(channelKey, percept);
+      if (event.scope.isDirect) {
+        const percept = this.buildPercept(event);
+        if (this.queues.has(channelKey)) {
+          this.pending.set(channelKey, percept);
+        } else {
+          this.enqueue(channelKey, percept);
+        }
+        return;
       }
+      // Group: aggregation window — last event wins
+      const existing = this.pendingWindows.get(channelKey);
+      if (existing) existing.cancel();
+      const cancel = this.ctx.setTimeout(() => {
+        this.pendingWindows.delete(channelKey);
+        const stored = this.buildPercept(event);
+        if (this.queues.has(channelKey)) {
+          this.pending.set(channelKey, stored);
+        } else {
+          this.enqueue(channelKey, stored);
+        }
+      }, this.config.aggregationWindow ?? 1500);
+      this.pendingWindows.set(channelKey, { cancel, lastEvent: event });
     } catch (err: unknown) {
-      this.logger.error(`gateAndEnqueue error: ${err}`);
+      this.logger.error(`handleEvent error: ${err}`);
     }
   }
 
-  private enqueue(channelKey: string, percept: Percept): void {
+  private buildPercept(event: HorizonMessageEvent): UserMessagePercept {
+    return {
+      id: Random.id(),
+      type: PerceptType.UserMessage,
+      scope: event.scope,
+      priority: 5,
+      timestamp: event.timestamp,
+      triggerType: event.triggerType,
+      payload: {
+        messageId: event.payload.messageId,
+        content: event.payload.content,
+        sender: { id: event.payload.senderId, name: event.payload.senderName },
+        channel: { id: event.scope.channelId ?? "", platform: event.scope.platform ?? "", guildId: event.scope.guildId },
+      },
+      runtime: event.runtime,
+    };
+  }
+
+  private enqueue(channelKey: string, percept: UserMessagePercept): void {
     const chain = (this.queues.get(channelKey) ?? Promise.resolve())
       .then(() => this.runLoop(channelKey, percept))
       .then(() => {
@@ -126,7 +187,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     this.queues.set(channelKey, chain);
   }
 
-  protected async runLoop(channelKey: string, percept: Percept): Promise<void> {
+  protected async runLoop(channelKey: string, percept: UserMessagePercept): Promise<void> {
     try {
       await this.loop.run(percept);
       this.willingness.recordBotReply(channelKey);
@@ -149,7 +210,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private scheduleDeferredJudgment(
     channelKey: string,
-    percept: Percept,
+    percept: UserMessagePercept,
     probability: number,
   ): void {
     const { threshold, minDelayMs = 3000, maxDelayMs = 15000 } = this.config.willingness!.deferred!;
@@ -170,14 +231,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private async executeDeferredJudgment(
     channelKey: string,
-    percept: Percept,
+    percept: UserMessagePercept,
     probability: number,
     gen: number,
   ): Promise<void> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
       const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const view = await horizon.buildView(percept as UserMessagePercept);
+      const view = await horizon.buildView(percept, percept.runtime);
       const contextText = horizon.formatHorizonText(view);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";
       const fallbackChain = this.config.willingness?.deferred?.fallbackChain ?? [];
@@ -211,7 +272,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private async reportError(err: unknown, percept: Percept): Promise<void> {
+  private async reportError(err: unknown, percept: UserMessagePercept): Promise<void> {
     if (!this.config.errorReportChannel) return;
     const colonIdx = this.config.errorReportChannel.indexOf(":");
     const platform = this.config.errorReportChannel.slice(0, colonIdx);

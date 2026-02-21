@@ -2,8 +2,8 @@ import { type StepResult, type ToolSet } from "ai";
 import { Context, sleep } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
-import type { Percept, UserMessagePercept } from "../horizon/types";
-import { PerceptType } from "../horizon/types";
+import type { Percept, UserMessagePercept } from "./service";
+import { PerceptType } from "./service";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
@@ -36,32 +36,13 @@ export class ThinkActLoop {
     const prompt = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    const view = await horizon.buildView(userPercept);
-    const structured = horizon.toStructured(view);
-
-    // Format environment text for the prompt scope
-    const envLines: string[] = [];
-    if (structured.environment) {
-      const e = structured.environment;
-      envLines.push(`Location: ${e.name} (${e.type}${e.platform ? `, ${e.platform}` : ""})`);
-    }
-    if (structured.members.length) {
-      envLines.push(
-        `Active members: ${structured.members.map((m) => (m.badge ? `${m.name} [${m.badge}]` : m.name)).join(", ")}`,
-      );
-    }
-    if (structured.history.length) {
-      envLines.push("--- Message History ---");
-      for (const h of structured.history) {
-        const prefix = h.isSummary ? "[Bot Summary]" : h.isBot ? `[Bot] ${h.sender}` : h.sender;
-        envLines.push(`[${h.time}] ${prefix}: ${h.content}`);
-      }
-    }
+    const view = await horizon.buildView(userPercept, userPercept.runtime);
+    const environmentText = horizon.formatHorizonText(view);
 
     const systemPrompt = await prompt.renderToString("system", {
       view,
-      environment_content: envLines.join("\n"),
-      has_environment: envLines.length > 0,
+      environment_content: environmentText,
+      has_environment: environmentText.length > 0,
     });
 
     const fnCtx = { session: userPercept.runtime?.session, view, percept: userPercept };

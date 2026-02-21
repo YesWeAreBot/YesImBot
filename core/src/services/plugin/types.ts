@@ -1,6 +1,7 @@
 import type { Schema, Session } from "koishi";
 
-import type { HorizonView, Percept } from "../horizon/types";
+import type { HorizonView } from "../horizon/types";
+import type { Percept } from "../agent/service";
 
 export enum FunctionType {
   Tool = "tool",
