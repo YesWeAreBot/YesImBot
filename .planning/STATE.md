@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 Phase: 16.1 (Percept Ownership & User Message Context Refactor)
 Plan: 2/2
 Status: Complete
-Last activity: 2026-02-21 — Completed Quick Task 1 (Percept BuildView Refactor)
+Last activity: 2026-02-21 - Completed quick task 1: 优化类型定义和接口：统一Percept类型，简化buildView参数
 
 Progress: [██████████] 100%
 
@@ -70,6 +70,12 @@ None.
 
 - TraitAnalyzer service type TBD: Koishi Service vs plain class owned by AgentCore
 - Skill hot-reload behavior during active conversations needs design
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | [1-percept-buildview](./quick/1-percept-buildview/) |
 
 ## Session Continuity
 
