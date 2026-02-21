@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Quick Task 1 — Percept BuildView Refactor (COMPLETE)
+**Current focus:** Phase 16.2 — Percept Type Cleanup & Session Decoupling
 
 ## Current Position
 
-Phase: 16.1 (Percept Ownership & User Message Context Refactor)
-Plan: 2/2
-Status: Complete
-Last activity: 2026-02-21 - Completed quick task 1: 优化类型定义和接口：统一Percept类型，简化buildView参数
+Phase: 16.2 (Percept Type Cleanup & Session Decoupling)
+Plan: 1/2
+Status: In Progress
+Last activity: 2026-02-21 - Completed 16.2-01: type foundation (Percept, ToolExecutionContext, ViewOptions, buildView decoupling)
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -57,6 +57,10 @@ Recent decisions affecting current work:
 - [16.1-02]: Observations split by stage: active/undefined->history, new->trigger
 - [16.1-02]: environment.mustache emptied not deleted; environment kept in INJECTION_POINTS for future Skill reuse
 - [16.1-02]: Single rendering path: all dynamic context via formatHorizonText -> horizon-view.mustache
+- [16.2-01]: Percept is flat interface with metadata bag, not discriminated union hierarchy
+- [16.2-01]: ToolExecutionContext has index signature for extensibility
+- [16.2-01]: buildView accepts Scope + ViewOptions instead of PerceptInput wrapper
+- [16.2-01]: agent/types.ts emptied rather than deleted for import path compatibility
 
 ### Pending Todos
 
@@ -81,5 +85,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed Quick Task 1 (Percept BuildView Refactor)
+Stopped at: Completed 16.2-01-PLAN.md (Type Foundation)
 Resume file: None
