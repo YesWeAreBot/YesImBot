@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 16.1 — Percept Ownership & User Message Context Refactor (COMPLETE)
+**Current focus:** Quick Task 1 — Percept BuildView Refactor (COMPLETE)
 
 ## Current Position
 
 Phase: 16.1 (Percept Ownership & User Message Context Refactor)
 Plan: 2/2
 Status: Complete
-Last activity: 2026-02-21 — Completed 16.1-02-PLAN.md (Rendering Pipeline Refactor)
+Last activity: 2026-02-21 — Completed Quick Task 1 (Percept BuildView Refactor)
 
 Progress: [██████████] 100%
 
@@ -52,6 +52,8 @@ Recent decisions affecting current work:
 - [16.1-01]: HorizonView.percept narrowed to BasePerceptRef to avoid circular imports
 - [16.1-01]: toStructured() removed; loop.ts uses formatHorizonText() directly
 - [16.1-01]: buildView() accepts BasePerceptRef + optional runtime instead of UserMessagePercept
+- [quick-1]: Shared types (TriggerType, Scope, BasePerceptRef) extracted to shared/types.ts
+- [quick-1]: buildView() simplified to single PerceptInput argument (no separate runtime param)
 - [16.1-02]: Observations split by stage: active/undefined->history, new->trigger
 - [16.1-02]: environment.mustache emptied not deleted; environment kept in INJECTION_POINTS for future Skill reuse
 - [16.1-02]: Single rendering path: all dynamic context via formatHorizonText -> horizon-view.mustache
@@ -72,5 +74,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 16.1-02-PLAN.md (Rendering Pipeline Refactor) — Phase 16.1 complete
+Stopped at: Completed Quick Task 1 (Percept BuildView Refactor)
 Resume file: None
