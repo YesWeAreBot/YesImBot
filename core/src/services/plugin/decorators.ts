@@ -2,9 +2,10 @@ import { Schema } from "koishi";
 
 import {
   FunctionType,
-  type FunctionContext,
+  type Activator,
   type FunctionDefinition,
   type PluginMetadata,
+  type ToolExecutionContext,
   type ToolResult,
 } from "./types";
 
@@ -12,6 +13,7 @@ interface DecoratorOpts {
   name: string;
   description: string;
   parameters: Schema;
+  activators?: Activator[];
 }
 
 export interface StaticEntry extends DecoratorOpts {
@@ -53,7 +55,7 @@ export function defineTool(
   name: string,
   description: string,
   parameters: Schema,
-  handler: (params: Record<string, unknown>, ctx: FunctionContext) => Promise<ToolResult>,
+  handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>,
 ): FunctionDefinition {
   return { name, description, type: FunctionType.Tool, parameters, handler };
 }
@@ -62,7 +64,7 @@ export function defineAction(
   name: string,
   description: string,
   parameters: Schema,
-  handler: (params: Record<string, unknown>, ctx: FunctionContext) => Promise<ToolResult>,
+  handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>,
 ): FunctionDefinition {
   return { name, description, type: FunctionType.Action, parameters, handler };
 }

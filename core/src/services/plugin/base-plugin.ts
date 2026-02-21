@@ -23,6 +23,7 @@ export abstract class Plugin {
         type: entry.type,
         parameters: entry.parameters,
         handler: handler.bind(this),
+        activators: entry.activators,
       });
     }
 
@@ -36,6 +37,7 @@ export abstract class Plugin {
         type: entry.type,
         parameters: entry.parameters,
         handler: handler.bind(this),
+        activators: entry.activators,
       });
     }
   }

@@ -5,8 +5,8 @@ import { CorePlugin, SessionInfoPlugin } from "./builtin";
 import { schemaToJSONSchema } from "./schema";
 import {
   FunctionType,
-  type FunctionContext,
   type FunctionDefinition,
+  type ToolExecutionContext,
   type ToolResult,
 } from "./types";
 import { Failed } from "./utils";
@@ -58,7 +58,7 @@ export class PluginService extends Service<PluginServiceConfig> {
   async invoke(
     name: string,
     params: Record<string, unknown>,
-    context?: FunctionContext,
+    context?: ToolExecutionContext,
   ): Promise<ToolResult> {
     const fn = this.findFunction(name);
     if (!fn) return Failed(`Function not found: ${name}`);
@@ -66,7 +66,7 @@ export class PluginService extends Service<PluginServiceConfig> {
     const timeout = this.config?.defaultTimeout ?? 30000;
     try {
       return await Promise.race([
-        fn.handler(params, context ?? {}),
+        fn.handler(params, context ?? { scope: {} }),
         new Promise<ToolResult>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout")), timeout),
         ),
@@ -80,7 +80,7 @@ export class PluginService extends Service<PluginServiceConfig> {
     return this.findFunction(name);
   }
 
-  getTools(): Array<{
+  getTools(execCtx?: ToolExecutionContext): Array<{
     type: "function";
     functionType: FunctionType;
     function: { name: string; description: string; parameters: Record<string, unknown> };
@@ -88,6 +88,23 @@ export class PluginService extends Service<PluginServiceConfig> {
     const result = [];
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
+        if (execCtx && fn.activators?.length) {
+          const failed = fn.activators.find(a => !a.check(execCtx));
+          if (failed) {
+            if (failed.onFail === "hint") {
+              result.push({
+                type: "function" as const,
+                functionType: fn.type,
+                function: {
+                  name: fn.name,
+                  description: `${fn.description} (unavailable: ${failed.reason ?? "prerequisite not met"})`,
+                  parameters: schemaToJSONSchema(fn.parameters),
+                },
+              });
+            }
+            continue;
+          }
+        }
         result.push({
           type: "function" as const,
           functionType: fn.type,

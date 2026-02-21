@@ -1,8 +1,9 @@
 import { Context, Schema, sleep } from "koishi";
 
+import { requireSession } from "../activators";
 import { Plugin } from "../base-plugin";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
-import type { FunctionContext, ToolResult } from "../types";
+import type { ToolExecutionContext, ToolResult } from "../types";
 import { Failed, Success } from "../utils";
 
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
@@ -20,8 +21,9 @@ export class CorePlugin extends Plugin {
         "Target channel in platform:channelId format. Defaults to current channel.",
       ),
     }),
+    activators: [requireSession()],
   })
-  async sendMessage(params: Record<string, unknown>, ctx: FunctionContext): Promise<ToolResult> {
+  async sendMessage(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
     try {
       const content = String(params["content"] ?? "");
       const target = params["target"] as string | undefined;
