@@ -1,5 +1,10 @@
 import type { Session } from "koishi";
 
+import { TriggerType, Scope, BasePerceptRef } from "../shared/types";
+
+// Re-export for backward compatibility
+export { TriggerType, Scope, BasePerceptRef };
+
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
 // ---- Horizon Event ----
@@ -12,21 +17,10 @@ export interface HorizonMessageEvent {
   runtime?: { session: Session };
 }
 
-export interface HorizonEventMap {
-  "horizon/message": (event: HorizonMessageEvent) => void;
-}
-
 declare module "koishi" {
-  interface Events extends HorizonEventMap {}
-}
-
-// ---- Scope ----
-
-export interface Scope {
-  platform?: string;
-  channelId?: string;
-  guildId?: string;
-  isDirect?: boolean;
+  interface Events {
+    "horizon/message": (event: HorizonMessageEvent) => void;
+  }
 }
 
 // ---- Timeline ----
@@ -131,17 +125,6 @@ export interface AgentSummaryObservation {
 }
 
 export type Observation = MessageObservation | AgentSummaryObservation;
-
-// ---- Percept ----
-
-export type TriggerType = "mention" | "reply" | "keyword" | "random" | "direct";
-
-export interface BasePerceptRef {
-  id: string;
-  type: string;
-  scope: Scope;
-  timestamp: Date;
-}
 
 // ---- HorizonView ----
 

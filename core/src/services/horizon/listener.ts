@@ -1,9 +1,9 @@
 import type { Session } from "koishi";
 import { Context, Logger } from "koishi";
 
+import { TriggerType } from "../shared/types";
 import type { EventManager } from "./manager";
 import type { HorizonServiceConfig } from "./service";
-import type { TriggerType } from "./types";
 import { TimelineStage } from "./types";
 
 // Table name constant — schema declared in horizon service (Plan 03)
@@ -30,9 +30,19 @@ export class EventListener {
         await this.recordUserMessage(session);
         await next();
         this.ctx.emit("horizon/message", {
-          scope: { platform: session.platform, channelId: session.channelId, guildId: session.guildId, isDirect: session.isDirect },
+          scope: {
+            platform: session.platform,
+            channelId: session.channelId,
+            guildId: session.guildId,
+            isDirect: session.isDirect,
+          },
           timestamp: new Date(session.timestamp),
-          payload: { messageId: session.messageId ?? "", senderId: session.author?.id ?? session.userId ?? "", senderName: session.author?.nick || session.author?.name || session.userId || "", content: session.content ?? "" },
+          payload: {
+            messageId: session.messageId ?? "",
+            senderId: session.author?.id ?? session.userId ?? "",
+            senderName: session.author?.nick || session.author?.name || session.userId || "",
+            content: session.content ?? "",
+          },
           triggerType: this.classifyTrigger(session),
           runtime: { session },
         });
@@ -139,5 +149,4 @@ export class EventListener {
       this.logger.error(`updateMemberInfo failed: ${err instanceof Error ? err.message : err}`);
     }
   }
-
 }
