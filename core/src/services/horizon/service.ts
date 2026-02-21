@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
-import type { PerceptInput } from "../shared/types";
+import { PerceptInput, Scope } from "../shared/types";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
@@ -11,7 +11,6 @@ import type {
   Environment,
   HorizonView,
   Observation,
-  Scope,
   TimelineEntry,
 } from "./types";
 import { TimelineEventType } from "./types";

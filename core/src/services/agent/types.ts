@@ -2,10 +2,6 @@ import { Session } from "koishi";
 
 import { Scope, TriggerType } from "../shared/types";
 
-// Re-export for backward compatibility
-export { TriggerType };
-export type { Scope } from "../shared/types";
-
 // ---- Percept ----
 
 export enum PerceptType {

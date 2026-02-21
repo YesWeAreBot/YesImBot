@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
 
-import type { TriggerType } from "../horizon/types";
+import { TriggerType } from "../shared/types";
 
 interface ChannelState {
   willingness: number;

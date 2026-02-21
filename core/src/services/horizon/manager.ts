@@ -1,12 +1,12 @@
 import { Context, Random, Logger, Query } from "koishi";
 
+import { Scope } from "../shared/types";
 import type {
   AgentSummaryRecord,
   EventQueryOptions,
   MessageEventData,
   MessageRecord,
   Observation,
-  Scope,
   TimelineEntry,
 } from "./types";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "./types";

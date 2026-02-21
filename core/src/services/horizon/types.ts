@@ -2,9 +2,6 @@ import type { Session } from "koishi";
 
 import { TriggerType, Scope, BasePerceptRef } from "../shared/types";
 
-// Re-export for backward compatibility
-export { TriggerType, Scope, BasePerceptRef };
-
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
 // ---- Horizon Event ----
