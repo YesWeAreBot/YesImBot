@@ -61,7 +61,7 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 - **v1.0 shipped:** 2026-02-21, 3,470 LOC TypeScript, 15 phases, 29 plans
 - **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
-- **包结构:** packages/shared-model + plugins/core + providers/provider-openai + providers/provider-deepseek
+- **包结构:** packages/shared-model + core + providers/provider-openai + providers/provider-deepseek
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
 - **设计文档**：`books/` 目录为作者架构思考，`docs/` 为完整架构讨论
 - **v1.0 达成:** v3 功能平替 — 动态 Schema、意愿值系统、核心记忆块、Horizon 上下文填充
@@ -72,7 +72,7 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - **Framework**: Koishi 4.x（4.18.x），TypeScript
 - **Build**: Turbo monorepo，Yarn workspaces
 - **Model SDK**: ai-sdk（替代 xsai）
-- **Package Structure**: packages/core + packages/shared-model + plugins/provider-*
+- **Package Structure**: core + packages/shared-model + plugins/provider-*
 - **Linting**: oxlint
 - **Target**: ES2022，bundler moduleResolution
 
