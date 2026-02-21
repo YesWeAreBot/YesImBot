@@ -117,7 +117,7 @@ Plans:
 
 **Goal:** 彻底清理 16.1 遗留的类型问题：移除临时方案 BasePerceptRef，将 session 从 PerceptInput 核心结构中解耦，建立 Percept 在 agent/horizon/plugin 三层的清晰职责边界
 **Depends on:** Phase 16.1
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 **Background (from 16.1 / quick-1):**
 - quick-1 将 TriggerType, Scope, BasePerceptRef 提取到 shared/types.ts，解决了循环引用
@@ -141,7 +141,8 @@ Plans:
 - 明确 Percept 在三层的职责：agent 构造、horizon 记录/广播、plugin 消费
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 16.2 to break down)
+- [ ] 16.2-01-PLAN.md — Types cleanup: clean Percept, ToolExecutionContext, ViewOptions, Activator types + horizon buildView decoupling
+- [ ] 16.2-02-PLAN.md — Agent + plugin wiring: split buildPercept/buildToolContext, wire ToolExecutionContext through loop, activator filtering
 
 ### Phase 17: Trait Perception
 **Goal**: The system can analyze conversation context across multiple dimensions in parallel, producing typed signals that downstream consumers can react to
