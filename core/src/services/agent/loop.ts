@@ -4,8 +4,8 @@ import { Context, sleep } from "koishi";
 import type { HorizonService } from "../horizon/service";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
-import type { PromptService } from "../prompt/service";
 import type { ToolExecutionContext } from "../plugin/types";
+import type { PromptService } from "../prompt/service";
 import type { Percept } from "../shared/types";
 import type { AgentCoreConfig } from "./service";
 import { buildAiSdkTools, buildStopCondition } from "./tools";
@@ -47,6 +47,7 @@ export class ThinkActLoop {
       toolCtxWithPercept,
       this.config.maxToolResultLength ?? 4000,
     );
+    this.logger.info(`Available tools: [${Object.keys(allTools).join(", ")}]`);
     const messages = [{ role: "user" as const, content: userContent }];
     const stopWhen = buildStopCondition(this.config.maxRounds ?? 3);
 

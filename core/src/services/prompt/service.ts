@@ -25,7 +25,13 @@ export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.obj
   resourcesDir: Schema.string().description("Custom templates directory"),
 });
 
-const CACHEABLE_POINTS = new Set<InjectionPoint>(["identity", "style", "core_memories"]);
+const CACHEABLE_POINTS = new Set<InjectionPoint>([
+  "identity",
+  "style",
+  "control_flow",
+  "basic_functions",
+  "memory",
+]);
 
 export class PromptService extends Service<PromptServiceConfig> {
   private templates = new Map<string, string>();
@@ -55,45 +61,38 @@ export class PromptService extends Service<PromptServiceConfig> {
     }
     this.registerTemplate("system", this.loadTemplate("system"));
 
-    // Register section partials (hyphenated filenames -> underscored partial names)
     const partialMap: Record<string, string> = {
-      identity: "identity",
-      style: "style",
-      core_memories: "core-memories",
-      working_memory: "working-memory",
       extra: "extra",
+      "horizon-view": "horizon-view",
+      identity: "identity",
+      "memory-block": "memory-block",
+      memory: "memory",
+      style: "style",
     };
     for (const [name, file] of Object.entries(partialMap)) {
       this.registerPartial(name, this.loadPartial(file));
     }
 
-    // Default identity injection
     this.inject(this.ctx, "identity", {
       name: "__default_identity",
       renderFn: (scope) => {
         const view = scope.view as { self?: { name?: string }; environment?: { name?: string } };
         const name = view?.self?.name ?? "";
         const env = view?.environment?.name;
-        let text = `你是 ${name}，一个有血有肉的人，正在和朋友们聊天。`;
-        if (env) text += `\n你现在在「${env}」里。`;
-        text += "\n你不是 AI 助手，不要表现得像客服或机器人。";
-        text += "\n你会收到对话历史和当前消息。根据上下文判断是否需要回复，以及回复什么内容。";
-        text += "\n你可以调用工具来完成任务，工具调用结果会反馈给你。";
-        text += "\n当你认为已经完成任务或不需要进一步行动时，调用 finish 工具结束本轮对话。";
-        return text;
+        const text = this.loadTemplate("default-identity", "md");
+        const rendered = this.renderer.render(text, { name, env });
+        return rendered;
       },
     });
 
     // Default style injection
     this.inject(this.ctx, "style", {
       name: "__default_style",
-      renderFn: () =>
-        [
-          "- 说话自然随意，像真人发消息一样，不用敬语",
-          "- 回复简短，不要长篇大论，除非对方明确需要详细解释",
-          "- 可以有自己的情绪和看法，不必总是附和",
-          "- 不要在回复里加多余的标点或格式，保持口语化",
-        ].join("\n"),
+      renderFn: () => {
+        const text = this.loadTemplate("default-style", "md");
+        const rendered = this.renderer.render(text, {});
+        return rendered;
+      },
     });
   }
 
@@ -101,8 +100,8 @@ export class PromptService extends Service<PromptServiceConfig> {
     return this.templates.get(name) ?? "";
   }
 
-  loadTemplate(name: string): string {
-    return readFileSync(resolve(this.resourcesDir, `${name}.mustache`), "utf-8");
+  loadTemplate(name: string, ext: string = "mustache"): string {
+    return readFileSync(resolve(this.resourcesDir, `${name}.${ext}`), "utf-8");
   }
 
   loadPartial(name: string): string {

@@ -1,4 +1,4 @@
-import { readFileSync, watch, type FSWatcher } from "node:fs";
+import { cpSync, existsSync, readFileSync, watch, type FSWatcher } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, extname, basename } from "node:path";
 
@@ -7,8 +7,8 @@ import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
 import type { HorizonView } from "../horizon";
-import type { Percept } from "../shared/types";
 import { PromptService } from "../prompt";
+import type { Percept } from "../shared/types";
 import type { MemoryBlock } from "./types";
 
 declare module "koishi" {
@@ -23,12 +23,10 @@ export interface MemoryServiceConfig {
 }
 
 export const MemoryServiceConfigSchema: Schema<MemoryServiceConfig> = Schema.object({
-  coreMemoryPath: Schema.path({ filters: ["directory"] }).description(
-    "Directory containing memory block files (.md/.txt)",
+  coreMemoryPath: Schema.path({ filters: ["directory"], allowCreate: true }).default(
+    "data/yesimbot/memories",
   ),
-  memoryCharLimit: Schema.number()
-    .default(4000)
-    .description("Maximum characters for memory block injection"),
+  memoryCharLimit: Schema.number().default(4000),
 });
 
 export class MemoryService extends Service<MemoryServiceConfig> {
@@ -37,7 +35,6 @@ export class MemoryService extends Service<MemoryServiceConfig> {
   private blocks: MemoryBlock[] = [];
   private watcher: FSWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private defaultPersona: string;
   private prompt: PromptService;
 
   constructor(ctx: Context, config: MemoryServiceConfig) {
@@ -45,10 +42,6 @@ export class MemoryService extends Service<MemoryServiceConfig> {
     this.config = config;
     this.logger = ctx.logger("memory");
     this.prompt = ctx["yesimbot.prompt"];
-    this.defaultPersona = readFileSync(
-      join(this.prompt.resourcesDir, "default-persona.mustache"),
-      "utf-8",
-    );
   }
 
   protected async start(): Promise<void> {
@@ -60,10 +53,8 @@ export class MemoryService extends Service<MemoryServiceConfig> {
   }
 
   private async loadBlocks(): Promise<void> {
-    const log = this.ctx.logger("yesimbot.memory");
     if (!this.config.coreMemoryPath) {
-      this.blocks = [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
-      return;
+      this.config.coreMemoryPath = "data/yesimbot/memories";
     }
 
     try {
@@ -71,8 +62,12 @@ export class MemoryService extends Service<MemoryServiceConfig> {
       const files = entries.filter((f) => /\.(md|txt)$/.test(f)).sort();
 
       if (!files.length) {
-        this.blocks = [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
-        return;
+        // copy default persona if no files exist
+        const defaultPath = join(this.prompt.resourcesDir, "default-persona.md");
+        if (existsSync(defaultPath)) {
+          cpSync(defaultPath, join(this.config.coreMemoryPath, "persona.md"), { force: false });
+          this.logger.info("Default persona copied to memory directory");
+        }
       }
 
       const blocks: MemoryBlock[] = [];
@@ -91,12 +86,9 @@ export class MemoryService extends Service<MemoryServiceConfig> {
           this.logger.warn("Failed to load memory file %s: %s", file, e);
         }
       }
-      this.blocks = blocks.length
-        ? blocks
-        : [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
+      this.blocks = blocks;
     } catch (e) {
       this.logger.warn("Failed to read memory directory: %s", e);
-      this.blocks = [{ label: "persona", content: this.defaultPersona, filename: "__default__" }];
     }
   }
 
@@ -172,7 +164,7 @@ export class MemoryService extends Service<MemoryServiceConfig> {
     const coreMemoryTpl = this.prompt.loadTemplate("core-memory");
     const partials = { "memory-block": this.prompt.loadPartial("memory-block") };
 
-    this.prompt.inject(this.ctx, "core_memories", {
+    this.prompt.inject(this.ctx, "memory", {
       name: "core-memory",
       renderFn: (scope: Record<string, unknown>) => {
         if (!this.blocks.length) return "";
