@@ -2,13 +2,12 @@ import { type StepResult, type ToolSet } from "ai";
 import { Context, sleep } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
-import type { Percept, UserMessagePercept } from "./service";
-import { PerceptType } from "./service";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
 import type { AgentCoreConfig } from "./service";
 import { buildAiSdkTools, buildStopCondition } from "./tools";
+import { Percept, PerceptType, UserMessagePercept } from "./types";
 
 class LoopAbort extends Error {}
 
@@ -36,7 +35,7 @@ export class ThinkActLoop {
     const prompt = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    const view = await horizon.buildView(userPercept, userPercept.runtime);
+    const view = await horizon.buildView(userPercept);
 
     const systemPrompt = await prompt.renderToString("system", { view });
 
@@ -48,9 +47,7 @@ export class ThinkActLoop {
       fnCtx,
       this.config.maxToolResultLength ?? 4000,
     );
-    const messages = [
-      { role: "user" as const, content: userContent },
-    ];
+    const messages = [{ role: "user" as const, content: userContent }];
     const stopWhen = buildStopCondition(this.config.maxRounds ?? 3);
 
     // ModelService handles model resolution and default params internally

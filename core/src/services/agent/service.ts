@@ -1,37 +1,11 @@
 import { Context, Random, Schema, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
-import type { HorizonMessageEvent, Scope, TriggerType } from "../horizon/types";
+import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ThinkActLoop } from "./loop";
+import { PerceptType, UserMessagePercept } from "./types";
 import { WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
-
-// ---- Percept types (moved from horizon/types) ----
-
-export enum PerceptType {
-  UserMessage = "user.message",
-}
-
-export interface BasePercept<T extends PerceptType> {
-  id: string;
-  type: T;
-  scope: Scope;
-  priority: number;
-  timestamp: Date;
-}
-
-export interface UserMessagePercept extends BasePercept<PerceptType.UserMessage> {
-  payload: {
-    messageId: string;
-    content: string;
-    sender: { id: string; name: string; role?: string };
-    channel: { id: string; platform: string; guildId?: string };
-  };
-  triggerType: TriggerType;
-  runtime?: { session: import("koishi").Session };
-}
-
-export type Percept = UserMessagePercept;
 
 const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
 Answer with exactly one word: "yes" or "no".`;
@@ -64,7 +38,9 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
   willingness: WillingnessSchema,
-  aggregationWindow: Schema.number().default(1500).description("Aggregation window duration in ms for group messages"),
+  aggregationWindow: Schema.number()
+    .default(1500)
+    .description("Aggregation window duration in ms for group messages"),
   errorReportChannel: Schema.string().description(
     "Error report channel in platform:channelId format",
   ),
@@ -75,7 +51,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, UserMessagePercept>();
-  private pendingWindows = new Map<string, { cancel: () => void; lastEvent: HorizonMessageEvent }>();
+  private pendingWindows = new Map<
+    string,
+    { cancel: () => void; lastEvent: HorizonMessageEvent }
+  >();
   private deferredTimers = new Map<string, () => void>();
   private deferredGen = new Map<string, number>();
   private loop!: ThinkActLoop;
@@ -164,7 +143,11 @@ export class AgentCore extends Service<AgentCoreConfig> {
         messageId: event.payload.messageId,
         content: event.payload.content,
         sender: { id: event.payload.senderId, name: event.payload.senderName },
-        channel: { id: event.scope.channelId ?? "", platform: event.scope.platform ?? "", guildId: event.scope.guildId },
+        channel: {
+          id: event.scope.channelId ?? "",
+          platform: event.scope.platform ?? "",
+          guildId: event.scope.guildId,
+        },
       },
       runtime: event.runtime,
     };
@@ -238,7 +221,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
       const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const view = await horizon.buildView(percept, percept.runtime);
+      const view = await horizon.buildView(percept);
       const contextText = horizon.formatHorizonText(view);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";
       const fallbackChain = this.config.willingness?.deferred?.fallbackChain ?? [];

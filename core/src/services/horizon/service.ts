@@ -1,15 +1,14 @@
 import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
+import type { PerceptInput } from "../shared/types";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
   AllowedChannel,
-  BasePerceptRef,
   Entity,
   EntityRecord,
   Environment,
-  HorizonMessageEvent,
   HorizonView,
   Observation,
   Scope,
@@ -107,7 +106,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.logger.info("HorizonService stopped");
   }
 
-  async buildView(percept: BasePerceptRef, runtime?: HorizonMessageEvent["runtime"]): Promise<HorizonView> {
+  async buildView(percept: PerceptInput): Promise<HorizonView> {
     const { platform, channelId } = percept.scope;
     const entries = await this.events.query({
       scope: { platform, channelId },
@@ -116,9 +115,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       orderBy: "asc",
     });
     const history = this.events.toObservations(entries);
-    const environment = await this.getOrCreateEnvironment(percept.scope, runtime);
+    const environment = await this.getOrCreateEnvironment(percept.scope, percept.runtime);
     const entities = await this.getEntities(percept.scope);
-    const session = runtime?.session;
+    const session = percept.runtime?.session;
     const self = {
       id: session?.bot?.selfId ?? "",
       name: this.config.botName || session?.bot?.user?.name || session?.bot?.selfId || "",
@@ -128,7 +127,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
   private async getOrCreateEnvironment(
     scope: Scope,
-    runtime?: HorizonMessageEvent["runtime"],
+    runtime?: PerceptInput["runtime"],
   ): Promise<Environment | null> {
     if (!scope.channelId) return null;
     const id = `${scope.platform}:${scope.channelId}`;
