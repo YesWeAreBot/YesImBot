@@ -241,17 +241,24 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         .join(", ");
     }
 
-    const observations =
-      view.history?.map((obs) => this.formatObservation(obs, view.self.id)) ?? [];
-    const p = view.percept as BasePerceptRef & Record<string, unknown>;
+    const historyObs: string[] = [];
+    const triggerObs: string[] = [];
+    for (const obs of view.history ?? []) {
+      const formatted = this.formatObservation(obs, view.self.id);
+      if (obs.type === "message" && obs.stage === "new") {
+        triggerObs.push(formatted);
+      } else {
+        historyObs.push(formatted);
+      }
+    }
 
     return Mustache.render(this.horizonViewTpl, {
       environment,
       activeMembers,
-      hasHistory: observations.length > 0,
-      observations,
-      triggerType: p["triggerType"] ?? "",
-      triggerMessage: ((p["payload"] as Record<string, unknown>)?.["content"] as string) ?? "",
+      hasHistory: historyObs.length > 0,
+      history: historyObs,
+      hasTrigger: triggerObs.length > 0,
+      trigger: triggerObs,
     }).trim();
   }
 }

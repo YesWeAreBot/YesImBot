@@ -81,6 +81,7 @@ export class EventManager {
           sender: { id: entry.data.senderId, type: "user", name: entry.data.senderName },
           messageId: entry.data.messageId,
           content: entry.data.content,
+          stage: entry.stage,
         };
       }
       return {

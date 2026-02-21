@@ -121,6 +121,7 @@ export interface MessageObservation {
   sender: Entity;
   messageId: string;
   content: string;
+  stage?: string;
 }
 
 export interface AgentSummaryObservation {
