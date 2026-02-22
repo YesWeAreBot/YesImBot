@@ -14,14 +14,14 @@ Schema:
       "params": { ... }      // Parameters for the tool (optional)
     }
   ],
-  "request_heartbeat": false // Optional. Set true to request another round after tool results return.
+  "request_heartbeat": boolean  // Optional. Only needed to continue after action-type calls.
 }
 ```
 
 Rules:
 - `actions` is always an array, even for a single call.
-- Tool-type functions retrieve information; results are automatically returned to you for the next round.
+- Tool-type functions retrieve information; results are always returned to you in the next round. You cannot stop the loop when tools are called.
 - Action-type functions perform side effects; the loop ends automatically after actions execute.
-- Set `request_heartbeat: true` to override automatic continuation (e.g., to continue after an action, or stop after a tool).
+- Set `request_heartbeat: true` to request another round after action-type calls (tools always continue regardless).
 - `send_message` is the ONLY way to communicate with users. Never place reply text outside of a send_message call.
 - If you need multiple rounds of tool calls, the system will provide tool results in a follow-up message.

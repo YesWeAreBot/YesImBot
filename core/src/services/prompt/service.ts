@@ -61,6 +61,8 @@ export class PromptService extends Service<PromptServiceConfig> {
     this.registerTemplate("system", this.loadTemplate("system"));
 
     const partialMap: Record<string, string> = {
+      basic_functions: "basic_functions",
+      control_flow: "control_flow",
       extra: "extra",
       "horizon-view": "horizon-view",
       identity: "identity",
@@ -82,6 +84,17 @@ export class PromptService extends Service<PromptServiceConfig> {
         const rendered = this.renderer.render(text, { name, env });
         return rendered;
       },
+    });
+
+    this.inject(this.ctx, "control_flow", {
+      name: "__default_control_flow",
+      renderFn: () => this.loadTemplate("default-control-flow", "md"),
+    });
+
+    this.inject(this.ctx, "basic_functions", {
+      name: "__default_basic_functions",
+      before: "__loop_tool_schema",
+      renderFn: () => this.loadTemplate("default-basic-functions", "md"),
     });
 
     // Default style injection

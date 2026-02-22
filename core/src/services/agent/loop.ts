@@ -7,8 +7,8 @@ import { FunctionType, type ToolExecutionContext, type ToolResult } from "../plu
 import type { PromptService } from "../prompt/service";
 import type { Percept } from "../shared/types";
 import { JsonParser, type ParseResult } from "./json-parser";
-import { buildToolSchemaForPrompt } from "./tools";
 import type { AgentCoreConfig } from "./service";
+import { buildToolSchemaForPrompt } from "./tools";
 
 interface AgentResponse {
   thoughts?: { observe: string; analyze_infer: string; plan: string };
@@ -84,6 +84,8 @@ export class ThinkActLoop {
           messages,
         };
 
+        this.logger.info(JSON.stringify(callParams, null, 2));
+
         const result = await modelService.call(
           this.config.model ?? "",
           callParams,
@@ -114,11 +116,23 @@ export class ThinkActLoop {
         }
 
         if (!parsed.data || !Array.isArray(parsed.data.actions)) {
-          this.logger.info("Failed to parse agent response, breaking loop");
-          break;
+          // Fallback: model returned content without actions — wrap as send_message
+          const raw = parsed.data as Record<string, unknown> | null;
+          const fallbackContent = raw?.content;
+          if (typeof fallbackContent === "string" && fallbackContent) {
+            this.logger.info("No actions array, wrapping content as send_message");
+            parsed = {
+              data: { actions: [{ name: "send_message", params: { content: fallbackContent } }] },
+              error: null,
+              logs: [],
+            };
+          } else {
+            this.logger.info("Failed to parse agent response, breaking loop");
+            break;
+          }
         }
 
-        const response = parsed.data;
+        const response = parsed.data!;
 
         if (response.thoughts) {
           this.logger.info(
@@ -139,9 +153,9 @@ export class ThinkActLoop {
           if (r.name === "send_message") hasSent = true;
         }
 
-        // Determine continuation
-        const autoShouldContinue = hasToolCalls && !hasActionCalls;
-        const shouldContinue = response.request_heartbeat ?? autoShouldContinue;
+        // Determine continuation: Tool calls always continue (results must flow back),
+        // request_heartbeat only controls continuation for pure Action calls
+        const shouldContinue = hasToolCalls || (response.request_heartbeat ?? !hasActionCalls);
 
         if (!shouldContinue) break;
 
@@ -231,9 +245,7 @@ export class ThinkActLoop {
       for (let i = 0; i < toolActions.length; i++) {
         const { idx, action } = toolActions[i];
         const r = results[i];
-        toolResults.push(
-          toToolResultEntry(idx, action.name, r, maxResultLen),
-        );
+        toolResults.push(toToolResultEntry(idx, action.name, r, maxResultLen));
       }
     }
 
@@ -241,7 +253,9 @@ export class ThinkActLoop {
     for (const { idx, action } of actionActions) {
       try {
         const result = await pluginService.invoke(action.name, action.params ?? {}, toolCtx);
-        toolResults.push(toToolResultEntry(idx, action.name, { status: "fulfilled", value: result }, maxResultLen));
+        toolResults.push(
+          toToolResultEntry(idx, action.name, { status: "fulfilled", value: result }, maxResultLen),
+        );
       } catch (e) {
         toolResults.push({
           id: idx,
