@@ -3,7 +3,13 @@ import { join, resolve } from "node:path";
 
 import { load as yamlLoad } from "js-yaml";
 
-import type { ConditionNode, LifecycleStrategy, SkillDefinition, StyleEffect, ToolFilter } from "./types";
+import type {
+  ConditionNode,
+  LifecycleStrategy,
+  SkillDefinition,
+  StyleEffect,
+  ToolFilter,
+} from "./types";
 
 interface Logger {
   warn: (msg: string, ...args: unknown[]) => void;

@@ -9,4 +9,5 @@ effects:
       - image-generate
       - image-edit
 ---
+
 When the user asks for images, drawings, or visual content, enable image generation tools.

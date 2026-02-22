@@ -67,7 +67,14 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
 });
 
 export class AgentCore extends Service<AgentCoreConfig> {
-  static inject = ["yesimbot.horizon", "yesimbot.plugin", "yesimbot.prompt", "yesimbot.model", "yesimbot.trait", "yesimbot.skill"];
+  static inject = [
+    "yesimbot.horizon",
+    "yesimbot.plugin",
+    "yesimbot.prompt",
+    "yesimbot.model",
+    "yesimbot.trait",
+    "yesimbot.skill",
+  ];
 
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, Built>();

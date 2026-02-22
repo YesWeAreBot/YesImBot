@@ -1,5 +1,5 @@
-import type { TraitSignal } from "../shared/types";
 import type { InjectionPoint } from "../prompt/types";
+import type { TraitSignal } from "../shared/types";
 
 // ---- Condition Nodes ----
 

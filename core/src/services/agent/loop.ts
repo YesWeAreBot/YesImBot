@@ -64,27 +64,37 @@ export class ThinkActLoop {
 
     // Apply prompt injections from active skills
     for (const inj of effects.promptInjections) {
-      disposers.push(prompt.inject(this.ctx, inj.point, {
-        name: `__skill_${inj.skillName}_${percept.id}`,
-        renderFn: () => inj.content,
-      }));
+      disposers.push(
+        prompt.inject(this.ctx, inj.point, {
+          name: `__skill_${inj.skillName}_${percept.id}`,
+          renderFn: () => inj.content,
+        }),
+      );
     }
 
     // Apply style override from highest-specificity skill
     if (effects.styleOverride) {
-      disposers.push(prompt.inject(this.ctx, "style", {
-        name: `__skill_style_${percept.id}`,
-        after: "__default_style",
-        renderFn: () => effects.styleOverride!.content,
-      }));
+      disposers.push(
+        prompt.inject(this.ctx, "style", {
+          name: `__skill_style_${percept.id}`,
+          after: "__default_style",
+          renderFn: () => effects.styleOverride!.content,
+        }),
+      );
     }
 
     // Inject tool schema into basic_functions point (with skill tool filter)
-    const toolSchema = buildToolSchemaForPrompt(pluginService, toolCtxWithPercept, effects.toolFilter);
-    disposers.push(prompt.inject(this.ctx, "basic_functions", {
-      name: `__loop_tool_schema_${percept.id}`,
-      renderFn: () => toolSchema,
-    }));
+    const toolSchema = buildToolSchemaForPrompt(
+      pluginService,
+      toolCtxWithPercept,
+      effects.toolFilter,
+    );
+    disposers.push(
+      prompt.inject(this.ctx, "basic_functions", {
+        name: `__loop_tool_schema_${percept.id}`,
+        renderFn: () => toolSchema,
+      }),
+    );
 
     try {
       const systemPrompt = await prompt.renderToString("system", { view, percept });

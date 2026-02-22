@@ -46,6 +46,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
   constructor(ctx: Context, config: SkillRegistryConfig) {
     super(ctx, "yesimbot.skill", false);
+    this.config = config;
     this.logger = ctx.logger("skill");
   }
 
@@ -56,7 +57,9 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
   register(def: SkillDefinition): () => void {
     this.skills.set(def.name, def);
-    const dispose = () => { this.skills.delete(def.name); };
+    const dispose = () => {
+      this.skills.delete(def.name);
+    };
     this[Context.current]?.on("dispose", dispose);
     return dispose;
   }
