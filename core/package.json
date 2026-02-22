@@ -28,6 +28,7 @@
     "@yesimbot/shared-model": "workspace:*",
     "ai": "^6.0.0",
     "js-yaml": "^4.1.1",
+    "jsonrepair": "^3.13.2",
     "mustache": "^4.2.0"
   },
   "devDependencies": {
