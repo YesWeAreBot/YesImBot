@@ -12,6 +12,8 @@ import type { PluginServiceConfig } from "./services/plugin";
 import { PluginService, PluginServiceConfigSchema } from "./services/plugin";
 import type { PromptServiceConfig } from "./services/prompt";
 import { PromptService, PromptServiceConfigSchema } from "./services/prompt";
+import type { SkillRegistryConfig } from "./services/skill";
+import { SkillRegistry, SkillRegistryConfigSchema } from "./services/skill";
 import type { TraitAnalyzerConfig } from "./services/trait";
 import { TraitAnalyzer, TraitAnalyzerConfigSchema } from "./services/trait";
 
@@ -24,6 +26,7 @@ export type Config = AgentCoreConfig &
   ModelServiceConfig &
   PluginServiceConfig &
   PromptServiceConfig &
+  SkillRegistryConfig &
   TraitAnalyzerConfig;
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -33,6 +36,7 @@ export const Config: Schema<Config> = Schema.intersect([
   ModelServiceConfigSchema,
   PluginServiceConfigSchema,
   PromptServiceConfigSchema,
+  SkillRegistryConfigSchema,
   TraitAnalyzerConfigSchema,
 ]);
 
@@ -56,6 +60,11 @@ export function apply(ctx: Context, config: Config) {
   });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
   ctx.plugin(TraitAnalyzer, {});
+  ctx.plugin(SkillRegistry, {
+    skillPaths: config.skillPaths,
+    confidenceThreshold: config.confidenceThreshold,
+    stickyDefaultTimeout: config.stickyDefaultTimeout,
+  });
   ctx.plugin(AgentCore, {
     model: config.model,
     fallbackChain: config.fallbackChain,
@@ -91,6 +100,7 @@ async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void>
     "yesimbot.plugin",
     "yesimbot.prompt",
     "yesimbot.memory",
+    "yesimbot.skill",
     "yesimbot.trait",
   ];
   const resolvedServices = new Set<string>();
