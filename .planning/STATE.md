@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 18 (Skill Response)
-Plan: 1/2
-Status: In Progress
-Last activity: 2026-02-22 - Completed 18-01: Skill types, condition evaluator, and loader
+Plan: 2/2
+Status: Complete
+Last activity: 2026-02-22 - Completed 18-02: SkillRegistry service and core wiring
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -82,6 +82,9 @@ Recent decisions affecting current work:
 - [18-01]: ConditionNode uses discriminated union with 'in' checks (match/and/or/not) for type narrowing
 - [18-01]: Code activator loading uses require() with cache-busting for reload support
 - [18-01]: Loader Logger interface kept minimal (warn only) to avoid coupling to Koishi
+- [18-02]: SkillRegistry uses static inject for yesimbot.trait dependency
+- [18-02]: Style resolution picks highest specificity; on tie, later registration wins (>=)
+- [18-02]: Sticky skills track roundsSinceActive per-channel, deactivate when >= timeout
 
 ### Pending Todos
 
@@ -107,9 +110,10 @@ None.
 | Phase 17 P01 | 2min | 2 tasks | 5 files |
 | Phase 17 P02 | 2min | 2 tasks | 4 files |
 | Phase 18 P01 | 2min | 2 tasks | 4 files |
+| Phase 18 P02 | 2min | 2 tasks | 3 files |
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 18-01-PLAN.md (Skill types, condition evaluator, and loader)
+Stopped at: Completed 18-02-PLAN.md (SkillRegistry service and core wiring)
 Resume file: None

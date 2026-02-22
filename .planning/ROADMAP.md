@@ -34,7 +34,7 @@
 
 - [x] **Phase 16: PromptService Redesign + HorizonView** - Multi-section prompt architecture with named injection points, partial composition, and structured context rendering (completed 2026-02-21)
 - [x] **Phase 17: Trait Perception** - Multi-dimensional context analysis framework with scene and heat detectors (completed 2026-02-22)
-- [ ] **Phase 18: Skill Response** - File-based skill definitions with trait-conditional activation and layered effect merging
+- [x] **Phase 18: Skill Response** - File-based skill definitions with trait-conditional activation and layered effect merging (completed 2026-02-22)
 - [ ] **Phase 19: Integration & Validation** - End-to-end pipeline wiring with example skills proving the full Trait-Skill loop
 
 ## Phase Details
@@ -188,7 +188,7 @@ Plans:
   2. SkillRegistry detects file changes and hot-reloads skill definitions without restarting the bot
   3. Skills activate when their declared trait-signal conditions match, supporting both declarative YAML conditions and programmatic activators
   4. When multiple skills activate simultaneously, their prompt injections and tool additions stack additively while style effects resolve by priority
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 18-01-PLAN.md — Skill types, condition evaluator, and file-based skill loader
 - [ ] 18-02-PLAN.md — SkillRegistry service with lifecycle management, effect merging, and core wiring
@@ -231,5 +231,5 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16.3. Tool Call Improve | v2.0 | 2/2 | Complete | 2026-02-22 |
 | 16.4. Working Memory Improve | 2/2 | Complete    | 2026-02-22 | - |
 | 17. Trait Perception | 2/2 | Complete    | 2026-02-22 | - |
-| 18. Skill Response | 1/2 | In Progress|  | - |
+| 18. Skill Response | 2/2 | Complete   | 2026-02-22 | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |
