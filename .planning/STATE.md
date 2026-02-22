@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 19 (Integration Validation)
-Plan: 1/2
-Status: In Progress
-Last activity: 2026-02-22 - Completed 19-01: Trait-Skill pipeline integration
+Plan: 2/2
+Status: Complete
+Last activity: 2026-02-22 - Completed 19-02: Example skills validation
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Recent decisions affecting current work:
 - [18-02]: Sticky skills track roundsSinceActive per-channel, deactivate when >= timeout
 - [19-01]: Stale before constraint on __default_basic_functions is harmless no-op after tool schema name change
 - [19-01]: All skill injections use percept.id suffix for concurrent safety across simultaneous percepts
+- [19-02]: image-gen keywords include both Chinese and English terms for bilingual matching
 
 ### Pending Todos
 
@@ -115,9 +116,10 @@ None.
 | Phase 18 P02 | 2min | 2 tasks | 3 files |
 
 | Phase 19 P01 | 2min | 2 tasks | 4 files |
+| Phase 19 P02 | 2min | 2 tasks | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 19-01-PLAN.md (Trait-Skill pipeline integration)
+Stopped at: Completed 19-02-PLAN.md (Example skills validation)
 Resume file: None
