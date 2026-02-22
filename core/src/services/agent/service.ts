@@ -30,6 +30,10 @@ export interface AgentCoreConfig {
   globalTimeout?: number;
   maxToolResultLength?: number;
   enableThoughts?: boolean;
+  charBudget?: number;
+  keepLastRounds?: number;
+  softTrimHead?: number;
+  softTrimTail?: number;
   willingness?: WillingnessConfig;
   aggregationWindow?: number;
   errorReportChannel?: string;
@@ -45,6 +49,10 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
   enableThoughts: Schema.boolean().default(true).description("Enable thoughts field in agent JSON output"),
+  charBudget: Schema.number().default(30000).description("Character budget for working memory trimming"),
+  keepLastRounds: Schema.number().default(2).description("Rounds to keep untrimmed"),
+  softTrimHead: Schema.number().default(800).description("Head chars for softTrim"),
+  softTrimTail: Schema.number().default(800).description("Tail chars for softTrim"),
   willingness: WillingnessSchema,
   aggregationWindow: Schema.number()
     .default(1500)

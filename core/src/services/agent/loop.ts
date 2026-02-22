@@ -9,6 +9,7 @@ import type { Percept } from "../shared/types";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
+import { trimMessages, type TrimConfig, type LoopMessage } from "./trimmer";
 
 interface AgentResponse {
   thoughts?: { observe: string; analyze_infer: string; plan: string };
@@ -63,21 +64,28 @@ export class ThinkActLoop {
 
       this.logger.info(`Available tools: ${toolSchema ? "injected" : "none"}`);
 
-      const messages: Array<{ role: "user" | "assistant"; content: string }> = [
+      const trimConfig: TrimConfig = {
+        charBudget: this.config.charBudget ?? 30000,
+        keepLastRounds: this.config.keepLastRounds ?? 2,
+        softTrimHead: this.config.softTrimHead ?? 800,
+        softTrimTail: this.config.softTrimTail ?? 800,
+      };
+
+      const messages: LoopMessage[] = [
         { role: "user", content: userContent },
       ];
 
       const maxRounds = this.config.maxRounds ?? 3;
       const maxResultLen = this.config.maxToolResultLength ?? 4000;
       let round = 0;
-      const allToolNames: string[] = [];
-      let hasSent = false;
 
       const parser = new JsonParser<AgentResponse>(this.logger);
 
       while (round < maxRounds) {
         round++;
         this.logger.info(`Round ${round}/${maxRounds}`);
+
+        trimMessages(messages, trimConfig);
 
         const callParams: CallParams = {
           system: systemPrompt,
@@ -148,10 +156,17 @@ export class ThinkActLoop {
           maxResultLen,
         );
 
-        for (const r of toolResults) {
-          allToolNames.push(r.name);
-          if (r.name === "send_message") hasSent = true;
-        }
+        // Record per-round AgentResponse immediately after tool execution
+        await horizon.events.recordAgentResponse({
+          scope: percept.scope,
+          timestamp: new Date(),
+          data: {
+            round,
+            assistantText: rawText,
+            actions: response.actions,
+            toolResults,
+          },
+        });
 
         // Determine continuation: Tool calls always continue (results must flow back),
         // request_heartbeat only controls continuation for pure Action calls
@@ -163,6 +178,9 @@ export class ThinkActLoop {
         if (round >= maxRounds) {
           messages.push({ role: "assistant", content: rawText });
           messages.push({ role: "user", content: formatFinalRoundPrompt(toolResults) });
+
+          trimMessages(messages, trimConfig);
+
           const wrapResult = await modelService.call(
             this.config.model ?? "",
             { system: systemPrompt, messages } as CallParams,
@@ -177,10 +195,16 @@ export class ThinkActLoop {
                 toolCtxWithPercept,
                 maxResultLen,
               );
-              for (const r of wrapToolResults) {
-                allToolNames.push(r.name);
-                if (r.name === "send_message") hasSent = true;
-              }
+              await horizon.events.recordAgentResponse({
+                scope: percept.scope,
+                timestamp: new Date(),
+                data: {
+                  round: round + 1,
+                  assistantText: wrapResult.text,
+                  actions: wrapParsed.data.actions,
+                  toolResults: wrapToolResults,
+                },
+              });
             }
           }
           break;
@@ -191,22 +215,11 @@ export class ThinkActLoop {
         messages.push({ role: "user", content: formatToolResults(toolResults) });
       }
 
-      // Record agent response
       await horizon.events.markAsActive(percept.scope, new Date());
       const archiveMs =
         (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
       await horizon.events.archiveStale(percept.scope, archiveMs);
 
-      await horizon.events.recordAgentResponse({
-        scope: percept.scope,
-        timestamp: new Date(),
-        data: {
-          round,
-          assistantText: "",
-          actions: allToolNames.map((name) => ({ name })),
-          toolResults: [],
-        },
-      });
       this.logger.info(`Loop complete: ${round} rounds`);
     } finally {
       disposeInjection();
