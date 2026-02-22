@@ -1,5 +1,5 @@
-import type { Scope, TraitSignal } from "../shared/types";
 import type { HorizonView } from "../horizon/types";
+import type { Scope, TraitSignal } from "../shared/types";
 
 export interface TraitDetector {
   name: string;

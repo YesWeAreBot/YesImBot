@@ -1,10 +1,10 @@
 import { Context, Schema, Service } from "koishi";
 
-import type { Scope, TraitSignal } from "../shared/types";
 import type { HorizonView } from "../horizon/types";
-import type { TraitDetector } from "./types";
-import { SceneTrait } from "./detectors/scene";
+import type { Scope, TraitSignal } from "../shared/types";
 import { HeatTrait } from "./detectors/heat";
+import { SceneTrait } from "./detectors/scene";
+import type { TraitDetector } from "./types";
 
 declare module "koishi" {
   interface Context {

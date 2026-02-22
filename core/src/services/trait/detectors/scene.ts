@@ -1,9 +1,9 @@
 import type { Context, Logger } from "koishi";
 
-import type { Scope, TraitSignal } from "../../shared/types";
 import type { HorizonView } from "../../horizon/types";
-import type { TraitDetector } from "../types";
+import type { Scope, TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
+import type { TraitDetector } from "../types";
 
 interface SceneState {
   lastBotResponseAt?: number;
@@ -40,7 +40,10 @@ export class SceneTrait implements TraitDetector {
       state.messagesSinceBotResponse++;
       state.messagesSinceMention++;
 
-      if (this.botName && event.payload.content.toLowerCase().includes(this.botName.toLowerCase())) {
+      if (
+        this.botName &&
+        event.payload.content.toLowerCase().includes(this.botName.toLowerCase())
+      ) {
         state.lastMentionedAt = Date.now();
         state.messagesSinceMention = 0;
       }
@@ -84,8 +87,9 @@ export class SceneTrait implements TraitDetector {
     if (mentioned) {
       signals.push({ dimension: "attention", value: "mentioned", confidence: 0.9 });
     } else if (state) {
-      const ignoredByResponse = state.lastBotResponseAt !== undefined
-        && state.messagesSinceBotResponse >= IGNORED_MESSAGES_SINCE_RESPONSE;
+      const ignoredByResponse =
+        state.lastBotResponseAt !== undefined &&
+        state.messagesSinceBotResponse >= IGNORED_MESSAGES_SINCE_RESPONSE;
       const ignoredByMention = state.messagesSinceMention >= IGNORED_MESSAGES_SINCE_MENTION;
 
       if (ignoredByResponse || ignoredByMention) {

@@ -1,9 +1,9 @@
 import type { Context, Logger } from "koishi";
 
-import type { Scope, TraitSignal } from "../../shared/types";
 import type { HorizonView } from "../../horizon/types";
-import type { TraitDetector } from "../types";
+import type { Scope, TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
+import type { TraitDetector } from "../types";
 
 interface HeatState {
   timestamps: number[];
