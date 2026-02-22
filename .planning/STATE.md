@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 16.2 — Percept Type Cleanup & Session Decoupling
+**Current focus:** Phase 16.3 — Tool Call Improve
 
 ## Current Position
 
-Phase: 16.2 (Percept Type Cleanup & Session Decoupling)
-Plan: 2/2
-Status: Complete
-Last activity: 2026-02-21 - Completed 16.2-02: agent + plugin consumer refactor (ToolExecutionContext wiring, activator filtering)
+Phase: 16.3 (Tool Call Improve)
+Plan: 1/2
+Status: In Progress
+Last activity: 2026-02-22 - Completed 16.3-01: JsonParser + buildToolSchemaForPrompt foundation
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -63,7 +63,8 @@ Recent decisions affecting current work:
 - [16.2-01]: agent/types.ts emptied rather than deleted for import path compatibility
 - [16.2-02]: buildPercept returns {percept, toolCtx} pair, not separate methods
 - [16.2-02]: toolCtxWithPercept spread in loop adds percept reference for tool handlers
-- [16.2-02]: memory/service.ts sender snippets read from Percept.metadata instead of removed HorizonView.percept
+- [16.3-01]: Simple Logger interface keeps JsonParser unit-testable without Koishi dependency
+- [16.3-01]: isLikelyJsonStart made public for potential reuse in loop parsing
 
 ### Pending Todos
 
@@ -88,6 +89,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-21
-Stopped at: Completed 16.2-02-PLAN.md (Agent + Plugin Consumer Refactor)
+Last session: 2026-02-22
+Stopped at: Completed 16.3-01-PLAN.md (JsonParser + buildToolSchemaForPrompt foundation)
 Resume file: None
