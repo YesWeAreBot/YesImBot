@@ -54,6 +54,16 @@ Plans:
 - [ ] 16-01-PLAN.md — PromptService core: types, renderer, named injection points, ctx lifecycle, Section[] render
 - [ ] 16-02-PLAN.md — Templates, HorizonView structured output, consumer migration (MemoryService, ThinkActLoop)
 
+### Phase 16.3: tool-call-improve (INSERTED)
+
+**Goal:** Replace native AI SDK tool_call with structured JSON text output, manual heartbeat loop, and prompt-based tool schema rendering
+**Depends on:** Phase 16
+**Plans:** 2 plans
+
+Plans:
+- [ ] 16.3-01-PLAN.md — JsonParser (ported from v3 with jsonrepair) + tool schema prompt builder
+- [ ] 16.3-02-PLAN.md — ThinkActLoop rewrite (manual heartbeat loop, JSON parsing, continuation inference) + template updates
+
 ### Phase 16.1: Percept Ownership & User Message Context Refactor (INSERTED)
 
 **Goal:** Percept 构造从 horizon 移到 agent 模块，horizon 只负责数据记录和事件广播；user message 承载全部工作负载（环境、成员、历史），system prompt 变为纯静态；统一使用模板路径渲染上下文
