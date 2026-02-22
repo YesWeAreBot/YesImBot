@@ -58,7 +58,7 @@ Plans:
 
 **Goal:** Replace native AI SDK tool_call with structured JSON text output, manual heartbeat loop, and prompt-based tool schema rendering
 **Depends on:** Phase 16
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 16.3-01-PLAN.md — JsonParser (ported from v3 with jsonrepair) + tool schema prompt builder

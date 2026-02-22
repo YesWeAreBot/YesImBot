@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 16.3 (Tool Call Improve)
-Plan: 1/2
-Status: In Progress
-Last activity: 2026-02-22 - Completed 16.3-01: JsonParser + buildToolSchemaForPrompt foundation
+Plan: 2/2
+Status: Complete
+Last activity: 2026-02-22 - Completed 16.3-02: Loop rewrite & templates
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -65,6 +65,9 @@ Recent decisions affecting current work:
 - [16.2-02]: toolCtxWithPercept spread in loop adds percept reference for tool handlers
 - [16.3-01]: Simple Logger interface keeps JsonParser unit-testable without Koishi dependency
 - [16.3-01]: isLikelyJsonStart made public for potential reuse in loop parsing
+- [16.3-02]: Tool schema injected at basic_functions point via prompt.inject() with dispose cleanup
+- [16.3-02]: LLM repair fallback only when raw text contains 'actions' substring
+- [16.3-02]: Tool results truncated to maxToolResultLength config value
 
 ### Pending Todos
 
@@ -90,5 +93,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 16.3-01-PLAN.md (JsonParser + buildToolSchemaForPrompt foundation)
+Stopped at: Completed 16.3-02-PLAN.md (Loop rewrite & templates)
 Resume file: None
