@@ -1,0 +1,57 @@
+import { Context, Schema, Service } from "koishi";
+
+import type { Scope, TraitSignal } from "../shared/types";
+import type { HorizonView } from "../horizon/types";
+import type { TraitDetector } from "./types";
+
+declare module "koishi" {
+  interface Context {
+    "yesimbot.trait": TraitAnalyzer;
+  }
+}
+
+export interface TraitAnalyzerConfig {}
+
+export const TraitAnalyzerConfigSchema: Schema<TraitAnalyzerConfig> = Schema.object({});
+
+export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
+  static inject = ["yesimbot.horizon"];
+
+  private detectors: TraitDetector[] = [];
+  private stateStore = new Map<string, unknown>();
+
+  constructor(ctx: Context, config: TraitAnalyzerConfig) {
+    super(ctx, "yesimbot.trait", false);
+    this.logger = ctx.logger("trait");
+  }
+
+  protected async start(): Promise<void> {}
+
+  registerDetector(detector: TraitDetector): void {
+    this.detectors.push(detector);
+    detector.start(this.ctx, this);
+  }
+
+  getState<T>(detectorName: string, channelKey: string): T | undefined {
+    return this.stateStore.get(`${detectorName}:${channelKey}`) as T | undefined;
+  }
+
+  setState<T>(detectorName: string, channelKey: string, state: T): void {
+    this.stateStore.set(`${detectorName}:${channelKey}`, state);
+  }
+
+  async analyze(scope: Scope, view: HorizonView): Promise<TraitSignal[]> {
+    const results = await Promise.allSettled(
+      this.detectors.map((d) => Promise.resolve(d.detect(scope, view))),
+    );
+    const signals: TraitSignal[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        signals.push(...result.value);
+      } else {
+        this.logger.warn(`Detector failed: ${result.reason}`);
+      }
+    }
+    return signals;
+  }
+}

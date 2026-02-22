@@ -23,3 +23,10 @@ export interface Percept {
   timestamp: Date;
   metadata?: Record<string, unknown>;
 }
+
+export interface TraitSignal {
+  dimension: string;
+  value: string;
+  confidence: number;
+  metadata?: Record<string, unknown>;
+}
