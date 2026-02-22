@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 16.3 — Tool Call Improve
+**Current focus:** Phase 16.4 — Working Memory Improve
 
 ## Current Position
 
-Phase: 16.3 (Tool Call Improve)
-Plan: 2/2
-Status: Complete
-Last activity: 2026-02-22 - Completed 16.3-02: Loop rewrite & templates
+Phase: 16.4 (Working Memory Improve)
+Plan: 1/2
+Status: In Progress
+Last activity: 2026-02-22 - Completed 16.4-01: Trimmer & AgentResponse foundation
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -68,6 +68,9 @@ Recent decisions affecting current work:
 - [16.3-02]: Tool schema injected at basic_functions point via prompt.inject() with dispose cleanup
 - [16.3-02]: LLM repair fallback only when raw text contains 'actions' substring
 - [16.3-02]: Tool results truncated to maxToolResultLength config value
+- [16.4-01]: Trimmer prioritizes user messages (tool results) over assistant messages for degradation
+- [16.4-01]: AgentResponseData stores structured round/actions/toolResults instead of summary string
+- [16.4-01]: formatObservation shows send_message content inline with [also: ...] suffix
 
 ### Pending Todos
 
@@ -78,6 +81,7 @@ None.
 - Phase 16.1 inserted after Phase 16: Percept Ownership & User Message Context Refactor (URGENT)
 - Phase 16.2 inserted after Phase 16.1: Percept Type Cleanup & Session Decoupling (URGENT)
 - Phase 16.3 inserted after Phase 16: tool-call-improve (URGENT)
+- Phase 16.4 inserted after Phase 16: working-memory-improve (URGENT)
 
 ### Blockers/Concerns
 
@@ -93,5 +97,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 16.3-02-PLAN.md (Loop rewrite & templates)
+Stopped at: Completed 16.4-01-PLAN.md (Trimmer & AgentResponse foundation)
 Resume file: None

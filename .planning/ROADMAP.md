@@ -61,7 +61,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 16.4-01-PLAN.md — Trimmer function + AgentResponse type replacement across horizon chain
+- [x] 16.4-01-PLAN.md — Trimmer function + AgentResponse type replacement across horizon chain
 - [ ] 16.4-02-PLAN.md — Loop integration (per-round recording, trimming, working-memory template)
 
 ### Phase 16.3: tool-call-improve (INSERTED)
@@ -222,6 +222,8 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16. PromptService Redesign + HorizonView | v2.0 | 2/2 | Complete | 2026-02-21 |
 | 16.1. Percept Ownership & User Message Context Refactor | v2.0 | Complete    | 2026-02-21 | 2026-02-21 |
 | 16.2. Percept Type Cleanup & Session Decoupling | 2/2 | Complete    | 2026-02-21 | - |
+| 16.3. Tool Call Improve | v2.0 | 2/2 | Complete | 2026-02-22 |
+| 16.4. Working Memory Improve | v2.0 | 1/2 | In Progress | - |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |
