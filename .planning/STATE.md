@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 18 — Skill Response
+**Current focus:** Phase 19 — Integration Validation
 
 ## Current Position
 
-Phase: 18 (Skill Response)
-Plan: 2/2
-Status: Complete
-Last activity: 2026-02-22 - Completed 18-02: SkillRegistry service and core wiring
+Phase: 19 (Integration Validation)
+Plan: 1/2
+Status: In Progress
+Last activity: 2026-02-22 - Completed 19-01: Trait-Skill pipeline integration
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -85,6 +85,8 @@ Recent decisions affecting current work:
 - [18-02]: SkillRegistry uses static inject for yesimbot.trait dependency
 - [18-02]: Style resolution picks highest specificity; on tie, later registration wins (>=)
 - [18-02]: Sticky skills track roundsSinceActive per-channel, deactivate when >= timeout
+- [19-01]: Stale before constraint on __default_basic_functions is harmless no-op after tool schema name change
+- [19-01]: All skill injections use percept.id suffix for concurrent safety across simultaneous percepts
 
 ### Pending Todos
 
@@ -112,8 +114,10 @@ None.
 | Phase 18 P01 | 2min | 2 tasks | 4 files |
 | Phase 18 P02 | 2min | 2 tasks | 3 files |
 
+| Phase 19 P01 | 2min | 2 tasks | 4 files |
+
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 18-02-PLAN.md (SkillRegistry service and core wiring)
+Stopped at: Completed 19-01-PLAN.md (Trait-Skill pipeline integration)
 Resume file: None
