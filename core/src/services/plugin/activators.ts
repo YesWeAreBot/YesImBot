@@ -1,7 +1,11 @@
 import type { Activator } from "./types";
 
 export function requireSession(reason?: string): Activator {
-  return { check: (ctx) => !!ctx.session, reason: reason ?? "Requires active session", onFail: "remove" };
+  return {
+    check: (ctx) => !!ctx.session,
+    reason: reason ?? "Requires active session",
+    onFail: "remove",
+  };
 }
 
 export function requirePlatform(platform: string | string[], reason?: string): Activator {

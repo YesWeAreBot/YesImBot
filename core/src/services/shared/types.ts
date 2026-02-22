@@ -1,6 +1,13 @@
 // ---- Shared Types ----
 
-export type TriggerType = "mention" | "reply" | "keyword" | "random" | "direct" | "timer" | "internal";
+export type TriggerType =
+  | "mention"
+  | "reply"
+  | "keyword"
+  | "random"
+  | "direct"
+  | "timer"
+  | "internal";
 
 export interface Scope {
   platform?: string;

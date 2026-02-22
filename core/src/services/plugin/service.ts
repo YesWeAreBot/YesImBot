@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from "koishi";
 
 import { Plugin } from "./base-plugin";
-import { CorePlugin, OnebotPlugin, SessionInfoPlugin } from "./builtin";
+import { CorePlugin, DemoPlugin, OnebotPlugin, SessionInfoPlugin } from "./builtin";
 import { schemaToJSONSchema } from "./schema";
 import {
   FunctionType,
@@ -36,6 +36,7 @@ export class PluginService extends Service<PluginServiceConfig> {
     this.register(new CorePlugin(ctx));
     this.register(new SessionInfoPlugin(ctx));
     this.register(new OnebotPlugin(ctx));
+    this.register(new DemoPlugin(ctx));
   }
 
   register(plugin: Plugin): void {

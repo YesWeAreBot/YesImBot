@@ -1,4 +1,4 @@
-import { type StepResult, type ToolSet } from "ai";
+import { LanguageModelUsage, type StepResult, type ToolSet } from "ai";
 import { Context, sleep } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
@@ -62,9 +62,9 @@ export class ThinkActLoop {
 
     const onStepFinish = (step: StepResult<ToolSet>) => {
       this.logger.info(
-        `Step #${collectedSteps.length + 1} finished. \
-        Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. \
-        ${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
+        `Step #${collectedSteps.length + 1} finished. ` +
+          `Tool calls: [${(step.toolCalls ?? []).map((t) => t.toolName).join(", ")}]. ` +
+          `${isEmptyString(step.text) ? "" : `Text: ${step.text}`}`.trim(),
       );
       collectedSteps.push(step);
       const calls = step.toolCalls ?? [];
@@ -82,7 +82,39 @@ export class ThinkActLoop {
       toolChoice: "required",
       stopWhen,
       onStepFinish,
+      experimental_onToolCallStart: ({
+        toolName,
+        toolCallId,
+        input,
+      }: {
+        toolName: string;
+        toolCallId: string;
+        input: unknown;
+      }) => {
+        this.logger.info(`Calling tool: ${toolName}`, { toolCallId, input });
+      },
+      experimental_onToolCallFinish: ({
+        toolName,
+        toolCallId,
+        output,
+        error,
+        durationMs,
+      }: {
+        toolName: string;
+        toolCallId: string;
+        output?: unknown;
+        error?: unknown;
+        durationMs: number;
+      }) => {
+        if (error) {
+          this.logger.error(`Tool ${toolName} failed after ${durationMs}ms:`, error);
+        } else {
+          this.logger.info(`Tool ${toolName} completed in ${durationMs}ms`, { output });
+        }
+      },
     } as CallParams;
+
+    let usage: LanguageModelUsage | undefined;
 
     try {
       let resultText: string | undefined;
@@ -92,20 +124,27 @@ export class ThinkActLoop {
           timeoutPromise,
         ]);
         resultText = await streamResult.text;
+        usage = await streamResult.usage;
       } else {
         const result = await Promise.race([
           modelService.call(this.config.model ?? "", callParams, this.config.fallbackChain),
           timeoutPromise,
         ]);
         resultText = result?.text;
+
+        if (result?.reasoningText) {
+          this.logger.info(`Model reasoning: ${result.reasoningText}`);
+        }
+
+        usage = result?.usage;
       }
 
       if (resultText) {
         this.logger.info(`Model output: ${resultText}`);
         fallbackText = resultText;
-        if (fallbackText.indexOf("</think>") >= 0) {
-          fallbackText = fallbackText.split("</think>").slice(-1)[0];
-        }
+      }
+      if (usage) {
+        this.logger.info(`=== Model Usage ===\n${JSON.stringify(usage, null, 2)}`);
       }
     } catch (e) {
       if (e instanceof LoopAbort) {

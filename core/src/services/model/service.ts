@@ -3,12 +3,15 @@ import {
   ErrorCategory,
   IModelProvider,
   IModelService,
+  LanguageModel,
+  LanguageModelV3,
   ModelDefaultParams,
   ModelInfo,
   ModelSelector,
+  parseModelId,
 } from "@yesimbot/shared-model";
-import { parseModelId } from "@yesimbot/shared-model";
-import { type CallSettings, LanguageModel, type Prompt, generateText, streamText } from "ai";
+import type { CallSettings, Prompt } from "ai";
+import { extractReasoningMiddleware, generateText, streamText, wrapLanguageModel } from "ai";
 import { Context, Schema, Service } from "koishi";
 import PQueue from "p-queue";
 
@@ -138,22 +141,30 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     const provider = this.providers.get(providerName);
     if (!provider) throw new Error(`Provider not found: ${providerName}`);
 
-    const model = provider.getModel(modelId);
+    const model = provider.getModel(modelId) as LanguageModelV3;
+    const wrappedModel = wrapLanguageModel({
+      model,
+      middleware: [extractReasoningMiddleware({ tagName: "think" })],
+    });
     const defaults = provider.getDefaultParams();
     const merged = { ...defaults, ...params };
 
-    return await streamText({ model, ...merged });
+    return await streamText({ model: wrappedModel, ...merged });
   }
 
   private async executeCall(providerName: string, modelId: string, params: CallParams) {
     const provider = this.providers.get(providerName);
     if (!provider) throw new Error(`Provider not found: ${providerName}`);
 
-    const model = provider.getModel(modelId);
+    const model = provider.getModel(modelId) as LanguageModelV3;
+    const wrappedModel = wrapLanguageModel({
+      model,
+      middleware: [extractReasoningMiddleware({ tagName: "think" })],
+    });
     const defaults = provider.getDefaultParams();
     const merged = { ...defaults, ...params };
 
-    const result = await generateText({ model, ...merged });
+    const result = await generateText({ model: wrappedModel, ...merged });
 
     const key = `${providerName}:${modelId}`;
     const current = this.usage.get(key) || { tokens: 0, requests: 0 };

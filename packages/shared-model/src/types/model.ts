@@ -1,3 +1,4 @@
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
 
 export type ModelSelector = { provider: string; model: string };
@@ -61,4 +62,4 @@ export interface IModelService {
   getModelInfo(providerName: string, modelId: string): ModelInfo | undefined;
 }
 
-export type { LanguageModel };
+export type { LanguageModel, LanguageModelV3 };

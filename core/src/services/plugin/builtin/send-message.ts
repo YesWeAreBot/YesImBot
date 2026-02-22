@@ -14,16 +14,24 @@ export class CorePlugin extends Plugin {
 
   @Action({
     name: "send_message",
-    description: "Send a message to the current conversation",
+    description:
+      "Sends a message to the channel. This is the only way you can talk to the human user.",
     parameters: withInnerThoughts({
-      content: Schema.string().required().description("Message content to send"),
+      content: Schema.string()
+        .required()
+        .description(
+          "Message content to send. Use `<sep/>` to split a long message into multiple parts (natural delays).",
+        ),
       target: Schema.string().description(
         "Target channel in platform:channelId format. Defaults to current channel.",
       ),
     }),
     activators: [requireSession()],
   })
-  async sendMessage(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
+  async sendMessage(
+    params: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolResult> {
     try {
       const content = String(params["content"] ?? "");
       const target = params["target"] as string | undefined;
