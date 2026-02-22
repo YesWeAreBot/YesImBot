@@ -25,12 +25,7 @@ export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.obj
   resourcesDir: Schema.string().description("Custom templates directory"),
 });
 
-const CACHEABLE_POINTS = new Set<InjectionPoint>([
-  "identity",
-  "style",
-  "control_flow",
-  "memory",
-]);
+const CACHEABLE_POINTS = new Set<InjectionPoint>(["identity", "style", "control_flow", "memory"]);
 
 export class PromptService extends Service<PromptServiceConfig> {
   private templates = new Map<string, string>();

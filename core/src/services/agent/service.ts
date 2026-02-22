@@ -48,8 +48,12 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
-  enableThoughts: Schema.boolean().default(true).description("Enable thoughts field in agent JSON output"),
-  charBudget: Schema.number().default(30000).description("Character budget for working memory trimming"),
+  enableThoughts: Schema.boolean()
+    .default(true)
+    .description("Enable thoughts field in agent JSON output"),
+  charBudget: Schema.number()
+    .default(30000)
+    .description("Character budget for working memory trimming"),
   keepLastRounds: Schema.number().default(2).description("Rounds to keep untrimmed"),
   softTrimHead: Schema.number().default(800).description("Head chars for softTrim"),
   softTrimTail: Schema.number().default(800).description("Tail chars for softTrim"),

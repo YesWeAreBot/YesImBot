@@ -139,9 +139,14 @@ export class JsonParser<T> {
     if (trimmed.startsWith("[")) {
       const ch = trimmed.substring(1).trim().charAt(0);
       return (
-        ch === "]" || ch === "{" || ch === '"' ||
-        ch === "t" || ch === "f" || ch === "n" ||
-        (ch >= "0" && ch <= "9") || ch === "-"
+        ch === "]" ||
+        ch === "{" ||
+        ch === '"' ||
+        ch === "t" ||
+        ch === "f" ||
+        ch === "n" ||
+        (ch >= "0" && ch <= "9") ||
+        ch === "-"
       );
     }
 

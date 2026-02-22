@@ -67,12 +67,14 @@ export class ThinkActLoop {
           const d = obs.data;
           const lines = [`Round ${d.round}:`];
           for (const a of d.actions) {
-            const r = d.toolResults.find(t => t.name === a.name);
-            const status = r ? r.status + (r.error ? ': ' + r.error : '') : 'no result';
-            const preview = r?.result != null ? String(r.result).slice(0, 200) : '';
-            lines.push(`  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ': ' + preview : ''}`);
+            const r = d.toolResults.find((t) => t.name === a.name);
+            const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
+            const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
+            lines.push(
+              `  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`,
+            );
           }
-          wmLines.push(lines.join('\n'));
+          wmLines.push(lines.join("\n"));
         }
       }
       const userContent = horizon.formatHorizonText(view, wmLines);
@@ -86,9 +88,7 @@ export class ThinkActLoop {
         softTrimTail: this.config.softTrimTail ?? 800,
       };
 
-      const messages: LoopMessage[] = [
-        { role: "user", content: userContent },
-      ];
+      const messages: LoopMessage[] = [{ role: "user", content: userContent }];
 
       const maxRounds = this.config.maxRounds ?? 3;
       const maxResultLen = this.config.maxToolResultLength ?? 4000;

@@ -1,6 +1,7 @@
 You must respond with a JSON object. Do not include any text outside the JSON structure.
 
 Schema:
+
 ```
 {
   "thoughts": {              // Optional. Your reasoning before acting.
@@ -19,6 +20,7 @@ Schema:
 ```
 
 Rules:
+
 - `actions` is always an array, even for a single call.
 - Tool-type functions retrieve information; results are always returned to you in the next round. You cannot stop the loop when tools are called.
 - Action-type functions perform side effects; the loop ends automatically after actions execute.
