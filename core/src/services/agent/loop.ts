@@ -6,6 +6,9 @@ import type { PluginService } from "../plugin/service";
 import { FunctionType, type ToolExecutionContext, type ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { Percept } from "../shared/types";
+import type { SkillRegistry } from "../skill/service";
+import type { SkillEffect } from "../skill/types";
+import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
@@ -51,12 +54,37 @@ export class ThinkActLoop {
 
     const toolCtxWithPercept = { ...toolCtx, percept };
 
-    // Inject tool schema into basic_functions point
-    const toolSchema = buildToolSchemaForPrompt(pluginService, toolCtxWithPercept);
-    const disposeInjection = prompt.inject(this.ctx, "basic_functions", {
-      name: "__loop_tool_schema",
+    // Trait-Skill pipeline: analyze context, resolve active skills
+    const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
+    const skill = this.ctx["yesimbot.skill"] as SkillRegistry;
+    const signals = await trait.analyze(percept.scope, view);
+    const effects: SkillEffect = skill.resolve(signals, percept.scope);
+
+    const disposers: Array<() => void> = [];
+
+    // Apply prompt injections from active skills
+    for (const inj of effects.promptInjections) {
+      disposers.push(prompt.inject(this.ctx, inj.point, {
+        name: `__skill_${inj.skillName}_${percept.id}`,
+        renderFn: () => inj.content,
+      }));
+    }
+
+    // Apply style override from highest-specificity skill
+    if (effects.styleOverride) {
+      disposers.push(prompt.inject(this.ctx, "style", {
+        name: `__skill_style_${percept.id}`,
+        after: "__default_style",
+        renderFn: () => effects.styleOverride!.content,
+      }));
+    }
+
+    // Inject tool schema into basic_functions point (with skill tool filter)
+    const toolSchema = buildToolSchemaForPrompt(pluginService, toolCtxWithPercept, effects.toolFilter);
+    disposers.push(prompt.inject(this.ctx, "basic_functions", {
+      name: `__loop_tool_schema_${percept.id}`,
       renderFn: () => toolSchema,
-    });
+    }));
 
     try {
       const systemPrompt = await prompt.renderToString("system", { view, percept });
@@ -237,7 +265,7 @@ export class ThinkActLoop {
 
       this.logger.info(`Loop complete: ${round} rounds`);
     } finally {
-      disposeInjection();
+      for (const d of disposers) d();
     }
   }
 
