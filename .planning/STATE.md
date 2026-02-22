@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 16.4 (Working Memory Improve)
-Plan: 1/2
-Status: In Progress
-Last activity: 2026-02-22 - Completed 16.4-01: Trimmer & AgentResponse foundation
+Plan: 2/2
+Status: Complete
+Last activity: 2026-02-22 - Completed 16.4-02: Loop integration & working-memory template
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -71,6 +71,9 @@ Recent decisions affecting current work:
 - [16.4-01]: Trimmer prioritizes user messages (tool results) over assistant messages for degradation
 - [16.4-01]: AgentResponseData stores structured round/actions/toolResults instead of summary string
 - [16.4-01]: formatObservation shows send_message content inline with [also: ...] suffix
+- [16.4-02]: Working-memory extracted from view.history AgentResponse observations in loop, passed to formatHorizonText
+- [16.4-02]: formatHorizonText accepts optional workingMemory string array as second parameter
+- [16.4-02]: Per-round recording happens immediately after executeActions, before shouldContinue check
 
 ### Pending Todos
 
@@ -97,5 +100,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 16.4-01-PLAN.md (Trimmer & AgentResponse foundation)
+Stopped at: Completed 16.4-02-PLAN.md (Loop integration & working-memory template)
 Resume file: None
