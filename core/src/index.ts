@@ -12,6 +12,8 @@ import type { PluginServiceConfig } from "./services/plugin";
 import { PluginService, PluginServiceConfigSchema } from "./services/plugin";
 import type { PromptServiceConfig } from "./services/prompt";
 import { PromptService, PromptServiceConfigSchema } from "./services/prompt";
+import type { TraitAnalyzerConfig } from "./services/trait";
+import { TraitAnalyzer, TraitAnalyzerConfigSchema } from "./services/trait";
 
 export const name = "yesimbot";
 export const inject = ["database"];
@@ -21,7 +23,8 @@ export type Config = AgentCoreConfig &
   MemoryServiceConfig &
   ModelServiceConfig &
   PluginServiceConfig &
-  PromptServiceConfig;
+  PromptServiceConfig &
+  TraitAnalyzerConfig;
 
 export const Config: Schema<Config> = Schema.intersect([
   AgentCoreConfigSchema,
@@ -30,6 +33,7 @@ export const Config: Schema<Config> = Schema.intersect([
   ModelServiceConfigSchema,
   PluginServiceConfigSchema,
   PromptServiceConfigSchema,
+  TraitAnalyzerConfigSchema,
 ]);
 
 export function apply(ctx: Context, config: Config) {
@@ -51,6 +55,7 @@ export function apply(ctx: Context, config: Config) {
     memoryCharLimit: config.memoryCharLimit,
   });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
+  ctx.plugin(TraitAnalyzer, {});
   ctx.plugin(AgentCore, {
     model: config.model,
     fallbackChain: config.fallbackChain,
@@ -86,6 +91,7 @@ async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void>
     "yesimbot.plugin",
     "yesimbot.prompt",
     "yesimbot.memory",
+    "yesimbot.trait",
   ];
   const resolvedServices = new Set<string>();
   const startTime = Date.now();
