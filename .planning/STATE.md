@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 16.4 — Working Memory Improve
+**Current focus:** Phase 17 — Trait Perception
 
 ## Current Position
 
-Phase: 16.4 (Working Memory Improve)
-Plan: 2/2
-Status: Complete
-Last activity: 2026-02-22 - Completed 16.4-02: Loop integration & working-memory template
+Phase: 17 (Trait Perception)
+Plan: 1/2
+Status: In Progress
+Last activity: 2026-02-22 - Completed 17-01: TraitAnalyzer service framework
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -74,6 +74,8 @@ Recent decisions affecting current work:
 - [16.4-02]: Working-memory extracted from view.history AgentResponse observations in loop, passed to formatHorizonText
 - [16.4-02]: formatHorizonText accepts optional workingMemory string array as second parameter
 - [16.4-02]: Per-round recording happens immediately after executeActions, before shouldContinue check
+- [17-01]: TraitDetector uses forward-compatible unknown types for ctx/analyzer params to avoid circular imports
+- [17-01]: TraitAnalyzer registered before AgentCore in core plugin for Phase 18 consumption
 
 ### Pending Todos
 
@@ -88,7 +90,7 @@ None.
 
 ### Blockers/Concerns
 
-- TraitAnalyzer service type TBD: Koishi Service vs plain class owned by AgentCore
+- TraitAnalyzer service type RESOLVED: Koishi Service subclass pattern (17-01)
 - Skill hot-reload behavior during active conversations needs design
 
 ### Quick Tasks Completed
@@ -96,9 +98,10 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | [1-percept-buildview](./quick/1-percept-buildview/) |
+| Phase 17 P01 | 2min | 2 tasks | 5 files |
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 16.4-02-PLAN.md (Loop integration & working-memory template)
+Stopped at: Completed 17-01-PLAN.md (TraitAnalyzer service framework)
 Resume file: None
