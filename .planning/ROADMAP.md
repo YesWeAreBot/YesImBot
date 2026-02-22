@@ -223,7 +223,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16.1. Percept Ownership & User Message Context Refactor | v2.0 | Complete    | 2026-02-21 | 2026-02-21 |
 | 16.2. Percept Type Cleanup & Session Decoupling | 2/2 | Complete    | 2026-02-21 | - |
 | 16.3. Tool Call Improve | v2.0 | 2/2 | Complete | 2026-02-22 |
-| 16.4. Working Memory Improve | 2/2 | Complete   | 2026-02-22 | - |
+| 16.4. Working Memory Improve | 2/2 | Complete    | 2026-02-22 | - |
 | 17. Trait Perception | v2.0 | 0/? | Not started | - |
 | 18. Skill Response | v2.0 | 0/? | Not started | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |
