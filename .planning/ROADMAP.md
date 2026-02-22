@@ -174,7 +174,10 @@ Plans:
   3. HeatTrait tracks conversation activity rate and trend direction (heating/cooling/stable) per channel
   4. TraitSignal protocol is defined such that a consumer can match against signals without importing detector implementations (decoupled)
   5. Stateful traits persist per-channel and update incrementally across conversations
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 17-01-PLAN.md — TraitSignal protocol, TraitDetector interface, TraitAnalyzer service with state API + parallel dispatch
+- [ ] 17-02-PLAN.md — SceneTrait and HeatTrait built-in detectors with event-driven state updates
 
 ### Phase 18: Skill Response
 **Goal**: Skills defined as file-based folders activate against trait signals and modify prompt sections, style, and tool availability through layered effect merging
