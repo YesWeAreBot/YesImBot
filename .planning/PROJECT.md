@@ -2,22 +2,11 @@
 
 ## What This Is
 
-Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用和 Horizon 上下文管理——一个独一无二的、专属于社群的虚拟成员。基于 YesImBot-v3 完全重写，v1.0 已达到 v3 功能平替水平。
+Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用、Horizon 上下文管理，以及基于 Trait + Skill 的上下文感知行为调整体系——一个独一无二的、专属于社群的虚拟成员。
 
 ## Core Value
 
 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-
-## Current Milestone: v2.0 Context-Aware Architecture
-
-**Goal:** 重设计提示词服务架构，建立模块化提示词结构，引入 Trait + Skill 上下文感知行为调整体系——替代 ChatMode 的离散模式切换。
-
-**Target features:**
-- PromptService 架构重设计：多注入点、上下文感知、生命周期管理
-- 模块化提示词结构：partial 组合（identity / environment / working_memory / memories / tools / output）
-- HorizonView 渲染优化：结构化上下文编排
-- Trait 感知层：多维度并行分析上下文（场景、话题、热度等）
-- Skill 响应层：文件夹规范定义、条件激活、分层效果叠加
 
 ## Requirements
 
@@ -37,14 +26,15 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - ✓ 核心记忆块：文件系统加载人设/知识块，注入 Prompt scope — v1.0
 - ✓ Horizon 上下文填充：从 Koishi session 填充 Environment/Entity 实际数据 — v1.0
 - ✓ 内置 Prompt snippet：时间、用户信息、频道信息、机器人信息动态数据 — v1.0
+- ✓ PromptService 架构重设计：命名注入点 + partial 组合 + ctx 生命周期自动清理 — v2.0
+- ✓ 模块化提示词结构：partial 组合替代单体模板，HorizonView 结构化渲染 — v2.0
+- ✓ HorizonView 渲染优化：结构化标签分区，Percept 职责分层 — v2.0
+- ✓ Trait 感知层：TraitAnalyzer 并行分析（Scene/Heat），有状态 per-channel scope — v2.0
+- ✓ Skill 响应层：文件夹规范 + 条件树激活 + 分层效果合并 + 热重载 — v2.0
 
 ### Active
 
-- [ ] PromptService 架构重设计：多注入点、上下文感知渲染、生命周期管理
-- [ ] 模块化提示词结构：partial 组合替代单体模板
-- [ ] HorizonView 渲染优化：结构化上下文编排
-- [ ] Trait 感知层：多维度并行上下文分析
-- [ ] Skill 响应层：文件夹规范定义、条件激活、分层效果叠加
+(None — next milestone requirements TBD via `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -52,20 +42,21 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - 生命周期管理（RoutineScheduler、TaskManager）— 高级特性，后续迭代
 - 唤醒机制（ArousalHandler、离线回顾）— 后续迭代
 - 知识图谱与用户画像 — 后续迭代
-- ChatMode 机制 — 已被 Trait + Skill 体系替代（v2.0 架构决策）
-- 内置工具迁移（CoreUtil/QManager/Interactions）— v2 聚焦核心体验，工具后续迁移
-- 模型组与负载均衡 — v2 聚焦功能平替，高级模型管理后续迭代
+- ChatMode 机制 — 已被 Trait + Skill 体系替代（v2.0 验证）
+- 内置工具迁移（CoreUtil/QManager/Interactions）— 后续迭代
+- 模型组与负载均衡 — 后续迭代
 - TTS/STT、RAG 记忆库 — 后续迭代
 
 ## Context
 
 - **v1.0 shipped:** 2026-02-21, 3,470 LOC TypeScript, 15 phases, 29 plans
+- **v2.0 shipped:** 2026-02-23, +12,546 LOC TypeScript, 8 phases, 16 plans
 - **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
 - **包结构:** packages/shared-model + core + providers/provider-openai + providers/provider-deepseek
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
 - **设计文档**：`books/` 目录为作者架构思考，`docs/` 为完整架构讨论
-- **v1.0 达成:** v3 功能平替 — 动态 Schema、意愿值系统、核心记忆块、Horizon 上下文填充
-- **已知技术债:** Schema 在首个 Provider 注册前为空（by design）
+- **v2.0 达成:** PromptService 重设计、Trait 感知层、Skill 响应层、端到端管线验证
+- **已知技术债:** 4 项（见 MILESTONES.md v2.0 条目）
 
 ## Constraints
 
@@ -91,9 +82,12 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | Horizon 三元组架构 | Environment/Entity/Event 替代 per-channel 隔离 | ✓ Good — 支持跨频道 Entity 连续性 |
 | PQueue 并发控制 | 防止 LLM API 过载 | ✓ Good — call/streamCall 统一队列化 |
 | per-module fallbackChain | 替代全局 defaultModel，更灵活 | ✓ Good — agent/willingness 独立 fallback |
-| Trait + Skill 替代 ChatMode | ChatMode 是离散模式切换，无法描述多维度叠加的真实场景；Trait 感知 + Skill 响应解耦更灵活 | — Pending |
-| PromptService 重设计 | v1 的 Injection 是为插件工具注入临时加的 hack，不支持多注入点和上下文感知 | — Pending |
-| Skill 分层效果叠加 | Prompt/Tools 层叠加，Style 层优先级覆盖，Willingness 不直接干预 | — Pending |
+| Trait + Skill 替代 ChatMode | ChatMode 是离散模式切换，无法描述多维度叠加的真实场景；Trait 感知 + Skill 响应解耦更灵活 | ✓ Good — v2.0 完整管线验证 |
+| PromptService 重设计 | v1 的 Injection 是为插件工具注入临时加的 hack，不支持多注入点和上下文感知 | ✓ Good — 命名注入点 + partial 组合 |
+| Skill 分层效果叠加 | Prompt/Tools 层叠加，Style 层优先级覆盖，Willingness 不直接干预 | ✓ Good — 条件树激活 + 效果合并 |
+| JSON 文本输出替代原生 tool_call | 原生 tool_call 不支持心跳循环和自定义解析 | ✓ Good — 手动心跳 + jsonrepair fallback |
+| 渐进式工作记忆裁剪 | 无限增长 messages 导致 token 溢出 | ✓ Good — softTrim/hardClear 两级策略 |
+| Percept 构造从 horizon 移到 agent | horizon 只负责数据，不参与决策 | ✓ Good — 职责边界清晰 |
 
 ---
-*Last updated: 2026-02-21 after v2.0 milestone started*
+*Last updated: 2026-02-23 after v2.0 milestone*

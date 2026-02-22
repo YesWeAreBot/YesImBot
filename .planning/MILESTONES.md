@@ -17,3 +17,28 @@
 
 ---
 
+
+## v2.0 Context-Aware Architecture (Shipped: 2026-02-23)
+
+**Phases completed:** 8 phases, 16 plans
+**Timeline:** 6 days (2026-02-17 → 2026-02-23)
+**Commits:** 101
+**Files modified:** 131 (+12,546 / -619)
+**Git range:** 826040e → f7a2c29
+
+**Key accomplishments:**
+1. PromptService 重设计 — 命名注入点 + Mustache partial 组合 + ctx 生命周期自动清理
+2. HorizonView 模块化 — 结构化标签分区渲染，Percept 职责清晰分层（agent/horizon/plugin）
+3. Tool Call 改造 — JSON 文本输出替代原生 tool_call，手动心跳循环，渐进式工作记忆裁剪
+4. TraitAnalyzer 框架 — 并行 Trait 检测器（Scene/Heat），有状态 per-channel scope，解耦信号协议
+5. Skill 响应体系 — 文件夹规范 + 条件树激活 + 分层效果合并 + 热重载注册表
+6. 端到端验证 — 3 个示例 Skill 验证完整 Trait→Skill→Prompt 管线
+
+**Tech Debt (4 items):**
+- TraitAnalyzerConfig exported as value instead of type
+- SkillEffect.promptInjections.point always hardcoded to "extra"
+- trait-bound lifecycle undifferentiated from per-turn at runtime
+- 3 E2E scenarios require live Koishi session for human verification
+
+---
+
