@@ -127,8 +127,8 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
         });
       }
 
-      if (skill.effects.style && skill.conditions) {
-        const spec = specificity(skill.conditions);
+      if (skill.effects.style) {
+        const spec = skill.conditions ? specificity(skill.conditions) : 0;
         if (!bestStyle || spec >= bestStyle.specificity) {
           bestStyle = { content: skill.effects.style.content, specificity: spec };
         }
