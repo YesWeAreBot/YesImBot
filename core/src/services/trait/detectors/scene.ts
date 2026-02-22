@@ -62,10 +62,12 @@ export class SceneTrait implements TraitDetector {
     const key = channelKey(scope);
 
     // Scene dimension
+    const lastMsg = view.history?.filter(o => o.type === "message").slice(-1)[0];
     signals.push({
       dimension: "scene",
       value: scope.isDirect ? "private-chat" : "group-chat",
       confidence: 1.0,
+      ...(lastMsg && { metadata: { triggerContent: lastMsg.content } }),
     });
 
     // Attention dimension
