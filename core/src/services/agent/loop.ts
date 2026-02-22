@@ -8,7 +8,7 @@ import type { ToolExecutionContext } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { Percept } from "../shared/types";
 import type { AgentCoreConfig } from "./service";
-import { buildAiSdkTools, buildStopCondition } from "./tools";
+// TODO(16.3-02): loop.ts will be fully rewritten in Plan 02
 
 class LoopAbort extends Error {}
 
@@ -42,14 +42,13 @@ export class ThinkActLoop {
     const userContent = horizon.formatHorizonText(view);
 
     const toolCtxWithPercept = { ...toolCtx, percept };
-    const { tools: allTools, toolNames: infoToolNames } = buildAiSdkTools(
-      pluginService,
-      toolCtxWithPercept,
-      this.config.maxToolResultLength ?? 4000,
-    );
+    // TODO(16.3-02): replaced by JSON tool-call loop in Plan 02
+    const allTools: ToolSet = {};
+    const infoToolNames = new Set<string>();
+    void pluginService;
     this.logger.info(`Available tools: [${Object.keys(allTools).join(", ")}]`);
     const messages = [{ role: "user" as const, content: userContent }];
-    const stopWhen = buildStopCondition(this.config.maxRounds ?? 3);
+    const stopWhen: unknown[] = [];
 
     // ModelService handles model resolution and default params internally
     const collectedSteps: StepResult<ToolSet>[] = [];
