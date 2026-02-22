@@ -3,6 +3,8 @@ import { Context, Schema, Service } from "koishi";
 import type { Scope, TraitSignal } from "../shared/types";
 import type { HorizonView } from "../horizon/types";
 import type { TraitDetector } from "./types";
+import { SceneTrait } from "./detectors/scene";
+import { HeatTrait } from "./detectors/heat";
 
 declare module "koishi" {
   interface Context {
@@ -25,7 +27,11 @@ export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
     this.logger = ctx.logger("trait");
   }
 
-  protected async start(): Promise<void> {}
+  protected async start(): Promise<void> {
+    this.registerDetector(new SceneTrait());
+    this.registerDetector(new HeatTrait());
+    this.logger.info("TraitAnalyzer started");
+  }
 
   registerDetector(detector: TraitDetector): void {
     this.detectors.push(detector);
