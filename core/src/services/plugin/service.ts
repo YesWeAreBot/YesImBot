@@ -82,7 +82,10 @@ export class PluginService extends Service<PluginServiceConfig> {
     return this.findFunction(name);
   }
 
-  getTools(execCtx?: ToolExecutionContext): Array<{
+  getTools(
+    execCtx?: ToolExecutionContext,
+    includeHidden = false,
+  ): Array<{
     type: "function";
     functionType: FunctionType;
     function: { name: string; description: string; parameters: Record<string, unknown> };
@@ -90,6 +93,7 @@ export class PluginService extends Service<PluginServiceConfig> {
     const result = [];
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
+        if (fn.hidden && !includeHidden) continue;
         if (execCtx && fn.activators?.length) {
           const failed = fn.activators.find((a) => !a.check(execCtx));
           if (failed) {

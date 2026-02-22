@@ -36,6 +36,8 @@ export interface FunctionDefinition {
   parameters: Schema;
   handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>;
   activators?: Activator[];
+  /** Hidden tools are excluded from getTools() unless explicitly included via skill toolFilter */
+  hidden?: boolean;
 }
 
 export interface PluginMetadata {

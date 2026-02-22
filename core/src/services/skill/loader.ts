@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -45,16 +46,20 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
         source: "file",
       };
 
-      // Load code activator if present
-      const activatorPath = resolve(join(skillDir, "scripts", "activate.js"));
-      try {
-        delete require.cache[activatorPath];
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require(activatorPath);
-        const fn = mod.default ?? mod;
-        if (typeof fn === "function") def.activate = fn;
-      } catch {
-        // No activator script — that's fine
+      // Load code activator if present (.cjs preferred, .js fallback)
+      for (const ext of ["activate.cjs", "activate.js"]) {
+        const activatorPath = resolve(join(skillDir, "scripts", ext));
+        if (!existsSync(activatorPath)) continue;
+        try {
+          delete require.cache[activatorPath];
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const mod = require(activatorPath);
+          const fn = mod.default ?? mod;
+          if (typeof fn === "function") def.activate = fn;
+        } catch (e) {
+          logger.warn("Failed to load activator for %s: %s", entry.name, e);
+        }
+        break;
       }
 
       skills.push(def);

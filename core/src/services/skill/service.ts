@@ -74,6 +74,10 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
   resolve(signals: TraitSignal[], scope: Scope): SkillEffect {
     const filtered = filterByConfidence(signals, this.config.confidenceThreshold ?? 0.3);
+    this.logger.info(
+      "resolve signals: %o",
+      filtered.map((s) => ({ d: s.dimension, v: s.value, meta: s.metadata })),
+    );
     const channelKey = `${scope.platform}:${scope.channelId}`;
     if (!this.channelState.has(channelKey)) {
       this.channelState.set(channelKey, new Map());
@@ -88,6 +92,13 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
         : skill.conditions
           ? evaluateCondition(skill.conditions, filtered)
           : false;
+      this.logger.info(
+        "skill %s: hasActivate=%s, hasCond=%s, activated=%s",
+        skill.name,
+        !!skill.activate,
+        !!skill.conditions,
+        activated,
+      );
 
       if (activated) {
         active.push(skill);
