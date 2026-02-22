@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 17 — Trait Perception
+**Current focus:** Phase 18 — Skill Response
 
 ## Current Position
 
-Phase: 17 (Trait Perception)
-Plan: 2/2
-Status: Phase Complete
-Last activity: 2026-02-22 - Completed 17-02: Built-in trait detectors
+Phase: 18 (Skill Response)
+Plan: 1/2
+Status: In Progress
+Last activity: 2026-02-22 - Completed 18-01: Skill types, condition evaluator, and loader
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -79,6 +79,9 @@ Recent decisions affecting current work:
 - [17-02]: SceneTrait lazy-inits bot name from view.self.name on first detect() call
 - [17-02]: HeatTrait uses 5-min sliding window with 8/2 msgs-per-minute thresholds
 - [17-02]: Trend detection splits window at midpoint with 1.3x/0.7x ratio thresholds
+- [18-01]: ConditionNode uses discriminated union with 'in' checks (match/and/or/not) for type narrowing
+- [18-01]: Code activator loading uses require() with cache-busting for reload support
+- [18-01]: Loader Logger interface kept minimal (warn only) to avoid coupling to Koishi
 
 ### Pending Todos
 
@@ -103,9 +106,10 @@ None.
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | [1-percept-buildview](./quick/1-percept-buildview/) |
 | Phase 17 P01 | 2min | 2 tasks | 5 files |
 | Phase 17 P02 | 2min | 2 tasks | 4 files |
+| Phase 18 P01 | 2min | 2 tasks | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 17-02-PLAN.md (Built-in trait detectors)
+Stopped at: Completed 18-01-PLAN.md (Skill types, condition evaluator, and loader)
 Resume file: None

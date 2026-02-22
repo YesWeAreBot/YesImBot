@@ -188,7 +188,7 @@ Plans:
   2. SkillRegistry detects file changes and hot-reloads skill definitions without restarting the bot
   3. Skills activate when their declared trait-signal conditions match, supporting both declarative YAML conditions and programmatic activators
   4. When multiple skills activate simultaneously, their prompt injections and tool additions stack additively while style effects resolve by priority
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 18-01-PLAN.md — Skill types, condition evaluator, and file-based skill loader
 - [ ] 18-02-PLAN.md — SkillRegistry service with lifecycle management, effect merging, and core wiring
@@ -231,5 +231,5 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16.3. Tool Call Improve | v2.0 | 2/2 | Complete | 2026-02-22 |
 | 16.4. Working Memory Improve | 2/2 | Complete    | 2026-02-22 | - |
 | 17. Trait Perception | 2/2 | Complete    | 2026-02-22 | - |
-| 18. Skill Response | v2.0 | 0/2 | Planning complete | - |
+| 18. Skill Response | 1/2 | In Progress|  | - |
 | 19. Integration & Validation | v2.0 | 0/? | Not started | - |

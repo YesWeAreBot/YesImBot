@@ -28,9 +28,9 @@
 
 ### Skill Response
 
-- [ ] **SKILL-01**: Skill 文件夹规范定义（SKILL.md + scripts/ + references/），YAML frontmatter 声明元信息和激活条件
+- [x] **SKILL-01**: Skill 文件夹规范定义（SKILL.md + scripts/ + references/），YAML frontmatter 声明元信息和激活条件
 - [ ] **SKILL-02**: SkillRegistry 加载和管理 Skill 文件夹，支持热重载
-- [ ] **SKILL-03**: Skill 基于 TraitSignal 条件匹配激活，支持声明式条件和代码激活器
+- [x] **SKILL-03**: Skill 基于 TraitSignal 条件匹配激活，支持声明式条件和代码激活器
 - [ ] **SKILL-04**: 分层效果合并——Prompt 层叠加、Style 层优先级覆盖、Tools 层叠加
 - [ ] **SKILL-05**: 内置 1-2 个示例 Skill 验证完整体系
 
@@ -73,9 +73,9 @@
 | TRAIT-03 | Phase 17 | Complete |
 | TRAIT-04 | Phase 17 | Complete |
 | TRAIT-05 | Phase 17 | Complete |
-| SKILL-01 | Phase 18 | Pending |
+| SKILL-01 | Phase 18 | Complete |
 | SKILL-02 | Phase 18 | Pending |
-| SKILL-03 | Phase 18 | Pending |
+| SKILL-03 | Phase 18 | Complete |
 | SKILL-04 | Phase 18 | Pending |
 | SKILL-05 | Phase 19 | Pending |
 
