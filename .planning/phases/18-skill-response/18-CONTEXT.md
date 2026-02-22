@@ -14,7 +14,7 @@ Skills defined as file-based folders or plugin-registered definitions activate a
 ## Implementation Decisions
 
 ### Skill 文件夹结构
-- core 包内置默认 Skill + 运行时数据目录，首次启动时释放资源
+- Skill 发现机制接收多个来源：core 内置资源目录（随包分发）+ 用户自定义目录（运行时管理），不需要释放内置资源到用户目录
 - SKILL.md 格式：YAML frontmatter 声明元信息和激活条件，Markdown 正文作为 prompt 内容
 - scripts/ 目录放预编译 JS 文件（代码激活器、自定义效果逻辑）
 - references/ 目录放 few-shot 示例对话（未来 RAG 支持后可扩展参考文档）
