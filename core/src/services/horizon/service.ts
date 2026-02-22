@@ -223,7 +223,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
   private horizonViewTpl?: string;
 
-  formatHorizonText(view: HorizonView): string {
+  formatHorizonText(view: HorizonView, workingMemory?: string[]): string {
     this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
     let environment = "";
     if (view.environment) {
@@ -264,6 +264,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       history: historyObs,
       hasTrigger: triggerObs.length > 0,
       trigger: triggerObs,
+      hasWorkingMemory: (workingMemory?.length ?? 0) > 0,
+      workingMemory,
     }).trim();
   }
 }

@@ -60,7 +60,22 @@ export class ThinkActLoop {
 
     try {
       const systemPrompt = await prompt.renderToString("system", { view, percept });
-      const userContent = horizon.formatHorizonText(view);
+
+      const wmLines: string[] = [];
+      for (const obs of view.history ?? []) {
+        if (obs.type === "agent.response") {
+          const d = obs.data;
+          const lines = [`Round ${d.round}:`];
+          for (const a of d.actions) {
+            const r = d.toolResults.find(t => t.name === a.name);
+            const status = r ? r.status + (r.error ? ': ' + r.error : '') : 'no result';
+            const preview = r?.result != null ? String(r.result).slice(0, 200) : '';
+            lines.push(`  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ': ' + preview : ''}`);
+          }
+          wmLines.push(lines.join('\n'));
+        }
+      }
+      const userContent = horizon.formatHorizonText(view, wmLines);
 
       this.logger.info(`Available tools: ${toolSchema ? "injected" : "none"}`);
 
