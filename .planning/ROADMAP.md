@@ -201,7 +201,10 @@ Plans:
   1. ThinkActLoop invokes TraitAnalyzer and SkillRegistry between buildView() and prompt rendering, with active skill effects reflected in the LLM call
   2. At least one example skill demonstrably changes bot behavior (prompt content, style, or available tools) based on detected trait signals in a real conversation flow
   3. Existing v1.0 functionality (willingness gate, tool calling, memory injection) continues working unchanged through the new pipeline
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 19-01-PLAN.md — Pipeline wiring: trait/skill integration into ThinkActLoop, toolFilter, AgentCore inject, SceneTrait triggerContent
+- [ ] 19-02-PLAN.md — Example skills: fix private-chat, rewrite image-gen with code activator, create mention-aware
 
 ## Progress
 
@@ -232,4 +235,4 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16.4. Working Memory Improve | 2/2 | Complete    | 2026-02-22 | - |
 | 17. Trait Perception | 2/2 | Complete    | 2026-02-22 | - |
 | 18. Skill Response | 2/2 | Complete    | 2026-02-22 | - |
-| 19. Integration & Validation | v2.0 | 0/? | Not started | - |
+| 19. Integration & Validation | v2.0 | 0/2 | Not started | - |
