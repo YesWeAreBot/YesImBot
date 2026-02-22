@@ -29,6 +29,7 @@ export interface AgentCoreConfig {
   streamMode?: boolean;
   globalTimeout?: number;
   maxToolResultLength?: number;
+  enableThoughts?: boolean;
   willingness?: WillingnessConfig;
   aggregationWindow?: number;
   errorReportChannel?: string;
@@ -43,6 +44,7 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   streamMode: Schema.boolean().default(false),
   globalTimeout: Schema.number().default(120000),
   maxToolResultLength: Schema.number().default(4000),
+  enableThoughts: Schema.boolean().default(true).description("Enable thoughts field in agent JSON output"),
   willingness: WillingnessSchema,
   aggregationWindow: Schema.number()
     .default(1500)
