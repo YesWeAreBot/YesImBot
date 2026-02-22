@@ -54,6 +54,16 @@ Plans:
 - [ ] 16-01-PLAN.md — PromptService core: types, renderer, named injection points, ctx lifecycle, Section[] render
 - [ ] 16-02-PLAN.md — Templates, HorizonView structured output, consumer migration (MemoryService, ThinkActLoop)
 
+### Phase 16.4: working-memory-improve (INSERTED)
+
+**Goal:** Transform ThinkActLoop messages array from unbounded growth into budget-controlled working memory with progressive trimming, replace post-loop AgentSummary with per-round AgentResponse timeline recording, and present layered context (history + working-memory) to the LLM
+**Depends on:** Phase 16
+**Plans:** 2 plans
+
+Plans:
+- [ ] 16.4-01-PLAN.md — Trimmer function + AgentResponse type replacement across horizon chain
+- [ ] 16.4-02-PLAN.md — Loop integration (per-round recording, trimming, working-memory template)
+
 ### Phase 16.3: tool-call-improve (INSERTED)
 
 **Goal:** Replace native AI SDK tool_call with structured JSON text output, manual heartbeat loop, and prompt-based tool schema rendering
