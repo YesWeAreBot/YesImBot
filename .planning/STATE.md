@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 17 (Trait Perception)
-Plan: 1/2
-Status: In Progress
-Last activity: 2026-02-22 - Completed 17-01: TraitAnalyzer service framework
+Plan: 2/2
+Status: Phase Complete
+Last activity: 2026-02-22 - Completed 17-02: Built-in trait detectors
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -76,6 +76,9 @@ Recent decisions affecting current work:
 - [16.4-02]: Per-round recording happens immediately after executeActions, before shouldContinue check
 - [17-01]: TraitDetector uses forward-compatible unknown types for ctx/analyzer params to avoid circular imports
 - [17-01]: TraitAnalyzer registered before AgentCore in core plugin for Phase 18 consumption
+- [17-02]: SceneTrait lazy-inits bot name from view.self.name on first detect() call
+- [17-02]: HeatTrait uses 5-min sliding window with 8/2 msgs-per-minute thresholds
+- [17-02]: Trend detection splits window at midpoint with 1.3x/0.7x ratio thresholds
 
 ### Pending Todos
 
@@ -99,9 +102,10 @@ None.
 |---|-------------|------|--------|-----------|
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | [1-percept-buildview](./quick/1-percept-buildview/) |
 | Phase 17 P01 | 2min | 2 tasks | 5 files |
+| Phase 17 P02 | 2min | 2 tasks | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 17-01-PLAN.md (TraitAnalyzer service framework)
+Stopped at: Completed 17-02-PLAN.md (Built-in trait detectors)
 Resume file: None

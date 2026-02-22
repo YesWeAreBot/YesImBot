@@ -21,8 +21,8 @@
 ### Trait Perception
 
 - [x] **TRAIT-01**: TraitAnalyzer 框架支持注册多个 Trait 检测器，并行分析 HorizonView 输出 TraitSignal
-- [ ] **TRAIT-02**: 内置 SceneTrait 检测器（群聊/私聊/被@/被忽略等场景维度）
-- [ ] **TRAIT-03**: 内置 HeatTrait 检测器（对话热度/趋势维度）
+- [x] **TRAIT-02**: 内置 SceneTrait 检测器（群聊/私聊/被@/被忽略等场景维度）
+- [x] **TRAIT-03**: 内置 HeatTrait 检测器（对话热度/趋势维度）
 - [x] **TRAIT-04**: TraitSignal 协议定义，解耦感知层和响应层
 - [x] **TRAIT-05**: 有状态 Trait 支持（per-channel scope，增量更新，如关系熟悉度累积）
 
@@ -69,8 +69,8 @@
 | HVIEW-01 | Phase 16 | Complete |
 | HVIEW-02 | Phase 16 | Complete |
 | TRAIT-01 | Phase 17 | Complete |
-| TRAIT-02 | Phase 17 | Pending |
-| TRAIT-03 | Phase 17 | Pending |
+| TRAIT-02 | Phase 17 | Complete |
+| TRAIT-03 | Phase 17 | Complete |
 | TRAIT-04 | Phase 17 | Complete |
 | TRAIT-05 | Phase 17 | Complete |
 | SKILL-01 | Phase 18 | Pending |
