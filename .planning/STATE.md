@@ -73,6 +73,7 @@ None.
 
 - Phase 16.1 inserted after Phase 16: Percept Ownership & User Message Context Refactor (URGENT)
 - Phase 16.2 inserted after Phase 16.1: Percept Type Cleanup & Session Decoupling (URGENT)
+- Phase 16.3 inserted after Phase 16: tool-call-improve (URGENT)
 
 ### Blockers/Concerns
 
