@@ -29,7 +29,6 @@ const CACHEABLE_POINTS = new Set<InjectionPoint>([
   "identity",
   "style",
   "control_flow",
-  "basic_functions",
   "memory",
 ]);
 
