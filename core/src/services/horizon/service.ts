@@ -110,7 +110,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const { platform, channelId } = scope;
     const entries = await this.events.query({
       scope: { platform, channelId },
-      types: [TimelineEventType.Message, TimelineEventType.AgentSummary],
+      types: [TimelineEventType.Message, TimelineEventType.AgentResponse],
       limit: this.config.historyLimit ?? 30,
       orderBy: "asc",
     });
@@ -210,7 +210,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       const badge = this.getRoleBadge(obs.sender.attributes);
       return `[${hhmm}] ${badge}${obs.sender.name}: ${obs.content}`;
     }
-    return `[${hhmm}] [Bot Summary]: ${obs.summary}`;
+    const actions = obs.data.actions;
+    const sendAction = actions.find((a) => a.name === "send_message");
+    const otherTools = actions.filter((a) => a.name !== "send_message").map((a) => a.name);
+    if (sendAction) {
+      const content = (sendAction.params?.content as string) ?? "";
+      const suffix = otherTools.length ? ` [also: ${otherTools.join(", ")}]` : "";
+      return `[${hhmm}] [Bot]: ${content}${suffix}`;
+    }
+    return `[${hhmm}] [Bot Action]: ${actions.map((a) => a.name).join(", ")}`;
   }
 
   private horizonViewTpl?: string;

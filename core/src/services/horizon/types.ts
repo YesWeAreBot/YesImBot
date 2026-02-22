@@ -24,7 +24,7 @@ declare module "koishi" {
 
 export enum TimelineEventType {
   Message = "message",
-  AgentSummary = "agent.summary",
+  AgentResponse = "agent.response",
 }
 
 export enum TimelinePriority {
@@ -61,16 +61,19 @@ export interface MessageEventData {
 
 export type MessageRecord = BaseTimelineEntry<TimelineEventType.Message, MessageEventData>;
 
-export interface AgentSummaryData {
-  summary: string;
+export interface AgentResponseData {
+  round: number;
+  assistantText: string;
+  actions: Array<{ name: string; params?: Record<string, unknown> }>;
+  toolResults: Array<{ name: string; status: string; result?: unknown; error?: string }>;
 }
 
-export type AgentSummaryRecord = BaseTimelineEntry<
-  TimelineEventType.AgentSummary,
-  AgentSummaryData
+export type AgentResponseRecord = BaseTimelineEntry<
+  TimelineEventType.AgentResponse,
+  AgentResponseData
 >;
 
-export type TimelineEntry = MessageRecord | AgentSummaryRecord;
+export type TimelineEntry = MessageRecord | AgentResponseRecord;
 
 // ---- Entity ----
 
@@ -115,13 +118,13 @@ export interface MessageObservation {
   stage?: string;
 }
 
-export interface AgentSummaryObservation {
-  type: "agent.summary";
+export interface AgentResponseObservation {
+  type: "agent.response";
   timestamp: Date;
-  summary: string;
+  data: AgentResponseData;
 }
 
-export type Observation = MessageObservation | AgentSummaryObservation;
+export type Observation = MessageObservation | AgentResponseObservation;
 
 // ---- ViewOptions ----
 

@@ -191,17 +191,21 @@ export class ThinkActLoop {
         messages.push({ role: "user", content: formatToolResults(toolResults) });
       }
 
-      // Record agent summary
+      // Record agent response
       await horizon.events.markAsActive(percept.scope, new Date());
       const archiveMs =
         (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
       await horizon.events.archiveStale(percept.scope, archiveMs);
 
-      const summary = `Tools: [${allToolNames.join(", ")}]. Sent: [${hasSent ? "yes" : "nothing"}]`;
-      await horizon.events.recordAgentSummary({
+      await horizon.events.recordAgentResponse({
         scope: percept.scope,
         timestamp: new Date(),
-        summary,
+        data: {
+          round,
+          assistantText: "",
+          actions: allToolNames.map((name) => ({ name })),
+          toolResults: [],
+        },
       });
       this.logger.info(`Loop complete: ${round} rounds`);
     } finally {

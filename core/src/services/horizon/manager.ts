@@ -2,7 +2,8 @@ import { Context, Random, Logger, Query } from "koishi";
 
 import { Scope } from "../shared/types";
 import type {
-  AgentSummaryRecord,
+  AgentResponseData,
+  AgentResponseRecord,
   EventQueryOptions,
   MessageEventData,
   MessageRecord,
@@ -55,21 +56,21 @@ export class EventManager {
     return this.record(entry) as Promise<MessageRecord>;
   }
 
-  async recordAgentSummary(data: {
+  async recordAgentResponse(data: {
     scope: Scope;
     timestamp: Date;
-    summary: string;
-  }): Promise<AgentSummaryRecord> {
-    const entry: AgentSummaryRecord = {
+    data: AgentResponseData;
+  }): Promise<AgentResponseRecord> {
+    const entry: AgentResponseRecord = {
       id: Random.id(),
-      type: TimelineEventType.AgentSummary,
+      type: TimelineEventType.AgentResponse,
       priority: TimelinePriority.Normal,
       stage: TimelineStage.Active,
       scope: data.scope,
       timestamp: data.timestamp,
-      data: { summary: data.summary },
+      data: data.data,
     };
-    return this.record(entry) as Promise<AgentSummaryRecord>;
+    return this.record(entry) as Promise<AgentResponseRecord>;
   }
 
   toObservations(entries: TimelineEntry[], _selfId?: string): Observation[] {
@@ -85,9 +86,9 @@ export class EventManager {
         };
       }
       return {
-        type: "agent.summary" as const,
+        type: "agent.response" as const,
         timestamp: entry.timestamp,
-        summary: entry.data.summary,
+        data: entry.data,
       };
     });
   }
