@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 Phase: — (between milestones)
 Plan: —
 Status: v2.0 shipped
-Last activity: 2026-02-23 - Completed v2.0 milestone
+Last activity: 2026-02-23 - Completed quick task 2: 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。
 
 Progress: v1.0 ✅ | v2.0 ✅
 
@@ -45,10 +45,10 @@ None open.
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | [1-percept-buildview](./quick/1-percept-buildview/) |
-| 2 | Replace js-yaml with gray-matter for frontmatter parsing | 2026-02-23 | bc8184a | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | | [1-percept-buildview](./quick/1-percept-buildview/) |
+| 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
 
 ## Session Continuity
 
