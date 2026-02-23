@@ -187,6 +187,13 @@ export class ThinkActLoop {
               error: null,
               logs: [],
             };
+          } else if (!parsed.data && rawText.trim().length > 0) {
+            this.logger.info("Raw text output detected, wrapping as send_message");
+            parsed = {
+              data: { actions: [{ name: "send_message", params: { content: rawText.trim() } }] },
+              error: null,
+              logs: [],
+            };
           } else {
             this.logger.info("Failed to parse agent response, breaking loop");
             break;
@@ -396,7 +403,7 @@ function formatToolResults(results: ToolResultEntry[]): string {
     ...(r.result !== undefined && { result: r.result }),
     ...(r.error && { error: r.error }),
   }));
-  return `Tool results:\n${JSON.stringify(compact)}`;
+  return `Tool results:\n${JSON.stringify(compact)}\n\nRespond with a JSON object containing "actions" array.`;
 }
 
 function formatFinalRoundPrompt(results: ToolResultEntry[]): string {
