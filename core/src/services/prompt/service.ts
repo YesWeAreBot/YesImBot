@@ -25,7 +25,7 @@ export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.obj
   resourcesDir: Schema.string().description("Custom templates directory"),
 });
 
-const CACHEABLE_POINTS = new Set<InjectionPoint>(["identity", "style", "control_flow", "memory"]);
+const CACHEABLE_POINTS = new Set<InjectionPoint>(INJECTION_POINTS);
 
 export class PromptService extends Service<PromptServiceConfig> {
   private templates = new Map<string, string>();
@@ -56,51 +56,14 @@ export class PromptService extends Service<PromptServiceConfig> {
     this.registerTemplate("system", this.loadTemplate("system"));
 
     const partialMap: Record<string, string> = {
-      basic_functions: "basic_functions",
-      control_flow: "control_flow",
       extra: "extra",
       "horizon-view": "horizon-view",
-      identity: "identity",
       "memory-block": "memory-block",
       memory: "memory",
-      style: "style",
     };
     for (const [name, file] of Object.entries(partialMap)) {
       this.registerPartial(name, this.loadPartial(file));
     }
-
-    this.inject(this.ctx, "identity", {
-      name: "__default_identity",
-      renderFn: (scope) => {
-        const view = scope.view as { self?: { name?: string }; environment?: { name?: string } };
-        const name = view?.self?.name ?? "";
-        const env = view?.environment?.name;
-        const text = this.loadTemplate("default-identity", "md");
-        const rendered = this.renderer.render(text, { name, env });
-        return rendered;
-      },
-    });
-
-    this.inject(this.ctx, "control_flow", {
-      name: "__default_control_flow",
-      renderFn: () => this.loadTemplate("default-control-flow", "md"),
-    });
-
-    this.inject(this.ctx, "basic_functions", {
-      name: "__default_basic_functions",
-      before: "__loop_tool_schema",
-      renderFn: () => this.loadTemplate("default-basic-functions", "md"),
-    });
-
-    // Default style injection
-    this.inject(this.ctx, "style", {
-      name: "__default_style",
-      renderFn: () => {
-        const text = this.loadTemplate("default-style", "md");
-        const rendered = this.renderer.render(text, {});
-        return rendered;
-      },
-    });
   }
 
   getTemplate(name: string): string {
@@ -131,7 +94,10 @@ export class PromptService extends Service<PromptServiceConfig> {
   }
 
   inject(ctx: Context, point: InjectionPoint, entry: InjectionEntry): () => void {
-    const list = this.injections.get(point)!;
+    const list = this.injections.get(point);
+    if (!list) {
+      throw new Error(`Unrecognized injection point: "${point}"`);
+    }
     if (list.some((e) => e.name === entry.name)) {
       this.logger.warn(`Duplicate injection "${entry.name}" in point "${point}", ignoring`);
       return () => {};
