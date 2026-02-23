@@ -22,8 +22,11 @@ export class CorePlugin extends Plugin {
         .description(
           "Message content to send. Use `<sep/>` to split a long message into multiple parts (natural delays).",
         ),
-      target: Schema.string().description(
-        "Target channel in platform:channelId format. Defaults to current channel.",
+      target: Schema.object({
+        platform: Schema.string().required().description("Target platform (e.g., 'discord')"),
+        channelId: Schema.string().required().description("Target channel ID"),
+      }).description(
+        "Optional target to specify which channel to send the message to. If not provided, it will send to the current session's channel.",
       ),
     }),
     activators: [requireSession()],
@@ -34,7 +37,7 @@ export class CorePlugin extends Plugin {
   ): Promise<ToolResult> {
     try {
       const content = String(params["content"] ?? "");
-      const target = params["target"] as string | undefined;
+      const target = params["target"] as { platform: string; channelId: string } | undefined;
       const parts = content
         .split("<sep/>")
         .map((s) => s.trim())
@@ -42,9 +45,7 @@ export class CorePlugin extends Plugin {
       const effectiveParts = parts.length ? parts : [content];
 
       if (target) {
-        const colonIdx = target.indexOf(":");
-        const platform = target.slice(0, colonIdx);
-        const channelId = target.slice(colonIdx + 1);
+        const { platform, channelId } = target;
         const bot = this.ctx.bots.find((b) => b.platform === platform);
         if (!bot) return Failed(`Bot not found for platform: ${platform}`);
         for (let i = 0; i < effectiveParts.length; i++) {

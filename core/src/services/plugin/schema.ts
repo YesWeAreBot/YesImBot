@@ -15,6 +15,7 @@ export function schemaToJSONSchema(schema: Schema): Record<string, unknown> {
     }
     const result: Record<string, unknown> = { type: "object", properties };
     if (required.length) result["required"] = required;
+    if (schema.meta?.description) result["description"] = schema.meta.description;
     return result;
   }
 
