@@ -34,7 +34,17 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ### Active
 
-(None — next milestone requirements TBD via `/gsd:new-milestone`)
+#### Current Milestone: v2.1 Polish & Release Prep
+
+**Goal:** 打磨优化现有功能，重构 memory_block 和提示词注入体系，修复技术债，为首个正式发布版做准备。
+
+**Target features:**
+- 重构 memory_block 为 OpenClaw 风格固定角色文件（SOUL.md/AGENTS.md/TOOLS.md）
+- 注入点合并简化（6→4：soul/instructions/memory/extra）
+- 消除冗余 wrapper partials，代码内生成 XML 标签
+- 修复 v2.0 技术债（4 项）
+- 核心服务基础测试覆盖（vitest）
+- 代码健壮性增强（边界处理、错误处理）
 
 ### Out of Scope
 
@@ -57,6 +67,7 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - **设计文档**：`books/` 目录为作者架构思考，`docs/` 为完整架构讨论
 - **v2.0 达成:** PromptService 重设计、Trait 感知层、Skill 响应层、端到端管线验证
 - **已知技术债:** 4 项（见 MILESTONES.md v2.0 条目）
+- **v2.1 方向:** 打磨优化 + memory_block/注入点重构 + 测试基础设施
 
 ## Constraints
 
@@ -89,5 +100,8 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | 渐进式工作记忆裁剪 | 无限增长 messages 导致 token 溢出 | ✓ Good — softTrim/hardClear 两级策略 |
 | Percept 构造从 horizon 移到 agent | horizon 只负责数据，不参与决策 | ✓ Good — 职责边界清晰 |
 
+| OpenClaw 风格 memory_block | SOUL.md/AGENTS.md 固定角色文件替代自由标签 persona.md，职责更清晰 | — Pending |
+| 注入点合并 6→4 | identity+style→soul, control_flow+basic_functions→instructions，减少抽象层 | — Pending |
+
 ---
-*Last updated: 2026-02-23 after v2.0 milestone*
+*Last updated: 2026-02-23 after v2.1 milestone started*

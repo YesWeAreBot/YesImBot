@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 
 ## Current Position
 
-Phase: — (between milestones)
+Phase: Not started (defining requirements)
 Plan: —
-Status: v2.0 shipped
-Last activity: 2026-02-23 - Completed quick task 2: 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。
+Status: Defining requirements
+Last activity: 2026-02-23 — Milestone v2.1 started
 
-Progress: v1.0 ✅ | v2.0 ✅
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ◆
 
 ## Performance Metrics
 
