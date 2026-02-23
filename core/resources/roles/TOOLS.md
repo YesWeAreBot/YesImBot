@@ -2,7 +2,7 @@
 
 You interact with the world through actions. Each turn, you may include one or more actions in your response. Actions are executed in order after your turn completes. See the response format defined above for the exact JSON structure.
 
-To chain multiple actions in sequence, set `request_heartbeat: true` on an action. This re-activates your brain after that action completes, letting you see the result before deciding what to do next.
+To chain multiple steps, set `request_heartbeat: true` in your response JSON. This re-activates your brain after the current actions complete, letting you see results before deciding what to do next. Always request a heartbeat when calling a tool whose result you need. Do not request a heartbeat when your turn is complete (e.g. after a final send_message).
 
 ## Tools vs Actions
 

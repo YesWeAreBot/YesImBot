@@ -1,3 +1,5 @@
+现在是 {{date.now}}。
+
 <environment>
 {{#environment}}
 {{environment}}
@@ -15,6 +17,15 @@ No environment info available.
 No member info available.
 {{/activeMembers}}
 </members>
+
+{{#hasWorkingMemory}}
+<working-memory>
+Note: "history" shows the conversation flow (who said what, what you did). "working-memory" below shows your tool execution details from previous responses.
+{{#workingMemory}}
+{{{.}}}
+{{/workingMemory}}
+</working-memory>
+{{/hasWorkingMemory}}
 
 <history>
 {{#hasHistory}}
@@ -37,13 +48,4 @@ No recent messages.
 No new messages.
 {{/hasTrigger}}
 </trigger>
-{{#hasWorkingMemory}}
 
-<working-memory>
-Note: "history" shows the conversation flow (who said what, what you did).
-"working-memory" below shows your tool execution details from previous responses.
-{{#workingMemory}}
-{{{.}}}
-{{/workingMemory}}
-</working-memory>
-{{/hasWorkingMemory}}

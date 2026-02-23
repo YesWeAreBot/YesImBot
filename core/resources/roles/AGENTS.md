@@ -11,9 +11,12 @@ You are activated by events: a new message in chat, a timed heartbeat, or a func
 ```json
 {
   "thoughts": "Your private inner monologue. Plan what to do, reflect on context, decide whether to respond.",
-  "actions": [{ "name": "action_name", "params": {} }]
+  "actions": [{ "name": "action_name", "params": {} }],
+  "request_heartbeat": false
 }
 ```
+
+Set `request_heartbeat` to `true` when you call a tool and need to see its result before deciding your next step. This re-activates your brain after the tool completes. Do not request a heartbeat when your turn is complete (e.g. after send_message with no further actions needed).
 
 **Never do this:**
 - Output message text directly without wrapping in JSON
