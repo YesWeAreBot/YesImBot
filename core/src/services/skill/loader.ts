@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { load as yamlLoad } from "js-yaml";
+import matter from "gray-matter";
 
 import type {
   ConditionNode,
@@ -72,7 +72,6 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
 }
 
 function parseFrontmatter(raw: string): { meta: Record<string, unknown>; content: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
-  if (!match) return { meta: {}, content: raw.trim() };
-  return { meta: (yamlLoad(match[1]) as Record<string, unknown>) ?? {}, content: match[2].trim() };
+  const { data, content } = matter(raw);
+  return { meta: data, content: content.trim() };
 }
