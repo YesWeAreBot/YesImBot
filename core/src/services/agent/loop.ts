@@ -75,22 +75,22 @@ export class ThinkActLoop {
     // Apply style override from highest-specificity skill
     if (effects.styleOverride) {
       disposers.push(
-        prompt.inject(this.ctx, "style", {
+        prompt.inject(this.ctx, "soul", {
           name: `__skill_style_${percept.id}`,
-          after: "__default_style",
+          after: "__default_soul",
           renderFn: () => effects.styleOverride!.content,
         }),
       );
     }
 
-    // Inject tool schema into basic_functions point (with skill tool filter)
+    // Inject tool schema into instructions point (with skill tool filter)
     const toolSchema = buildToolSchemaForPrompt(
       pluginService,
       toolCtxWithPercept,
       effects.toolFilter,
     );
     disposers.push(
-      prompt.inject(this.ctx, "basic_functions", {
+      prompt.inject(this.ctx, "instructions", {
         name: `__loop_tool_schema_${percept.id}`,
         renderFn: () => toolSchema,
       }),
