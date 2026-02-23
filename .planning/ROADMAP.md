@@ -112,7 +112,7 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23
 |-------|-----------|----------------|--------|-----------|
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
-| 20. Injection Point Merge & Wrapper Elimination | v2.1 | 0/2 | Planning complete | - |
+| 20. Injection Point Merge & Wrapper Elimination | 1/2 | In Progress|  | - |
 | 21. Fixed-Role File Loading | v2.1 | 0/? | Not started | - |
 | 22. Skill Enhancement & Tech Debt | v2.1 | 0/? | Not started | - |
 | 23. Test Infrastructure | v2.1 | 0/? | Not started | - |

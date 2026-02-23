@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 20 of 23 (Injection Point Merge & Wrapper Elimination)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-02-23 — Roadmap created for v2.1 milestone
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-23 — Completed 20-01 (Injection Point Merge)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [░░░░░░░░░░] 0%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [█░░░░░░░░░] 10%
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 - [v2.1]: OpenClaw memory paradigm adopted (SOUL.md/AGENTS.md/TOOLS.md)
 - [v2.1]: Injection points merged 6->4 (soul/instructions/memory/extra)
 - [v2.1]: Vitest chosen over Jest (ESM-native, zero-config for bundler moduleResolution)
+- [20-01]: Removed old default injections from constructor — Phase 21 fills content via SOUL.md/AGENTS.md
 
 ### Pending Todos
 
@@ -53,6 +54,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-23 11:08
-Stopped at: Roadmap created for v2.1 milestone
+Last session: 2026-02-23 12:26
+Stopped at: Completed 20-01-PLAN.md
 Resume file: None

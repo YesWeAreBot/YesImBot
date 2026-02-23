@@ -7,10 +7,10 @@
 
 ### Prompt System Refactor (提示词系统重构)
 
-- [ ] **PROMPT-01**: 注入点从 6 个合并为 4 个（identity+style→soul, control_flow+basic_functions→instructions, 保留 memory 和 extra）
+- [x] **PROMPT-01**: 注入点从 6 个合并为 4 个（identity+style→soul, control_flow+basic_functions→instructions, 保留 memory 和 extra）
 - [ ] **PROMPT-02**: 消除 5 个 wrapper partials（identity/style/control_flow/basic_functions/memory.mustache），改为 PromptService.render() 代码内生成 XML 标签
 - [ ] **PROMPT-03**: system.mustache 模板适配新的 4 注入点结构
-- [ ] **PROMPT-04**: CACHEABLE_POINTS 与 InjectionPoint 类型同步更新
+- [x] **PROMPT-04**: CACHEABLE_POINTS 与 InjectionPoint 类型同步更新
 
 ### Fixed-Role Files (固定角色文件)
 
@@ -62,10 +62,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROMPT-01 | Phase 20 | Pending |
+| PROMPT-01 | Phase 20 | Complete |
 | PROMPT-02 | Phase 20 | Pending |
 | PROMPT-03 | Phase 20 | Pending |
-| PROMPT-04 | Phase 20 | Pending |
+| PROMPT-04 | Phase 20 | Complete |
 | ROLE-01 | Phase 21 | Pending |
 | ROLE-02 | Phase 21 | Pending |
 | ROLE-03 | Phase 21 | Pending |
