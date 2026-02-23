@@ -12,6 +12,8 @@ import type { PluginServiceConfig } from "./services/plugin";
 import { PluginService, PluginServiceConfigSchema } from "./services/plugin";
 import type { PromptServiceConfig } from "./services/prompt";
 import { PromptService, PromptServiceConfigSchema } from "./services/prompt";
+import type { RoleServiceConfig } from "./services/role";
+import { RoleService, RoleServiceConfigSchema } from "./services/role";
 import type { SkillRegistryConfig } from "./services/skill";
 import { SkillRegistry, SkillRegistryConfigSchema } from "./services/skill";
 import type { TraitAnalyzerConfig } from "./services/trait";
@@ -26,6 +28,7 @@ export type Config = AgentCoreConfig &
   ModelServiceConfig &
   PluginServiceConfig &
   PromptServiceConfig &
+  RoleServiceConfig &
   SkillRegistryConfig &
   TraitAnalyzerConfig;
 
@@ -36,6 +39,7 @@ export const Config: Schema<Config> = Schema.intersect([
   ModelServiceConfigSchema,
   PluginServiceConfigSchema,
   PromptServiceConfigSchema,
+  RoleServiceConfigSchema,
   SkillRegistryConfigSchema,
   TraitAnalyzerConfigSchema,
 ]);
@@ -54,6 +58,7 @@ export function apply(ctx: Context, config: Config) {
     maxActiveEntities: config.maxActiveEntities,
   });
   ctx.plugin(PromptService, { templates: config.templates });
+  ctx.plugin(RoleService, { rolePath: config.rolePath });
   ctx.plugin(MemoryService, {
     coreMemoryPath: config.coreMemoryPath,
     memoryCharLimit: config.memoryCharLimit,
@@ -99,6 +104,7 @@ async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void>
     "yesimbot.model",
     "yesimbot.plugin",
     "yesimbot.prompt",
+    "yesimbot.role",
     "yesimbot.memory",
     "yesimbot.skill",
     "yesimbot.trait",

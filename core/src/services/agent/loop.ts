@@ -77,7 +77,7 @@ export class ThinkActLoop {
       disposers.push(
         prompt.inject(this.ctx, "soul", {
           name: `__skill_style_${percept.id}`,
-          after: "__default_soul",
+          after: "__role_soul",
           renderFn: () => effects.styleOverride!.content,
         }),
       );
