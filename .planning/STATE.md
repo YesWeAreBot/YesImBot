@@ -56,9 +56,10 @@ None.
 |---|-------------|------|--------|--------|-----------|
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | | [1-percept-buildview](./quick/1-percept-buildview/) |
 | 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
+| 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 
 ## Session Continuity
 
-Last session: 2026-02-23 14:38
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-02-23 17:26
+Stopped at: Completed quick-3 (Fix agent JSON output drift)
 Resume file: None
