@@ -62,31 +62,31 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROMPT-01 | — | Pending |
-| PROMPT-02 | — | Pending |
-| PROMPT-03 | — | Pending |
-| PROMPT-04 | — | Pending |
-| ROLE-01 | — | Pending |
-| ROLE-02 | — | Pending |
-| ROLE-03 | — | Pending |
-| ROLE-04 | — | Pending |
-| ROLE-05 | — | Pending |
-| ROLE-06 | — | Pending |
-| ROLE-07 | — | Pending |
-| SKILL-01 | — | Pending |
-| SKILL-02 | — | Pending |
-| DEBT-01 | — | Pending |
-| DEBT-02 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| TEST-04 | — | Pending |
+| PROMPT-01 | Phase 20 | Pending |
+| PROMPT-02 | Phase 20 | Pending |
+| PROMPT-03 | Phase 20 | Pending |
+| PROMPT-04 | Phase 20 | Pending |
+| ROLE-01 | Phase 21 | Pending |
+| ROLE-02 | Phase 21 | Pending |
+| ROLE-03 | Phase 21 | Pending |
+| ROLE-04 | Phase 21 | Pending |
+| ROLE-05 | Phase 21 | Pending |
+| ROLE-06 | Phase 21 | Pending |
+| ROLE-07 | Phase 21 | Pending |
+| SKILL-01 | Phase 22 | Pending |
+| SKILL-02 | Phase 22 | Pending |
+| DEBT-01 | Phase 22 | Pending |
+| DEBT-02 | Phase 22 | Pending |
+| TEST-01 | Phase 23 | Pending |
+| TEST-02 | Phase 23 | Pending |
+| TEST-03 | Phase 23 | Pending |
+| TEST-04 | Phase 23 | Pending |
 
 **Coverage:**
 - v2.1 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-23*
-*Last updated: 2026-02-23 after initial definition*
+*Last updated: 2026-02-23 after roadmap creation*

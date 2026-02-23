@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-23)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Planning next milestone
+**Current focus:** Phase 20 — Injection Point Merge & Wrapper Elimination
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-23 — Milestone v2.1 started
+Phase: 20 of 23 (Injection Point Merge & Wrapper Elimination)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-02-23 — Roadmap created for v2.1 milestone
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ◆
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -31,17 +31,18 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ◆
 Full decision log in PROJECT.md Key Decisions table.
 v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 
+- [v2.1]: OpenClaw memory paradigm adopted (SOUL.md/AGENTS.md/TOOLS.md)
+- [v2.1]: Injection points merged 6->4 (soul/instructions/memory/extra)
+- [v2.1]: Vitest chosen over Jest (ESM-native, zero-config for bundler moduleResolution)
+
 ### Pending Todos
 
 None.
 
-### Roadmap Evolution
-
-All v2.0 inserted phases (16.1, 16.2, 16.3, 16.4) completed and archived.
-
 ### Blockers/Concerns
 
-None open.
+- Mustache renders missing partials as empty string — validate partial existence at boot
+- system.mustache may become vestigial after wrapper partial elimination — clarify during Phase 20
 
 ### Quick Tasks Completed
 
@@ -52,6 +53,6 @@ None open.
 
 ## Session Continuity
 
-Last session: 2026-02-23
-Stopped at: Completed quick task 2 (gray-matter migration)
+Last session: 2026-02-23 11:08
+Stopped at: Roadmap created for v2.1 milestone
 Resume file: None
