@@ -47,7 +47,7 @@
 
 **Milestone Goal:** Adopt OpenClaw memory paradigm, simplify prompt injection (6->4 points), fix tech debt, establish test coverage for core services.
 
-- [ ] **Phase 20: Injection Point Merge & Wrapper Elimination** - Consolidate 6 injection points to 4, replace wrapper partials with inline XML generation
+- [x] **Phase 20: Injection Point Merge & Wrapper Elimination** - Consolidate 6 injection points to 4, replace wrapper partials with inline XML generation (completed 2026-02-23)
 - [ ] **Phase 21: Fixed-Role File Loading** - SOUL.md/AGENTS.md/TOOLS.md replace legacy default files, with Mustache templating and hot-reload
 - [ ] **Phase 22: Skill Enhancement & Tech Debt** - Skill effects target any injection point, resolve trait-bound lifecycle and type export debt
 - [ ] **Phase 23: Test Infrastructure** - Vitest setup and unit tests for PromptService, MemoryService, SkillRegistry
@@ -65,8 +65,8 @@
   4. PromptService.inject() throws at runtime for unrecognized injection point names (guards against silent failures)
 **Plans**: 2 plans
 Plans:
-- [ ] 20-01-PLAN.md — Merge InjectionPoint type (6->4), update CACHEABLE_POINTS, add inject() guard, migrate loop.ts call sites
-- [ ] 20-02-PLAN.md — Rewrite render() for inline XML generation, clean constructor, delete 11 obsolete template/default files
+- [x] 20-01-PLAN.md — Merge InjectionPoint type (6->4), update CACHEABLE_POINTS, add inject() guard, migrate loop.ts call sites
+- [x] 20-02-PLAN.md — Rewrite render() for inline XML generation, clean constructor, delete 11 obsolete template/default files
 
 ### Phase 21: Fixed-Role File Loading
 **Goal**: Bot personality and behavior instructions are defined in SOUL.md/AGENTS.md/TOOLS.md files that replace legacy defaults, with template variable support and graceful fallback
@@ -112,7 +112,7 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23
 |-------|-----------|----------------|--------|-----------|
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
-| 20. Injection Point Merge & Wrapper Elimination | 1/2 | In Progress|  | - |
+| 20. Injection Point Merge & Wrapper Elimination | 2/2 | Complete   | 2026-02-23 | - |
 | 21. Fixed-Role File Loading | v2.1 | 0/? | Not started | - |
 | 22. Skill Enhancement & Tech Debt | v2.1 | 0/? | Not started | - |
 | 23. Test Infrastructure | v2.1 | 0/? | Not started | - |

@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 20 of 23 (Injection Point Merge & Wrapper Elimination)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-23 — Completed 20-01 (Injection Point Merge)
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-02-23 — Completed 20-02 (Wrapper Elimination)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [█░░░░░░░░░] 10%
 
@@ -35,6 +35,8 @@ v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 - [v2.1]: Injection points merged 6->4 (soul/instructions/memory/extra)
 - [v2.1]: Vitest chosen over Jest (ESM-native, zero-config for bundler moduleResolution)
 - [20-01]: Removed old default injections from constructor — Phase 21 fills content via SOUL.md/AGENTS.md
+- [20-02]: render() assembles XML tags inline — no Mustache partials for prompt structure
+- [20-02]: Empty injection points always emit tags for structural consistency
 
 ### Pending Todos
 
@@ -43,7 +45,6 @@ None.
 ### Blockers/Concerns
 
 - Mustache renders missing partials as empty string — validate partial existence at boot
-- system.mustache may become vestigial after wrapper partial elimination — clarify during Phase 20
 
 ### Quick Tasks Completed
 
@@ -54,6 +55,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-23 12:26
-Stopped at: Completed 20-01-PLAN.md
+Last session: 2026-02-23 12:33
+Stopped at: Completed 20-02-PLAN.md
 Resume file: None
