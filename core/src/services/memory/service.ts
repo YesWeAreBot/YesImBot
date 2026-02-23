@@ -1,6 +1,6 @@
-import { cpSync, existsSync, readFileSync, watch, type FSWatcher } from "node:fs";
+import { cpSync, existsSync, mkdirSync, watch, type FSWatcher } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join, extname, basename } from "node:path";
+import path, { basename, extname, join } from "node:path";
 
 import matter from "gray-matter";
 import { Context, Schema, Service } from "koishi";
@@ -36,12 +36,17 @@ export class MemoryService extends Service<MemoryServiceConfig> {
   private watcher: FSWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private prompt: PromptService;
+  private coreMemoryPath: string;
 
   constructor(ctx: Context, config: MemoryServiceConfig) {
     super(ctx, "yesimbot.memory", false);
     this.config = config;
     this.logger = ctx.logger("memory");
     this.prompt = ctx["yesimbot.prompt"];
+    this.coreMemoryPath = path.resolve(
+      ctx.baseDir,
+      this.config.coreMemoryPath || "data/yesimbot/memories",
+    );
   }
 
   protected async start(): Promise<void> {
@@ -52,28 +57,39 @@ export class MemoryService extends Service<MemoryServiceConfig> {
     this.logger.info("MemoryService started, %d blocks loaded", this.blocks.length);
   }
 
-  private async loadBlocks(): Promise<void> {
-    if (!this.config.coreMemoryPath) {
-      this.config.coreMemoryPath = "data/yesimbot/memories";
-    }
-
+  private async ensureCoreMemoryDir(): Promise<void> {
     try {
-      const entries = await readdir(this.config.coreMemoryPath);
+      if (!existsSync(this.coreMemoryPath)) {
+        this.logger.info("Memory directory does not exist, creating: %s", this.coreMemoryPath);
+        mkdirSync(this.coreMemoryPath, { recursive: true });
+      }
+      const entries = await readdir(this.coreMemoryPath);
       const files = entries.filter((f) => /\.(md|txt)$/.test(f)).sort();
 
       if (!files.length) {
         // copy default persona if no files exist
         const defaultPath = join(this.prompt.resourcesDir, "default-persona.md");
         if (existsSync(defaultPath)) {
-          cpSync(defaultPath, join(this.config.coreMemoryPath, "persona.md"), { force: false });
+          cpSync(defaultPath, join(this.coreMemoryPath, "persona.md"), { force: false });
           this.logger.info("Default persona copied to memory directory");
+          entries.push("persona.md");
         }
       }
+    } catch (e) {
+      this.logger.warn("Failed to ensure memory directory: %s", e);
+    }
+  }
+
+  private async loadBlocks(): Promise<void> {
+    try {
+      await this.ensureCoreMemoryDir();
+      const entries = await readdir(this.coreMemoryPath);
+      const files = entries.filter((f) => /\.(md|txt)$/.test(f)).sort();
 
       const blocks: MemoryBlock[] = [];
       for (const file of files) {
         try {
-          const raw = await readFile(join(this.config.coreMemoryPath, file), "utf-8");
+          const raw = await readFile(join(this.coreMemoryPath, file), "utf-8");
           const { meta, content } = this.parseFrontmatter(raw);
           blocks.push({
             label: (meta.label as string) || basename(file, extname(file)),
