@@ -62,6 +62,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   public events: EventManager;
   public listener: EventListener;
 
+  private horizonViewTpl?: string;
+
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
     this.config = config;
@@ -139,6 +141,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
           type: scope.isDirect ? "private" : "group",
           id: row.id,
           name: row.name,
+          platform: row.attributes?.platform as string,
+          channelId: row.attributes?.channelId as string,
           metadata: row.attributes ?? {},
         };
       }
@@ -156,7 +160,13 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         id,
         type: "channel",
         name: channelName,
-        attributes: { platform: scope.platform, isDirect: scope.isDirect, guildId: scope.guildId },
+        attributes: {
+          platform: scope.platform,
+          isDirect: scope.isDirect,
+          channelId: scope.channelId,
+          userId: scope.userId,
+          guildId: scope.guildId,
+        },
         updatedAt: new Date(),
       },
     ]);
@@ -164,7 +174,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       type: scope.isDirect ? "private" : "group",
       id,
       name: channelName,
-      metadata: { platform: scope.platform },
+      platform: scope.platform,
+      channelId: scope.channelId,
+      metadata: {
+        platform: scope.platform,
+        channelId: scope.channelId,
+        userId: scope.userId,
+        guildId: scope.guildId,
+        isDirect: scope.isDirect,
+      },
     };
   }
 
@@ -221,19 +239,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return `[${hhmm}] [Bot Action]: ${actions.map((a) => a.name).join(", ")}`;
   }
 
-  private horizonViewTpl?: string;
-
   formatHorizonText(view: HorizonView, workingMemory?: string[]): string {
     this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
     let environment = "";
     if (view.environment) {
       const env = view.environment;
       const platform = (env.metadata?.platform as string) || "";
+      const channelId = (env.metadata?.channelId as string) || "";
       const typeLabel = env.type === "private" ? "Private" : "Group";
-      environment =
-        platform && !env.name.includes(":")
-          ? `${env.name} (${platform}, ${typeLabel})`
-          : `${env.name} (${typeLabel})`;
+      environment = `Platform: ${platform}, Channel: ${channelId} (${typeLabel})`;
     }
 
     let activeMembers = "";

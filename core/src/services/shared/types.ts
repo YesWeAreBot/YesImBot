@@ -13,6 +13,7 @@ export interface Scope {
   platform?: string;
   channelId?: string;
   guildId?: string;
+  userId?: string;
   isDirect?: boolean;
 }
 
