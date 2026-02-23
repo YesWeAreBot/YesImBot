@@ -12,7 +12,7 @@ import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
-import { trimMessages, type TrimConfig, type LoopMessage } from "./trimmer";
+import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentResponse {
   thoughts?: { observe: string; analyze_infer: string; plan: string };
@@ -187,13 +187,6 @@ export class ThinkActLoop {
               error: null,
               logs: [],
             };
-          } else if (!parsed.data && rawText.trim().length > 0) {
-            this.logger.info("Raw text output detected, wrapping as send_message");
-            parsed = {
-              data: { actions: [{ name: "send_message", params: { content: rawText.trim() } }] },
-              error: null,
-              logs: [],
-            };
           } else {
             this.logger.info("Failed to parse agent response, breaking loop");
             break;
@@ -230,7 +223,7 @@ export class ThinkActLoop {
 
         // Determine continuation: Tool calls always continue (results must flow back),
         // request_heartbeat only controls continuation for pure Action calls
-        const shouldContinue = hasToolCalls || (response.request_heartbeat ?? !hasActionCalls);
+        const shouldContinue = hasToolCalls || response.request_heartbeat;
 
         if (!shouldContinue) break;
 

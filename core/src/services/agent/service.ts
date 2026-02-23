@@ -11,7 +11,7 @@ import { WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willi
 const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
 Answer with exactly one word: "yes" or "no".`;
 
-interface Built {
+interface LoopPayload {
   percept: Percept;
   toolCtx: ToolExecutionContext;
 }
@@ -77,7 +77,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
   ];
 
   private queues = new Map<string, Promise<void>>();
-  private pending = new Map<string, Built>();
+  private pending = new Map<string, LoopPayload>();
   private pendingWindows = new Map<
     string,
     { cancel: () => void; lastEvent: HorizonMessageEvent }
@@ -180,7 +180,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     };
   }
 
-  private enqueue(channelKey: string, built: Built): void {
+  private enqueue(channelKey: string, built: LoopPayload): void {
     const chain = (this.queues.get(channelKey) ?? Promise.resolve())
       .then(() => this.runLoop(channelKey, built))
       .then(() => {
@@ -197,7 +197,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     this.queues.set(channelKey, chain);
   }
 
-  protected async runLoop(channelKey: string, built: Built): Promise<void> {
+  protected async runLoop(channelKey: string, built: LoopPayload): Promise<void> {
     try {
       await this.loop.run(built.percept, built.toolCtx);
       this.willingness.recordBotReply(channelKey);
@@ -218,7 +218,11 @@ export class AgentCore extends Service<AgentCoreConfig> {
     this.deferredGen.set(channelKey, (this.deferredGen.get(channelKey) ?? 0) + 1);
   }
 
-  private scheduleDeferredJudgment(channelKey: string, built: Built, probability: number): void {
+  private scheduleDeferredJudgment(
+    channelKey: string,
+    built: LoopPayload,
+    probability: number,
+  ): void {
     const { threshold, minDelayMs = 3000, maxDelayMs = 15000 } = this.config.willingness!.deferred!;
     const normalized = (probability - threshold) / (1 - threshold);
     const delay = maxDelayMs - normalized * (maxDelayMs - minDelayMs);
@@ -237,7 +241,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private async executeDeferredJudgment(
     channelKey: string,
-    built: Built,
+    built: LoopPayload,
     probability: number,
     gen: number,
   ): Promise<void> {
