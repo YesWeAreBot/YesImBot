@@ -48,9 +48,10 @@ None open.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | [1-percept-buildview](./quick/1-percept-buildview/) |
+| 2 | Replace js-yaml with gray-matter for frontmatter parsing | 2026-02-23 | bc8184a | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
 
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: v2.0 milestone completed
+Stopped at: Completed quick task 2 (gray-matter migration)
 Resume file: None
