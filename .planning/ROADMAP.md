@@ -78,7 +78,10 @@ Plans:
   3. TOOLS.md is optional — present: injected at `instructions` point; absent: silently skipped, no error
   4. Fixed-role files support Mustache variables (e.g. `{{bot.name}}` renders the bot's configured name)
   5. Editing a fixed-role file on disk triggers hot-reload within the same debounce window as existing memory blocks
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 21-01-PLAN.md — Write bundled default SOUL.md/AGENTS.md/TOOLS.md role file content
+- [ ] 21-02-PLAN.md — Implement RoleService (file loading, Mustache rendering, hot-reload, injection) and wire into plugin
 
 ### Phase 22: Skill Enhancement & Tech Debt
 **Goal**: Skills can inject prompt content at any of the 4 injection points, and v2.0 tech debt items are resolved
@@ -113,6 +116,6 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20. Injection Point Merge & Wrapper Elimination | 2/2 | Complete    | 2026-02-23 | - |
-| 21. Fixed-Role File Loading | v2.1 | 0/? | Not started | - |
+| 21. Fixed-Role File Loading | v2.1 | 0/2 | Planned | - |
 | 22. Skill Enhancement & Tech Debt | v2.1 | 0/? | Not started | - |
 | 23. Test Infrastructure | v2.1 | 0/? | Not started | - |
