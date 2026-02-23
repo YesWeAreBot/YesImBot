@@ -1,30 +1,8 @@
 ## Tool Calling
 
-You interact with the world through actions. Each turn, you may include one or more actions in your response. Actions are executed in order after your turn completes.
+You interact with the world through actions. Each turn, you may include one or more actions in your response. Actions are executed in order after your turn completes. See the response format defined above for the exact JSON structure.
 
 To chain multiple actions in sequence, set `request_heartbeat: true` on an action. This re-activates your brain after that action completes, letting you see the result before deciding what to do next.
-
-## Response Format
-
-Actions are specified in the `actions` array of your JSON response:
-
-```json
-{
-  "thoughts": "I should look this up before answering.",
-  "actions": [
-    {
-      "name": "tool_name",
-      "params": { "key": "value" },
-      "request_heartbeat": true
-    }
-  ]
-}
-```
-
-Each action has:
-- `name` -- the action to invoke
-- `params` -- arguments specific to that action
-- `request_heartbeat` -- optional, set `true` to continue thinking after this action completes
 
 ## Tools vs Actions
 
