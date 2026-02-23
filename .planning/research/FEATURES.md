@@ -1,58 +1,91 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** Context-aware AI agent prompt management, perception, and behavior adaptation
-**Researched:** 2026-02-21
-**Confidence:** HIGH (codebase analysis, reference implementations v3/dev, design documents)
+**Domain:** OpenClaw-style fixed-role memory files, injection point simplification, prompt system polish
+**Researched:** 2026-02-23
+**Confidence:** HIGH (direct codebase analysis, OpenClaw reverse-engineering analysis, existing v2.0 implementation)
 
-## Feature Landscape
+## Context: What Already Exists (v2.0)
 
-### Table Stakes (Users Expect These)
+- MemoryService: loads `.md` files from `data/yesimbot/memories/`, parses frontmatter with gray-matter, renders with Mustache, injects to `memory` point
+- PromptService: 6 injection points (`identity/style/control_flow/basic_functions/memory/extra`), 5 wrapper partials (each wraps content in XML tags via Mustache), topological sort ordering, timeout protection
+- Default injections: `default-identity.md`, `default-style.md`, `default-control-flow.md`, `default-basic-functions.md` loaded from `resources/templates/`
+- Skill effects inject to `extra` point only (hardcoded)
+- `system.mustache` wraps all 6 points inside `<base_instructions>` then appends `{{> extra }}`
 
-Features the v2.0 redesign must have. Missing these means the redesign doesn't justify itself over v1.0.
+## Table Stakes
+
+Features required for v2.1 to be coherent. Missing any of these means the refactor is incomplete.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Multi-injection-point prompt architecture | v1 has single `{{injections}}` placeholder — plugins, memory, tools all compete for one slot | MEDIUM | Named slots: `identity`, `environment`, `style`, `memories`, `tools`, `instructions`, `output` |
-| Modular prompt partials (composition) | Monolithic `system.mustache` cannot adapt to different contexts | LOW-MEDIUM | Mustache `{{>partial}}` already works. Need: partial registry, per-render selection |
-| Injection lifecycle management | v1 `inject()` pushes to array with no dispose path; Koishi hot-reload requires cleanup | MEDIUM | `ctx.on('dispose', ...)` pattern. Each injection tied to caller context for auto-cleanup |
-| Context-aware snippet rendering | v1 renders ALL registered snippets if template references them; v2 must scope to current context | LOW | Extend existing `getRequiredVariables()` to respect injection-point scoping |
-| Structured HorizonView rendering | v1 `formatHorizonText()` renders flat text; LLMs understand structured context (XML tags) better | LOW-MEDIUM | Restructure into tagged sections: `<environment>`, `<members>`, `<history>` |
-| Backward-compatible inject() API | MemoryService and PluginService depend on current `inject(name, priority, renderFn)` signature | LOW | Map existing calls to a "legacy" section in multi-section system |
-| Default prompt template out-of-box | Users expect working system prompt without manual config; v1 has this | LOW | Ship section-based template with sensible defaults for each partial |
+| SOUL.md fixed-role file | OpenClaw paradigm: soul = identity + personality, always loaded, not user-editable per-session | LOW | Replaces `default-identity.md` + `default-style.md`. Loaded by MemoryService at startup, injected to `soul` point |
+| AGENTS.md fixed-role file | OpenClaw paradigm: agent instructions = behavioral rules, tool usage rules, always loaded | LOW | Replaces `default-control-flow.md` + `default-basic-functions.md`. Injected to `instructions` point |
+| TOOLS.md fixed-role file | OpenClaw paradigm: tool usage guide, loaded when tools are active | LOW-MEDIUM | Optional file; injected to `instructions` point after AGENTS.md content, or omitted if absent |
+| Injection point merge 6→4 | `identity+style→soul`, `control_flow+basic_functions→instructions` reduces abstraction layers with no loss of expressiveness | MEDIUM | New points: `soul/instructions/memory/extra`. Existing `inject()` callers targeting old points must be remapped |
+| Eliminate wrapper partials | 5 `.mustache` partials each do `{{#has_X}}<X>{{{X_content}}}</X>{{/has_X}}` — this is boilerplate that belongs in code | LOW | Generate XML wrapper tags in `PromptService.render()` directly; delete `identity.mustache`, `style.mustache`, `control_flow.mustache`, `basic_functions.mustache`, `memory.mustache` |
+| Fixed-role files are not user memory | SOUL.md/AGENTS.md/TOOLS.md live in `resources/templates/` (or a config-specified path), not in `data/yesimbot/memories/` | LOW | MemoryService loads user memory blocks; a new or extended loader handles fixed-role files separately |
+| Hot-reload for fixed-role files | Consistent with existing memory block hot-reload behavior | LOW | Same `fs.watch` + debounce pattern already in MemoryService |
 
-### Differentiators (Competitive Advantage)
+## Differentiators
+
+Features that make the refactor meaningfully better, not just a rename.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Trait perception layer | Multi-dimensional parallel analysis replaces discrete ChatMode switching | HIGH | Rule-based detectors, no LLM cost. Output: TraitSignal vector |
-| Skill response layer (file-based) | Non-developers create/modify behaviors via YAML + Mustache files | MEDIUM-HIGH | Folder-based: manifest.yaml + prompt.mustache per skill |
-| Layered effect merging | Prompt=additive, Style=priority-override, Tools=additive | MEDIUM | Willingness stays outside skill control |
-| Trait-to-Skill signal protocol | Clean decoupling between perception and response layers | MEDIUM | Enables third-party skills |
-| Skill-based tool filtering | Context-aware tool activation instead of always-on | LOW-MEDIUM | enableTools/disableTools in skill effects |
+| SOUL.md as Mustache template | Fixed-role files can reference `{{bot.name}}`, `{{date.now}}` etc. — same as user memory blocks | LOW | Already supported by existing Mustache render pipeline; just apply it to fixed-role files too |
+| Skill effects target `soul` or `instructions` | Skills can now augment identity or behavioral rules, not just `extra` | LOW-MEDIUM | Remove hardcoded `extra`-only constraint in SkillRegistry effect merger |
+| Graceful fallback when fixed-role files absent | If SOUL.md missing, fall back to hardcoded minimal identity string; never crash | LOW | Prevents blank system prompts on fresh installs |
+| Vitest coverage for PromptService + MemoryService | Injection point merge is a breaking internal change; tests catch regressions | MEDIUM | Cover: inject/render/dispose lifecycle, point ordering, XML tag generation, fixed-role file loading |
 
-### Anti-Features (Do NOT Build)
+## Anti-Features
 
-| Feature | Why Avoid | Alternative |
-|---------|-----------|-------------|
-| LLM-based trait analysis | 200-500ms latency + cost per message | Rule-based heuristic detectors |
-| Dynamic template selection per-message | ChatMode reinvented, personality discontinuity | Trait+Skill layering on same base template |
-| Skill inheritance/composition | Dependency chains, ordering problems | Flat definitions, shared partials |
-| Per-skill token budgets | Combinatorial explosion | Per-section budgets |
-| Skills modifying willingness | Breaks separation of concerns | Skills only affect prompt/style/tools |
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Dynamic SOUL.md per-channel | Defeats the "fixed role" purpose; reintroduces ChatMode complexity | One SOUL.md per bot instance; Skill effects handle per-context personality adjustments |
+| Merging MemoryService and fixed-role file loading into one class | Different lifecycles: fixed-role = startup-loaded, user memory = per-session injected | Keep separate loaders; MemoryService handles user blocks, PromptService (or a thin FixedRoleLoader) handles SOUL/AGENTS/TOOLS |
+| Keeping wrapper partials alongside code-generated tags | Dual paths for the same thing; confusion about which is authoritative | Delete partials, generate tags in code only |
+| Adding new injection points beyond 4 | More points = more cognitive overhead for plugin authors | 4 points cover all cases: soul (who), instructions (how), memory (what I know), extra (context-specific) |
+| USER.md (OpenClaw user profile file) | Out of scope for v2.1; requires per-user persistence not yet built | Defer to L1/L2/L3 memory milestone |
 
 ## Feature Dependencies
 
-PromptService v2 is the foundation -- SkillRegistry requires it to target sections. TraitAnalyzer reads from existing HorizonView (no changes needed) and is required by SkillRegistry for activation signals. MemoryService inject() must survive the PromptService redesign via backward-compat mapping.
+```
+Fixed-role files (SOUL.md/AGENTS.md/TOOLS.md)
+  → requires: injection point rename (soul/instructions)
+  → requires: wrapper partial elimination (so new point names don't need new partials)
+
+Injection point merge (6→4)
+  → requires: update PromptService INJECTION_POINTS array
+  → requires: remap existing inject() callers (MemoryService → memory, SkillRegistry → extra, default injections → soul/instructions)
+  → requires: update system.mustache to use new point names
+
+Wrapper partial elimination
+  → requires: PromptService.render() generates <soul>...</soul> etc. in code
+  → requires: delete 5 partial .mustache files (identity/style/control_flow/basic_functions/memory)
+  → keep: horizon-view.mustache (complex, not a simple wrapper), memory-block.mustache (used inside memory rendering), extra.mustache (skills inject here, may have complex structure)
+
+Vitest coverage
+  → depends on: all above changes complete
+  → tests: PromptService inject/render/dispose, MemoryService block loading + injection, fixed-role file loading
+```
 
 ## MVP Recommendation
 
-Prioritize: (1) PromptService multi-section architecture, (2) TraitAnalyzer with scene+heat detectors, (3) SkillRegistry with file loader and 1 example skill, (4) ThinkActLoop integration wiring.
+Prioritize in this order:
 
-Defer: Token-aware context budgeting, relation trait detector, HorizonView structured rendering optimization.
+1. Injection point merge (6→4) — foundational, everything else depends on it
+2. Wrapper partial elimination — simplifies the render path before adding new loaders
+3. Fixed-role file loading (SOUL.md/AGENTS.md/TOOLS.md) — replaces hardcoded default .md files
+4. Vitest coverage for changed services — validates the refactor
+
+Defer:
+- Skill effects targeting `soul`/`instructions` points — nice-to-have, not blocking release
+- TOOLS.md conditional loading — can ship as always-loaded empty file initially
 
 ## Sources
 
-- Direct codebase analysis of PromptService, HorizonService, ThinkActLoop, PluginService
-- YesImBot-dev ChatMode pattern (replaced by Trait+Skill)
-- Design docs: books/04 sections 4.9, 4.12, 4.13
-- PROJECT.md v2.0 requirements and key decisions
+- Direct codebase analysis: `core/src/services/prompt/service.ts`, `core/src/services/memory/service.ts`, `core/src/services/prompt/types.ts`
+- `core/resources/templates/` — existing partials and default .md files
+- `references/从OpenClaw看Agnet记忆范式.md` — OpenClaw reverse-engineering: SOUL.md/AGENTS.md/TOOLS.md/USER.md paradigm, two-tier memory architecture, fixed-role vs user memory distinction
+- `references/openclaw/AGENTS.md` — OpenClaw's own AGENTS.md as a live example of the pattern
+- `.planning/PROJECT.md` — v2.1 target features and key decisions table
