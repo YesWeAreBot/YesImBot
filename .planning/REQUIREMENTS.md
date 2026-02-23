@@ -14,13 +14,13 @@
 
 ### Fixed-Role Files (固定角色文件)
 
-- [ ] **ROLE-01**: SOUL.md 固定角色文件替代 default-identity.md + default-style.md + default persona.md，注入到 soul 点
-- [ ] **ROLE-02**: AGENTS.md 固定角色文件替代 default-control-flow.md + default-basic-functions.md，注入到 instructions 点
-- [ ] **ROLE-03**: TOOLS.md 可选固定角色文件，注入到 instructions 点（缺失时静默跳过）
+- [x] **ROLE-01**: SOUL.md 固定角色文件替代 default-identity.md + default-style.md + default persona.md，注入到 soul 点
+- [x] **ROLE-02**: AGENTS.md 固定角色文件替代 default-control-flow.md + default-basic-functions.md，注入到 instructions 点
+- [x] **ROLE-03**: TOOLS.md 可选固定角色文件，注入到 instructions 点（缺失时静默跳过）
 - [x] **ROLE-04**: 参考 OpenClaw 模板风格重写默认提示词内容（SOUL.md/AGENTS.md/TOOLS.md）
-- [ ] **ROLE-05**: 固定角色文件支持 Mustache 模板变量（{{bot.name}}、{{date.now}} 等）
-- [ ] **ROLE-06**: 固定角色文件缺失时优雅降级（使用内置最小默认内容，不崩溃）
-- [ ] **ROLE-07**: 固定角色文件支持热重载（与现有 memory block 一致的 fs.watch + debounce）
+- [x] **ROLE-05**: 固定角色文件支持 Mustache 模板变量（{{bot.name}}、{{date.now}} 等）
+- [x] **ROLE-06**: 固定角色文件缺失时优雅降级（使用内置最小默认内容，不崩溃）
+- [x] **ROLE-07**: 固定角色文件支持热重载（与现有 memory block 一致的 fs.watch + debounce）
 
 ### Skill Enhancement (Skill 增强)
 
@@ -66,13 +66,13 @@
 | PROMPT-02 | Phase 20 | Complete |
 | PROMPT-03 | Phase 20 | Complete |
 | PROMPT-04 | Phase 20 | Complete |
-| ROLE-01 | Phase 21 | Pending |
-| ROLE-02 | Phase 21 | Pending |
-| ROLE-03 | Phase 21 | Pending |
+| ROLE-01 | Phase 21 | Complete |
+| ROLE-02 | Phase 21 | Complete |
+| ROLE-03 | Phase 21 | Complete |
 | ROLE-04 | Phase 21 | Complete |
-| ROLE-05 | Phase 21 | Pending |
-| ROLE-06 | Phase 21 | Pending |
-| ROLE-07 | Phase 21 | Pending |
+| ROLE-05 | Phase 21 | Complete |
+| ROLE-06 | Phase 21 | Complete |
+| ROLE-07 | Phase 21 | Complete |
 | SKILL-01 | Phase 22 | Pending |
 | SKILL-02 | Phase 22 | Pending |
 | DEBT-01 | Phase 22 | Pending |

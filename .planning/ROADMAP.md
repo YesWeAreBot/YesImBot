@@ -48,7 +48,7 @@
 **Milestone Goal:** Adopt OpenClaw memory paradigm, simplify prompt injection (6->4 points), fix tech debt, establish test coverage for core services.
 
 - [x] **Phase 20: Injection Point Merge & Wrapper Elimination** - Consolidate 6 injection points to 4, replace wrapper partials with inline XML generation (completed 2026-02-23)
-- [ ] **Phase 21: Fixed-Role File Loading** - SOUL.md/AGENTS.md/TOOLS.md replace legacy default files, with Mustache templating and hot-reload
+- [x] **Phase 21: Fixed-Role File Loading** - SOUL.md/AGENTS.md/TOOLS.md replace legacy default files, with Mustache templating and hot-reload (completed 2026-02-23)
 - [ ] **Phase 22: Skill Enhancement & Tech Debt** - Skill effects target any injection point, resolve trait-bound lifecycle and type export debt
 - [ ] **Phase 23: Test Infrastructure** - Vitest setup and unit tests for PromptService, MemoryService, SkillRegistry
 
@@ -80,8 +80,8 @@ Plans:
   5. Editing a fixed-role file on disk triggers hot-reload within the same debounce window as existing memory blocks
 **Plans**: 2 plans
 Plans:
-- [ ] 21-01-PLAN.md — Write bundled default SOUL.md/AGENTS.md/TOOLS.md role file content
-- [ ] 21-02-PLAN.md — Implement RoleService (file loading, Mustache rendering, hot-reload, injection) and wire into plugin
+- [x] 21-01-PLAN.md — Write bundled default SOUL.md/AGENTS.md/TOOLS.md role file content
+- [x] 21-02-PLAN.md — Implement RoleService (file loading, Mustache rendering, hot-reload, injection) and wire into plugin
 
 ### Phase 22: Skill Enhancement & Tech Debt
 **Goal**: Skills can inject prompt content at any of the 4 injection points, and v2.0 tech debt items are resolved
@@ -116,6 +116,6 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20. Injection Point Merge & Wrapper Elimination | 2/2 | Complete    | 2026-02-23 | - |
-| 21. Fixed-Role File Loading | 1/2 | In Progress|  | - |
+| 21. Fixed-Role File Loading | 2/2 | Complete | 2026-02-23 | - |
 | 22. Skill Enhancement & Tech Debt | v2.1 | 0/? | Not started | - |
 | 23. Test Infrastructure | v2.1 | 0/? | Not started | - |

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-23)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 21 — Fixed-Role File Loading
+**Current focus:** Phase 22 — Skill Enhancement & Tech Debt
 
 ## Current Position
 
-Phase: 21 of 23 (Fixed-Role File Loading)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-02-23 — Completed 21-01 (Default Role Files)
+Phase: 22 of 23 (Skill Enhancement & Tech Debt)
+Plan: 0 of ? in current phase
+Status: Phase 21 Complete
+Last activity: 2026-02-23 — Completed 21-02 (RoleService)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [█░░░░░░░░░] 10%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -39,6 +39,8 @@ v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 - [20-02]: Empty injection points always emit tags for structural consistency
 - [21-01]: English defaults with natural tone, Markdown ## headings for RAG chunking
 - [21-01]: SOUL.md covers identity/personality/style; AGENTS.md covers control-flow/format/group-chat; TOOLS.md covers tool mechanics
+- [21-02]: Used Mustache.render() directly (same as MemoryService) rather than MustacheRenderer wrapper
+- [21-02]: Fixed loop.ts __default_soul -> __role_soul for skill style override ordering
 
 ### Pending Todos
 
@@ -57,6 +59,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-23 14:26
-Stopped at: Completed 21-01-PLAN.md
+Last session: 2026-02-23 14:38
+Stopped at: Completed 21-02-PLAN.md
 Resume file: None
