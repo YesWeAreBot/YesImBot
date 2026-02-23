@@ -25,8 +25,6 @@ export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.obj
   resourcesDir: Schema.string().description("Custom templates directory"),
 });
 
-const CACHEABLE_POINTS = new Set<InjectionPoint>(INJECTION_POINTS);
-
 export class PromptService extends Service<PromptServiceConfig> {
   private templates = new Map<string, string>();
   private snippets = new Map<string, Snippet>();
@@ -40,11 +38,11 @@ export class PromptService extends Service<PromptServiceConfig> {
     this.config = config;
     this.logger = this.ctx.logger("yesimbot.prompt");
 
-    // Resolve resources directory; seed from builtin if custom dir lacks templates
+    // Resolve resources directory; seed from builtin if custom dir lacks core-memory template
     this.resourcesDir = config.resourcesDir ?? builtinResourcesDir;
     if (
       this.resourcesDir !== builtinResourcesDir &&
-      !existsSync(resolve(this.resourcesDir, "system.mustache"))
+      !existsSync(resolve(this.resourcesDir, "core-memory.mustache"))
     ) {
       cpSync(builtinResourcesDir, this.resourcesDir, { recursive: true });
       this.logger.info(`Seeded templates to "${this.resourcesDir}"`);
@@ -53,16 +51,10 @@ export class PromptService extends Service<PromptServiceConfig> {
     for (const point of INJECTION_POINTS) {
       this.injections.set(point, []);
     }
-    this.registerTemplate("system", this.loadTemplate("system"));
 
-    const partialMap: Record<string, string> = {
-      extra: "extra",
-      "horizon-view": "horizon-view",
-      "memory-block": "memory-block",
-      memory: "memory",
-    };
-    for (const [name, file] of Object.entries(partialMap)) {
-      this.registerPartial(name, this.loadPartial(file));
+    // Register only retained partials (used by MemoryService and HorizonService)
+    for (const name of ["memory-block", "horizon-view"] as const) {
+      this.registerPartial(name, this.loadPartial(name));
     }
   }
 
@@ -118,16 +110,10 @@ export class PromptService extends Service<PromptServiceConfig> {
     }
   }
 
-  async render(templateName: string, initialScope?: Record<string, unknown>): Promise<Section[]> {
-    const templateContent =
-      this.config.templates?.[templateName] ?? this.templates.get(templateName);
-    if (!templateContent) {
-      this.logger.warn(`No template found for key "${templateName}"`);
-      return [];
-    }
-
-    const scope = await this.buildScope(initialScope ?? {}, templateContent);
+  async render(_templateName: string, initialScope?: Record<string, unknown>): Promise<Section[]> {
+    const scope = await this.buildScope(initialScope ?? {});
     const timeout = this.config.timeout ?? 5000;
+    const sections: Section[] = [];
 
     for (const point of INJECTION_POINTS) {
       const ordered = this.resolveOrder(this.injections.get(point)!);
@@ -144,32 +130,11 @@ export class PromptService extends Service<PromptServiceConfig> {
         }
       }
       const content = fragments.join("\n\n");
-      if (content || !(`${point}_content` in scope)) {
-        scope[`${point}_content`] = content;
-        scope[`has_${point}`] = content.length > 0;
-      }
-    }
-
-    const allPartials = {
-      ...Object.fromEntries(this.templates),
-      ...Object.fromEntries(this.partials),
-    };
-
-    const sections: Section[] = [];
-    for (const point of INJECTION_POINTS) {
-      const partialKey = point;
-      const partialTemplate = allPartials[partialKey];
-      if (!partialTemplate) {
-        const content = scope[`${point}_content`] as string;
-        if (content) {
-          sections.push({ name: point, content, cacheable: CACHEABLE_POINTS.has(point) });
-        }
-        continue;
-      }
-      const rendered = this.renderer.render(partialTemplate, scope, allPartials);
-      if (rendered.trim()) {
-        sections.push({ name: point, content: rendered, cacheable: CACHEABLE_POINTS.has(point) });
-      }
+      sections.push({
+        name: point,
+        content: `<${point}>\n${content}\n</${point}>`,
+        cacheable: true,
+      });
     }
 
     return sections;
@@ -247,46 +212,11 @@ export class PromptService extends Service<PromptServiceConfig> {
     ]);
   }
 
-  private getRequiredVariables(templateContent: string): Set<string> {
-    const visited = new Set<string>();
-    const allVars = new Set<string>();
-    const allPartials = {
-      ...Object.fromEntries(this.templates),
-      ...Object.fromEntries(this.partials),
-    };
-
-    const process = (content: string) => {
-      const { variables, partials } = this.renderer.parse(content);
-      for (const v of variables) allVars.add(v);
-      for (const p of partials) {
-        if (!visited.has(p)) {
-          visited.add(p);
-          const pc = allPartials[p];
-          if (pc) process(pc);
-        }
-      }
-    };
-
-    process(templateContent);
-    return allVars;
-  }
-
-  private isSnippetRequired(key: string, required: Set<string>): boolean {
-    if (required.has(key)) return true;
-    for (const req of required) {
-      if (req.startsWith(`${key}.`) || key.startsWith(`${req}.`)) return true;
-    }
-    return false;
-  }
-
   private async buildScope(
     initialScope: Record<string, unknown>,
-    templateContent: string,
   ): Promise<Record<string, unknown>> {
-    const required = this.getRequiredVariables(templateContent);
     const scope: Record<string, unknown> = { ...initialScope };
     for (const [key, fn] of this.snippets) {
-      if (!this.isSnippetRequired(key, required)) continue;
       const result = await fn(scope);
       this.setNestedProperty(scope, key, result);
     }
