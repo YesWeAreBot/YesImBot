@@ -41,7 +41,18 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ### Active
 
-(No active milestone — run `/gsd:new-milestone` to start next)
+## Current Milestone: v2.2 Runtime Optimization & Observability
+
+**Goal:** 优化运行时行为（意愿值、缓存、日志）、修复已知 bug、合并 memory_block 到 RoleService
+
+**Target features:**
+- 意愿值系统优化：单聊特殊处理 + Judge prompt 调整
+- 提示词缓存优化：system prompt 拆分 content block + 增量缓存研究
+- 全链路 DEBUG 日志：消息接收 → 意愿值 → Agent → 工具调用 → 回复
+- memory_block → RoleService 完全合并
+- JSON Parser 加固：复用 v3 成熟解析器 + vitest 单测
+- Snippet 变量注入修复：{{date.now}} 等 Mustache 变量渲染为空
+- Working Memory 排布优化：因果关系/时间先后/交互逻辑清晰化
 
 ### Out of Scope
 
@@ -105,4 +116,4 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | trait-bound 即时移除 | trait 信号消失时立即移除，不设宽限期 | ✓ Good — 与 sticky countdown 区分 |
 
 ---
-*Last updated: 2026-02-24 after v2.1 milestone*
+*Last updated: 2026-02-24 after v2.2 milestone start*

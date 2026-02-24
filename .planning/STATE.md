@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** No active milestone — run `/gsd:new-milestone` to start next
+**Current focus:** v2.2 Runtime Optimization & Observability
 
 ## Current Position
 
-Phase: None (between milestones)
-Plan: N/A
-Status: v2.1 milestone complete — ready for next milestone
-Last activity: 2026-02-24 — Completed v2.1 milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-24 — Milestone v2.2 started
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆
 
 ## Performance Metrics
 
