@@ -3,14 +3,10 @@ import { resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
 
-import type { Scope, TraitSignal } from "../shared/types";
-import {
-  evaluateCondition,
-  filterByConfidence,
-  specificity,
-} from "./condition";
-import { loadSkillsFromDir } from "./loader";
 import type { InjectionPoint } from "../prompt/types";
+import type { Scope, TraitSignal } from "../shared/types";
+import { evaluateCondition, filterByConfidence, specificity } from "./condition";
+import { loadSkillsFromDir } from "./loader";
 import type { SkillDefinition, SkillEffect } from "./types";
 
 declare module "koishi" {
@@ -25,14 +21,11 @@ export interface SkillRegistryConfig {
   stickyDefaultTimeout?: number;
 }
 
-export const SkillRegistryConfigSchema: Schema<SkillRegistryConfig> =
-  Schema.object({
-    skillPaths: Schema.array(
-      Schema.path({ filters: ["directory"], allowCreate: true }),
-    ).default([]),
-    confidenceThreshold: Schema.number().default(0.3),
-    stickyDefaultTimeout: Schema.number().default(3),
-  });
+export const SkillRegistryConfigSchema: Schema<SkillRegistryConfig> = Schema.object({
+  skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default([]),
+  confidenceThreshold: Schema.number().default(0.3),
+  stickyDefaultTimeout: Schema.number().default(3),
+});
 
 interface ActiveSkillState {
   lifecycle: SkillDefinition["lifecycle"];
@@ -60,10 +53,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
   protected async start(): Promise<void> {
     await this.loadAllDirs();
-    this.logger.info(
-      "SkillRegistry started, %d skills loaded",
-      this.skills.size,
-    );
+    this.logger.info("SkillRegistry started, %d skills loaded", this.skills.size);
   }
 
   register(def: SkillDefinition): () => void {
@@ -84,10 +74,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
   }
 
   resolve(signals: TraitSignal[], scope: Scope): SkillEffect {
-    const filtered = filterByConfidence(
-      signals,
-      this.config.confidenceThreshold ?? 0.3,
-    );
+    const filtered = filterByConfidence(signals, this.config.confidenceThreshold ?? 0.3);
     this.logger.info(
       "resolve signals: %o",
       filtered.map((s) => ({ d: s.dimension, v: s.value, meta: s.metadata })),
@@ -116,17 +103,12 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
       if (activated) {
         active.push(skill);
-        this.logger.info(
-          "skill %s activated (lifecycle: %s)",
-          skill.name,
-          skill.lifecycle,
-        );
+        this.logger.info("skill %s activated (lifecycle: %s)", skill.name, skill.lifecycle);
         if (skill.lifecycle === "sticky") {
           state.set(skill.name, {
             lifecycle: "sticky",
             roundsSinceActive: 0,
-            stickyTimeout:
-              skill.stickyTimeout ?? this.config.stickyDefaultTimeout ?? 3,
+            stickyTimeout: skill.stickyTimeout ?? this.config.stickyDefaultTimeout ?? 3,
           });
         } else if (skill.lifecycle === "trait-bound") {
           state.set(skill.name, {
@@ -146,10 +128,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
       } else if (skill.lifecycle === "trait-bound" && state.has(skill.name)) {
         // Trait signal gone -> immediate removal, no grace period
         state.delete(skill.name);
-        this.logger.info(
-          "trait-bound skill %s deactivated (trait signal lost)",
-          skill.name,
-        );
+        this.logger.info("trait-bound skill %s deactivated (trait signal lost)", skill.name);
       }
     }
 
