@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 23 — Bug Fixes & Reliability
-Plan: 02 of 4
+Plan: 03 of 4
 Status: In progress
-Last activity: 2026-02-25 — Completed 23-02 snippet variable rendering fix
+Last activity: 2026-02-25 — Completed 23-03 DM willingness & rate limiting
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 
@@ -40,6 +40,7 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 - TraceContext threaded as explicit object (not AsyncLocalStorage — Koishi event system doesn't guarantee async context propagation)
 - Phase 25 requires phase research before implementation (providerOptions format needs live API verification)
 - BUGFIX-01: Build scope inline in formatHorizonText (avoid circular dep with PromptService); missing vars fall back to tag text
+- WILL-01/WILL-02: TokenBucket uses senderId as bucket key; directBoost via applyMentionBoost; adaptive DM timeout = interval*1.5 clamped 3-8s
 
 ### Pending Todos
 
@@ -61,9 +62,10 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 | Phase 22 P01 | 3min | 2 tasks | 4 files |
 | Phase 22 P02 | 2min | 2 tasks | 2 files |
 | Phase 23 P02 | 5min | 2 tasks | 3 files |
+| Phase 23 P03 | 5min | 2 tasks | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 23-02-PLAN.md (snippet variable rendering fix)
+Stopped at: Completed 23-03-PLAN.md (DM willingness & rate limiting)
 Resume file: None
