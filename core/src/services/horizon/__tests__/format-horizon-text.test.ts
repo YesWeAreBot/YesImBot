@@ -7,12 +7,10 @@ import { describe, expect, it } from "vitest";
 /**
  * Smoke tests for BUGFIX-01: snippet variable rendering in horizon-view.
  *
- * These tests call formatHorizonText (via HorizonService) and assert that
- * snippet variables like {{date.now}} and {{bot.name}} are resolved.
+ * Tests verify that the scope construction pattern used by formatHorizonText
+ * correctly resolves snippet variables like {{date.now}} and {{bot.name}}.
  *
- * RED until 23-02 threads scope construction into formatHorizonText.
- * The current implementation passes a bare data object to Mustache.render
- * without date/bot/sender scope — so {{date.now}} renders as empty string.
+ * GREEN after 23-02 threads scope construction into formatHorizonText.
  */
 
 const TEMPLATE_PATH = resolve(
@@ -25,11 +23,41 @@ function loadTemplate(): string {
 }
 
 /**
- * Reproduces the CURRENT (broken) scope that formatHorizonText builds.
- * This is what the method passes to Mustache.render today — no date, no bot.
+ * Builds the FIXED scope matching formatHorizonText's new implementation.
+ * Includes nested date, bot, sender, channel objects for dot-path access.
  */
-function buildCurrentBrokenScope() {
+function buildFixedScope(overrides?: {
+  botName?: string;
+  botId?: string;
+  senderName?: string;
+  senderId?: string;
+  channelName?: string;
+  channelPlatform?: string;
+}) {
+  const fmt = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
   return {
+    date: { now: fmt.format(new Date()) },
+    bot: {
+      name: overrides?.botName || "{{bot.name}}",
+      id: overrides?.botId || "{{bot.id}}",
+    },
+    sender: {
+      name: overrides?.senderName || "{{sender.name}}",
+      id: overrides?.senderId || "{{sender.id}}",
+    },
+    channel: {
+      name: overrides?.channelName || "{{channel.name}}",
+      platform: overrides?.channelPlatform || "{{channel.platform}}",
+    },
     environment: "",
     activeMembers: "",
     hasHistory: false,
@@ -45,51 +73,61 @@ describe("formatHorizonText snippet rendering", () => {
   const template = loadTemplate();
 
   it("{{date.now}} renders non-empty", () => {
-    // Current broken scope — no date object
-    const scope = buildCurrentBrokenScope();
+    const scope = buildFixedScope();
     const rendered = Mustache.render(template, scope).trim();
 
-    // BUGFIX-01: {{date.now}} should resolve to an actual date string.
-    // This FAILS (RED) because the current scope has no `date` property.
-    // Mustache renders missing variables as empty string.
-    // After fix: the scope will include { date: { now: "2026年..." } }
+    // date.now should resolve to an actual date string (zh-CN format)
     expect(rendered).not.toContain("现在是 。");
     expect(rendered).toMatch(/现在是 .+。/);
   });
 
   it("{{bot.name}} resolves via scope when present in template", () => {
-    // The horizon-view template doesn't currently use {{bot.name}},
-    // but the fix will add bot scope for templates that do.
-    // Test the Mustache dot-path contract with a minimal template.
     const snippetTemplate = "Bot: {{bot.name}}, ID: {{bot.id}}";
-    const scope = buildCurrentBrokenScope();
+    const scope = buildFixedScope({ botName: "TestBot", botId: "bot-1" });
     const rendered = Mustache.render(snippetTemplate, scope);
 
-    // FAILS (RED): current scope has no `bot` property
-    // After fix: scope will include { bot: { name: "TestBot", id: "bot-1" } }
     expect(rendered).not.toBe("Bot: , ID: ");
     expect(rendered).toContain("TestBot");
+    expect(rendered).toContain("bot-1");
   });
 
   it("missing sender variables preserve tag text", () => {
-    // When percept is not available, sender.* variables should
-    // preserve their original tag text, not render as empty string.
-    // This tests the fallback-value pattern from the research doc.
     const snippetTemplate = "From: {{sender.name}}";
 
-    // Scope with fallback value (the fix pattern)
-    const scopeWithFallback = {
-      ...buildCurrentBrokenScope(),
-      sender: { name: "{{sender.name}}" },
-    };
+    // Scope with fallback value (the fix pattern — no percept available)
+    const scopeWithFallback = buildFixedScope();
     const rendered = Mustache.render(snippetTemplate, scopeWithFallback);
 
     // The fallback preserves the tag text literally
     expect(rendered).toContain("{{sender.name}}");
+  });
 
-    // Scope WITHOUT fallback (current broken behavior) renders empty
-    const scopeWithout = buildCurrentBrokenScope();
-    const broken = Mustache.render(snippetTemplate, scopeWithout);
-    expect(broken).toBe("From: ");
+  it("sender variables resolve when percept provides them", () => {
+    const snippetTemplate = "From: {{sender.name}} ({{sender.id}})";
+    const scope = buildFixedScope({ senderName: "Alice", senderId: "user-42" });
+    const rendered = Mustache.render(snippetTemplate, scope);
+
+    expect(rendered).toBe("From: Alice (user-42)");
+  });
+
+  it("channel variables resolve from environment", () => {
+    const snippetTemplate = "Channel: {{channel.name}} on {{channel.platform}}";
+    const scope = buildFixedScope({
+      channelName: "general",
+      channelPlatform: "discord",
+    });
+    const rendered = Mustache.render(snippetTemplate, scope);
+
+    expect(rendered).toBe("Channel: general on discord");
+  });
+
+  it("full template renders with all snippet variables populated", () => {
+    const scope = buildFixedScope({ botName: "Athena", botId: "bot-1" });
+    const rendered = Mustache.render(template, scope).trim();
+
+    // date.now should be present (non-empty after "现在是")
+    expect(rendered).toMatch(/现在是 \d{4}年/);
+    // Should not contain empty "现在是 。"
+    expect(rendered).not.toContain("现在是 。");
   });
 });

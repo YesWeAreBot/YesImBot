@@ -1,7 +1,7 @@
 import { Context, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
-import { Scope } from "../shared/types";
+import { Scope, type Percept } from "../shared/types";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
@@ -239,7 +239,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return `[${hhmm}] [Bot Action]: ${actions.map((a) => a.name).join(", ")}`;
   }
 
-  formatHorizonText(view: HorizonView, workingMemory?: string[]): string {
+  formatHorizonText(view: HorizonView, workingMemory?: string[], percept?: Percept): string {
     this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
     let environment = "";
     if (view.environment) {
@@ -271,7 +271,32 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       }
     }
 
-    return Mustache.render(this.horizonViewTpl, {
+    const fmt = new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    const scope = {
+      // Snippet variables — nested objects for dot-path access
+      date: { now: fmt.format(new Date()) },
+      bot: {
+        name: view.self.name || "{{bot.name}}",
+        id: view.self.id || "{{bot.id}}",
+      },
+      sender: {
+        name: (percept?.metadata?.senderName as string) || "{{sender.name}}",
+        id: (percept?.metadata?.senderId as string) || "{{sender.id}}",
+      },
+      channel: {
+        name: view.environment?.name || "{{channel.name}}",
+        platform: (view.environment?.metadata?.platform as string) || "{{channel.platform}}",
+      },
+      // Template data
       environment,
       activeMembers,
       hasHistory: historyObs.length > 0,
@@ -280,6 +305,13 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       trigger: triggerObs,
       hasWorkingMemory: (workingMemory?.length ?? 0) > 0,
       workingMemory,
-    }).trim();
+    };
+
+    const rendered = Mustache.render(this.horizonViewTpl, scope).trim();
+    const unresolved = rendered.match(/\{\{[^}]+\}\}/g);
+    if (unresolved) {
+      this.logger.debug(`Unresolved template variables: ${unresolved.join(", ")}`);
+    }
+    return rendered;
   }
 }
