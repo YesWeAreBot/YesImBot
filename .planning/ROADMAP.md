@@ -92,7 +92,10 @@ Plans:
   2. SkillRegistry.mergeEffects() reads the injection point from skill definition instead of hardcoding `"extra"`
   3. TraitAnalyzerConfig is a type-only export (no runtime value leak)
   4. trait-bound skills persist across turns until their trait deactivates, distinguishable from per-turn skills at runtime in SkillRegistry.resolve()
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 22-01-PLAN.md — Configurable skill injection points (types, loader, mergeEffects, loop style routing)
+- [ ] 22-02-PLAN.md — Tech debt: type-only TraitAnalyzerConfig export, trait-bound lifecycle in resolve()
 
 ### Phase 23: Test Infrastructure
 **Goal**: Core services have unit test coverage via vitest, catching regressions from the v2.1 refactor
@@ -117,5 +120,5 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20. Injection Point Merge & Wrapper Elimination | 2/2 | Complete    | 2026-02-23 | - |
 | 21. Fixed-Role File Loading | 2/2 | Complete    | 2026-02-23 | - |
-| 22. Skill Enhancement & Tech Debt | v2.1 | 0/? | Not started | - |
+| 22. Skill Enhancement & Tech Debt | v2.1 | 0/2 | Planning complete | - |
 | 23. Test Infrastructure | v2.1 | 0/? | Not started | - |
