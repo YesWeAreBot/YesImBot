@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 23 — Bug Fixes & Reliability
 Plan: —
-Status: Defining requirements
-Last activity: 2026-02-24 — Milestone v2.2 started
+Status: Not started
+Last activity: 2026-02-25 — Roadmap created for v2.2
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 
 ## Performance Metrics
 
@@ -22,6 +22,7 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆
 - v1.0: 15 phases, 29 plans, ~4 days
 - v2.0: 8 phases, 16 plans, ~6 days
 - v2.1: 3 phases, 6 plans, ~2 days
+- v2.2: 3 phases planned, 0 complete
 
 **By Phase:** See MILESTONES.md for breakdown.
 
@@ -33,14 +34,20 @@ Full decision log in PROJECT.md Key Decisions table.
 v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 
+**v2.2 decisions:**
+- memory_block → RoleService merge deferred to v2.3 (migration risk, not blocking any v2.2 feature)
+- Prompt cache scoped to Anthropic-only first (other providers have different cache semantics)
+- TraceContext threaded as explicit object (not AsyncLocalStorage — Koishi event system doesn't guarantee async context propagation)
+- Phase 25 requires phase research before implementation (providerOptions format needs live API verification)
+
 ### Pending Todos
 
-None.
+- Phase 25: Run phase research to verify Anthropic `providerOptions` cache control format before implementing OPT-01/OPT-02
 
 ### Blockers/Concerns
 
-- Mustache renders missing partials as empty string — validate partial existence at boot
-- Test coverage not yet established (Phase 23 deferred from v2.1)
+- `{{date.now}}` and all snippet variables render empty in horizon-view (BUGFIX-01) — confirmed live bug, critical path blocker for Phase 25
+- Test coverage not yet established — BUGFIX-02 introduces vitest as first test infrastructure
 
 ### Quick Tasks Completed
 
@@ -54,6 +61,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-24 14:53
-Stopped at: Completed v2.1 milestone archival
+Last session: 2026-02-25
+Stopped at: Roadmap created for v2.2, ready to plan Phase 23
 Resume file: None
