@@ -107,6 +107,6 @@ Plans:
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
-| 23. Bug Fixes & Reliability | v2.2 | 1/4 | In progress | — |
+| 23. Bug Fixes & Reliability | 3/4 | In Progress|  | — |
 | 24. Observability | v2.2 | 0/? | Not started | — |
 | 25. Optimization | v2.2 | 0/? | Not started | — |

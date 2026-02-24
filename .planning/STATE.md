@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 23 — Bug Fixes & Reliability
-Plan: 01 of 4
+Plan: 02 of 4
 Status: In progress
-Last activity: 2026-02-24 — Completed 23-00 test scaffolds
+Last activity: 2026-02-25 — Completed 23-02 snippet variable rendering fix
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 
@@ -39,6 +39,7 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 - Prompt cache scoped to Anthropic-only first (other providers have different cache semantics)
 - TraceContext threaded as explicit object (not AsyncLocalStorage — Koishi event system doesn't guarantee async context propagation)
 - Phase 25 requires phase research before implementation (providerOptions format needs live API verification)
+- BUGFIX-01: Build scope inline in formatHorizonText (avoid circular dep with PromptService); missing vars fall back to tag text
 
 ### Pending Todos
 
@@ -46,7 +47,7 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 
 ### Blockers/Concerns
 
-- `{{date.now}}` and all snippet variables render empty in horizon-view (BUGFIX-01) — confirmed live bug, critical path blocker for Phase 25
+- ~~`{{date.now}}` and all snippet variables render empty in horizon-view (BUGFIX-01)~~ — FIXED in 23-02 (00012e5, f20ba28)
 - Test coverage not yet established — BUGFIX-02 introduces vitest as first test infrastructure
 - vitest installed, RED test scaffolds created for BUGFIX-01, WILL-01, WILL-02 (23-00 complete)
 
@@ -59,9 +60,10 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 | Phase 22 P01 | 3min | 2 tasks | 4 files |
 | Phase 22 P02 | 2min | 2 tasks | 2 files |
+| Phase 23 P02 | 5min | 2 tasks | 3 files |
 
 ## Session Continuity
 
-Last session: 2026-02-24
-Stopped at: Completed 23-00-PLAN.md (test scaffolds)
+Last session: 2026-02-25
+Stopped at: Completed 23-02-PLAN.md (snippet variable rendering fix)
 Resume file: None

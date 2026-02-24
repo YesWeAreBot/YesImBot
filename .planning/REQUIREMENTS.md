@@ -7,7 +7,7 @@
 
 ### Bug 修复 (BUGFIX)
 
-- [ ] **BUGFIX-01**: Snippet 变量（`{{date.now}}`、`{{bot.name}}` 等）在 horizon-view 模板中正确渲染，不再输出空字符串
+- [x] **BUGFIX-01**: Snippet 变量（`{{date.now}}`、`{{bot.name}}` 等）在 horizon-view 模板中正确渲染，不再输出空字符串
 - [ ] **BUGFIX-02**: JSON Parser 拥有完整的 vitest 测试套件，覆盖 v3 的 18 个测试用例（完美 JSON、代码块、嵌套代码块、`[OBSERVE]` 前缀、截断字符串、悬空键等）
 
 ### 意愿值系统 (WILL)
@@ -57,7 +57,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUGFIX-01 | Phase 23 | Pending |
+| BUGFIX-01 | Phase 23 | Complete |
 | BUGFIX-02 | Phase 23 | Pending |
 | WILL-01 | Phase 23 | Pending |
 | WILL-02 | Phase 23 | Pending |
