@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用、Horizon 上下文管理，以及基于 Trait + Skill 的上下文感知行为调整体系——一个独一无二的、专属于社群的虚拟成员。
+Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用、Horizon 上下文管理、基于 Trait + Skill 的上下文感知行为调整体系，以及 SOUL.md/AGENTS.md/TOOLS.md 固定角色文件驱动的提示词系统——一个独一无二的、专属于社群的虚拟成员。
 
 ## Core Value
 
@@ -31,20 +31,17 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - ✓ HorizonView 渲染优化：结构化标签分区，Percept 职责分层 — v2.0
 - ✓ Trait 感知层：TraitAnalyzer 并行分析（Scene/Heat），有状态 per-channel scope — v2.0
 - ✓ Skill 响应层：文件夹规范 + 条件树激活 + 分层效果合并 + 热重载 — v2.0
+- ✓ 注入点合并 6→4：soul/instructions/memory/extra，编译器强制 + 运行时 guard — v2.1
+- ✓ render() 代码内 XML 生成：消除 wrapper partials，删除 11 个废弃文件 — v2.1
+- ✓ 固定角色文件系统：SOUL.md/AGENTS.md/TOOLS.md 替代 legacy defaults — v2.1
+- ✓ RoleService：文件加载、Mustache 渲染、热重载、注入完整生命周期 — v2.1
+- ✓ Skill 可配置注入点：效果可指定任意注入点，按 specificity 排序 — v2.1
+- ✓ 三种 Skill 生命周期：per-turn / sticky / trait-bound 运行时可区分 — v2.1
+- ✓ TraitAnalyzerConfig type-only export — v2.1
 
 ### Active
 
-#### Current Milestone: v2.1 Polish & Release Prep
-
-**Goal:** 打磨优化现有功能，重构 memory_block 和提示词注入体系，修复技术债，为首个正式发布版做准备。
-
-**Target features:**
-- 重构 memory_block 为 OpenClaw 风格固定角色文件（SOUL.md/AGENTS.md/TOOLS.md）
-- 注入点合并简化（6→4：soul/instructions/memory/extra）
-- 消除冗余 wrapper partials，代码内生成 XML 标签
-- 修复 v2.0 技术债（4 项）
-- 核心服务基础测试覆盖（vitest）
-- 代码健壮性增强（边界处理、错误处理）
+(No active milestone — run `/gsd:new-milestone` to start next)
 
 ### Out of Scope
 
@@ -61,13 +58,14 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 - **v1.0 shipped:** 2026-02-21, 3,470 LOC TypeScript, 15 phases, 29 plans
 - **v2.0 shipped:** 2026-02-23, +12,546 LOC TypeScript, 8 phases, 16 plans
+- **v2.1 shipped:** 2026-02-24, +1,741 LOC TypeScript, 3 phases, 6 plans
 - **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
 - **包结构:** packages/shared-model + core + providers/provider-openai + providers/provider-deepseek
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
-- **设计文档**：`books/` 目录为作者架构思考，`docs/` 为完整架构讨论
-- **v2.0 达成:** PromptService 重设计、Trait 感知层、Skill 响应层、端到端管线验证
-- **已知技术债:** 4 项（见 MILESTONES.md v2.0 条目）
-- **v2.1 方向:** 打磨优化 + memory_block/注入点重构 + 测试基础设施
+- **设计文档**：`references/books/` 目录为作者架构思考，`references/talks/` 为完整架构讨论
+- **v2.1 达成:** 注入点合并 6→4、固定角色文件系统、Skill 可配置注入点、3/4 v2.0 技术债修复
+- **已知技术债:** 1 项低优先级（`__role_soul` 字符串字面量耦合）+ 4 项测试需求推迟
+- **测试覆盖:** 尚未建立（Phase 23 推迟到下个 milestone）
 
 ## Constraints
 
@@ -100,8 +98,11 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | 渐进式工作记忆裁剪 | 无限增长 messages 导致 token 溢出 | ✓ Good — softTrim/hardClear 两级策略 |
 | Percept 构造从 horizon 移到 agent | horizon 只负责数据，不参与决策 | ✓ Good — 职责边界清晰 |
 
-| OpenClaw 风格 memory_block | SOUL.md/AGENTS.md 固定角色文件替代自由标签 persona.md，职责更清晰 | — Pending |
-| 注入点合并 6→4 | identity+style→soul, control_flow+basic_functions→instructions，减少抽象层 | — Pending |
+| OpenClaw 风格 memory_block | SOUL.md/AGENTS.md 固定角色文件替代自由标签 persona.md，职责更清晰 | ✓ Good — RoleService 完整生命周期 |
+| 注入点合并 6→4 | identity+style→soul, control_flow+basic_functions→instructions，减少抽象层 | ✓ Good — 编译器全局强制 + 运行时 guard |
+| render() 代码内 XML 生成 | 消除 Mustache partial 间接层，删除 11 个废弃文件 | ✓ Good |
+| Skill 可配置注入点 | 效果可指定 soul/instructions/memory/extra 任意点 | ✓ Good — 按 specificity 排序 |
+| trait-bound 即时移除 | trait 信号消失时立即移除，不设宽限期 | ✓ Good — 与 sticky countdown 区分 |
 
 ---
-*Last updated: 2026-02-23 after v2.1 milestone started*
+*Last updated: 2026-02-24 after v2.1 milestone*

@@ -2,25 +2,26 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-23)
+See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 22 — Skill Enhancement & Tech Debt
+**Current focus:** No active milestone — run `/gsd:new-milestone` to start next
 
 ## Current Position
 
-Phase: 22 of 23 (Skill Enhancement & Tech Debt)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase 22 Complete — ready for Phase 23
-Last activity: 2026-02-24 — Completed 22-02 (Tech debt: type export + trait-bound lifecycle)
+Phase: None (between milestones)
+Plan: N/A
+Status: v2.1 milestone complete — ready for next milestone
+Last activity: 2026-02-24 — Completed v2.1 milestone
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [████████░░] 80%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅
 
 ## Performance Metrics
 
 **Velocity:**
 - v1.0: 15 phases, 29 plans, ~4 days
 - v2.0: 8 phases, 16 plans, ~6 days
+- v2.1: 3 phases, 6 plans, ~2 days
 
 **By Phase:** See MILESTONES.md for breakdown.
 
@@ -30,21 +31,7 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [████████░░] 80%
 
 Full decision log in PROJECT.md Key Decisions table.
 v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
-
-- [v2.1]: OpenClaw memory paradigm adopted (SOUL.md/AGENTS.md/TOOLS.md)
-- [v2.1]: Injection points merged 6->4 (soul/instructions/memory/extra)
-- [v2.1]: Vitest chosen over Jest (ESM-native, zero-config for bundler moduleResolution)
-- [20-01]: Removed old default injections from constructor — Phase 21 fills content via SOUL.md/AGENTS.md
-- [20-02]: render() assembles XML tags inline — no Mustache partials for prompt structure
-- [20-02]: Empty injection points always emit tags for structural consistency
-- [21-01]: English defaults with natural tone, Markdown ## headings for RAG chunking
-- [21-01]: SOUL.md covers identity/personality/style; AGENTS.md covers control-flow/format/group-chat; TOOLS.md covers tool mechanics
-- [21-02]: Used Mustache.render() directly (same as MemoryService) rather than MustacheRenderer wrapper
-- [21-02]: Fixed loop.ts __default_soul -> __role_soul for skill style override ordering
-- [22-01]: injectionPoint defaults to 'extra', styleInjectionPoint defaults to 'soul' — backward compatible
-- [22-01]: Active skills sorted by specificity descending before prompt injection concatenation
-- [22-02]: trait-bound uses immediate removal (no grace period) when trait signal lost, unlike sticky countdown
-- [22-02]: trait-bound and sticky coexist in same channelState Map, distinguished by lifecycle field
+v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 
 ### Pending Todos
 
@@ -53,6 +40,7 @@ None.
 ### Blockers/Concerns
 
 - Mustache renders missing partials as empty string — validate partial existence at boot
+- Test coverage not yet established (Phase 23 deferred from v2.1)
 
 ### Quick Tasks Completed
 
@@ -66,6 +54,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-24 09:42
-Stopped at: Completed 22-02-PLAN.md (Tech debt: type export + trait-bound lifecycle)
+Last session: 2026-02-24 14:53
+Stopped at: Completed v2.1 milestone archival
 Resume file: None

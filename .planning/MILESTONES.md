@@ -42,3 +42,34 @@
 
 ---
 
+
+## v2.1 Polish & Release Prep (Shipped: 2026-02-24)
+
+**Phases completed:** 3 phases (20-22), 6 plans, 12 tasks
+**Timeline:** 2 days (2026-02-23 → 2026-02-24)
+**Commits:** 23
+**Files modified:** 30 (+1,741 / -119)
+**Git range:** 8ee3ac1 → 6b039f5
+
+**Key accomplishments:**
+1. 注入点合并 6→4 — soul/instructions/memory/extra，编译器全局强制 + 运行时 guard
+2. render() 代码内生成 XML 标签 — 删除 11 个废弃模板/默认文件，消除 Mustache 间接层
+3. 固定角色文件系统 — SOUL.md/AGENTS.md/TOOLS.md 替代 legacy defaults，Mustache 模板变量支持
+4. RoleService — 文件加载、渲染、注入、fs.watch 热重载完整生命周期
+5. Skill 可配置注入点路由 — 效果可指定任意注入点，按 specificity 排序
+6. 三种 Skill 生命周期策略 — per-turn / sticky / trait-bound，运行时可区分
+
+**v2.0 Tech Debt Resolved (3/4):**
+- ✓ TraitAnalyzerConfig → type-only export
+- ✓ Skill injection point → configurable (was hardcoded "extra")
+- ✓ trait-bound lifecycle → runtime distinguishable from per-turn
+- ○ 3 E2E scenarios still require live Koishi session (deferred)
+
+**Known Gaps:**
+- TEST-01: vitest 测试基础设施搭建 (Phase 23 未启动)
+- TEST-02: MemoryService 单元测试 (Phase 23 未启动)
+- TEST-03: SkillRegistry 单元测试 (Phase 23 未启动)
+- TEST-04: PromptService 单元测试 (Phase 23 未启动)
+
+---
+
