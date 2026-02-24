@@ -49,7 +49,7 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 ### Blockers/Concerns
 
 - ~~`{{date.now}}` and all snippet variables render empty in horizon-view (BUGFIX-01)~~ — FIXED in 23-02 (00012e5, f20ba28)
-- Test coverage not yet established — BUGFIX-02 introduces vitest as first test infrastructure
+- ~~Test coverage not yet established~~ — BUGFIX-02 complete: 27 vitest tests for JSON parser (23-01)
 - vitest installed, RED test scaffolds created for BUGFIX-01, WILL-01, WILL-02 (23-00 complete)
 
 ### Quick Tasks Completed
@@ -61,11 +61,12 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 | Phase 22 P01 | 3min | 2 tasks | 4 files |
 | Phase 22 P02 | 2min | 2 tasks | 2 files |
+| Phase 23 P01 | 13min | 2 tasks | 2 files |
 | Phase 23 P02 | 5min | 2 tasks | 3 files |
 | Phase 23 P03 | 5min | 2 tasks | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 23-03-PLAN.md (DM willingness & rate limiting)
+Stopped at: Completed 23-01-PLAN.md (JSON parser test suite)
 Resume file: None
