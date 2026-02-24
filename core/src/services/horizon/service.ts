@@ -114,9 +114,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       scope: { platform, channelId },
       types: [TimelineEventType.Message, TimelineEventType.AgentResponse],
       limit: this.config.historyLimit ?? 30,
-      orderBy: "asc",
+      orderBy: "desc",
     });
-    const history = this.events.toObservations(entries);
+    const history = this.events.toObservations(entries.reverse());
     const environment = await this.getOrCreateEnvironment(scope, options?.session);
     const entities = await this.getEntities(scope);
     const self = {
