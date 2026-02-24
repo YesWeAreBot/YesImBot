@@ -14,9 +14,14 @@ import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
 import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
 
+interface AgentAction {
+  name: string;
+  params?: Record<string, unknown>;
+}
+
 interface AgentResponse {
-  thoughts?: { observe: string; analyze_infer: string; plan: string };
-  actions: Array<{ name: string; params?: Record<string, unknown> }>;
+  thoughts?: string;
+  actions: Array<AgentAction>;
   request_heartbeat?: boolean;
 }
 
@@ -206,9 +211,7 @@ export class ThinkActLoop {
         const response = parsed.data!;
 
         if (response.thoughts) {
-          this.logger.info(
-            `[Thoughts] observe: ${response.thoughts.observe} | analyze: ${response.thoughts.analyze_infer} | plan: ${response.thoughts.plan}`,
-          );
+          this.logger.info(`[Thoughts] ${response.thoughts}`);
         }
 
         // Execute actions
@@ -310,14 +313,8 @@ export class ThinkActLoop {
     let hasActionCalls = false;
 
     // Partition by type
-    const toolActions: Array<{
-      idx: number;
-      action: AgentResponse["actions"][0];
-    }> = [];
-    const actionActions: Array<{
-      idx: number;
-      action: AgentResponse["actions"][0];
-    }> = [];
+    const toolActions: Array<{ idx: number; action: AgentAction }> = [];
+    const actionActions: Array<{ idx: number; action: AgentAction }> = [];
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
