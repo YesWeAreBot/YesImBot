@@ -70,7 +70,11 @@
   2. The JSON parser test suite runs via `vitest` and passes all 18 cases covering perfect JSON, code blocks, nested code blocks, `[OBSERVE]` prefix, truncated strings, and dangling keys
   3. A private message to the bot receives a reply with high probability, using a longer aggregation window to wait for the user to finish sending multiple messages before responding — not every single DM triggers a response
   4. Rapid DM sequences are rate-limited per user so cost cannot explode from unthrottled private chat
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 23-01-PLAN.md — Install vitest + port v3 JSON parser test suite (18 cases)
+- [ ] 23-02-PLAN.md — Fix snippet variable rendering in horizon-view
+- [ ] 23-03-PLAN.md — DM adaptive aggregation window + per-user token bucket rate limiting
 
 ### Phase 24: Observability
 **Goal**: Every message processing flow is traceable end-to-end and the willingness judge makes better-calibrated decisions
@@ -102,6 +106,6 @@
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
-| 23. Bug Fixes & Reliability | v2.2 | 0/? | Not started | — |
+| 23. Bug Fixes & Reliability | v2.2 | 0/3 | Planned | — |
 | 24. Observability | v2.2 | 0/? | Not started | — |
 | 25. Optimization | v2.2 | 0/? | Not started | — |
