@@ -116,12 +116,23 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
       if (activated) {
         active.push(skill);
+        this.logger.info(
+          "skill %s activated (lifecycle: %s)",
+          skill.name,
+          skill.lifecycle,
+        );
         if (skill.lifecycle === "sticky") {
           state.set(skill.name, {
             lifecycle: "sticky",
             roundsSinceActive: 0,
             stickyTimeout:
               skill.stickyTimeout ?? this.config.stickyDefaultTimeout ?? 3,
+          });
+        } else if (skill.lifecycle === "trait-bound") {
+          state.set(skill.name, {
+            lifecycle: "trait-bound",
+            roundsSinceActive: 0,
+            stickyTimeout: 0,
           });
         }
       } else if (skill.lifecycle === "sticky" && state.has(skill.name)) {
@@ -132,6 +143,13 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
         } else {
           active.push(skill);
         }
+      } else if (skill.lifecycle === "trait-bound" && state.has(skill.name)) {
+        // Trait signal gone -> immediate removal, no grace period
+        state.delete(skill.name);
+        this.logger.info(
+          "trait-bound skill %s deactivated (trait signal lost)",
+          skill.name,
+        );
       }
     }
 
