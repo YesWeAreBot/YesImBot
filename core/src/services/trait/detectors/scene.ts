@@ -61,13 +61,14 @@ export class SceneTrait implements TraitDetector {
     const signals: TraitSignal[] = [];
     const key = channelKey(scope);
 
-    // Scene dimension
-    const lastMsg = view.history?.filter((o) => o.type === "message").slice(-1)[0];
+    // Scene dimension — prefer stage:"new" messages as trigger content
+    const msgs = view.history?.filter((o) => o.type === "message") ?? [];
+    const triggerMsg = msgs.filter((o) => o.stage === "new").slice(-1)[0] ?? msgs.slice(-1)[0];
     signals.push({
       dimension: "scene",
       value: scope.isDirect ? "private-chat" : "group-chat",
       confidence: 1.0,
-      ...(lastMsg && { metadata: { triggerContent: lastMsg.content } }),
+      ...(triggerMsg && { metadata: { triggerContent: triggerMsg.content } }),
     });
 
     // Attention dimension
@@ -87,7 +88,11 @@ export class SceneTrait implements TraitDetector {
     }
 
     if (mentioned) {
-      signals.push({ dimension: "attention", value: "mentioned", confidence: 0.9 });
+      signals.push({
+        dimension: "attention",
+        value: "mentioned",
+        confidence: 0.9,
+      });
     } else if (state) {
       const ignoredByResponse =
         state.lastBotResponseAt !== undefined &&
@@ -95,7 +100,11 @@ export class SceneTrait implements TraitDetector {
       const ignoredByMention = state.messagesSinceMention >= IGNORED_MESSAGES_SINCE_MENTION;
 
       if (ignoredByResponse || ignoredByMention) {
-        signals.push({ dimension: "attention", value: "ignored", confidence: 0.8 });
+        signals.push({
+          dimension: "attention",
+          value: "ignored",
+          confidence: 0.8,
+        });
       }
     }
 

@@ -97,7 +97,10 @@ export class ThinkActLoop {
     );
 
     try {
-      const systemPrompt = await prompt.renderToString("system", { view, percept });
+      const systemPrompt = await prompt.renderToString("system", {
+        view,
+        percept,
+      });
 
       const wmLines: string[] = [];
       for (const obs of view.history ?? []) {
@@ -183,7 +186,14 @@ export class ThinkActLoop {
           if (typeof fallbackContent === "string" && fallbackContent) {
             this.logger.info("No actions array, wrapping content as send_message");
             parsed = {
-              data: { actions: [{ name: "send_message", params: { content: fallbackContent } }] },
+              data: {
+                actions: [
+                  {
+                    name: "send_message",
+                    params: { content: fallbackContent },
+                  },
+                ],
+              },
               error: null,
               logs: [],
             };
@@ -230,7 +240,10 @@ export class ThinkActLoop {
         // Force wrap-up on max rounds
         if (round >= maxRounds) {
           messages.push({ role: "assistant", content: rawText });
-          messages.push({ role: "user", content: formatFinalRoundPrompt(toolResults) });
+          messages.push({
+            role: "user",
+            content: formatFinalRoundPrompt(toolResults),
+          });
 
           trimMessages(messages, trimConfig);
 
@@ -265,10 +278,13 @@ export class ThinkActLoop {
 
         // Append messages for next round
         messages.push({ role: "assistant", content: rawText });
-        messages.push({ role: "user", content: formatToolResults(toolResults) });
+        messages.push({
+          role: "user",
+          content: formatToolResults(toolResults),
+        });
       }
 
-      await horizon.events.markAsActive(percept.scope, new Date());
+      await horizon.events.markAsActive(percept.scope, percept.timestamp);
       const archiveMs =
         (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
       await horizon.events.archiveStale(percept.scope, archiveMs);
@@ -284,14 +300,24 @@ export class ThinkActLoop {
     pluginService: PluginService,
     toolCtx: ToolExecutionContext,
     maxResultLen: number,
-  ): Promise<{ toolResults: ToolResultEntry[]; hasToolCalls: boolean; hasActionCalls: boolean }> {
+  ): Promise<{
+    toolResults: ToolResultEntry[];
+    hasToolCalls: boolean;
+    hasActionCalls: boolean;
+  }> {
     const toolResults: ToolResultEntry[] = [];
     let hasToolCalls = false;
     let hasActionCalls = false;
 
     // Partition by type
-    const toolActions: Array<{ idx: number; action: AgentResponse["actions"][0] }> = [];
-    const actionActions: Array<{ idx: number; action: AgentResponse["actions"][0] }> = [];
+    const toolActions: Array<{
+      idx: number;
+      action: AgentResponse["actions"][0];
+    }> = [];
+    const actionActions: Array<{
+      idx: number;
+      action: AgentResponse["actions"][0];
+    }> = [];
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
