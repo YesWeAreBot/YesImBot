@@ -123,7 +123,7 @@ export class ThinkActLoop {
           wmLines.push(lines.join("\n"));
         }
       }
-      const userContent = horizon.formatHorizonText(view, wmLines);
+      const userContent = horizon.formatHorizonText(view, wmLines, percept);
 
       this.logger.info(`Available tools: ${toolSchema ? "injected" : "none"}`);
 
