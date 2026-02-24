@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import matter from "gray-matter";
 
+import { INJECTION_POINTS, type InjectionPoint } from "../prompt/types";
 import type {
   ConditionNode,
   LifecycleStrategy,
@@ -16,7 +17,30 @@ interface Logger {
   warn: (msg: string, ...args: unknown[]) => void;
 }
 
-export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<SkillDefinition[]> {
+function validateInjectionPoint(
+  val: unknown,
+  logger: Logger,
+  skillName: string,
+): InjectionPoint | undefined {
+  if (val == null) return undefined;
+  if (
+    typeof val === "string" &&
+    (INJECTION_POINTS as readonly string[]).includes(val)
+  ) {
+    return val as InjectionPoint;
+  }
+  logger.warn(
+    "Invalid injection_point '%s' in skill %s, using default",
+    val,
+    skillName,
+  );
+  return undefined;
+}
+
+export async function loadSkillsFromDir(
+  dir: string,
+  logger: Logger,
+): Promise<SkillDefinition[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const skills: SkillDefinition[] = [];
 
@@ -42,6 +66,16 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
         conditions: meta.conditions as ConditionNode | undefined,
         lifecycle: (meta.lifecycle as LifecycleStrategy) ?? "per-turn",
         stickyTimeout: meta.stickyTimeout as number | undefined,
+        injectionPoint: validateInjectionPoint(
+          meta.injection_point,
+          logger,
+          entry.name,
+        ),
+        styleInjectionPoint: validateInjectionPoint(
+          meta.style_injection_point,
+          logger,
+          entry.name,
+        ),
         effects,
         source: "file",
       };
@@ -71,7 +105,10 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
   return skills;
 }
 
-function parseFrontmatter(raw: string): { meta: Record<string, unknown>; content: string } {
+function parseFrontmatter(raw: string): {
+  meta: Record<string, unknown>;
+  content: string;
+} {
   const { data, content } = matter(raw);
   return { meta: data, content: content.trim() };
 }

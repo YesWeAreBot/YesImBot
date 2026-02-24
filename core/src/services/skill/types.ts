@@ -47,6 +47,8 @@ export interface SkillDefinition {
   activate?: (signals: TraitSignal[]) => boolean;
   lifecycle: LifecycleStrategy;
   stickyTimeout?: number;
+  injectionPoint?: InjectionPoint;
+  styleInjectionPoint?: InjectionPoint;
   effects: SkillEffects;
   source: "file" | "plugin";
 }
@@ -59,6 +61,10 @@ export interface SkillEffect {
     point: InjectionPoint;
     content: string;
   }>;
-  styleOverride: { content: string; specificity: number } | null;
+  styleOverride: {
+    content: string;
+    specificity: number;
+    point: InjectionPoint;
+  } | null;
   toolFilter: { include: string[]; exclude: string[] };
 }
