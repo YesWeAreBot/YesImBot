@@ -4,8 +4,13 @@ import { resolve } from "node:path";
 import { Context, Schema, Service } from "koishi";
 
 import type { Scope, TraitSignal } from "../shared/types";
-import { evaluateCondition, filterByConfidence, specificity } from "./condition";
+import {
+  evaluateCondition,
+  filterByConfidence,
+  specificity,
+} from "./condition";
 import { loadSkillsFromDir } from "./loader";
+import type { InjectionPoint } from "../prompt/types";
 import type { SkillDefinition, SkillEffect } from "./types";
 
 declare module "koishi" {
@@ -20,11 +25,14 @@ export interface SkillRegistryConfig {
   stickyDefaultTimeout?: number;
 }
 
-export const SkillRegistryConfigSchema: Schema<SkillRegistryConfig> = Schema.object({
-  skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default([]),
-  confidenceThreshold: Schema.number().default(0.3),
-  stickyDefaultTimeout: Schema.number().default(3),
-});
+export const SkillRegistryConfigSchema: Schema<SkillRegistryConfig> =
+  Schema.object({
+    skillPaths: Schema.array(
+      Schema.path({ filters: ["directory"], allowCreate: true }),
+    ).default([]),
+    confidenceThreshold: Schema.number().default(0.3),
+    stickyDefaultTimeout: Schema.number().default(3),
+  });
 
 interface ActiveSkillState {
   lifecycle: SkillDefinition["lifecycle"];
@@ -52,7 +60,10 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
   protected async start(): Promise<void> {
     await this.loadAllDirs();
-    this.logger.info("SkillRegistry started, %d skills loaded", this.skills.size);
+    this.logger.info(
+      "SkillRegistry started, %d skills loaded",
+      this.skills.size,
+    );
   }
 
   register(def: SkillDefinition): () => void {
@@ -73,7 +84,10 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
   }
 
   resolve(signals: TraitSignal[], scope: Scope): SkillEffect {
-    const filtered = filterByConfidence(signals, this.config.confidenceThreshold ?? 0.3);
+    const filtered = filterByConfidence(
+      signals,
+      this.config.confidenceThreshold ?? 0.3,
+    );
     this.logger.info(
       "resolve signals: %o",
       filtered.map((s) => ({ d: s.dimension, v: s.value, meta: s.metadata })),
@@ -106,7 +120,8 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
           state.set(skill.name, {
             lifecycle: "sticky",
             roundsSinceActive: 0,
-            stickyTimeout: skill.stickyTimeout ?? this.config.stickyDefaultTimeout ?? 3,
+            stickyTimeout:
+              skill.stickyTimeout ?? this.config.stickyDefaultTimeout ?? 3,
           });
         }
       } else if (skill.lifecycle === "sticky" && state.has(skill.name)) {
@@ -124,19 +139,30 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
   }
 
   private mergeEffects(active: SkillDefinition[]): SkillEffect {
+    // Sort by specificity descending for prompt injection ordering
+    const sorted = [...active].sort((a, b) => {
+      const specA = a.conditions ? specificity(a.conditions) : 0;
+      const specB = b.conditions ? specificity(b.conditions) : 0;
+      return specB - specA;
+    });
+
     const result: SkillEffect = {
       promptInjections: [],
       styleOverride: null,
       toolFilter: { include: [], exclude: [] },
     };
 
-    let bestStyle: { content: string; specificity: number } | null = null;
+    let bestStyle: {
+      content: string;
+      specificity: number;
+      point: InjectionPoint;
+    } | null = null;
 
-    for (const skill of active) {
+    for (const skill of sorted) {
       if (skill.effects.prompt) {
         result.promptInjections.push({
           skillName: skill.name,
-          point: "extra",
+          point: skill.injectionPoint ?? "extra",
           content: `<skill name="${skill.name}">${skill.effects.prompt}</skill>`,
         });
       }
@@ -144,7 +170,11 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
       if (skill.effects.style) {
         const spec = skill.conditions ? specificity(skill.conditions) : 0;
         if (!bestStyle || spec >= bestStyle.specificity) {
-          bestStyle = { content: skill.effects.style.content, specificity: spec };
+          bestStyle = {
+            content: skill.effects.style.content,
+            specificity: spec,
+            point: skill.styleInjectionPoint ?? "soul",
+          };
         }
       }
 

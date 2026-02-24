@@ -3,7 +3,11 @@ import { Context } from "koishi";
 import type { HorizonService } from "../horizon/service";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
-import { FunctionType, type ToolExecutionContext, type ToolResult } from "../plugin/types";
+import {
+  FunctionType,
+  type ToolExecutionContext,
+  type ToolResult,
+} from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { Percept } from "../shared/types";
 import type { SkillRegistry } from "../skill/service";
@@ -44,7 +48,9 @@ export class ThinkActLoop {
   }
 
   async run(percept: Percept, toolCtx: ToolExecutionContext): Promise<void> {
-    this.logger.info(`Starting loop for percept ${percept.id} of type ${percept.type}`);
+    this.logger.info(
+      `Starting loop for percept ${percept.id} of type ${percept.type}`,
+    );
 
     const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
@@ -80,9 +86,11 @@ export class ThinkActLoop {
     // Apply style override from highest-specificity skill
     if (effects.styleOverride) {
       disposers.push(
-        prompt.inject(this.ctx, "soul", {
+        prompt.inject(this.ctx, effects.styleOverride.point, {
           name: `__skill_style_${percept.id}`,
-          after: "__role_soul",
+          ...(effects.styleOverride.point === "soul"
+            ? { after: "__role_soul" }
+            : {}),
           renderFn: () => effects.styleOverride!.content,
         }),
       );
@@ -114,8 +122,11 @@ export class ThinkActLoop {
           const lines = [`Round ${d.round}:`];
           for (const a of d.actions) {
             const r = d.toolResults.find((t) => t.name === a.name);
-            const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
-            const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
+            const status = r
+              ? r.status + (r.error ? ": " + r.error : "")
+              : "no result";
+            const preview =
+              r?.result != null ? String(r.result).slice(0, 200) : "";
             lines.push(
               `  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`,
             );
@@ -172,7 +183,9 @@ export class ThinkActLoop {
           this.logger.info(`Model reasoning: ${result.reasoningText}`);
         }
         if (result?.usage) {
-          this.logger.info(`=== Model Usage ===\n${JSON.stringify(result.usage, null, 2)}`);
+          this.logger.info(
+            `=== Model Usage ===\n${JSON.stringify(result.usage, null, 2)}`,
+          );
         }
 
         // Parse JSON response
@@ -189,7 +202,9 @@ export class ThinkActLoop {
           const raw = parsed.data as Record<string, unknown> | null;
           const fallbackContent = raw?.content;
           if (typeof fallbackContent === "string" && fallbackContent) {
-            this.logger.info("No actions array, wrapping content as send_message");
+            this.logger.info(
+              "No actions array, wrapping content as send_message",
+            );
             parsed = {
               data: {
                 actions: [
@@ -215,12 +230,13 @@ export class ThinkActLoop {
         }
 
         // Execute actions
-        const { toolResults, hasToolCalls, hasActionCalls } = await this.executeActions(
-          response.actions,
-          pluginService,
-          toolCtxWithPercept,
-          maxResultLen,
-        );
+        const { toolResults, hasToolCalls, hasActionCalls } =
+          await this.executeActions(
+            response.actions,
+            pluginService,
+            toolCtxWithPercept,
+            maxResultLen,
+          );
 
         // Record per-round AgentResponse immediately after tool execution
         await horizon.events.recordAgentResponse({
@@ -258,12 +274,13 @@ export class ThinkActLoop {
           if (wrapResult?.text) {
             const wrapParsed = parser.parse(wrapResult.text);
             if (wrapParsed.data?.actions) {
-              const { toolResults: wrapToolResults } = await this.executeActions(
-                wrapParsed.data.actions,
-                pluginService,
-                toolCtxWithPercept,
-                maxResultLen,
-              );
+              const { toolResults: wrapToolResults } =
+                await this.executeActions(
+                  wrapParsed.data.actions,
+                  pluginService,
+                  toolCtxWithPercept,
+                  maxResultLen,
+                );
               await horizon.events.recordAgentResponse({
                 scope: percept.scope,
                 timestamp: new Date(),
@@ -289,7 +306,8 @@ export class ThinkActLoop {
 
       await horizon.events.markAsActive(percept.scope, percept.timestamp);
       const archiveMs =
-        (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
+        (this.ctx["yesimbot.horizon"] as HorizonService).config
+          .archiveThresholdMs ?? 86400000;
       await horizon.events.archiveStale(percept.scope, archiveMs);
 
       this.logger.info(`Loop complete: ${round} rounds`);
@@ -345,9 +363,18 @@ export class ThinkActLoop {
     // Execute Action-type sequentially
     for (const { idx, action } of actionActions) {
       try {
-        const result = await pluginService.invoke(action.name, action.params ?? {}, toolCtx);
+        const result = await pluginService.invoke(
+          action.name,
+          action.params ?? {},
+          toolCtx,
+        );
         toolResults.push(
-          toToolResultEntry(idx, action.name, { status: "fulfilled", value: result }, maxResultLen),
+          toToolResultEntry(
+            idx,
+            action.name,
+            { status: "fulfilled", value: result },
+            maxResultLen,
+          ),
         );
       } catch (e) {
         toolResults.push({
@@ -381,7 +408,9 @@ export class ThinkActLoop {
         return parser.parse(repairResult.text);
       }
     } catch (e) {
-      this.logger.info(`LLM repair failed: ${e instanceof Error ? e.message : String(e)}`);
+      this.logger.info(
+        `LLM repair failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     return { data: null, error: "LLM repair failed", logs: [] };
   }
@@ -397,8 +426,10 @@ function toToolResultEntry(
     const v = result.value;
     let resultVal = v.content;
     if (resultVal !== undefined) {
-      const str = typeof resultVal === "string" ? resultVal : JSON.stringify(resultVal);
-      if (str.length > maxLen) resultVal = str.slice(0, maxLen) + "...(truncated)";
+      const str =
+        typeof resultVal === "string" ? resultVal : JSON.stringify(resultVal);
+      if (str.length > maxLen)
+        resultVal = str.slice(0, maxLen) + "...(truncated)";
     }
     return {
       id: idx,
