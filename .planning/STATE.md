@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 22 of 23 (Skill Enhancement & Tech Debt)
-Plan: 0 of ? in current phase
-Status: Phase 21 Complete
-Last activity: 2026-02-23 — Completed quick task 3: fix unexpected agent outputs
+Plan: 1 of 2 in current phase
+Status: Executing Phase 22
+Last activity: 2026-02-24 — Completed 22-01 (Skill injection point routing)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [█████░░░░░] 50%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -41,6 +41,8 @@ v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 - [21-01]: SOUL.md covers identity/personality/style; AGENTS.md covers control-flow/format/group-chat; TOOLS.md covers tool mechanics
 - [21-02]: Used Mustache.render() directly (same as MemoryService) rather than MustacheRenderer wrapper
 - [21-02]: Fixed loop.ts __default_soul -> __role_soul for skill style override ordering
+- [22-01]: injectionPoint defaults to 'extra', styleInjectionPoint defaults to 'soul' — backward compatible
+- [22-01]: Active skills sorted by specificity descending before prompt injection concatenation
 
 ### Pending Todos
 
@@ -57,9 +59,10 @@ None.
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | | [1-percept-buildview](./quick/1-percept-buildview/) |
 | 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
+| Phase 22 P01 | 3min | 2 tasks | 4 files |
 
 ## Session Continuity
 
-Last session: 2026-02-23 17:26
-Stopped at: Completed quick-3 (Fix agent JSON output drift)
+Last session: 2026-02-24 09:37
+Stopped at: Completed 22-01-PLAN.md (Skill injection point routing)
 Resume file: None

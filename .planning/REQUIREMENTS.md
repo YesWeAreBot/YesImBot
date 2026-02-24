@@ -24,8 +24,8 @@
 
 ### Skill Enhancement (Skill 增强)
 
-- [ ] **SKILL-01**: Skill 效果可指定注入到 soul/instructions/memory/extra 任意点（不再硬编码 extra）
-- [ ] **SKILL-02**: Skill 定义文件中可配置 injection point 字段
+- [x] **SKILL-01**: Skill 效果可指定注入到 soul/instructions/memory/extra 任意点（不再硬编码 extra）
+- [x] **SKILL-02**: Skill 定义文件中可配置 injection point 字段
 
 ### Tech Debt (技术债修复)
 
@@ -73,8 +73,8 @@
 | ROLE-05 | Phase 21 | Complete |
 | ROLE-06 | Phase 21 | Complete |
 | ROLE-07 | Phase 21 | Complete |
-| SKILL-01 | Phase 22 | Pending |
-| SKILL-02 | Phase 22 | Pending |
+| SKILL-01 | Phase 22 | Complete |
+| SKILL-02 | Phase 22 | Complete |
 | DEBT-01 | Phase 22 | Pending |
 | DEBT-02 | Phase 22 | Pending |
 | TEST-01 | Phase 23 | Pending |
