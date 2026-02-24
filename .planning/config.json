@@ -3,7 +3,7 @@
   "depth": "standard",
   "parallelization": true,
   "commit_docs": true,
-  "model_profile": "quality",
+  "model_profile": "balanced",
   "workflow": {
     "research": true,
     "plan_check": true,
