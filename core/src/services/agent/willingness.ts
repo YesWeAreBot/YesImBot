@@ -2,6 +2,30 @@ import { Schema } from "koishi";
 
 import { TriggerType } from "../shared/types";
 
+export class TokenBucket {
+  private buckets = new Map<string, { tokens: number; lastRefill: number }>();
+
+  constructor(
+    private capacity: number,
+    private refillRate: number,
+  ) {}
+
+  consume(key: string): boolean {
+    const now = Date.now();
+    const state = this.buckets.get(key) ?? { tokens: this.capacity, lastRefill: now };
+    const elapsed = (now - state.lastRefill) / 1000;
+    const refilled = Math.min(this.capacity, state.tokens + elapsed * this.refillRate);
+
+    if (refilled < 1) {
+      this.buckets.set(key, { tokens: refilled, lastRefill: now });
+      return false;
+    }
+
+    this.buckets.set(key, { tokens: refilled - 1, lastRefill: now });
+    return true;
+  }
+}
+
 interface ChannelState {
   willingness: number;
   lastMessageAt: number;
@@ -38,6 +62,16 @@ export interface WillingnessConfig {
   maxWillingness: number;
   mentionBoost: number;
   deferred?: DeferredJudgmentConfig;
+  dm?: {
+    directBoost: number;
+    aggregationMinMs: number;
+    aggregationMaxMs: number;
+    aggregationCapMs: number;
+  };
+  rateLimit?: {
+    dm?: { capacity: number; refillRate: number };
+    group?: { capacity: number; refillRate: number };
+  };
 }
 
 export const WillingnessSchema: Schema<WillingnessConfig> = Schema.intersect([
@@ -99,6 +133,34 @@ export const WillingnessSchema: Schema<WillingnessConfig> = Schema.intersect([
         .default([])
         .description("Willingness fallback chain (provider:model)"),
     }).description("Deferred LLM judgment for borderline SKIP decisions"),
+  }),
+  Schema.object({
+    dm: Schema.object({
+      directBoost: Schema.number()
+        .default(0.95)
+        .description("Probability boost for direct messages (0-1)"),
+      aggregationMinMs: Schema.number()
+        .default(3000)
+        .description("Minimum adaptive aggregation wait (ms)"),
+      aggregationMaxMs: Schema.number()
+        .default(8000)
+        .description("Maximum adaptive aggregation wait (ms)"),
+      aggregationCapMs: Schema.number()
+        .default(15000)
+        .description("Absolute max wait from first DM message (ms)"),
+    }).description("DM-specific willingness and aggregation settings"),
+  }),
+  Schema.object({
+    rateLimit: Schema.object({
+      dm: Schema.object({
+        capacity: Schema.number().default(5).description("DM token bucket capacity"),
+        refillRate: Schema.number().default(0.5).description("DM tokens refilled per second"),
+      }).description("Per-user DM rate limit"),
+      group: Schema.object({
+        capacity: Schema.number().default(10).description("Group token bucket capacity"),
+        refillRate: Schema.number().default(1).description("Group tokens refilled per second"),
+      }).description("Per-user group rate limit"),
+    }).description("Per-user token bucket rate limiting"),
   }),
 ]);
 
@@ -233,6 +295,11 @@ export class WillingnessEngine {
 
     if (triggerType === "mention" || triggerType === "reply") {
       probability = applyMentionBoost(probability, this.config.mentionBoost);
+    }
+
+    if (triggerType === "direct") {
+      const boost = this.config.dm?.directBoost ?? 0.95;
+      probability = applyMentionBoost(probability, boost);
     }
 
     const shouldReply = Math.random() < probability;
