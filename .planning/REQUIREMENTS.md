@@ -29,8 +29,8 @@
 
 ### Tech Debt (技术债修复)
 
-- [ ] **DEBT-01**: TraitAnalyzerConfig 改为 type-only export
-- [ ] **DEBT-02**: trait-bound 生命周期在 SkillRegistry.resolve() 中实现运行时区分（与 per-turn 不同行为）
+- [x] **DEBT-01**: TraitAnalyzerConfig 改为 type-only export
+- [x] **DEBT-02**: trait-bound 生命周期在 SkillRegistry.resolve() 中实现运行时区分（与 per-turn 不同行为）
 
 ### Test Infrastructure (测试基础设施)
 
@@ -75,8 +75,8 @@
 | ROLE-07 | Phase 21 | Complete |
 | SKILL-01 | Phase 22 | Complete |
 | SKILL-02 | Phase 22 | Complete |
-| DEBT-01 | Phase 22 | Pending |
-| DEBT-02 | Phase 22 | Pending |
+| DEBT-01 | Phase 22 | Complete |
+| DEBT-02 | Phase 22 | Complete |
 | TEST-01 | Phase 23 | Pending |
 | TEST-02 | Phase 23 | Pending |
 | TEST-03 | Phase 23 | Pending |

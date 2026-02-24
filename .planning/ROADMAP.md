@@ -49,7 +49,7 @@
 
 - [x] **Phase 20: Injection Point Merge & Wrapper Elimination** - Consolidate 6 injection points to 4, replace wrapper partials with inline XML generation (completed 2026-02-23)
 - [x] **Phase 21: Fixed-Role File Loading** - SOUL.md/AGENTS.md/TOOLS.md replace legacy default files, with Mustache templating and hot-reload (completed 2026-02-23)
-- [ ] **Phase 22: Skill Enhancement & Tech Debt** - Skill effects target any injection point, resolve trait-bound lifecycle and type export debt
+- [x] **Phase 22: Skill Enhancement & Tech Debt** - Skill effects target any injection point, resolve trait-bound lifecycle and type export debt (completed 2026-02-24)
 - [ ] **Phase 23: Test Infrastructure** - Vitest setup and unit tests for PromptService, MemoryService, SkillRegistry
 
 ## Phase Details
@@ -95,7 +95,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 22-01-PLAN.md — Configurable skill injection points (types, loader, mergeEffects, loop style routing)
-- [ ] 22-02-PLAN.md — Tech debt: type-only TraitAnalyzerConfig export, trait-bound lifecycle in resolve()
+- [x] 22-02-PLAN.md — Tech debt: type-only TraitAnalyzerConfig export, trait-bound lifecycle in resolve()
 
 ### Phase 23: Test Infrastructure
 **Goal**: Core services have unit test coverage via vitest, catching regressions from the v2.1 refactor
@@ -120,5 +120,5 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20. Injection Point Merge & Wrapper Elimination | 2/2 | Complete    | 2026-02-23 | - |
 | 21. Fixed-Role File Loading | 2/2 | Complete    | 2026-02-23 | - |
-| 22. Skill Enhancement & Tech Debt | v2.1 | 1/2 | In progress | - |
+| 22. Skill Enhancement & Tech Debt | v2.1 | 2/2 | Complete | 2026-02-24 |
 | 23. Test Infrastructure | v2.1 | 0/? | Not started | - |

@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-23)
 ## Current Position
 
 Phase: 22 of 23 (Skill Enhancement & Tech Debt)
-Plan: 1 of 2 in current phase
-Status: Executing Phase 22
-Last activity: 2026-02-24 — Completed 22-01 (Skill injection point routing)
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase 22 Complete — ready for Phase 23
+Last activity: 2026-02-24 — Completed 22-02 (Tech debt: type export + trait-bound lifecycle)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [██████░░░░] 60%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 [████████░░] 80%
 
 ## Performance Metrics
 
@@ -43,6 +43,8 @@ v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 - [21-02]: Fixed loop.ts __default_soul -> __role_soul for skill style override ordering
 - [22-01]: injectionPoint defaults to 'extra', styleInjectionPoint defaults to 'soul' — backward compatible
 - [22-01]: Active skills sorted by specificity descending before prompt injection concatenation
+- [22-02]: trait-bound uses immediate removal (no grace period) when trait signal lost, unlike sticky countdown
+- [22-02]: trait-bound and sticky coexist in same channelState Map, distinguished by lifecycle field
 
 ### Pending Todos
 
@@ -60,9 +62,10 @@ None.
 | 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 | Phase 22 P01 | 3min | 2 tasks | 4 files |
+| Phase 22 P02 | 2min | 2 tasks | 2 files |
 
 ## Session Continuity
 
-Last session: 2026-02-24 09:37
-Stopped at: Completed 22-01-PLAN.md (Skill injection point routing)
+Last session: 2026-02-24 09:42
+Stopped at: Completed 22-02-PLAN.md (Tech debt: type export + trait-bound lifecycle)
 Resume file: None
