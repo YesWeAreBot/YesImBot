@@ -6,7 +6,7 @@ import type { ModelService } from "../model/service";
 import type { ToolExecutionContext } from "../plugin/types";
 import type { Percept } from "../shared/types";
 import { ThinkActLoop } from "./loop";
-import { WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
+import { TokenBucket, WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
 
 const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
 Answer with exactly one word: "yes" or "no".`;
@@ -84,8 +84,16 @@ export class AgentCore extends Service<AgentCoreConfig> {
   >();
   private deferredTimers = new Map<string, () => void>();
   private deferredGen = new Map<string, number>();
+  private dmWindows = new Map<string, {
+    cancel: () => void;
+    capCancel: () => void;
+    firstMessageAt: number;
+    lastMessageAt: number;
+    lastEvent: HorizonMessageEvent;
+  }>();
   private loop!: ThinkActLoop;
   private willingness!: WillingnessEngine;
+  private rateLimiter!: { dm: TokenBucket; group: TokenBucket };
 
   constructor(ctx: Context, config: AgentCoreConfig) {
     super(ctx, "yesimbot.agent", false);
@@ -105,6 +113,11 @@ export class AgentCore extends Service<AgentCoreConfig> {
       },
     );
     this.ctx.setInterval(() => this.willingness.tick(), 1000);
+    const rl = this.config.willingness?.rateLimit;
+    this.rateLimiter = {
+      dm: new TokenBucket(rl?.dm?.capacity ?? 5, rl?.dm?.refillRate ?? 0.5),
+      group: new TokenBucket(rl?.group?.capacity ?? 10, rl?.group?.refillRate ?? 1),
+    };
     this.loop = new ThinkActLoop(this.ctx, this.config);
     this.ctx.on("horizon/message", (event) => this.handleEvent(event));
     this.logger.info("AgentCore started");
@@ -113,6 +126,18 @@ export class AgentCore extends Service<AgentCoreConfig> {
   private handleEvent(event: HorizonMessageEvent): void {
     try {
       const channelKey = `${event.scope.platform}:${event.scope.channelId}`;
+
+      // Rate limit check — before any processing
+      const userId = event.payload.senderId;
+      const isDirect = event.scope.isDirect;
+      const bucketKey = `${event.scope.platform}:${userId}`;
+      const bucket = isDirect ? this.rateLimiter.dm : this.rateLimiter.group;
+
+      if (!bucket.consume(bucketKey)) {
+        this.logger.debug(`[rate-limit] ${bucketKey} | silently ignored`);
+        return;
+      }
+
       this.cancelDeferred(channelKey);
       const result = this.willingness.processMessage(
         channelKey,
@@ -131,15 +156,13 @@ export class AgentCore extends Service<AgentCoreConfig> {
         }
         return;
       }
-      if (event.scope.isDirect) {
-        const built = this.buildPercept(event);
-        if (this.queues.has(channelKey)) {
-          this.pending.set(channelKey, built);
-        } else {
-          this.enqueue(channelKey, built);
-        }
+
+      // DM: adaptive aggregation window
+      if (isDirect) {
+        this.handleDmAggregation(channelKey, event);
         return;
       }
+
       // Group: aggregation window — last event wins
       const existing = this.pendingWindows.get(channelKey);
       if (existing) existing.cancel();
@@ -155,6 +178,96 @@ export class AgentCore extends Service<AgentCoreConfig> {
       this.pendingWindows.set(channelKey, { cancel, lastEvent: event });
     } catch (err: unknown) {
       this.logger.error(`handleEvent error: ${err}`);
+    }
+  }
+
+  private handleDmAggregation(channelKey: string, event: HorizonMessageEvent): void {
+    const dmConfig = this.config.willingness?.dm;
+    const minMs = dmConfig?.aggregationMinMs ?? 3000;
+    const maxMs = dmConfig?.aggregationMaxMs ?? 8000;
+    const capMs = dmConfig?.aggregationCapMs ?? 15000;
+
+    const existing = this.dmWindows.get(channelKey);
+    const now = Date.now();
+
+    if (existing) {
+      // Cancel previous adaptive timer
+      existing.cancel();
+
+      // Compute adaptive timeout based on inter-message interval
+      const interval = now - existing.lastMessageAt;
+      const adaptiveMs = Math.min(Math.max(interval * 1.5, minMs), maxMs);
+
+      existing.lastMessageAt = now;
+      existing.lastEvent = event;
+
+      // Check if cap exceeded — fire immediately
+      if (now - existing.firstMessageAt >= capMs) {
+        existing.capCancel();
+        this.dmWindows.delete(channelKey);
+        const built = this.buildPercept(event);
+        if (this.queues.has(channelKey)) {
+          this.pending.set(channelKey, built);
+        } else {
+          this.enqueue(channelKey, built);
+        }
+        return;
+      }
+
+      // Reset adaptive timer
+      const cancel = this.ctx.setTimeout(() => {
+        const win = this.dmWindows.get(channelKey);
+        if (win) {
+          win.capCancel();
+          this.dmWindows.delete(channelKey);
+          const built = this.buildPercept(win.lastEvent);
+          if (this.queues.has(channelKey)) {
+            this.pending.set(channelKey, built);
+          } else {
+            this.enqueue(channelKey, built);
+          }
+        }
+      }, adaptiveMs);
+      existing.cancel = cancel;
+    } else {
+      // First DM message — start both adaptive timer and cap timer
+      const adaptiveMs = maxMs;
+
+      const capCancel = this.ctx.setTimeout(() => {
+        const win = this.dmWindows.get(channelKey);
+        if (win) {
+          win.cancel();
+          this.dmWindows.delete(channelKey);
+          const built = this.buildPercept(win.lastEvent);
+          if (this.queues.has(channelKey)) {
+            this.pending.set(channelKey, built);
+          } else {
+            this.enqueue(channelKey, built);
+          }
+        }
+      }, capMs);
+
+      const cancel = this.ctx.setTimeout(() => {
+        const win = this.dmWindows.get(channelKey);
+        if (win) {
+          win.capCancel();
+          this.dmWindows.delete(channelKey);
+          const built = this.buildPercept(event);
+          if (this.queues.has(channelKey)) {
+            this.pending.set(channelKey, built);
+          } else {
+            this.enqueue(channelKey, built);
+          }
+        }
+      }, adaptiveMs);
+
+      this.dmWindows.set(channelKey, {
+        cancel,
+        capCancel,
+        firstMessageAt: now,
+        lastMessageAt: now,
+        lastEvent: event,
+      });
     }
   }
 
