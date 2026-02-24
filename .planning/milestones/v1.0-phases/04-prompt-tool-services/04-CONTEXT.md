@@ -66,7 +66,7 @@
 - 参考 dev 版 `services/plugin/` 和 `services/prompt/` 的架构设计，v4 精简沿用
 - dev 版的 Snippet（动态数据片段）+ Injection（插件注入）机制已验证可用
 - dev 版的 `withInnerThoughts` 辅助函数为工具参数添加内心独白字段，可考虑保留
-- 异步任务系统（`books/02_异步任务系统.md`）不在 v4 scope，但统一 async handler 设计保证未来可平滑扩展
+- 异步任务系统（`references/books/02_异步任务系统.md`）不在 v4 scope，但统一 async handler 设计保证未来可平滑扩展
 
 </specifics>
 

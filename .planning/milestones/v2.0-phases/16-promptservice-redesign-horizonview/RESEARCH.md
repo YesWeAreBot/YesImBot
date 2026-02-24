@@ -436,8 +436,8 @@ this.ctx["yesimbot.prompt"].inject(this.ctx, "core_memories", {
 
 ### Secondary (MEDIUM confidence)
 - `16-CONTEXT.md` — User decisions constraining design choices
-- `docs/上下文管理设计缺陷与解决方案.md` — Historical context management design discussions
-- `docs/智能上下文管理器改造方案总结.md` — Multi-level memory architecture vision
+- `references/talks/上下文管理设计缺陷与解决方案.md` — Historical context management design discussions
+- `references/talks/智能上下文管理器改造方案总结.md` — Multi-level memory architecture vision
 
 ## Metadata
 
