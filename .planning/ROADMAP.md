@@ -72,7 +72,7 @@
   4. Rapid DM sequences are rate-limited per user so cost cannot explode from unthrottled private chat
 **Plans**: 4 plans
 Plans:
-- [ ] 23-00-PLAN.md — Wave 0: Test scaffolds for BUGFIX-01, WILL-01, WILL-02 (RED tests)
+- [x] 23-00-PLAN.md — Wave 0: Test scaffolds for BUGFIX-01, WILL-01, WILL-02 (RED tests)
 - [ ] 23-01-PLAN.md — Install vitest + port v3 JSON parser test suite (18 cases)
 - [ ] 23-02-PLAN.md — Fix snippet variable rendering in horizon-view
 - [ ] 23-03-PLAN.md — DM adaptive aggregation window + per-user token bucket rate limiting
@@ -107,6 +107,6 @@ Plans:
 | 1-15 | v1.0 | 29/29 | Complete | 2026-02-21 |
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
-| 23. Bug Fixes & Reliability | v2.2 | 0/3 | Planned | — |
+| 23. Bug Fixes & Reliability | v2.2 | 1/4 | In progress | — |
 | 24. Observability | v2.2 | 0/? | Not started | — |
 | 25. Optimization | v2.2 | 0/? | Not started | — |
