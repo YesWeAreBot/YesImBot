@@ -35,23 +35,19 @@ interface ToolResultEntry {
 
 export class ThinkActLoop {
   private logger;
-  private logLoop;
-  private logModel;
-  private logParser;
-  private logTool;
 
   constructor(
     private ctx: Context,
     private config: AgentCoreConfig,
   ) {
     this.logger = ctx.logger("agent");
-    this.logLoop = ctx.logger("agent.loop");
-    this.logModel = ctx.logger("agent.model");
-    this.logParser = ctx.logger("agent.parser");
-    this.logTool = ctx.logger("agent.tool");
+    this.logger.level = this.config.debugLevel ?? 2;
   }
 
-  async run(percept: Percept, toolCtx: ToolExecutionContext): Promise<{ totalTokens: number; totalToolCalls: number }> {
+  async run(
+    percept: Percept,
+    toolCtx: ToolExecutionContext,
+  ): Promise<{ totalTokens: number; totalToolCalls: number }> {
     this.logger.info(`[${percept.traceId}] Starting loop type=${percept.type}`);
     let totalTokens = 0;
     let totalToolCalls = 0;
@@ -117,29 +113,54 @@ export class ThinkActLoop {
         percept,
       });
 
+      const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
+
       const wmLines: string[] = [];
-      for (const obs of view.history ?? []) {
+      for (let i = 0; i < (view.history ?? []).length; i++) {
+        const obs = view.history![i];
         if (obs.type === "agent.response") {
           const d = obs.data;
-          const lines = [`Round ${d.round}:`];
+          // Find last message before this agent response for triggered-by label (OPT-03)
+          let triggerLabel = "";
+          for (let j = i - 1; j >= 0; j--) {
+            const prev = view.history![j];
+            if (prev.type === "message") {
+              const shortId = horizon.getShortId(channelKey, prev.messageId);
+              if (shortId !== undefined) {
+                triggerLabel = ` (triggered by #${shortId})`;
+              }
+              break;
+            }
+          }
+          const lines = [`Round ${d.round}${triggerLabel}:`];
           for (const a of d.actions) {
             const r = d.toolResults.find((t) => t.name === a.name);
-            const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
-            const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
-            lines.push(
-              `  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`,
-            );
+            if (a.name === "send_message") {
+              // OPT-04: omit content param, compact result
+              const ok =
+                r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
+              if (ok) {
+                lines.push("  - send_message({}) -> sent, ok");
+              } else {
+                const errMsg = r?.error ?? "unknown";
+                lines.push(`  - send_message({}) -> sent, failed: ${errMsg}`);
+              }
+            } else {
+              const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
+              const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
+              lines.push(
+                `  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`,
+              );
+            }
           }
           wmLines.push(lines.join("\n"));
         }
       }
       const userContent = horizon.formatHorizonText(view, wmLines, percept);
 
-      if ((this.config.debugLevel ?? 0) >= 3) {
-        this.logLoop.debug(
-          `[${percept.traceId}] system_bytes=${Buffer.byteLength(systemPrompt, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
-        );
-      }
+      this.logger.debug(
+        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPrompt, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
+      );
 
       this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
 
@@ -169,9 +190,7 @@ export class ThinkActLoop {
           messages,
         };
 
-        if ((this.config.debugLevel ?? 0) >= 3) {
-          this.logLoop.debug(`[${percept.traceId}] callParams=${JSON.stringify(callParams)}`);
-        }
+        this.logger.debug(`[loop] [${percept.traceId}] callParams=${JSON.stringify(callParams)}`);
 
         const callStart = Date.now();
         const result = await modelService.call(
@@ -187,28 +206,23 @@ export class ThinkActLoop {
           break;
         }
 
-        if ((this.config.debugLevel ?? 0) >= 2) {
-          this.logModel.debug(
-            `[${percept.traceId}] round=${round} latency=${callLatency}ms tokens_in=${result?.usage?.inputTokens ?? 0} tokens_out=${result?.usage?.outputTokens ?? 0}`,
-          );
-        }
+        this.logger.debug(
+          `[model] [${percept.traceId}] round=${round} latency=${callLatency}ms tokens_in=${result?.usage?.inputTokens ?? 0} tokens_out=${result?.usage?.outputTokens ?? 0}`,
+        );
+
         totalTokens += (result?.usage?.inputTokens ?? 0) + (result?.usage?.outputTokens ?? 0);
 
-        if ((this.config.debugLevel ?? 0) >= 3) {
-          this.logModel.debug(`[${percept.traceId}] output=${rawText}`);
-          if (result?.reasoningText) {
-            this.logModel.debug(`[${percept.traceId}] reasoning=${result.reasoningText}`);
-          }
+        this.logger.debug(`[model] [${percept.traceId}] output=${rawText}`);
+        if (result?.reasoningText) {
+          this.logger.debug(`[model] [${percept.traceId}] reasoning=${result.reasoningText}`);
         }
 
         // Parse JSON response
         let parsed = parser.parse(rawText);
 
-        if ((this.config.debugLevel ?? 0) >= 2) {
-          this.logParser.debug(
-            `[${percept.traceId}] round=${round} success=${parsed.data !== null} error=${parsed.error ?? "none"}`,
-          );
-        }
+        this.logger.debug(
+          `[parser] [${percept.traceId}] round=${round} success=${parsed.data !== null} error=${parsed.error ?? "none"}`,
+        );
 
         // LLM repair fallback if parse failed but "actions" present in raw text
         if (!parsed.data && rawText.includes("actions")) {
@@ -255,12 +269,11 @@ export class ThinkActLoop {
         );
 
         totalToolCalls += toolResults.length;
-        if ((this.config.debugLevel ?? 0) >= 2) {
-          for (const r of toolResults) {
-            this.logTool.debug(
-              `[${percept.traceId}] tool=${r.name} status=${r.status}${r.error ? ` error=${r.error}` : ""}`,
-            );
-          }
+
+        for (const r of toolResults) {
+          this.logger.debug(
+            `[tool] [${percept.traceId}] tool=${r.name} status=${r.status}${r.error ? ` error=${r.error}` : ""}`,
+          );
         }
 
         // Record per-round AgentResponse immediately after tool execution
