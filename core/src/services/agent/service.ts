@@ -212,7 +212,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       if (!result.shouldReply) {
         const deferred = this.config.willingness?.deferred;
         if (deferred && result.probability >= deferred.threshold) {
-          const built = this.buildPercept(event);
+          const built = this.buildPercept(event, traceId);
           this.scheduleDeferredJudgment(channelKey, built, result.probability);
         }
         return;
@@ -229,7 +229,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       if (existing) existing.cancel();
       const cancel = this.ctx.setTimeout(() => {
         this.pendingWindows.delete(channelKey);
-        const stored = this.buildPercept(event);
+        const stored = this.buildPercept(event, traceId);
         if (this.queues.has(channelKey)) {
           this.pending.set(channelKey, stored);
         } else {
@@ -332,7 +332,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private buildPercept(event: HorizonMessageEvent): {
+  private buildPercept(event: HorizonMessageEvent, traceId?: string): {
     percept: Percept;
     toolCtx: ToolExecutionContext;
   } {
@@ -340,7 +340,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     return {
       percept: {
         id: Random.id(),
-        traceId: `msg-${Random.id(8, 16)}`,
+        traceId: traceId ?? `msg-${Random.id(8, 16)}`,
         type: event.triggerType,
         scope: event.scope,
         timestamp: event.timestamp,
