@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { JsonParser } from "../json-parser";
 
 interface ExpectedOutputType {
@@ -73,8 +74,7 @@ describe("ParseResult", () => {
     expect(result.error).toBeNull();
     expect(result.data).toEqual({
       thoughts: {
-        observe:
-          "Miaow问咱在JavaScript中如何裁剪一段文本中每一行开头的空格。",
+        observe: "Miaow问咱在JavaScript中如何裁剪一段文本中每一行开头的空格。",
         analyze_infer:
           "这是一个技术问题，咱需要给Miaow提供一个JavaScript代码示例，用于去除多行文本中每行开头的空格。",
         plan: "咱要编写一个JavaScript函数，然后用send_message发送给Miaow。发送完就可以啦，不需要心跳哦。",
@@ -83,10 +83,8 @@ describe("ParseResult", () => {
         {
           function: "send_message",
           params: {
-            inner_thoughts:
-              "给Miaow提供一个实用的JavaScript代码片段，符合咱的技术宅女形象。",
-            message:
-              "呐，Miaow！咱想了一下，可以用replace函数和正则表达式来搞定哦！",
+            inner_thoughts: "给Miaow提供一个实用的JavaScript代码片段，符合咱的技术宅女形象。",
+            message: "呐，Miaow！咱想了一下，可以用replace函数和正则表达式来搞定哦！",
           },
         },
       ],
@@ -106,8 +104,7 @@ describe("ParseResult", () => {
     expect(result.error).toBeNull();
     expect(result.data).toEqual({
       thoughts: {
-        observe:
-          "Miaow问咱在JavaScript中如何裁剪一段文本中每一行开头的空格。",
+        observe: "Miaow问咱在JavaScript中如何裁剪一段文本中每一行开头的空格。",
         analyze_infer:
           "这是一个技术问题，咱需要给Miaow提供一个JavaScript代码示例，用于去除多行文本中每行开头的空格。",
         plan: "咱要编写一个JavaScript函数，然后用send_message发送给Miaow。发送完就可以啦，不需要心跳哦。",
@@ -116,8 +113,7 @@ describe("ParseResult", () => {
         {
           function: "send_message",
           params: {
-            inner_thoughts:
-              "给Miaow提供一个实用的JavaScript代码片段，符合咱的技术宅女形象。",
+            inner_thoughts: "给Miaow提供一个实用的JavaScript代码片段，符合咱的技术宅女形象。",
             message: message,
           },
         },
@@ -139,16 +135,14 @@ describe("ParseResult", () => {
     expect(result.data).toEqual({
       thoughts: {
         observe: "Markchai要求我发送JSON配置文件。",
-        analyze_infer:
-          "这是一个技术问题，咱需要给Markchai提供一个JSON配置文件。",
+        analyze_infer: "这是一个技术问题，咱需要给Markchai提供一个JSON配置文件。",
         plan: "咱要编写一个JSON配置文件，然后用send_message发送给Markchai。发送完就可以啦，不需要心跳哦。",
       },
       actions: [
         {
           function: "send_message",
           params: {
-            inner_thoughts:
-              "给Markchai提供一个JSON配置文件，符合咱的技术宅女形象。",
+            inner_thoughts: "给Markchai提供一个JSON配置文件，符合咱的技术宅女形象。",
             message: message,
           },
         },
@@ -212,10 +206,8 @@ describe("ParseResult", () => {
         {
           function: "send_message",
           params: {
-            inner_thoughts:
-              "用爱丽丝特有的问候语回应老师，表达欢迎和期待。",
-            message:
-              "邦邦咔邦~您来啦，老师！<sep/>爱丽丝，一直在等着您呢！",
+            inner_thoughts: "用爱丽丝特有的问候语回应老师，表达欢迎和期待。",
+            message: "邦邦咔邦~您来啦，老师！<sep/>爱丽丝，一直在等着您呢！",
           },
         },
       ],
@@ -310,8 +302,7 @@ describe("JsonParser", () => {
     });
 
     it("should trim trailing text after JSON", () => {
-      const input =
-        '{"name": "小明", "age": 20} 这是一些不应该出现的多余解释文本。';
+      const input = '{"name": "小明", "age": 20} 这是一些不应该出现的多余解释文本。';
       const result = parser.parse(input);
       expect(result.error).toBeNull();
       expect(result.data).toEqual({ name: "小明", age: 20 });
@@ -373,8 +364,7 @@ describe("JsonParser", () => {
 
   describe("JSON syntax repair (via jsonrepair)", () => {
     it("should repair missing closing brace", () => {
-      const input =
-        '{"name": "小华", "age": 25, "isStudent": true, "courses": ["Art"]';
+      const input = '{"name": "小华", "age": 25, "isStudent": true, "courses": ["Art"]';
       const result = parser.parse(input);
       expect(result.error).toBeNull();
       expect(result.data).toEqual({
@@ -386,8 +376,7 @@ describe("JsonParser", () => {
     });
 
     it("should repair missing closing bracket", () => {
-      const input =
-        '{"name": "小丽", "age": 21, "isStudent": true, "courses": ["Music", "Dance"';
+      const input = '{"name": "小丽", "age": 21, "isStudent": true, "courses": ["Music", "Dance"';
       const result = parser.parse(input);
       expect(result.error).toBeNull();
       expect(result.data).toEqual({
@@ -425,8 +414,7 @@ describe("JsonParser", () => {
     });
 
     it("should repair dangling keys", () => {
-      const input =
-        '{"name": "小美", "age": 28, "isStudent": false, "city":';
+      const input = '{"name": "小美", "age": 28, "isStudent": false, "city":';
       const result = parser.parse(input);
       expect(result.error).toBeNull();
       expect(result.data).toEqual({

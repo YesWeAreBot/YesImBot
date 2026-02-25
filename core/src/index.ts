@@ -79,6 +79,7 @@ export function apply(ctx: Context, config: Config) {
     maxToolResultLength: config.maxToolResultLength,
     willingness: config.willingness,
     errorReportChannel: config.errorReportChannel,
+    debugLevel: config.debugLevel,
   });
 
   ctx.on("ready", () => {

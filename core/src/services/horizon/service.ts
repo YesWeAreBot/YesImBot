@@ -228,7 +228,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       }
     }
 
-    const counter = (this.shortIdCounters.get(channelKey) ?? 0) % 999 + 1;
+    const counter = ((this.shortIdCounters.get(channelKey) ?? 0) % 999) + 1;
     this.shortIdCounters.set(channelKey, counter);
     map.set(platformMsgId, counter);
     return counter;
@@ -255,10 +255,12 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       if (channelKey) {
         const shortId = this.assignShortId(channelKey, obs.messageId);
         const isBot = selfId && obs.sender.id === selfId;
-        const senderName = isBot ? "[Bot]" : (() => {
-          const badge = this.getRoleBadge(obs.sender.attributes);
-          return `${badge}${obs.sender.name}`;
-        })();
+        const senderName = isBot
+          ? "[Bot]"
+          : (() => {
+              const badge = this.getRoleBadge(obs.sender.attributes);
+              return `${badge}${obs.sender.name}`;
+            })();
         const senderId = isBot ? "bot" : obs.sender.id;
         let attrs = `id="${shortId}" sender="${senderName}" senderId="${senderId}"`;
         if (obs.replyTo) {

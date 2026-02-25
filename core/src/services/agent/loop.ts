@@ -168,8 +168,7 @@ export class ThinkActLoop {
             const r = d.toolResults.find((t) => t.name === a.name);
             if (a.name === "send_message") {
               // OPT-04: omit content param, compact result
-              const ok =
-                r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
+              const ok = r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
               if (ok) {
                 lines.push("  - send_message({}) -> sent, ok");
               } else {

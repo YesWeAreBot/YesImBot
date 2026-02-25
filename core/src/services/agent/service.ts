@@ -8,7 +8,12 @@ import type { RoleService } from "../role/service";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
-import { TokenBucket, WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
+import {
+  TokenBucket,
+  WillingnessConfig,
+  WillingnessEngine,
+  WillingnessSchema,
+} from "./willingness";
 
 interface JudgeResponse {
   decision: boolean;
@@ -77,7 +82,7 @@ export interface AgentCoreConfig {
   willingness?: WillingnessConfig;
   aggregationWindow?: number;
   errorReportChannel?: string;
-  debugLevel?: number;
+  debugLevel?: 0 | 1 | 2 | 3;
 }
 
 export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
@@ -105,8 +110,13 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   errorReportChannel: Schema.string().description(
     "Error report channel in platform:channelId format",
   ),
-  debugLevel: Schema.number()
-    .default(0)
+  debugLevel: Schema.union([
+    Schema.const(0).description("0 = off"),
+    Schema.const(1).description("1 = basic logging"),
+    Schema.const(2).description("2 = detailed logging"),
+    Schema.const(3).description("3 = full logging"),
+  ])
+    .default(2)
     .description("Debug log verbosity: 0=off, 1=basic, 2=detailed, 3=full"),
 });
 
@@ -129,32 +139,26 @@ export class AgentCore extends Service<AgentCoreConfig> {
   >();
   private deferredTimers = new Map<string, () => void>();
   private deferredGen = new Map<string, number>();
-  private dmWindows = new Map<string, {
-    cancel: () => void;
-    capCancel: () => void;
-    firstMessageAt: number;
-    lastMessageAt: number;
-    lastEvent: HorizonMessageEvent;
-    traceId: string;
-  }>();
+  private dmWindows = new Map<
+    string,
+    {
+      cancel: () => void;
+      capCancel: () => void;
+      firstMessageAt: number;
+      lastMessageAt: number;
+      lastEvent: HorizonMessageEvent;
+      traceId: string;
+    }
+  >();
   private loop!: ThinkActLoop;
   private willingness!: WillingnessEngine;
   private rateLimiter!: { dm: TokenBucket; group: TokenBucket };
-  private logWillingness;
-  private logLoop;
-  private logModel;
-  private logParser;
-  private logTool;
 
   constructor(ctx: Context, config: AgentCoreConfig) {
     super(ctx, "yesimbot.agent", false);
     this.config = config;
     this.logger = ctx.logger("agent");
-    this.logWillingness = ctx.logger("agent.willingness");
-    this.logLoop = ctx.logger("agent.loop");
-    this.logModel = ctx.logger("agent.model");
-    this.logParser = ctx.logger("agent.parser");
-    this.logTool = ctx.logger("agent.tool");
+    this.logger.level = config.debugLevel || 2;
   }
 
   protected async start(): Promise<void> {
@@ -205,11 +209,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
       this.logger.info(
         `[${traceId}] willingness channel=${channelKey} P=${result.probability.toFixed(3)} decision=${result.shouldReply ? "REPLY" : "SKIP"}`,
       );
-      if ((this.config.debugLevel ?? 0) >= 2) {
-        this.logWillingness.debug(
-          `[${traceId}] prev=${d.prevWillingness.toFixed(1)} new=${d.newWillingness.toFixed(1)} gain=${d.gain.toFixed(1)} fatigue=${d.fatigue.toFixed(2)} keyword=${d.keywordHit} trigger=${d.triggerType}`,
-        );
-      }
+      this.logger.debug(
+        `[willingness] [${traceId}] prev=${d.prevWillingness.toFixed(1)} new=${d.newWillingness.toFixed(1)} gain=${d.gain.toFixed(1)} fatigue=${d.fatigue.toFixed(2)} keyword=${d.keywordHit} trigger=${d.triggerType}`,
+      );
+
       if (!result.shouldReply) {
         const deferred = this.config.willingness?.deferred;
         if (deferred && result.probability >= deferred.threshold) {
@@ -243,7 +246,11 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private handleDmAggregation(channelKey: string, event: HorizonMessageEvent, traceId: string): void {
+  private handleDmAggregation(
+    channelKey: string,
+    event: HorizonMessageEvent,
+    traceId: string,
+  ): void {
     const dmConfig = this.config.willingness?.dm;
     const minMs = dmConfig?.aggregationMinMs ?? 3000;
     const maxMs = dmConfig?.aggregationMaxMs ?? 8000;
@@ -335,7 +342,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private buildPercept(event: HorizonMessageEvent, traceId?: string): {
+  private buildPercept(
+    event: HorizonMessageEvent,
+    traceId?: string,
+  ): {
     percept: Percept;
     toolCtx: ToolExecutionContext;
   } {
@@ -456,7 +466,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
         fallbackChain,
       );
       if (this.deferredGen.get(channelKey) !== gen) {
-        this.logger.info(`[${built.percept.traceId}] deferred stale gen=${gen} channel=${channelKey}`);
+        this.logger.info(
+          `[${built.percept.traceId}] deferred stale gen=${gen} channel=${channelKey}`,
+        );
         return;
       }
       const rawAnswer = (result?.text ?? "").trim();
@@ -469,23 +481,25 @@ export class AgentCore extends Service<AgentCoreConfig> {
       if (parsed.data && typeof parsed.data.decision === "boolean") {
         judgeDecision = parsed.data.decision;
         // Log structured response at debugLevel >= 1
-        if ((this.config.debugLevel ?? 0) >= 1) {
-          const traceId = built.percept.traceId;
-          this.logWillingness.debug(
-            `[${traceId}] judge decision=${judgeDecision} confidence=${parsed.data.confidence?.toFixed(2) ?? "?"} reasoning="${(parsed.data.reasoning ?? "").slice(0, 100)}"`,
-          );
-        }
-        if ((this.config.debugLevel ?? 0) >= 2 && parsed.data.factors) {
+
+        const traceId = built.percept.traceId;
+        this.logger.debug(
+          `[willingness] [${traceId}] judge decision=${judgeDecision} confidence=${parsed.data.confidence?.toFixed(2) ?? "?"} reasoning="${(parsed.data.reasoning ?? "").slice(0, 100)}"`,
+        );
+
+        if (parsed.data.factors) {
           const traceId = built.percept.traceId;
           const fKv = Object.entries(parsed.data.factors)
             .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(2) : v}`)
             .join(" ");
-          this.logWillingness.debug(`[${traceId}] judge_factors ${fKv}`);
+          this.logger.debug(`[willingness] [${traceId}] judge_factors ${fKv}`);
         }
       } else {
         // Legacy fallback: bare yes/no string
         judgeDecision = rawAnswer.toLowerCase().startsWith("yes");
-        this.logger.info(`[deferred] ${channelKey} | legacy parse fallback, raw="${rawAnswer.slice(0, 50)}"`);
+        this.logger.info(
+          `[deferred] ${channelKey} | legacy parse fallback, raw="${rawAnswer.slice(0, 50)}"`,
+        );
       }
 
       if (judgeDecision) {
