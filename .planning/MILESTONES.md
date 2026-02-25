@@ -73,3 +73,26 @@
 
 ---
 
+
+## v2.2 Runtime Optimization & Observability (Shipped: 2026-02-25)
+
+**Phases completed:** 3 phases (23-25), 8 plans, 15 tasks
+**Timeline:** 2 days (2026-02-24 → 2026-02-25)
+**Commits:** 44
+**Files modified:** 20 (+1,580 / -57)
+**Git range:** e3347a8 → 070306c
+
+**Key accomplishments:**
+1. Snippet 变量渲染修复 — formatHorizonText 构建完整嵌套 scope，{{date.now}} 等变量正确渲染
+2. JSON Parser 测试套件 — 27 个 vitest 用例移植自 v3，覆盖完美 JSON、代码块、脏数据等场景
+3. DM 自适应聚合 + 速率限制 — TokenBucket per-user 限流，directBoost 私聊高概率回复，3-8s 聚合窗口
+4. 全链路 traceId + 结构化日志 — msg-XXXXXXXX 贯穿全流程，debugLevel 分级，namespace logger 过滤
+5. 人设感知 Judge Prompt — getSoulSummary() 注入人设摘要，结构化 JSON 响应替代裸 yes/no
+6. Anthropic 系统提示词缓存 — stable/dynamic 拆分，SystemModelMessage[] + cache_control ephemeral
+
+**Tech Debt (2 items — trivial):**
+- REQUIREMENTS.md OBS-01/02/03 复选框已在归档前修复
+- formatHorizonText deferred-judgment 路径有意省略 percept（已记录的设计决策）
+
+---
+

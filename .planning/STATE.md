@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v2.2
 milestone_name: Runtime Optimization & Observability
-status: unknown
-last_updated: "2026-02-25T16:18:03.269Z"
+status: completed
+last_updated: "2026-02-25T17:25:45.000Z"
 progress:
   total_phases: 3
   completed_phases: 3
@@ -15,19 +15,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-24)
+See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.2 Runtime Optimization & Observability
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 25 — Optimization
-Plan: 02 of 3
-Status: In Progress
-Last activity: 2026-02-25 — Completed 25-02 System prompt caching with Anthropic cache_control injection and provider-anthropic package
+Phase: — (milestone complete)
+Plan: —
+Status: v2.2 shipped
+Last activity: 2026-02-25 — Milestone v2.2 archived
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅
 
 ## Performance Metrics
 
@@ -35,7 +35,7 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 - v1.0: 15 phases, 29 plans, ~4 days
 - v2.0: 8 phases, 16 plans, ~6 days
 - v2.1: 3 phases, 6 plans, ~2 days
-- v2.2: 3 phases planned, 0 complete
+- v2.2: 3 phases, 8 plans, ~2 days
 
 **By Phase:** See MILESTONES.md for breakdown.
 
@@ -46,27 +46,15 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 Full decision log in PROJECT.md Key Decisions table.
 v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
 v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
-
-**v2.2 decisions:**
-- memory_block → RoleService merge deferred to v2.3 (migration risk, not blocking any v2.2 feature)
-- Prompt cache scoped to Anthropic-only first (other providers have different cache semantics)
-- TraceContext threaded as explicit object (not AsyncLocalStorage — Koishi event system doesn't guarantee async context propagation)
-- Phase 25 requires phase research before implementation (providerOptions format needs live API verification)
-- BUGFIX-01: Build scope inline in formatHorizonText (avoid circular dep with PromptService); missing vars fall back to tag text
-- WILL-01/WILL-02: TokenBucket uses senderId as bucket key; directBoost via applyMentionBoost; adaptive DM timeout = interval*1.5 clamped 3-8s
-- WILL-03: confidence is log-only in structured judge response; getSoulSummary trims at sentence boundary; JsonParser reused for judge JSON parsing with legacy fallback
-- OPT-03/OPT-04: XML history format gated on channelKey; short-ID map bounded at 100 entries; send_message always omits content param (no platform ID returned yet)
-- OPT-01/OPT-02: System prompt split stable/dynamic; Anthropic gets SystemModelMessage[] with cacheControl ephemeral; providerType field used for detection (not model ID); provider-anthropic package created
+v2.2 decisions archived to milestones/v2.2-ROADMAP.md.
 
 ### Pending Todos
 
-- Phase 25: Plan 03 remaining (if any)
+(None — milestone complete)
 
 ### Blockers/Concerns
 
-- ~~`{{date.now}}` and all snippet variables render empty in horizon-view (BUGFIX-01)~~ — FIXED in 23-02 (00012e5, f20ba28)
-- ~~Test coverage not yet established~~ — BUGFIX-02 complete: 27 vitest tests for JSON parser (23-01)
-- vitest installed, RED test scaffolds created for BUGFIX-01, WILL-01, WILL-02 (23-00 complete)
+(None — all v2.2 blockers resolved)
 
 ### Quick Tasks Completed
 
@@ -91,5 +79,5 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 25-02-PLAN.md (System prompt caching with Anthropic cache_control)
+Stopped at: Milestone v2.2 archived and shipped
 Resume file: None

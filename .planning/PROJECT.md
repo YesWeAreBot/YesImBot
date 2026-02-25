@@ -38,21 +38,17 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - ✓ Skill 可配置注入点：效果可指定任意注入点，按 specificity 排序 — v2.1
 - ✓ 三种 Skill 生命周期：per-turn / sticky / trait-bound 运行时可区分 — v2.1
 - ✓ TraitAnalyzerConfig type-only export — v2.1
+- ✓ Snippet 变量渲染修复：formatHorizonText 完整嵌套 scope，Mustache 变量正确渲染 — v2.2
+- ✓ JSON Parser 测试套件：27 个 vitest 用例覆盖 v3 全场景 — v2.2
+- ✓ DM 自适应聚合 + per-user 速率限制：TokenBucket + directBoost + 3-8s 聚合窗口 — v2.2
+- ✓ 全链路 traceId + 结构化日志：msg-XXXXXXXX 贯穿全流程，debugLevel 分级 — v2.2
+- ✓ 人设感知 Judge Prompt：getSoulSummary() + 结构化 JSON 响应 — v2.2
+- ✓ Anthropic 系统提示词缓存：stable/dynamic 拆分 + SystemModelMessage[] + cache_control — v2.2
+- ✓ Working Memory 时序优化：XML history + short-ID + triggered-by 因果标签 + send_message 裁剪 — v2.2
 
 ### Active
 
-## Current Milestone: v2.2 Runtime Optimization & Observability
-
-**Goal:** 优化运行时行为（意愿值、缓存、日志）、修复已知 bug、合并 memory_block 到 RoleService
-
-**Target features:**
-- 意愿值系统优化：单聊特殊处理 + Judge prompt 调整
-- 提示词缓存优化：system prompt 拆分 content block + 增量缓存研究
-- 全链路 DEBUG 日志：消息接收 → 意愿值 → Agent → 工具调用 → 回复
-- memory_block → RoleService 完全合并
-- JSON Parser 加固：复用 v3 成熟解析器 + vitest 单测
-- Snippet 变量注入修复：{{date.now}} 等 Mustache 变量渲染为空
-- Working Memory 排布优化：因果关系/时间先后/交互逻辑清晰化
+(Next milestone — use `/gsd:new-milestone` to define)
 
 ### Out of Scope
 
@@ -64,19 +60,21 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - 内置工具迁移（CoreUtil/QManager/Interactions）— 后续迭代
 - 模型组与负载均衡 — 后续迭代
 - TTS/STT、RAG 记忆库 — 后续迭代
+- 全 provider 缓存抽象 — 各 provider 缓存语义不同，先做 Anthropic-only（v2.2 验证）
 
 ## Context
 
 - **v1.0 shipped:** 2026-02-21, 3,470 LOC TypeScript, 15 phases, 29 plans
 - **v2.0 shipped:** 2026-02-23, +12,546 LOC TypeScript, 8 phases, 16 plans
 - **v2.1 shipped:** 2026-02-24, +1,741 LOC TypeScript, 3 phases, 6 plans
+- **v2.2 shipped:** 2026-02-25, +1,580 LOC TypeScript, 3 phases, 8 plans
 - **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
-- **包结构:** packages/shared-model + core + providers/provider-openai + providers/provider-deepseek
+- **包结构:** packages/shared-model + core + providers/provider-openai + providers/provider-deepseek + providers/provider-anthropic
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
 - **设计文档**：`references/books/` 目录为作者架构思考，`references/talks/` 为完整架构讨论
-- **v2.1 达成:** 注入点合并 6→4、固定角色文件系统、Skill 可配置注入点、3/4 v2.0 技术债修复
-- **已知技术债:** 1 项低优先级（`__role_soul` 字符串字面量耦合）+ 4 项测试需求推迟
-- **测试覆盖:** 尚未建立（Phase 23 推迟到下个 milestone）
+- **v2.2 达成:** Snippet 渲染修复、JSON Parser 27 测试、DM 聚合+限流、全链路 traceId、结构化 Judge、Anthropic prompt cache
+- **已知技术债:** formatHorizonText deferred-judgment 路径省略 percept（设计决策）、memory_block→RoleService 合并推迟到 v2.3
+- **测试覆盖:** vitest 基础设施已建立，JSON Parser 27 用例 + TokenBucket/Willingness/HorizonText 单测
 
 ## Constraints
 
@@ -114,6 +112,12 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | render() 代码内 XML 生成 | 消除 Mustache partial 间接层，删除 11 个废弃文件 | ✓ Good |
 | Skill 可配置注入点 | 效果可指定 soul/instructions/memory/extra 任意点 | ✓ Good — 按 specificity 排序 |
 | trait-bound 即时移除 | trait 信号消失时立即移除，不设宽限期 | ✓ Good — 与 sticky countdown 区分 |
+| TraceContext 显式对象传递 | Koishi 事件系统不保证 async context 传播，不用 AsyncLocalStorage | ✓ Good — traceId 贯穿全链路 |
+| Prompt cache Anthropic-only | 各 provider 缓存语义不同，先做 Anthropic ephemeral | ✓ Good — 非 Anthropic 无行为变化 |
+| providerType 字段检测 | 不从 model ID 推断 provider 类型 | ✓ Good — 显式声明更可靠 |
+| memory_block 合并推迟 | 迁移风险高，不阻塞 v2.2 任何功能 | ✓ Good — 推迟到 v2.3 |
+| JSON 文本输出 + 结构化 Judge | Judge 用 JsonParser 解析结构化响应，保留 legacy yes/no fallback | ✓ Good — 兼容性好 |
+| DM TokenBucket 用 senderId | 真正的 per-user 限流，避免 channelId 在 DM 场景的歧义 | ✓ Good |
 
 ---
-*Last updated: 2026-02-24 after v2.2 milestone start*
+*Last updated: 2026-02-25 after v2.2 milestone*
