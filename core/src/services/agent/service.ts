@@ -334,12 +334,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
   protected async runLoop(channelKey: string, built: LoopPayload): Promise<void> {
     try {
       const startedAt = Date.now();
-      const stats = await this.loop.run(built.percept, built.toolCtx) as { totalTokens: number; totalToolCalls: number } | void;
+      const stats = await this.loop.run(built.percept, built.toolCtx);
       const latencyMs = Date.now() - startedAt;
-      const totalTokens = (stats as { totalTokens: number } | undefined)?.totalTokens ?? 0;
-      const totalToolCalls = (stats as { totalToolCalls: number } | undefined)?.totalToolCalls ?? 0;
       this.logger.info(
-        `[${built.percept.traceId}] decision=RESPOND latency=${(latencyMs / 1000).toFixed(2)}s tokens=${totalTokens} tools=${totalToolCalls}`,
+        `[${built.percept.traceId}] decision=RESPOND latency=${(latencyMs / 1000).toFixed(2)}s tokens=${stats.totalTokens} tools=${stats.totalToolCalls}`,
       );
       this.willingness.recordBotReply(channelKey);
     } catch (err: unknown) {

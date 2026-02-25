@@ -35,16 +35,26 @@ interface ToolResultEntry {
 
 export class ThinkActLoop {
   private logger;
+  private logLoop;
+  private logModel;
+  private logParser;
+  private logTool;
 
   constructor(
     private ctx: Context,
     private config: AgentCoreConfig,
   ) {
     this.logger = ctx.logger("agent");
+    this.logLoop = ctx.logger("agent.loop");
+    this.logModel = ctx.logger("agent.model");
+    this.logParser = ctx.logger("agent.parser");
+    this.logTool = ctx.logger("agent.tool");
   }
 
-  async run(percept: Percept, toolCtx: ToolExecutionContext): Promise<void> {
-    this.logger.info(`Starting loop for percept ${percept.id} of type ${percept.type}`);
+  async run(percept: Percept, toolCtx: ToolExecutionContext): Promise<{ totalTokens: number; totalToolCalls: number }> {
+    this.logger.info(`[${percept.traceId}] Starting loop type=${percept.type}`);
+    let totalTokens = 0;
+    let totalToolCalls = 0;
 
     const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
@@ -125,7 +135,13 @@ export class ThinkActLoop {
       }
       const userContent = horizon.formatHorizonText(view, wmLines, percept);
 
-      this.logger.info(`Available tools: ${toolSchema ? "injected" : "none"}`);
+      if ((this.config.debugLevel ?? 0) >= 3) {
+        this.logLoop.debug(
+          `[${percept.traceId}] system_bytes=${Buffer.byteLength(systemPrompt, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
+        );
+      }
+
+      this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
 
       const trimConfig: TrimConfig = {
         charBudget: this.config.charBudget ?? 30000,
@@ -144,7 +160,7 @@ export class ThinkActLoop {
 
       while (round < maxRounds) {
         round++;
-        this.logger.info(`Round ${round}/${maxRounds}`);
+        this.logger.info(`[${percept.traceId}] Round ${round}/${maxRounds}`);
 
         trimMessages(messages, trimConfig);
 
@@ -153,30 +169,46 @@ export class ThinkActLoop {
           messages,
         };
 
-        this.logger.info(JSON.stringify(callParams, null, 2));
+        if ((this.config.debugLevel ?? 0) >= 3) {
+          this.logLoop.debug(`[${percept.traceId}] callParams=${JSON.stringify(callParams)}`);
+        }
 
+        const callStart = Date.now();
         const result = await modelService.call(
           this.config.model ?? "",
           callParams,
           this.config.fallbackChain,
         );
+        const callLatency = Date.now() - callStart;
 
         const rawText = result?.text ?? "";
         if (!rawText) {
-          this.logger.info("Empty model response, breaking loop");
+          this.logger.info(`[${percept.traceId}] Empty model response, breaking loop`);
           break;
         }
 
-        this.logger.info(`Model output: ${rawText}`);
-        if (result?.reasoningText) {
-          this.logger.info(`Model reasoning: ${result.reasoningText}`);
+        if ((this.config.debugLevel ?? 0) >= 2) {
+          this.logModel.debug(
+            `[${percept.traceId}] round=${round} latency=${callLatency}ms tokens_in=${result?.usage?.inputTokens ?? 0} tokens_out=${result?.usage?.outputTokens ?? 0}`,
+          );
         }
-        if (result?.usage) {
-          this.logger.info(`=== Model Usage ===\n${JSON.stringify(result.usage, null, 2)}`);
+        totalTokens += (result?.usage?.inputTokens ?? 0) + (result?.usage?.outputTokens ?? 0);
+
+        if ((this.config.debugLevel ?? 0) >= 3) {
+          this.logModel.debug(`[${percept.traceId}] output=${rawText}`);
+          if (result?.reasoningText) {
+            this.logModel.debug(`[${percept.traceId}] reasoning=${result.reasoningText}`);
+          }
         }
 
         // Parse JSON response
         let parsed = parser.parse(rawText);
+
+        if ((this.config.debugLevel ?? 0) >= 2) {
+          this.logParser.debug(
+            `[${percept.traceId}] round=${round} success=${parsed.data !== null} error=${parsed.error ?? "none"}`,
+          );
+        }
 
         // LLM repair fallback if parse failed but "actions" present in raw text
         if (!parsed.data && rawText.includes("actions")) {
@@ -221,6 +253,15 @@ export class ThinkActLoop {
           toolCtxWithPercept,
           maxResultLen,
         );
+
+        totalToolCalls += toolResults.length;
+        if ((this.config.debugLevel ?? 0) >= 2) {
+          for (const r of toolResults) {
+            this.logTool.debug(
+              `[${percept.traceId}] tool=${r.name} status=${r.status}${r.error ? ` error=${r.error}` : ""}`,
+            );
+          }
+        }
 
         // Record per-round AgentResponse immediately after tool execution
         await horizon.events.recordAgentResponse({
@@ -292,7 +333,8 @@ export class ThinkActLoop {
         (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
       await horizon.events.archiveStale(percept.scope, archiveMs);
 
-      this.logger.info(`Loop complete: ${round} rounds`);
+      this.logger.info(`[${percept.traceId}] Loop complete: ${round} rounds`);
+      return { totalTokens, totalToolCalls };
     } finally {
       for (const d of disposers) d();
     }
