@@ -166,6 +166,15 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
 
     const result = await generateText({ model: wrappedModel, ...merged });
 
+    // Log cache token usage if present (Anthropic prompt caching)
+    const cacheWrite = result.usage?.inputTokenDetails?.cacheWriteTokens ?? 0;
+    const cacheRead = result.usage?.inputTokenDetails?.cacheReadTokens ?? 0;
+    if (cacheWrite > 0 || cacheRead > 0) {
+      this.logger.debug(
+        `cache provider=${providerName} model=${modelId} write=${cacheWrite} read=${cacheRead}`,
+      );
+    }
+
     const key = `${providerName}:${modelId}`;
     const current = this.usage.get(key) || { tokens: 0, requests: 0 };
     this.usage.set(key, {

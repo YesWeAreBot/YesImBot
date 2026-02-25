@@ -1,0 +1,43 @@
+{
+  "name": "@yesimbot/koishi-plugin-provider-anthropic",
+  "version": "0.0.0",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && pkgroll",
+    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "fmt": "oxfmt",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.47",
+    "@yesimbot/shared-model": "workspace:*"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.3"
+  },
+  "peerDependencies": {
+    "koishi": "^4.0.0"
+  },
+  "koishi": {
+    "service": {
+      "required": [
+        "yesimbot.model"
+      ]
+    }
+  }
+}
