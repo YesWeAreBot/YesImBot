@@ -1,3 +1,4 @@
+import type { SystemModelMessage } from "ai";
 import { Context } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
@@ -5,6 +6,7 @@ import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, type ToolExecutionContext, type ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
+import type { Section } from "../prompt/types";
 import type { Percept } from "../shared/types";
 import type { SkillRegistry } from "../skill/service";
 import type { SkillEffect } from "../skill/types";
@@ -108,10 +110,39 @@ export class ThinkActLoop {
     );
 
     try {
-      const systemPrompt = await prompt.renderToString("system", {
-        view,
-        percept,
-      });
+      const sections: Section[] = await prompt.render("system", { view, percept });
+      const stableContent = sections
+        .filter((s) => s.name === "soul" || s.name === "instructions")
+        .map((s) => s.content)
+        .join("\n\n");
+      const dynamicContent = sections
+        .filter((s) => s.name === "memory" || s.name === "extra")
+        .map((s) => s.content)
+        .join("\n\n");
+      const systemPromptString = stableContent + "\n\n" + dynamicContent;
+
+      const providerType = modelService.getProvider(
+        (this.config.model ?? "").split(":")[0],
+      )?.providerType;
+
+      let systemParam: string | SystemModelMessage[];
+      if (providerType === "anthropic") {
+        systemParam = [
+          {
+            role: "system" as const,
+            content: stableContent,
+            providerOptions: {
+              anthropic: { cacheControl: { type: "ephemeral" } },
+            },
+          },
+          {
+            role: "system" as const,
+            content: dynamicContent,
+          },
+        ];
+      } else {
+        systemParam = systemPromptString;
+      }
 
       const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
 
@@ -158,8 +189,14 @@ export class ThinkActLoop {
       }
       const userContent = horizon.formatHorizonText(view, wmLines, percept);
 
+      if ((this.config.debugLevel ?? 0) >= 3) {
+        this.logger.debug(
+          `[${percept.traceId}] system_stable_bytes=${Buffer.byteLength(stableContent, "utf8")} system_dynamic_bytes=${Buffer.byteLength(dynamicContent, "utf8")} provider=${providerType ?? "unknown"}`,
+        );
+      }
+
       this.logger.debug(
-        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPrompt, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
+        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
       );
 
       this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
@@ -186,7 +223,7 @@ export class ThinkActLoop {
         trimMessages(messages, trimConfig);
 
         const callParams: CallParams = {
-          system: systemPrompt,
+          system: systemParam,
           messages,
         };
 
@@ -306,7 +343,7 @@ export class ThinkActLoop {
 
           const wrapResult = await modelService.call(
             this.config.model ?? "",
-            { system: systemPrompt, messages } as CallParams,
+            { system: systemParam, messages } as CallParams,
             this.config.fallbackChain,
           );
           if (wrapResult?.text) {
