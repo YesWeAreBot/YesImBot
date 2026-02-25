@@ -19,6 +19,7 @@ export interface Scope {
 
 export interface Percept {
   id: string;
+  traceId: string;
   type: TriggerType;
   scope: Scope;
   timestamp: Date;

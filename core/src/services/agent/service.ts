@@ -37,6 +37,7 @@ export interface AgentCoreConfig {
   willingness?: WillingnessConfig;
   aggregationWindow?: number;
   errorReportChannel?: string;
+  debugLevel?: number;
 }
 
 export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
@@ -64,6 +65,9 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   errorReportChannel: Schema.string().description(
     "Error report channel in platform:channelId format",
   ),
+  debugLevel: Schema.number()
+    .default(0)
+    .description("Debug log verbosity: 0=off, 1=basic, 2=detailed, 3=full"),
 });
 
 export class AgentCore extends Service<AgentCoreConfig> {
@@ -94,11 +98,21 @@ export class AgentCore extends Service<AgentCoreConfig> {
   private loop!: ThinkActLoop;
   private willingness!: WillingnessEngine;
   private rateLimiter!: { dm: TokenBucket; group: TokenBucket };
+  private logWillingness;
+  private logLoop;
+  private logModel;
+  private logParser;
+  private logTool;
 
   constructor(ctx: Context, config: AgentCoreConfig) {
     super(ctx, "yesimbot.agent", false);
     this.config = config;
     this.logger = ctx.logger("agent");
+    this.logWillingness = ctx.logger("agent.willingness");
+    this.logLoop = ctx.logger("agent.loop");
+    this.logModel = ctx.logger("agent.model");
+    this.logParser = ctx.logger("agent.parser");
+    this.logTool = ctx.logger("agent.tool");
   }
 
   protected async start(): Promise<void> {
@@ -125,6 +139,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private handleEvent(event: HorizonMessageEvent): void {
     try {
+      const traceId = `msg-${Random.id(8, 16)}`;
       const channelKey = `${event.scope.platform}:${event.scope.channelId}`;
 
       // Rate limit check — before any processing
@@ -134,7 +149,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
       const bucket = isDirect ? this.rateLimiter.dm : this.rateLimiter.group;
 
       if (!bucket.consume(bucketKey)) {
-        this.logger.debug(`[rate-limit] ${bucketKey} | silently ignored`);
+        this.logger.debug(`[${traceId}] rate-limit ${bucketKey} | silently ignored`);
         return;
       }
 
@@ -146,8 +161,13 @@ export class AgentCore extends Service<AgentCoreConfig> {
       );
       const d = result.debug;
       this.logger.info(
-        `[willingness] ${channelKey} | ${d.prevWillingness.toFixed(1)} → ${d.newWillingness.toFixed(1)} (+${d.gain.toFixed(1)}) | P=${result.probability.toFixed(3)} fatigue=${d.fatigue.toFixed(2)} kw=${d.keywordHit} trigger=${d.triggerType} → ${result.shouldReply ? "REPLY" : "SKIP"}`,
+        `[${traceId}] willingness channel=${channelKey} P=${result.probability.toFixed(3)} decision=${result.shouldReply ? "REPLY" : "SKIP"}`,
       );
+      if ((this.config.debugLevel ?? 0) >= 2) {
+        this.logWillingness.debug(
+          `[${traceId}] prev=${d.prevWillingness.toFixed(1)} new=${d.newWillingness.toFixed(1)} gain=${d.gain.toFixed(1)} fatigue=${d.fatigue.toFixed(2)} keyword=${d.keywordHit} trigger=${d.triggerType}`,
+        );
+      }
       if (!result.shouldReply) {
         const deferred = this.config.willingness?.deferred;
         if (deferred && result.probability >= deferred.threshold) {
@@ -279,6 +299,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     return {
       percept: {
         id: Random.id(),
+        traceId: `msg-${Random.id(8, 16)}`,
         type: event.triggerType,
         scope: event.scope,
         timestamp: event.timestamp,
@@ -312,7 +333,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   protected async runLoop(channelKey: string, built: LoopPayload): Promise<void> {
     try {
-      await this.loop.run(built.percept, built.toolCtx);
+      const startedAt = Date.now();
+      const stats = await this.loop.run(built.percept, built.toolCtx) as { totalTokens: number; totalToolCalls: number } | void;
+      const latencyMs = Date.now() - startedAt;
+      const totalTokens = (stats as { totalTokens: number } | undefined)?.totalTokens ?? 0;
+      const totalToolCalls = (stats as { totalToolCalls: number } | undefined)?.totalToolCalls ?? 0;
+      this.logger.info(
+        `[${built.percept.traceId}] decision=RESPOND latency=${(latencyMs / 1000).toFixed(2)}s tokens=${totalTokens} tools=${totalToolCalls}`,
+      );
       this.willingness.recordBotReply(channelKey);
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
@@ -340,7 +368,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const normalized = (probability - threshold) / (1 - threshold);
     const delay = maxDelayMs - normalized * (maxDelayMs - minDelayMs);
     this.logger.info(
-      `[deferred] ${channelKey} | scheduling LLM judgment in ${delay.toFixed(0)}ms (P=${probability.toFixed(3)})`,
+      `[${built.percept.traceId}] deferred channel=${channelKey} delay=${delay.toFixed(0)}ms P=${probability.toFixed(3)}`,
     );
     const gen = (this.deferredGen.get(channelKey) ?? 0) + 1;
     this.deferredGen.set(channelKey, gen);
@@ -384,15 +412,15 @@ export class AgentCore extends Service<AgentCoreConfig> {
         fallbackChain,
       );
       if (this.deferredGen.get(channelKey) !== gen) {
-        this.logger.info(`[deferred] ${channelKey} | stale judgment (gen ${gen}), discarding`);
+        this.logger.info(`[${built.percept.traceId}] deferred stale gen=${gen} channel=${channelKey}`);
         return;
       }
       const answer = (result?.text ?? "").trim().toLowerCase();
       if (answer.startsWith("yes")) {
-        this.logger.info(`[deferred] ${channelKey} | LLM judged YES — entering agent loop`);
+        this.logger.info(`[${built.percept.traceId}] deferred decision=YES channel=${channelKey}`);
         this.enqueue(channelKey, built);
       } else {
-        this.logger.info(`[deferred] ${channelKey} | LLM judged NO — staying silent`);
+        this.logger.info(`[${built.percept.traceId}] deferred decision=NO channel=${channelKey}`);
       }
     } catch (err: unknown) {
       this.logger.error(`[deferred] ${channelKey} | judgment failed, defaulting to SKIP: ${err}`);
