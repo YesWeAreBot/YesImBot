@@ -14,7 +14,7 @@
 
 - [x] **WILL-01**: 私聊场景自动获得高回复概率（可配置 `directBoost`），配合较长的消息聚合窗口等待用户发完再回复，而非每条消息都触发响应
 - [x] **WILL-02**: 私聊回复附带 per-user 速率限制，防止无节制 DM 导致成本爆炸
-- [ ] **WILL-03**: Judge Prompt 包含人设摘要上下文，提供明确的判断标准（间接提及、话题相关性、沉默尴尬度），使用结构化输出格式替代裸 yes/no
+- [x] **WILL-03**: Judge Prompt 包含人设摘要上下文，提供明确的判断标准（间接提及、话题相关性、沉默尴尬度），使用结构化输出格式替代裸 yes/no
 
 ### 可观测性 (OBS)
 
@@ -61,7 +61,7 @@
 | BUGFIX-02 | Phase 23 | Complete |
 | WILL-01 | Phase 23 | Complete |
 | WILL-02 | Phase 23 | Complete |
-| WILL-03 | Phase 24 | Pending |
+| WILL-03 | Phase 24 | Complete |
 | OBS-01 | Phase 24 | Pending |
 | OBS-02 | Phase 24 | Pending |
 | OBS-03 | Phase 24 | Pending |

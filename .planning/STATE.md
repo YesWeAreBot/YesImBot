@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: 23 — Bug Fixes & Reliability
-Plan: 03 of 4
-Status: In progress
-Last activity: 2026-02-25 — Completed 23-03 DM willingness & rate limiting
+Phase: 24 — Observability
+Plan: 02 of 2
+Status: Complete
+Last activity: 2026-02-25 — Completed 24-02 Persona-aware structured judge prompt
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 
@@ -41,6 +41,7 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 - Phase 25 requires phase research before implementation (providerOptions format needs live API verification)
 - BUGFIX-01: Build scope inline in formatHorizonText (avoid circular dep with PromptService); missing vars fall back to tag text
 - WILL-01/WILL-02: TokenBucket uses senderId as bucket key; directBoost via applyMentionBoost; adaptive DM timeout = interval*1.5 clamped 3-8s
+- WILL-03: confidence is log-only in structured judge response; getSoulSummary trims at sentence boundary; JsonParser reused for judge JSON parsing with legacy fallback
 
 ### Pending Todos
 
@@ -65,8 +66,11 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 | Phase 23 P02 | 5min | 2 tasks | 3 files |
 | Phase 23 P03 | 5min | 2 tasks | 4 files |
 
+| Phase 24 P01 | 12min | 2 tasks | 3 files |
+| Phase 24 P02 | 2min | 1 task | 2 files |
+
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 23-01-PLAN.md (JSON parser test suite)
+Stopped at: Completed 24-02-PLAN.md (Persona-aware structured judge prompt)
 Resume file: None

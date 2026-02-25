@@ -56,7 +56,7 @@
 ### v2.2 Runtime Optimization & Observability (Phases 23-25)
 
 - [x] **Phase 23: Bug Fixes & Reliability** — Snippet rendering fix, JSON parser test suite, DM willingness handling (completed 2026-02-24)
-- [ ] **Phase 24: Observability** — Full-chain trace IDs, structured debug logging, Judge prompt improvement
+- [x] **Phase 24: Observability** — Full-chain trace IDs, structured debug logging, Judge prompt improvement (completed 2026-02-25)
 - [ ] **Phase 25: Optimization** — Working memory layout, prompt cache with SystemModelMessage[]
 
 ## Phase Details
@@ -111,5 +111,5 @@ Plans:
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23. Bug Fixes & Reliability | 4/4 | Complete    | 2026-02-24 | — |
-| 24. Observability | 1/2 | In Progress|  | — |
+| 24. Observability | 2/2 | Complete   | 2026-02-25 | — |
 | 25. Optimization | v2.2 | 0/? | Not started | — |
