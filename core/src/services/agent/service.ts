@@ -135,6 +135,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     firstMessageAt: number;
     lastMessageAt: number;
     lastEvent: HorizonMessageEvent;
+    traceId: string;
   }>();
   private loop!: ThinkActLoop;
   private willingness!: WillingnessEngine;
@@ -220,7 +221,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
       // DM: adaptive aggregation window
       if (isDirect) {
-        this.handleDmAggregation(channelKey, event);
+        this.handleDmAggregation(channelKey, event, traceId);
         return;
       }
 
@@ -242,7 +243,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     }
   }
 
-  private handleDmAggregation(channelKey: string, event: HorizonMessageEvent): void {
+  private handleDmAggregation(channelKey: string, event: HorizonMessageEvent, traceId: string): void {
     const dmConfig = this.config.willingness?.dm;
     const minMs = dmConfig?.aggregationMinMs ?? 3000;
     const maxMs = dmConfig?.aggregationMaxMs ?? 8000;
@@ -261,12 +262,13 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
       existing.lastMessageAt = now;
       existing.lastEvent = event;
+      existing.traceId = traceId;
 
       // Check if cap exceeded — fire immediately
       if (now - existing.firstMessageAt >= capMs) {
         existing.capCancel();
         this.dmWindows.delete(channelKey);
-        const built = this.buildPercept(event);
+        const built = this.buildPercept(event, traceId);
         if (this.queues.has(channelKey)) {
           this.pending.set(channelKey, built);
         } else {
@@ -281,7 +283,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
         if (win) {
           win.capCancel();
           this.dmWindows.delete(channelKey);
-          const built = this.buildPercept(win.lastEvent);
+          const built = this.buildPercept(win.lastEvent, win.traceId);
           if (this.queues.has(channelKey)) {
             this.pending.set(channelKey, built);
           } else {
@@ -299,7 +301,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
         if (win) {
           win.cancel();
           this.dmWindows.delete(channelKey);
-          const built = this.buildPercept(win.lastEvent);
+          const built = this.buildPercept(win.lastEvent, win.traceId);
           if (this.queues.has(channelKey)) {
             this.pending.set(channelKey, built);
           } else {
@@ -313,7 +315,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
         if (win) {
           win.capCancel();
           this.dmWindows.delete(channelKey);
-          const built = this.buildPercept(event);
+          const built = this.buildPercept(win.lastEvent, win.traceId);
           if (this.queues.has(channelKey)) {
             this.pending.set(channelKey, built);
           } else {
@@ -328,6 +330,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
         firstMessageAt: now,
         lastMessageAt: now,
         lastEvent: event,
+        traceId,
       });
     }
   }
