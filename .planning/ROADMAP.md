@@ -86,7 +86,10 @@ Plans:
   2. Setting `KOISHI_DEBUG=agent.willingness` shows only willingness logs; `KOISHI_DEBUG=agent.loop` shows only loop logs — namespaces filter independently
   3. Debug logs include: willingness score breakdown, prompt section byte sizes, model call latency and token counts, JSON parse outcome, and tool execution results
   4. The Judge prompt includes a persona summary and structured output format — responses are no longer bare `yes`/`no` strings and include reasoning context
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 24-01-PLAN.md — TraceId threading + namespace loggers + structured debug logging (OBS-01, OBS-02, OBS-03)
+- [ ] 24-02-PLAN.md — Judge prompt upgrade with persona summary + structured JSON output (WILL-03)
 
 ### Phase 25: Optimization
 **Goal**: The agent's working memory is temporally coherent and the system prompt is cached at the provider level to reduce token costs
@@ -108,5 +111,5 @@ Plans:
 | 16-19 | v2.0 | 16/16 | Complete | 2026-02-23 |
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23. Bug Fixes & Reliability | 4/4 | Complete    | 2026-02-24 | — |
-| 24. Observability | v2.2 | 0/? | Not started | — |
+| 24. Observability | v2.2 | 0/2 | Planning complete | — |
 | 25. Optimization | v2.2 | 0/? | Not started | — |
