@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 25 — Optimization
-Plan: 01 of 3
+Plan: 02 of 3
 Status: In Progress
-Last activity: 2026-02-25 — Completed 25-01 Working memory temporal coherence (short-ID, XML history, triggeredAt, send_message trimming)
+Last activity: 2026-02-25 — Completed 25-02 System prompt caching with Anthropic cache_control injection and provider-anthropic package
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 
@@ -56,10 +56,11 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 - WILL-01/WILL-02: TokenBucket uses senderId as bucket key; directBoost via applyMentionBoost; adaptive DM timeout = interval*1.5 clamped 3-8s
 - WILL-03: confidence is log-only in structured judge response; getSoulSummary trims at sentence boundary; JsonParser reused for judge JSON parsing with legacy fallback
 - OPT-03/OPT-04: XML history format gated on channelKey; short-ID map bounded at 100 entries; send_message always omits content param (no platform ID returned yet)
+- OPT-01/OPT-02: System prompt split stable/dynamic; Anthropic gets SystemModelMessage[] with cacheControl ephemeral; providerType field used for detection (not model ID); provider-anthropic package created
 
 ### Pending Todos
 
-- Phase 25: Run phase research to verify Anthropic `providerOptions` cache control format before implementing OPT-01/OPT-02
+- Phase 25: Plan 03 remaining (if any)
 
 ### Blockers/Concerns
 
@@ -85,8 +86,10 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 
 | Phase 25 P01 | 5min | 2 tasks | 4 files |
 
+| Phase 25 P02 | 4min | 2 tasks | 5 files |
+
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 25-01-PLAN.md (Working memory temporal coherence)
+Stopped at: Completed 25-02-PLAN.md (System prompt caching with Anthropic cache_control)
 Resume file: None

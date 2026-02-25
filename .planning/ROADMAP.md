@@ -57,7 +57,7 @@
 
 - [x] **Phase 23: Bug Fixes & Reliability** — Snippet rendering fix, JSON parser test suite, DM willingness handling (completed 2026-02-24)
 - [x] **Phase 24: Observability** — Full-chain trace IDs, structured debug logging, Judge prompt improvement (completed 2026-02-25)
-- [ ] **Phase 25: Optimization** — Working memory layout, prompt cache with SystemModelMessage[]
+- [x] **Phase 25: Optimization** — Working memory layout, prompt cache with SystemModelMessage[] (completed 2026-02-25)
 
 ## Phase Details
 
@@ -112,4 +112,4 @@ Plans:
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23. Bug Fixes & Reliability | 4/4 | Complete    | 2026-02-24 | — |
 | 24. Observability | 2/2 | Complete    | 2026-02-25 | — |
-| 25. Optimization | 1/2 | In Progress|  | — |
+| 25. Optimization | 2/2 | Complete   | 2026-02-25 | — |
