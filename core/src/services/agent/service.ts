@@ -4,12 +4,52 @@ import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import type { ToolExecutionContext } from "../plugin/types";
+import type { RoleService } from "../role/service";
 import type { Percept } from "../shared/types";
+import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
 import { TokenBucket, WillingnessConfig, WillingnessEngine, WillingnessSchema } from "./willingness";
 
-const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
-Answer with exactly one word: "yes" or "no".`;
+interface JudgeResponse {
+  decision: boolean;
+  confidence?: number;
+  reasoning?: string;
+  factors?: Record<string, number>;
+}
+
+function buildJudgmentPrompt(personaSummary: string): string {
+  return `You are a conversation participation judge for a chat bot.
+
+## Bot Persona
+${personaSummary}
+
+## Task
+Decide whether the bot should reply to the current conversation based on the willingness score and context.
+
+## Judgment Factors
+Consider these factors and rate each 0.0-1.0:
+- mention: Was the bot directly mentioned or addressed?
+- topic_relevance: Is the topic relevant to the bot's interests/expertise?
+- silence_awkwardness: Would staying silent feel socially awkward?
+- conversation_flow: Does the conversation naturally invite a response?
+
+## Output Format
+Respond with ONLY a JSON object:
+{
+  "decision": true,
+  "confidence": 0.85,
+  "reasoning": "Brief explanation of the decision",
+  "factors": {
+    "mention": 0.0,
+    "topic_relevance": 0.4,
+    "silence_awkwardness": 0.15,
+    "conversation_flow": 0.3
+  }
+}
+
+decision: true = reply, false = stay silent
+confidence: 0.0-1.0 (for logging only, does not affect decision)`;
+}
 
 interface LoopPayload {
   percept: Percept;
@@ -78,6 +118,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     "yesimbot.model",
     "yesimbot.trait",
     "yesimbot.skill",
+    "yesimbot.role",
   ];
 
   private queues = new Map<string, Promise<void>>();
@@ -393,19 +434,21 @@ export class AgentCore extends Service<AgentCoreConfig> {
         selfName: built.toolCtx.bot?.user?.name,
       });
       const contextText = horizon.formatHorizonText(view);
+      const roleService = this.ctx["yesimbot.role"] as RoleService;
+      const personaSummary = roleService.getSoulSummary(300);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";
       const fallbackChain = this.config.willingness?.deferred?.fallbackChain ?? [];
       const result = await modelService.call(
         judgmentModel,
         {
-          system: JUDGMENT_PROMPT,
+          system: buildJudgmentPrompt(personaSummary),
           messages: [
             {
               role: "user" as const,
               content: `Willingness score: ${probability.toFixed(3)}\n\n${contextText}`,
             },
           ],
-          maxOutputTokens: 8,
+          maxOutputTokens: 256,
         },
         fallbackChain,
       );
@@ -413,12 +456,40 @@ export class AgentCore extends Service<AgentCoreConfig> {
         this.logger.info(`[${built.percept.traceId}] deferred stale gen=${gen} channel=${channelKey}`);
         return;
       }
-      const answer = (result?.text ?? "").trim().toLowerCase();
-      if (answer.startsWith("yes")) {
-        this.logger.info(`[${built.percept.traceId}] deferred decision=YES channel=${channelKey}`);
+      const rawAnswer = (result?.text ?? "").trim();
+      let judgeDecision = false;
+
+      // Try structured JSON parse first
+      const parser = new JsonParser<JudgeResponse>(this.logger);
+      const parsed = parser.parse(rawAnswer);
+
+      if (parsed.data && typeof parsed.data.decision === "boolean") {
+        judgeDecision = parsed.data.decision;
+        // Log structured response at debugLevel >= 1
+        if ((this.config.debugLevel ?? 0) >= 1) {
+          const traceId = built.percept.traceId;
+          this.logWillingness.debug(
+            `[${traceId}] judge decision=${judgeDecision} confidence=${parsed.data.confidence?.toFixed(2) ?? "?"} reasoning="${(parsed.data.reasoning ?? "").slice(0, 100)}"`,
+          );
+        }
+        if ((this.config.debugLevel ?? 0) >= 2 && parsed.data.factors) {
+          const traceId = built.percept.traceId;
+          const fKv = Object.entries(parsed.data.factors)
+            .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(2) : v}`)
+            .join(" ");
+          this.logWillingness.debug(`[${traceId}] judge_factors ${fKv}`);
+        }
+      } else {
+        // Legacy fallback: bare yes/no string
+        judgeDecision = rawAnswer.toLowerCase().startsWith("yes");
+        this.logger.info(`[deferred] ${channelKey} | legacy parse fallback, raw="${rawAnswer.slice(0, 50)}"`);
+      }
+
+      if (judgeDecision) {
+        this.logger.info(`[deferred] ${channelKey} | judge=YES — entering agent loop`);
         this.enqueue(channelKey, built);
       } else {
-        this.logger.info(`[${built.percept.traceId}] deferred decision=NO channel=${channelKey}`);
+        this.logger.info(`[deferred] ${channelKey} | judge=NO — staying silent`);
       }
     } catch (err: unknown) {
       this.logger.error(`[deferred] ${channelKey} | judgment failed, defaulting to SKIP: ${err}`);

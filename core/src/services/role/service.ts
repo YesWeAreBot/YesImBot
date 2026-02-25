@@ -118,6 +118,27 @@ export class RoleService extends Service<RoleServiceConfig> {
     }
   }
 
+  getSoulSummary(maxChars = 300): string {
+    const rendered = this.lastValid.get("SOUL.md");
+    if (!rendered) return "A conversational chat bot.";
+
+    const text = rendered.trim();
+    if (text.length <= maxChars) return text;
+
+    // Trim at last sentence boundary within maxChars
+    const slice = text.slice(0, maxChars);
+    const lastPeriod = slice.lastIndexOf(".");
+    const lastNewline = slice.lastIndexOf("\n");
+    const boundary = Math.max(lastPeriod, lastNewline);
+
+    if (boundary > maxChars * 0.3) {
+      return text.slice(0, boundary + 1).trim();
+    }
+    // No good boundary — trim at last space to avoid mid-word cutoff
+    const lastSpace = slice.lastIndexOf(" ");
+    return lastSpace > 0 ? text.slice(0, lastSpace).trim() + "..." : slice;
+  }
+
   private startWatching(): void {
     const dir = this.config.rolePath ?? "data/yesimbot/roles";
     if (!existsSync(dir)) return;
