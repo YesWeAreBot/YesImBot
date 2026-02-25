@@ -26,8 +26,8 @@
 
 - [ ] **OPT-01**: System prompt 拆分为 `SystemModelMessage[]` content blocks，稳定部分（soul + instructions）标记 cache breakpoint
 - [ ] **OPT-02**: ModelService 支持 provider 检测，Anthropic 自动注入 `providerOptions` cache control，其他 provider 回退为字符串拼接
-- [ ] **OPT-03**: Working Memory 工具条目标记其在 history 中的触发位置（时间戳或消息 ID 关联），使 LLM 意识到工具执行与聊天窗口的因果联系，而非仅用无区分度的 Round N 标记
-- [ ] **OPT-04**: Working Memory 中 `send_message` 动作省略已在 history 中出现的内容参数，仅保留执行结果摘要
+- [x] **OPT-03**: Working Memory 工具条目标记其在 history 中的触发位置（时间戳或消息 ID 关联），使 LLM 意识到工具执行与聊天窗口的因果联系，而非仅用无区分度的 Round N 标记
+- [x] **OPT-04**: Working Memory 中 `send_message` 动作省略已在 history 中出现的内容参数，仅保留执行结果摘要
 
 ## Future Requirements (v2.3+)
 
@@ -67,8 +67,8 @@
 | OBS-03 | Phase 24 | Pending |
 | OPT-01 | Phase 25 | Pending |
 | OPT-02 | Phase 25 | Pending |
-| OPT-03 | Phase 25 | Pending |
-| OPT-04 | Phase 25 | Pending |
+| OPT-03 | Phase 25 | Complete |
+| OPT-04 | Phase 25 | Complete |
 
 **Coverage:**
 - v2.2 requirements: 12 total

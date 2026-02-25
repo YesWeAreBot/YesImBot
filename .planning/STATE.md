@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: 24 — Observability
-Plan: 02 of 2
-Status: Complete
-Last activity: 2026-02-25 — Completed 24-02 Persona-aware structured judge prompt
+Phase: 25 — Optimization
+Plan: 01 of 3
+Status: In Progress
+Last activity: 2026-02-25 — Completed 25-01 Working memory temporal coherence (short-ID, XML history, triggeredAt, send_message trimming)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ◆ (Phase 23/25)
 
@@ -55,6 +55,7 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 - BUGFIX-01: Build scope inline in formatHorizonText (avoid circular dep with PromptService); missing vars fall back to tag text
 - WILL-01/WILL-02: TokenBucket uses senderId as bucket key; directBoost via applyMentionBoost; adaptive DM timeout = interval*1.5 clamped 3-8s
 - WILL-03: confidence is log-only in structured judge response; getSoulSummary trims at sentence boundary; JsonParser reused for judge JSON parsing with legacy fallback
+- OPT-03/OPT-04: XML history format gated on channelKey; short-ID map bounded at 100 entries; send_message always omits content param (no platform ID returned yet)
 
 ### Pending Todos
 
@@ -82,8 +83,10 @@ v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
 | Phase 24 P01 | 12min | 2 tasks | 3 files |
 | Phase 24 P02 | 2min | 1 task | 2 files |
 
+| Phase 25 P01 | 5min | 2 tasks | 4 files |
+
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 24-02-PLAN.md (Persona-aware structured judge prompt)
+Stopped at: Completed 25-01-PLAN.md (Working memory temporal coherence)
 Resume file: None

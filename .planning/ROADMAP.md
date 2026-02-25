@@ -112,4 +112,4 @@ Plans:
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23. Bug Fixes & Reliability | 4/4 | Complete    | 2026-02-24 | — |
 | 24. Observability | 2/2 | Complete    | 2026-02-25 | — |
-| 25. Optimization | v2.2 | 0/? | Not started | — |
+| 25. Optimization | 1/2 | In Progress|  | — |
