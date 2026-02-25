@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: Architecture Cleanup
 status: active
-last_updated: "2026-02-26T18:04:52.000Z"
+last_updated: "2026-02-26T19:07:40.000Z"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Defining requirements for v2.3
+**Current focus:** Phase 26 — Memory Cleanup
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-26 — Milestone v2.3 started
+Phase: 26 of 28 (Memory Cleanup)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-02-26 — v2.3 roadmap created, 3 phases defined
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -44,17 +44,19 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆
 ### Decisions
 
 Full decision log in PROJECT.md Key Decisions table.
-v2.0 decisions archived to milestones/v2.0-ROADMAP.md.
-v2.1 decisions archived to milestones/v2.1-ROADMAP.md.
-v2.2 decisions archived to milestones/v2.2-ROADMAP.md.
+v2.0–v2.2 decisions archived to milestones/v2.x-ROADMAP.md.
+
+Recent decisions affecting v2.3:
+- memory_block 合并推迟到 v2.3（v2.2 决策）：迁移风险高，不阻塞 v2.2 功能
+- Scope 删除：用 platform + channelId 裸字段替代，全局 13 个文件迁移
 
 ### Pending Todos
 
-(None — milestone just started)
+None.
 
 ### Blockers/Concerns
 
-(None)
+None.
 
 ### Quick Tasks Completed
 
@@ -67,5 +69,5 @@ v2.2 decisions archived to milestones/v2.2-ROADMAP.md.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Milestone v2.3 initialized, defining requirements
+Stopped at: v2.3 roadmap created — Phase 26 ready to plan
 Resume file: None

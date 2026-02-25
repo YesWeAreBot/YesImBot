@@ -46,24 +46,24 @@ Requirements for Architecture Cleanup milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MEM-01 | — | Pending |
-| MEM-02 | — | Pending |
-| MEM-03 | — | Pending |
-| MEM-04 | — | Pending |
-| CTX-01 | — | Pending |
-| CTX-02 | — | Pending |
-| CTX-03 | — | Pending |
-| CTX-04 | — | Pending |
-| CTX-05 | — | Pending |
-| CTX-06 | — | Pending |
-| CTX-07 | — | Pending |
-| CTX-08 | — | Pending |
+| MEM-01 | Phase 26 | Pending |
+| MEM-02 | Phase 26 | Pending |
+| MEM-03 | Phase 26 | Pending |
+| MEM-04 | Phase 26 | Pending |
+| CTX-01 | Phase 27 | Pending |
+| CTX-02 | Phase 27 | Pending |
+| CTX-03 | Phase 27 | Pending |
+| CTX-04 | Phase 27 | Pending |
+| CTX-05 | Phase 27 | Pending |
+| CTX-06 | Phase 27 | Pending |
+| CTX-07 | Phase 28 | Pending |
+| CTX-08 | Phase 28 | Pending |
 
 **Coverage:**
 - v2.3 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12 ⚠️
+- Mapped to phases: 12
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-26*
-*Last updated: 2026-02-26 after initial definition*
+*Last updated: 2026-02-26 after roadmap creation*
