@@ -83,6 +83,7 @@ export class EventManager {
           messageId: entry.data.messageId,
           content: entry.data.content,
           stage: entry.stage,
+          ...(entry.data.replyTo !== undefined && { replyTo: entry.data.replyTo }),
         };
       }
       return {

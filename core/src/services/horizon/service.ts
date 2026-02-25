@@ -63,6 +63,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   public listener: EventListener;
 
   private horizonViewTpl?: string;
+  private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
+  private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (platformMsgId -> shortId)
 
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
@@ -208,6 +210,34 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     }));
   }
 
+  assignShortId(channelKey: string, platformMsgId: string): number {
+    let map = this.shortIdMaps.get(channelKey);
+    if (!map) {
+      map = new Map<string, number>();
+      this.shortIdMaps.set(channelKey, map);
+    }
+    const existing = map.get(platformMsgId);
+    if (existing !== undefined) return existing;
+
+    // Evict oldest entries if map exceeds 100
+    if (map.size >= 100) {
+      let evictCount = map.size - 80;
+      for (const key of map.keys()) {
+        if (evictCount-- <= 0) break;
+        map.delete(key);
+      }
+    }
+
+    const counter = (this.shortIdCounters.get(channelKey) ?? 0) % 999 + 1;
+    this.shortIdCounters.set(channelKey, counter);
+    map.set(platformMsgId, counter);
+    return counter;
+  }
+
+  getShortId(channelKey: string, platformMsgId: string): number | undefined {
+    return this.shortIdMaps.get(channelKey)?.get(platformMsgId);
+  }
+
   private getRoleBadge(attributes?: Record<string, unknown>): string {
     const roles = attributes?.roles;
     if (!Array.isArray(roles)) return "";
@@ -219,9 +249,27 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return lower === "owner" ? "[Owner] " : "[Admin] ";
   }
 
-  formatObservation(obs: Observation, selfId?: string): string {
+  formatObservation(obs: Observation, selfId?: string, channelKey?: string): string {
     const hhmm = obs.timestamp.toTimeString().slice(0, 5);
     if (obs.type === "message") {
+      if (channelKey) {
+        const shortId = this.assignShortId(channelKey, obs.messageId);
+        const isBot = selfId && obs.sender.id === selfId;
+        const senderName = isBot ? "[Bot]" : (() => {
+          const badge = this.getRoleBadge(obs.sender.attributes);
+          return `${badge}${obs.sender.name}`;
+        })();
+        const senderId = isBot ? "bot" : obs.sender.id;
+        let attrs = `id="${shortId}" sender="${senderName}" senderId="${senderId}"`;
+        if (obs.replyTo) {
+          const replyShortId = this.getShortId(channelKey, obs.replyTo);
+          if (replyShortId !== undefined) {
+            attrs += ` replyTo="${replyShortId}"`;
+          }
+        }
+        return `<msg ${attrs}>${obs.content}</msg>`;
+      }
+      // Fallback: no channelKey — legacy [HH:MM] format
       if (selfId && obs.sender.id === selfId) {
         return `[${hhmm}] [Bot] ${obs.sender.name}: ${obs.content}`;
       }
@@ -262,8 +310,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
     const historyObs: string[] = [];
     const triggerObs: string[] = [];
+    const channelKey = view.environment
+      ? `${view.environment.metadata?.platform}:${view.environment.metadata?.channelId}`
+      : undefined;
     for (const obs of view.history ?? []) {
-      const formatted = this.formatObservation(obs, view.self.id);
+      const formatted = this.formatObservation(obs, view.self.id, channelKey);
       if (obs.type === "message" && obs.stage === "new") {
         triggerObs.push(formatted);
       } else {

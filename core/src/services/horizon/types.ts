@@ -118,6 +118,7 @@ export interface MessageObservation {
   messageId: string;
   content: string;
   stage?: string;
+  replyTo?: string;
 }
 
 export interface AgentResponseObservation {
