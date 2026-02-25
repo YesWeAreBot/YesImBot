@@ -48,7 +48,14 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ### Active
 
-(Next milestone — use `/gsd:new-milestone` to define)
+## Current Milestone: v2.3 Architecture Cleanup
+
+**Goal:** 简化内部架构——合并 memory_block 到 RoleService，删除 Scope 抽象改用裸字段，简化 Environment 构造
+
+**Target features:**
+- memory_block → RoleService 合并：消除重复的文件加载/注入逻辑
+- Scope 接口删除：用 platform + channelId 裸字段替代，全局 13 个文件迁移
+- Environment 构造简化：减少 Scope→Environment 的冗余转换
 
 ### Out of Scope
 
@@ -120,4 +127,4 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | DM TokenBucket 用 senderId | 真正的 per-user 限流，避免 channelId 在 DM 场景的歧义 | ✓ Good |
 
 ---
-*Last updated: 2026-02-25 after v2.2 milestone*
+*Last updated: 2026-02-26 after v2.3 milestone start*
