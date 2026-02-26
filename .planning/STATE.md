@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Runtime & Polish
 status: unknown
-last_updated: "2026-02-26T13:39:08.573Z"
+last_updated: "2026-02-26T16:08:58Z"
 progress:
   total_phases: 3
   completed_phases: 1
@@ -18,18 +18,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.4 Runtime & Polish — Phase 29: Runtime Bug Fixes
+**Current focus:** v2.4 Runtime & Polish — Phase 30: Provider Architecture
 
 ## Current Position
 
-Phase: 29 (Runtime Bug Fixes)
-Plan: 02 of 2 — COMPLETE
-Status: Phase 29 complete — all plans done
-Last activity: 2026-02-26 — Completed 29-02 (silence rendering + initial context trim)
+Phase: 30 (Provider Architecture)
+Plan: 01 of 2 — COMPLETE
+Status: Plan 01 done, Plan 02 pending
+Last activity: 2026-02-26 — Completed 30-01 (AbstractProvider + schema factory)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
 
-[Phase 29 ✅] → [Phase 30] → [Phase 31]
+[Phase 29 ✅] → [Phase 30 ◆] → [Phase 31]
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 
 - 29-01: Used plain LoopPayload[] array for pending queue; first message timestamp preserved in merged percept; isBacklogDrain flag for downstream awareness
 - 29-02: Silence rendered as "(chose silence)" marker not suppressed; initialContextCharBudget default 20000 chars; head-trim at newline boundary
+- 30-01: Deleted ModelDefaultParams, replaced with CallSettings from ai-sdk; AbstractProvider auto-registers in constructor; createProviderSchema uses Schema.intersect for extra fields; advancedOverride merges at construction time with parse-error-as-warning
 
 ### Pending Todos
 
@@ -70,9 +71,10 @@ None.
 | Phase 26-memory-cleanup P02 | 2 | 2 tasks | 6 files |
 | Phase 29 P01 | 3min | 2 tasks | 1 files |
 | Phase 29 P02 | 2min | 2 tasks | 4 files |
+| Phase 30 P01 | 5min | 3 tasks | 6 files |
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 29-02-PLAN.md (silence rendering + initial context trim)
+Stopped at: Completed 30-01-PLAN.md (AbstractProvider + schema factory)
 Resume file: None
