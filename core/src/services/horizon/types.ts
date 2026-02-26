@@ -100,10 +100,9 @@ export interface Environment {
   type: string;
   id: string;
   name: string;
-  platform?: string;
-  channelId?: string;
+  platform: string;
+  channelId: string;
   description?: string;
-  metadata: Record<string, unknown>;
 }
 
 export interface SelfInfo {

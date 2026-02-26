@@ -77,7 +77,7 @@ export class RoleService extends Service<RoleServiceConfig> {
     });
     this.prompt.registerSnippet("channel.platform", (scope) => {
       const view = scope.view as HorizonView | undefined;
-      return (view?.environment?.metadata?.platform as string) ?? "";
+      return view?.environment?.platform ?? "";
     });
 
     this.prompt.registerSnippet("bot.name", (scope) => {

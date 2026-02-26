@@ -74,12 +74,12 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   }
 
   protected async start(): Promise<void> {
-    // Phase 28 (CTX-08) will migrate scope column to bare platform/channelId columns
     this.ctx.model.extend(
       "yesimbot.timeline",
       {
         id: "string(32)",
-        scope: "json",
+        platform: "string(64)",
+        channelId: "string(255)",
         type: "string(32)",
         priority: "unsigned",
         stage: "string(16)",
@@ -145,7 +145,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
           name: row.name,
           platform: row.attributes?.platform as string,
           channelId: row.attributes?.channelId as string,
-          metadata: row.attributes ?? {},
         };
       }
     }
@@ -178,13 +177,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       name: channelName,
       platform: key.platform,
       channelId: key.channelId,
-      metadata: {
-        platform: key.platform,
-        channelId: key.channelId,
-        userId: session?.userId,
-        guildId: session?.guildId,
-        isDirect: session?.isDirect ?? false,
-      },
     };
   }
 
@@ -294,8 +286,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     let environment = "";
     if (view.environment) {
       const env = view.environment;
-      const platform = (env.metadata?.platform as string) || "";
-      const channelId = (env.metadata?.channelId as string) || "";
+      const platform = env.platform || "";
+      const channelId = env.channelId || "";
       const typeLabel = env.type === "private" ? "Private" : "Group";
       environment = `Platform: ${platform}, Channel: ${channelId} (${typeLabel})`;
     }
@@ -313,7 +305,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const historyObs: string[] = [];
     const triggerObs: string[] = [];
     const channelKey = view.environment
-      ? `${view.environment.metadata?.platform}:${view.environment.metadata?.channelId}`
+      ? `${view.environment.platform}:${view.environment.channelId}`
       : undefined;
     for (const obs of view.history ?? []) {
       const formatted = this.formatObservation(obs, view.self.id, channelKey);
@@ -347,7 +339,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       },
       channel: {
         name: view.environment?.name || "{{channel.name}}",
-        platform: (view.environment?.metadata?.platform as string) || "{{channel.platform}}",
+        platform: view.environment?.platform || "{{channel.platform}}",
       },
       // Template data
       environment,
