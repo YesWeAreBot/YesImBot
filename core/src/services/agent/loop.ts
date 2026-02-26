@@ -59,7 +59,7 @@ export class ThinkActLoop {
     const prompt = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    const view = await horizon.buildView(percept.scope, {
+    const view = await horizon.buildView({ platform: percept.platform, channelId: percept.channelId }, {
       session: toolCtx.session,
       selfId: toolCtx.bot?.selfId,
       selfName: toolCtx.bot?.user?.name,
@@ -70,8 +70,8 @@ export class ThinkActLoop {
     // Trait-Skill pipeline: analyze context, resolve active skills
     const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
     const skill = this.ctx["yesimbot.skill"] as SkillRegistry;
-    const signals = await trait.analyze(percept.scope, view);
-    const effects: SkillEffect = skill.resolve(signals, percept.scope);
+    const signals = await trait.analyze({ platform: percept.platform, channelId: percept.channelId }, view);
+    const effects: SkillEffect = skill.resolve(signals, { platform: percept.platform, channelId: percept.channelId });
 
     const disposers: Array<() => void> = [];
 
@@ -144,7 +144,7 @@ export class ThinkActLoop {
         systemParam = systemPromptString;
       }
 
-      const channelKey = `${percept.scope.platform}:${percept.scope.channelId}`;
+      const channelKey = `${percept.platform}:${percept.channelId}`;
 
       const wmLines: string[] = [];
       for (let i = 0; i < (view.history ?? []).length; i++) {
@@ -314,7 +314,8 @@ export class ThinkActLoop {
 
         // Record per-round AgentResponse immediately after tool execution
         await horizon.events.recordAgentResponse({
-          scope: percept.scope,
+          platform: percept.platform,
+          channelId: percept.channelId,
           timestamp: new Date(),
           data: {
             round,
@@ -355,7 +356,8 @@ export class ThinkActLoop {
                 maxResultLen,
               );
               await horizon.events.recordAgentResponse({
-                scope: percept.scope,
+                platform: percept.platform,
+                channelId: percept.channelId,
                 timestamp: new Date(),
                 data: {
                   round: round + 1,
@@ -377,10 +379,10 @@ export class ThinkActLoop {
         });
       }
 
-      await horizon.events.markAsActive(percept.scope, percept.timestamp);
+      await horizon.events.markAsActive({ platform: percept.platform, channelId: percept.channelId }, percept.timestamp);
       const archiveMs =
         (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
-      await horizon.events.archiveStale(percept.scope, archiveMs);
+      await horizon.events.archiveStale({ platform: percept.platform, channelId: percept.channelId }, archiveMs);
 
       this.logger.info(`[${percept.traceId}] Loop complete: ${round} rounds`);
       return { totalTokens, totalToolCalls };
