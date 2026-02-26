@@ -5,5 +5,5 @@
     "rootDir": "./src"
   },
   "references": [{ "path": "../../packages/shared-model" }],
-  "include": ["src"]
+  "include": ["src", "src/**/*.json"]
 }
