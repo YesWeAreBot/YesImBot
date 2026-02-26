@@ -18,8 +18,8 @@
 ### 配置分组方案
 
 - 五组划分：基础、模型、意愿值、提示词、高级（可根据实际配置项数量和逻辑关系微调）
-- 使用 `Schema.intersect` 各子 schema 的 `.description()` 实现 UI 折叠分组，保持平铺结构不引入嵌套 object
-- 首组（基础）默认展开，其余分组默认折叠
+- 使用 `Schema.intersect` 各子 schema 的 `.description()` 实现 UI 标题分组，保持平铺结构不引入嵌套 object
+- Koishi Console 不支持独立折叠各分组（已验证：嵌套 intersect 方案失败），使用标题分隔即可
 - 每个分组仅显示纯中文标题，不加额外描述文字
 - 组内字段按使用频率排列，常改的靠前，高级/少用的靠后
 
@@ -32,8 +32,8 @@
 ### i18n 国际化
 
 - 覆盖范围：core 插件 + 所有 provider 插件，全部做 i18n
-- 每个插件独立维护 `locales/` 目录，包含 `zh-CN.yml` 和 `en-US.yml`
-- 通过 `ctx.i18n.define()` 或 Koishi locales 文件机制注册翻译
+- 每个插件独立维护 `locales/` 目录，包含 `zh-CN.json` 和 `en-US.json`（JSON 格式，pkgroll 不支持 YAML 内联）
+- 通过 `Schema.i18n()` 注册配置描述翻译，`tsconfig.base.json` 需要 `resolveJsonModule: true`
 
 ### Claude's Discretion
 
