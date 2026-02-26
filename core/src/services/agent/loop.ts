@@ -205,6 +205,7 @@ export class ThinkActLoop {
         keepLastRounds: this.config.keepLastRounds ?? 2,
         softTrimHead: this.config.softTrimHead ?? 800,
         softTrimTail: this.config.softTrimTail ?? 800,
+        initialContextCharBudget: this.config.initialContextCharBudget ?? 20000,
       };
 
       const messages: LoopMessage[] = [{ role: "user", content: userContent }];

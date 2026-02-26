@@ -79,6 +79,7 @@ export interface AgentCoreConfig {
   keepLastRounds?: number;
   softTrimHead?: number;
   softTrimTail?: number;
+  initialContextCharBudget?: number;
   willingness?: WillingnessConfig;
   aggregationWindow?: number;
   errorReportChannel?: string;
@@ -103,6 +104,9 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   keepLastRounds: Schema.number().default(2).description("Rounds to keep untrimmed"),
   softTrimHead: Schema.number().default(800).description("Head chars for softTrim"),
   softTrimTail: Schema.number().default(800).description("Tail chars for softTrim"),
+  initialContextCharBudget: Schema.number()
+    .default(20000)
+    .description("Character budget for initial user context block (messages[0])"),
   willingness: WillingnessSchema,
   aggregationWindow: Schema.number()
     .default(1500)
