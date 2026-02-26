@@ -9,19 +9,14 @@ export type TriggerType =
   | "timer"
   | "internal";
 
-export interface Scope {
-  platform?: string;
-  channelId?: string;
-  guildId?: string;
-  userId?: string;
-  isDirect?: boolean;
-}
+export type ChannelKey = { platform: string; channelId: string };
 
 export interface Percept {
   id: string;
   traceId: string;
   type: TriggerType;
-  scope: Scope;
+  platform: string;
+  channelId: string;
   timestamp: Date;
   metadata?: Record<string, unknown>;
 }

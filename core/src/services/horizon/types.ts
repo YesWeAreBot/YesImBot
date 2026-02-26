@@ -1,13 +1,14 @@
 import type { Session } from "koishi";
 
-import { TriggerType, Scope } from "../shared/types";
+import { TriggerType, type ChannelKey } from "../shared/types";
 
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
 // ---- Horizon Event ----
 
 export interface HorizonMessageEvent {
-  scope: Scope;
+  platform: string;
+  channelId: string;
   timestamp: Date;
   payload: { messageId: string; senderId: string; senderName: string; content: string };
   triggerType: TriggerType;
@@ -44,7 +45,8 @@ export enum TimelineStage {
 export interface BaseTimelineEntry<Type extends TimelineEventType, Data extends object> {
   id: string;
   timestamp: Date;
-  scope: Scope;
+  platform: string;
+  channelId: string;
   type: Type;
   priority: TimelinePriority;
   stage: TimelineStage;
@@ -149,7 +151,7 @@ export interface HorizonView {
 // ---- Query ----
 
 export interface EventQueryOptions {
-  scope?: Scope;
+  key?: ChannelKey;
   types?: TimelineEventType[];
   limit?: number;
   since?: Date;
