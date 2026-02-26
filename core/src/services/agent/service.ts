@@ -388,7 +388,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     if (backlog.length === 1) return first;
 
     const combinedContent = backlog
-      .map((p) => p.percept.metadata?.content as string ?? "")
+      .map((p) => (p.percept.metadata?.content as string) ?? "")
       .filter(Boolean)
       .join("\n");
 
@@ -480,11 +480,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
       const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const view = await horizon.buildView({ platform: built.percept.platform, channelId: built.percept.channelId }, {
-        session: built.toolCtx.session,
-        selfId: built.toolCtx.bot?.selfId,
-        selfName: built.toolCtx.bot?.user?.name,
-      });
+      const view = await horizon.buildView(
+        { platform: built.percept.platform, channelId: built.percept.channelId },
+        {
+          session: built.toolCtx.session,
+          selfId: built.toolCtx.bot?.selfId,
+          selfName: built.toolCtx.bot?.user?.name,
+        },
+      );
       const contextText = horizon.formatHorizonText(view);
       const roleService = this.ctx["yesimbot.role"] as RoleService;
       const personaSummary = roleService.getSoulSummary(300);
