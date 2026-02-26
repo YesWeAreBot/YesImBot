@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { Context, Schema, Service } from "koishi";
 
 import type { InjectionPoint } from "../prompt/types";
-import type { Scope, TraitSignal } from "../shared/types";
+import type { ChannelKey, TraitSignal } from "../shared/types";
 import { evaluateCondition, filterByConfidence, specificity } from "./condition";
 import { loadSkillsFromDir } from "./loader";
 import type { SkillDefinition, SkillEffect } from "./types";
@@ -73,13 +73,13 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     this.logger.info("Skills reloaded, %d skills", this.skills.size);
   }
 
-  resolve(signals: TraitSignal[], scope: Scope): SkillEffect {
+  resolve(signals: TraitSignal[], key: ChannelKey): SkillEffect {
     const filtered = filterByConfidence(signals, this.config.confidenceThreshold ?? 0.3);
     this.logger.info(
       "resolve signals: %o",
       filtered.map((s) => ({ d: s.dimension, v: s.value, meta: s.metadata })),
     );
-    const channelKey = `${scope.platform}:${scope.channelId}`;
+    const channelKey = `${key.platform}:${key.channelId}`;
     if (!this.channelState.has(channelKey)) {
       this.channelState.set(channelKey, new Map());
     }
