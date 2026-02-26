@@ -96,3 +96,25 @@
 
 ---
 
+
+## v2.3 Architecture Cleanup (Shipped: 2026-02-26)
+
+**Phases completed:** 3 phases (26-28), 6 plans, ~10 tasks
+**Timeline:** 1 day (2026-02-26)
+**Commits:** 25 (9 feat + 16 docs)
+**Files modified:** 47 (+3,444 / -444)
+**Git range:** c679c73 → 02a34e0
+
+**Key accomplishments:**
+1. 删除 MemoryService 模块 — snippet 注册迁移到 RoleService，清理全部引用
+2. 清理 PromptService — 移除 memory-block partial、"memory" 注入点、3 个废弃模板文件
+3. 删除 Scope 接口 — 引入 ChannelKey 类型别名（platform + channelId 裸字段）
+4. 全局 13 文件迁移 — Horizon/Trait/Skill/Agent/Plugin 模块全部改用裸字段
+5. 简化 Environment 构造 — platform/channelId 成为必填字段，消除 Scope→Environment 转换
+6. 迁移 timeline DB schema — scope JSON 列替换为独立的 platform + channelId 列
+
+**Tech Debt (1 item — trivial):**
+- Turbo cache staleness required `--force` build during Phase 27 Plan 03 (infra, not code)
+
+---
+

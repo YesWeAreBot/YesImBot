@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v2.3
 milestone_name: Architecture Cleanup
-status: unknown
-last_updated: "2026-02-26T09:05:08.724Z"
+status: complete
+last_updated: "2026-02-26T09:25:00.000Z"
 progress:
   total_phases: 3
   completed_phases: 3
@@ -18,16 +18,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 28 — Environment Simplification / DB Schema
+**Current focus:** v2.3 complete — planning next milestone
 
 ## Current Position
 
-Phase: 28 of 28 (Environment Simplification / DB Schema)
-Plan: 1 of 1 complete
+Milestone: v2.3 Architecture Cleanup — SHIPPED 2026-02-26
 Status: Complete
-Last activity: 2026-02-26 — Plan 28-01 complete (Environment interface cleaned, timeline DB schema migrated to bare columns, all scope bridging casts removed)
+Last activity: 2026-02-26 — Milestone archived
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [██████████] 100%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅
 
 ## Performance Metrics
 
@@ -36,6 +35,7 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [█████�
 - v2.0: 8 phases, 16 plans, ~6 days
 - v2.1: 3 phases, 6 plans, ~2 days
 - v2.2: 3 phases, 8 plans, ~2 days
+- v2.3: 3 phases, 6 plans, ~1 day
 
 **By Phase:** See MILESTONES.md for breakdown.
 
@@ -44,21 +44,7 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [█████�
 ### Decisions
 
 Full decision log in PROJECT.md Key Decisions table.
-v2.0–v2.2 decisions archived to milestones/v2.x-ROADMAP.md.
-
-Recent decisions affecting v2.3:
-- memory_block 合并推迟到 v2.3（v2.2 决策）：迁移风险高，不阻塞 v2.2 功能
-- Scope 删除：用 platform + channelId 裸字段替代，全局 13 个文件迁移
-- [Phase 26-memory-cleanup]: Changed resourcesDir seeding sentinel from core-memory.mustache to partials/horizon-view.mustache since core-memory.mustache was deleted
-- [Phase 27-01]: ChannelKey is a type alias with required non-optional fields (stricter than Scope)
-- [Phase 27-01]: DB bridge pattern — scope JSON column preserved until Phase 28 (CTX-08), bridged via as unknown as casts
-- [Phase 27-02]: isDirect derived from view.environment?.type === "private" — canonical source after Scope deletion
-- [Phase 27-02]: HorizonMessageEvent satisfies ChannelKey structurally — event passed directly to channelKey() helper
-- [Phase 27-03]: ToolExecutionContext bare fields: platform/channelId replace scope: Scope as first two fields
-- [Phase 27-03]: isDirect read from event.runtime?.session?.isDirect — not part of channel identity
-- [Phase 28-01]: Environment.platform and Environment.channelId are now required fields — no optional chaining needed at call sites
-- [Phase 28-01]: Timeline DB schema migrated from scope:json to platform:string(64) + channelId:string(255) — bare columns end-to-end
-- [Phase 28-01]: DB bridge pattern fully resolved — all as unknown as scope bridging casts removed from manager.ts
+v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 
 ### Pending Todos
 
@@ -80,5 +66,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 28-01-PLAN.md — Environment interface cleaned, timeline DB schema migrated to bare columns, all scope bridging casts removed, Phase 28 complete
+Stopped at: v2.3 milestone archived — ready for /gsd:new-milestone
 Resume file: None

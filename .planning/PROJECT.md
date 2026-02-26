@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用、Horizon 上下文管理、基于 Trait + Skill 的上下文感知行为调整体系，以及 SOUL.md/AGENTS.md/TOOLS.md 固定角色文件驱动的提示词系统——一个独一无二的、专属于社群的虚拟成员。
+Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的群聊和私聊中。它具备性格记忆、动态意愿值决策、可扩展工具调用、Horizon 上下文管理、基于 Trait + Skill 的上下文感知行为调整体系，以及 SOUL.md/AGENTS.md/TOOLS.md 固定角色文件驱动的提示词系统。内部架构使用 platform + channelId 裸字段作为频道标识，无中间抽象层——一个独一无二的、专属于社群的虚拟成员。
 
 ## Core Value
 
@@ -45,17 +45,12 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - ✓ 人设感知 Judge Prompt：getSoulSummary() + 结构化 JSON 响应 — v2.2
 - ✓ Anthropic 系统提示词缓存：stable/dynamic 拆分 + SystemModelMessage[] + cache_control — v2.2
 - ✓ Working Memory 时序优化：XML history + short-ID + triggered-by 因果标签 + send_message 裁剪 — v2.2
+- ✓ MemoryService 模块删除：snippet 注册迁移到 RoleService，清理全部引用和模板文件 — v2.3
+- ✓ Scope 接口删除：ChannelKey 类型别名（platform + channelId 裸字段）替代，全局 13 文件迁移 — v2.3
+- ✓ Environment 构造简化：platform/channelId 必填字段，消除 Scope→Environment 转换 — v2.3
+- ✓ Timeline DB schema 迁移：scope JSON 列替换为独立 platform + channelId 列 — v2.3
 
 ### Active
-
-## Current Milestone: v2.3 Architecture Cleanup
-
-**Goal:** 简化内部架构——合并 memory_block 到 RoleService，删除 Scope 抽象改用裸字段，简化 Environment 构造
-
-**Target features:**
-- memory_block → RoleService 合并：消除重复的文件加载/注入逻辑
-- Scope 接口删除：用 platform + channelId 裸字段替代，全局 13 个文件迁移
-- Environment 构造简化：减少 Scope→Environment 的冗余转换
 
 ### Out of Scope
 
@@ -68,6 +63,8 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - 模型组与负载均衡 — 后续迭代
 - TTS/STT、RAG 记忆库 — 后续迭代
 - 全 provider 缓存抽象 — 各 provider 缓存语义不同，先做 Anthropic-only（v2.2 验证）
+- Scope 细粒度化（per-user/per-topic）— platform+channelId 足够，不过度设计（v2.3 验证）
+- 跨频道 scope 共享 — 伪命题，未来记忆系统 + 工具查询替代（v2.3 验证）
 
 ## Context
 
@@ -75,12 +72,13 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - **v2.0 shipped:** 2026-02-23, +12,546 LOC TypeScript, 8 phases, 16 plans
 - **v2.1 shipped:** 2026-02-24, +1,741 LOC TypeScript, 3 phases, 6 plans
 - **v2.2 shipped:** 2026-02-25, +1,580 LOC TypeScript, 3 phases, 8 plans
+- **v2.3 shipped:** 2026-02-26, 6,029 LOC TypeScript total, 3 phases, 6 plans
 - **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
 - **包结构:** packages/shared-model + core + providers/provider-openai + providers/provider-deepseek + providers/provider-anthropic
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
 - **设计文档**：`references/books/` 目录为作者架构思考，`references/talks/` 为完整架构讨论
-- **v2.2 达成:** Snippet 渲染修复、JSON Parser 27 测试、DM 聚合+限流、全链路 traceId、结构化 Judge、Anthropic prompt cache
-- **已知技术债:** formatHorizonText deferred-judgment 路径省略 percept（设计决策）、memory_block→RoleService 合并推迟到 v2.3
+- **v2.3 达成:** MemoryService 删除、Scope→ChannelKey 全局迁移、Environment 裸字段简化、timeline DB schema 迁移
+- **已知技术债:** formatHorizonText deferred-judgment 路径省略 percept（设计决策）
 - **测试覆盖:** vitest 基础设施已建立，JSON Parser 27 用例 + TokenBucket/Willingness/HorizonText 单测
 
 ## Constraints
@@ -125,6 +123,11 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | memory_block 合并推迟 | 迁移风险高，不阻塞 v2.2 任何功能 | ✓ Good — 推迟到 v2.3 |
 | JSON 文本输出 + 结构化 Judge | Judge 用 JsonParser 解析结构化响应，保留 legacy yes/no fallback | ✓ Good — 兼容性好 |
 | DM TokenBucket 用 senderId | 真正的 per-user 限流，避免 channelId 在 DM 场景的歧义 | ✓ Good |
+| MemoryService 删除而非合并 | SOUL.md 已覆盖人设定制，memory_block 读写能力验证效果不佳 | ✓ Good — snippet 迁移到 RoleService |
+| Scope→ChannelKey 裸字段替代 | Scope 可选字段过度设计，platform+channelId 必填字段更严格 | ✓ Good — 全局 13 文件一次性迁移 |
+| DB bridge 渐进迁移 | Phase 27 先迁移 TS 类型，Phase 28 再迁移 DB schema，降低风险 | ✓ Good — 两步完成零回归 |
+| Environment 必填字段 | 消除 optional chaining，调用方必须提供 platform/channelId | ✓ Good — 类型系统强制正确性 |
+| isDirect 从 Session 读取 | 不属于频道标识，从 event.runtime.session 获取 | ✓ Good — 职责边界清晰 |
 
 ---
-*Last updated: 2026-02-26 after v2.3 milestone start*
+*Last updated: 2026-02-26 after v2.3 milestone*
