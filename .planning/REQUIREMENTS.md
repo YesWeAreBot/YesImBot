@@ -22,8 +22,8 @@ Requirements for Architecture Cleanup milestone. Each maps to roadmap phases.
 - [x] **CTX-04**: 迁移 Skill 模块（service.ts）使用裸字段
 - [x] **CTX-05**: 迁移 Agent 模块（service.ts）和 Plugin 模块（types.ts）使用裸字段
 - [x] **CTX-06**: 迁移 Percept 接口从 `scope: Scope` 改为裸字段
-- [ ] **CTX-07**: 简化 Environment 构造——消除 Scope→Environment 的冗余转换
-- [ ] **CTX-08**: 迁移 timeline 数据库 schema，scope JSON 列改为 platform + channelId 独立列
+- [x] **CTX-07**: 简化 Environment 构造——消除 Scope→Environment 的冗余转换
+- [x] **CTX-08**: 迁移 timeline 数据库 schema，scope JSON 列改为 platform + channelId 独立列
 
 ## Future Requirements
 
@@ -56,8 +56,8 @@ Requirements for Architecture Cleanup milestone. Each maps to roadmap phases.
 | CTX-04 | Phase 27 | Complete |
 | CTX-05 | Phase 27 | Complete |
 | CTX-06 | Phase 27 | Complete |
-| CTX-07 | Phase 28 | Pending |
-| CTX-08 | Phase 28 | Pending |
+| CTX-07 | Phase 28 | Complete |
+| CTX-08 | Phase 28 | Complete |
 
 **Coverage:**
 - v2.3 requirements: 12 total

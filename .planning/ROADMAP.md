@@ -69,7 +69,7 @@
 
 - [x] **Phase 26: Memory Cleanup** — Delete memory_block module and all its wiring (completed 2026-02-26)
 - [x] **Phase 27: Scope Deletion & Module Migration** — Delete Scope interface, migrate all 13 files to bare fields (completed 2026-02-26)
-- [ ] **Phase 28: Environment Simplification & DB Schema** — Simplify Environment construction, migrate timeline schema
+- [x] **Phase 28: Environment Simplification & DB Schema** — Simplify Environment construction, migrate timeline schema (completed 2026-02-26)
 
 ## Phase Details
 
@@ -119,4 +119,4 @@
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26. Memory Cleanup | 2/2 | Complete    | 2026-02-26 | - |
 | 27. Scope Deletion & Module Migration | 3/3 | Complete    | 2026-02-26 | - |
-| 28. Environment Simplification & DB Schema | v2.3 | 0/? | Not started | - |
+| 28. Environment Simplification & DB Schema | 1/1 | Complete   | 2026-02-26 | - |

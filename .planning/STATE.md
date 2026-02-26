@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 27 — Scope Deletion / Module Migration
+**Current focus:** Phase 28 — Environment Simplification / DB Schema
 
 ## Current Position
 
-Phase: 27 of 28 (Scope Deletion / Module Migration)
-Plan: 3 of 3 complete
+Phase: 28 of 28 (Environment Simplification / DB Schema)
+Plan: 1 of 1 complete
 Status: Complete
-Last activity: 2026-02-26 — Plan 27-03 complete (Agent and Plugin modules migrated, yarn build passes, Phase 27 done)
+Last activity: 2026-02-26 — Plan 28-01 complete (Environment interface cleaned, timeline DB schema migrated to bare columns, all scope bridging casts removed)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [██████░░░░] 60%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [██████████] 100%
 
 ## Performance Metrics
 
@@ -56,6 +56,9 @@ Recent decisions affecting v2.3:
 - [Phase 27-02]: HorizonMessageEvent satisfies ChannelKey structurally — event passed directly to channelKey() helper
 - [Phase 27-03]: ToolExecutionContext bare fields: platform/channelId replace scope: Scope as first two fields
 - [Phase 27-03]: isDirect read from event.runtime?.session?.isDirect — not part of channel identity
+- [Phase 28-01]: Environment.platform and Environment.channelId are now required fields — no optional chaining needed at call sites
+- [Phase 28-01]: Timeline DB schema migrated from scope:json to platform:string(64) + channelId:string(255) — bare columns end-to-end
+- [Phase 28-01]: DB bridge pattern fully resolved — all as unknown as scope bridging casts removed from manager.ts
 
 ### Pending Todos
 
@@ -77,5 +80,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 27-03-PLAN.md — Agent and Plugin modules migrated, yarn build passes, Phase 27 complete
+Stopped at: Completed 28-01-PLAN.md — Environment interface cleaned, timeline DB schema migrated to bare columns, all scope bridging casts removed, Phase 28 complete
 Resume file: None
