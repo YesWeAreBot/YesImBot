@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 27 of 28 (Scope Deletion / Module Migration)
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In Progress
-Last activity: 2026-02-26 — Plan 27-01 complete (Scope deleted, ChannelKey introduced, Horizon module migrated)
+Last activity: 2026-02-26 — Plan 27-02 complete (Trait and Skill modules migrated to ChannelKey)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [██░░░░░░░░] 20%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -52,7 +52,8 @@ Recent decisions affecting v2.3:
 - [Phase 26-memory-cleanup]: Changed resourcesDir seeding sentinel from core-memory.mustache to partials/horizon-view.mustache since core-memory.mustache was deleted
 - [Phase 27-01]: ChannelKey is a type alias with required non-optional fields (stricter than Scope)
 - [Phase 27-01]: DB bridge pattern — scope JSON column preserved until Phase 28 (CTX-08), bridged via as unknown as casts
-- [Phase 27-01]: isDirect/guildId/userId moved to Session parameter in service.ts — not part of channel identity
+- [Phase 27-02]: isDirect derived from view.environment?.type === "private" — canonical source after Scope deletion
+- [Phase 27-02]: HorizonMessageEvent satisfies ChannelKey structurally — event passed directly to channelKey() helper
 
 ### Pending Todos
 
@@ -74,5 +75,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 27-01-PLAN.md — Scope deleted, ChannelKey introduced, Horizon module migrated
+Stopped at: Completed 27-02-PLAN.md — Trait and Skill modules migrated to ChannelKey
 Resume file: None
