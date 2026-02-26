@@ -55,6 +55,7 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 - 30-01: Deleted ModelDefaultParams, replaced with CallSettings from ai-sdk; AbstractProvider auto-registers in constructor; createProviderSchema uses Schema.intersect for extra fields; advancedOverride merges at construction time with parse-error-as-warning
 - 30-02: Separated class+namespace+export default pattern for TS2652 compatibility; used explicit BaseProviderConfig type alias instead of Schema parse inference; fixed core ModelService declare module to IModelService
 - 31-02: Removed hardcoded .description() from schema-factory advancedOverride; all provider config descriptions now come from i18n locale files
+- 31-01: Used `as never` cast for locale-aware .description() objects; inlined all field definitions into 5 groups in index.ts for grouping control
 
 ### Pending Todos
 
@@ -77,9 +78,10 @@ None.
 | Phase 30 P01                | 5min                                                                            | 3 tasks    | 6 files  |
 | Phase 30 P02                | 10min                                                                           | 3 tasks    | 4 files  |
 | Phase 31 P02                | 6min                                                                            | 2 tasks    | 10 files |
+| Phase 31 P01                | 7min                                                                            | 2 tasks    | 9 files  |
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 31-02-PLAN.md (Provider i18n locale files and .i18n() wiring)
+Stopped at: Completed 31-01-PLAN.md (Core config UX grouping and i18n)
 Resume file: None
