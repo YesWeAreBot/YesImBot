@@ -77,7 +77,7 @@
 
 - [x] **Phase 29: Runtime Bug Fixes** — Eliminate three known runtime defects to establish a clean baseline
 - [x] **Phase 30: Provider Architecture** — Extract BaseProvider abstraction to unify provider plugins (completed 2026-02-26)
-- [ ] **Phase 31: Model Groups + Config UX** — Add load-balanced model groups and improve config readability
+- [x] **Phase 31: Model Groups + Config UX** — Add load-balanced model groups and improve config readability (completed 2026-02-26)
 
 ## Phase Details
 
@@ -126,13 +126,13 @@
 
 ## Progress
 
-| Phase | Milestone | Plans Complete | Status      | Completed  |
-| ----- | --------- | -------------- | ----------- | ---------- |
-| 1-15  | v1.0      | 29/29          | Complete    | 2026-02-21 |
-| 16-19 | v2.0      | 16/16          | Complete    | 2026-02-23 |
-| 20-22 | v2.1      | 6/6            | Complete    | 2026-02-24 |
-| 23-25 | v2.2      | 8/8            | Complete    | 2026-02-25 |
-| 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
-| 29    | v2.4      | Complete       | 2026-02-26  | 2026-02-26 |
-| 30    | 2/2       | Complete       | 2026-02-26  | -          |
-| 31    | v2.4      | 0/?            | Not started | -          |
+| Phase | Milestone | Plans Complete | Status     | Completed  |
+| ----- | --------- | -------------- | ---------- | ---------- |
+| 1-15  | v1.0      | 29/29          | Complete   | 2026-02-21 |
+| 16-19 | v2.0      | 16/16          | Complete   | 2026-02-23 |
+| 20-22 | v2.1      | 6/6            | Complete   | 2026-02-24 |
+| 23-25 | v2.2      | 8/8            | Complete   | 2026-02-25 |
+| 26-28 | v2.3      | 6/6            | Complete   | 2026-02-26 |
+| 29    | v2.4      | Complete       | 2026-02-26 | 2026-02-26 |
+| 30    | 2/2       | Complete       | 2026-02-26 | -          |
+| 31    | 2/2       | Complete       | 2026-02-26 | -          |
