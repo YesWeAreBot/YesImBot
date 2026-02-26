@@ -46,6 +46,48 @@
 
 ---
 
+## Milestone: v2.3 — Architecture Cleanup
+
+**Shipped:** 2026-02-26
+**Phases:** 3 | **Plans:** 6 | **Tasks:** ~10
+
+### What Was Built
+- MemoryService 模块完全删除，snippet 注册迁移到 RoleService
+- PromptService 清理：memory-block partial、"memory" 注入点、3 个废弃模板文件
+- Scope 接口删除，ChannelKey 类型别名引入（platform + channelId 裸字段）
+- 全局 13 文件迁移到裸字段（Horizon/Trait/Skill/Agent/Plugin）
+- Environment 构造简化：platform/channelId 必填字段
+- Timeline DB schema 从 scope JSON 列迁移到独立 platform + channelId 列
+
+### What Worked
+- DB bridge 渐进迁移策略：Phase 27 先迁移 TS 类型（用 `as unknown as` 桥接），Phase 28 再迁移 DB schema——两步完成零回归
+- 审计先行：milestone audit 12/12 requirements + 12/12 integration 全部通过，归档无阻塞
+- 极小粒度 plan（2-5 min）：6 个 plan 全部零偏差或仅 auto-fix 级偏差
+- ChannelKey 类型别名设计：required 字段比 Scope 的 optional 字段更严格，类型系统强制正确性
+
+### What Was Inefficient
+- STATE.md milestone 字段再次被 CLI 写成 "v1.0" 而非 "v2.3"（与 v2.2 相同的 CLI 默认值问题）
+- summary-extract CLI 的 `one_liner` 字段返回 null——SUMMARY frontmatter 缺少 `one_liner` 字段定义
+- Turbo cache staleness 在 Phase 27 Plan 03 导致假失败，需要 `--force` 构建
+
+### Patterns Established
+- ChannelKey 类型别名模式：`{ platform: string; channelId: string }` 作为最小频道标识
+- 内联 ChannelKey 对象字面量：调用方直接构造 `{ platform: percept.platform, channelId: percept.channelId }`
+- isDirect 从 Session 读取：不属于频道标识，从 `event.runtime?.session?.isDirect` 获取
+- Environment 直接字段访问：`env.platform` / `env.channelId`，无 metadata 间接层
+
+### Key Lessons
+1. 渐进式迁移（类型先行，DB 后行）比一次性大迁移风险更低——Phase 27/28 拆分验证了这一点
+2. SUMMARY frontmatter 应包含 `one_liner` 字段以支持 CLI 自动提取成就
+3. Turbo cache 在跨 plan 执行时可能过期——复杂迁移后应默认 `--force` 构建
+
+### Cost Observations
+- Model mix: balanced profile (sonnet for execution, haiku for workers)
+- Sessions: ~2 sessions in 1 day
+- Notable: 6 plans 平均执行时间 ~3 min，整个 milestone 约 20 min 纯执行时间
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -56,6 +98,7 @@
 | v2.0 | 6 | 8 | 16 | 迁移而非重写，Trait+Skill 体系 |
 | v2.1 | 2 | 3 | 6 | 精简打磨，技术债清理 |
 | v2.2 | 2 | 3 | 8 | Wave 0 RED 测试，审计先行 |
+| v2.3 | 1 | 3 | 6 | 渐进式迁移，DB bridge 策略 |
 
 ### Cumulative Quality
 
@@ -65,9 +108,11 @@
 | v2.0 | 0 | 0% | 0 |
 | v2.1 | 0 | 0% | 0 |
 | v2.2 | 37 | JSON parser + willingness + horizon | 1 (provider-anthropic) |
+| v2.3 | 37 | unchanged | 0 (cleanup milestone) |
 
 ### Top Lessons (Verified Across Milestones)
 
-1. 小粒度 plan（2-5 min）比大 plan 偏差更少，执行更可预测（v2.1, v2.2 验证）
+1. 小粒度 plan（2-5 min）比大 plan 偏差更少，执行更可预测（v2.1, v2.2, v2.3 验证）
 2. 推迟高风险迁移是正确策略 — 聚焦当前 milestone 目标（v1.0 记忆系统, v2.2 memory_block 合并）
 3. 审计/验证步骤在归档前必不可少 — 每次都能发现遗漏（v2.0 tech debt, v2.2 OBS 复选框）
+4. 渐进式迁移（类型先行，DB 后行）比一次性大迁移风险更低（v2.3 验证）
