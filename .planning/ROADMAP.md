@@ -119,4 +119,4 @@
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26. Memory Cleanup | 2/2 | Complete    | 2026-02-26 | - |
 | 27. Scope Deletion & Module Migration | 3/3 | Complete    | 2026-02-26 | - |
-| 28. Environment Simplification & DB Schema | 1/1 | Complete   | 2026-02-26 | - |
+| 28. Environment Simplification & DB Schema | 1/1 | Complete    | 2026-02-26 | - |
