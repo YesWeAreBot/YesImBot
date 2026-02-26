@@ -1,4 +1,5 @@
 import { Schema } from "koishi";
+
 import { Modality } from "../types/model";
 import type { ModelInfo } from "../types/model";
 

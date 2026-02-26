@@ -1,6 +1,13 @@
-import type { Context } from "koishi";
+import type { EmbeddingModelV3 } from "@ai-sdk/provider";
 import type { CallSettings, LanguageModel } from "ai";
+import type { Context } from "koishi";
+
 import type { IModelProvider, IModelService, ModelInfo } from "../types/model";
+
+export interface ProviderClient {
+  chat(modelId: string): LanguageModel;
+  textEmbeddingModel?(modelId: string): EmbeddingModelV3;
+}
 
 export interface BaseProviderConfig {
   id: string;
@@ -17,9 +24,10 @@ declare module "koishi" {
   }
 }
 
-export abstract class AbstractProvider<TClient, TConfig extends BaseProviderConfig>
-  implements IModelProvider
-{
+export abstract class AbstractProvider<
+  TClient extends ProviderClient,
+  TConfig extends BaseProviderConfig,
+> implements IModelProvider {
   readonly id: string;
   readonly models: ModelInfo[];
   abstract readonly providerType: string;
@@ -46,7 +54,7 @@ export abstract class AbstractProvider<TClient, TConfig extends BaseProviderConf
   protected abstract createClient(config: TConfig): TClient;
 
   getModel(modelId: string): LanguageModel {
-    return (this.client as any).chat(modelId);
+    return this.client.chat(modelId);
   }
 
   listModels(): Record<string, ModelInfo> {
