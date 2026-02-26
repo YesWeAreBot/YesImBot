@@ -4,7 +4,9 @@ import { join, resolve } from "node:path";
 import { Context, Schema, Service } from "koishi";
 import Mustache from "mustache";
 
+import type { HorizonView } from "../horizon";
 import type { PromptService } from "../prompt/service";
+import type { Percept } from "../shared/types";
 import type { RoleServiceConfig } from "./types";
 import { RoleServiceConfigSchema } from "./types";
 
@@ -42,8 +44,50 @@ export class RoleService extends Service<RoleServiceConfig> {
   protected async start(): Promise<void> {
     this.ensureFiles();
     this.loadAndInject();
+    this.registerSnippets();
     this.startWatching();
     this.logger.info("RoleService started");
+  }
+
+  private registerSnippets(): void {
+    const fmt = new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    this.prompt.registerSnippet("date.now", () => fmt.format(new Date()));
+
+    this.prompt.registerSnippet("sender.name", (scope) => {
+      const percept = scope.percept as Percept | undefined;
+      return (percept?.metadata?.senderName as string) ?? "";
+    });
+    this.prompt.registerSnippet("sender.id", (scope) => {
+      const percept = scope.percept as Percept | undefined;
+      return (percept?.metadata?.senderId as string) ?? "";
+    });
+
+    this.prompt.registerSnippet("channel.name", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return view?.environment?.name ?? "";
+    });
+    this.prompt.registerSnippet("channel.platform", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return (view?.environment?.metadata?.platform as string) ?? "";
+    });
+
+    this.prompt.registerSnippet("bot.name", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return view?.self?.name ?? "";
+    });
+    this.prompt.registerSnippet("bot.id", (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      return view?.self?.id ?? "";
+    });
   }
 
   private ensureFiles(): void {
