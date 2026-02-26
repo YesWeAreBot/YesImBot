@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 27 of 28 (Scope Deletion / Module Migration)
-Plan: 2 of 3 complete
-Status: In Progress
-Last activity: 2026-02-26 — Plan 27-02 complete (Trait and Skill modules migrated to ChannelKey)
+Plan: 3 of 3 complete
+Status: Complete
+Last activity: 2026-02-26 — Plan 27-03 complete (Agent and Plugin modules migrated, yarn build passes, Phase 27 done)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [████░░░░░░] 40%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -54,6 +54,8 @@ Recent decisions affecting v2.3:
 - [Phase 27-01]: DB bridge pattern — scope JSON column preserved until Phase 28 (CTX-08), bridged via as unknown as casts
 - [Phase 27-02]: isDirect derived from view.environment?.type === "private" — canonical source after Scope deletion
 - [Phase 27-02]: HorizonMessageEvent satisfies ChannelKey structurally — event passed directly to channelKey() helper
+- [Phase 27-03]: ToolExecutionContext bare fields: platform/channelId replace scope: Scope as first two fields
+- [Phase 27-03]: isDirect read from event.runtime?.session?.isDirect — not part of channel identity
 
 ### Pending Todos
 
@@ -75,5 +77,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 27-02-PLAN.md — Trait and Skill modules migrated to ChannelKey
+Stopped at: Completed 27-03-PLAN.md — Agent and Plugin modules migrated, yarn build passes, Phase 27 complete
 Resume file: None

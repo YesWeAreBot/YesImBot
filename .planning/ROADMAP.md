@@ -68,7 +68,7 @@
 **Milestone Goal:** 简化内部架构——删除 memory_block 模块，消除 Scope 抽象改用裸字段，简化 Environment 构造
 
 - [x] **Phase 26: Memory Cleanup** — Delete memory_block module and all its wiring (completed 2026-02-26)
-- [ ] **Phase 27: Scope Deletion & Module Migration** — Delete Scope interface, migrate all 13 files to bare fields
+- [x] **Phase 27: Scope Deletion & Module Migration** — Delete Scope interface, migrate all 13 files to bare fields (completed 2026-02-26)
 - [ ] **Phase 28: Environment Simplification & DB Schema** — Simplify Environment construction, migrate timeline schema
 
 ## Phase Details
@@ -118,5 +118,5 @@
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26. Memory Cleanup | 2/2 | Complete    | 2026-02-26 | - |
-| 27. Scope Deletion & Module Migration | 2/3 | In Progress|  | - |
+| 27. Scope Deletion & Module Migration | 3/3 | Complete   | 2026-02-26 | - |
 | 28. Environment Simplification & DB Schema | v2.3 | 0/? | Not started | - |
