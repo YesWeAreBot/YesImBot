@@ -186,12 +186,12 @@ export class AgentCore extends Service<AgentCoreConfig> {
   private handleEvent(event: HorizonMessageEvent): void {
     try {
       const traceId = `msg-${Random.id(8, 16)}`;
-      const channelKey = `${event.scope.platform}:${event.scope.channelId}`;
+      const channelKey = `${event.platform}:${event.channelId}`;
 
       // Rate limit check — before any processing
       const userId = event.payload.senderId;
-      const isDirect = event.scope.isDirect;
-      const bucketKey = `${event.scope.platform}:${userId}`;
+      const isDirect = event.runtime?.session?.isDirect ?? false;
+      const bucketKey = `${event.platform}:${userId}`;
       const bucket = isDirect ? this.rateLimiter.dm : this.rateLimiter.group;
 
       if (!bucket.consume(bucketKey)) {
@@ -355,7 +355,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
         id: Random.id(),
         traceId: traceId ?? `msg-${Random.id(8, 16)}`,
         type: event.triggerType,
-        scope: event.scope,
+        platform: event.platform,
+        channelId: event.channelId,
         timestamp: event.timestamp,
         metadata: {
           messageId: event.payload.messageId,
@@ -364,7 +365,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
           senderName: event.payload.senderName,
         },
       },
-      toolCtx: { scope: event.scope, session, bot: session?.bot },
+      toolCtx: { platform: event.platform, channelId: event.channelId, session, bot: session?.bot },
     };
   }
 
@@ -441,7 +442,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     try {
       const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
       const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const view = await horizon.buildView(built.percept.scope, {
+      const view = await horizon.buildView({ platform: built.percept.platform, channelId: built.percept.channelId }, {
         session: built.toolCtx.session,
         selfId: built.toolCtx.bot?.selfId,
         selfName: built.toolCtx.bot?.user?.name,
@@ -520,7 +521,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const channelId = this.config.errorReportChannel.slice(colonIdx + 1);
     const bot = this.ctx.bots.find((b) => b.platform === platform);
     if (!bot) return;
-    const summary = `[Error] ${percept.scope.channelId}: ${err instanceof Error ? err.message : String(err)}`;
+    const summary = `[Error] ${percept.channelId}: ${err instanceof Error ? err.message : String(err)}`;
     await bot.sendMessage(channelId, summary).catch(() => {});
   }
 }

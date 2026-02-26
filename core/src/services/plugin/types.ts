@@ -1,6 +1,6 @@
 import type { Bot, Schema, Session } from "koishi";
 
-import type { Percept, Scope } from "../shared/types";
+import type { Percept } from "../shared/types";
 
 export enum FunctionType {
   Tool = "tool",
@@ -14,7 +14,8 @@ export interface ToolResult<T = unknown> {
 }
 
 export interface ToolExecutionContext {
-  scope: Scope;
+  platform: string;
+  channelId: string;
   session?: Session;
   bot?: Bot;
   percept?: Percept;

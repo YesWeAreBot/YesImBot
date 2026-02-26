@@ -1,8 +1,8 @@
 import type { HorizonView } from "../horizon/types";
-import type { Scope, TraitSignal } from "../shared/types";
+import type { ChannelKey, TraitSignal } from "../shared/types";
 
 export interface TraitDetector {
   name: string;
   start(ctx: unknown, analyzer: unknown): void;
-  detect(scope: Scope, view: HorizonView): TraitSignal[] | Promise<TraitSignal[]>;
+  detect(key: ChannelKey, view: HorizonView): TraitSignal[] | Promise<TraitSignal[]>;
 }

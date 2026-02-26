@@ -68,7 +68,7 @@ export class PluginService extends Service<PluginServiceConfig> {
     const timeout = this.config?.defaultTimeout ?? 30000;
     try {
       return await Promise.race([
-        fn.handler(params, context ?? { scope: {} }),
+        fn.handler(params, context ?? { platform: "", channelId: "" }),
         new Promise<ToolResult>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout")), timeout),
         ),

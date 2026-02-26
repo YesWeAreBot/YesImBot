@@ -1,7 +1,7 @@
 import type { Context, Logger } from "koishi";
 
 import type { HorizonView } from "../../horizon/types";
-import type { Scope, TraitSignal } from "../../shared/types";
+import type { ChannelKey, TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
 import type { TraitDetector } from "../types";
 
@@ -13,8 +13,8 @@ const WINDOW_MS = 5 * 60 * 1000;
 const HIGH_THRESHOLD = 8;
 const MEDIUM_THRESHOLD = 2;
 
-function channelKey(scope: Scope): string {
-  return `${scope.platform}:${scope.channelId}`;
+function channelKey(key: ChannelKey): string {
+  return `${key.platform}:${key.channelId}`;
 }
 
 export class HeatTrait implements TraitDetector {
@@ -28,7 +28,7 @@ export class HeatTrait implements TraitDetector {
     this.logger = context.logger("trait:heat");
 
     context.on("horizon/message", (event) => {
-      const key = channelKey(event.scope);
+      const key = channelKey(event);
       const state = this.analyzer.getState<HeatState>(this.name, key) ?? { timestamps: [] };
       const now = Date.now();
 
@@ -39,9 +39,9 @@ export class HeatTrait implements TraitDetector {
     });
   }
 
-  detect(scope: Scope, _view: HorizonView): TraitSignal[] {
-    const key = channelKey(scope);
-    const state = this.analyzer.getState<HeatState>(this.name, key);
+  detect(key: ChannelKey, _view: HorizonView): TraitSignal[] {
+    const ck = channelKey(key);
+    const state = this.analyzer.getState<HeatState>(this.name, ck);
 
     if (!state || state.timestamps.length === 0) {
       return [
