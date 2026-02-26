@@ -132,7 +132,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
   ];
 
   private queues = new Map<string, Promise<void>>();
-  private pending = new Map<string, LoopPayload>();
+  private pending = new Map<string, LoopPayload[]>();
   private pendingWindows = new Map<
     string,
     { cancel: () => void; lastEvent: HorizonMessageEvent }
@@ -235,7 +235,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
         this.pendingWindows.delete(channelKey);
         const stored = this.buildPercept(event, traceId);
         if (this.queues.has(channelKey)) {
-          this.pending.set(channelKey, stored);
+          const arr = this.pending.get(channelKey) ?? [];
+          arr.push(stored);
+          this.pending.set(channelKey, arr);
         } else {
           this.enqueue(channelKey, stored);
         }
@@ -277,7 +279,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
         this.dmWindows.delete(channelKey);
         const built = this.buildPercept(event, traceId);
         if (this.queues.has(channelKey)) {
-          this.pending.set(channelKey, built);
+          const arr = this.pending.get(channelKey) ?? [];
+          arr.push(built);
+          this.pending.set(channelKey, arr);
         } else {
           this.enqueue(channelKey, built);
         }
@@ -292,7 +296,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
           this.dmWindows.delete(channelKey);
           const built = this.buildPercept(win.lastEvent, win.traceId);
           if (this.queues.has(channelKey)) {
-            this.pending.set(channelKey, built);
+            const arr = this.pending.get(channelKey) ?? [];
+            arr.push(built);
+            this.pending.set(channelKey, arr);
           } else {
             this.enqueue(channelKey, built);
           }
@@ -310,7 +316,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
           this.dmWindows.delete(channelKey);
           const built = this.buildPercept(win.lastEvent, win.traceId);
           if (this.queues.has(channelKey)) {
-            this.pending.set(channelKey, built);
+            const arr = this.pending.get(channelKey) ?? [];
+            arr.push(built);
+            this.pending.set(channelKey, arr);
           } else {
             this.enqueue(channelKey, built);
           }
@@ -324,7 +332,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
           this.dmWindows.delete(channelKey);
           const built = this.buildPercept(win.lastEvent, win.traceId);
           if (this.queues.has(channelKey)) {
-            this.pending.set(channelKey, built);
+            const arr = this.pending.get(channelKey) ?? [];
+            arr.push(built);
+            this.pending.set(channelKey, arr);
           } else {
             this.enqueue(channelKey, built);
           }
@@ -369,14 +379,38 @@ export class AgentCore extends Service<AgentCoreConfig> {
     };
   }
 
+  private mergeBacklog(backlog: LoopPayload[]): LoopPayload {
+    const first = backlog[0];
+    if (backlog.length === 1) return first;
+
+    const combinedContent = backlog
+      .map((p) => p.percept.metadata?.content as string ?? "")
+      .filter(Boolean)
+      .join("\n");
+
+    return {
+      percept: {
+        ...first.percept,
+        metadata: {
+          ...first.percept.metadata,
+          content: combinedContent,
+          isBacklogDrain: true,
+          backlogCount: backlog.length,
+        },
+      },
+      toolCtx: first.toolCtx,
+    };
+  }
+
   private enqueue(channelKey: string, built: LoopPayload): void {
     const chain = (this.queues.get(channelKey) ?? Promise.resolve())
       .then(() => this.runLoop(channelKey, built))
       .then(() => {
-        const next = this.pending.get(channelKey);
-        if (next) {
+        const backlog = this.pending.get(channelKey);
+        if (backlog?.length) {
           this.pending.delete(channelKey);
-          this.enqueue(channelKey, next);
+          const merged = this.mergeBacklog(backlog);
+          this.enqueue(channelKey, merged);
         }
       })
       .catch((err: unknown) => this.logger.error(`AgentCore queue error: ${err}`))
