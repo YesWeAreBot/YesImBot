@@ -1,7 +1,7 @@
 import type { Context, Logger } from "koishi";
 
 import type { HorizonView } from "../../horizon/types";
-import type { Scope, TraitSignal } from "../../shared/types";
+import type { ChannelKey, TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
 import type { TraitDetector } from "../types";
 
@@ -15,8 +15,8 @@ interface SceneState {
 const IGNORED_MESSAGES_SINCE_RESPONSE = 5;
 const IGNORED_MESSAGES_SINCE_MENTION = 10;
 
-function channelKey(scope: Scope): string {
-  return `${scope.platform}:${scope.channelId}`;
+function channelKey(key: ChannelKey): string {
+  return `${key.platform}:${key.channelId}`;
 }
 
 export class SceneTrait implements TraitDetector {
@@ -31,7 +31,7 @@ export class SceneTrait implements TraitDetector {
     this.logger = context.logger("trait:scene");
 
     context.on("horizon/message", (event) => {
-      const key = channelKey(event.scope);
+      const key = channelKey(event);
       const state = this.analyzer.getState<SceneState>(this.name, key) ?? {
         messagesSinceBotResponse: 0,
         messagesSinceMention: 0,
@@ -52,27 +52,27 @@ export class SceneTrait implements TraitDetector {
     });
   }
 
-  detect(scope: Scope, view: HorizonView): TraitSignal[] {
+  detect(key: ChannelKey, view: HorizonView): TraitSignal[] {
     // Lazy-init bot name from view
     if (!this.botName && view.self?.name) {
       this.botName = view.self.name;
     }
 
     const signals: TraitSignal[] = [];
-    const key = channelKey(scope);
+    const ck = channelKey(key);
 
     // Scene dimension — prefer stage:"new" messages as trigger content
     const msgs = view.history?.filter((o) => o.type === "message") ?? [];
     const triggerMsg = msgs.filter((o) => o.stage === "new").slice(-1)[0] ?? msgs.slice(-1)[0];
     signals.push({
       dimension: "scene",
-      value: scope.isDirect ? "private-chat" : "group-chat",
+      value: view.environment?.type === "private" ? "private-chat" : "group-chat",
       confidence: 1.0,
       ...(triggerMsg && { metadata: { triggerContent: triggerMsg.content } }),
     });
 
     // Attention dimension
-    const state = this.analyzer.getState<SceneState>(this.name, key);
+    const state = this.analyzer.getState<SceneState>(this.name, ck);
 
     // Check mentioned: scan recent history for bot name
     let mentioned = false;
