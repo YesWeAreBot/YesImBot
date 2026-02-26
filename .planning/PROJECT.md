@@ -52,6 +52,13 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ### Active
 
+- [ ] 消息队列重构：处理中忽略新消息触发，完成后合并积压消息一次性响应
+- [ ] Bot Action 空记录修复：LLM 选择不回复时不记录空 [Bot Action] 到 history
+- [ ] Tool trim 修复：working memory 裁剪机制未生效，token 持续增长
+- [ ] 模型组与负载均衡：多模型实例分组、failover、并发分配
+- [ ] 配置分组优化：Koishi Console 配置 UI 分组 + Schema 描述增强
+- [ ] Provider 架构优化：统一 provider 接口、抽象公共逻辑
+
 ### Out of Scope
 
 - 三级记忆系统（L1/L2/L3）— 核心记忆块是 L0，L1/L2/L3 后续迭代
@@ -129,5 +136,16 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | Environment 必填字段 | 消除 optional chaining，调用方必须提供 platform/channelId | ✓ Good — 类型系统强制正确性 |
 | isDirect 从 Session 读取 | 不属于频道标识，从 event.runtime.session 获取 | ✓ Good — 职责边界清晰 |
 
+## Current Milestone: v2.4 Runtime & Polish
+
+**Goal:** 修复运行时 bug、优化消息处理机制、增强配置体验、引入模型组负载均衡和 Provider 架构统一
+
+**Target features:**
+- 消息队列重构（积压合并）
+- Bug 修复（Bot Action 空记录、tool trim 失效）
+- 模型组与负载均衡
+- 配置分组优化 + Schema 描述增强
+- Provider 架构优化
+
 ---
-*Last updated: 2026-02-26 after v2.3 milestone*
+*Last updated: 2026-02-26 after v2.4 milestone started*
