@@ -1,10 +1,16 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
   AbstractProvider,
+  type BaseProviderConfig,
   createProviderSchema,
   Modality,
 } from "@yesimbot/shared-model";
 import { type Context, Schema } from "koishi";
+
+interface AnthropicConfig extends BaseProviderConfig {
+  projectId: string;
+  sessionId: string;
+}
 
 function buildUserId(projectId: string, currentSessionId: string): string {
   return `user_${projectId}_account__session_${currentSessionId}`;
@@ -22,15 +28,15 @@ function parseBody(body: BodyInit | null | undefined): string | null {
   return null;
 }
 
-export default class AnthropicProvider extends AbstractProvider<
+class AnthropicProvider extends AbstractProvider<
   ReturnType<typeof createAnthropic>,
-  AnthropicProvider.Config
+  AnthropicConfig
 > {
   static reusable = true;
   static inject = ["yesimbot.model"];
   readonly providerType = "anthropic";
 
-  protected createClient(config: AnthropicProvider.Config) {
+  protected createClient(config: AnthropicConfig) {
     const logger = this.ctx.logger("provider-anthropic");
     return createAnthropic({
       apiKey: config.apiKey,
@@ -78,9 +84,7 @@ export default class AnthropicProvider extends AbstractProvider<
 }
 
 namespace AnthropicProvider {
-  export type Config = NonNullable<
-    ReturnType<(typeof AnthropicProvider.Config)["parse"]>
-  >;
+  export type Config = AnthropicConfig;
   export const Config = createProviderSchema({
     defaultId: "anthropic",
     defaultBaseURL: "https://api.anthropic.com",
@@ -110,3 +114,5 @@ namespace AnthropicProvider {
     }),
   });
 }
+
+export default AnthropicProvider;

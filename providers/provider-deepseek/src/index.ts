@@ -1,20 +1,21 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import {
   AbstractProvider,
+  type BaseProviderConfig,
   createProviderSchema,
   Modality,
 } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 
-export default class DeepSeekProvider extends AbstractProvider<
+class DeepSeekProvider extends AbstractProvider<
   ReturnType<typeof createDeepSeek>,
-  DeepSeekProvider.Config
+  BaseProviderConfig
 > {
   static reusable = true;
   static inject = ["yesimbot.model"];
   readonly providerType = "deepseek";
 
-  protected createClient(config: DeepSeekProvider.Config) {
+  protected createClient(config: BaseProviderConfig) {
     return createDeepSeek({
       apiKey: config.apiKey,
       baseURL: config.baseURL,
@@ -23,9 +24,7 @@ export default class DeepSeekProvider extends AbstractProvider<
 }
 
 namespace DeepSeekProvider {
-  export type Config = NonNullable<
-    ReturnType<(typeof DeepSeekProvider.Config)["parse"]>
-  >;
+  export type Config = BaseProviderConfig;
   export const Config = createProviderSchema({
     defaultId: "deepseek",
     defaultBaseURL: "https://api.deepseek.com/v1",
@@ -45,3 +44,5 @@ namespace DeepSeekProvider {
     ],
   });
 }
+
+export default DeepSeekProvider;

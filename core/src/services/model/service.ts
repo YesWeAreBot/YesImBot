@@ -16,7 +16,7 @@ import PQueue from "p-queue";
 
 declare module "koishi" {
   interface Context {
-    "yesimbot.model": ModelService;
+    "yesimbot.model": IModelService;
   }
 }
 

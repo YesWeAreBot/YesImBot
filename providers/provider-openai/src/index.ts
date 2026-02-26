@@ -1,20 +1,18 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   AbstractProvider,
+  type BaseProviderConfig,
   createProviderSchema,
   Modality,
 } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 
-export default class OpenAIProvider extends AbstractProvider<
-  ReturnType<typeof createOpenAI>,
-  OpenAIProvider.Config
-> {
+class OpenAIProvider extends AbstractProvider<ReturnType<typeof createOpenAI>, BaseProviderConfig> {
   static reusable = true;
   static inject = ["yesimbot.model"];
   readonly providerType = "openai";
 
-  protected createClient(config: OpenAIProvider.Config) {
+  protected createClient(config: BaseProviderConfig) {
     return createOpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseURL,
@@ -23,9 +21,7 @@ export default class OpenAIProvider extends AbstractProvider<
 }
 
 namespace OpenAIProvider {
-  export type Config = NonNullable<
-    ReturnType<(typeof OpenAIProvider.Config)["parse"]>
-  >;
+  export type Config = BaseProviderConfig;
   export const Config = createProviderSchema({
     defaultId: "openai",
     defaultBaseURL: "https://api.openai.com/v1",
@@ -39,3 +35,5 @@ namespace OpenAIProvider {
     ],
   });
 }
+
+export default OpenAIProvider;
