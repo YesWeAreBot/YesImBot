@@ -7,6 +7,9 @@ import {
 } from "@yesimbot/shared-model";
 import { type Context, Schema } from "koishi";
 
+import enUS from "./locales/en-US.json";
+import zhCN from "./locales/zh-CN.json";
+
 interface AnthropicConfig extends BaseProviderConfig {
   projectId: string;
   sessionId: string;
@@ -112,6 +115,9 @@ namespace AnthropicProvider {
       projectId: Schema.string().default("unknown"),
       sessionId: Schema.string().default("unknown"),
     }),
+  }).i18n({
+    "zh-CN": zhCN._config,
+    "en-US": enUS._config,
   });
 }
 

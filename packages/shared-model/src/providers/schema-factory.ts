@@ -48,10 +48,7 @@ export function createProviderSchema<TExtra = Record<string, never>>(
     }),
     advancedOverride: Schema.string()
       .role("textarea", { rows: [2, 4] })
-      .default("")
-      .description(
-        "JSON override for headers, options, per-model params. Parse errors are ignored.",
-      ),
+      .default(""),
   });
 
   if (opts.extra) {

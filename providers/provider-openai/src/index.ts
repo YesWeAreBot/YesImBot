@@ -7,6 +7,9 @@ import {
 } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 
+import enUS from "./locales/en-US.json";
+import zhCN from "./locales/zh-CN.json";
+
 class OpenAIProvider extends AbstractProvider<ReturnType<typeof createOpenAI>, BaseProviderConfig> {
   static reusable = true;
   static inject = ["yesimbot.model"];
@@ -33,6 +36,9 @@ namespace OpenAIProvider {
         modalities: [Modality.Text, Modality.Image],
       },
     ],
+  }).i18n({
+    "zh-CN": zhCN._config,
+    "en-US": enUS._config,
   });
 }
 

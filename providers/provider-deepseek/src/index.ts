@@ -7,6 +7,9 @@ import {
 } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 
+import enUS from "./locales/en-US.json";
+import zhCN from "./locales/zh-CN.json";
+
 class DeepSeekProvider extends AbstractProvider<
   ReturnType<typeof createDeepSeek>,
   BaseProviderConfig
@@ -42,6 +45,9 @@ namespace DeepSeekProvider {
         modalities: [Modality.Text],
       },
     ],
+  }).i18n({
+    "zh-CN": zhCN._config,
+    "en-US": enUS._config,
   });
 }
 
