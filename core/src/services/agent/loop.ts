@@ -116,7 +116,7 @@ export class ThinkActLoop {
         .map((s) => s.content)
         .join("\n\n");
       const dynamicContent = sections
-        .filter((s) => s.name === "memory" || s.name === "extra")
+        .filter((s) => s.name === "extra")
         .map((s) => s.content)
         .join("\n\n");
       const systemPromptString = stableContent + "\n\n" + dynamicContent;

@@ -38,11 +38,11 @@ export class PromptService extends Service<PromptServiceConfig> {
     this.config = config;
     this.logger = this.ctx.logger("yesimbot.prompt");
 
-    // Resolve resources directory; seed from builtin if custom dir lacks core-memory template
+    // Resolve resources directory; seed from builtin if custom dir lacks horizon-view partial
     this.resourcesDir = config.resourcesDir ?? builtinResourcesDir;
     if (
       this.resourcesDir !== builtinResourcesDir &&
-      !existsSync(resolve(this.resourcesDir, "core-memory.mustache"))
+      !existsSync(resolve(this.resourcesDir, "partials/horizon-view.mustache"))
     ) {
       cpSync(builtinResourcesDir, this.resourcesDir, { recursive: true });
       this.logger.info(`Seeded templates to "${this.resourcesDir}"`);
@@ -52,10 +52,8 @@ export class PromptService extends Service<PromptServiceConfig> {
       this.injections.set(point, []);
     }
 
-    // Register only retained partials (used by MemoryService and HorizonService)
-    for (const name of ["memory-block", "horizon-view"] as const) {
-      this.registerPartial(name, this.loadPartial(name));
-    }
+    // Register retained partial (used by HorizonService)
+    this.registerPartial("horizon-view", this.loadPartial("horizon-view"));
   }
 
   getTemplate(name: string): string {

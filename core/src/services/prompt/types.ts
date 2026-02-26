@@ -1,6 +1,6 @@
-export type InjectionPoint = "soul" | "instructions" | "memory" | "extra";
+export type InjectionPoint = "soul" | "instructions" | "extra";
 
-export const INJECTION_POINTS: InjectionPoint[] = ["soul", "instructions", "memory", "extra"];
+export const INJECTION_POINTS: InjectionPoint[] = ["soul", "instructions", "extra"];
 
 export interface InjectionEntry {
   name: string;
