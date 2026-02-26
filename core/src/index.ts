@@ -4,8 +4,6 @@ import type { AgentCoreConfig } from "./services/agent";
 import { AgentCore, AgentCoreConfigSchema } from "./services/agent";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService, HorizonServiceConfigSchema } from "./services/horizon";
-import type { MemoryServiceConfig } from "./services/memory";
-import { MemoryService, MemoryServiceConfigSchema } from "./services/memory";
 import type { ModelServiceConfig } from "./services/model";
 import { ModelService, ModelServiceConfigSchema } from "./services/model";
 import type { PluginServiceConfig } from "./services/plugin";
@@ -24,7 +22,6 @@ export const inject = ["database"];
 
 export type Config = AgentCoreConfig &
   HorizonServiceConfig &
-  MemoryServiceConfig &
   ModelServiceConfig &
   PluginServiceConfig &
   PromptServiceConfig &
@@ -35,7 +32,6 @@ export type Config = AgentCoreConfig &
 export const Config: Schema<Config> = Schema.intersect([
   AgentCoreConfigSchema,
   HorizonServiceConfigSchema,
-  MemoryServiceConfigSchema,
   ModelServiceConfigSchema,
   PluginServiceConfigSchema,
   PromptServiceConfigSchema,
@@ -59,10 +55,6 @@ export function apply(ctx: Context, config: Config) {
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });
-  ctx.plugin(MemoryService, {
-    coreMemoryPath: config.coreMemoryPath,
-    memoryCharLimit: config.memoryCharLimit,
-  });
   ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
   ctx.plugin(TraitAnalyzer, {});
   ctx.plugin(SkillRegistry, {
@@ -106,7 +98,6 @@ async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void>
     "yesimbot.plugin",
     "yesimbot.prompt",
     "yesimbot.role",
-    "yesimbot.memory",
     "yesimbot.skill",
     "yesimbot.trait",
   ];
