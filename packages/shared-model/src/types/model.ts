@@ -1,5 +1,5 @@
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import type { LanguageModel } from "ai";
+import type { CallSettings, LanguageModel } from "ai";
 
 export type ModelSelector = { provider: string; model: string };
 
@@ -9,17 +9,6 @@ export enum Modality {
   Pdf = "pdf",
   Text = "text",
   Video = "video",
-}
-
-export interface ModelDefaultParams {
-  maxOutputTokens?: number;
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  presencePenalty?: number;
-  frequencyPenalty?: number;
-  stopSequences?: string[];
-  seed?: number;
 }
 
 export interface ModelInfo {
@@ -48,10 +37,9 @@ export interface IModelProvider {
   readonly id: string;
   readonly providerType: string;
   readonly models: ModelInfo[];
-  readonly defaultParams?: ModelDefaultParams;
   listModels(): Record<string, ModelInfo>;
   getModel(modelId: string): LanguageModel;
-  getDefaultParams(): ModelDefaultParams;
+  getDefaultParams(): Partial<CallSettings>;
 }
 
 export interface IModelService {
@@ -62,4 +50,4 @@ export interface IModelService {
   getModelInfo(providerName: string, modelId: string): ModelInfo | undefined;
 }
 
-export type { LanguageModel, LanguageModelV3 };
+export type { LanguageModel, LanguageModelV3, CallSettings };
