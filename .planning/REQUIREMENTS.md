@@ -9,10 +9,10 @@ Requirements for Architecture Cleanup milestone. Each maps to roadmap phases.
 
 ### Memory Cleanup
 
-- [ ] **MEM-01**: 删除 `core/src/services/memory/` 目录（service.ts, types.ts, index.ts）
-- [ ] **MEM-02**: 从 `core/src/index.ts` 移除 MemoryService 插件注册和配置
-- [ ] **MEM-03**: 移除 `yesimbot.memory` 服务声明和依赖引用
-- [ ] **MEM-04**: 清理 PromptService 中 "memory-block" partial 和 "memory" 注入点相关代码
+- [x] **MEM-01**: 删除 `core/src/services/memory/` 目录（service.ts, types.ts, index.ts）
+- [x] **MEM-02**: 从 `core/src/index.ts` 移除 MemoryService 插件注册和配置
+- [x] **MEM-03**: 移除 `yesimbot.memory` 服务声明和依赖引用
+- [x] **MEM-04**: 清理 PromptService 中 "memory-block" partial 和 "memory" 注入点相关代码
 
 ### Context Redesign
 
@@ -46,10 +46,10 @@ Requirements for Architecture Cleanup milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MEM-01 | Phase 26 | Pending |
-| MEM-02 | Phase 26 | Pending |
-| MEM-03 | Phase 26 | Pending |
-| MEM-04 | Phase 26 | Pending |
+| MEM-01 | Phase 26 | Complete |
+| MEM-02 | Phase 26 | Complete |
+| MEM-03 | Phase 26 | Complete |
+| MEM-04 | Phase 26 | Complete |
 | CTX-01 | Phase 27 | Pending |
 | CTX-02 | Phase 27 | Pending |
 | CTX-03 | Phase 27 | Pending |

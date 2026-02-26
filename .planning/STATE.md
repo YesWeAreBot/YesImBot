@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.3
+milestone: v1.0
 milestone_name: Architecture Cleanup
-status: active
-last_updated: "2026-02-26T19:07:40.000Z"
+status: unknown
+last_updated: "2026-02-26T03:29:00.741Z"
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 26 of 28 (Memory Cleanup)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-02-26 — v2.3 roadmap created, 3 phases defined
+Plan: 2 of 2 complete
+Status: Complete
+Last activity: 2026-02-26 — Plan 26-02 complete (PromptService cleaned, memory templates deleted)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [░░░░░░░░░░] 0%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [█░░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ v2.0–v2.2 decisions archived to milestones/v2.x-ROADMAP.md.
 Recent decisions affecting v2.3:
 - memory_block 合并推迟到 v2.3（v2.2 决策）：迁移风险高，不阻塞 v2.2 功能
 - Scope 删除：用 platform + channelId 裸字段替代，全局 13 个文件迁移
+- [Phase 26-memory-cleanup]: Changed resourcesDir seeding sentinel from core-memory.mustache to partials/horizon-view.mustache since core-memory.mustache was deleted
 
 ### Pending Todos
 
@@ -65,9 +66,10 @@ None.
 | 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | | [1-percept-buildview](./quick/1-percept-buildview/) |
 | 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
+| Phase 26-memory-cleanup P02 | 2 | 2 tasks | 6 files |
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: v2.3 roadmap created — Phase 26 ready to plan
+Stopped at: Completed 26-01-PLAN.md — MemoryService deleted, snippets in RoleService
 Resume file: None
