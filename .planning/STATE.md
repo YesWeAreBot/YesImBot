@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Runtime & Polish
 status: active
-last_updated: "2026-02-26T12:31:58.000Z"
+last_updated: "2026-02-26T13:28:52.936Z"
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 29 (Runtime Bug Fixes)
-Plan: —
-Status: Ready to plan
-Last activity: 2026-02-26 — Roadmap created for v2.4
+Plan: 02 of 2
+Status: Plan 01 complete — ready for plan 02
+Last activity: 2026-02-26 — Completed 29-01 (pending queue array fix)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
 
@@ -49,6 +49,8 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
 Full decision log in PROJECT.md Key Decisions table.
 v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 
+- 29-01: Used plain LoopPayload[] array for pending queue; first message timestamp preserved in merged percept; isBacklogDrain flag for downstream awareness
+
 ### Pending Todos
 
 None.
@@ -65,9 +67,10 @@ None.
 | 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 | Phase 26-memory-cleanup P02 | 2 | 2 tasks | 6 files |
+| Phase 29 P01 | 3min | 2 tasks | 1 files |
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: v2.4 roadmap created — ready for /gsd:plan-phase 29
+Stopped at: Completed 29-01-PLAN.md (pending queue array fix)
 Resume file: None

@@ -125,6 +125,6 @@
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26-28 | v2.3 | 6/6 | Complete | 2026-02-26 |
-| 29 | v2.4 | 0/? | Not started | - |
+| 29 | 1/2 | In Progress|  | - |
 | 30 | v2.4 | 0/? | Not started | - |
 | 31 | v2.4 | 0/? | Not started | - |
