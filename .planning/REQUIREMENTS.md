@@ -114,8 +114,8 @@ Koishi Console 配置 UI 当前为平铺列表，不易阅读。使用 `Schema.i
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | REQ-01 | Phase 29 | Complete |
-| REQ-02 | Phase 29 | Pending |
-| REQ-03 | Phase 29 | Pending |
+| REQ-02 | Phase 29 | Complete |
+| REQ-03 | Phase 29 | Complete |
 | REQ-05 | Phase 30 | Pending |
 | REQ-04 | Phase 31 | Pending |
 | REQ-06 | Phase 31 | Pending |

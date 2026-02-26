@@ -75,7 +75,7 @@
 
 ### v2.4 Runtime & Polish (Phases 29-31)
 
-- [ ] **Phase 29: Runtime Bug Fixes** — Eliminate three known runtime defects to establish a clean baseline
+- [x] **Phase 29: Runtime Bug Fixes** — Eliminate three known runtime defects to establish a clean baseline
 - [ ] **Phase 30: Provider Architecture** — Extract BaseProvider abstraction to unify provider plugins
 - [ ] **Phase 31: Model Groups + Config UX** — Add load-balanced model groups and improve config readability
 
@@ -90,8 +90,8 @@
   2. When the LLM chooses silence, no empty `[Bot Action]` record appears in the timeline
   3. After many conversation rounds, working memory token count stays bounded — the initial user context block is trimmed like any other message
 **Plans**: 2 plans
-- [ ] 29-01-PLAN.md — Message queue backlog merge (REQ-01)
-- [ ] 29-02-PLAN.md — Silence rendering fix + trimmer initial context budget (REQ-02, REQ-03)
+- [x] 29-01-PLAN.md — Message queue backlog merge (REQ-01)
+- [x] 29-02-PLAN.md — Silence rendering fix + trimmer initial context budget (REQ-02, REQ-03)
 
 ### Phase 30: Provider Architecture
 **Goal**: All provider plugins share a common BaseProvider base class; duplicated registration and schema code is eliminated
@@ -125,6 +125,6 @@
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26-28 | v2.3 | 6/6 | Complete | 2026-02-26 |
-| 29 | 1/2 | In Progress|  | - |
+| 29 | v2.4 | 2/2 | Complete | 2026-02-26 |
 | 30 | v2.4 | 0/? | Not started | - |
 | 31 | v2.4 | 0/? | Not started | - |

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Runtime & Polish
 status: active
-last_updated: "2026-02-26T13:28:52.936Z"
+last_updated: "2026-02-26T13:32:41Z"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 29 (Runtime Bug Fixes)
-Plan: 02 of 2
-Status: Plan 01 complete — ready for plan 02
-Last activity: 2026-02-26 — Completed 29-01 (pending queue array fix)
+Plan: 02 of 2 — COMPLETE
+Status: Phase 29 complete — all plans done
+Last activity: 2026-02-26 — Completed 29-02 (silence rendering + initial context trim)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
 
-[Phase 29 ◆] → [Phase 30] → [Phase 31]
+[Phase 29 ✅] → [Phase 30] → [Phase 31]
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Full decision log in PROJECT.md Key Decisions table.
 v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 
 - 29-01: Used plain LoopPayload[] array for pending queue; first message timestamp preserved in merged percept; isBacklogDrain flag for downstream awareness
+- 29-02: Silence rendered as "(chose silence)" marker not suppressed; initialContextCharBudget default 20000 chars; head-trim at newline boundary
 
 ### Pending Todos
 
@@ -68,9 +69,10 @@ None.
 | 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 | Phase 26-memory-cleanup P02 | 2 | 2 tasks | 6 files |
 | Phase 29 P01 | 3min | 2 tasks | 1 files |
+| Phase 29 P02 | 2min | 2 tasks | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 29-01-PLAN.md (pending queue array fix)
+Stopped at: Completed 29-02-PLAN.md (silence rendering + initial context trim)
 Resume file: None
