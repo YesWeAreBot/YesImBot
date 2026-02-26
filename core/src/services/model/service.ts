@@ -5,7 +5,6 @@ import {
   IModelService,
   LanguageModel,
   LanguageModelV3,
-  ModelDefaultParams,
   ModelInfo,
   ModelSelector,
   parseModelId,
@@ -209,7 +208,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
 
   public getModel(model: string | ModelSelector): {
     model: LanguageModel;
-    defaultParams: ModelDefaultParams;
+    defaultParams: Partial<CallSettings>;
   } {
     const { provider, modelId } = this.resolveModel(model);
     const p = this.providers.get(provider);
