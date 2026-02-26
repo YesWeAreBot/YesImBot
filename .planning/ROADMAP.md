@@ -7,6 +7,7 @@
 - ✅ **v2.1 Polish & Release Prep** — Phases 20-22 (shipped 2026-02-24)
 - ✅ **v2.2 Runtime Optimization & Observability** — Phases 23-25 (shipped 2026-02-25)
 - ✅ **v2.3 Architecture Cleanup** — Phases 26-28 (shipped 2026-02-26)
+- 🔷 **v2.4 Runtime & Polish** — Phases 29-31 (active)
 
 ## Phases
 
@@ -72,6 +73,47 @@
 
 </details>
 
+### v2.4 Runtime & Polish (Phases 29-31)
+
+- [ ] **Phase 29: Runtime Bug Fixes** — Eliminate three known runtime defects to establish a clean baseline
+- [ ] **Phase 30: Provider Architecture** — Extract BaseProvider abstraction to unify provider plugins
+- [ ] **Phase 31: Model Groups + Config UX** — Add load-balanced model groups and improve config readability
+
+## Phase Details
+
+### Phase 29: Runtime Bug Fixes
+**Goal**: Three known runtime defects are eliminated and the system behaves correctly under message bursts, silence, and long conversations
+**Depends on**: Nothing (surgical fixes, zero cross-phase dependencies)
+**Requirements**: REQ-01, REQ-02, REQ-03
+**Success Criteria** (what must be TRUE):
+  1. When messages arrive while a response is in-flight, they are queued and merged into a single follow-up response rather than triggering separate responses or being dropped
+  2. When the LLM chooses silence, no empty `[Bot Action]` record appears in the timeline
+  3. After many conversation rounds, working memory token count stays bounded — the initial user context block is trimmed like any other message
+**Plans**: TBD
+
+### Phase 30: Provider Architecture
+**Goal**: All provider plugins share a common BaseProvider base class; duplicated registration and schema code is eliminated
+**Depends on**: Phase 29
+**Requirements**: REQ-05
+**Success Criteria** (what must be TRUE):
+  1. A `BaseProvider` abstract class exists in `shared-model` encapsulating `listModels`, `getDefaultParams`, and the registration flow
+  2. A `createBaseProviderSchema()` factory generates the common config schema fields
+  3. All three provider plugins extend `BaseProvider` with no duplicated boilerplate
+  4. Existing provider external behavior is unchanged — no config migration required
+**Plans**: TBD
+
+### Phase 31: Model Groups + Config UX
+**Goal**: Users can route requests to a named model group with load balancing, and the Koishi Console config UI is organized and readable
+**Depends on**: Phase 30
+**Requirements**: REQ-04, REQ-06, REQ-07, REQ-08
+**Success Criteria** (what must be TRUE):
+  1. A model group can be defined in config with a name, member list, and strategy (round-robin / random / failover); referencing it via `group:<name>` routes to a concrete model
+  2. When a group member fails, it is skipped with a cooldown and the next member is tried — this does not conflict with the existing `fallbackChain`
+  3. The Koishi Console config panel shows items in labeled, collapsible groups (基础、模型、意愿值、提示词、高级) rather than a flat list
+  4. Every config field has a Chinese description; key fields show default value and valid range
+  5. Both `zh-CN` and `en-US` locale files exist; Schema descriptions reference i18n keys
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -81,3 +123,6 @@
 | 20-22 | v2.1 | 6/6 | Complete | 2026-02-24 |
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26-28 | v2.3 | 6/6 | Complete | 2026-02-26 |
+| 29 | v2.4 | 0/? | Not started | - |
+| 30 | v2.4 | 0/? | Not started | - |
+| 31 | v2.4 | 0/? | Not started | - |

@@ -108,3 +108,16 @@ Koishi Console 配置 UI 当前为平铺列表，不易阅读。使用 `Schema.i
 - 通过 `ctx.i18n.define()` 或 locales 文件注册翻译
 - 中文为主语言，英文为辅助语言
 - 不影响现有配置值和默认行为
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| REQ-01 | Phase 29 | Pending |
+| REQ-02 | Phase 29 | Pending |
+| REQ-03 | Phase 29 | Pending |
+| REQ-05 | Phase 30 | Pending |
+| REQ-04 | Phase 31 | Pending |
+| REQ-06 | Phase 31 | Pending |
+| REQ-07 | Phase 31 | Pending |
+| REQ-08 | Phase 31 | Pending |

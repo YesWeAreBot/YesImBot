@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: Runtime & Polish
 status: active
-last_updated: "2026-02-26T09:58:00.000Z"
+last_updated: "2026-02-26T12:31:58.000Z"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,16 +18,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.4 Runtime & Polish — defining requirements
+**Current focus:** v2.4 Runtime & Polish — Phase 29: Runtime Bug Fixes
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 29 (Runtime Bug Fixes)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-02-26 — Milestone v2.4 started
+Status: Ready to plan
+Last activity: 2026-02-26 — Roadmap created for v2.4
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
+
+[Phase 29 ◆] → [Phase 30] → [Phase 31]
 
 ## Performance Metrics
 
@@ -53,7 +55,7 @@ None.
 
 ### Blockers/Concerns
 
-None.
+- Phase 31 planning: failover vs fallbackChain interaction semantics need clarification before implementation
 
 ### Quick Tasks Completed
 
@@ -67,5 +69,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: v2.3 milestone archived — ready for /gsd:new-milestone
+Stopped at: v2.4 roadmap created — ready for /gsd:plan-phase 29
 Resume file: None
