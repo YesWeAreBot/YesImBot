@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Runtime & Polish
 status: unknown
-last_updated: "2026-02-26T16:08:58Z"
+last_updated: "2026-02-26T16:22:07Z"
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 2
   completed_plans: 2
 ---
@@ -23,17 +23,18 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 30 (Provider Architecture)
-Plan: 01 of 2 — COMPLETE
-Status: Plan 01 done, Plan 02 pending
-Last activity: 2026-02-26 — Completed 30-01 (AbstractProvider + schema factory)
+Plan: 02 of 2 — COMPLETE
+Status: Phase 30 complete, all providers migrated to AbstractProvider
+Last activity: 2026-02-26 — Completed 30-02 (Provider migration to AbstractProvider)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
 
-[Phase 29 ✅] → [Phase 30 ◆] → [Phase 31]
+[Phase 29 ✅] → [Phase 30 ✅] → [Phase 31]
 
 ## Performance Metrics
 
 **Velocity:**
+
 - v1.0: 15 phases, 29 plans, ~4 days
 - v2.0: 8 phases, 16 plans, ~6 days
 - v2.1: 3 phases, 6 plans, ~2 days
@@ -52,6 +53,7 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 - 29-01: Used plain LoopPayload[] array for pending queue; first message timestamp preserved in merged percept; isBacklogDrain flag for downstream awareness
 - 29-02: Silence rendered as "(chose silence)" marker not suppressed; initialContextCharBudget default 20000 chars; head-trim at newline boundary
 - 30-01: Deleted ModelDefaultParams, replaced with CallSettings from ai-sdk; AbstractProvider auto-registers in constructor; createProviderSchema uses Schema.intersect for extra fields; advancedOverride merges at construction time with parse-error-as-warning
+- 30-02: Separated class+namespace+export default pattern for TS2652 compatibility; used explicit BaseProviderConfig type alias instead of Schema parse inference; fixed core ModelService declare module to IModelService
 
 ### Pending Todos
 
@@ -63,18 +65,19 @@ None.
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Status | Directory |
-|---|-------------|------|--------|--------|-----------|
-| 1 | 优化类型定义和接口：统一Percept类型，简化buildView参数 | 2026-02-21 | 3977997 | | [1-percept-buildview](./quick/1-percept-buildview/) |
-| 2 | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/) |
-| 3 | Fix agent JSON output drift: unify format spec, improve raw-text fallback | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
-| Phase 26-memory-cleanup P02 | 2 | 2 tasks | 6 files |
-| Phase 29 P01 | 3min | 2 tasks | 1 files |
-| Phase 29 P02 | 2min | 2 tasks | 4 files |
-| Phase 30 P01 | 5min | 3 tasks | 6 files |
+| #                           | Description                                                                     | Date       | Commit  | Status   | Directory                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------- | ---------- | ------- | -------- | ------------------------------------------------------------------------------------------------- |
+| 1                           | 优化类型定义和接口：统一Percept类型，简化buildView参数                          | 2026-02-21 | 3977997 |          | [1-percept-buildview](./quick/1-percept-buildview/)                                               |
+| 2                           | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/)     |
+| 3                           | Fix agent JSON output drift: unify format spec, improve raw-text fallback       | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
+| Phase 26-memory-cleanup P02 | 2                                                                               | 2 tasks    | 6 files |
+| Phase 29 P01                | 3min                                                                            | 2 tasks    | 1 files |
+| Phase 29 P02                | 2min                                                                            | 2 tasks    | 4 files |
+| Phase 30 P01                | 5min                                                                            | 3 tasks    | 6 files |
+| Phase 30 P02                | 10min                                                                           | 3 tasks    | 4 files |
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 30-01-PLAN.md (AbstractProvider + schema factory)
+Stopped at: Completed 30-02-PLAN.md (Provider migration to AbstractProvider)
 Resume file: None
