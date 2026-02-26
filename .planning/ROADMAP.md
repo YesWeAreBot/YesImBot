@@ -89,7 +89,9 @@
   1. When messages arrive while a response is in-flight, they are queued and merged into a single follow-up response rather than triggering separate responses or being dropped
   2. When the LLM chooses silence, no empty `[Bot Action]` record appears in the timeline
   3. After many conversation rounds, working memory token count stays bounded — the initial user context block is trimmed like any other message
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 29-01-PLAN.md — Message queue backlog merge (REQ-01)
+- [ ] 29-02-PLAN.md — Silence rendering fix + trimmer initial context budget (REQ-02, REQ-03)
 
 ### Phase 30: Provider Architecture
 **Goal**: All provider plugins share a common BaseProvider base class; duplicated registration and schema code is eliminated
