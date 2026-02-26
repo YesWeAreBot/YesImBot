@@ -21,8 +21,8 @@ export interface PromptServiceConfig {
 
 export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
   templates: Schema.dict(Schema.string()),
-  timeout: Schema.number().default(5000).description("Injection render timeout (ms)"),
-  resourcesDir: Schema.string().description("Custom templates directory"),
+  timeout: Schema.number().default(5000),
+  resourcesDir: Schema.string(),
 });
 
 export class PromptService extends Service<PromptServiceConfig> {

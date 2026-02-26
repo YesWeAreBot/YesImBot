@@ -22,9 +22,7 @@ export interface PluginServiceConfig {
 }
 
 export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.object({
-  defaultTimeout: Schema.number()
-    .default(30000)
-    .description("Default function execution timeout in ms"),
+  defaultTimeout: Schema.number().default(30000),
 });
 
 export class PluginService extends Service<PluginServiceConfig> {

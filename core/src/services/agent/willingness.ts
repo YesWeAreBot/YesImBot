@@ -76,91 +76,63 @@ export interface WillingnessConfig {
 
 export const WillingnessSchema: Schema<WillingnessConfig> = Schema.intersect([
   Schema.object({
-    maxWillingness: Schema.number().default(100).description("Maximum willingness value cap"),
-    mentionBoost: Schema.number().default(0.8).description("Probability boost on @mention (0-1)"),
+    maxWillingness: Schema.number().default(100),
+    mentionBoost: Schema.number().default(0.8),
   }),
   Schema.object({
     decay: Schema.object({
-      halfLife: Schema.number().default(300).description("Willingness half-life in seconds"),
-      elasticThreshold: Schema.number()
-        .default(0.7)
-        .description("Ratio of max above which decay is halved"),
-    }).description("Decay settings"),
+      halfLife: Schema.number().default(300),
+      elasticThreshold: Schema.number().default(0.7),
+    }),
   }),
   Schema.object({
     gain: Schema.object({
-      baseGain: Schema.number().default(15).description("Willingness added per message"),
-      keywordMultiplier: Schema.number()
-        .default(1.5)
-        .description("Gain multiplier when keyword matches"),
-      keywords: Schema.array(Schema.string())
-        .default([])
-        .description("Regex patterns that boost gain"),
-    }).description("Gain settings"),
+      baseGain: Schema.number().default(15),
+      keywordMultiplier: Schema.number().default(1.5),
+      keywords: Schema.array(Schema.string()).default([]),
+    }),
   }),
   Schema.object({
     sigmoid: Schema.object({
-      midpoint: Schema.number()
-        .default(0.5)
-        .description("Willingness ratio where gain multiplier = 1"),
-      steepness: Schema.number().default(10).description("Sigmoid curve steepness"),
-    }).description("Sigmoid gain curve settings"),
+      midpoint: Schema.number().default(0.5),
+      steepness: Schema.number().default(10),
+    }),
   }),
   Schema.object({
     fatigue: Schema.object({
-      windowMs: Schema.number().default(120000).description("Sliding window duration in ms"),
-      threshold: Schema.number().default(3).description("Bot replies before fatigue penalty"),
-      penaltyBase: Schema.number()
-        .default(0.5)
-        .description("Exponential penalty base per excess reply"),
-    }).description("Fatigue settings"),
+      windowMs: Schema.number().default(120000),
+      threshold: Schema.number().default(3),
+      penaltyBase: Schema.number().default(0.5),
+    }),
   }),
   Schema.object({
     deferred: Schema.object({
-      threshold: Schema.number()
-        .default(0.3)
-        .description("Probability threshold to trigger deferred judgment"),
-      minDelayMs: Schema.number()
-        .default(3000)
-        .description("Minimum delay before LLM judgment (ms)"),
-      maxDelayMs: Schema.number()
-        .default(15000)
-        .description("Maximum delay before LLM judgment (ms)"),
-      model: Schema.dynamic("registry.chatModels").description(
-        "Model for deferred LLM judgment (overrides willingness model)",
-      ),
-      fallbackChain: Schema.array(Schema.dynamic("registry.chatModels"))
-        .default([])
-        .description("Willingness fallback chain (provider:model)"),
-    }).description("Deferred LLM judgment for borderline SKIP decisions"),
+      threshold: Schema.number().default(0.3),
+      minDelayMs: Schema.number().default(3000),
+      maxDelayMs: Schema.number().default(15000),
+      model: Schema.dynamic("registry.chatModels"),
+      fallbackChain: Schema.array(Schema.dynamic("registry.chatModels")).default([]),
+    }),
   }),
   Schema.object({
     dm: Schema.object({
-      directBoost: Schema.number()
-        .default(0.95)
-        .description("Probability boost for direct messages (0-1)"),
-      aggregationMinMs: Schema.number()
-        .default(3000)
-        .description("Minimum adaptive aggregation wait (ms)"),
-      aggregationMaxMs: Schema.number()
-        .default(8000)
-        .description("Maximum adaptive aggregation wait (ms)"),
-      aggregationCapMs: Schema.number()
-        .default(15000)
-        .description("Absolute max wait from first DM message (ms)"),
-    }).description("DM-specific willingness and aggregation settings"),
+      directBoost: Schema.number().default(0.95),
+      aggregationMinMs: Schema.number().default(3000),
+      aggregationMaxMs: Schema.number().default(8000),
+      aggregationCapMs: Schema.number().default(15000),
+    }),
   }),
   Schema.object({
     rateLimit: Schema.object({
       dm: Schema.object({
-        capacity: Schema.number().default(5).description("DM token bucket capacity"),
-        refillRate: Schema.number().default(0.5).description("DM tokens refilled per second"),
-      }).description("Per-user DM rate limit"),
+        capacity: Schema.number().default(5),
+        refillRate: Schema.number().default(0.5),
+      }),
       group: Schema.object({
-        capacity: Schema.number().default(10).description("Group token bucket capacity"),
-        refillRate: Schema.number().default(1).description("Group tokens refilled per second"),
-      }).description("Per-user group rate limit"),
-    }).description("Per-user token bucket rate limiting"),
+        capacity: Schema.number().default(10),
+        refillRate: Schema.number().default(1),
+      }),
+    }),
   }),
 ]);
 
