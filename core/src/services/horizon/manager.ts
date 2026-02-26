@@ -1,6 +1,7 @@
+// NOTE: DB column is still "scope" (JSON) — Phase 28 (CTX-08) will migrate to bare columns
 import { Context, Random, Logger, Query } from "koishi";
 
-import { Scope } from "../shared/types";
+import { ChannelKey } from "../shared/types";
 import type {
   AgentResponseData,
   AgentResponseRecord,
@@ -28,7 +29,9 @@ export class EventManager {
 
   async query(options: EventQueryOptions): Promise<TimelineEntry[]> {
     const query: Query.Expr<TimelineEntry> = {};
-    if (options.scope) query.scope = options.scope;
+    if (options.key)
+      // Phase 28 (CTX-08) will migrate DB column
+      (query as Record<string, unknown>).scope = { platform: options.key.platform, channelId: options.key.channelId };
     if (options.types?.length)
       query.type = { $in: options.types } as unknown as Query.Expr<TimelineEntry>["type"];
     if (options.since) query.timestamp = { $gte: options.since };
@@ -41,35 +44,42 @@ export class EventManager {
   }
 
   async recordMessage(data: {
-    scope: Scope;
+    platform: string;
+    channelId: string;
     stage: TimelineStage;
     timestamp: Date;
     data: MessageEventData;
   }): Promise<MessageRecord> {
-    const entry: MessageRecord = {
+    const entry = {
       id: Random.id(),
       type: TimelineEventType.Message,
       priority: TimelinePriority.Normal,
-      ...data,
-    };
+      // Phase 28 (CTX-08) will migrate DB column
+      scope: { platform: data.platform, channelId: data.channelId },
+      stage: data.stage,
+      timestamp: data.timestamp,
+      data: data.data,
+    } as unknown as MessageRecord;
     this.logger.info(`record message ${data.data.senderId}: ${data.data.content}`);
     return this.record(entry) as Promise<MessageRecord>;
   }
 
   async recordAgentResponse(data: {
-    scope: Scope;
+    platform: string;
+    channelId: string;
     timestamp: Date;
     data: AgentResponseData;
   }): Promise<AgentResponseRecord> {
-    const entry: AgentResponseRecord = {
+    const entry = {
       id: Random.id(),
       type: TimelineEventType.AgentResponse,
       priority: TimelinePriority.Normal,
       stage: TimelineStage.Active,
-      scope: data.scope,
+      // Phase 28 (CTX-08) will migrate DB column
+      scope: { platform: data.platform, channelId: data.channelId },
       timestamp: data.timestamp,
       data: data.data,
-    };
+    } as unknown as AgentResponseRecord;
     return this.record(entry) as Promise<AgentResponseRecord>;
   }
 
@@ -94,18 +104,23 @@ export class EventManager {
     });
   }
 
-  async markAsActive(scope: Scope, before?: Date): Promise<void> {
-    const query: Record<string, unknown> = { scope, stage: TimelineStage.New };
+  async markAsActive(key: ChannelKey, before?: Date): Promise<void> {
+    const query: Record<string, unknown> = {
+      // Phase 28 (CTX-08) will migrate DB column
+      scope: { platform: key.platform, channelId: key.channelId },
+      stage: TimelineStage.New,
+    };
     if (before) query.timestamp = { $lte: before };
     await this.ctx.database.set(TIMELINE_TABLE, query, {
       stage: TimelineStage.Active,
     });
   }
 
-  async archiveStale(scope: Scope, olderThanMs: number): Promise<void> {
+  async archiveStale(key: ChannelKey, olderThanMs: number): Promise<void> {
     const cutoff = new Date(Date.now() - olderThanMs);
     const query = {
-      scope,
+      // Phase 28 (CTX-08) will migrate DB column
+      scope: { platform: key.platform, channelId: key.channelId },
       stage: TimelineStage.Active,
       timestamp: { $lte: cutoff },
     } as unknown as Query.Expr<TimelineEntry>;

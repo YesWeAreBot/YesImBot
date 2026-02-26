@@ -1,7 +1,7 @@
 import { Context, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
-import { Scope, type Percept } from "../shared/types";
+import { type ChannelKey, type Percept } from "../shared/types";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
@@ -74,6 +74,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   }
 
   protected async start(): Promise<void> {
+    // Phase 28 (CTX-08) will migrate scope column to bare platform/channelId columns
     this.ctx.model.extend(
       "yesimbot.timeline",
       {
@@ -84,7 +85,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         stage: "string(16)",
         timestamp: "timestamp",
         data: "json",
-      },
+      } as Record<string, unknown> as never,
       { primary: "id", autoInc: false },
     );
 
@@ -110,17 +111,16 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.logger.info("HorizonService stopped");
   }
 
-  async buildView(scope: Scope, options?: ViewOptions): Promise<HorizonView> {
-    const { platform, channelId } = scope;
+  async buildView(key: ChannelKey, options?: ViewOptions): Promise<HorizonView> {
     const entries = await this.events.query({
-      scope: { platform, channelId },
+      key: { platform: key.platform, channelId: key.channelId },
       types: [TimelineEventType.Message, TimelineEventType.AgentResponse],
       limit: this.config.historyLimit ?? 30,
       orderBy: "desc",
     });
     const history = this.events.toObservations(entries.reverse());
-    const environment = await this.getOrCreateEnvironment(scope, options?.session);
-    const entities = await this.getEntities(scope);
+    const environment = await this.getOrCreateEnvironment(key, options?.session);
+    const entities = await this.getEntities(key, options?.session);
     const self = {
       id: options?.selfId ?? "",
       name: this.config.botName || options?.selfName || options?.selfId || "",
@@ -129,18 +129,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   }
 
   private async getOrCreateEnvironment(
-    scope: Scope,
+    key: ChannelKey,
     session?: Session,
   ): Promise<Environment | null> {
-    if (!scope.channelId) return null;
-    const id = `${scope.platform}:${scope.channelId}`;
+    if (!key.channelId) return null;
+    const id = `${key.platform}:${key.channelId}`;
     const ttl = this.config.entityCacheTtl ?? 3600000;
     const rows = await this.ctx.database.get("yesimbot.entity", { id, type: "channel" });
     if (rows?.length) {
       const row = rows[0];
       if (Date.now() - new Date(row.updatedAt).getTime() < ttl) {
         return {
-          type: scope.isDirect ? "private" : "group",
+          type: (session?.isDirect ?? false) ? "private" : "group",
           id: row.id,
           name: row.name,
           platform: row.attributes?.platform as string,
@@ -152,47 +152,47 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     let channelName = session?.event?.channel?.name || session?.event?.guild?.name || null;
     if (!channelName && session?.bot) {
       try {
-        const ch = await session.bot.getChannel(scope.channelId, scope.guildId);
+        const ch = await session.bot.getChannel(key.channelId, session?.guildId);
         channelName = ch?.name || null;
       } catch {}
     }
-    if (!channelName) channelName = `${scope.platform}:${scope.channelId}`;
+    if (!channelName) channelName = `${key.platform}:${key.channelId}`;
     await this.ctx.database.upsert("yesimbot.entity", [
       {
         id,
         type: "channel",
         name: channelName,
         attributes: {
-          platform: scope.platform,
-          isDirect: scope.isDirect,
-          channelId: scope.channelId,
-          userId: scope.userId,
-          guildId: scope.guildId,
+          platform: key.platform,
+          isDirect: session?.isDirect ?? false,
+          channelId: key.channelId,
+          userId: session?.userId,
+          guildId: session?.guildId,
         },
         updatedAt: new Date(),
       },
     ]);
     return {
-      type: scope.isDirect ? "private" : "group",
+      type: (session?.isDirect ?? false) ? "private" : "group",
       id,
       name: channelName,
-      platform: scope.platform,
-      channelId: scope.channelId,
+      platform: key.platform,
+      channelId: key.channelId,
       metadata: {
-        platform: scope.platform,
-        channelId: scope.channelId,
-        userId: scope.userId,
-        guildId: scope.guildId,
-        isDirect: scope.isDirect,
+        platform: key.platform,
+        channelId: key.channelId,
+        userId: session?.userId,
+        guildId: session?.guildId,
+        isDirect: session?.isDirect ?? false,
       },
     };
   }
 
-  async getEntities(scope: Scope): Promise<Entity[]> {
-    const parentId = scope.guildId
-      ? `guild:${scope.guildId}`
-      : scope.isDirect
-        ? `direct:${scope.platform}`
+  async getEntities(key: ChannelKey, session?: Session): Promise<Entity[]> {
+    const parentId = session?.guildId
+      ? `guild:${session.guildId}`
+      : (session?.isDirect ?? false)
+        ? `direct:${key.platform}`
         : null;
     if (!parentId) return [];
     const limit = this.config.maxActiveEntities ?? 15;

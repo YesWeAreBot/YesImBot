@@ -30,12 +30,8 @@ export class EventListener {
         await this.recordUserMessage(session);
         await next();
         this.ctx.emit("horizon/message", {
-          scope: {
-            platform: session.platform,
-            channelId: session.channelId,
-            guildId: session.guildId,
-            isDirect: session.isDirect,
-          },
+          platform: session.platform,
+          channelId: session.channelId ?? "",
           timestamp: new Date(session.timestamp),
           payload: {
             messageId: session.messageId ?? "",
@@ -85,12 +81,8 @@ export class EventListener {
       await this.updateMemberInfo(session, `direct:${session.platform}`);
     }
     await this.events.recordMessage({
-      scope: {
-        platform: session.platform,
-        channelId: session.channelId ?? "",
-        guildId: session.guildId,
-        isDirect: session.isDirect,
-      },
+      platform: session.platform,
+      channelId: session.channelId ?? "",
       stage: TimelineStage.New,
       timestamp: new Date(session.timestamp),
       data: {
@@ -105,12 +97,8 @@ export class EventListener {
   private async recordBotSentMessage(session: Session): Promise<void> {
     if (!session.content || !session.messageId) return;
     await this.events.recordMessage({
-      scope: {
-        platform: session.platform,
-        channelId: session.channelId ?? "",
-        guildId: session.guildId,
-        isDirect: session.isDirect,
-      },
+      platform: session.platform,
+      channelId: session.channelId ?? "",
       stage: TimelineStage.Active,
       timestamp: new Date(session.timestamp),
       data: {
