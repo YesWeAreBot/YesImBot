@@ -78,34 +78,29 @@ export const WillingnessSchema: Schema<WillingnessConfig> = Schema.intersect([
   Schema.object({
     maxWillingness: Schema.number().default(100),
     mentionBoost: Schema.number().default(0.8),
-  }),
-  Schema.object({
+
     decay: Schema.object({
       halfLife: Schema.number().default(300),
       elasticThreshold: Schema.number().default(0.7),
     }),
-  }),
-  Schema.object({
+
     gain: Schema.object({
       baseGain: Schema.number().default(15),
       keywordMultiplier: Schema.number().default(1.5),
       keywords: Schema.array(Schema.string()).default([]),
     }),
-  }),
-  Schema.object({
+
     sigmoid: Schema.object({
       midpoint: Schema.number().default(0.5),
       steepness: Schema.number().default(10),
     }),
-  }),
-  Schema.object({
+
     fatigue: Schema.object({
       windowMs: Schema.number().default(120000),
       threshold: Schema.number().default(3),
       penaltyBase: Schema.number().default(0.5),
     }),
-  }),
-  Schema.object({
+
     deferred: Schema.object({
       threshold: Schema.number().default(0.3),
       minDelayMs: Schema.number().default(3000),
@@ -113,16 +108,14 @@ export const WillingnessSchema: Schema<WillingnessConfig> = Schema.intersect([
       model: Schema.dynamic("registry.chatModels"),
       fallbackChain: Schema.array(Schema.dynamic("registry.chatModels")).default([]),
     }),
-  }),
-  Schema.object({
+
     dm: Schema.object({
       directBoost: Schema.number().default(0.95),
       aggregationMinMs: Schema.number().default(3000),
       aggregationMaxMs: Schema.number().default(8000),
       aggregationCapMs: Schema.number().default(15000),
     }),
-  }),
-  Schema.object({
+
     rateLimit: Schema.object({
       dm: Schema.object({
         capacity: Schema.number().default(5),
@@ -134,7 +127,7 @@ export const WillingnessSchema: Schema<WillingnessConfig> = Schema.intersect([
       }),
     }),
   }),
-]);
+]).collapse(true);
 
 function computeDecayFactor(
   baseFactor: number,
