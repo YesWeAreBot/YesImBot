@@ -1,329 +1,402 @@
-# Stack Research: v2.2 Runtime Optimization & Observability
+# Technology Stack
 
-**Domain:** AI LLM chat agent for IM platforms (Koishi 4.x plugin monorepo)
-**Researched:** 2026-02-25
-**Confidence:** HIGH (all findings verified against installed node_modules and source code)
+**Project:** Athena (YesImBot v4) — v2.4 Runtime & Polish
+**Researched:** 2026-02-26
+**Overall confidence:** HIGH (all findings verified from installed node_modules and reference source)
+
+---
 
 ## Scope
 
-Technology stack assessment for v2.2's 7 features. Focus: prompt caching via ai-sdk, debug logging, JSON parser testing, snippet variable fix, new dependencies.
+This is a **subsequent milestone** research file. The base stack is already in production. This file covers only what is **new or changed** for v2.4's four feature areas:
 
-## Key Finding: No New Runtime Dependencies Required
-
-The only new dependency is `vitest` (dev-only). Prompt caching uses `SystemModelMessage[]` with `providerOptions` already supported by `ai@6.0.91`.
-
-## Current Stack (Verified)
-
-| Technology | Version | Purpose |
-|---|---|---|
-| koishi | 4.18.10 | Bot framework, service lifecycle, logger |
-| ai (Vercel AI SDK) | 6.0.91 | LLM abstraction, generateText/streamText |
-| @ai-sdk/provider | 3.0.8 | SystemModelMessage, ProviderOptions types |
-| mustache | ^4.2.0 | Template rendering for prompts |
-| jsonrepair | ^3.13.2 | JSON repair for malformed LLM output |
-| gray-matter | ^4.0.3 | Frontmatter parsing for memory blocks |
-| p-queue | ^9.0.0 | Concurrency control for model calls |
-| typescript | ^5.9.3 | Type checking |
-| turbo | ^2.8.9 | Monorepo task orchestration |
-| pkgroll | ^2.21.4 | Package bundling (CJS + ESM) |
-| oxlint / oxfmt | ^1.48.0 / ^0.33.0 | Linting and formatting |
-| yarn | 4.12.0 | Package manager |
+1. Model group load balancing
+2. Provider architecture optimization
+3. Koishi config UI grouping
+4. Runtime bug fixes (message queue, Bot Action empty record, tool trim)
 
 ---
 
-## Area 1: LLM API Prefix Caching / Prompt Splitting
+## Current Stack (Verified from node_modules)
 
-**Confidence:** HIGH (verified from installed type definitions)
+| Package | Installed Version | Role |
+|---------|------------------|------|
+| `ai` | 6.0.91 | Core LLM SDK — generateText/streamText/wrapLanguageModel |
+| `@ai-sdk/openai` | ^3.0.0 | OpenAI provider adapter |
+| `@ai-sdk/anthropic` | ^3.0.47 | Anthropic provider adapter |
+| `@ai-sdk/deepseek` | ^3.0.0 | DeepSeek provider adapter |
+| `p-queue` | 5.0.0 | Concurrency queue in ModelService |
+| `schemastery` | 3.17.2 | Koishi Schema engine (via koishi dep) |
+| `koishi` | ^4.18.3 | Framework |
+| `typescript` | ^5.9.3 | Type checking |
+| `turbo` | ^2.8.9 | Monorepo task orchestration |
 
-### ai-sdk System Parameter
+---
 
-The installed `ai@6.0.91` Prompt type (`node_modules/ai/dist/index.d.ts:681`) accepts:
+## Feature 1: Model Group Load Balancing
 
-```ts
-system?: string | SystemModelMessage | Array<SystemModelMessage>;
+### What needs to be built
+
+`ModelService` currently routes calls to a single `provider:model` string via `resolveModel()`. Load balancing requires:
+
+- A named group concept: `{ name: string; models: string[] }`
+- A selection strategy per group: round-robin, failover, weighted-random, random
+- Per-model runtime state: failure count, circuit breaker open-until, EMA latency, success rate
+- `resolveModel()` must accept a group name and delegate to a `ModelGroupSwitcher`
+
+### Stack decision: pure TypeScript, no new library
+
+The v3-dev reference (`references/YesImBot-dev/packages/core/src/services/model/chat-switcher.ts`) already implements the full pattern — `ChatModelSwitcher` with all four strategies, EMA latency tracking, and circuit breaker. This is ~160 lines of pure TypeScript with zero external dependencies.
+
+**Do NOT add** `cockatiel`, `opossum`, or any circuit-breaker library. The v3 implementation is self-contained, production-validated, and fits the existing `ModelService` architecture exactly. A library would add abstraction over a 30-line state machine.
+
+**Do NOT add** `p-retry`. `ModelService.withRetry()` already exists and handles transient/rate-limit errors.
+
+### New types for `shared-model`
+
+```typescript
+// packages/shared-model/src/types/model.ts — additions
+
+export enum SwitchStrategy {
+  RoundRobin = 'round_robin',
+  Failover = 'failover',
+  Random = 'random',
+  WeightedRandom = 'weighted_random',
+}
+
+export interface ModelGroup {
+  name: string;
+  models: string[];                    // provider:model strings
+  strategy?: SwitchStrategy;
+  weights?: Record<string, number>;    // WeightedRandom only
+  breaker?: {
+    enabled: boolean;
+    threshold?: number;                // consecutive failures before open
+    cooldownMs?: number;               // how long to stay open
+  };
+}
 ```
 
-`SystemModelMessage` (`@ai-sdk/provider-utils`):
+### New file: `ModelGroupSwitcher`
 
-```ts
-type SystemModelMessage = {
-  role: 'system';
-  content: string;
-  providerOptions?: ProviderOptions;  // Record<string, JSONObject>
-};
-```
+```typescript
+// core/src/services/model/switcher.ts  (new file, ~120 lines)
 
-The JSDoc in `@ai-sdk/provider` shows the Anthropic cache control format:
+interface ModelRuntimeState {
+  failureCount: number;
+  openUntil?: number;
+  totalRequests: number;
+  successRequests: number;
+  averageLatency: number;
+  weight: number;
+}
 
-```ts
-{ "anthropic": { "cacheControl": { "type": "ephemeral" } } }
-```
+export class ModelGroupSwitcher {
+  private states = new Map<string, ModelRuntimeState>();
+  private rrIndex = 0;
 
-No new packages needed. The existing ai-sdk supports cache hints per system message block.
-
-### Current Code Path
-
-`ThinkActLoop.run()` calls `prompt.renderToString()` which returns a single string. This is passed as `system: systemPrompt` to `ModelService.call()` (loop.ts:151). `ModelService.executeCall()` spreads `{ ...defaults, ...params }` (model/service.ts:165) and passes to `generateText()`.
-
-### What Needs to Change
-
-1. `PromptService.render()` already returns `Section[]` with `name`, `content`, and `cacheable` fields. The `cacheable` flag is hardcoded `true` (prompt/service.ts:136) but never consumed. This is the natural seam for cache boundaries.
-
-2. Instead of `renderToString()`, the loop should call `render()` to get `Section[]`, then convert to `SystemModelMessage[]`:
-
-```ts
-const sections = await prompt.render("system", { view, percept });
-const systemMessages: SystemModelMessage[] = sections.map(s => ({
-  role: 'system' as const,
-  content: s.content,
-  ...(s.cacheable ? {
-    providerOptions: {
-      anthropic: { cacheControl: { type: "ephemeral" } }
+  constructor(private group: ModelGroup) {
+    for (const m of group.models) {
+      this.states.set(m, {
+        failureCount: 0, totalRequests: 0,
+        successRequests: 0, averageLatency: 0,
+        weight: group.weights?.[m] ?? 1,
+      });
     }
-  } : {})
-}));
+  }
+
+  pick(): string | undefined { /* strategy dispatch */ }
+  recordResult(model: string, success: boolean, latencyMs: number): void { /* EMA + breaker */ }
+}
 ```
 
-3. The `CallParams` type is `CallSettings & Prompt` which already accepts `system: Array<SystemModelMessage>`. No type changes needed at the model layer.
+### Integration in `ModelService`
 
-### Provider-Specific Caching Behavior
+- Add `private groups = new Map<string, ModelGroupSwitcher>()` field
+- `resolveModel()` checks group map first, then falls back to `provider:model` parse
+- `registerGroup(group: ModelGroup)` method — called from `ModelServiceConfig` on init
+- `refreshSchemas()` adds `registry.chatModelOrGroup` dynamic schema (group names + individual models)
 
-| Provider | Caching Mechanism | ai-sdk Integration |
-|---|---|---|
-| Anthropic | Explicit `cache_control` breakpoints. Up to 4 breakpoints. Cached prefix must be >1024 tokens. 5-min TTL. | `providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } }` on `SystemModelMessage` |
-| OpenAI | Automatic prefix caching. No explicit hints needed. Caches longest matching prefix >=1024 tokens. | No `providerOptions` needed. Just splitting into `SystemModelMessage[]` is sufficient for stable prefixes. |
-| DeepSeek | Automatic prefix caching similar to OpenAI. Context caching on disk, 128-token granularity. | No `providerOptions` needed. Stable prefix ordering is enough. |
+### Schema additions for `ModelServiceConfig`
 
-**Key insight:** Splitting the system prompt into `SystemModelMessage[]` benefits ALL providers. For OpenAI/DeepSeek, stable ordering of content blocks maximizes automatic cache hits. For Anthropic, explicit `cacheControl` hints are additionally needed. The `providerOptions` field is ignored by providers that don't understand it, so it's safe to always include Anthropic hints.
+```typescript
+// Extend ModelServiceConfigSchema in core/src/services/model/service.ts
 
-**Warning:** The ai-sdk docs note "not all providers support several system messages." However, the installed `@ai-sdk/openai` and `@ai-sdk/deepseek` providers both use the OpenAI-compatible API which concatenates multiple system messages. Verified: no `@ai-sdk/anthropic` is installed in this repo (only openai and deepseek providers exist). If Anthropic support is added later, the `providerOptions` plumbing is already in place.
+groups: Schema.array(
+  Schema.object({
+    name: Schema.string().required().description('Group name'),
+    models: Schema.array(Schema.dynamic('registry.chatModels')).required(),
+    strategy: Schema.union([
+      Schema.const(SwitchStrategy.Failover).description('Failover — best success rate first'),
+      Schema.const(SwitchStrategy.RoundRobin).description('Round-robin'),
+      Schema.const(SwitchStrategy.Random).description('Random'),
+      Schema.const(SwitchStrategy.WeightedRandom).description('Weighted random'),
+    ]).default(SwitchStrategy.Failover),
+    breaker: Schema.object({
+      enabled: Schema.boolean().default(false),
+      threshold: Schema.number().default(5),
+      cooldownMs: Schema.number().default(60000),
+    }).collapse().description('Circuit breaker'),
+  }).collapse()
+).default([]).description('Model groups for load balancing / failover'),
+```
 
-### Section Cacheability
-
-Current `PromptService.render()` produces 4 sections in order: `soul`, `instructions`, `memory`, `extra`. Recommended cacheability:
-
-| Section | Stability | Cacheable? | Rationale |
-|---|---|---|---|
-| `soul` | Static per role | YES | SOUL.md rarely changes between turns |
-| `instructions` | Static per role | YES | AGENTS.md + TOOLS.md rarely change |
-| `memory` | Semi-static | YES (last block) | Core memory blocks change infrequently; place cache breakpoint after last memory block |
-| `extra` | Dynamic per turn | NO | Contains horizon-view with history, working memory -- changes every turn |
-
-Place Anthropic `cacheControl` on the last `SystemModelMessage` of the stable prefix (after `memory`, before `extra`). This maximizes the cached portion.
+**Confidence: HIGH** — pattern verified from v3-dev reference (production-validated), no external deps needed.
 
 ---
 
-## Area 2: Debug Logging
+## Feature 2: Provider Architecture Optimization
 
-**Confidence:** HIGH (verified from Koishi source and current codebase)
+### Current duplication (verified by reading all three providers)
 
-### Koishi Logger API
+All three providers repeat identically:
+- `Config` interface: `id`, `apiKey`, `baseURL`, `models: ModelInfo[]`, `defaultParams`
+- `Schema.array(Schema.object({ id, tool_call, reasoning, modalities })).role('table')` block
+- `IModelProvider` boilerplate: `listModels()`, `getDefaultParams()`, constructor model mapping
 
-Koishi uses `cordis` Logger under the hood. The API available via `ctx.logger(namespace)`:
+### Stack decision: extract to `shared-model`, no new packages
 
-- `logger.debug(msg, ...args)` -- level 3
-- `logger.info(msg, ...args)` -- level 2 (default visible)
-- `logger.warn(msg, ...args)` -- level 1
-- `logger.error(msg, ...args)` -- level 0
-- `logger.level` -- per-namespace level override
+Move shared config types and Schema fragments into `packages/shared-model/src/types/provider.ts` (new file). Each provider imports and extends.
 
-Namespace filtering: `KOISHI_DEBUG=agent.loop,agent.willingness` enables debug-level for specific namespaces. This is the built-in mechanism for granular log control.
+```typescript
+// packages/shared-model/src/types/provider.ts  (new file)
 
-### Current Logging State
+export interface BaseProviderConfig {
+  id: string;
+  apiKey: string;
+  baseURL: string;
+  models: ModelInfo[];
+  defaultParams: ModelDefaultParams;
+}
 
-All agent logs use `ctx.logger("agent")` -- a single namespace. The loop (loop.ts) logs full prompt payloads at `info` level (line 156: `JSON.stringify(callParams, null, 2)`). No trace/correlation ID exists.
+// Reusable Schema fragment
+export const ModelInfoSchema = Schema.object({
+  id: Schema.string().required(),
+  tool_call: Schema.boolean().default(true),
+  reasoning: Schema.boolean().default(false),
+  modalities: Schema.array(
+    Schema.union([...Modality values...])
+  ).default([Modality.Text]).role('checkbox'),
+});
 
-### Trace ID Strategy
-
-**No new dependency needed.** Node.js `AsyncLocalStorage` (built-in since Node 16) is the right tool:
-
-```ts
-import { AsyncLocalStorage } from "node:async_hooks";
-const traceStore = new AsyncLocalStorage<{ traceId: string }>();
+export const BaseProviderConfigSchema = Schema.object({
+  id: Schema.string().required(),
+  apiKey: Schema.string().role('secret').required(),
+  baseURL: Schema.string().required(),
+  models: Schema.array(ModelInfoSchema).role('table'),
+});
 ```
 
-This avoids threading `traceId` through every function signature. The trace ID is set once at `handleEvent()` entry and automatically propagates through all async calls.
+Provider-specific extras use `Schema.intersect`:
 
-### Recommended Logger Namespaces
-
-| Namespace | What it logs |
-|---|---|
-| `agent` | Lifecycle: start, stop, error reports |
-| `agent.willingness` | Willingness calculations, DM bypass, deferred judgment |
-| `agent.loop` | Round progression, model calls, tool executions |
-| `agent.loop.prompt` | Full prompt payload (debug level only) |
-| `agent.loop.output` | Raw model output (debug level only) |
-| `agent.parser` | JSON parse attempts, repairs, failures |
-
----
-
-## Area 3: JSON Parser Hardening
-
-**Confidence:** HIGH (verified from v3 source and v4 source)
-
-### v3 Parser Reference
-
-The v3 parser (`references/YesImBot-v3/packages/core/src/shared/utils/json-parser.ts`, 267 lines) handles:
-- Markdown code block extraction (triple backtick with optional language tag)
-- `[OBSERVE]`/`[ANALYZE]`/`[PLAN]`/`[ACT]` prefix stripping
-- Nested code blocks inside JSON string values
-- Unbalanced bracket detection with logging
-- `jsonrepair` fallback for malformed JSON
-- Debug flag to suppress verbose logging in production
-
-### v4 Parser Current State
-
-The v4 parser (`core/src/services/agent/json-parser.ts`, 155 lines) is a simplified rewrite. It shares the same core logic but:
-- No test coverage
-- No debug flag (always logs)
-- Uses injected `Logger` interface instead of constructor options
-
-### Testing Framework: vitest
-
-**Use vitest** because:
-- The turbo.json already has a `"test"` task defined (line 23-25)
-- No test runner is currently installed -- vitest is the standard for modern TypeScript monorepos
-- The v3 test suite uses `bun:test` which is incompatible; vitest has near-identical API (`describe`, `it`, `expect`)
-- vitest supports workspace mode for monorepo testing out of the box
-
-### Setup Required
-
-```bash
-# Root devDependency
-yarn add -D vitest -W
-
-# Root vitest.config.ts (minimal)
-# vitest auto-discovers **/*.test.ts files
+```typescript
+// provider-anthropic/src/index.ts
+export const Config: Schema<Config> = Schema.intersect([
+  BaseProviderConfigSchema,
+  Schema.object({
+    defaultParams: Schema.object({ temperature, maxTokens }),
+    projectId: Schema.string().default('unknown'),
+    sessionId: Schema.string().default('unknown'),
+  }),
+]);
 ```
 
-Turbo already has `"test": { "outputs": [] }` configured. Add `"vitest --run"` as the test script in `core/package.json`.
+`Schema.intersect` is confirmed available in schemastery 3.17.2 (read from source).
 
-### v3 Test Porting Notes
+### Abstract base class
 
-The v3 test file uses:
-- `import { describe, it, expect } from "bun:test"` -- replace with `vitest`
-- `toContainValue()` custom matcher -- replace with standard `toContain()` or `toEqual(expect.objectContaining(...))`
-- Chinese log message assertions -- update to match v4's English messages
-- 12 test cases covering: basic JSON, code blocks, `[OBSERVE]` prefix, nested blocks, complex multi-section LLM output
+```typescript
+// packages/shared-model/src/provider/base.ts  (new file)
 
----
+export abstract class BaseProvider implements IModelProvider {
+  abstract readonly providerType: string;
+  abstract getModel(modelId: string): LanguageModel;
 
-## Area 4: Snippet Variable Fix
+  constructor(
+    readonly id: string,
+    readonly models: ModelInfo[],
+    readonly defaultParams: ModelDefaultParams,
+  ) {}
 
-**Confidence:** HIGH (confirmed bug from source code analysis)
+  listModels(): Record<string, ModelInfo> {
+    return Object.fromEntries(this.models.map(m => [m.id, m]));
+  }
 
-### Root Cause
-
-The `{{date.now}}` variable renders as empty in the horizon-view template. The bug is in `HorizonService.formatHorizonText()` (horizon/service.ts:274):
-
-```ts
-return Mustache.render(this.horizonViewTpl, {
-  environment,
-  activeMembers,
-  hasHistory: historyObs.length > 0,
-  history: historyObs,
-  // ... no date, sender, channel, bot keys
-}).trim();
-```
-
-Snippets like `date.now` are registered in `MemoryService.registerSnippets()` and resolved by `PromptService.buildScope()` (private method). But `formatHorizonText()` bypasses PromptService entirely -- it renders the template directly with its own scope object that lacks snippet variables.
-
-Confirmed in PROMPT.json output: `"content": "现在是 。"` (empty date).
-
-### Fix Options
-
-**Option A (recommended):** Add a public `resolveScope(initial)` method to PromptService. Have the loop call it once, then pass the resolved scope to both `render()` and `formatHorizonText()`.
-
-**Option B:** Move `{{date.now}}` out of horizon-view.mustache into a section that PromptService renders directly (e.g., the `extra` injection point).
-
-Option A is better because it fixes ALL snippet variables in horizon-view, not just `date.now`. Note: `buildScope` is async (snippets can be async), so `formatHorizonText` would need to accept a pre-resolved scope or become async.
-
-### No New Dependencies
-
-This is a pure architectural fix. Mustache 4.2 handles nested property lookup (`date.now` -> `scope.date.now`) correctly -- the issue is that the scope object is never populated with snippet values when HorizonService renders.
-
----
-
-## Area 5: New Dependencies Assessment
-
-**Confidence:** HIGH
-
-### New Dependencies Needed
-
-| Package | Type | Purpose | Version |
-|---|---|---|---|
-| vitest | devDependency (root) | JSON parser unit tests | latest (^3.x) |
-
-That's it. No new runtime dependencies.
-
-### Dependencies NOT Needed
-
-| Considered | Why Not |
-|---|---|
-| `@ai-sdk/anthropic` | No Anthropic provider plugin exists yet. Cache hints via `providerOptions` work through the generic passthrough. Add when an Anthropic provider is built. |
-| `winston` / `pino` | Koishi's built-in Logger (from cordis) is sufficient. It supports namespaces, levels, and env-based filtering. |
-| `uuid` | For trace IDs, `crypto.randomUUID()` (Node 19+) or a simple counter suffices. |
-| `async_hooks` polyfill | `AsyncLocalStorage` is stable since Node 16. Koishi 4.18 requires Node 18+. |
-
-### Existing Dependencies Leveraged for v2.2
-
-| Package | v2.2 Feature | How Used |
-|---|---|---|
-| `ai` (6.0.91) | Prompt caching | `SystemModelMessage[]` with `providerOptions` |
-| `mustache` (4.2) | Snippet fix | Already handles nested property lookup correctly |
-| `jsonrepair` (3.13) | JSON parser hardening | Already used as fallback; add test coverage |
-| `koishi` (4.18.10) | Debug logging | Built-in Logger with namespace filtering |
-
----
-
-## Installation
-
-```bash
-# New dev dependency (root workspace)
-yarn add -D vitest -W
-```
-
-Add to `core/package.json` scripts:
-```json
-{
-  "scripts": {
-    "test": "vitest --run"
+  getDefaultParams(): ModelDefaultParams {
+    return this.defaultParams;
   }
 }
 ```
 
-No other package changes needed.
+Each provider class extends `BaseProvider` and only implements `getModel()`. This eliminates ~30 lines of identical code per provider.
+
+**Confidence: HIGH** — pure TypeScript, no new deps, schemastery `intersect` confirmed.
+
+---
+
+## Feature 3: Koishi Config UI Grouping
+
+### Mechanism: `Schema.object().description()` + `.collapse()`
+
+Koishi Console renders `Schema.object({ ... }).description('Section Title')` as a labeled collapsible section. Confirmed in schemastery 3.17.2 source:
+
+- `collapse?: boolean` is in `Schemastery.Meta<T>` interface (line 79)
+- `.collapse(value?: boolean)` is a prototype method (line 123)
+- `.description(text: string)` is a prototype method (line 121)
+
+`Schema.intersect([...])` of multiple `Schema.object().description()` blocks produces a multi-section config UI. This pattern is used extensively in v3-dev (`references/YesImBot-dev/packages/core/src/services/model/config.ts`).
+
+### `AgentCoreConfigSchema` grouping
+
+Current flat `Schema.object({...})` with ~15 fields becomes:
+
+```typescript
+export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.intersect([
+  Schema.object({
+    model: Schema.dynamic('registry.chatModelOrGroup').description('Chat model or group'),
+    fallbackChain: Schema.array(Schema.dynamic('registry.chatModels')).default([]),
+  }).description('模型配置'),
+
+  Schema.object({
+    maxRounds: Schema.number().default(3),
+    streamMode: Schema.boolean().default(false),
+    globalTimeout: Schema.number().default(120000),
+    maxToolResultLength: Schema.number().default(4000),
+    enableThoughts: Schema.boolean().default(true),
+  }).description('推理参数'),
+
+  Schema.object({
+    charBudget: Schema.number().default(30000),
+    keepLastRounds: Schema.number().default(2),
+    softTrimHead: Schema.number().default(800),
+    softTrimTail: Schema.number().default(800),
+  }).description('工作记忆'),
+
+  Schema.object({
+    aggregationWindow: Schema.number().default(1500),
+    errorReportChannel: Schema.string(),
+    debugLevel: Schema.union([...]).default(2),
+  }).description('系统'),
+
+  Schema.object({
+    willingness: WillingnessSchema,
+  }).description('意愿值'),
+]);
+```
+
+Note: `model` field changes from `Schema.dynamic('registry.chatModels')` to `Schema.dynamic('registry.chatModelOrGroup')` to expose group names alongside individual models.
+
+### Provider config grouping
+
+Each provider's flat `Schema.object` splits into `Schema.intersect([connectionGroup, modelsGroup, paramsGroup])`:
+
+```typescript
+// Example for provider-openai
+export const Config: Schema<Config> = Schema.intersect([
+  Schema.object({
+    id: ..., apiKey: ..., baseURL: ...,
+  }).description('连接配置'),
+  Schema.object({
+    models: Schema.array(ModelInfoSchema).role('table'),
+  }).description('模型列表'),
+  Schema.object({
+    defaultParams: Schema.object({ temperature, maxTokens, topP }),
+  }).description('默认参数').collapse(),
+]);
+```
+
+**Confidence: HIGH** — schemastery API confirmed from installed source, pattern confirmed from v3-dev reference.
+
+---
+
+## Feature 4: Runtime Bug Fixes
+
+All three bugs are pure logic fixes. No stack changes, no new dependencies.
+
+### Bug 1: Bot Action empty record
+
+When LLM decides not to reply, `ThinkActLoop` records an empty `[Bot Action]` to the timeline. Fix: conditional guard in `core/src/services/agent/loop.ts` before `horizon.addEvent()`. One-line check.
+
+### Bug 2: Tool trim not working
+
+Working memory trimmer (`core/src/services/agent/trimmer.ts`) — `softTrim`/`hardClear` thresholds not evaluated correctly. Fix: logic correction in trimmer. No new deps.
+
+### Bug 3: Message queue — in-flight ignored, backlog merged
+
+Current `AgentCore.enqueue()` uses a `pending: Map<string, LoopPayload>` that stores only the **last** event while a loop is running — new messages arriving during processing are silently dropped (only the last one is kept). The fix accumulates arriving events into a queue and merges them before the next loop run.
+
+The fix is in `core/src/services/agent/service.ts`:
+- Change `pending: Map<string, LoopPayload>` to `pending: Map<string, LoopPayload[]>`
+- On loop completion, merge all accumulated payloads (combine content, use latest event metadata)
+- No new libraries — pure Promise chain logic already in place
+
+**Confidence: HIGH** — bug confirmed by reading `service.ts` enqueue/pending logic directly.
+
+---
+
+## No New Runtime Dependencies Required
+
+All v2.4 features are achievable with the existing stack:
+
+| Feature | Approach | New Dep? |
+|---------|----------|----------|
+| Load balancing strategies | Pure TS `ModelGroupSwitcher` | No |
+| Circuit breaker | Inline state machine (v3 pattern) | No |
+| Provider abstraction | `BaseProvider` in shared-model | No |
+| Config UI grouping | `Schema.intersect` + `.description()` | No |
+| Bug fixes | Logic fixes in existing files | No |
+
+---
+
+## Recommended Stack (No Changes)
+
+| Technology | Version | Keep/Change | Rationale |
+|------------|---------|-------------|-----------|
+| `ai` | 6.0.91 | Keep | No upgrade needed for v2.4 features |
+| `p-queue` | 5.0.0 | Keep | Adequate; group-level concurrency handled by switcher |
+| `schemastery` | 3.17.2 | Keep | `.collapse()` / `.intersect()` confirmed available |
+| `koishi` | ^4.18.3 | Keep | No framework changes needed |
+| `@ai-sdk/*` | current | Keep | No new provider adapters in v2.4 |
+
+---
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Circuit breaker | Inline state machine | `cockatiel` / `opossum` | Overkill for 3 models; adds dep for 30 lines of logic |
+| Retry logic | Existing `withRetry()` | `p-retry` | Already implemented; no gap |
+| Config grouping | `Schema.intersect` | Flat schema with comments | Flat schema produces no UI sections in Koishi Console |
+| Provider abstraction | `BaseProvider` abstract class | Copy-paste per provider | Copy-paste is the current problem being solved |
+
+---
+
+## Files Affected by v2.4
+
+| File | Change Type |
+|------|-------------|
+| `packages/shared-model/src/types/model.ts` | Add `SwitchStrategy`, `ModelGroup` types |
+| `packages/shared-model/src/types/provider.ts` | New — `BaseProviderConfig`, `ModelInfoSchema`, `BaseProvider` |
+| `packages/shared-model/src/index.ts` | Export new types |
+| `core/src/services/model/switcher.ts` | New — `ModelGroupSwitcher` class |
+| `core/src/services/model/service.ts` | Add group registration, `resolveModel` group dispatch, schema grouping |
+| `core/src/services/agent/service.ts` | `AgentCoreConfigSchema` grouping, pending queue fix |
+| `core/src/services/agent/loop.ts` | Bot Action empty record fix |
+| `core/src/services/agent/trimmer.ts` | Tool trim fix |
+| `providers/provider-openai/src/index.ts` | Extend `BaseProvider`, use shared Schema |
+| `providers/provider-deepseek/src/index.ts` | Extend `BaseProvider`, use shared Schema |
+| `providers/provider-anthropic/src/index.ts` | Extend `BaseProvider`, use shared Schema |
 
 ---
 
 ## Sources
 
-All findings verified by reading actual source code and installed packages:
-
-**ai-sdk types (prompt caching):**
-- `node_modules/ai/dist/index.d.ts:678-681` -- `Prompt.system` union type
-- `node_modules/@ai-sdk/provider-utils/dist/index.d.ts:900-909` -- `SystemModelMessage` definition
-- `node_modules/@ai-sdk/provider/dist/index.d.ts:50-60` -- `SharedV3ProviderOptions` with Anthropic cacheControl JSDoc
-- `node_modules/ai/package.json` -- version 6.0.91
-- `node_modules/@ai-sdk/provider/package.json` -- version 3.0.8
-
-**Current codebase:**
-- `core/src/services/agent/loop.ts:151-153` -- system prompt passed as string
-- `core/src/services/model/service.ts:119-165` -- CallParams type, executeCall spread
-- `core/src/services/prompt/service.ts:113-148` -- render() returns Section[], cacheable flag
-- `core/src/services/prompt/types.ts` -- Section, Snippet, InjectionPoint types
-- `core/src/services/horizon/service.ts:242-283` -- formatHorizonText bypasses snippet scope
-- `core/src/services/memory/service.ts:135-174` -- snippet registration
-- `core/src/services/agent/json-parser.ts` -- v4 parser (155 lines, no tests)
-- `core/src/services/agent/service.ts:11-12` -- JUDGMENT_PROMPT
-- `core/resources/templates/partials/horizon-view.mustache:1` -- `{{date.now}}` template variable
-
-**Reference code:**
-- `references/YesImBot-v3/packages/core/src/shared/utils/json-parser.ts` -- v3 parser (267 lines)
-
-**Build config:**
-- `turbo.json:23-25` -- test task already defined
-- `core/package.json` -- dependency versions
-- `package.json` -- root workspace config
-
-**Confidence note:** WebSearch was unavailable during this research session. Provider-specific caching behavior (Anthropic breakpoint limits, OpenAI auto-cache thresholds, DeepSeek disk caching) is based on training data knowledge and should be verified against current provider documentation during implementation. All ai-sdk type information is HIGH confidence (read directly from installed packages).
+- schemastery 3.17.2 source: `/home/workspace/Athena/node_modules/schemastery/src/index.ts` — HIGH confidence, read directly
+- v3-dev `ChatModelSwitcher`: `/home/workspace/Athena/references/YesImBot-dev/packages/core/src/services/model/chat-switcher.ts` — HIGH confidence, production-validated
+- v3-dev `SwitchConfig` Schema: `/home/workspace/Athena/references/YesImBot-dev/packages/core/src/services/model/config.ts` — HIGH confidence
+- v3-dev `ModelService`: `/home/workspace/Athena/references/YesImBot-dev/packages/core/src/services/model/service.ts` — HIGH confidence
+- Current `ModelService`: `/home/workspace/Athena/core/src/services/model/service.ts` — HIGH confidence, read directly
+- Current `AgentCore`: `/home/workspace/Athena/core/src/services/agent/service.ts` — HIGH confidence, read directly
+- All three provider implementations: read directly from source — HIGH confidence
+- `ai` SDK 6.0.91: `/home/workspace/Athena/node_modules/ai/package.json` — HIGH confidence
+- `p-queue` 5.0.0: `/home/workspace/Athena/node_modules/p-queue/package.json` — HIGH confidence

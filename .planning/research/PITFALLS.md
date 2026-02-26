@@ -1,325 +1,368 @@
-# Pitfalls Research: v2.2 Runtime Optimization & Observability
+# Pitfalls Research
 
-**Domain:** AI LLM chat agent for IM platforms (Koishi 4.x plugin)
-**Researched:** 2026-02-25
-**Confidence:** HIGH (all findings verified against actual source code)
-
-## Critical Pitfalls (HIGH risk)
-
-### 1. Prompt Cache: `system` is currently a plain string, splitting into `SystemModelMessage[]` changes the ai-sdk contract
-
-**Risk:** HIGH
-**Where:** `core/src/services/agent/loop.ts:151-153`, `core/src/services/model/service.ts:119-138`
-**Description:**
-The current code passes `system` as a single string to `generateText`/`streamText`:
-
-```ts
-// loop.ts:151-153
-const callParams: CallParams = {
-  system: systemPrompt,  // string
-  messages,
-};
-```
-
-The ai-sdk `Prompt` type accepts `system?: string | SystemModelMessage | Array<SystemModelMessage>`. Switching to `SystemModelMessage[]` for cache control requires each element to have `{ role: 'system', content: string, providerOptions?: ProviderOptions }`. However:
-
-1. The `CallParams` type alias is `CallSettings & Prompt` (model/service.ts:24). This already supports the union type, so the TypeScript types will pass. But the `ModelService.executeCall` method spreads `{ ...defaults, ...params }` (line 165) -- if `defaults` also has a `system` key, the spread will silently overwrite the array with a string or vice versa.
-
-2. The `providerOptions` field on `SystemModelMessage` is how you'd set Anthropic's `cacheControl: { type: 'ephemeral' }`. But the `@ai-sdk/anthropic` provider in this repo's node_modules has NO explicit `cacheControl` typing -- it relies on the generic `providerOptions` passthrough. This means the cache hint format is provider-specific and undocumented in the installed version. Getting the format wrong means silent no-op (no caching, no error).
-
-3. Not all providers support `Array<SystemModelMessage>`. The ai-sdk docs explicitly warn: "not all providers support several system messages." OpenAI-compatible providers may concatenate or reject arrays. The current codebase supports multiple providers via `ModelService.registerProvider` with a fallback chain -- a cached prompt format that works for Anthropic will silently degrade or error on OpenAI fallbacks.
-
-**Mitigation:**
-- Implement cache control at the `ModelService` layer, not in the loop. Let `ModelService.executeCall` detect the provider type and conditionally split the system prompt into `SystemModelMessage[]` with appropriate `providerOptions` only for Anthropic.
-- Add integration tests that verify the actual HTTP request body sent to each provider.
-- Keep the `renderToString` return type as `string`; convert to `SystemModelMessage[]` only at the model service boundary.
-
-### 2. Snippet variables missing from Horizon's `formatHorizonText` -- `{{date.now}}` renders as empty string
-
-**Risk:** HIGH
-**Where:** `core/src/services/horizon/service.ts:274-283`, `core/resources/templates/partials/horizon-view.mustache:1`
-**Description:**
-The horizon-view template starts with `现在是 {{date.now}}。` (line 1). But `formatHorizonText` passes a hand-built scope object with only `environment`, `activeMembers`, `history`, `trigger`, and `workingMemory` keys:
-
-```ts
-// horizon/service.ts:274-283
-return Mustache.render(this.horizonViewTpl, {
-  environment,
-  activeMembers,
-  hasHistory: historyObs.length > 0,
-  history: historyObs,
-  hasTrigger: triggerObs.length > 0,
-  trigger: triggerObs,
-  hasWorkingMemory: (workingMemory?.length ?? 0) > 0,
-  workingMemory,
-}).trim();
-```
-
-The `date.now` snippet is registered in `MemoryService.registerSnippets()` (memory/service.ts:146) and resolved by `PromptService.buildScope()` (prompt/service.ts:215). But `buildScope` is `private` and only called inside `PromptService.render()`. The horizon service never calls `buildScope` -- it renders the template directly with Mustache, bypassing the entire snippet system.
-
-This is a confirmed live bug visible in the PROMPT.json file (line 178: `"content": "现在是 。`).
-
-**Mitigation:**
-- Option A: Make `buildScope` public (or add a `getScope(initialScope)` method) on PromptService, and have HorizonService call it before rendering.
-- Option B: Have HorizonService accept a pre-built scope from the caller (the loop already has access to the prompt service).
-- Option A is cleaner because it keeps scope resolution centralized. But be careful: `buildScope` is async (snippets can be async), so `formatHorizonText` would need to become async too.
-
-### 3. memory_block merge: MemoryService and RoleService both use `fs.watch` with incompatible patterns
-
-**Risk:** HIGH
-**Where:** `core/src/services/memory/service.ts:116-133`, `core/src/services/role/service.ts:121-137`
-**Description:**
-Both services implement nearly identical file-watching patterns:
-
-- MemoryService watches `data/yesimbot/memories/` (memory/service.ts:120)
-- RoleService watches `data/yesimbot/roles/` (role/service.ts:125)
-
-Both use 300ms debounce timers and reload-on-change. Merge risks:
-
-1. **Double watcher on same directory:** If both services watch the same merged directory, every file change triggers two independent reload cycles. The debounce timers are independent (`this.debounceTimer` is per-service), so they won't coalesce.
-
-2. **Injection point collision:** MemoryService injects into `"memory"` point with name `"core-memory"`. RoleService injects into `"soul"` and `"instructions"` with names `"__role_soul"`, `"__role_agents"`, `"__role_tools"`. If the merge changes injection names, the `PromptService.inject` duplicate-name check (prompt/service.ts:93-96) will silently ignore the second injection.
-
-3. **Sync vs async file reads:** RoleService uses `readFileSync` (role/service.ts:68-72) while MemoryService uses `readFile` (async, memory/service.ts:92). Mixing during hot-reload can cause race conditions where one service sees a partially-written file.
-
-4. **Dispose cleanup asymmetry:** RoleService manually tracks `disposers[]` and calls them on reload (role/service.ts:87-88). MemoryService doesn't -- it just replaces `this.blocks`. If the merged service needs to re-inject on reload, it must properly dispose old injections first.
-
-**Mitigation:**
-- Use a single watcher on the merged directory.
-- Ensure all file reads are async.
-- Track and dispose all injection handles before re-injecting on reload.
-- Keep injection point semantics clear: files from `roles/` inject into `soul`/`instructions`, files from `memories/` inject into `memory`.
+**Domain:** Koishi AI chat plugin — v2.4 model group load balancing, provider architecture, config UI grouping, runtime bug fixes
+**Researched:** 2026-02-26
+**Confidence:** HIGH (all findings derived from direct source analysis of v2.3 codebase)
 
 ---
 
-## Moderate Pitfalls (MEDIUM risk)
+## Critical Pitfalls
 
-### 4. JSON Parser v4 is missing v3's battle-tested edge cases
+### Pitfall 1: Model Group Queue Bypasses the Global PQueue
 
-**Risk:** MEDIUM
-**Where:** `core/src/services/agent/json-parser.ts` vs `references/YesImBot-v3/packages/core/src/shared/utils/json-parser.ts`
-**Description:**
-The v4 parser is a simplified rewrite of v3. Comparing the two:
+**What goes wrong:**
+Group selection logic runs *outside* `queue.add()`, so group member calls skip the global concurrency cap. Under burst load, multiple group members fire simultaneously and hit API rate limits.
 
-| Capability | v3 | v4 |
-|---|---|---|
-| Code block extraction | Yes | Yes |
-| Nested code blocks in JSON values | Yes (tested) | Partial -- same logic but untested |
-| `[OBSERVE]` prefix handling | Yes (tested) | Yes |
-| Unbalanced bracket detection | Yes (logged) | Yes |
-| Log messages | Chinese (match test assertions) | English |
-| Constructor | `ParserOptions` with `debug` flag | `Logger` interface |
+**Why it happens:**
+The natural implementation of "pick a member, then call it" puts selection before `queue.add()`. If group resolution calls `executeCall` directly instead of going through the queued path, the PQueue guard is bypassed entirely.
 
-Key gaps:
+**How to avoid:**
+All model calls — direct or via group — must enter `queue.add()` as the outermost wrapper. Group member selection happens *inside* the queued task, not before it.
 
-1. **v3 test suite uses `bun:test` and custom matchers.** The test file (line 1: `import { describe, it, expect } from "bun:test"`) uses `toContainValue` (line 364) which is a Bun-specific matcher not available in vitest. Porting the test suite requires replacing these.
+```typescript
+// WRONG: selection outside queue
+const member = group.pick();
+return this.queue.add(() => this.executeCall(member.provider, member.modelId, params));
 
-2. **v3 test assertions check Chinese log messages** (e.g., line 330: `"检测到 Markdown 代码块"`). The v4 parser logs in English. Porting tests means updating all log assertions.
-
-3. **The "complex format" test case** (v3 test line 211-249) tests a massive multi-paragraph LLM output with `[OBSERVE]`, `[ANALYZE & INFER]`, `[PLAN]`, `[ACT]` sections followed by a ```json block. This is a real-world edge case that v4 has no test coverage for.
-
-4. **v4 lacks the `debug` flag.** v3's parser only logs when `debug: true`. v4 always logs to the injected logger. In production, this means every parse attempt generates log noise.
-
-**Mitigation:**
-- Port v3 test cases to vitest, updating `bun:test` imports and custom matchers.
-- Replace Chinese log assertions with English equivalents matching v4's messages.
-- Add the "complex format" test case -- it catches real production failures.
-- Add a `debug` flag to v4's constructor to suppress verbose logging.
-
-### 5. Willingness DM bypass: always-reply in DMs removes the only spam protection
-
-**Risk:** MEDIUM
-**Where:** `core/src/services/agent/service.ts:113-142`
-**Description:**
-The current `handleEvent` flow for DMs (service.ts:134-141):
-
-```ts
-if (event.scope.isDirect) {
-  const built = this.buildPercept(event);
-  if (this.queues.has(channelKey)) {
-    this.pending.set(channelKey, built);
-  } else {
-    this.enqueue(channelKey, built);
-  }
-  return;
-}
-```
-
-This code runs AFTER the willingness check (line 126: `if (!result.shouldReply)`). So DMs still go through willingness. The v2.2 plan is to bypass willingness for DMs entirely. Risks:
-
-1. **No rate limiting for DMs.** Without willingness as a gate, a user can spam the bot in DMs and trigger unlimited LLM calls. The `queues` map serializes per-channel, but `pending` only keeps the LAST event (line 138: `this.pending.set(channelKey, built)`) -- so rapid-fire messages won't queue up infinitely, but each new message replaces the pending one, meaning the bot will process at least 2 messages per burst (current + pending).
-
-2. **Cost explosion.** Each loop iteration calls `modelService.call` which goes through the queue (p-queue with concurrency 5). DM spam from multiple users hits the concurrency limit and backs up, but doesn't reject.
-
-3. **The deferred judgment path is skipped for DMs.** If DMs bypass willingness entirely, the `scheduleDeferredJudgment` code (service.ts:127-132) never fires for DMs. This is correct behavior but means the Judge prompt feature is group-only.
-
-**Mitigation:**
-- Add a per-user rate limiter for DMs (e.g., max 1 request per 3 seconds per user).
-- Keep the `pending` map behavior (last-write-wins) as natural backpressure, but add an explicit cooldown.
-- Document that deferred judgment is group-only by design.
-
-### 6. Working memory format change may confuse the LLM
-
-**Risk:** MEDIUM
-**Where:** `core/src/services/agent/loop.ts:110-126`, `core/resources/templates/partials/horizon-view.mustache:21-28`
-**Description:**
-The current working memory is built in the loop (loop.ts:110-125) as plain text lines:
-
-```
-Round 2:
-  - send_message({"content":"搜不了，搜索服务炸了"}) -> success: Sent 1 message(s)
-```
-
-This format is embedded in the user message via the horizon-view template's `<working-memory>` section. The LLM has been "trained" (via in-context examples across many conversations) to expect this exact format.
-
-Risks of changing the format:
-
-1. **LLM behavioral regression.** If the format changes (e.g., from indented text to structured XML or JSON), the LLM may misinterpret the working memory or try to mimic the new format in its output. Since the agent's output format is JSON with `actions[]`, any confusion about what's "data" vs "instruction" can cause parse failures.
-
-2. **The trimmer operates on raw strings.** `trimMessages` (trimmer.ts:37-74) uses character counting and string slicing. If working memory format changes to be more verbose (e.g., XML tags), the `charBudget` of 30000 will be hit sooner, causing more aggressive trimming of earlier rounds.
-
-3. **Working memory is duplicated.** The same tool execution data appears in both `<history>` (as `[Bot Action]` lines from `formatObservation`) and `<working-memory>` (as detailed round logs). Changing one format without the other creates inconsistency the LLM may flag or get confused by.
-
-**Mitigation:**
-- Make format changes incremental -- test with A/B comparisons on real conversations.
-- If adding structure (XML/JSON), keep it concise to avoid blowing the char budget.
-- Ensure `<history>` and `<working-memory>` tell a consistent story.
-
-### 7. Deferred judgment JUDGMENT_PROMPT is too minimal -- LLM may not understand the task
-
-**Risk:** MEDIUM
-**Where:** `core/src/services/agent/service.ts:11-12`
-**Description:**
-The current judgment prompt:
-
-```ts
-const JUDGMENT_PROMPT = `You are a conversation participation judge. Based on the conversation context and the bot's willingness score, decide whether the bot should reply.
-Answer with exactly one word: "yes" or "no".`;
-```
-
-Issues:
-
-1. **No persona context.** The judge doesn't know who the bot is, what topics it cares about, or its personality. It receives the full horizon text (which includes history) but has no soul/instructions context. This means the judge can't make persona-consistent decisions.
-
-2. **Willingness score is opaque.** The judge receives `Willingness score: 0.312` but has no idea what this number means, what range it's in, or what threshold triggered the judgment. Without calibration context, the LLM is essentially guessing.
-
-3. **"yes"/"no" parsing is fragile.** The code checks `answer.startsWith("yes")` (service.ts:278). If the LLM responds with "Yes, the bot should reply" or "yes." it works. But some models may respond with "I think yes" or reasoning before the answer, which would fail the startsWith check.
-
-4. **Cost per judgment.** Each deferred judgment is a full LLM call with `maxOutputTokens: 8`. The model used is `this.config.willingness?.deferred?.model` which defaults to empty string (service.ts:257) -- meaning it falls through to the default model, which may be expensive.
-
-**Mitigation:**
-- Include a brief persona summary in the judgment prompt.
-- Add calibration context: "Score range is 0-1, threshold for this judgment was {threshold}."
-- Parse more robustly: extract first "yes" or "no" token from anywhere in the response.
-- Default the judgment model to a cheap/fast model, not the main agent model.
-
----
-
-## Minor Pitfalls (LOW risk)
-
-### 8. Debug logging: all current logs use `logger.info` -- no debug level separation
-
-**Risk:** LOW
-**Where:** `core/src/services/agent/loop.ts` (throughout)
-**Description:**
-The loop currently logs everything at `info` level:
-
-```ts
-this.logger.info(`Round ${round}/${maxRounds}`);           // line 147
-this.logger.info(JSON.stringify(callParams, null, 2));      // line 156 -- FULL PROMPT
-this.logger.info(`Model output: ${rawText}`);               // line 170
-```
-
-Line 156 is particularly problematic: it logs the entire system prompt + messages as pretty-printed JSON on every round. This is useful for debugging but extremely noisy in production.
-
-Adding trace ID threading means touching these log calls anyway. The risk is:
-
-1. **Changing log levels breaks existing monitoring.** If users have log scrapers filtering for `info`, downgrading to `debug` will hide messages they depend on.
-2. **Trace ID as function parameter has wide blast radius.** If `traceId` is added as a parameter to `ThinkActLoop.run()`, `ModelService.call()`, etc., it touches every call site.
-
-**Mitigation:**
-- Use Koishi's logger namespace system: `ctx.logger("agent.loop")`, `ctx.logger("agent.willingness")` etc. for granular filtering.
-- Pass trace ID via a context object or AsyncLocalStorage, not as a function parameter.
-- Keep `info` for key lifecycle events (loop start/end, round count), use `debug` for payloads.
-
-### 9. RoleService `renderSafe` fallback masks template errors silently
-
-**Risk:** LOW
-**Where:** `core/src/services/role/service.ts:75-84`
-**Description:**
-```ts
-private renderSafe(name: string, content: string, scope: Record<string, unknown>): string {
-  try {
-    const rendered = Mustache.render(content, scope);
-    this.lastValid.set(name, rendered);
-    return rendered;
-  } catch (e) {
-    this.logger.warn("Mustache render error in %s: %s", name, e);
-    return this.lastValid.get(name) ?? content;
-  }
-}
-```
-
-If a user edits SOUL.md and introduces a Mustache syntax error, the service silently falls back to the last valid render. This is good for resilience but bad for debugging -- the user won't know their edit didn't take effect unless they check logs.
-
-After the merge with MemoryService, this pattern should be applied consistently to memory blocks too (currently memory blocks don't have this fallback).
-
-**Mitigation:**
-- Log at `warn` level (already done) but also consider surfacing the error via Koishi's console plugin if available.
-- Apply the same `renderSafe` pattern to memory block rendering after the merge.
-
-### 10. `PromptService.render` returns sections with `cacheable: true` hardcoded -- no actual cache logic
-
-**Risk:** LOW
-**Where:** `core/src/services/prompt/service.ts:136`
-**Description:**
-```ts
-sections.push({
-  name: point,
-  content: `<${point}>\n${content}\n</${point}>`,
-  cacheable: true,  // always true, never consumed
+// CORRECT: selection inside queue
+return this.queue.add(async () => {
+  const member = group.pick(); // inside the queued task
+  return this.executeCall(member.provider, member.modelId, params);
 });
 ```
 
-The `Section.cacheable` field is always `true` and nothing reads it. When implementing prompt caching, this field could be repurposed to signal which sections should get `cacheControl` hints. But currently it's dead code that might mislead implementers into thinking caching is already partially implemented.
+**Warning signs:**
+- `queue.size` stays near 0 even under load while API 429 errors appear
+- `usage` map shows uneven distribution across group members despite round-robin config
 
-**Mitigation:**
-- Either remove the `cacheable` field until it's actually used, or implement the cache boundary logic that consumes it.
-- If keeping it, make it dynamic: `soul` and `instructions` sections are cacheable (stable across turns), `memory` and `extra` may not be (they change per-turn with working memory).
+**Phase to address:** Model group load balancing phase
 
 ---
 
-## Phase-Specific Warnings
+### Pitfall 2: Group Failover Skips `withRetry`
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|---|---|---|
-| Prompt cache optimization | Provider-specific `providerOptions` format for cache hints; silent failure if wrong | Test against actual Anthropic API; add response header check for cache hit/miss |
-| Willingness DM handling | Cost explosion from unthrottled DM processing | Add per-user rate limiter before bypassing willingness |
-| Judge prompt enhancement | Minimal context leads to poor judgment quality | Include persona summary and score calibration in prompt |
-| memory_block → RoleService merge | Data migration for existing `data/yesimbot/memories/` and `data/yesimbot/roles/` directories | Provide migration script or auto-detect old directory structure |
-| JSON parser hardening | v3 test suite uses Bun-specific APIs | Port to vitest; replace `bun:test` imports and custom matchers |
-| Snippet variable fix | Making `buildScope` public changes PromptService's API surface | Consider a dedicated `resolveScope()` method instead of exposing internals |
-| Working memory format | LLM behavioral regression from format changes | A/B test with real conversations before committing to new format |
-| Debug logging (trace ID) | Wide blast radius if trace ID is a function parameter | Use AsyncLocalStorage or context object pattern instead |
+**What goes wrong:**
+`withRetry()` wraps a single `executeCall`. When group failover is added as a separate loop, it calls `executeCall` directly, bypassing `withRetry`. Transient errors on group members don't get the retry treatment they would on a direct call — every transient error immediately advances to the next member.
+
+**Why it happens:**
+`handleFallback` already exists for `fallbackChain` and calls `executeCall` directly. Developers copy this pattern for group failover without noticing `withRetry` is missing from the chain.
+
+**How to avoid:**
+Wrap each group member attempt with `withRetry`, or integrate group failover into the retry loop: on transient error, advance to the next member and retry rather than throwing immediately.
+
+**Warning signs:**
+- Single transient 429 on a group member causes immediate failover instead of a retry
+- Logs show `Trying fallback` on errors that should have been retried first
+
+**Phase to address:** Model group load balancing phase
+
+---
+
+### Pitfall 3: `IModelService` Interface Not Extended for Groups
+
+**What goes wrong:**
+New group methods are added to `ModelService` (concrete class in `core`) without updating `IModelService` (interface in `shared-model`). Provider plugins typed as `IModelService` cannot call group methods. The type contract diverges from the implementation silently.
+
+**Why it happens:**
+`ModelService` is the concrete class; `IModelService` is the interface in `shared-model`. It's easy to add methods to the class and forget the interface, especially since provider plugins only use `registerProvider` and never need group methods themselves.
+
+**How to avoid:**
+Update `IModelService` first, then implement in `ModelService`. Run `yarn typecheck` (Turbo task) across the monorepo after interface changes — it catches divergence before build.
+
+**Warning signs:**
+- TypeScript errors only appear in `core` package, not in `shared-model` or provider packages
+- Provider plugins compile fine but runtime calls to group methods fail with "not a function"
+
+**Phase to address:** Model group load balancing phase (interface design step)
+
+---
+
+### Pitfall 4: `refreshSchemas()` Called N Times During Group Registration
+
+**What goes wrong:**
+`refreshSchemas()` rebuilds the entire `registry.chatModels` Schema union on every `registerProvider` call. If model groups register multiple members individually, `refreshSchemas()` fires N times during startup — N full Schema rebuilds and N Koishi console refreshes.
+
+**Why it happens:**
+The current `registerProvider` always calls `refreshSchemas()` at the end (model/service.ts:71). Adding groups that register multiple members individually multiplies this cost.
+
+**How to avoid:**
+Batch group registration: register all members first, then call `refreshSchemas()` once. Or add a `registerGroup(name, members[])` method that defers `refreshSchemas()` until all members are registered.
+
+**Warning signs:**
+- Koishi console flickers or shows stale model list during startup
+- Startup logs show `Provider registered` + `refreshSchemas` called 5+ times in rapid succession
+
+**Phase to address:** Model group load balancing phase
+
+---
+
+### Pitfall 5: Promise-Chain Queue Loses "Processing" State on Completion
+
+**What goes wrong:**
+The `enqueue` method uses a Promise chain stored in `this.queues`. The `finally` block deletes the entry when the chain resolves. If a new message arrives in the tiny window between `finally` running and the next `enqueue` call, `this.queues.has(channelKey)` returns `false`, so the new message starts a fresh chain instead of being queued as `pending`. Two concurrent loops run for the same channel.
+
+**Why it happens:**
+The `finally` block runs synchronously after the Promise resolves, but the event handler that checks `this.queues.has()` can fire in the same microtask tick. The delete-then-check race is subtle.
+
+**How to avoid:**
+The current code already guards this correctly with an identity check:
+```typescript
+if (this.queues.get(channelKey) === chain) this.queues.delete(channelKey);
+```
+The message queue refactor must preserve this identity check. Do not simplify to `this.queues.delete(channelKey)` without the guard — that removes the race protection.
+
+**Warning signs:**
+- Two simultaneous "Starting loop" log entries for the same `channelKey`
+- `pending` map entries are never consumed (overwritten by a new chain before being drained)
+
+**Phase to address:** Message queue refactor phase
+
+---
+
+### Pitfall 6: Accumulate-and-Merge Drops the Willingness Gate
+
+**What goes wrong:**
+The refactored message queue accumulates messages that arrive while a loop is running, then merges them into a single response. If accumulated messages are fed directly to the loop without re-running the willingness check, the bot responds to messages it would have silently ignored under normal conditions.
+
+**Why it happens:**
+The willingness check happens in `handleEvent` before `enqueue`. Accumulated messages bypass `handleEvent` — they go straight into `pending` and then into the loop. The willingness gate is skipped for backlog messages.
+
+**How to avoid:**
+Make a conscious decision: either (a) re-run willingness for the accumulated batch, or (b) accept that backlog messages inherit the willingness decision of the triggering message. Option (b) is simpler and defensible. Document the chosen behavior explicitly — do not silently skip the willingness check without a recorded decision.
+
+**Warning signs:**
+- Bot responds to messages in channels where willingness should have kept it silent
+- Willingness logs show no entry for backlog-triggered responses
+
+**Phase to address:** Message queue refactor phase
+
+---
+
+### Pitfall 7: Bot Action Empty Record — Fix at Display Layer Instead of Storage Layer
+
+**What goes wrong:**
+The fix for "LLM chooses not to reply → empty `[Bot Action]` recorded" is placed in `formatObservation` (display layer) rather than in `loop.ts` before `recordAgentResponse` (storage layer). The empty record is still written to the timeline DB; it just doesn't show in the rendered view. On the next turn, the empty record is loaded from DB and causes a blank line in history.
+
+**Why it happens:**
+`formatObservation` is the most visible place where the empty action string appears (service.ts:281: `[Bot Action]: `). Developers fix the symptom (display) rather than the cause (storage write).
+
+**How to avoid:**
+The guard must be in `loop.ts` before calling `horizon.events.recordAgentResponse`. If `response.actions` is empty or contains only no-ops, skip the `recordAgentResponse` call entirely. The display layer should handle the empty case defensively too, but the primary fix is at the write path.
+
+```typescript
+// In loop.ts, before recordAgentResponse:
+if (response.actions.length > 0) {
+  await horizon.events.recordAgentResponse({ ... });
+}
+```
+
+**Warning signs:**
+- Timeline DB accumulates `agent.response` entries with empty `actions` arrays
+- `[Bot Action]: ` (trailing space, no names) appears in rendered history
+
+**Phase to address:** Bug fix phase (Bot Action empty record)
+
+---
+
+### Pitfall 8: `trimMessages()` Cannot Trim the Initial User Message
+
+**What goes wrong:**
+`trimMessages` is called at the top of each loop round. But the initial `messages` array is `[{ role: "user", content: userContent }]` — a single message. The trimmer's round-detection logic is `Math.floor((messages.length - 1) / 2)`, which gives `totalRounds = 0`, `protectedRounds = 0`, `eligibleEnd = 1`, and an empty eligible slice. Nothing gets trimmed even if `userContent` alone exceeds `charBudget`.
+
+**Why it happens:**
+The trimmer assumes at least one assistant+user pair exists. A single initial user message has 0 rounds, so the eligible window is empty. The budget check passes silently.
+
+**How to avoid:**
+Truncate `userContent` before building the `messages` array, or add a special case in `trimMessages` for the single-message case. The `charBudget` check must apply to `userContent` directly before it enters the messages array — not only after the loop has accumulated multiple rounds.
+
+**Warning signs:**
+- Token counts in logs consistently exceed `charBudget / 4` (rough char-to-token ratio)
+- `trimMessages` logs show "budget ok" even when `userContent` is very large
+- Working memory grows without bound despite trim config being set
+
+**Phase to address:** Tool trim fix phase
+
+---
+
+## Moderate Pitfalls
+
+### Pitfall 9: Provider Architecture — Duplicated Schema Blocks Across Three Providers
+
+**What goes wrong:**
+The `models` array Schema block is copy-pasted identically across `provider-openai`, `provider-deepseek`, and `provider-anthropic`. When a new `ModelInfo` field is added (e.g., `maxContextTokens`), it must be added to all three Schema definitions manually. One provider gets missed, causing a type mismatch between the shared `ModelInfo` type and the provider's config Schema.
+
+**Why it happens:**
+Each provider is a standalone Koishi plugin with its own `Config` interface and `Schema<Config>`. There is no shared Schema factory for the common `models` array block.
+
+**How to avoid:**
+Extract a shared `modelsArraySchema` factory into `shared-model` or a shared utility. Each provider imports and uses it. When `ModelInfo` changes, only the factory needs updating.
+
+```typescript
+// In shared-model:
+export function createModelsArraySchema(defaults: ModelInfo[]): Schema<ModelInfo[]> {
+  return Schema.array(Schema.object({ ... })).default(defaults).role("table");
+}
+```
+
+**Warning signs:**
+- TypeScript error in one provider but not others after a `ModelInfo` change
+- Provider configs show different fields in Koishi console UI
+
+**Phase to address:** Provider architecture optimization phase
+
+---
+
+### Pitfall 10: Provider `apply()` Does Not Unregister on Dispose
+
+**What goes wrong:**
+The current `apply()` function in each provider registers the provider with `ctx["yesimbot.model"].registerProvider(config.id, provider)`. The `registerProvider` method in `ModelService` sets up a dispose listener using `this[Context.current]` (model/service.ts:66-69). But if the provider plugin is reloaded (hot-reload in Koishi), the old provider instance may linger if the dispose listener fires after the new registration.
+
+**Why it happens:**
+`this[Context.current]` in `registerProvider` captures the caller's context at registration time. This is correct for Koishi's hot-reload model. But if the provider architecture refactor moves registration logic into a class constructor or a different call site, the caller context may not be the plugin's context, breaking the auto-cleanup.
+
+**How to avoid:**
+Keep `registerProvider` called directly from `apply(ctx, config)` — never from a constructor or a nested function that doesn't have the plugin's `ctx` as the current context. Verify hot-reload behavior: disable and re-enable the provider plugin in Koishi console and confirm the old provider is unregistered.
+
+**Warning signs:**
+- After hot-reload, `listProviders()` returns duplicate provider names
+- `refreshSchemas()` shows duplicate model entries in the dropdown
+
+**Phase to address:** Provider architecture optimization phase
+
+---
+
+### Pitfall 11: Koishi Schema Grouping — `Schema.object().collapse()` vs Nested Objects
+
+**What goes wrong:**
+Koishi Console renders `Schema.object()` as a flat list of fields by default. Adding `.collapse()` makes it collapsible in the UI. But if a nested `Schema.object()` is used inside another `Schema.object()` without `.collapse()`, the inner object's fields render inline and the grouping is invisible to the user.
+
+**Why it happens:**
+The distinction between "grouping for UI" and "grouping for data structure" is conflated. A nested object in the Schema data model does not automatically create a visual group in the console UI — it requires explicit `.collapse()` or `.role("group")` annotations.
+
+**How to avoid:**
+For config grouping in Koishi Console, use `Schema.object({ ... }).collapse()` for sections that should be collapsible. Test the UI rendering in the actual Koishi console after Schema changes — the rendered output is not always predictable from the Schema definition alone.
+
+**Warning signs:**
+- Config fields appear in unexpected order or without visual separation in Koishi console
+- Nested config objects render as flat fields instead of grouped sections
+
+**Phase to address:** Config grouping optimization phase
+
+---
+
+### Pitfall 12: `Schema.dynamic()` Dropdown Breaks When Group Names Contain Colons
+
+**What goes wrong:**
+The `registry.chatModels` dynamic Schema uses `provider:model` as the option value (model/service.ts:55). If model group names also use colons (e.g., `group:primary`), the `parseModelId` function in `shared-model` may misparse the group name as a provider name, causing "Provider not found" errors at runtime.
+
+**Why it happens:**
+`parseModelId` splits on the first colon to extract `provider` and `model`. A group name like `group:primary` would parse as `provider="group"`, `model="primary"`, which is not a registered provider.
+
+**How to avoid:**
+Use a different separator for group references in the dropdown (e.g., `@group/primary`) or add explicit group resolution before `parseModelId` in `resolveModel`. The group lookup must happen before the provider lookup, not after.
+
+**Warning signs:**
+- "Provider not found: group" errors in logs when a group model is selected
+- `resolveModel` throws on valid group names
+
+**Phase to address:** Model group load balancing phase (model ID format design)
+
+---
+
+## Technical Debt Patterns
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Copy-paste provider Schema blocks | Fast to add new provider | Schema drift when `ModelInfo` changes | Never — extract shared factory |
+| `declare module "koishi"` in each provider | Each provider is self-contained | Three identical augmentation blocks; any change requires 3 edits | Acceptable until a shared provider-base package exists |
+| `pending` map holds only last message | Simple backpressure, no unbounded queue | Burst messages during processing are silently dropped | Acceptable for v2.4; document the behavior |
+| Group failover as linear scan | Simple to implement | No circuit-breaker; a permanently-down member is retried every call | Acceptable for v2.4; add circuit-breaker in later milestone |
+
+---
+
+## Integration Gotchas
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| PQueue + group selection | Selection before `queue.add()` bypasses concurrency cap | Selection inside `queue.add()` callback |
+| Koishi `ctx[Context.current]` | Called from constructor instead of `apply()` | Always call `registerProvider` from the plugin's `apply()` function |
+| Koishi Schema `.collapse()` | Assuming nested objects auto-collapse in UI | Explicitly annotate collapsible sections with `.collapse()` |
+| `parseModelId` with group names | Group name parsed as provider:model | Resolve group names before calling `parseModelId` |
+| `recordAgentResponse` with empty actions | Empty record written to DB | Guard at write path in `loop.ts`, not at display path |
+
+---
+
+## Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| `refreshSchemas()` on every registration | Koishi console flickers at startup | Batch registrations, call `refreshSchemas()` once | At 5+ providers/groups registered |
+| `trimMessages()` skips initial message | Token counts grow unbounded | Pre-truncate `userContent` before loop | When `userContent` > `charBudget` chars |
+| Round-robin counter not persisted | After restart, all groups start at member 0 | In-memory counter is acceptable; document restart behavior | Not a performance issue, but fairness issue |
+| Group failover with no circuit-breaker | Every call retries a dead member | Add failure tracking per member | When one group member is permanently down |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+- [ ] **Model group load balancing:** Group selection is inside `queue.add()`, not before it — verify with concurrency stress test
+- [ ] **Group failover:** Each member attempt goes through `withRetry` — verify transient errors retry before advancing
+- [ ] **Bot Action fix:** Empty `actions` arrays are not written to DB — verify with `ctx.database.get` after a no-reply turn
+- [ ] **Tool trim fix:** `userContent` exceeding `charBudget` is truncated before entering `messages` — verify with a large history channel
+- [ ] **Provider architecture:** All three providers use shared Schema factory — verify `ModelInfo` field addition only requires one change
+- [ ] **Config grouping:** Collapsible sections render correctly in Koishi console — verify by loading the plugin in a real Koishi instance
+- [ ] **Hot-reload:** Provider unregisters cleanly on plugin disable — verify `listProviders()` after disable/re-enable cycle
+- [ ] **Message queue refactor:** Identity check `this.queues.get(channelKey) === chain` preserved — verify no concurrent loops for same channel
+
+---
+
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Group queue bypass (API overload) | MEDIUM | Add `queue.add()` wrapper around group selection; redeploy |
+| Empty Bot Action records in DB | LOW | One-time DB cleanup: delete `agent.response` entries with empty `actions`; deploy fix |
+| `trimMessages` not trimming initial message | LOW | Add pre-truncation of `userContent`; no DB migration needed |
+| `IModelService` interface divergence | LOW | Update interface in `shared-model`; rebuild all packages |
+| `refreshSchemas()` startup flicker | LOW | Batch registrations; cosmetic issue only |
+| Promise-chain race condition | HIGH | Restore identity check; requires careful testing to verify fix |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Group queue bypass | Model group load balancing | Concurrency stress test: 10 simultaneous requests, verify `queue.size` > 0 |
+| Group failover skips retry | Model group load balancing | Inject transient error on member 1; verify retry before failover to member 2 |
+| `IModelService` not extended | Model group load balancing (interface step) | `yarn typecheck` passes across all packages |
+| `refreshSchemas()` N-times | Model group load balancing | Startup log shows single `refreshSchemas` call |
+| Promise-chain race | Message queue refactor | Identity check preserved; no concurrent loop logs |
+| Willingness gate dropped | Message queue refactor | Backlog behavior documented and tested |
+| Bot Action empty record | Bug fix phase | DB query after no-reply turn returns 0 `agent.response` entries |
+| `trimMessages` initial message | Tool trim fix | Large history channel stays within token budget |
+| Provider Schema duplication | Provider architecture | Single `ModelInfo` field addition requires 1 file change |
+| Provider dispose on hot-reload | Provider architecture | Disable/re-enable cycle leaves no duplicate providers |
+| Schema grouping UI | Config grouping | Visual inspection in Koishi console |
+| Group name colon collision | Model group load balancing (ID format) | Group names resolve correctly before `parseModelId` |
+
+---
 
 ## Sources
 
-All findings verified by reading actual source code in the repository:
+All findings verified by direct source analysis:
 
-- `core/src/services/model/service.ts` — ModelService, CallParams type, executeCall spread pattern
-- `core/src/services/agent/loop.ts` — ThinkActLoop, system prompt passing, working memory construction
-- `core/src/services/agent/service.ts` — AgentCore, willingness flow, DM handling, JUDGMENT_PROMPT
-- `core/src/services/agent/willingness.ts` — WillingnessEngine algorithm
-- `core/src/services/agent/json-parser.ts` — v4 JSON parser
-- `core/src/services/agent/trimmer.ts` — Message trimming logic
-- `core/src/services/prompt/service.ts` — PromptService, buildScope (private), inject, Section.cacheable
-- `core/src/services/prompt/types.ts` — InjectionPoint, Section, Snippet types
-- `core/src/services/memory/service.ts` — MemoryService, fs.watch, snippet registration, async reads
-- `core/src/services/role/service.ts` — RoleService, fs.watch, sync reads, renderSafe, disposers
-- `core/src/services/horizon/service.ts` — HorizonService, formatHorizonText, Mustache.render without scope
-- `core/resources/templates/partials/horizon-view.mustache` — `{{date.now}}` template variable
-- `references/YesImBot-v3/packages/core/src/shared/utils/json-parser.ts` — v3 parser for comparison
-- `references/YesImBot-v3/packages/core/tests/utils-json-parser.test.ts` — v3 test suite (bun:test)
-- `node_modules/@ai-sdk/provider-utils/dist/index.d.ts` — SystemModelMessage type definition
-- `node_modules/ai/dist/index.d.ts` — `system` field union type in Prompt
-- `PROMPT.json` — Live output showing `现在是 。` (empty date.now) bug
+- `core/src/services/model/service.ts` — PQueue usage, `registerProvider`, `refreshSchemas`, `withRetry`, `handleFallback`, `resolveModel`
+- `core/src/services/agent/service.ts` — `enqueue`, `pending` map, identity check in `finally`, `handleEvent` willingness gate
+- `core/src/services/agent/loop.ts` — `recordAgentResponse` call site, `messages` array construction, `trimMessages` call
+- `core/src/services/agent/trimmer.ts` — `trimMessages` round-detection logic, single-message edge case
+- `core/src/services/horizon/manager.ts` — `recordAgentResponse` write path
+- `core/src/services/horizon/service.ts` — `formatObservation` display path for empty actions
+- `providers/provider-openai/src/index.ts` — Schema duplication, `apply()` registration pattern
+- `providers/provider-deepseek/src/index.ts` — Schema duplication
+- `providers/provider-anthropic/src/index.ts` — Schema duplication, `ctx` passed to constructor
+- `packages/shared-model/src/types/model.ts` — `IModelService` interface, `ModelInfo` type
+
+---
+*Pitfalls research for: Koishi AI chat plugin v2.4 milestone*
+*Researched: 2026-02-26*
