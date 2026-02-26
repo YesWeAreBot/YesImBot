@@ -112,18 +112,16 @@
 - [ ] 30-01-PLAN.md — Foundation (AbstractProvider + schema factory + type updates)
 - [ ] 30-02-PLAN.md — Migration (convert all three providers + cleanup)
 
-### Phase 31: Model Groups + Config UX
+### Phase 31: Config UX
 
-**Goal**: Users can route requests to a named model group with load balancing, and the Koishi Console config UI is organized and readable
+**Goal**: Improve Koishi Console config readability with labeled groups and i18n descriptions across core and provider plugins
 **Depends on**: Phase 30
-**Requirements**: REQ-04, REQ-06, REQ-07, REQ-08
+**Requirements**: REQ-06, REQ-07, REQ-08
 **Success Criteria** (what must be TRUE):
 
-1. A model group can be defined in config with a name, member list, and strategy (round-robin / random / failover); referencing it via `group:<name>` routes to a concrete model
-2. When a group member fails, it is skipped with a cooldown and the next member is tried — this does not conflict with the existing `fallbackChain`
-3. The Koishi Console config panel shows items in labeled, collapsible groups (基础、模型、意愿值、提示词、高级) rather than a flat list
-4. Every config field has a Chinese description; key fields show default value and valid range
-5. Both `zh-CN` and `en-US` locale files exist; Schema descriptions reference i18n keys
+1. The Koishi Console config panel shows items in labeled groups (基础、模型、意愿值、提示词、高级) rather than a flat list
+2. Every config field has a Chinese description via i18n keys (not hardcoded)
+3. Both `zh-CN` and `en-US` locale files exist for core and all provider plugins; Schema descriptions reference i18n keys
    **Plans**: TBD
 
 ## Progress
