@@ -102,7 +102,9 @@
   2. A `createBaseProviderSchema()` factory generates the common config schema fields
   3. All three provider plugins extend `BaseProvider` with no duplicated boilerplate
   4. Existing provider external behavior is unchanged — no config migration required
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 30-01-PLAN.md — Foundation (AbstractProvider + schema factory + type updates)
+- [ ] 30-02-PLAN.md — Migration (convert all three providers + cleanup)
 
 ### Phase 31: Model Groups + Config UX
 **Goal**: Users can route requests to a named model group with load balancing, and the Koishi Console config UI is organized and readable
@@ -126,5 +128,5 @@
 | 23-25 | v2.2 | 8/8 | Complete | 2026-02-25 |
 | 26-28 | v2.3 | 6/6 | Complete | 2026-02-26 |
 | 29 | v2.4 | Complete    | 2026-02-26 | 2026-02-26 |
-| 30 | v2.4 | 0/? | Not started | - |
+| 30 | v2.4 | 0/2 | Planned | - |
 | 31 | v2.4 | 0/? | Not started | - |
