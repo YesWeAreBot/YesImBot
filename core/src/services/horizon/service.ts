@@ -278,6 +278,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       const suffix = otherTools.length ? ` [also: ${otherTools.join(", ")}]` : "";
       return `[${hhmm}] [Bot]: ${content}${suffix}`;
     }
+    if (actions.length === 0) {
+      return `[${hhmm}] [Bot]: (chose silence)`;
+    }
     return `[${hhmm}] [Bot Action]: ${actions.map((a) => a.name).join(", ")}`;
   }
 

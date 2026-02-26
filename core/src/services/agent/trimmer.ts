@@ -3,6 +3,7 @@ export interface TrimConfig {
   keepLastRounds: number;
   softTrimHead: number;
   softTrimTail: number;
+  initialContextCharBudget?: number;
 }
 
 export interface LoopMessage {
@@ -36,6 +37,23 @@ function totalChars(messages: LoopMessage[]): number {
 
 export function trimMessages(messages: LoopMessage[], config: TrimConfig): void {
   if (totalChars(messages) <= config.charBudget) return;
+
+  // Trim messages[0] independently if it exceeds its own budget
+  if (
+    messages.length > 1 &&
+    config.initialContextCharBudget !== undefined &&
+    messages[0].content.length > config.initialContextCharBudget
+  ) {
+    const m0 = messages[0];
+    const excess = m0.content.length - config.initialContextCharBudget;
+    const cutPoint = m0.content.indexOf("\n", excess);
+    if (cutPoint !== -1) {
+      m0.content = "...(trimmed)\n" + m0.content.slice(cutPoint + 1);
+    } else {
+      m0.content = "...(trimmed)\n" + m0.content.slice(excess);
+    }
+    if (totalChars(messages) <= config.charBudget) return;
+  }
 
   // Identify rounds: index 0 protected, rounds are (assistant, user) pairs from index 1
   // round 1 = [1,2], round 2 = [3,4], etc.
