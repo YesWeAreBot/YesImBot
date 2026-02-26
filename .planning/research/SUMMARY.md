@@ -1,140 +1,105 @@
 # Project Research Summary
 
-**Project:** Athena v2.2 — Runtime Optimization & Observability
-**Domain:** AI LLM chat agent for IM platforms (Koishi 4.x plugin monorepo)
-**Researched:** 2026-02-25
-**Confidence:** HIGH (all 4 research dimensions verified against actual source code and installed packages)
+**Project:** Athena (YesImBot v4)
+**Domain:** Koishi AI chat plugin — runtime bug fixes, model group load balancing, provider architecture, config UX
+**Researched:** 2026-02-26
+**Confidence:** HIGH (direct source code analysis of v2.3 baseline)
 
 ## Executive Summary
 
-Athena v2.2 targets 8 features across runtime optimization and observability for a Koishi 4.x AI chat agent. The research reveals a codebase with strong architectural foundations — a clean 9-service dependency graph, well-separated injection points, and an ai-sdk integration that already supports the `SystemModelMessage[]` format needed for prompt caching. The critical finding is that **no new runtime dependencies are required**. The only addition is `vitest` as a dev dependency for JSON parser testing. The existing stack (ai@6.0.91, Koishi's built-in Logger, Node.js AsyncLocalStorage, Mustache 4.2) provides everything needed.
+v2.4 聚焦两个方向：修复三个运行时 bug 和三个架构增强。
 
-The most impactful discovery is a confirmed live bug: `{{date.now}}` and all snippet variables render as empty strings in the horizon-view template because `HorizonService.formatHorizonText()` bypasses the PromptService snippet system entirely. This bug blocks prompt cache optimization (cache boundaries need correct rendering first) and the memory_block merge (snippet ownership moves during merge). The fix is small (~10 lines) but sits on the critical path.
+Bug 修复根因已全部定位：(1) 消息队列 `pending` 单槽 Map 导致积压消息丢失且逐条触发响应；(2) `recordAgentResponse()` 无条件调用导致 LLM 选择沉默时写入空 `[Bot Action]` 记录；(3) `trimMessages()` 对 `messages[0]`（初始用户上下文）永远不裁剪，因为 `totalRounds = Math.floor((1-1)/2) = 0`，导致 working memory 无限增长。
 
-Key risks center on the prompt cache feature: switching from `system: string` to `system: SystemModelMessage[]` touches the model service boundary, and provider-specific `providerOptions` formats fail silently if wrong (no error, just no caching). The mitigation is to implement cache control at the ModelService layer with provider detection, not in the loop. For willingness DM bypass, the main risk is cost explosion from unthrottled DM processing — a per-user rate limiter is essential.
+增强功能中，模型组负载均衡在 `ModelService.resolveModel()` 上增加 `group:` 前缀路由层；Provider 架构通过 `BaseProvider` 抽象类消除三个 provider 插件的重复代码；配置分组利用 Koishi `Schema.intersect` 的 `.description()` 实现 UI 分组，不破坏现有配置结构。无新运行时依赖。
 
 ## Key Findings
 
 ### Recommended Stack
 
-**What's needed:**
-- `vitest` (dev-only, ^3.x) — JSON parser unit tests. Turbo already has a `"test"` task defined.
+无新运行时依赖。所有功能基于现有技术栈实现。
 
-**What's NOT needed:**
-- No `@ai-sdk/anthropic` — cache hints work via generic `providerOptions` passthrough
-- No `winston`/`pino` — Koishi's built-in Logger supports namespaces, levels, env-based filtering
-- No `uuid` — `crypto.randomUUID()` (Node 19+) suffices for trace IDs
-- No `async_hooks` polyfill — `AsyncLocalStorage` stable since Node 16, Koishi requires Node 18+
-
-**Existing dependencies leveraged:**
-| Package | v2.2 Use |
-|---------|----------|
-| `ai` 6.0.91 | `SystemModelMessage[]` with `providerOptions` for prompt caching |
-| `mustache` 4.2 | Already handles nested property lookup correctly (snippet fix) |
-| `jsonrepair` 3.13 | Already used as fallback; needs test coverage |
-| `koishi` 4.18.10 | Built-in Logger with namespace filtering for debug logging |
+**核心技术（已有）：**
+- `ai-sdk 6.0.91`：ModelService 基础，模型组复用现有 resolveModel/fallback 机制
+- `Koishi 4.18.x`：Schema `.description()` 支持 UI 分组，Service 子类模式
+- `p-queue`：并发控制，模型组可复用现有队列
 
 ### Expected Features
 
-**Must have (table stakes):**
-1. **Snippet variable fix** — `{{date.now}}` renders empty. Confirmed live bug. ~10 lines. Critical path blocker.
-2. **JSON parser hardening + tests** — Zero test coverage in v4. Port v3's 18 test cases to vitest. ~400 lines new tests.
-3. **Willingness DM handling** — DMs go through same probability roll as groups. Users expect responses. ~15 lines.
-4. **Full-chain debug logging** — No trace ID, no correlation, prompt payloads logged at info level. ~100 lines across 4 files.
-5. **Judge prompt improvement** — Current prompt has no persona context, opaque willingness score, fragile yes/no parsing. ~30 lines.
+**Must have（bug 修复）：**
+- 消息队列积压合并 — pending 单槽→数组，完成后合并一次响应
+- Bot Action 空记录过滤 — actions 为空时跳过 recordAgentResponse
+- Tool trim 生效 — 初始用户上下文受独立裁剪预算约束
 
-**Should have (differentiators):**
-6. **Prompt cache optimization** — Split system prompt into `SystemModelMessage[]` for provider caching. Up to 90% cost reduction on cached tokens. High complexity.
-7. **Working memory layout optimization** — Reverse chronological ordering confuses LLM temporal reasoning. Redundant `send_message` content. ~50 lines.
-
-**Defer to v2.3:**
-8. **memory_block → RoleService merge** — Architectural refactor with migration risk. Not urgent. Needs careful planning for existing user data paths.
-
-**Anti-features (do NOT build):**
-- Full prompt caching abstraction for all providers (start Anthropic-only)
-- Dynamic per-channel willingness configs
-- External structured logging framework
-- Separate "memory LLM" for working memory summarization
+**Should have（增强）：**
+- 模型组负载均衡 — round-robin/random/failover 策略
+- Provider 架构统一 — BaseProvider + createBaseProviderSchema 消除重复
+- 配置分组 + Schema 描述 — Console UI 可读性提升
 
 ### Architecture Approach
 
-All v2.2 features integrate into the existing 9-service architecture with **no new services**:
+所有 v2.4 功能在现有服务架构上扩展，不新增服务：
 
-- **Prompt caching:** Add `renderToMessages()` to PromptService mapping `Section[]` → `SystemModelMessage[]`. ModelService gains an overload accepting `SystemModelMessage[]`. Cache breakpoint after `instructions` section (soul+instructions stable across session).
-- **Trace ID:** `TraceContext` object (not AsyncLocalStorage — Koishi's event system doesn't guarantee async context propagation). Created at `handleEvent()`, threaded through `enqueue()` → `loop.run()` → `modelService.call()`.
-- **Snippet fix:** Make `buildScope()` public (or add `resolveScope()`) on PromptService. Pass pre-resolved scope to `formatHorizonText()`.
-- **Logger namespaces:** `agent`, `agent.willingness`, `agent.loop`, `agent.loop.prompt`, `agent.loop.output`, `agent.parser` — granular filtering via `KOISHI_DEBUG` env var.
-- **memory_block merge (if done):** Absorb MemoryService into RoleService. Service count 9→8. Single watcher, unified file loading, snippet registration moves to RoleService.
+**新增组件：**
+1. `ModelGroup` (`model/group.ts`) — 负载均衡策略实现，member 选择 + failure 追踪
+2. `BaseProvider` (`shared-model/src/provider/base.ts`) — 抽象基类，统一 listModels/getDefaultParams
+3. `createBaseProviderSchema()` — Schema 工厂，消除 provider 配置重复
 
-Feature dependency matrix shows 7 of 8 features are fully independent. Features 2 (prompt cache) and 7 (working memory) both modify `loop.ts` prompt assembly — do working memory first, then cache the result.
+**修改组件：**
+4. `AgentCore` — pending 单槽→数组，drain+merge 逻辑
+5. `ThinkActLoop` — recordAgentResponse guard + userContext trim
+6. `ModelService` — groups map, group-aware resolveModel, refreshSchemas
 
 ### Critical Pitfalls
 
-| # | Pitfall | Risk | Mitigation |
-|---|---------|------|------------|
-| 1 | `system` string→`SystemModelMessage[]` changes ai-sdk contract; `ModelService.executeCall` spread can silently overwrite | HIGH | Implement cache control at ModelService layer with provider detection, not in the loop |
-| 2 | `formatHorizonText()` bypasses snippet system — all snippet variables empty | HIGH | Add public `resolveScope()` to PromptService; pass pre-built scope to horizon rendering |
-| 3 | MemoryService + RoleService merge: double watchers, injection name collisions, sync/async file read mismatch | HIGH | Single watcher, all async reads, track+dispose injection handles before re-injecting |
-| 4 | DM willingness bypass removes only spam protection — cost explosion risk | MEDIUM | Per-user rate limiter (max 1 req/3s/user) before bypassing willingness |
-| 5 | Judge prompt too minimal — no persona context, opaque score, fragile parsing | MEDIUM | Include persona summary, score calibration context, robust yes/no extraction |
+1. **Schema.intersect→嵌套 object 破坏配置兼容性** — 保持 intersect 平铺，用 `.description()` 分组
+2. **trimMessages[0] 直接裁剪破坏当前轮上下文** — 在 messages 构造前独立裁剪 userContent
+3. **模型组作为假 Provider 注册** — 保持 group 为独立层，resolveModel 做 group→concrete 翻译
+4. **聚合窗口阻塞队列** — 聚合逻辑留在 handleEvent（pre-enqueue），队列重构只影响 post-enqueue
 
 ## Implications for Roadmap
 
-### Suggested Phase Structure
+### Phase 1: Bug Fixes
+**Rationale:** 外科手术式修复，低风险，为后续功能建立干净基线
+**Delivers:** Bot Action 空记录消除、tool trim 生效、消息队列积压合并
+**Addresses:** 3 个已知 bug
 
-**Phase 1 — Bug Fixes & Reliability Foundation**
-- Features: F3 (snippet fix), F4 (JSON parser tests), F1 (DM willingness)
-- Rationale: F3 is a confirmed live bug on the critical path — blocks F6 and F8. F4 prevents regressions in the most critical reliability path (JSON parse failures = silent bot). F1 fixes broken DM experience with minimal code change.
-- Delivers: Correct prompt rendering, test infrastructure, working DM responses
-- Pitfalls to avoid: #2 (snippet scope), #4 (DM rate limiting)
-- Research needed: None — well-documented patterns, all code paths mapped
+### Phase 2: Provider Architecture
+**Rationale:** shared-model 类型变更是模型组的前置依赖
+**Delivers:** BaseProvider 抽象类、Schema 工厂、3 个 provider 插件瘦身
 
-**Phase 2 — Observability**
-- Features: F5 (debug logging + trace ID), F2 (judge prompt improvement)
-- Rationale: Debug logging should exist before optimizing anything — it enables validating all subsequent changes. Judge prompt benefits from F5 for validation.
-- Delivers: End-to-end message tracing, better deferred judgment quality
-- Pitfalls to avoid: #5 (judge prompt), #8 (log level changes breaking monitoring)
-- Research needed: None — TraceContext pattern is straightforward
+### Phase 3: Model Groups + Config
+**Rationale:** 依赖 Phase 2 的 shared-model 类型；配置分组独立可并行
+**Delivers:** 模型组负载均衡、配置 UI 分组 + 描述增强
 
-**Phase 3 — Optimization**
-- Features: F7 (working memory layout), F6 (prompt cache)
-- Rationale: Working memory restructure should come before prompt caching because both touch `loop.ts` prompt assembly. Do F7 first (restructure WM in user message), then F6 (cache the stable system prompt sections). F6 is the highest-complexity feature with the biggest cost savings payoff.
-- Delivers: Better LLM reasoning (WM), up to 90% cost reduction on cached tokens (cache)
-- Pitfalls to avoid: #1 (SystemModelMessage contract), #6 (WM format regression)
-- Research needed: Phase research recommended for F6 — verify `providerOptions` format against current Anthropic API docs, test cache hit/miss response headers
+### Phase Ordering Rationale
 
-**Deferred to v2.3:**
-- F8 (memory_block → RoleService merge) — Architectural refactor with user-facing migration impact. Not blocking any v2.2 features. Needs migration script planning.
+- Bug 修复优先：外科手术式改动，零依赖，建立测试基线
+- Provider 架构在模型组之前：BaseProvider 在 shared-model 是模型组集成的前置
+- 配置分组与模型组并行：纯 UI/Schema 变更，无行为影响
 
 ### Research Flags
 
-- **Needs phase research:** Phase 3 (prompt cache optimization) — provider-specific `providerOptions` format was based on training data, not live API verification. Cache hit/miss detection needs testing.
-- **Standard patterns (skip research):** Phase 1 (all bug fixes with clear code paths), Phase 2 (logging is additive, no behavioral changes)
+- **标准模式（跳过研究）：** Phase 1（bug 修复，代码路径已完全映射）
+- **标准模式（跳过研究）：** Phase 2（Provider 重构，模式清晰）
+- **可能需要研究：** Phase 3 模型组（负载均衡策略选择，failover 与现有 fallbackChain 的交互）
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All versions verified from installed `node_modules`. Only gap: provider-specific caching behavior from training data, not live docs. |
-| Features | HIGH | All 8 features mapped to exact source locations with line numbers. Feature dependencies verified. |
-| Architecture | HIGH | Full 9-service dependency graph traced. All touch points identified per feature. No external sources needed. |
-| Pitfalls | HIGH | All 10 pitfalls verified against actual code. Root causes confirmed (e.g., PROMPT.json shows empty `date.now`). |
+| Stack | HIGH | 无新依赖，所有版本已验证 |
+| Features | HIGH | 6 个功能全部映射到具体源码位置 |
+| Architecture | HIGH | 完整服务依赖图，所有 touch points 已识别 |
+| Pitfalls | HIGH | 所有陷阱基于实际代码验证 |
 
-**Gaps to address during planning:**
-1. Anthropic `providerOptions` cache control format — verify against current API docs before implementing F6
-2. Provider behavior with `SystemModelMessage[]` — test that OpenAI/DeepSeek providers correctly handle array system messages
-3. DM rate limiting strategy — exact cooldown values need tuning based on real usage patterns
-4. Working memory format — A/B test with real conversations before committing to new layout
+**Overall confidence:** HIGH
 
-## Sources
+### Gaps to Address
 
-Aggregated from all 4 research files. All findings based on direct source code analysis:
+- 模型组 failover 与现有 fallbackChain 的交互语义需要在 planning 阶段明确
+- 配置分组的具体分类需要结合实际 Console UI 效果调整
 
-**Core agent pipeline:** `agent/service.ts`, `agent/loop.ts`, `agent/willingness.ts`, `agent/json-parser.ts`, `agent/trimmer.ts`, `agent/tools.ts`
-**Prompt system:** `prompt/service.ts`, `prompt/types.ts`, `prompt/renderer.ts`
-**Content services:** `memory/service.ts`, `memory/types.ts`, `role/service.ts`, `role/types.ts`
-**Horizon layer:** `horizon/service.ts`, `horizon/listener.ts`, `horizon/manager.ts`, `horizon/types.ts`
-**Model layer:** `model/service.ts`
-**ai-sdk types:** `node_modules/ai/dist/index.d.ts`, `node_modules/@ai-sdk/provider-utils/dist/index.d.ts`, `node_modules/@ai-sdk/provider/dist/index.d.ts`
-**v3 reference:** `references/YesImBot-v3/packages/core/src/shared/utils/json-parser.ts`, `references/YesImBot-v3/packages/core/tests/utils-json-parser.test.ts`
-**Live output:** `PROMPT.json` (confirmed `{{date.now}}` bug)
+---
+*Research completed: 2026-02-26*
+*Ready for roadmap: yes*

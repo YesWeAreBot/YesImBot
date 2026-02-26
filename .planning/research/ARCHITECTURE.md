@@ -1,14 +1,12 @@
-# Architecture Research: v2.2 Runtime Optimization & Observability
+# Architecture Research
 
-**Domain:** AI LLM chat agent for IM platforms (Koishi 4.x plugin monorepo)
-**Researched:** 2026-02-25
-**Confidence:** HIGH (based on direct source code analysis of v2.1 baseline)
+**Domain:** Koishi AI chat plugin — v2.4 model group load balancing, provider unification, config UI grouping, runtime bug fixes
+**Researched:** 2026-02-26
+**Confidence:** HIGH (direct source code analysis of v2.3 baseline)
 
-## Current Architecture (v2.1 Baseline)
+## Current Architecture (v2.3 Baseline)
 
-### Service Graph (dependency order)
-
-9 services registered as Koishi `Service` subclasses. Entry point at `core/src/index.ts:47-82`.
+### Service Graph
 
 ```
 Layer 0 (no internal deps):
@@ -21,7 +19,6 @@ Layer 1:
 
 Layer 2:
   RoleService       — immediate=false, inject: ["yesimbot.prompt"]
-  MemoryService     — immediate=false, inject: ["yesimbot.prompt"]
   TraitAnalyzer     — immediate=false, inject: ["yesimbot.horizon"]
 
 Layer 3:
@@ -31,494 +28,565 @@ Layer 4 (terminal):
   AgentCore         — immediate=false, inject: [
                         "yesimbot.horizon", "yesimbot.plugin",
                         "yesimbot.prompt",  "yesimbot.model",
-                        "yesimbot.trait",   "yesimbot.skill"
+                        "yesimbot.trait",   "yesimbot.skill",
+                        "yesimbot.role"
                       ]
 ```
 
-`waitForServiceReady()` at `index.ts:100-129` polls all 9 with 100ms intervals, 10s timeout.
+### Provider Registration Flow (current)
 
-### Message Processing Flow
-
-#### Step 1: Message Ingress — `horizon/listener.ts:26-48`
-
-Koishi middleware intercepts session:
-1. `isChannelAllowed()` check (`listener.ts:58-66`)
-2. Skip if `session.author.isBot` (`listener.ts:29`)
-3. `recordUserMessage()` writes to timeline DB (`listener.ts:78-102`)
-4. `updateMemberInfo()` upserts entity record (`listener.ts:125-151`)
-5. `ctx.emit("horizon/message", event)` with classified TriggerType
-
-`classifyTrigger()` at `listener.ts:69-76`: direct > reply > mention > keyword > random.
-
-#### Step 2: Willingness Gate — `agent/service.ts:113-159`
-
-`handleEvent(event)` computes willingness:
-1. Build `channelKey = "platform:channelId"`
-2. `cancelDeferred(channelKey)` — cancel any pending LLM judgment
-3. `willingness.processMessage(channelKey, triggerType, content)`
-4. `Math.random() < probability` determines `shouldReply`
-
-Three outcomes (`service.ts:126-155`):
-- `shouldReply=true` + `isDirect` — immediate enqueue (no aggregation window)
-- `shouldReply=true` + group — aggregation window (default 1500ms), last event wins
-- `shouldReply=false` + deferred config + `probability >= threshold` — schedule LLM judgment
-
-#### Step 3: Deferred LLM Judgment (optional) — `agent/service.ts:221-287`
-
-1. `scheduleDeferredJudgment()` computes delay inversely proportional to probability
-2. `ctx.setTimeout(delay)` schedules `executeDeferredJudgment()`
-3. Builds `HorizonView`, formats context text
-4. Calls `modelService.call(JUDGMENT_PROMPT, contextText)` with maxOutputTokens=8
-5. Answer starts with "yes" -> enqueue; otherwise stay silent
-6. Generation counter (`deferredGen`) prevents stale judgments
-
-#### Step 4: Channel Queue — `agent/service.ts:183-198`
-
-Per-channel serial execution via promise chaining:
-1. `enqueue(channelKey, built)` chains onto existing queue promise
-2. Runs `runLoop(channelKey, built)` then checks `pending` map for next payload
-3. If loop is running when new message arrives, latest payload overwrites `pending`
-
-#### Step 5: ThinkActLoop — `agent/loop.ts:46-298`
-
-The core agent loop. Called via `loop.run(percept, toolCtx)`:
-
-**5a. Context Assembly** (`loop.ts:49-102`):
-1. `horizon.buildView(scope, options)` — queries timeline DB, builds `HorizonView`
-2. `trait.analyze(scope, view)` — runs SceneTrait + HeatTrait detectors in parallel
-3. `skill.resolve(signals, scope)` — evaluates conditions, returns `SkillEffect`
-4. Injects skill prompt/style/tools into PromptService (with disposers for cleanup)
-5. `buildToolSchemaForPrompt()` — serializes available tools as text schema
-
-**5b. Prompt Rendering** (`loop.ts:105-127`):
-1. `prompt.renderToString("system", { view, percept })` — renders all injection points
-2. Builds working memory lines from `view.history` agent.response observations
-3. `horizon.formatHorizonText(view, wmLines)` — renders user message content
-
-**5c. Multi-Round Loop** (`loop.ts:145-288`):
 ```
-while (round < maxRounds):
-  trimMessages(messages, trimConfig)        // budget-aware trimming
-  modelService.call(model, {system, messages})
-  parser.parse(rawText)                     // JsonParser with jsonrepair
-  if parse fails + "actions" in text:
-    attemptLlmRepair(modelService, rawText) // LLM-based JSON repair
-  executeActions(actions, pluginService)    // Tool parallel, Action sequential
-  horizon.events.recordAgentResponse(...)   // persist round to timeline
-  if hasToolCalls || request_heartbeat:
-    append assistant+user messages, continue
-  else: break
+provider-openai apply()
+  → new OpenAIProvider(config)
+  → ctx["yesimbot.model"].registerProvider(config.id, provider)
+  → ModelService.providers Map<string, IModelProvider>
+  → ModelService.refreshSchemas()  ← updates registry.chatModels dynamic schema
+
+AgentCore.config.model = "openai:gpt-4o"
+  → ModelService.call("openai:gpt-4o", params, fallbackChain?)
+  → resolveModel() → { provider: "openai", modelId: "gpt-4o" }
+  → providers.get("openai").getModel("gpt-4o")
+  → PQueue.add(() => executeCall(...))
 ```
 
-**5d. Cleanup** (`loop.ts:296-298`):
-All skill injection disposers called in `finally` block.
+### Message Queue Flow (current — has bug)
 
-### Prompt Assembly Pipeline
+```
+horizon/message event
+  → handleEvent(event)
+  → willingness check
+  → if shouldReply:
+      if isDirect: handleDmAggregation()
+      else: pendingWindows aggregation (1500ms)
+  → enqueue(channelKey, built)
+      → queues.get(channelKey) ?? Promise.resolve()
+      → .then(() => runLoop())
+      → .then(() => check pending map for next payload)
+      → queues.set(channelKey, chain)
 
-#### Injection Points — `prompt/types.ts:1-3`
+BUG: While loop is running, new messages set pending[channelKey].
+     But if TWO messages arrive before loop starts, only the last
+     one is kept — earlier messages are silently dropped.
+     Also: if loop is running and new message arrives, it goes to
+     pending but the "check pending" only runs AFTER the current
+     loop finishes — this is actually correct behavior, but the
+     aggregation window fires immediately even if loop is busy.
+```
+
+### Working Memory Trim (current — has bug)
+
+```
+ThinkActLoop.run()
+  → trimMessages(messages, trimConfig)  ← called at start of each round
+  → trimConfig.charBudget = config.charBudget ?? 30000
+
+BUG: trimMessages() is called with messages[] that starts as
+     [{ role: "user", content: userContent }] — only ONE message.
+     The trim logic requires messages.length > 1 to identify rounds:
+       totalRounds = Math.floor((messages.length - 1) / 2)
+     With 1 message: totalRounds = 0, protectedRounds = 0,
+     eligibleEnd = 1, eligible = [] — nothing to trim.
+     Trim never fires on round 1. By round 2+ messages grow but
+     the initial userContent (which can be very large) is never
+     trimmed because it's at index 0 (protected as "system context").
+```
+
+### Bot Action Empty Record (current — has bug)
+
+```
+ThinkActLoop.run() → executeActions() → horizon.events.recordAgentResponse()
+
+BUG: recordAgentResponse() is called unconditionally after every
+     LLM response, even when the model returns no actions or
+     returns only a "stay silent" decision. This writes empty
+     [Bot Action] entries to the timeline DB, polluting history
+     that gets fed back to the LLM in subsequent turns.
+```
+
+---
+
+## v2.4 Integration Map
+
+### Feature 1: Message Queue Refactor (积压合并)
+
+**What changes:** While a loop is running, new messages should be buffered. When the loop finishes, all buffered messages should be merged into a single response rather than processing each one individually.
+
+**Current code location:** `core/src/services/agent/service.ts`
+
+**Relevant state:**
+```typescript
+private queues = new Map<string, Promise<void>>();   // per-channel running promise
+private pending = new Map<string, LoopPayload>();    // single-slot pending buffer
+```
+
+**Problem:** `pending` is a single-slot map — only the last message is kept. Multiple messages arriving during a running loop lose all but the last.
+
+**Integration approach:** Replace single-slot `pending` with a queue buffer per channel. When the loop finishes, drain the buffer and merge all accumulated messages into one `Percept` before calling `runLoop()`.
+
+**Touch points:**
+- `agent/service.ts` — `pending` map type changes from `Map<string, LoopPayload>` to `Map<string, LoopPayload[]>`
+- `agent/service.ts:enqueue()` — drain logic: collect all pending, merge into single percept
+- `agent/service.ts:handleEvent()` — aggregation window logic unchanged; only the enqueue/pending path changes
+- `agent/loop.ts` — `Percept` may need a `mergedMessages` field to carry multiple source messages
+- `core/src/services/shared/types.ts` — `Percept` type may gain optional `mergedMessages` array
+
+**New vs modified:**
+- MODIFIED: `agent/service.ts` (pending map + enqueue drain logic)
+- MODIFIED: `core/src/services/shared/types.ts` (Percept type, if merged messages need to be visible to loop)
+
+**Independence:** Fully independent. No dependency on other v2.4 features.
+
+---
+
+### Feature 2: Bot Action Empty Record Fix
+
+**What changes:** `recordAgentResponse()` should only be called when the agent actually took meaningful actions (sent a message or called a tool). Silent decisions should not be recorded.
+
+**Current code location:** `core/src/services/agent/loop.ts:316-326`
 
 ```typescript
-type InjectionPoint = "soul" | "instructions" | "memory" | "extra";
-const INJECTION_POINTS = ["soul", "instructions", "memory", "extra"];
-```
-
-#### Injection Registry
-
-| Service | Injection Name | Point | Content |
-|---------|---------------|-------|---------|
-| RoleService | `__role_soul` | soul | SOUL.md rendered with Mustache |
-| RoleService | `__role_agents` | instructions | AGENTS.md rendered |
-| RoleService | `__role_tools` | instructions (after agents) | TOOLS.md rendered |
-| MemoryService | `core-memory` | memory | Memory blocks with char limit |
-| SkillRegistry (via loop) | `__skill_{name}_{id}` | configurable | Skill prompt content |
-| SkillRegistry (via loop) | `__skill_style_{id}` | configurable | Style override |
-| ThinkActLoop | `__loop_tool_schema_{id}` | instructions | Tool schema text |
-
-#### render() Pipeline — `prompt/service.ts:113-141`
-
-```typescript
-async render(_templateName, initialScope?) -> Section[]
-```
-
-1. `buildScope(initialScope)` — runs all registered snippets sequentially
-2. For each injection point in order (soul, instructions, memory, extra):
-   - `resolveOrder()` — topological sort via `before`/`after` constraints
-   - `Promise.allSettled()` on all entries with timeout
-   - Join fragments with `\n\n`, wrap in XML tags: `<point>...content...</point>`
-3. Returns `Section[]` where each section has `{ name, content, cacheable: true }`
-
-`renderToString()` at `service.ts:143-149` joins all sections with `\n\n`.
-
-#### Snippet System — `prompt/service.ts:77-79, 215-236`
-
-Snippets are scope-building functions registered by name (dot-path notation):
-
-| Snippet Key | Registered By | Value |
-|-------------|--------------|-------|
-| `date.now` | MemoryService | Formatted current date/time (zh-CN) |
-| `sender.name` | MemoryService | `percept.metadata.senderName` |
-| `sender.id` | MemoryService | `percept.metadata.senderId` |
-| `channel.name` | MemoryService | `view.environment.name` |
-| `channel.platform` | MemoryService | `view.environment.metadata.platform` |
-| `bot.name` | MemoryService | `view.self.name` |
-| `bot.id` | MemoryService | `view.self.id` |
-
-Snippets run in `buildScope()` before injection rendering. The scope object is passed to all `renderFn` callbacks.
-
-## v2.2 Integration Map
-
-### Feature 1: Willingness DM Handling + Judge Prompt
-
-**Primary:** `agent/service.ts` (handleEvent), `agent/willingness.ts` (WillingnessEngine)
-**Secondary:** `agent/service.ts:221-287` (deferred judgment prompt)
-
-**Current gap:** `handleEvent()` at `service.ts:126-131` treats DM (`isDirect`) as "always reply immediately" — bypasses willingness entirely. The `WillingnessEngine.processMessage()` still runs but its result is ignored for DMs.
-
-**Touch points:**
-- `agent/service.ts:126-131` — DM branch needs willingness-aware logic
-- `agent/willingness.ts:201-251` — `processMessage()` may need DM-specific gain/decay params
-- `agent/service.ts:221-287` — Judge prompt text (hardcoded `JUDGMENT_PROMPT` string) needs tuning
-- `agent/willingness.ts:11-17` — `DeferredJudgmentConfig` may need DM-specific overrides
-
-**Independence:** Fully independent. No dependency on other v2.2 features.
-
-### Feature 2: Prompt Cache Optimization (SystemModelMessage[])
-
-**Primary:** `prompt/service.ts` (render pipeline), `model/service.ts` (call/streamCall)
-**Secondary:** `agent/loop.ts` (system prompt consumption)
-
-**Current gap:** `render()` returns `Section[]` with `cacheable: true` on every section, but `renderToString()` flattens everything into a single string. The `modelService.call()` at `model/service.ts:72-107` passes `system` as a plain string to ai-sdk's `generateText()`. No `SystemModelMessage[]` splitting occurs.
-
-**Touch points:**
-- `prompt/service.ts:113-141` — `render()` already returns `Section[]` with `cacheable` flag
-- `prompt/types.ts:5-9` — `Section` type: `{ name: string; content: string; cacheable: boolean }`
-- `model/service.ts:72-107` — `call()` needs to accept `Section[]` or `SystemModelMessage[]`
-- `agent/loop.ts:105-127` — Must switch from `renderToString()` to `render()` and pass sections
-- ai-sdk `generateText()` — needs `system` as `Array<{ type: "text", text: string, providerOptions?: { cacheControl } }>`
-
-**Independence:** Depends on understanding the ai-sdk `SystemModelMessage` format. No dependency on other v2.2 features, but touches the same `loop.ts` code as Feature 7.
-
-### Feature 3: Full-Chain DEBUG Logging (Trace ID)
-
-**Primary:** `agent/service.ts` (handleEvent entry point), `agent/loop.ts` (ThinkActLoop)
-**Secondary:** All services touched during message processing
-
-**Current state:** Logging is ad-hoc. `horizon/listener.ts:79` logs user messages. `agent/service.ts` logs willingness results. `agent/loop.ts` logs round progress. No correlation ID ties them together.
-
-**Touch points:**
-- `agent/service.ts:113` — `handleEvent()` is the natural trace ID generation point
-- `agent/service.ts:183-198` — `enqueue()` / `runLoop()` must propagate trace ID
-- `agent/loop.ts:46-298` — Every log call needs trace ID prefix
-- `model/service.ts:72-107` — `call()` should log model name, token counts, latency
-- `horizon/listener.ts:26-48` — Message ingress should log with trace ID (or pre-trace correlation)
-- `agent/willingness.ts:157-168` — `WillingnessResult.debug` already has structured data
-
-**Design question:** Parameter threading vs context object. Koishi has no built-in async context (no AsyncLocalStorage). Options:
-1. Pass `traceId: string` as parameter through the call chain
-2. Create a `TraceContext` object passed alongside `Percept`
-3. Use Node.js `AsyncLocalStorage` (works but adds complexity)
-
-**Recommendation:** Option 2 — `TraceContext` object. It can carry traceId + timing marks + log buffer. Pass it through `loop.run(percept, toolCtx, trace)`.
-
-**Independence:** Fully independent. Touches many files but only adds logging, no behavioral changes.
-
-### Feature 4: memory_block → RoleService Merge
-
-**Primary:** `memory/service.ts` (MemoryService), `role/service.ts` (RoleService)
-**Secondary:** `prompt/service.ts` (injection registry)
-
-**Current state:** Two separate services both inject into PromptService at startup:
-- `MemoryService` loads `*.md` files from `memoryPath`, registers as `core-memory` at `memory` injection point, also registers all 7 snippets
-- `RoleService` loads `SOUL.md`/`AGENTS.md`/`TOOLS.md` from `rolePath`, registers as `__role_soul`/`__role_agents`/`__role_tools`
-
-**Overlap:** Both load markdown files from disk. Both register PromptService injections. Both do Mustache rendering. MemoryService's `MemoryBlock` type (`{ label, title?, description?, content, filename }`) is a subset of what RoleService already handles.
-
-**Touch points:**
-- `memory/service.ts` — Entire file to be absorbed into RoleService
-- `memory/types.ts` — `MemoryBlock` interface moves to `role/types.ts`
-- `role/service.ts` — Gains memory block loading + snippet registration
-- `index.ts:57-58` — Remove MemoryService registration
-- `index.ts:100-129` — Remove from `waitForServiceReady()` list
-- `agent/service.ts` inject list — Remove `yesimbot.memory` if present (currently not in inject)
-
-**Independence:** Fully independent. No dependency on other v2.2 features.
-
-### Feature 5: JSON Parser Hardening
-
-**Primary:** `agent/json-parser.ts` (JsonParser)
-**Secondary:** `agent/loop.ts:145-288` (parse call site)
-
-**Current state:** `JsonParser<T>` at `json-parser.ts:13-155` has a 3-stage pipeline:
-1. Extract from markdown code block if present
-2. Find JSON start (`{` or `[`), trim trailing text if balanced
-3. `JSON.parse()` → fallback to `jsonrepair()` → fallback to error
-
-**Known gaps:**
-- `isLikelyJsonStart()` at line 134-153 checks `[` followed by specific chars to avoid `[OBSERVE]` false positives, but doesn't handle all edge cases
-- No handling of truncated JSON (model hit max_tokens mid-output)
-- No handling of multiple JSON objects in output (model outputs text + JSON + text)
-- The `attemptLlmRepair()` in `loop.ts` is a separate fallback that calls the model again
-
-**Touch points:**
-- `agent/json-parser.ts` — Main file to harden
-- `agent/loop.ts` — Call site at parse step, LLM repair fallback
-- v3 reference: `references/YesImBot-v3/` has a more mature parser to port patterns from
-
-**Independence:** Fully independent. Self-contained in json-parser.ts + tests.
-
-### Feature 6: Snippet Variable Injection Fix
-
-**Primary:** `prompt/service.ts` (buildScope, snippet system)
-**Secondary:** `prompt/renderer.ts` (MustacheRenderer), `memory/service.ts` (snippet registration)
-
-**Current state:** Snippets register via `prompt.registerSnippet(key, fn)` at `service.ts:77-79`. The `buildScope()` at `service.ts:215-224` runs each snippet function and sets the result into a nested scope object using dot-path notation (e.g., `date.now` → `scope.date.now`).
-
-**Known bug:** `{{date.now}}` renders as empty. The issue is likely in how `buildScope()` constructs the nested object. The `setNestedValue()` helper at `service.ts:226-236` splits on `.` and creates intermediate objects, but the Mustache renderer may not receive the scope correctly, or the snippet functions aren't being called with the right `initialScope` context (view/percept may be missing).
-
-**Touch points:**
-- `prompt/service.ts:215-236` — `buildScope()` and `setNestedValue()` logic
-- `prompt/service.ts:77-79` — `registerSnippet()` API
-- `prompt/renderer.ts:26-42` — `MustacheRenderer.render()` iterative rendering
-- `memory/service.ts` — Where snippets are registered with their value functions
-- `agent/loop.ts:105-127` — Where `renderToString("system", { view, percept })` is called
-
-**Root cause hypothesis:** The `initialScope` passed to `render()` from `loop.ts` contains `{ view, percept }`, but snippet functions need to access `view.self.name`, `percept.metadata.senderName` etc. If the snippet function receives the wrong scope shape, it returns undefined, and Mustache renders `{{date.now}}` as empty string.
-
-**Independence:** Fully independent. Fix is localized to prompt/service.ts snippet pipeline.
-
-### Feature 7: Working Memory Layout Optimization
-
-**Primary:** `agent/loop.ts` (working memory construction), `horizon/service.ts` (formatHorizonText)
-**Secondary:** `agent/trimmer.ts` (trimMessages)
-
-**Current state:** Working memory is built in `loop.ts:105-127`:
-1. `view.history` observations are iterated
-2. `agent.response` observations extract `assistantText` + tool results
-3. These become `wmLines` strings passed to `horizon.formatHorizonText()`
-4. The result becomes the first `user` message in the loop's `messages[]` array
-
-The `trimmer.ts` manages budget via `softTrim` (head+tail with ellipsis) then `hardClear` (replace with placeholder). Messages are `LoopMessage[]` with `role: "user" | "assistant"` and `_trimState`.
-
-**Known issues:**
-- Causality: tool results appear before the assistant message that requested them
-- Temporal ordering: agent responses and user messages may interleave confusingly
-- The working memory lines are plain text concatenation, not structured
-
-**Touch points:**
-- `agent/loop.ts:105-127` — Working memory construction from `view.history`
-- `horizon/service.ts` — `formatHorizonText()` method
-- `horizon/types.ts` — `Observation`, `AgentResponseData` types
-- `agent/trimmer.ts` — May need awareness of message semantic types for smarter trimming
-
-**Independence:** Partially dependent on Feature 2 (prompt cache). Both touch `loop.ts` prompt assembly. Should be coordinated but can be developed independently if interfaces are agreed first.
-
-### Feature Dependency Matrix
-
-```
-Feature                        Independent?  Shared Code
-1. Willingness DM + Judge      YES           agent/service.ts
-2. Prompt Cache (Section[])    YES*          loop.ts, model/service.ts
-3. Trace ID Logging            YES           all services (additive)
-4. memory_block → RoleService  YES           memory/, role/, index.ts
-5. JSON Parser Hardening       YES           agent/json-parser.ts
-6. Snippet Variable Fix        YES           prompt/service.ts
-7. Working Memory Layout       YES*          loop.ts, horizon/service.ts
-
-* Features 2 and 7 both modify loop.ts prompt assembly.
-  Recommend: do Feature 7 first (restructure WM), then Feature 2 (cache the result).
-```
-
-## Architecture Decisions for v2.2
-
-### Decision 1: Prompt Caching — Section[] → SystemModelMessage[] Mapping
-
-**Context:** ai-sdk's `generateText()` accepts `system` as either a string or `Array<SystemModelMessage>`. Each `SystemModelMessage` can carry `providerOptions` with `cacheControl` hints (e.g., Anthropic's `ephemeral` cache breakpoint).
-
-**Current:** `render()` already returns `Section[]` with `{ name, content, cacheable }`. The `renderToString()` flattens this. The infrastructure is 80% there.
-
-**Recommendation:** Add a `renderToMessages()` method to PromptService that maps `Section[]` to `SystemModelMessage[]`:
-
-```typescript
-// prompt/service.ts — new method
-renderToMessages(templateName: string, scope?: Record<string, unknown>): Promise<SystemModelMessage[]> {
-  const sections = await this.render(templateName, scope);
-  return sections
-    .filter(s => s.content.trim())
-    .map(s => ({
-      type: "text" as const,
-      text: s.content,
-      providerOptions: s.cacheable
-        ? { anthropic: { cacheControl: { type: "ephemeral" } } }
-        : undefined,
-    }));
-}
-```
-
-**model/service.ts change:** `call()` signature gains an overload accepting `system: SystemModelMessage[]` alongside the existing `system: string`.
-
-**Cache boundary strategy:** The `soul` and `instructions` sections are stable across turns (same SOUL.md, same tools). The `memory` section changes rarely. The `extra` section changes per-turn (skill injections). Place cache breakpoint after `instructions`, making soul+instructions cacheable across the entire session.
-
-### Decision 2: Trace ID Threading Strategy
-
-**Context:** Need to correlate logs across the full chain: message ingress → willingness → queue → loop → model call → tool exec → response.
-
-**Options considered:**
-1. Pass `traceId: string` as parameter through every function
-2. Create `TraceContext` object passed alongside Percept
-3. Use Node.js `AsyncLocalStorage`
-
-**Recommendation:** Option 2 — `TraceContext` object.
-
-```typescript
-// shared/types.ts — new type
-interface TraceContext {
-  traceId: string;          // e.g., "t-{channelKey}-{timestamp}"
-  startedAt: number;        // Date.now() at handleEvent entry
-  marks: Map<string, number>; // named timing marks
-  mark(name: string): void;
-  elapsed(from?: string): number;
-}
-```
-
-**Why not AsyncLocalStorage:** Koishi's event system and middleware chain don't guarantee async context propagation. The `ctx.emit("horizon/message")` → `handleEvent()` path crosses event boundaries where AsyncLocalStorage context can be lost.
-
-**Why not plain traceId string:** A string requires a separate timing mechanism. The `TraceContext` object carries both correlation and performance data in one pass.
-
-**Threading path:**
-1. `handleEvent()` creates `TraceContext` with `traceId = "t-{channelKey}-{ts}"`
-2. Passed to `enqueue()` → `runLoop()` → `loop.run(percept, toolCtx, trace)`
-3. `loop.run()` passes to `modelService.call()` for latency logging
-4. Logger helper: `trace.log(logger, "step description")` auto-prefixes traceId + elapsed
-
-### Decision 3: memory_block → RoleService Merge Strategy
-
-**Context:** MemoryService and RoleService both load markdown files from disk and inject into PromptService. They're siblings at Layer 2 with identical dependencies.
-
-**Recommendation:** Absorb MemoryService into RoleService. RoleService becomes the single "content from disk" service.
-
-**Strategy:**
-1. Move `MemoryBlock` type to `role/types.ts`
-2. Add `memoryPath` config to `RoleServiceConfig` (alongside existing `rolePath`)
-3. Move snippet registration from MemoryService to RoleService
-4. Move memory block loading + `core-memory` injection to RoleService
-5. Delete `memory/service.ts`, `memory/types.ts`
-6. Update `index.ts` to remove MemoryService registration
-7. Update service count in `waitForServiceReady()` (9 → 8)
-
-**Risk:** Low. MemoryService is ~120 LOC with no external consumers. RoleService already has the same patterns (file loading, Mustache rendering, PromptService injection).
-
-**Post-merge RoleService responsibilities:**
-- Load SOUL.md/AGENTS.md/TOOLS.md → inject at soul/instructions
-- Load memory blocks (*.md from memoryPath) → inject at memory
-- Register all 7 snippets (date, sender, channel, bot)
-- Hot-reload on file changes (already implemented for role files)
-
-### Decision 4: Snippet Scope Fix Strategy
-
-**Context:** `{{date.now}}` and other Mustache variables render as empty in role files.
-
-**Root cause analysis:** The `buildScope()` at `prompt/service.ts:215-224` runs snippet functions and builds a nested scope object. But the snippet functions registered by MemoryService need access to `view` and `percept` from the `initialScope`. The issue is that `buildScope()` receives `initialScope` but snippet functions may not be receiving it as their argument.
-
-Looking at `service.ts:77-79`:
-```typescript
-registerSnippet(key: string, fn: SnippetFn): Disposable
-```
-
-And `buildScope()` at `service.ts:215-224` calls each `fn(initialScope)`. The snippet function must extract what it needs from `initialScope`. If `initialScope` is `{ view, percept }` but the snippet expects a flat scope, it fails silently (Mustache renders missing keys as empty string).
-
-**Recommendation:** Fix the snippet function signatures to correctly destructure from `initialScope`. The fix is in MemoryService's snippet registration (or post-merge, RoleService). Each snippet function should be:
-
-```typescript
-prompt.registerSnippet("date.now", (_scope) => {
-  return new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-});
-prompt.registerSnippet("sender.name", (scope) => {
-  return scope?.percept?.metadata?.senderName ?? "";
+// Current — unconditional
+await horizon.events.recordAgentResponse({
+  platform: percept.platform,
+  channelId: percept.channelId,
+  timestamp: new Date(),
+  data: { round, assistantText: rawText, actions: response.actions, toolResults },
 });
 ```
 
-The `setNestedValue()` helper then places the return value at the correct dot-path in the scope object, making `{{sender.name}}` resolve correctly in Mustache.
+**Fix:** Add a guard before `recordAgentResponse()`. Only record if `response.actions` contains at least one non-empty action, or if `toolResults` is non-empty.
 
-### Decision 5: Working Memory Layout Restructure
+**Touch points:**
+- `agent/loop.ts` — add guard condition before `recordAgentResponse()` call (lines ~316-326)
+- No type changes needed
 
-**Context:** Current working memory is built as plain text lines from `view.history` observations. Tool results appear before the assistant message that requested them, breaking causality.
+**New vs modified:**
+- MODIFIED: `agent/loop.ts` (2-3 line guard addition)
 
-**Current flow in `loop.ts:105-127`:**
-1. Iterate `view.history` (chronological)
-2. For `agent.response` observations: extract `assistantText` + stringify tool results
-3. Concatenate as `wmLines` strings
-4. Pass to `horizon.formatHorizonText(view, wmLines)`
+**Independence:** Fully independent. Surgical fix.
 
-**Problem:** The `AgentResponseData` bundles `assistantText`, `actions[]`, and `toolResults[]` in a single record. When rendered linearly, the causal chain (assistant thinks → calls tool → gets result → responds) is lost.
+---
 
-**Recommendation:** Restructure working memory into a structured format:
+### Feature 3: Tool Trim Fix
+
+**What changes:** The working memory trimmer must actually fire. The root cause is that `trimMessages()` is called with a messages array that starts with only 1 element (the initial user context), and the trim logic skips arrays with 0 eligible rounds.
+
+**Current code location:** `core/src/services/agent/loop.ts` and `core/src/services/agent/trimmer.ts`
+
+**Root cause:** `trimMessages()` at `trimmer.ts:37` computes:
+```typescript
+const totalRounds = Math.floor((messages.length - 1) / 2);
+```
+With `messages = [userContent]` (length 1): `totalRounds = 0`. Nothing is eligible. The initial `userContent` (which contains the full HorizonView + working memory) is at index 0 and is treated as protected "system context" — it never gets trimmed regardless of size.
+
+**Fix options:**
+1. Apply a separate budget check on `messages[0]` (the initial user context) before the round-based trim
+2. Move the initial user context into a separate field and only pass the round messages to `trimMessages()`
+3. Trim the `userContent` string itself before inserting into `messages[0]`
+
+**Recommended fix:** Option 3 — trim `userContent` at construction time in `loop.ts` before it enters `messages[]`. The `formatHorizonText()` output can be truncated if it exceeds a separate `userContextBudget` config value. This is simpler than restructuring the messages array.
+
+**Touch points:**
+- `agent/loop.ts` — add user context size check after `formatHorizonText()` call
+- `agent/trimmer.ts` — optionally add a `trimUserContext()` helper
+- `agent/service.ts` — `AgentCoreConfig` may gain `userContextBudget` field
+- `agent/service.ts:AgentCoreConfigSchema` — new schema field if config added
+
+**New vs modified:**
+- MODIFIED: `agent/loop.ts` (user context trim before messages construction)
+- MODIFIED: `agent/trimmer.ts` (optional new helper)
+
+**Independence:** Fully independent. Localized to loop.ts + trimmer.ts.
+
+---
+
+### Feature 4: Model Group Load Balancing
+
+**What changes:** Add a `ModelGroup` abstraction above `IModelProvider`. A group contains multiple model instances and applies a selection strategy (round-robin, random, least-loaded, failover) when `ModelService.call()` is invoked.
+
+**Current call path:**
+```
+ModelService.call("openai:gpt-4o", params)
+  → resolveModel() → { provider: "openai", modelId: "gpt-4o" }
+  → providers.get("openai").getModel("gpt-4o")
+```
+
+**New call path with groups:**
+```
+ModelService.call("group:my-group", params)
+  → resolveModel() → detects "group:" prefix
+  → groups.get("my-group").selectMember()  ← strategy picks a provider:model
+  → providers.get(provider).getModel(modelId)
+```
+
+**New types needed in `shared-model`:**
+
+```typescript
+// packages/shared-model/src/types/model.ts — additions
+
+export type LoadBalanceStrategy = "round-robin" | "random" | "least-loaded" | "failover";
+
+export interface ModelGroupMember {
+  model: string;          // "provider:modelId" format
+  weight?: number;        // for weighted random
+}
+
+export interface ModelGroupConfig {
+  id: string;
+  strategy: LoadBalanceStrategy;
+  members: ModelGroupMember[];
+}
+
+export interface IModelGroup {
+  readonly id: string;
+  readonly strategy: LoadBalanceStrategy;
+  selectMember(): string;  // returns "provider:modelId"
+  recordSuccess(model: string): void;
+  recordFailure(model: string): void;
+}
+```
+
+**ModelService changes:**
+
+```typescript
+// core/src/services/model/service.ts — additions
+private groups = new Map<string, IModelGroup>();
+
+registerGroup(config: ModelGroupConfig): void
+unregisterGroup(id: string): void
+getGroup(id: string): IModelGroup | undefined
+
+// resolveModel() — extend to handle "group:" prefix
+private resolveModel(model: string | ModelSelector): { provider: string; modelId: string } {
+  if (typeof model === "string" && model.startsWith("group:")) {
+    const groupId = model.slice(6);
+    const group = this.groups.get(groupId);
+    if (!group) throw new Error(`Model group not found: ${groupId}`);
+    const selected = group.selectMember();  // returns "provider:modelId"
+    return this.resolveModel(selected);     // recurse with concrete model
+  }
+  // ... existing logic
+}
+```
+
+**Failover integration:** The existing `fallbackChain` in `call()` already handles sequential fallback. Model groups add a pre-call selection layer. When a group member fails with TRANSIENT/RATE_LIMIT, `recordFailure()` updates the group's internal state, and the existing `handleFallback()` can try the next group member.
+
+**Schema for group config in core:**
+
+```typescript
+// core/src/services/model/service.ts — ModelServiceConfig additions
+export interface ModelServiceConfig {
+  concurrency?: number;
+  groups?: ModelGroupConfig[];  // NEW
+}
+```
+
+**Dynamic schema update:** `refreshSchemas()` must also enumerate group IDs so they appear in the `registry.chatModels` dropdown alongside individual models.
+
+**New files:**
+- `core/src/services/model/group.ts` — `ModelGroup` class implementing `IModelGroup`
+
+**Modified files:**
+- `packages/shared-model/src/types/model.ts` — add `ModelGroupConfig`, `IModelGroup`, `LoadBalanceStrategy`
+- `packages/shared-model/src/index.ts` — export new types
+- `core/src/services/model/service.ts` — `groups` map, `registerGroup/unregisterGroup`, `resolveModel` extension, `refreshSchemas` extension
+- `core/src/services/model/index.ts` — re-export `ModelGroup`
+
+**Independence:** Independent of bug fixes. Depends on `shared-model` types being updated first (build order: shared-model → model/group.ts → model/service.ts).
+
+---
+
+### Feature 5: Provider Architecture Optimization
+
+**What changes:** The 3 provider plugins (openai, deepseek, anthropic) have near-identical structure. Extract shared logic into a base class or factory in `shared-model` to eliminate duplication.
+
+**Current duplication across providers:**
+
+| Element | openai | deepseek | anthropic |
+|---------|--------|----------|-----------|
+| `Config` interface | identical shape | identical shape | adds `projectId`/`sessionId` |
+| `Config` Schema | identical structure | identical structure | adds 2 fields |
+| `IModelProvider` impl | identical | identical | adds custom fetch |
+| `listModels()` | identical | identical | identical |
+| `getDefaultParams()` | identical | identical | identical |
+| `apply()` | identical | identical | identical |
+
+**Recommended approach:** Add a `BaseProviderConfig` and `createBaseProviderSchema()` factory to `shared-model`. Each provider extends the base schema and adds provider-specific fields.
+
+```typescript
+// packages/shared-model/src/types/provider.ts — NEW FILE
+
+export interface BaseProviderConfig {
+  id: string;
+  apiKey: string;
+  baseURL: string;
+  models: ModelInfo[];
+  defaultParams: {
+    temperature: number;
+    maxTokens: number;
+    topP?: number;
+  };
+}
+
+export function createBaseProviderSchema<T extends BaseProviderConfig>(
+  defaults: { id: string; baseURL: string; defaultModels: ModelInfo[] }
+): Schema<BaseProviderConfig>
+```
+
+**Abstract base class option:**
+
+```typescript
+// packages/shared-model/src/provider/base.ts — NEW FILE
+
+export abstract class BaseProvider implements IModelProvider {
+  readonly id: string;
+  readonly models: ModelInfo[];
+  readonly defaultParams: ModelDefaultParams;
+
+  constructor(config: BaseProviderConfig) {
+    this.id = config.id;
+    this.defaultParams = config.defaultParams;
+    this.models = config.models.map(m => ({ ...m }));
+  }
+
+  abstract readonly providerType: string;
+  abstract getModel(modelId: string): LanguageModel;
+
+  listModels(): Record<string, ModelInfo> {
+    return Object.fromEntries(this.models.map(m => [m.id, m]));
+  }
+
+  getDefaultParams(): ModelDefaultParams {
+    return this.defaultParams;
+  }
+}
+```
+
+**Provider refactor result:**
+
+```typescript
+// providers/provider-openai/src/index.ts — after refactor
+class OpenAIProvider extends BaseProvider {
+  readonly providerType = "openai";
+  private client: ReturnType<typeof createOpenAI>;
+
+  constructor(config: Config) {
+    super(config);
+    this.client = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
+  }
+
+  getModel(modelId: string) {
+    return this.client.chat(modelId);
+  }
+}
+```
+
+**New files:**
+- `packages/shared-model/src/provider/base.ts` — `BaseProvider` abstract class
+- `packages/shared-model/src/provider/schema.ts` — `createBaseProviderSchema()` factory
+
+**Modified files:**
+- `packages/shared-model/src/index.ts` — export new provider base
+- `providers/provider-openai/src/index.ts` — extend `BaseProvider`
+- `providers/provider-deepseek/src/index.ts` — extend `BaseProvider`
+- `providers/provider-anthropic/src/index.ts` — extend `BaseProvider`, keep custom fetch
+
+**Independence:** Independent of all other features. Can be done in parallel with model groups. Build order: shared-model changes first, then provider refactors.
+
+---
+
+### Feature 6: Config UI Grouping
+
+**What changes:** The Koishi Console config UI currently shows all fields from `Schema.intersect([...8 schemas...])` as a flat list. Group related fields under collapsible sections using `Schema.object().description()` with Koishi's `collapse` role.
+
+**Current structure in `core/src/index.ts`:**
+
+```typescript
+export const Config: Schema<Config> = Schema.intersect([
+  AgentCoreConfigSchema,       // model, fallbackChain, maxRounds, streamMode, ...
+  HorizonServiceConfigSchema,  // allowedChannels, keywords, historyLimit, ...
+  ModelServiceConfigSchema,    // concurrency
+  PluginServiceConfigSchema,   // defaultTimeout
+  PromptServiceConfigSchema,   // templates
+  RoleServiceConfigSchema,     // rolePath
+  SkillRegistryConfigSchema,   // skillPaths, confidenceThreshold, ...
+  TraitAnalyzerConfigSchema,   // (currently empty)
+]);
+```
+
+**Koishi Schema grouping pattern:**
+
+```typescript
+// Koishi supports Schema.object() with .role('group') or nested intersect
+// The standard approach is Schema.object() with description for section headers
+Schema.object({
+  model: Schema.dynamic("registry.chatModels").description("..."),
+  fallbackChain: Schema.array(...).description("..."),
+}).description("Agent Settings")
+```
+
+**Recommended grouping:**
+
+| Group | Fields | Schema Source |
+|-------|--------|---------------|
+| "模型设置" | concurrency, groups | ModelServiceConfigSchema |
+| "智能体设置" | model, fallbackChain, maxRounds, streamMode, globalTimeout, maxToolResultLength, enableThoughts, charBudget, keepLastRounds, softTrimHead, softTrimTail, debugLevel, errorReportChannel | AgentCoreConfigSchema |
+| "意愿值设置" | willingness (nested) | AgentCoreConfigSchema.willingness |
+| "消息聚合" | aggregationWindow | AgentCoreConfigSchema |
+| "频道设置" | allowedChannels, keywords, historyLimit, archiveThresholdMs, botName, entityCacheTtl, maxActiveEntities | HorizonServiceConfigSchema |
+| "角色设置" | rolePath | RoleServiceConfigSchema |
+| "技能设置" | skillPaths, confidenceThreshold, stickyDefaultTimeout | SkillRegistryConfigSchema |
+| "高级设置" | templates, defaultTimeout | PromptServiceConfigSchema + PluginServiceConfigSchema |
+
+**Touch points:**
+- `core/src/index.ts` — restructure `Config` type and `Schema.intersect` into grouped `Schema.object` sections
+- Individual `*ConfigSchema` exports — may need to be broken into sub-schemas if grouping requires field redistribution
+- `core/src/index.ts:apply()` — config destructuring must match new structure
+
+**Risk:** Koishi's `Schema.intersect` flattens all fields into one namespace. Switching to nested `Schema.object` changes how config is accessed (e.g., `config.agent.model` vs `config.model`). This is a breaking change for existing config files.
+
+**Safer approach:** Keep `Schema.intersect` for backward compatibility, add `.description()` to each sub-schema for section headers in the UI. Koishi renders `Schema.intersect` members as collapsible groups when each member has a `.description()`.
+
+```typescript
+export const Config: Schema<Config> = Schema.intersect([
+  AgentCoreConfigSchema.description("智能体设置"),
+  HorizonServiceConfigSchema.description("频道与上下文"),
+  ModelServiceConfigSchema.description("模型服务"),
+  // ...
+]);
+```
+
+**New vs modified:**
+- MODIFIED: `core/src/index.ts` — add `.description()` to each schema in intersect
+- MODIFIED: individual `*ConfigSchema` — add `.description()` to fields that lack them
+
+**Independence:** Fully independent. Pure UI/schema change, no behavioral impact.
+
+---
+
+## Component Boundaries After v2.4
+
+### Updated Component Table
+
+| Component | Responsibility | New in v2.4 |
+|-----------|----------------|-------------|
+| `ModelService` | Provider registry, PQueue, call/streamCall, fallback chains, **model groups** | `groups` map, `registerGroup()`, group-aware `resolveModel()` |
+| `ModelGroup` | Load balancing strategy, member selection, failure tracking | NEW file: `model/group.ts` |
+| `IModelGroup` | Interface for group implementations | NEW type in `shared-model` |
+| `BaseProvider` | Shared provider logic (listModels, getDefaultParams) | NEW in `shared-model` |
+| `AgentCore` | Per-channel queues, willingness, aggregation | **pending buffer** changes from single-slot to queue |
+| `ThinkActLoop` | LLM loop, tool exec, working memory | **trim fix** + **empty action guard** |
+| Provider plugins | Register `IModelProvider` | Extend `BaseProvider` (less duplication) |
+
+### Data Flow Changes
+
+**Model group selection:**
+```
+call("group:fast-models", params)
+  → resolveModel() detects "group:" prefix
+  → ModelGroup.selectMember() → "openai:gpt-4o-mini"
+  → executeCall("openai", "gpt-4o-mini", params)
+  → on RATE_LIMIT: group.recordFailure("openai:gpt-4o-mini")
+  → handleFallback() tries next group member
+```
+
+**Message queue with backlog merge:**
+```
+Message A arrives → enqueue(channelKey, A) → loop starts
+Message B arrives → pending[channelKey].push(B)   (was: overwrite)
+Message C arrives → pending[channelKey].push(C)   (was: overwrite)
+Loop A finishes → drain pending → merge B+C into single percept
+  → runLoop(channelKey, merged_BC)
+```
+
+**Trim fix flow:**
+```
+loop.run():
+  userContent = formatHorizonText(view, wmLines, percept)
+  if userContent.length > userContextBudget:
+    userContent = trimUserContext(userContent, userContextBudget)  ← NEW
+  messages = [{ role: "user", content: userContent }]
+  while round < maxRounds:
+    trimMessages(messages, trimConfig)  ← existing, now fires correctly
+    ...
+```
+
+---
+
+## Build Order
+
+Dependencies between v2.4 features determine safe implementation order:
 
 ```
-[Previous interaction]
-Assistant thought: "..."
-  → Called: tool_name(params) → result summary
-  → Called: tool_name(params) → result summary
-Assistant said: "final response text"
+Phase 1 (no deps, do first):
+  Bug Fix: Bot Action empty record    — agent/loop.ts only, 2-3 lines
+  Bug Fix: Tool trim                  — agent/loop.ts + trimmer.ts
 
-[Current context]
-User messages since last response...
+Phase 2 (no deps, can parallel with Phase 1):
+  Config UI grouping                  — core/index.ts schema only
+  Provider architecture optimization  — shared-model + 3 provider files
+
+Phase 3 (depends on Phase 2 shared-model changes):
+  Model group load balancing          — shared-model types → model/group.ts → model/service.ts
+
+Phase 4 (no deps on above, but benefits from stable queue):
+  Message queue refactor              — agent/service.ts pending map
 ```
 
-**Implementation:** Change `loop.ts` working memory builder to:
-1. Group `agent.response` observations by round
-2. For each round: render thought → actions → results → final text
-3. Separate "previous interactions" from "current context" (new messages since last response)
-4. Use XML-like structure for clarity to the LLM
+**Rationale:**
+- Bug fixes first: they're surgical, low risk, unblock testing
+- Config grouping is pure UI, zero behavioral risk
+- Provider unification before model groups: `BaseProvider` in shared-model is a prerequisite for clean group integration
+- Message queue refactor last: it's the most behavioral change and benefits from having the bugs fixed first so the test baseline is clean
 
-**Touch point with Feature 2:** The restructured working memory becomes part of the `user` message (not system). This is orthogonal to system prompt caching — system prompt sections are stable, working memory is per-turn user content.
+---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Monolithic System Prompt String
-**What:** Passing the entire system prompt as a single string to the model API.
-**Why bad:** Prevents prompt caching. Every turn re-sends identical soul/instructions content.
-**Instead:** Use `Section[]` → `SystemModelMessage[]` mapping with cache breakpoints.
+### Anti-Pattern 1: Group as Provider Alias
 
-### Anti-Pattern 2: Ad-hoc Logging Without Correlation
-**What:** Each service logs independently with no shared identifier.
-**Why bad:** Impossible to trace a single message's journey through the system.
-**Instead:** Generate trace ID at message entry, thread through all downstream calls.
+**What:** Implementing model groups by registering a fake `IModelProvider` that wraps other providers.
+**Why bad:** Breaks the `IModelProvider` contract (a provider wraps an ai-sdk client, not other providers). Confuses the registry. Makes `providerType` detection unreliable.
+**Instead:** Keep groups as a separate layer in `ModelService` above the provider registry. `resolveModel()` handles the group → concrete model translation before touching providers.
 
-### Anti-Pattern 3: Parallel Services With Identical Responsibilities
-**What:** MemoryService and RoleService both load markdown files and inject into PromptService.
-**Why bad:** Duplicated patterns, split configuration, unclear ownership boundaries.
-**Instead:** Single service (RoleService) owns all "content from disk" responsibilities.
+### Anti-Pattern 2: Nested Schema Objects Breaking Config Compatibility
+
+**What:** Restructuring `Config` from `Schema.intersect([flat schemas])` to `Schema.object({ agent: AgentSchema, horizon: HorizonSchema })`.
+**Why bad:** Existing Koishi config files use flat keys (`model`, `fallbackChain`). Nesting breaks all existing deployments.
+**Instead:** Keep `Schema.intersect` for flat key compatibility. Add `.description()` to each sub-schema for UI grouping. Koishi renders intersect members as collapsible sections.
+
+### Anti-Pattern 3: Trim on Messages[0]
+
+**What:** Modifying `trimMessages()` to also trim `messages[0]` (the initial user context).
+**Why bad:** `messages[0]` contains the current turn's full context — trimming it mid-loop corrupts the LLM's view of the current conversation.
+**Instead:** Trim `userContent` before it enters `messages[]`, at construction time in `loop.ts`. The trim budget for user context is separate from the round-history budget.
+
+### Anti-Pattern 4: Blocking Queue on Aggregation Window
+
+**What:** Holding the channel queue open during the aggregation window (waiting for more messages before starting the loop).
+**Why bad:** Adds latency to every response. The aggregation window is already handled by `pendingWindows` before `enqueue()` is called.
+**Instead:** Keep aggregation window logic in `handleEvent()` (pre-enqueue). The queue refactor only affects what happens after `enqueue()` is called — i.e., how backlogged messages are merged when the loop is already running.
+
+---
 
 ## Sources
 
-All findings are based on direct source code analysis of the v2.1 baseline:
+All findings based on direct source code analysis of v2.3 baseline:
 
-| File | Lines | Key Types/Functions |
-|------|-------|-------------------|
-| `core/src/index.ts` | 47-129 | Service registration, `waitForServiceReady()` |
-| `core/src/services/agent/service.ts` | 113-287 | `handleEvent()`, `enqueue()`, `scheduleDeferredJudgment()` |
-| `core/src/services/agent/loop.ts` | 46-298 | `ThinkActLoop.run()`, context assembly, multi-round loop |
-| `core/src/services/agent/willingness.ts` | 170-257 | `WillingnessEngine`, `processMessage()`, `WillingnessResult` |
-| `core/src/services/agent/json-parser.ts` | 13-155 | `JsonParser<T>`, `parse()`, `isLikelyJsonStart()` |
-| `core/src/services/agent/trimmer.ts` | 37-75 | `trimMessages()`, `softTrim()`, `hardClearToolResult()` |
-| `core/src/services/agent/tools.ts` | 1-39 | `buildToolSchemaForPrompt()` |
-| `core/src/services/prompt/service.ts` | 77-236 | `render()`, `renderToString()`, `buildScope()`, `registerSnippet()` |
-| `core/src/services/prompt/types.ts` | 1-9 | `InjectionPoint`, `Section`, `INJECTION_POINTS` |
-| `core/src/services/prompt/renderer.ts` | 7-43 | `MustacheRenderer.render()`, `parse()` |
-| `core/src/services/model/service.ts` | 72-107 | `call()`, `streamCall()`, PQueue integration |
-| `core/src/services/horizon/service.ts` | full | `buildView()`, `formatHorizonText()`, DB schema |
-| `core/src/services/horizon/listener.ts` | 12-152 | `EventListener`, middleware, `classifyTrigger()` |
-| `core/src/services/horizon/manager.ts` | 18-113 | `EventManager`, `recordMessage()`, `toObservations()` |
-| `core/src/services/horizon/types.ts` | full | `HorizonView`, `Observation`, `TimelineEntry`, `Scope` |
-| `core/src/services/memory/service.ts` | full | `MemoryService`, block loading, snippet registration |
-| `core/src/services/memory/types.ts` | 1-7 | `MemoryBlock` |
-| `core/src/services/role/service.ts` | full | `RoleService`, SOUL/AGENTS/TOOLS loading, hot-reload |
-| `core/src/services/role/types.ts` | 1-12 | `RoleServiceConfig` |
-| `core/src/services/trait/service.ts` | full | `TraitAnalyzer`, `analyze()`, SceneTrait/HeatTrait |
-| `core/src/services/skill/service.ts` | full | `SkillRegistry`, `resolve()`, condition evaluation |
-| `core/src/services/skill/types.ts` | full | `SkillDefinition`, `SkillEffect`, `ToolFilter` |
-| `core/src/services/plugin/service.ts` | 30-131 | `PluginService`, `invoke()`, `getTools()` |
-| `core/src/services/plugin/types.ts` | 1-47 | `FunctionDefinition`, `ToolExecutionContext`, `Activator` |
-| `core/src/services/shared/types.ts` | 1-34 | `TriggerType`, `Scope`, `Percept`, `TraitSignal` |
+| File | Key Findings |
+|------|-------------|
+| `core/src/services/agent/service.ts` | Queue structure, pending map (single-slot bug), aggregation windows |
+| `core/src/services/agent/loop.ts` | `recordAgentResponse()` unconditional call (empty action bug), `trimMessages()` call site (trim bug) |
+| `core/src/services/agent/trimmer.ts` | `totalRounds` calculation, why trim never fires on round 1 |
+| `core/src/services/model/service.ts` | `resolveModel()`, `providers` map, `refreshSchemas()`, fallback chain |
+| `packages/shared-model/src/types/model.ts` | `IModelProvider`, `ModelInfo`, `ModelSelector` — extension points for groups |
+| `providers/provider-openai/src/index.ts` | Duplicated structure pattern |
+| `providers/provider-deepseek/src/index.ts` | Duplicated structure pattern |
+| `providers/provider-anthropic/src/index.ts` | Unique: custom fetch for user_id injection |
+| `core/src/index.ts` | `Schema.intersect` flat config, `ctx.plugin` registration order |
 
-**Confidence:** HIGH — all findings verified against actual source code, no external sources needed for architecture mapping.
+**Confidence:** HIGH — all integration points verified against actual source code.
+
+---
+*Architecture research for: Koishi AI chat plugin v2.4*
+*Researched: 2026-02-26*
