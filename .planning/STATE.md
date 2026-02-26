@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 26 — Memory Cleanup
+**Current focus:** Phase 27 — Scope Deletion / Module Migration
 
 ## Current Position
 
-Phase: 26 of 28 (Memory Cleanup)
-Plan: 2 of 2 complete
-Status: Complete
-Last activity: 2026-02-26 — Plan 26-02 complete (PromptService cleaned, memory templates deleted)
+Phase: 27 of 28 (Scope Deletion / Module Migration)
+Plan: 1 of 3 complete
+Status: In Progress
+Last activity: 2026-02-26 — Plan 27-01 complete (Scope deleted, ChannelKey introduced, Horizon module migrated)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [█░░░░░░░░░] 17%
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ◆ [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -50,6 +50,9 @@ Recent decisions affecting v2.3:
 - memory_block 合并推迟到 v2.3（v2.2 决策）：迁移风险高，不阻塞 v2.2 功能
 - Scope 删除：用 platform + channelId 裸字段替代，全局 13 个文件迁移
 - [Phase 26-memory-cleanup]: Changed resourcesDir seeding sentinel from core-memory.mustache to partials/horizon-view.mustache since core-memory.mustache was deleted
+- [Phase 27-01]: ChannelKey is a type alias with required non-optional fields (stricter than Scope)
+- [Phase 27-01]: DB bridge pattern — scope JSON column preserved until Phase 28 (CTX-08), bridged via as unknown as casts
+- [Phase 27-01]: isDirect/guildId/userId moved to Session parameter in service.ts — not part of channel identity
 
 ### Pending Todos
 
@@ -71,5 +74,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 26-02-PLAN.md — PromptService cleaned, memory templates deleted
+Stopped at: Completed 27-01-PLAN.md — Scope deleted, ChannelKey introduced, Horizon module migrated
 Resume file: None
