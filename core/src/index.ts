@@ -5,6 +5,7 @@ import zhCN from "./locales/zh-CN.json";
 import type { AgentCoreConfig } from "./services/agent";
 import { AgentCore } from "./services/agent";
 import { WillingnessSchema } from "./services/agent/willingness";
+import { ElementFormatterService } from "./services/element-formatter";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
 import type { ModelServiceConfig } from "./services/model";
@@ -108,6 +109,7 @@ export const Config: Schema<Config> = Schema.intersect([
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger("yesimbot");
+  ctx.plugin(ElementFormatterService);
   ctx.plugin(ModelService, { concurrency: config.concurrency });
   ctx.plugin(HorizonService, {
     allowedChannels: config.allowedChannels ?? [],
@@ -159,6 +161,7 @@ export function apply(ctx: Context, config: Config) {
 async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void> {
   const services = [
     "yesimbot.agent",
+    "yesimbot.element-formatter",
     "yesimbot.horizon",
     "yesimbot.model",
     "yesimbot.plugin",
