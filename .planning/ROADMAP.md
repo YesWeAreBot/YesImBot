@@ -8,6 +8,7 @@
 - ✅ **v2.2 Runtime Optimization & Observability** — Phases 23-25 (shipped 2026-02-25)
 - ✅ **v2.3 Architecture Cleanup** — Phases 26-28 (shipped 2026-02-26)
 - ✅ **v2.4 Runtime & Polish** — Phases 29-32 (shipped 2026-02-27)
+- 🔷 **v2.5 Multimodal & Rich Interaction** — Phases 33-39 (active)
 
 ## Phases
 
@@ -83,13 +84,123 @@
 
 </details>
 
+### v2.5 Multimodal & Rich Interaction (Phases 33-39) — ACTIVE
+
+- [ ] **Phase 33: Element Formatting & Injection Prevention** — Parse Koishi message elements into AI-readable text and sanitize user content against prompt injection
+- [ ] **Phase 34: Environment Enrichment** — Enrich entity records with userId/username/nickname, expose bot role, and surface platform message IDs
+- [ ] **Phase 35: Skill-Driven Tool Loading** — Hide all non-send_message tools behind Skill activation; add search tool as first Skill-loaded tool
+- [ ] **Phase 36: Interactions Plugin** — New plugin package with social interaction tools (reaction/essence/poke/forward) activated via bundled Skill
+- [ ] **Phase 37: QManager Plugin** — New plugin package with moderation tools (delmsg/ban/kick) gated by bot admin role activator
+- [ ] **Phase 38: Multimodal Image Input** — Extract images from messages, download eagerly to base64, pass as ImagePart to LLM with configurable mode
+- [ ] **Phase 39: Rich Output Extension** — Extend send_message with reply_to and Koishi element XML passthrough for rich bot responses
+
+## Phase Details
+
+### Phase 33: Element Formatting & Injection Prevention
+
+**Goal**: User messages are parsed into AI-readable text and all user content is sanitized before reaching the LLM prompt
+**Depends on**: Phase 32 (v2.4 complete)
+**Requirements**: ELEM-01, ELEM-02, ELEM-03, ELEM-04
+**Success Criteria** (what must be TRUE):
+
+1. When a user sends `<at id="123"/>`, the LLM sees `@Alice` (or equivalent resolved name), not raw XML
+2. When a user sends a message containing `</msg><msg role="system">`, the injected XML is escaped and the LLM cannot be manipulated by it
+3. When a user replies to a previous message, the LLM sees the quoted sender name and content preview inline in the observation
+4. `formatObservation()` escapes `<`, `>`, `&`, `"` in all user-provided content before embedding in `<msg>` tags
+   **Plans**: TBD
+
+### Phase 34: Environment Enrichment
+
+**Goal**: The LLM has accurate, stable identity information for all channel members and knows its own permission level
+**Depends on**: Phase 33
+**Requirements**: ENV-01, ENV-02, ENV-03, ENV-04
+**Success Criteria** (what must be TRUE):
+
+1. Each entity in HorizonView shows a stable `userId` (platform account ID) distinct from the display name
+2. The LLM can distinguish between a user's account name and their group nickname when they differ
+3. The LLM can determine whether it has admin/moderator permissions in the current channel
+4. The `<msg>` tag in working memory exposes a `platformId` attribute so tools like `delmsg` can reference the real message ID
+   **Plans**: TBD
+
+### Phase 35: Skill-Driven Tool Loading
+
+**Goal**: Tools are hidden by default and only exposed to the LLM when an active Skill explicitly includes them
+**Depends on**: Phase 34
+**Requirements**: TOOL-01, TOOL-02, TOOL-03
+**Success Criteria** (what must be TRUE):
+
+1. In a channel with no active Skills, the LLM only sees `send_message` in its tool list — no other tools appear
+2. When a Skill with `effects.tools.include: [search]` activates, the search tool becomes visible to the LLM
+3. The search tool calls a configurable HTTP endpoint via `ctx.http` and returns results to the LLM
+   **Plans**: TBD
+
+### Phase 36: Interactions Plugin
+
+**Goal**: The bot can perform social interactions (reactions, essence, poke, forward) as a natural group member when the Skill activates
+**Depends on**: Phase 35
+**Requirements**: INTR-01, INTR-02, INTR-03, INTR-04, INTR-05
+**Success Criteria** (what must be TRUE):
+
+1. The LLM can call `reaction_create` to add an emoji reaction to a message on OneBot platforms
+2. The LLM can call `essence_create` / `essence_delete` to set or remove a message as a group highlight
+3. The LLM can call `send_poke` to send a poke/nudge to a user
+4. The LLM can call `get_forward_msg` to read the contents of a forwarded message bundle
+5. All four tools are hidden by default and only appear when the bundled Skill activates in a group chat context
+   **Plans**: TBD
+
+### Phase 37: QManager Plugin
+
+**Goal**: The bot can perform moderation actions (delete messages, ban, kick) when it holds admin permissions in the channel
+**Depends on**: Phase 35, Phase 34 (bot role from ENV-03)
+**Requirements**: QMGR-01, QMGR-02, QMGR-03, QMGR-04, QMGR-05
+**Success Criteria** (what must be TRUE):
+
+1. The LLM can call `delmsg` to delete a specific message by its platform message ID
+2. The LLM can call `ban` with a duration parameter to mute a user (duration 0 lifts the ban)
+3. The LLM can call `kick` to remove a user from the channel
+4. All three tools are invisible to the LLM when the bot does not have admin/moderator role
+5. When the bot gains admin role, the bundled Skill activates and all three tools become available
+   **Plans**: TBD
+
+### Phase 38: Multimodal Image Input
+
+**Goal**: Images sent by users are perceived by the LLM as visual content, not ignored or seen as placeholder text
+**Depends on**: Phase 33 (element formatter for image ID coordination), Phase 34 (enriched entities)
+**Requirements**: IMG-01, IMG-02, IMG-03, IMG-04
+**Success Criteria** (what must be TRUE):
+
+1. When a user sends an image, the LLM receives it as an `ImagePart` in the message content and can describe or reason about it
+2. Images are downloaded and converted to base64 at message-receive time, so CDN URL expiry does not cause failures
+3. The working memory trimmer handles messages whose content is an array of text and image parts without crashing
+4. Users can set `imageMode: "off"` in config to disable image processing entirely, or `"native"` to enable it
+   **Plans**: TBD
+
+### Phase 39: Rich Output Extension
+
+**Goal**: The bot can send replies, at-mentions, and Koishi element XML as part of its responses, not just plain text
+**Depends on**: Phase 34 (platformId in ENV-04 for reply_to references)
+**Requirements**: OUT-01, OUT-02, OUT-03
+**Success Criteria** (what must be TRUE):
+
+1. The LLM can pass a `reply_to` message ID in `send_message` and the bot's response appears as a quoted reply in the chat
+2. The LLM can include Koishi element XML (e.g. `<at id="123"/>`, `<face id="1"/>`) in `send_message` content and it renders correctly in the platform
+3. A `send_message` call with both `reply_to` and element XML content produces a correctly formatted platform message
+   **Plans**: TBD
+
 ## Progress
 
-| Phase | Milestone | Plans Complete | Status   | Completed  |
-| ----- | --------- | -------------- | -------- | ---------- |
-| 1-15  | v1.0      | 29/29          | Complete | 2026-02-21 |
-| 16-19 | v2.0      | 16/16          | Complete | 2026-02-23 |
-| 20-22 | v2.1      | 6/6            | Complete | 2026-02-24 |
-| 23-25 | v2.2      | 8/8            | Complete | 2026-02-25 |
-| 26-28 | v2.3      | 6/6            | Complete | 2026-02-26 |
-| 29-32 | v2.4      | 8/8            | Complete | 2026-02-27 |
+| Phase | Milestone | Plans Complete | Status      | Completed  |
+| ----- | --------- | -------------- | ----------- | ---------- |
+| 1-15  | v1.0      | 29/29          | Complete    | 2026-02-21 |
+| 16-19 | v2.0      | 16/16          | Complete    | 2026-02-23 |
+| 20-22 | v2.1      | 6/6            | Complete    | 2026-02-24 |
+| 23-25 | v2.2      | 8/8            | Complete    | 2026-02-25 |
+| 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
+| 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
+| 33    | v2.5      | 0/TBD          | Not started | -          |
+| 34    | v2.5      | 0/TBD          | Not started | -          |
+| 35    | v2.5      | 0/TBD          | Not started | -          |
+| 36    | v2.5      | 0/TBD          | Not started | -          |
+| 37    | v2.5      | 0/TBD          | Not started | -          |
+| 38    | v2.5      | 0/TBD          | Not started | -          |
+| 39    | v2.5      | 0/TBD          | Not started | -          |

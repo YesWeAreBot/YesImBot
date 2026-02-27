@@ -90,44 +90,44 @@ Explicitly excluded. Documented to prevent scope creep.
 
 Which phases cover which requirements. Updated during roadmap creation.
 
-| Requirement | Phase | Status  |
-| ----------- | ----- | ------- |
-| ELEM-01     | —     | Pending |
-| ELEM-02     | —     | Pending |
-| ELEM-03     | —     | Pending |
-| ELEM-04     | —     | Pending |
-| IMG-01      | —     | Pending |
-| IMG-02      | —     | Pending |
-| IMG-03      | —     | Pending |
-| IMG-04      | —     | Pending |
-| TOOL-01     | —     | Pending |
-| TOOL-02     | —     | Pending |
-| TOOL-03     | —     | Pending |
-| INTR-01     | —     | Pending |
-| INTR-02     | —     | Pending |
-| INTR-03     | —     | Pending |
-| INTR-04     | —     | Pending |
-| INTR-05     | —     | Pending |
-| QMGR-01     | —     | Pending |
-| QMGR-02     | —     | Pending |
-| QMGR-03     | —     | Pending |
-| QMGR-04     | —     | Pending |
-| QMGR-05     | —     | Pending |
-| ENV-01      | —     | Pending |
-| ENV-02      | —     | Pending |
-| ENV-03      | —     | Pending |
-| ENV-04      | —     | Pending |
-| OUT-01      | —     | Pending |
-| OUT-02      | —     | Pending |
-| OUT-03      | —     | Pending |
+| Requirement | Phase    | Status  |
+| ----------- | -------- | ------- |
+| ELEM-01     | Phase 33 | Pending |
+| ELEM-02     | Phase 33 | Pending |
+| ELEM-03     | Phase 33 | Pending |
+| ELEM-04     | Phase 33 | Pending |
+| ENV-01      | Phase 34 | Pending |
+| ENV-02      | Phase 34 | Pending |
+| ENV-03      | Phase 34 | Pending |
+| ENV-04      | Phase 34 | Pending |
+| TOOL-01     | Phase 35 | Pending |
+| TOOL-02     | Phase 35 | Pending |
+| TOOL-03     | Phase 35 | Pending |
+| INTR-01     | Phase 36 | Pending |
+| INTR-02     | Phase 36 | Pending |
+| INTR-03     | Phase 36 | Pending |
+| INTR-04     | Phase 36 | Pending |
+| INTR-05     | Phase 36 | Pending |
+| QMGR-01     | Phase 37 | Pending |
+| QMGR-02     | Phase 37 | Pending |
+| QMGR-03     | Phase 37 | Pending |
+| QMGR-04     | Phase 37 | Pending |
+| QMGR-05     | Phase 37 | Pending |
+| IMG-01      | Phase 38 | Pending |
+| IMG-02      | Phase 38 | Pending |
+| IMG-03      | Phase 38 | Pending |
+| IMG-04      | Phase 38 | Pending |
+| OUT-01      | Phase 39 | Pending |
+| OUT-02      | Phase 39 | Pending |
+| OUT-03      | Phase 39 | Pending |
 
 **Coverage:**
 
 - v2.5 requirements: 28 total
-- Mapped to phases: 0
-- Unmapped: 28 ⚠️
+- Mapped to phases: 28
+- Unmapped: 0 ✓
 
 ---
 
 _Requirements defined: 2026-02-27_
-_Last updated: 2026-02-27 after initial definition_
+_Last updated: 2026-02-27 after roadmap creation_
