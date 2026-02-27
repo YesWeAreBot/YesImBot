@@ -184,9 +184,13 @@ export class OnebotPlugin extends Plugin {
 
   @Action({
     name: "get_forward_msg",
-    description: "Get a forwarded message",
+    description:
+      "Read the contents of a forwarded message bundle. Returns a plain text summary of the messages. " +
+      "Use the forward ID from <forward id=...> tags in the context.",
     parameters: withInnerThoughts({
-      message_id: Schema.string().required().description("Message ID to retrieve"),
+      message_id: Schema.string()
+        .required()
+        .description("Forward message ID from <forward id=...> tag"),
     }),
     activators: [requireSession(), requirePlatform("onebot")],
     hidden: true,
@@ -200,29 +204,44 @@ export class OnebotPlugin extends Plugin {
       const session = ctx.session;
       if (!session) return Failed("No active session");
       if (!messageId) return Failed("message_id is required");
+
       const response: ForwordMessageResponse = await session.onebot._request("get_forward_msg", {
         message_id: messageId,
       });
-      const messages = response.data.messages;
-      return Success(await formatForwardMessage(messages));
+
+      const allMessages = response.data.messages;
+      const MAX_FORWARD_MESSAGES = 10;
+      const messages = allMessages.slice(0, MAX_FORWARD_MESSAGES);
+      const truncated = allMessages.length > MAX_FORWARD_MESSAGES;
+
+      const formatted = this.formatForwardMessages(messages);
+      const suffix = truncated
+        ? `\n\n[Showing ${MAX_FORWARD_MESSAGES} of ${allMessages.length} messages]`
+        : "";
+      return Success(formatted + suffix);
     } catch (e) {
       return Failed(e instanceof Error ? e.message : String(e));
     }
   }
-}
 
-async function formatForwardMessage(messages: Message[]): Promise<string> {
-  try {
-    const formattedMessages = await Promise.all(
-      messages.map(async (msg) => {
-        const senderInfo = `Sender: ${msg.sender.nickname} (ID: ${msg.sender.user_id})\n`;
-        const timeInfo = `Time: ${new Date(msg.time * 1000).toLocaleString()}\n`;
-        const contentInfo = `Content: ${msg.raw_message}\n`;
-        return senderInfo + timeInfo + contentInfo;
-      }),
-    );
-    return formattedMessages.join("\n---\n");
-  } catch (e) {
-    return `Failed to format messages: ${e instanceof Error ? e.message : String(e)}`;
+  private formatForwardMessages(messages: Message[]): string {
+    const formatter = this.ctx["yesimbot.formatter"] as FormatterService | undefined;
+
+    return messages
+      .map((msg) => {
+        const sender = `Sender: ${msg.sender.nickname || msg.sender.card || String(msg.sender.user_id)}`;
+        const time = `Time: ${new Date(msg.time * 1000).toLocaleString()}`;
+
+        let content: string;
+        if (formatter && msg.message?.length) {
+          const elements = msg.message.map((seg) => h(seg.type, seg.data));
+          content = formatter.format(elements);
+        } else {
+          content = msg.raw_message;
+        }
+
+        return `${sender}\n${time}\nContent: ${content}`;
+      })
+      .join("\n\n---\n\n");
   }
 }
