@@ -18,18 +18,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.4 Runtime & Polish — Phase 31: Config UX & i18n (COMPLETE)
+**Current focus:** Phase 32: Persona Customization UX
 
 ## Current Position
 
-Phase: 31 (Config UX & i18n)
-Plan: 02 of 2 — COMPLETE (all plans done)
-Status: Phase 31 complete — core config grouped into 5 sections with i18n, providers wired
-Last activity: 2026-02-26 — Completed 31-01 (Core config UX grouping and i18n)
+Phase: 32 (Persona Customization UX)
+Plan: 01 of 2 — COMPLETE
+Status: Plan 01 complete — persona plugin scaffold with Schema, presets, and i18n
+Last activity: 2026-02-27 — Completed 32-01 (Persona plugin scaffold, Schema, presets & i18n)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ◆
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | Phase 32 ◆
 
-[Phase 29 ✅] → [Phase 30 ✅] → [Phase 31 ✅]
+[Phase 29 ✅] → [Phase 30 ✅] → [Phase 31 ✅] → [Phase 32 ◆]
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 - 30-02: Separated class+namespace+export default pattern for TS2652 compatibility; used explicit BaseProviderConfig type alias instead of Schema parse inference; fixed core ModelService declare module to IModelService
 - 31-02: Removed hardcoded .description() from schema-factory advancedOverride; all provider config descriptions now come from i18n locale files
 - 31-01: Used `as never` cast for locale-aware .description() objects; inlined all field definitions into 5 groups in index.ts for grouping control
+- 32-01: Preset union uses inline .description() per const for bilingual dropdown labels; PersonaFields interface exported from presets.ts for reuse in Plan 02
 
 ### Pending Todos
 
@@ -83,9 +84,10 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 | Phase 30 P02                | 10min                                                                           | 3 tasks    | 4 files  |
 | Phase 31 P02                | 6min                                                                            | 2 tasks    | 10 files |
 | Phase 31 P01                | 7min                                                                            | 2 tasks    | 9 files  |
+| Phase 32 P01                | 3min                                                                            | 2 tasks    | 6 files  |
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: Completed 31-01-PLAN.md (Core config UX grouping and i18n)
+Last session: 2026-02-27
+Stopped at: Completed 32-01-PLAN.md (Persona plugin scaffold, Schema, presets & i18n)
 Resume file: None

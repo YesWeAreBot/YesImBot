@@ -145,5 +145,5 @@
 
 Plans:
 
-- [ ] 32-01-PLAN.md — Persona plugin scaffold, Schema, presets & i18n
+- [x] 32-01-PLAN.md — Persona plugin scaffold, Schema, presets & i18n
 - [ ] 32-02-PLAN.md — Persona injection wiring, text assembly & workspace integration
