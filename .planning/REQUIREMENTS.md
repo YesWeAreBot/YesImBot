@@ -9,8 +9,8 @@
 
 - [x] **ELEM-01**: 用户消息中的 Koishi 元素（at/quote/image/face/forward/audio/video/file）被解析为 AI 可读文本
 - [x] **ELEM-02**: 用户消息内容在注入 prompt 前经过 XML 转义，防止 prompt injection
-- [ ] **ELEM-03**: `session.quote` 引用内容内联展示（发送者 + 内容预览），LLM 可理解回复上下文
-- [ ] **ELEM-04**: `formatObservation()` 中用户内容经过转义处理，消除现有注入漏洞
+- [x] **ELEM-03**: `session.quote` 引用内容内联展示（发送者 + 内容预览），LLM 可理解回复上下文
+- [x] **ELEM-04**: `formatObservation()` 中用户内容经过转义处理，消除现有注入漏洞
 
 ### 多模态图片
 
@@ -94,8 +94,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ----------- | -------- | -------- |
 | ELEM-01     | Phase 33 | Complete |
 | ELEM-02     | Phase 33 | Complete |
-| ELEM-03     | Phase 33 | Pending  |
-| ELEM-04     | Phase 33 | Pending  |
+| ELEM-03     | Phase 33 | Complete |
+| ELEM-04     | Phase 33 | Complete |
 | ENV-01      | Phase 34 | Pending  |
 | ENV-02      | Phase 34 | Pending  |
 | ENV-03      | Phase 34 | Pending  |

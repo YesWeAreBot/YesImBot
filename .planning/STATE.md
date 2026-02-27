@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Multimodal & Rich Interaction
 status: executing
-last_updated: "2026-02-27T12:23:48.000Z"
+last_updated: "2026-02-27T12:29:41.000Z"
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -18,19 +18,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.5 — Phase 33 (Element Formatting & Injection Prevention)
+**Current focus:** v2.5 — Phase 34 (Environment Enrichment)
 
 ## Current Position
 
-Phase: 33 (in progress)
-Plan: 01 complete, 02 pending
-Status: Executing Phase 33 — Plan 01 complete
-Last activity: 2026-02-27 — ElementFormatterService created (Plan 01)
+Phase: 33 (complete)
+Plan: 02 complete (2/2 plans)
+Status: Phase 33 complete — ready for Phase 34
+Last activity: 2026-02-27 — Pipeline integration complete (Plan 02)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ```
-Phase 33 [=====     ] 50%  (1/2 plans)
+Phase 33 [==========] 100% (2/2 plans)
 Phase 34 [          ] 0%
 Phase 35 [          ] 0%
 Phase 36 [          ] 0%
@@ -67,6 +67,7 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - **Plugin pattern** — Interactions and QManager follow the `persona` plugin pattern exactly (declare module, ctx.on dispose hook)
 - **ElementFormatterService uses handler map pattern** — Map<string, ElementHandler> with register() for extensibility, <unsupported> fallback for unknown types
 - **<unverified> threshold = 200 chars** — text-only length; more permissive than dev version's 100 to reduce false positives
+- **Pipeline fix strategy** — format at receive time in EventListener, store safe content in timeline, no escaping at render time in formatObservation()
 - **Search tool uses ctx.http** — no Tavily SDK; configurable endpoint, thin wrapper
 
 ### Pending Todos
@@ -98,10 +99,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | Phase | Plan | Duration | Tasks | Files |
 | ----- | ---- | -------- | ----- | ----- |
 | 33    | 01   | 3min     | 2     | 4     |
+| 33    | 02   | 2min     | 2     | 2     |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 33-01-PLAN.md (ElementFormatterService)
+Stopped at: Completed 33-02-PLAN.md (Pipeline Integration)
 Resume file: None
-Next action: `/gsd:execute-phase 33` (Plan 02)
+Next action: `/gsd:execute-phase 34` (Phase 34 planning)

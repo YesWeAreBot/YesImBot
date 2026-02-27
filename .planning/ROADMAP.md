@@ -86,7 +86,7 @@
 
 ### v2.5 Multimodal & Rich Interaction (Phases 33-39) — ACTIVE
 
-- [ ] **Phase 33: Element Formatting & Injection Prevention** — Parse Koishi message elements into AI-readable text and sanitize user content against prompt injection
+- [x] **Phase 33: Element Formatting & Injection Prevention** — Parse Koishi message elements into AI-readable text and sanitize user content against prompt injection
 - [ ] **Phase 34: Environment Enrichment** — Enrich entity records with userId/username/nickname, expose bot role, and surface platform message IDs
 - [ ] **Phase 35: Skill-Driven Tool Loading** — Hide all non-send_message tools behind Skill activation; add search tool as first Skill-loaded tool
 - [ ] **Phase 36: Interactions Plugin** — New plugin package with social interaction tools (reaction/essence/poke/forward) activated via bundled Skill
@@ -108,12 +108,12 @@
 3. When a user replies to a previous message, the LLM sees the quoted sender name and content preview inline in the observation
 4. `formatObservation()` escapes `<`, `>`, `&`, `"` in all user-provided content before embedding in `<msg>` tags
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
 
-- [ ] 33-01-PLAN.md — Create ElementFormatterService with handler map, quote prefix, and unverified wrapper
-- [ ] 33-02-PLAN.md — Wire formatter into EventListener pipeline and close formatObservation injection vulnerability
+- [x] 33-01-PLAN.md — Create ElementFormatterService with handler map, quote prefix, and unverified wrapper
+- [x] 33-02-PLAN.md — Wire formatter into EventListener pipeline and close formatObservation injection vulnerability
 
 ### Phase 34: Environment Enrichment
 
@@ -203,7 +203,7 @@ Plans:
 | 23-25 | v2.2      | 8/8            | Complete    | 2026-02-25 |
 | 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
-| 33    | 1/2       | In Progress    |             | -          |
+| 33    | v2.5      | 2/2            | Complete    | 2026-02-27 |
 | 34    | v2.5      | 0/TBD          | Not started | -          |
 | 35    | v2.5      | 0/TBD          | Not started | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
