@@ -57,7 +57,7 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
-  static inject = ["database", "yesimbot.prompt"];
+  static inject = ["database", "yesimbot.prompt", "yesimbot.element-formatter"];
 
   public events: EventManager;
   public listener: EventListener;
@@ -261,8 +261,10 @@ export class HorizonService extends Service<HorizonServiceConfig> {
             attrs += ` replyTo="${replyShortId}"`;
           }
         }
+        // obs.content is pre-formatted by ElementFormatterService — safe to embed directly
         return `<msg ${attrs}>${obs.content}</msg>`;
       }
+      // obs.content is pre-formatted — safe for direct interpolation
       // Fallback: no channelKey — legacy [HH:MM] format
       if (selfId && obs.sender.id === selfId) {
         return `[${hhmm}] [Bot] ${obs.sender.name}: ${obs.content}`;
