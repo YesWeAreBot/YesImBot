@@ -87,7 +87,7 @@
 ### v2.5 Multimodal & Rich Interaction (Phases 33-39) — ACTIVE
 
 - [x] **Phase 33: Element Formatting & Injection Prevention** — Parse Koishi message elements into AI-readable text and sanitize user content against prompt injection
-- [ ] **Phase 34: Environment Enrichment** — Enrich entity records with userId/username/nickname, expose bot role, and surface platform message IDs
+- [ ] **Phase 34: Environment Enrichment** (2 plans) — Enrich entity records with userId/username/nickname, expose bot role, and surface platform message IDs
 - [ ] **Phase 35: Skill-Driven Tool Loading** — Hide all non-send_message tools behind Skill activation; add search tool as first Skill-loaded tool
 - [ ] **Phase 36: Interactions Plugin** — New plugin package with social interaction tools (reaction/essence/poke/forward) activated via bundled Skill
 - [ ] **Phase 37: QManager Plugin** — New plugin package with moderation tools (delmsg/ban/kick) gated by bot admin role activator
@@ -126,7 +126,13 @@ Plans:
 2. The LLM can distinguish between a user's account name and their group nickname when they differ
 3. The LLM can determine whether it has admin/moderator permissions in the current channel
 4. The `<msg>` tag in working memory exposes a `platformId` attribute so tools like `delmsg` can reference the real message ID
-   **Plans**: TBD
+
+**Plans:** 2 plans
+
+Plans:
+
+- [ ] 34-01-PLAN.md — Entity data model enrichment with userId/username/nickname and listener updates
+- [ ] 34-02-PLAN.md — Member tag rendering, bot role injection, and reverse short-ID lookup
 
 ### Phase 35: Skill-Driven Tool Loading
 
@@ -204,7 +210,7 @@ Plans:
 | 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
 | 33    | v2.5      | Complete       | 2026-02-27  | 2026-02-27 |
-| 34    | v2.5      | 0/TBD          | Not started | -          |
+| 34    | v2.5      | 0/2            | Planned     | -          |
 | 35    | v2.5      | 0/TBD          | Not started | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
 | 37    | v2.5      | 0/TBD          | Not started | -          |
