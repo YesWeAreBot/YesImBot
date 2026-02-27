@@ -88,7 +88,7 @@
 
 - [x] **Phase 33: Element Formatting & Injection Prevention** — Parse Koishi message elements into AI-readable text and sanitize user content against prompt injection
 - [x] **Phase 34: Environment Enrichment** (2 plans) — Enrich entity records with userId/username/nickname, expose bot role, and surface platform message IDs (completed 2026-02-27)
-- [ ] **Phase 35: Skill-Driven Tool Loading** — Hide all non-send_message tools behind Skill activation; add search tool as first Skill-loaded tool
+- [x] **Phase 35: Skill-Driven Tool Loading** — Hide all non-send_message tools behind Skill activation; add search tool as first Skill-loaded tool (completed 2026-02-27)
 - [ ] **Phase 36: Interactions Plugin** — New plugin package with social interaction tools (reaction/essence/poke/forward) activated via bundled Skill
 - [ ] **Phase 37: QManager Plugin** — New plugin package with moderation tools (delmsg/ban/kick) gated by bot admin role activator
 - [ ] **Phase 38: Multimodal Image Input** — Extract images from messages, download eagerly to base64, pass as ImagePart to LLM with configurable mode
@@ -211,7 +211,7 @@ Plans:
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
 | 33    | v2.5      | Complete       | 2026-02-27  | 2026-02-27 |
 | 34    | 2/2       | Complete       | 2026-02-27  | -          |
-| 35    | 1/2       | In Progress    |             | -          |
+| 35    | 2/2       | Complete       | 2026-02-27  | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
 | 37    | v2.5      | 0/TBD          | Not started | -          |
 | 38    | v2.5      | 0/TBD          | Not started | -          |

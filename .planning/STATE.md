@@ -22,17 +22,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 35 (in progress)
-Plan: 01 complete (1/2 plans)
-Status: Phase 35 Plan 01 complete — hidden tool infrastructure landed
-Last activity: 2026-02-27 — Hidden flag added to decorators, all builtins marked hidden (Plan 01)
+Phase: 35 (complete)
+Plan: 02 complete (2/2 plans)
+Status: Phase 35 complete — hidden tool infrastructure + search tool with Skill
+Last activity: 2026-02-27 — Search tool with Tavily backend and search Skill (Plan 02)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ```
 Phase 33 [==========] 100% (2/2 plans)
 Phase 34 [==========] 100% (2/2 plans)
-Phase 35 [=====     ] 50% (1/2 plans)
+Phase 35 [==========] 100% (2/2 plans)
 Phase 36 [          ] 0%
 Phase 37 [          ] 0%
 Phase 38 [          ] 0%
@@ -72,6 +72,7 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - **Bot role cache uses silent degradation** — getGuildMember failure caches null for TTL to avoid repeated failed API calls
 - **classifyRole two-tier system** — owner/admin/administrator/moderator mapped to "owner" | "admin"; regular members get no role attribute
 - **Reverse short-ID map synced eviction** — forward and reverse maps evicted in lockstep to prevent stale lookups
+- **Search tool conditional registration** — SearchPlugin only registered when searchApiKey is provided; no tool exists if unconfigured
 - **Entity ID uses session.userId** — stable platform account ID instead of session.author.id; nickname omitted when identical to username to reduce token noise
 
 ### Pending Todos
@@ -107,10 +108,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 34    | 01   | 2min     | 2     | 3     |
 | 34    | 02   | 3min     | 2     | 2     |
 | 35    | 01   | 3min     | 2     | 5     |
+| 35    | 02   | 4min     | 2     | 9     |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 35-01-PLAN.md (Hidden Tool Infrastructure)
+Stopped at: Completed 35-02-PLAN.md (Search Tool & Skill)
 Resume file: None
-Next action: `/gsd:execute-phase 35` continue with 35-02-PLAN.md
+Next action: `/gsd:execute-phase 36` or `/gsd:execute-phase 37` (parallel wave)
