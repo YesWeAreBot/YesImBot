@@ -17,6 +17,9 @@
     },
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc --noEmit && pkgroll --sourcemap",
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
@@ -31,7 +34,8 @@
     "gray-matter": "^4.0.3",
     "jsonrepair": "^3.13.2",
     "mustache": "^4.2.0",
-    "p-queue": "^5.0.0"
+    "p-queue": "^5.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/mustache": "^4.2.6",

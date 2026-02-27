@@ -16,6 +16,9 @@
     },
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc --noEmit && pkgroll",
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
@@ -25,7 +28,8 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.20",
-    "@yesimbot/shared-model": "workspace:*"
+    "@yesimbot/shared-model": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "koishi": "^4.18.3"
