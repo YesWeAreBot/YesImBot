@@ -36,7 +36,7 @@ export class EventListener {
           timestamp: new Date(session.timestamp),
           payload: {
             messageId: session.messageId ?? "",
-            senderId: session.author?.id ?? session.userId ?? "",
+            senderId: session.userId ?? session.author?.id ?? "",
             senderName: session.author?.nick || session.author?.name || session.userId || "",
             content: formattedContent,
           },
@@ -103,7 +103,7 @@ export class EventListener {
       timestamp: new Date(session.timestamp),
       data: {
         messageId: session.messageId ?? "",
-        senderId: session.author?.id ?? session.userId ?? "",
+        senderId: session.userId ?? session.author?.id ?? "",
         senderName: session.author?.nick || session.author?.name || session.userId || "",
         content: formattedContent,
         replyTo: session.quote?.id,
@@ -131,7 +131,11 @@ export class EventListener {
 
   private async updateMemberInfo(session: Session, parentId: string): Promise<void> {
     if (!session.author) return;
-    const id = `${session.platform}:${session.author.id}@${parentId}`;
+    const userId = session.userId;
+    const username = session.event.user?.name ?? userId;
+    const nickname = session.author.nick ?? undefined;
+
+    const id = `${session.platform}:${userId}@${parentId}`;
     const now = Date.now();
     const last = this.lastEntityUpdate.get(id);
     if (last && now - last < 60000) return;
@@ -141,7 +145,10 @@ export class EventListener {
         {
           id,
           type: "member",
-          name: session.author.nick || session.author.name || "",
+          name: nickname ?? username,
+          userId,
+          username,
+          nickname: nickname !== username ? nickname : undefined,
           parentId,
           attributes: {
             roles: session.author.roles ?? [],
