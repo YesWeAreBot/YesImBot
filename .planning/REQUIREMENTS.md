@@ -21,9 +21,9 @@
 
 ### Skill 驱动工具
 
-- [ ] **TOOL-01**: 除 `send_message` 外的内置工具默认标记为 `hidden: true`，仅通过 Skill 暴露
+- [x] **TOOL-01**: 除 `send_message` 外的内置工具默认标记为 `hidden: true`，仅通过 Skill 暴露
 - [ ] **TOOL-02**: 搜索工具以 Skill 工具形式提供，通过 `ctx.http` 调用可配置搜索 API endpoint
-- [ ] **TOOL-03**: Skill 的 `effects.tools.include` 能正确取消 hidden 标记，使工具对 LLM 可见
+- [x] **TOOL-03**: Skill 的 `effects.tools.include` 能正确取消 hidden 标记，使工具对 LLM 可见
 
 ### Interactions 插件
 
@@ -100,9 +100,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENV-02      | Phase 34 | Complete |
 | ENV-03      | Phase 34 | Complete |
 | ENV-04      | Phase 34 | Complete |
-| TOOL-01     | Phase 35 | Pending  |
+| TOOL-01     | Phase 35 | Complete |
 | TOOL-02     | Phase 35 | Pending  |
-| TOOL-03     | Phase 35 | Pending  |
+| TOOL-03     | Phase 35 | Complete |
 | INTR-01     | Phase 36 | Pending  |
 | INTR-02     | Phase 36 | Pending  |
 | INTR-03     | Phase 36 | Pending  |

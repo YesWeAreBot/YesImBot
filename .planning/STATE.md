@@ -18,21 +18,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.5 — Phase 34 (Environment Enrichment)
+**Current focus:** v2.5 — Phase 35 (Skill-Driven Tool Loading)
 
 ## Current Position
 
-Phase: 34 (complete)
-Plan: 02 complete (2/2 plans)
-Status: Phase 34 complete — ready for Phase 35
-Last activity: 2026-02-27 — Member tag rendering & reverse short-ID complete (Plan 02)
+Phase: 35 (in progress)
+Plan: 01 complete (1/2 plans)
+Status: Phase 35 Plan 01 complete — hidden tool infrastructure landed
+Last activity: 2026-02-27 — Hidden flag added to decorators, all builtins marked hidden (Plan 01)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ```
 Phase 33 [==========] 100% (2/2 plans)
 Phase 34 [==========] 100% (2/2 plans)
-Phase 35 [          ] 0%
+Phase 35 [=====     ] 50% (1/2 plans)
 Phase 36 [          ] 0%
 Phase 37 [          ] 0%
 Phase 38 [          ] 0%
@@ -106,10 +106,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 33    | 02   | 2min     | 2     | 2     |
 | 34    | 01   | 2min     | 2     | 3     |
 | 34    | 02   | 3min     | 2     | 2     |
+| 35    | 01   | 3min     | 2     | 5     |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 34-02-PLAN.md (Member Tag Rendering & Reverse Short-ID)
+Stopped at: Completed 35-01-PLAN.md (Hidden Tool Infrastructure)
 Resume file: None
-Next action: `/gsd:execute-phase 35` (Phase 35 Skill Visibility)
+Next action: `/gsd:execute-phase 35` continue with 35-02-PLAN.md

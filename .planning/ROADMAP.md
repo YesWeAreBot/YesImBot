@@ -211,7 +211,7 @@ Plans:
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
 | 33    | v2.5      | Complete       | 2026-02-27  | 2026-02-27 |
 | 34    | 2/2       | Complete       | 2026-02-27  | -          |
-| 35    | v2.5      | 0/TBD          | Not started | -          |
+| 35    | 1/2       | In Progress    |             | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
 | 37    | v2.5      | 0/TBD          | Not started | -          |
 | 38    | v2.5      | 0/TBD          | Not started | -          |
