@@ -27,10 +27,10 @@
 
 ### Interactions 插件
 
-- [ ] **INTR-01**: `reaction_create` 工具可对消息添加 emoji 表态（OneBot 平台）
-- [ ] **INTR-02**: `essence_create` / `essence_delete` 工具可设置/取消精华消息（OneBot 平台）
-- [ ] **INTR-03**: `send_poke` 工具可发送戳一戳（OneBot 平台）
-- [ ] **INTR-04**: `get_forward_msg` 工具可获取合并转发消息内容（OneBot 平台）
+- [x] **INTR-01**: `reaction_create` 工具可对消息添加 emoji 表态（OneBot 平台）
+- [x] **INTR-02**: `essence_create` / `essence_delete` 工具可设置/取消精华消息（OneBot 平台）
+- [x] **INTR-03**: `send_poke` 工具可发送戳一戳（OneBot 平台）
+- [x] **INTR-04**: `get_forward_msg` 工具可获取合并转发消息内容（OneBot 平台）
 - [x] **INTR-05**: 插件自带 Skill 定义，在群聊场景自动激活社交互动工具
 
 ### QManager 插件
@@ -103,10 +103,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TOOL-01     | Phase 35 | Complete |
 | TOOL-02     | Phase 35 | Complete |
 | TOOL-03     | Phase 35 | Complete |
-| INTR-01     | Phase 36 | Pending  |
-| INTR-02     | Phase 36 | Pending  |
-| INTR-03     | Phase 36 | Pending  |
-| INTR-04     | Phase 36 | Pending  |
+| INTR-01     | Phase 36 | Complete |
+| INTR-02     | Phase 36 | Complete |
+| INTR-03     | Phase 36 | Complete |
+| INTR-04     | Phase 36 | Complete |
 | INTR-05     | Phase 36 | Complete |
 | QMGR-01     | Phase 37 | Pending  |
 | QMGR-02     | Phase 37 | Pending  |
