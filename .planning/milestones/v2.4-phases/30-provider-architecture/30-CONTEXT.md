@@ -14,6 +14,7 @@ Extract AbstractProvider abstraction to unify provider plugins. All three provid
 ## Implementation Decisions
 
 ### Abstraction Boundary
+
 - `AbstractProvider` is an abstract class in `shared-model`, NOT a Koishi Service (Service only allows single registration; providers use `reusable = true` for multiple instances)
 - Provider plugins `export default class` extending AbstractProvider — the class itself IS a valid Koishi class-form plugin (`constructor(ctx, config)`)
 - No `apply()` wrapper needed; Koishi loads class plugins directly
@@ -23,6 +24,7 @@ Extract AbstractProvider abstraction to unify provider plugins. All three provid
 - Constructor auto-registers with `ctx['yesimbot.model'].registerProvider(this)` — subclasses don't handle registration
 
 ### Schema Factory Design
+
 - `createProviderSchema()` factory function generates the complete common Schema (id, apiKey, baseURL, models[], defaultParams)
 - Parameterized: accepts `{ extra, defaults, defaultModels }` — subclass passes provider-specific fields, default values, and default model list
 - Anthropic passes `extra: Schema.object({ projectId, sessionId })` to add its unique fields
@@ -30,11 +32,13 @@ Extract AbstractProvider abstraction to unify provider plugins. All three provid
 - Models stay as array form `[{id, name, ...}]` for Koishi Console table display compatibility
 
 ### Provider Specialization
+
 - `createClient()` is the sole extension point — subclasses handle all SDK initialization inside it (including Anthropic's custom fetch interceptor for user_id injection)
 - No additional lifecycle hooks (beforeRequest/afterResponse etc.) — not needed
 - Provider-specific helper methods (Anthropic's `buildUserId`, `isJsonContentType`, `parseBody`) stay inside the subclass, not promoted to AbstractProvider
 
 ### Config Structure Redesign
+
 - No backward compatibility needed (no published version yet) — free to redesign completely
 - Delete `ModelDefaultParams` interface from shared-model; use ai-sdk's `CallSettings` directly (SDK handles aliases internally)
 - Global `defaultParams` at provider level (not per-model) to keep models array concise
@@ -42,10 +46,12 @@ Extract AbstractProvider abstraction to unify provider plugins. All three provid
 - JSON parse failure: log warning, don't throw, don't apply the override — graceful degradation
 
 ### Migration Strategy
+
 - One-shot migration: all three providers converted to AbstractProvider simultaneously in one pass
 - Each provider should shrink from ~113 lines to ~30-40 lines
 
 ### Claude's Discretion
+
 - Exact `createProviderSchema()` parameter interface shape
 - How advanced JSON override merges with base config
 - Internal organization of AbstractProvider methods
@@ -71,5 +77,5 @@ None — discussion stayed within phase scope
 
 ---
 
-*Phase: 30-provider-architecture*
-*Context gathered: 2026-02-26*
+_Phase: 30-provider-architecture_
+_Context gathered: 2026-02-26_

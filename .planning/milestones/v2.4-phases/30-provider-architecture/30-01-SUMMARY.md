@@ -57,6 +57,7 @@ completed: 2026-02-26
 - **Files modified:** 6
 
 ## Accomplishments
+
 - Deleted ModelDefaultParams interface; IModelProvider now uses Partial<CallSettings> from ai-sdk
 - Created AbstractProvider abstract class with auto-registration, getModel, listModels, getDefaultParams, and advancedOverride merge
 - Created createProviderSchema() factory with parameterized defaults and Schema.intersect for extra fields
@@ -72,6 +73,7 @@ Each task was committed atomically:
 3. **Task 3: Update ModelService to use CallSettings** - `e8d5b99` (refactor)
 
 ## Files Created/Modified
+
 - `packages/shared-model/src/providers/abstract-provider.ts` - AbstractProvider abstract class, BaseProviderConfig interface
 - `packages/shared-model/src/providers/schema-factory.ts` - createProviderSchema() factory, ProviderSchemaOptions, DefaultModelEntry
 - `packages/shared-model/src/types/model.ts` - Deleted ModelDefaultParams, updated IModelProvider to use CallSettings
@@ -80,6 +82,7 @@ Each task was committed atomically:
 - `core/src/services/model/service.ts` - Removed ModelDefaultParams import, updated getModel() return type
 
 ## Decisions Made
+
 - Used `as never` cast for Schema.array().default() — Koishi Schema expects the fully-resolved type but callers pass partial ModelInfo entries; `as never` avoids explicit `any` per project rules
 - Exported `DefaultModelEntry` type so Plan 02 callers can use the correct type for defaultModels arrays
 - advancedOverride merges into resolvedDefaultParams at construction time; per-call params always win via ModelService's spread pattern
@@ -89,6 +92,7 @@ Each task was committed atomically:
 ### Auto-fixed Issues
 
 **1. [Rule 1 - Bug] Fixed Schema.array().default() type mismatch in schema-factory.ts**
+
 - **Found during:** Task 2 (Create AbstractProvider and schema factory)
 - **Issue:** `ModelInfo[]` has optional fields (`tool_call?`, `reasoning?`, `modalities?`) but Koishi Schema `.default()` expects the fully-resolved type with all fields required
 - **Fix:** Added `DefaultModelEntry` type alias and used `as never` cast at the `.default()` call site to satisfy the Schema API boundary
@@ -102,19 +106,23 @@ Each task was committed atomically:
 **Impact on plan:** Type-level fix only, no behavioral change. Required for compilation.
 
 ## Issues Encountered
+
 None
 
 ## User Setup Required
+
 None - no external service configuration required.
 
 ## Next Phase Readiness
+
 - AbstractProvider and createProviderSchema() are ready for Plan 02 to migrate all three providers (OpenAI, DeepSeek, Anthropic)
 - Provider packages will temporarily fail typecheck until Plan 02 migrates them off ModelDefaultParams
 - shared-model and core both typecheck cleanly
 
 ---
-*Phase: 30-provider-architecture*
-*Completed: 2026-02-26*
+
+_Phase: 30-provider-architecture_
+_Completed: 2026-02-26_
 
 ## Self-Check: PASSED
 

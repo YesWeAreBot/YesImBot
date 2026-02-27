@@ -8,6 +8,7 @@
 **Git range:** feat(01-01) → feat(15-02)
 
 **Key accomplishments:**
+
 1. Monorepo 基础架构 — shared-model 包 + core 插件 + provider 插件体系
 2. ModelService 模型服务 — Provider 注册、PQueue 并发控制、fallback 链、流式/非流式双路径
 3. Horizon 上下文系统 — Environment/Entity/Event 三元组 + Timeline 存储 + Observation 生成
@@ -16,7 +17,6 @@
 6. 动态 Schema 联动 — Provider 注册模型自动出现在配置下拉列表，热插拔刷新
 
 ---
-
 
 ## v2.0 Context-Aware Architecture (Shipped: 2026-02-23)
 
@@ -27,6 +27,7 @@
 **Git range:** 826040e → f7a2c29
 
 **Key accomplishments:**
+
 1. PromptService 重设计 — 命名注入点 + Mustache partial 组合 + ctx 生命周期自动清理
 2. HorizonView 模块化 — 结构化标签分区渲染，Percept 职责清晰分层（agent/horizon/plugin）
 3. Tool Call 改造 — JSON 文本输出替代原生 tool_call，手动心跳循环，渐进式工作记忆裁剪
@@ -35,13 +36,13 @@
 6. 端到端验证 — 3 个示例 Skill 验证完整 Trait→Skill→Prompt 管线
 
 **Tech Debt (4 items):**
+
 - TraitAnalyzerConfig exported as value instead of type
 - SkillEffect.promptInjections.point always hardcoded to "extra"
 - trait-bound lifecycle undifferentiated from per-turn at runtime
 - 3 E2E scenarios require live Koishi session for human verification
 
 ---
-
 
 ## v2.1 Polish & Release Prep (Shipped: 2026-02-24)
 
@@ -52,6 +53,7 @@
 **Git range:** 8ee3ac1 → 6b039f5
 
 **Key accomplishments:**
+
 1. 注入点合并 6→4 — soul/instructions/memory/extra，编译器全局强制 + 运行时 guard
 2. render() 代码内生成 XML 标签 — 删除 11 个废弃模板/默认文件，消除 Mustache 间接层
 3. 固定角色文件系统 — SOUL.md/AGENTS.md/TOOLS.md 替代 legacy defaults，Mustache 模板变量支持
@@ -60,19 +62,20 @@
 6. 三种 Skill 生命周期策略 — per-turn / sticky / trait-bound，运行时可区分
 
 **v2.0 Tech Debt Resolved (3/4):**
+
 - ✓ TraitAnalyzerConfig → type-only export
 - ✓ Skill injection point → configurable (was hardcoded "extra")
 - ✓ trait-bound lifecycle → runtime distinguishable from per-turn
 - ○ 3 E2E scenarios still require live Koishi session (deferred)
 
 **Known Gaps:**
+
 - TEST-01: vitest 测试基础设施搭建 (Phase 23 未启动)
 - TEST-02: MemoryService 单元测试 (Phase 23 未启动)
 - TEST-03: SkillRegistry 单元测试 (Phase 23 未启动)
 - TEST-04: PromptService 单元测试 (Phase 23 未启动)
 
 ---
-
 
 ## v2.2 Runtime Optimization & Observability (Shipped: 2026-02-25)
 
@@ -83,6 +86,7 @@
 **Git range:** e3347a8 → 070306c
 
 **Key accomplishments:**
+
 1. Snippet 变量渲染修复 — formatHorizonText 构建完整嵌套 scope，{{date.now}} 等变量正确渲染
 2. JSON Parser 测试套件 — 27 个 vitest 用例移植自 v3，覆盖完美 JSON、代码块、脏数据等场景
 3. DM 自适应聚合 + 速率限制 — TokenBucket per-user 限流，directBoost 私聊高概率回复，3-8s 聚合窗口
@@ -91,11 +95,11 @@
 6. Anthropic 系统提示词缓存 — stable/dynamic 拆分，SystemModelMessage[] + cache_control ephemeral
 
 **Tech Debt (2 items — trivial):**
+
 - REQUIREMENTS.md OBS-01/02/03 复选框已在归档前修复
 - formatHorizonText deferred-judgment 路径有意省略 percept（已记录的设计决策）
 
 ---
-
 
 ## v2.3 Architecture Cleanup (Shipped: 2026-02-26)
 
@@ -106,6 +110,7 @@
 **Git range:** c679c73 → 02a34e0
 
 **Key accomplishments:**
+
 1. 删除 MemoryService 模块 — snippet 注册迁移到 RoleService，清理全部引用
 2. 清理 PromptService — 移除 memory-block partial、"memory" 注入点、3 个废弃模板文件
 3. 删除 Scope 接口 — 引入 ChannelKey 类型别名（platform + channelId 裸字段）
@@ -114,7 +119,29 @@
 6. 迁移 timeline DB schema — scope JSON 列替换为独立的 platform + channelId 列
 
 **Tech Debt (1 item — trivial):**
+
 - Turbo cache staleness required `--force` build during Phase 27 Plan 03 (infra, not code)
 
 ---
 
+## v2.4 Runtime & Polish (Shipped: 2026-02-27)
+
+**Phases completed:** 4 phases (29-32), 8 plans, ~18 tasks
+**Timeline:** 2 days (2026-02-26 → 2026-02-27)
+**Commits:** 44
+**Files modified:** 11 code files (+348 / -17)
+**Git range:** feat(29-01) → docs(phase-32)
+
+**Key accomplishments:**
+
+1. 消息队列积压合并 — pending 单槽改为数组队列，burst 消息合并一次性响应
+2. 沉默渲染修复 + working memory 裁剪 — 空 Bot Action 过滤 + initialContextCharBudget 限制
+3. AbstractProvider 抽象基类 — 三个 provider 消除 36-61% 重复代码
+4. 配置分组 + i18n — 5 组分组 + 32 个字段中英文描述 + provider 国际化
+5. Persona 插件 — 表单化人设自定义，preset 下拉 + 字段覆盖 + soul 注入点集成
+
+### Known Gaps
+
+- REQ-04 模型组与负载均衡：Should Have 优先级，推迟到下个里程碑
+
+---

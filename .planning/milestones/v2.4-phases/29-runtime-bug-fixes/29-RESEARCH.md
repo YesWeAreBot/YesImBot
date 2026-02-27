@@ -17,11 +17,13 @@ REQ-03 is an off-by-one in `trimMessages`: `messages[0]` (the initial user conte
 **Primary recommendation:** Fix all three in a single wave of small, targeted edits. Write unit tests for each fix before implementing (TDD). No architectural changes needed.
 
 <user_constraints>
+
 ## User Constraints (from CONTEXT.md)
 
 ### Locked Decisions
 
 #### 消息队列合并策略（REQ-01）
+
 - pending 从单槽 Map 改为数组队列存储
 - drain 时全部拼接，按时间顺序组织
 - trigger 语义扩展：不再仅限于 status=new 的消息，而是"时间段内的消息集合"，起始点为第一条积压消息
@@ -31,6 +33,7 @@ REQ-03 is an off-by-one in `trimMessages`: `messages[0]` (the initial user conte
 - drain 后的合并请求强制回复，跳过意愿值判定（用户已等了一轮响应时间）
 
 #### 沉默判定与过滤逻辑（REQ-02）
+
 - 不是"空 actions 不记录"，而是改变渲染方式
 - timeline 照常记录完整的原始 response，保持 agent.response 结构不变
 - 运行时渲染/展示时判断：actions 为空时渲染为"选择沉默"标记（如 "you skipped this round"），而非空的 [Bot Action]
@@ -38,50 +41,58 @@ REQ-03 is an off-by-one in `trimMessages`: `messages[0]` (the initial user conte
 - 区分「LLM 主动沉默」和「LLM 出错无输出」：主动沉默正常记录沉默标记，出错时记录错误标记到 timeline
 
 #### 初始上下文裁剪预算（REQ-03）
+
 - messages[0]（初始用户上下文）受独立的固定 token 上限约束
 - 该上限作为可配置参数暴露给用户
 - 超出时从开头截断，保留末尾（最近信息）
 - 按消息边界截断，保持语义完整性（不在句子中间断开）
 
 ### Claude's Discretion
+
 - 积压队列的具体数据结构选择（数组 vs 其他队列实现）
 - 沉默标记的具体文本内容和格式
 - 初始上下文 token 上限的默认值
 - 错误标记的具体展示方式
 
 ### Deferred Ideas (OUT OF SCOPE)
+
 None — discussion stayed within phase scope
 </user_constraints>
 
 <phase_requirements>
+
 ## Phase Requirements
 
-| ID | Description | Research Support |
-|----|-------------|-----------------|
-| REQ-01 | pending 单槽 Map 导致积压消息丢失且逐条触发响应。改为数组存储，处理完成后合并积压消息一次性响应。 | `this.pending` field in `service.ts` is confirmed as `Map<string, LoopPayload>` (single slot). `enqueue()` drain logic reads one slot. Fix: change to `Map<string, LoopPayload[]>`, merge on drain. |
-| REQ-02 | LLM 选择沉默时 `recordAgentResponse()` 无条件调用，写入空 `[Bot Action]` 到 timeline。 | `loop.ts` line 316 calls `recordAgentResponse` unconditionally. `formatObservation` in `service.ts` line 281 renders empty-actions as `[Bot Action]: `. Fix: guard call + fix renderer. |
-| REQ-03 | `trimMessages()` 对 `messages[0]` 永远不裁剪，`totalRounds = Math.floor((1-1)/2) = 0`，导致 working memory 无限增长。 | `trimmer.ts` confirmed: eligible indices start at `1`, `messages[0]` never touched. Fix: add independent head-trim pass for `messages[0]` with configurable char budget. |
+| ID     | Description                                                                                                           | Research Support                                                                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| REQ-01 | pending 单槽 Map 导致积压消息丢失且逐条触发响应。改为数组存储，处理完成后合并积压消息一次性响应。                     | `this.pending` field in `service.ts` is confirmed as `Map<string, LoopPayload>` (single slot). `enqueue()` drain logic reads one slot. Fix: change to `Map<string, LoopPayload[]>`, merge on drain. |
+| REQ-02 | LLM 选择沉默时 `recordAgentResponse()` 无条件调用，写入空 `[Bot Action]` 到 timeline。                                | `loop.ts` line 316 calls `recordAgentResponse` unconditionally. `formatObservation` in `service.ts` line 281 renders empty-actions as `[Bot Action]: `. Fix: guard call + fix renderer.             |
+| REQ-03 | `trimMessages()` 对 `messages[0]` 永远不裁剪，`totalRounds = Math.floor((1-1)/2) = 0`，导致 working memory 无限增长。 | `trimmer.ts` confirmed: eligible indices start at `1`, `messages[0]` never touched. Fix: add independent head-trim pass for `messages[0]` with configurable char budget.                            |
+
 </phase_requirements>
 
 ## Standard Stack
 
 ### Core
-| Library | Version | Purpose | Why Standard |
-|---------|---------|---------|--------------|
-| TypeScript | (project) | Type safety | Project-wide standard |
-| Koishi 4.x | (project) | Plugin framework, Service base class | All services extend `Service` |
-| Vitest | (project) | Unit testing | Already configured in `core/vitest.config.ts` |
+
+| Library    | Version   | Purpose                              | Why Standard                                  |
+| ---------- | --------- | ------------------------------------ | --------------------------------------------- |
+| TypeScript | (project) | Type safety                          | Project-wide standard                         |
+| Koishi 4.x | (project) | Plugin framework, Service base class | All services extend `Service`                 |
+| Vitest     | (project) | Unit testing                         | Already configured in `core/vitest.config.ts` |
 
 ### Supporting
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| None new | — | — | All fixes use existing code only |
+
+| Library  | Version | Purpose | When to Use                      |
+| -------- | ------- | ------- | -------------------------------- |
+| None new | —       | —       | All fixes use existing code only |
 
 **Installation:** No new packages required.
 
 ## Architecture Patterns
 
 ### Relevant Project Structure
+
 ```
 core/src/services/agent/
 ├── service.ts       # REQ-01: pending queue, enqueue(), handleEvent()
@@ -99,6 +110,7 @@ core/src/services/horizon/
 **What:** Replace `Map<string, LoopPayload>` with `Map<string, LoopPayload[]>`. On drain, merge all queued payloads into a single percept with a combined trigger context.
 
 **Current code (service.ts lines 135, 237-239, 373-380):**
+
 ```typescript
 // CURRENT — single slot, overwrites on burst
 private pending = new Map<string, LoopPayload>();
@@ -119,6 +131,7 @@ if (next) {
 ```
 
 **Fixed pattern:**
+
 ```typescript
 // FIXED — array queue, accumulates all backlogged payloads
 private pending = new Map<string, LoopPayload[]>();
@@ -150,6 +163,7 @@ if (backlog?.length) {
 **What:** Two-part fix. (1) Guard in `loop.ts` before `recordAgentResponse`. (2) Renderer fix in `horizon/service.ts` `formatObservation`.
 
 **Current code (loop.ts line 315-326):**
+
 ```typescript
 // CURRENT — unconditional, records even when actions is empty
 await horizon.events.recordAgentResponse({
@@ -161,6 +175,7 @@ await horizon.events.recordAgentResponse({
 ```
 
 **Fixed guard (loop.ts):**
+
 ```typescript
 // FIXED — only record if there are actions (LLM chose to act)
 // Empty actions = LLM chose silence; still record but mark it
@@ -194,6 +209,7 @@ The exact silence marker text is Claude's discretion. A concise option: `"(chose
 **What:** Add a new `initialContextCharBudget` field to `TrimConfig`. Before the existing trim logic, apply a separate head-trim to `messages[0]` if it exceeds the budget.
 
 **Current code (trimmer.ts line 37-44):**
+
 ```typescript
 export function trimMessages(messages: LoopMessage[], config: TrimConfig): void {
   if (totalChars(messages) <= config.charBudget) return;
@@ -205,13 +221,14 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
 ```
 
 **Fixed pattern:**
+
 ```typescript
 export interface TrimConfig {
   charBudget: number;
   keepLastRounds: number;
   softTrimHead: number;
   softTrimTail: number;
-  initialContextCharBudget?: number;  // NEW: budget for messages[0]
+  initialContextCharBudget?: number; // NEW: budget for messages[0]
 }
 
 export function trimMessages(messages: LoopMessage[], config: TrimConfig): void {
@@ -223,9 +240,10 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
       // Trim to message boundary (newline) to preserve semantic integrity
       const excess = m0.content.length - config.initialContextCharBudget;
       const cutPoint = m0.content.indexOf("\n", excess);
-      m0.content = cutPoint !== -1
-        ? "...(trimmed)\n" + m0.content.slice(cutPoint + 1)
-        : "...(trimmed)\n" + m0.content.slice(excess);
+      m0.content =
+        cutPoint !== -1
+          ? "...(trimmed)\n" + m0.content.slice(cutPoint + 1)
+          : "...(trimmed)\n" + m0.content.slice(excess);
     }
   }
 
@@ -245,37 +263,42 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
 
 ## Don't Hand-Roll
 
-| Problem | Don't Build | Use Instead | Why |
-|---------|-------------|-------------|-----|
-| Queue data structure | Custom linked list | Plain `LoopPayload[]` array | Array push/splice is sufficient; no performance concern at chat scale |
-| Token counting | tiktoken integration | Character budget (existing pattern) | Project already uses `charBudget` in chars, not tokens — stay consistent |
+| Problem              | Don't Build          | Use Instead                         | Why                                                                      |
+| -------------------- | -------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| Queue data structure | Custom linked list   | Plain `LoopPayload[]` array         | Array push/splice is sufficient; no performance concern at chat scale    |
+| Token counting       | tiktoken integration | Character budget (existing pattern) | Project already uses `charBudget` in chars, not tokens — stay consistent |
 
 **Key insight:** All three fixes are 5-20 line changes. Resist the urge to refactor surrounding code.
 
 ## Common Pitfalls
 
 ### Pitfall 1: DM path also uses `this.pending`
+
 **What goes wrong:** Fixing only the group path in `handleEvent` leaves the DM path (`handleDmAggregation`) still using single-slot `pending.set`. Burst messages in DMs still get dropped.
 **Why it happens:** `handleDmAggregation` has three separate `this.pending.set(channelKey, built)` call sites (lines 280, 295, 312, 327 in service.ts).
 **How to avoid:** Search all `this.pending.set` usages and update every one.
 **Warning signs:** DM burst test passes but group burst test fails (or vice versa).
 
 ### Pitfall 2: mergeBacklog percept timestamp
+
 **What goes wrong:** Using the last backlogged message's timestamp means the merged percept appears newer than the bot's in-flight response, confusing the timeline ordering.
 **Why it happens:** The first backlogged message arrived before the bot responded; the last arrived after.
 **How to avoid:** Use the first backlogged message's timestamp as the percept timestamp. The trigger context should span from first to last.
 
 ### Pitfall 3: REQ-02 — two `recordAgentResponse` call sites
+
 **What goes wrong:** Fixing only the main call site (line 316) misses the wrap-up round call site (line 358) in the `round >= maxRounds` branch.
 **Why it happens:** The max-rounds wrap-up path also calls `recordAgentResponse` unconditionally.
 **How to avoid:** Fix both call sites. The wrap-up path can also produce empty actions if the LLM ignores the forced `send_message` instruction.
 
 ### Pitfall 4: REQ-03 — `initialContextCharBudget` default too small
+
 **What goes wrong:** A default that's too small (e.g. 5000 chars) aggressively trims the initial context on every call, degrading LLM quality.
 **Why it happens:** The initial context block contains the full horizon view (history + entities + environment) which can be large.
 **How to avoid:** Default to a generous value (20000 chars). The existing `charBudget` is 30000 — the initial context budget should be a fraction of that, not a tiny number.
 
 ### Pitfall 5: REQ-03 — trimming `messages[0]` when it's the only message
+
 **What goes wrong:** If `messages` has only one entry (first round, no tool results yet), trimming `messages[0]` may cut critical context needed for the LLM to respond correctly.
 **Why it happens:** The trim fires before the budget check.
 **How to avoid:** Only apply `initialContextCharBudget` trim when `totalChars(messages) > config.charBudget` — i.e., inside the existing budget guard, or add a separate guard.
@@ -283,6 +306,7 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
 ## Code Examples
 
 ### REQ-01: Backlog merge helper
+
 ```typescript
 // Source: derived from existing service.ts patterns
 private mergeBacklog(channelKey: string, backlog: LoopPayload[]): LoopPayload {
@@ -312,6 +336,7 @@ private mergeBacklog(channelKey: string, backlog: LoopPayload[]): LoopPayload {
 ```
 
 ### REQ-02: formatObservation silence branch
+
 ```typescript
 // Source: horizon/service.ts formatObservation, agent.response branch
 // BEFORE (line 281):
@@ -325,6 +350,7 @@ return `[${hhmm}] [Bot Action]: ${actions.map((a) => a.name).join(", ")}`;
 ```
 
 ### REQ-03: TrimConfig extension
+
 ```typescript
 // Source: trimmer.ts
 export interface TrimConfig {
@@ -332,11 +358,12 @@ export interface TrimConfig {
   keepLastRounds: number;
   softTrimHead: number;
   softTrimTail: number;
-  initialContextCharBudget?: number;  // budget for messages[0]; undefined = no limit
+  initialContextCharBudget?: number; // budget for messages[0]; undefined = no limit
 }
 ```
 
 ### REQ-03: AgentCoreConfig schema addition
+
 ```typescript
 // Source: service.ts AgentCoreConfigSchema
 initialContextCharBudget: Schema.number()
@@ -359,17 +386,20 @@ initialContextCharBudget: Schema.number()
 ## Sources
 
 ### Primary (HIGH confidence)
+
 - Direct source code reading — `core/src/services/agent/service.ts` (confirmed `pending` type, all call sites)
 - Direct source code reading — `core/src/services/agent/loop.ts` (confirmed `recordAgentResponse` call sites at lines 316, 358)
 - Direct source code reading — `core/src/services/agent/trimmer.ts` (confirmed `eligible` starts at index 1, `messages[0]` never trimmed)
 - Direct source code reading — `core/src/services/horizon/service.ts` (confirmed `formatObservation` empty-actions rendering at line 281)
 
 ### Secondary (MEDIUM confidence)
+
 - CONTEXT.md decisions — user-locked implementation choices verified against source code
 
 ## Metadata
 
 **Confidence breakdown:**
+
 - Standard stack: HIGH — no new dependencies, existing Vitest infrastructure confirmed
 - Architecture: HIGH — all defect locations confirmed by direct source reading
 - Pitfalls: HIGH — derived from actual code paths, not speculation

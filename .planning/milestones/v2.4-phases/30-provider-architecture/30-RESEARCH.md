@@ -5,6 +5,7 @@
 **Confidence:** HIGH
 
 <user_constraints>
+
 ## User Constraints (from CONTEXT.md)
 
 ### Locked Decisions
@@ -45,11 +46,13 @@ None — discussion stayed within phase scope
 </user_constraints>
 
 <phase_requirements>
+
 ## Phase Requirements
 
-| ID | Description | Research Support |
-|----|-------------|-----------------|
+| ID     | Description                                                                                                                                                           | Research Support                                                                                                                                                                 |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | REQ-05 | BaseProvider abstract class encapsulates listModels, getDefaultParams, registration flow; createBaseProviderSchema() factory; three providers inherit, no duplication | AbstractProvider pattern in shared-model; Koishi class-form plugin with static reusable; Schema.intersect for extra fields; CallSettings from ai-sdk replaces ModelDefaultParams |
+
 </phase_requirements>
 
 ## Summary
@@ -65,25 +68,28 @@ The `ModelDefaultParams` interface in `shared-model` is redundant with ai-sdk's 
 ## Standard Stack
 
 ### Core
-| Library | Version | Purpose | Why Standard |
-|---------|---------|---------|--------------|
-| koishi | ^4.18.3 | Plugin framework, Schema, Context | Already in use; class-form plugin is documented pattern |
-| ai (Vercel AI SDK) | ^6.0.0 | `CallSettings` type, `generateText`, `streamText` | Already in use; `CallSettings` is the canonical param type |
-| @yesimbot/shared-model | workspace:* | AbstractProvider, schema factory, IModelProvider | Internal shared package — correct home for cross-provider abstractions |
+
+| Library                | Version      | Purpose                                           | Why Standard                                                           |
+| ---------------------- | ------------ | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| koishi                 | ^4.18.3      | Plugin framework, Schema, Context                 | Already in use; class-form plugin is documented pattern                |
+| ai (Vercel AI SDK)     | ^6.0.0       | `CallSettings` type, `generateText`, `streamText` | Already in use; `CallSettings` is the canonical param type             |
+| @yesimbot/shared-model | workspace:\* | AbstractProvider, schema factory, IModelProvider  | Internal shared package — correct home for cross-provider abstractions |
 
 ### Supporting
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| @ai-sdk/openai | ^3.0.0 | `createOpenAI()` | OpenAI provider `createClient()` |
-| @ai-sdk/deepseek | ^3.0.0 | `createDeepSeek()` | DeepSeek provider `createClient()` |
+
+| Library           | Version | Purpose             | When to Use                         |
+| ----------------- | ------- | ------------------- | ----------------------------------- |
+| @ai-sdk/openai    | ^3.0.0  | `createOpenAI()`    | OpenAI provider `createClient()`    |
+| @ai-sdk/deepseek  | ^3.0.0  | `createDeepSeek()`  | DeepSeek provider `createClient()`  |
 | @ai-sdk/anthropic | ^3.0.47 | `createAnthropic()` | Anthropic provider `createClient()` |
 
 ### Alternatives Considered
-| Instead of | Could Use | Tradeoff |
-|------------|-----------|----------|
-| Plain abstract class | Koishi Service subclass | Service only allows one registration; providers need reusable=true multi-instance |
-| `CallSettings` from `ai` | Keep `ModelDefaultParams` | ModelDefaultParams is a subset duplicate; CallSettings is the SDK's canonical type |
-| `Schema.intersect` for extra fields | Separate Config interface per provider | intersect composes schemas cleanly in Koishi Console UI |
+
+| Instead of                          | Could Use                              | Tradeoff                                                                           |
+| ----------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------- |
+| Plain abstract class                | Koishi Service subclass                | Service only allows one registration; providers need reusable=true multi-instance  |
+| `CallSettings` from `ai`            | Keep `ModelDefaultParams`              | ModelDefaultParams is a subset duplicate; CallSettings is the SDK's canonical type |
+| `Schema.intersect` for extra fields | Separate Config interface per provider | intersect composes schemas cleanly in Koishi Console UI                            |
 
 **Installation:** No new packages needed — all dependencies already present.
 
@@ -115,10 +121,11 @@ providers/provider-anthropic/src/index.ts   # ~45 lines after migration (custom 
 **When to use:** When the plugin is a class (not a function), and multiple instances must be loadable simultaneously.
 
 **Example:**
+
 ```typescript
 // Source: references/koishi-docs/en-US/guide/plugin/lifecycle.md
 export default class Bar {
-  static reusable = true
+  static reusable = true;
   constructor(ctx: Context, config: Bar.Config) {
     // plugin logic here
   }
@@ -126,7 +133,7 @@ export default class Bar {
 
 namespace Bar {
   export interface Config {}
-  export const Config: Schema<Config> = Schema.object({})
+  export const Config: Schema<Config> = Schema.object({});
 }
 ```
 
@@ -139,6 +146,7 @@ The `name`, `inject`, and `Config` meta-properties must be on the class (as stat
 **When to use:** Shared logic across multiple plugin classes that are NOT services.
 
 **Example:**
+
 ```typescript
 // Source: codebase analysis of existing providers + Koishi docs
 import { Context } from "koishi";
@@ -146,9 +154,10 @@ import type { LanguageModel } from "ai";
 import type { CallSettings } from "ai";
 import { IModelProvider, ModelInfo } from "./types/model";
 
-export abstract class AbstractProvider<TClient, TConfig extends BaseProviderConfig>
-  implements IModelProvider {
-
+export abstract class AbstractProvider<
+  TClient,
+  TConfig extends BaseProviderConfig,
+> implements IModelProvider {
   readonly id: string;
   readonly models: ModelInfo[];
   protected client: TClient;
@@ -193,6 +202,7 @@ export abstract class AbstractProvider<TClient, TConfig extends BaseProviderConf
 **When to use:** When multiple plugins share the same schema shape with minor variations.
 
 **Example:**
+
 ```typescript
 // Source: codebase analysis + Koishi schema docs
 import { Schema } from "koishi";
@@ -240,7 +250,9 @@ export function createProviderSchema<TExtra = Record<string, never>>(
     advancedOverride: Schema.string()
       .role("textarea", { rows: [2, 4] })
       .default("")
-      .description("JSON override for headers, options, per-model params. Parse errors are ignored."),
+      .description(
+        "JSON override for headers, options, per-model params. Parse errors are ignored.",
+      ),
   });
 
   if (opts.extra) {
@@ -255,6 +267,7 @@ export function createProviderSchema<TExtra = Record<string, never>>(
 **What:** Each provider becomes a thin class that only implements `createClient()` and declares its `providerType`.
 
 **Example (OpenAI after migration):**
+
 ```typescript
 import { createOpenAI } from "@ai-sdk/openai";
 import { AbstractProvider, createProviderSchema } from "@yesimbot/shared-model";
@@ -262,7 +275,9 @@ import { Context } from "koishi";
 import type { IModelService } from "@yesimbot/shared-model";
 
 declare module "koishi" {
-  interface Context { "yesimbot.model": IModelService; }
+  interface Context {
+    "yesimbot.model": IModelService;
+  }
 }
 
 export default class OpenAIProvider extends AbstractProvider<
@@ -283,7 +298,9 @@ namespace OpenAIProvider {
   export const Config = createProviderSchema({
     defaultId: "openai",
     defaultBaseURL: "https://api.openai.com/v1",
-    defaultModels: [{ id: "gpt-4o", tool_call: true, reasoning: false, modalities: ["text", "image"] }],
+    defaultModels: [
+      { id: "gpt-4o", tool_call: true, reasoning: false, modalities: ["text", "image"] },
+    ],
   });
 }
 ```
@@ -299,12 +316,12 @@ namespace OpenAIProvider {
 
 ## Don't Hand-Roll
 
-| Problem | Don't Build | Use Instead | Why |
-|---------|-------------|-------------|-----|
-| Schema composition with extra fields | Custom merge logic | `Schema.intersect([base, extra])` | Koishi's built-in composition; renders correctly in Console UI |
-| Provider dispose cleanup | Manual dispose tracking in AbstractProvider | `ModelService.registerProvider()` already calls `caller.on('dispose', ...)` via `this[Context.current]` | Already implemented in ModelService; AbstractProvider just calls registerProvider |
-| Call parameter type | Custom `ModelDefaultParams` interface | `CallSettings` from `ai` package | SDK-canonical type; avoids field name mismatches (maxTokens vs maxOutputTokens) |
-| Plugin meta-properties on class | Separate export statements | Static class properties (`static reusable`, `static inject`) + namespace for `Config` | Koishi class-form plugin pattern; documented in official docs |
+| Problem                              | Don't Build                                 | Use Instead                                                                                             | Why                                                                               |
+| ------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Schema composition with extra fields | Custom merge logic                          | `Schema.intersect([base, extra])`                                                                       | Koishi's built-in composition; renders correctly in Console UI                    |
+| Provider dispose cleanup             | Manual dispose tracking in AbstractProvider | `ModelService.registerProvider()` already calls `caller.on('dispose', ...)` via `this[Context.current]` | Already implemented in ModelService; AbstractProvider just calls registerProvider |
+| Call parameter type                  | Custom `ModelDefaultParams` interface       | `CallSettings` from `ai` package                                                                        | SDK-canonical type; avoids field name mismatches (maxTokens vs maxOutputTokens)   |
+| Plugin meta-properties on class      | Separate export statements                  | Static class properties (`static reusable`, `static inject`) + namespace for `Config`                   | Koishi class-form plugin pattern; documented in official docs                     |
 
 **Key insight:** The ModelService already handles the full provider lifecycle (registration, dispose cleanup, schema refresh). AbstractProvider only needs to call `registerProvider(config.id, this)` in its constructor — no additional lifecycle management needed.
 
@@ -365,6 +382,7 @@ namespace OpenAIProvider {
 Verified patterns from official sources and codebase analysis:
 
 ### AbstractProvider base class (complete)
+
 ```typescript
 // Source: codebase analysis of existing providers + Koishi lifecycle docs
 import type { Context } from "koishi";
@@ -429,6 +447,7 @@ export abstract class AbstractProvider<
 ```
 
 ### IModelProvider interface update (remove ModelDefaultParams dependency)
+
 ```typescript
 // Source: packages/shared-model/src/types/model.ts — updated version
 import type { LanguageModel } from "ai";
@@ -448,6 +467,7 @@ export interface IModelProvider {
 ```
 
 ### Anthropic subclass (most complex — custom fetch interceptor stays in createClient)
+
 ```typescript
 // Source: codebase analysis of providers/provider-anthropic/src/index.ts
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -482,7 +502,12 @@ namespace AnthropicProvider {
     defaultModels: [
       { id: "claude-sonnet-4-6", tool_call: true, reasoning: false, modalities: ["text", "image"] },
       { id: "claude-opus-4-6", tool_call: true, reasoning: false, modalities: ["text", "image"] },
-      { id: "claude-haiku-4-5-20251001", tool_call: true, reasoning: false, modalities: ["text", "image"] },
+      {
+        id: "claude-haiku-4-5-20251001",
+        tool_call: true,
+        reasoning: false,
+        modalities: ["text", "image"],
+      },
     ],
     extra: Schema.object({
       projectId: Schema.string().default("unknown"),
@@ -493,6 +518,7 @@ namespace AnthropicProvider {
 ```
 
 ### shared-model/src/index.ts update
+
 ```typescript
 // Add new exports alongside existing ones
 export * from "./types/model";
@@ -503,6 +529,7 @@ export * from "./providers/schema-factory";
 ```
 
 ### ModelService.registerProvider — existing dispose cleanup (no changes needed)
+
 ```typescript
 // Source: core/src/services/model/service.ts (existing, verified)
 public registerProvider(name: string, provider: IModelProvider): void {
@@ -518,13 +545,14 @@ public registerProvider(name: string, provider: IModelProvider): void {
 
 ## State of the Art
 
-| Old Approach | Current Approach | When Changed | Impact |
-|--------------|------------------|--------------|--------|
-| `export const reusable = true` + `apply()` function | `export default class` with `static reusable = true` | Koishi 4.x class-form plugin support | Cleaner encapsulation; constructor IS the plugin entry |
-| Custom `ModelDefaultParams` interface | `CallSettings` from `ai` package | ai-sdk v6 stabilized CallSettings | Eliminates field name drift; SDK handles provider-specific aliases |
-| Per-provider duplicated Schema | `createProviderSchema()` factory + `Schema.intersect` | This phase | Single source of truth for common fields |
+| Old Approach                                        | Current Approach                                      | When Changed                         | Impact                                                             |
+| --------------------------------------------------- | ----------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `export const reusable = true` + `apply()` function | `export default class` with `static reusable = true`  | Koishi 4.x class-form plugin support | Cleaner encapsulation; constructor IS the plugin entry             |
+| Custom `ModelDefaultParams` interface               | `CallSettings` from `ai` package                      | ai-sdk v6 stabilized CallSettings    | Eliminates field name drift; SDK handles provider-specific aliases |
+| Per-provider duplicated Schema                      | `createProviderSchema()` factory + `Schema.intersect` | This phase                           | Single source of truth for common fields                           |
 
 **Deprecated/outdated:**
+
 - `ModelDefaultParams` interface: replaced by `CallSettings` from `ai`. The field `maxTokens` in current provider configs is wrong — the correct SDK field is `maxOutputTokens`.
 - `apply()` wrapper function in providers: replaced by class constructor. The current providers use `apply()` + internal class — after migration, the class IS the plugin.
 
@@ -548,6 +576,7 @@ public registerProvider(name: string, provider: IModelProvider): void {
 ## Sources
 
 ### Primary (HIGH confidence)
+
 - `/home/workspace/Athena/providers/provider-openai/src/index.ts` — current OpenAI provider (113 lines, full boilerplate)
 - `/home/workspace/Athena/providers/provider-deepseek/src/index.ts` — current DeepSeek provider (113 lines, identical structure)
 - `/home/workspace/Athena/providers/provider-anthropic/src/index.ts` — current Anthropic provider (184 lines, custom fetch)
@@ -559,14 +588,17 @@ public registerProvider(name: string, provider: IModelProvider): void {
 - `/home/workspace/Athena/node_modules/ai/dist/index.d.ts` lines 595-640 — `CallSettings` type definition (maxOutputTokens, temperature, topP, topK, presencePenalty, frequencyPenalty, stopSequences, seed)
 
 ### Secondary (MEDIUM confidence)
+
 - `.planning/phases/30-provider-architecture/30-CONTEXT.md` — locked decisions from discuss-phase session
 
 ### Tertiary (LOW confidence)
+
 - None
 
 ## Metadata
 
 **Confidence breakdown:**
+
 - Standard stack: HIGH — all libraries already in use, versions confirmed from package.json
 - Architecture: HIGH — patterns verified from existing codebase + Koishi official docs
 - Pitfalls: HIGH — identified from direct code inspection of current providers and ModelService

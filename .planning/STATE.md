@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v2.4
 milestone_name: Runtime & Polish
-status: unknown
-last_updated: "2026-02-27T07:21:54.455Z"
+status: shipped
+last_updated: "2026-02-27T07:42:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -15,21 +15,18 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-26)
+See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** Phase 32: Persona Customization UX
+**Current focus:** v2.4 shipped — planning next milestone
 
 ## Current Position
 
-Phase: 32 (Persona Customization UX)
-Plan: 02 of 2 — COMPLETE
-Status: Phase 32 complete — persona injection wiring and text assembly
-Last activity: 2026-02-27 — Completed 32-02 (Persona injection wiring & text assembly)
+Milestone: v2.4 Runtime & Polish — SHIPPED 2026-02-27
+Status: All 4 phases (29-32) complete, 8/8 plans shipped
+Last activity: 2026-02-27 — Milestone v2.4 archived
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | Phase 32 ✅
-
-[Phase 29 ✅] → [Phase 30 ✅] → [Phase 31 ✅] → [Phase 32 ✅]
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅
 
 ## Performance Metrics
 
@@ -40,6 +37,7 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | Phas
 - v2.1: 3 phases, 6 plans, ~2 days
 - v2.2: 3 phases, 8 plans, ~2 days
 - v2.3: 3 phases, 6 plans, ~1 day
+- v2.4: 4 phases, 8 plans, ~2 days
 
 **By Phase:** See MILESTONES.md for breakdown.
 
@@ -48,28 +46,19 @@ Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | Phas
 ### Decisions
 
 Full decision log in PROJECT.md Key Decisions table.
-v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
-
-- 29-01: Used plain LoopPayload[] array for pending queue; first message timestamp preserved in merged percept; isBacklogDrain flag for downstream awareness
-- 29-02: Silence rendered as "(chose silence)" marker not suppressed; initialContextCharBudget default 20000 chars; head-trim at newline boundary
-- 30-01: Deleted ModelDefaultParams, replaced with CallSettings from ai-sdk; AbstractProvider auto-registers in constructor; createProviderSchema uses Schema.intersect for extra fields; advancedOverride merges at construction time with parse-error-as-warning
-- 30-02: Separated class+namespace+export default pattern for TS2652 compatibility; used explicit BaseProviderConfig type alias instead of Schema parse inference; fixed core ModelService declare module to IModelService
-- 31-02: Removed hardcoded .description() from schema-factory advancedOverride; all provider config descriptions now come from i18n locale files
-- 31-01: Used `as never` cast for locale-aware .description() objects; inlined all field definitions into 5 groups in index.ts for grouping control
-- 32-01: Preset union uses inline .description() per const for bilingual dropdown labels; PersonaFields interface exported from presets.ts for reuse in Plan 02
-- 32-02: Used local declare module augmentation instead of core devDependency for PromptService typing; buildPersonaText returns pre-computed text string captured in renderFn closure
+v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 
 ### Pending Todos
 
-- 探索更直观的人设自定义方式 (core) — phase26 移除 memory_block 后，需要比单一 SOUL 文件更友好的人设自定义方案
+- REQ-04 模型组与负载均衡 — v2.4 推迟，下个里程碑处理
 
 ### Roadmap Evolution
 
-- Phase 32 added: Persona Customization UX — 替代单一 SOUL 文件，提供更直观的人设自定义方案
+(Clean slate for next milestone)
 
 ### Blockers/Concerns
 
-- Phase 31 planning: failover vs fallbackChain interaction semantics need clarification before implementation
+(None — fresh milestone)
 
 ### Quick Tasks Completed
 

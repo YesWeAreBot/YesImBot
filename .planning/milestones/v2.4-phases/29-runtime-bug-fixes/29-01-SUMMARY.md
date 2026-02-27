@@ -49,6 +49,7 @@ completed: 2026-02-26
 - **Files modified:** 1
 
 ## Accomplishments
+
 - Converted `pending` field from `Map<string, LoopPayload>` to `Map<string, LoopPayload[]>`
 - Updated all 5 call sites (1 group path + 4 DM path) to array-push pattern
 - Added `mergeBacklog` helper that immutably combines backlogged payloads
@@ -63,9 +64,11 @@ Each task was committed atomically:
 2. **Task 2: Verify build and validate all pending.set sites** - verification only, no file changes
 
 ## Files Created/Modified
+
 - `core/src/services/agent/service.ts` - Changed pending type, added mergeBacklog, updated all 5 set sites and enqueue drain
 
 ## Decisions Made
+
 - Used plain `LoopPayload[]` array for queue — no need for linked list at chat message scale
 - First backlogged message's timestamp used for merged percept (per CONTEXT.md decision)
 - `isBacklogDrain: true` and `backlogCount` set on merged metadata for loop awareness
@@ -76,12 +79,15 @@ Each task was committed atomically:
 None - plan executed exactly as written.
 
 ## Issues Encountered
+
 None
 
 ## User Setup Required
+
 None - no external service configuration required.
 
 ## Next Phase Readiness
+
 - REQ-01 fix complete, pending queue now accumulates burst messages
 - REQ-02 and REQ-03 fixes ready to proceed in plan 02
 
@@ -92,5 +98,6 @@ None - no external service configuration required.
 - FOUND: 29-01-SUMMARY.md
 
 ---
-*Phase: 29-runtime-bug-fixes*
-*Completed: 2026-02-26*
+
+_Phase: 29-runtime-bug-fixes_
+_Completed: 2026-02-26_

@@ -54,6 +54,7 @@ completed: 2026-02-26
 - **Files modified:** 4
 
 ## Accomplishments
+
 - formatObservation now renders empty-actions responses as "(chose silence)" instead of empty "[Bot Action]: "
 - TrimConfig gains optional initialContextCharBudget field with head-trim-at-newline-boundary logic
 - Config schema exposes initialContextCharBudget (default 20000) wired through loop.ts to trimmer
@@ -67,12 +68,14 @@ Each task was committed atomically:
 2. **Task 2: Wire initialContextCharBudget through config schema and loop** - `dab261d` (feat)
 
 ## Files Created/Modified
+
 - `core/src/services/horizon/service.ts` - Silence guard before action name rendering
 - `core/src/services/agent/trimmer.ts` - TrimConfig interface + initial context trim pass
 - `core/src/services/agent/loop.ts` - TrimConfig construction with initialContextCharBudget
 - `core/src/services/agent/service.ts` - AgentCoreConfig interface + schema field
 
 ## Decisions Made
+
 - Silence rendered as labeled marker, not suppressed — timeline always records full response per CONTEXT.md locked decision
 - Default 20000 chars for initial context budget — generous fraction of overall 30000 charBudget per research recommendation
 - Head-trim uses indexOf("\n", excess) for message-boundary truncation, falls back to exact excess cut
@@ -83,12 +86,15 @@ Each task was committed atomically:
 None - plan executed exactly as written.
 
 ## Issues Encountered
+
 None
 
 ## User Setup Required
+
 None - no external service configuration required.
 
 ## Next Phase Readiness
+
 - All three REQ fixes for phase 29 complete (REQ-01 in plan 01, REQ-02 + REQ-03 in plan 02)
 - Phase 29 runtime bug fixes fully resolved, ready for phase 30
 
@@ -103,5 +109,6 @@ None - no external service configuration required.
 - FOUND: 29-02-SUMMARY.md
 
 ---
-*Phase: 29-runtime-bug-fixes*
-*Completed: 2026-02-26*
+
+_Phase: 29-runtime-bug-fixes_
+_Completed: 2026-02-26_

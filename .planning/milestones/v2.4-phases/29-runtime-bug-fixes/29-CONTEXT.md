@@ -14,6 +14,7 @@
 ## Implementation Decisions
 
 ### 消息队列合并策略（REQ-01）
+
 - pending 从单槽 Map 改为数组队列存储
 - drain 时全部拼接，按时间顺序组织
 - trigger 语义扩展：不再仅限于 status=new 的消息，而是"时间段内的消息集合"，起始点为第一条积压消息
@@ -23,6 +24,7 @@
 - drain 后的合并请求强制回复，跳过意愿值判定（用户已等了一轮响应时间）
 
 ### 沉默判定与过滤逻辑（REQ-02）
+
 - 不是"空 actions 不记录"，而是改变渲染方式
 - timeline 照常记录完整的原始 response，保持 agent.response 结构不变
 - 运行时渲染/展示时判断：actions 为空时渲染为"选择沉默"标记（如 "you skipped this round"），而非空的 [Bot Action]
@@ -30,12 +32,14 @@
 - 区分「LLM 主动沉默」和「LLM 出错无输出」：主动沉默正常记录沉默标记，出错时记录错误标记到 timeline
 
 ### 初始上下文裁剪预算（REQ-03）
+
 - messages[0]（初始用户上下文）受独立的固定 token 上限约束
 - 该上限作为可配置参数暴露给用户
 - 超出时从开头截断，保留末尾（最近信息）
 - 按消息边界截断，保持语义完整性（不在句子中间断开）
 
 ### Claude's Discretion
+
 - 积压队列的具体数据结构选择（数组 vs 其他队列实现）
 - 沉默标记的具体文本内容和格式
 - 初始上下文 token 上限的默认值
@@ -61,5 +65,5 @@ None — discussion stayed within phase scope
 
 ---
 
-*Phase: 29-runtime-bug-fixes*
-*Context gathered: 2026-02-26*
+_Phase: 29-runtime-bug-fixes_
+_Context gathered: 2026-02-26_
