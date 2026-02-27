@@ -111,48 +111,47 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ## Key Decisions
 
-| Decision                          | Rationale                                                                                | Outcome                                     |
-| --------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------- |
-| 使用 ai-sdk 替代 xsai             | xsai 过于精简缺少功能，ai-sdk 生态更完善                                                 | ✓ Good                                      |
-| 保持 monorepo 结构                | 与 v3 一致，团队熟悉，Turbo 构建成熟                                                     | ✓ Good                                      |
-| 混合回复决策（规则+LLM）          | 纯随机不够智能，纯 LLM 成本太高                                                          | ✓ Good — v1.0 完成完整意愿值 + LLM 延迟判断 |
-| 模型服务优先开发                  | 是所有其他子系统的基础依赖                                                               | ✓ Good                                      |
-| Provider 插件化                   | 避免统一配置窗口过于复杂，支持独立参数                                                   | ✓ Good — 动态 Schema 联动已完成             |
-| v1 不含记忆系统                   | 聚焦核心骨架，降低复杂度，后续迭代                                                       | ✓ Good — v1.0 引入核心记忆块                |
-| 原生 tool call                    | ai-sdk tool calling 替代 JSON 文本解析                                                   | ✓ Good                                      |
-| v2 迁移而非重写                   | v3/dev 已验证功能直接适配新架构                                                          | ✓ Good — 4 天完成 15 phases                 |
-| Horizon 三元组架构                | Environment/Entity/Event 替代 per-channel 隔离                                           | ✓ Good — 支持跨频道 Entity 连续性           |
-| PQueue 并发控制                   | 防止 LLM API 过载                                                                        | ✓ Good — call/streamCall 统一队列化         |
-| per-module fallbackChain          | 替代全局 defaultModel，更灵活                                                            | ✓ Good — agent/willingness 独立 fallback    |
-| Trait + Skill 替代 ChatMode       | ChatMode 是离散模式切换，无法描述多维度叠加的真实场景；Trait 感知 + Skill 响应解耦更灵活 | ✓ Good — v2.0 完整管线验证                  |
-| PromptService 重设计              | v1 的 Injection 是为插件工具注入临时加的 hack，不支持多注入点和上下文感知                | ✓ Good — 命名注入点 + partial 组合          |
-| Skill 分层效果叠加                | Prompt/Tools 层叠加，Style 层优先级覆盖，Willingness 不直接干预                          | ✓ Good — 条件树激活 + 效果合并              |
-| JSON 文本输出替代原生 tool_call   | 原生 tool_call 不支持心跳循环和自定义解析                                                | ✓ Good — 手动心跳 + jsonrepair fallback     |
-| 渐进式工作记忆裁剪                | 无限增长 messages 导致 token 溢出                                                        | ✓ Good — softTrim/hardClear 两级策略        |
-| Percept 构造从 horizon 移到 agent | horizon 只负责数据，不参与决策                                                           | ✓ Good — 职责边界清晰                       |
-
-| OpenClaw 风格 memory_block | SOUL.md/AGENTS.md 固定角色文件替代自由标签 persona.md，职责更清晰 | ✓ Good — RoleService 完整生命周期 |
-| 注入点合并 6→4 | identity+style→soul, control_flow+basic_functions→instructions，减少抽象层 | ✓ Good — 编译器全局强制 + 运行时 guard |
-| render() 代码内 XML 生成 | 消除 Mustache partial 间接层，删除 11 个废弃文件 | ✓ Good |
-| Skill 可配置注入点 | 效果可指定 soul/instructions/memory/extra 任意点 | ✓ Good — 按 specificity 排序 |
-| trait-bound 即时移除 | trait 信号消失时立即移除，不设宽限期 | ✓ Good — 与 sticky countdown 区分 |
-| TraceContext 显式对象传递 | Koishi 事件系统不保证 async context 传播，不用 AsyncLocalStorage | ✓ Good — traceId 贯穿全链路 |
-| Prompt cache Anthropic-only | 各 provider 缓存语义不同，先做 Anthropic ephemeral | ✓ Good — 非 Anthropic 无行为变化 |
-| providerType 字段检测 | 不从 model ID 推断 provider 类型 | ✓ Good — 显式声明更可靠 |
-| memory_block 合并推迟 | 迁移风险高，不阻塞 v2.2 任何功能 | ✓ Good — 推迟到 v2.3 |
-| JSON 文本输出 + 结构化 Judge | Judge 用 JsonParser 解析结构化响应，保留 legacy yes/no fallback | ✓ Good — 兼容性好 |
-| DM TokenBucket 用 senderId | 真正的 per-user 限流，避免 channelId 在 DM 场景的歧义 | ✓ Good |
-| MemoryService 删除而非合并 | SOUL.md 已覆盖人设定制，memory_block 读写能力验证效果不佳 | ✓ Good — snippet 迁移到 RoleService |
-| Scope→ChannelKey 裸字段替代 | Scope 可选字段过度设计，platform+channelId 必填字段更严格 | ✓ Good — 全局 13 文件一次性迁移 |
-| DB bridge 渐进迁移 | Phase 27 先迁移 TS 类型，Phase 28 再迁移 DB schema，降低风险 | ✓ Good — 两步完成零回归 |
-| Environment 必填字段 | 消除 optional chaining，调用方必须提供 platform/channelId | ✓ Good — 类型系统强制正确性 |
-| isDirect 从 Session 读取 | 不属于频道标识，从 event.runtime.session 获取 | ✓ Good — 职责边界清晰 |
-| pending 数组队列替代单槽 Map | 单槽覆盖导致 burst 消息丢失 | ✓ Good — 合并积压一次性响应 |
-| initialContextCharBudget head-trim | messages[0] 不裁剪导致 WM 无限增长 | ✓ Good — newline 边界裁剪 |
-| AbstractProvider 自动注册 | 构造函数中完成注册，子类无需手动调用 | ✓ Good — 消除 36-61% 重复 |
-| CallSettings 替代 ModelDefaultParams | ai-sdk 原生类型，减少自定义接口 | ✓ Good — 类型更精确 |
-| Persona declare module 本地增强 | 不依赖 core devDependency，插件自包含 | ✓ Good — 轻量解耦 |
-| Persona preset merge-then-override | 预设为基础，用户字段覆盖非空值 | ✓ Good — 直觉化配置体验 |
+| Decision                             | Rationale                                                                                | Outcome                                     |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------- |
+| 使用 ai-sdk 替代 xsai                | xsai 过于精简缺少功能，ai-sdk 生态更完善                                                 | ✓ Good                                      |
+| 保持 monorepo 结构                   | 与 v3 一致，团队熟悉，Turbo 构建成熟                                                     | ✓ Good                                      |
+| 混合回复决策（规则+LLM）             | 纯随机不够智能，纯 LLM 成本太高                                                          | ✓ Good — v1.0 完成完整意愿值 + LLM 延迟判断 |
+| 模型服务优先开发                     | 是所有其他子系统的基础依赖                                                               | ✓ Good                                      |
+| Provider 插件化                      | 避免统一配置窗口过于复杂，支持独立参数                                                   | ✓ Good — 动态 Schema 联动已完成             |
+| v1 不含记忆系统                      | 聚焦核心骨架，降低复杂度，后续迭代                                                       | ✓ Good — v1.0 引入核心记忆块                |
+| 原生 tool call                       | ai-sdk tool calling 替代 JSON 文本解析                                                   | ✓ Good                                      |
+| v2 迁移而非重写                      | v3/dev 已验证功能直接适配新架构                                                          | ✓ Good — 4 天完成 15 phases                 |
+| Horizon 三元组架构                   | Environment/Entity/Event 替代 per-channel 隔离                                           | ✓ Good — 支持跨频道 Entity 连续性           |
+| PQueue 并发控制                      | 防止 LLM API 过载                                                                        | ✓ Good — call/streamCall 统一队列化         |
+| per-module fallbackChain             | 替代全局 defaultModel，更灵活                                                            | ✓ Good — agent/willingness 独立 fallback    |
+| Trait + Skill 替代 ChatMode          | ChatMode 是离散模式切换，无法描述多维度叠加的真实场景；Trait 感知 + Skill 响应解耦更灵活 | ✓ Good — v2.0 完整管线验证                  |
+| PromptService 重设计                 | v1 的 Injection 是为插件工具注入临时加的 hack，不支持多注入点和上下文感知                | ✓ Good — 命名注入点 + partial 组合          |
+| Skill 分层效果叠加                   | Prompt/Tools 层叠加，Style 层优先级覆盖，Willingness 不直接干预                          | ✓ Good — 条件树激活 + 效果合并              |
+| JSON 文本输出替代原生 tool_call      | 原生 tool_call 不支持心跳循环和自定义解析                                                | ✓ Good — 手动心跳 + jsonrepair fallback     |
+| 渐进式工作记忆裁剪                   | 无限增长 messages 导致 token 溢出                                                        | ✓ Good — softTrim/hardClear 两级策略        |
+| Percept 构造从 horizon 移到 agent    | horizon 只负责数据，不参与决策                                                           | ✓ Good — 职责边界清晰                       |
+| OpenClaw 风格 memory_block           | SOUL.md/AGENTS.md 固定角色文件替代自由标签 persona.md，职责更清晰                        | ✓ Good — RoleService 完整生命周期           |
+| 注入点合并 6→4                       | identity+style→soul, control_flow+basic_functions→instructions，减少抽象层               | ✓ Good — 编译器全局强制 + 运行时 guard      |
+| render() 代码内 XML 生成             | 消除 Mustache partial 间接层，删除 11 个废弃文件                                         | ✓ Good                                      |
+| Skill 可配置注入点                   | 效果可指定 soul/instructions/memory/extra 任意点                                         | ✓ Good — 按 specificity 排序                |
+| trait-bound 即时移除                 | trait 信号消失时立即移除，不设宽限期                                                     | ✓ Good — 与 sticky countdown 区分           |
+| TraceContext 显式对象传递            | Koishi 事件系统不保证 async context 传播，不用 AsyncLocalStorage                         | ✓ Good — traceId 贯穿全链路                 |
+| Prompt cache Anthropic-only          | 各 provider 缓存语义不同，先做 Anthropic ephemeral                                       | ✓ Good — 非 Anthropic 无行为变化            |
+| providerType 字段检测                | 不从 model ID 推断 provider 类型                                                         | ✓ Good — 显式声明更可靠                     |
+| memory_block 合并推迟                | 迁移风险高，不阻塞 v2.2 任何功能                                                         | ✓ Good — 推迟到 v2.3                        |
+| JSON 文本输出 + 结构化 Judge         | Judge 用 JsonParser 解析结构化响应，保留 legacy yes/no fallback                          | ✓ Good — 兼容性好                           |
+| DM TokenBucket 用 senderId           | 真正的 per-user 限流，避免 channelId 在 DM 场景的歧义                                    | ✓ Good                                      |
+| MemoryService 删除而非合并           | SOUL.md 已覆盖人设定制，memory_block 读写能力验证效果不佳                                | ✓ Good — snippet 迁移到 RoleService         |
+| Scope→ChannelKey 裸字段替代          | Scope 可选字段过度设计，platform+channelId 必填字段更严格                                | ✓ Good — 全局 13 文件一次性迁移             |
+| DB bridge 渐进迁移                   | Phase 27 先迁移 TS 类型，Phase 28 再迁移 DB schema，降低风险                             | ✓ Good — 两步完成零回归                     |
+| Environment 必填字段                 | 消除 optional chaining，调用方必须提供 platform/channelId                                | ✓ Good — 类型系统强制正确性                 |
+| isDirect 从 Session 读取             | 不属于频道标识，从 event.runtime.session 获取                                            | ✓ Good — 职责边界清晰                       |
+| pending 数组队列替代单槽 Map         | 单槽覆盖导致 burst 消息丢失                                                              | ✓ Good — 合并积压一次性响应                 |
+| initialContextCharBudget head-trim   | messages[0] 不裁剪导致 WM 无限增长                                                       | ✓ Good — newline 边界裁剪                   |
+| AbstractProvider 自动注册            | 构造函数中完成注册，子类无需手动调用                                                     | ✓ Good — 消除 36-61% 重复                   |
+| CallSettings 替代 ModelDefaultParams | ai-sdk 原生类型，减少自定义接口                                                          | ✓ Good — 类型更精确                         |
+| Persona declare module 本地增强      | 不依赖 core devDependency，插件自包含                                                    | ✓ Good — 轻量解耦                           |
+| Persona preset merge-then-override   | 预设为基础，用户字段覆盖非空值                                                           | ✓ Good — 直觉化配置体验                     |
 
 ## Current Milestone: v2.5 Multimodal & Rich Interaction
 
