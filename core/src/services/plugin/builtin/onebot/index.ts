@@ -28,6 +28,7 @@ export class OnebotPlugin extends Plugin {
       message_id: Schema.string().required().description("Message ID to retrieve"),
     }),
     activators: [requireSession(), requirePlatform("onebot")],
+    hidden: true,
   })
   async getForwardMessage(
     params: Record<string, unknown>,

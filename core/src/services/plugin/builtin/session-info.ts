@@ -16,6 +16,7 @@ export class SessionInfoPlugin extends Plugin {
     description: "Get information about the current chat session",
     parameters: withInnerThoughts({}),
     activators: [requireSession()],
+    hidden: true,
   })
   async getSessionInfo(
     _params: Record<string, unknown>,

@@ -22,6 +22,7 @@ export class DemoPlugin extends Plugin {
       city: Schema.string().required().description("The name of the city to get the weather for."),
     }),
     activators: [],
+    hidden: true,
   })
   async getWeather(
     params: Record<string, unknown>,
@@ -44,6 +45,7 @@ export class DemoPlugin extends Plugin {
       query: Schema.string().required().description("The search query to look up on the web."),
     }),
     activators: [],
+    hidden: true,
   })
   async webSearch(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
     const query = String(params["query"] ?? "");
