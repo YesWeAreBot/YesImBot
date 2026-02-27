@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Multimodal & Rich Interaction
 status: unknown
-last_updated: "2026-02-27T17:29:08.374Z"
+last_updated: "2026-02-27T17:33:03.000Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.5 — Phase 37 (QManager Plugin)
+**Current focus:** v2.5 — Phase 37 complete, ready for Phase 38
 
 ## Current Position
 
-Phase: 37 (in progress)
-Plan: 01 complete (1/2 plans)
-Status: Plan 01 complete — entities injection + qmanager SKILL.md
-Last activity: 2026-02-27 — view.entities into ToolExecutionContext, qmanager Skill definition
+Phase: 37 (complete)
+Plan: 02 complete (2/2 plans)
+Status: Phase 37 complete — QManager Plugin fully implemented
+Last activity: 2026-02-27 — delmsg/ban/kick tool handlers with safety intercepts
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
@@ -34,7 +34,7 @@ Phase 33 [==========] 100% (2/2 plans)
 Phase 34 [==========] 100% (2/2 plans)
 Phase 35 [==========] 100% (2/2 plans)
 Phase 36 [==========] 100% (2/2 plans)
-Phase 37 [=====     ] 50% (1/2 plans)
+Phase 37 [==========] 100% (2/2 plans)
 Phase 38 [          ] 0%
 Phase 39 [          ] 0%
 ```
@@ -60,6 +60,8 @@ Full decision log in PROJECT.md Key Decisions table.
 v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 
 - [Phase 37]: Entities passed as-is from view.entities into toolCtxWithPercept — index signature on ToolExecutionContext already supports arbitrary keys
+- [Phase 37]: All three QManager tools use requireBotRole('admin'), NOT requirePlatform('onebot') — standard Koishi Bot API is cross-platform
+- [Phase 37]: Safety intercept blocks bot self and admin/owner targets before any destructive platform API call
 
 ### v2.5 Key Design Decisions
 
@@ -114,10 +116,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 36    | 01   | 2min     | 2     | 6     |
 | 36    | 02   | 3min     | 2     | 1     |
 | 37    | 01   | 1min     | 2     | 2     |
+| 37    | 02   | 3min     | 2     | 1     |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 37-01-PLAN.md (Entities Injection & QManager Skill)
+Stopped at: Completed 37-02-PLAN.md (QManager Tool Handlers) — Phase 37 complete
 Resume file: None
-Next action: `/gsd:execute-phase 37` continue (Plan 02 — QManager Tool Handlers)
+Next action: `/gsd:execute-phase 38` (Multimodal Image Input — needs research phase first)
