@@ -66,6 +66,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private horizonViewTpl?: string;
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (platformMsgId -> shortId)
+  private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> platformMsgId)
   private botRoleCache = new Map<string, { role: "owner" | "admin" | null; fetchedAt: number }>();
 
   constructor(ctx: Context, config: HorizonServiceConfig) {
@@ -250,20 +251,35 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     // Evict oldest entries if map exceeds 100
     if (map.size >= 100) {
       let evictCount = map.size - 80;
-      for (const key of map.keys()) {
+      const rev = this.shortIdReverse.get(channelKey);
+      for (const [pid, sid] of map) {
         if (evictCount-- <= 0) break;
-        map.delete(key);
+        map.delete(pid);
+        rev?.delete(sid); // sync reverse map eviction
       }
     }
 
     const counter = ((this.shortIdCounters.get(channelKey) ?? 0) % 999) + 1;
     this.shortIdCounters.set(channelKey, counter);
     map.set(platformMsgId, counter);
+
+    // Populate reverse map
+    let rev = this.shortIdReverse.get(channelKey);
+    if (!rev) {
+      rev = new Map();
+      this.shortIdReverse.set(channelKey, rev);
+    }
+    rev.set(counter, platformMsgId);
+
     return counter;
   }
 
   getShortId(channelKey: string, platformMsgId: string): number | undefined {
     return this.shortIdMaps.get(channelKey)?.get(platformMsgId);
+  }
+
+  lookupPlatformId(channelKey: string, shortId: number): string | undefined {
+    return this.shortIdReverse.get(channelKey)?.get(shortId);
   }
 
   private getRoleBadge(attributes?: Record<string, unknown>): string {
