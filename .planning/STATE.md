@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 34 (in progress)
-Plan: 01 complete (1/2 plans)
-Status: Phase 34 Plan 01 complete — ready for Plan 02
-Last activity: 2026-02-27 — Entity identity enrichment complete (Plan 01)
+Phase: 34 (complete)
+Plan: 02 complete (2/2 plans)
+Status: Phase 34 complete — ready for Phase 35
+Last activity: 2026-02-27 — Member tag rendering & reverse short-ID complete (Plan 02)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ```
 Phase 33 [==========] 100% (2/2 plans)
-Phase 34 [=====     ] 50% (1/2 plans)
+Phase 34 [==========] 100% (2/2 plans)
 Phase 35 [          ] 0%
 Phase 36 [          ] 0%
 Phase 37 [          ] 0%
@@ -69,6 +69,9 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - **<unverified> threshold = 200 chars** — text-only length; more permissive than dev version's 100 to reduce false positives
 - **Pipeline fix strategy** — format at receive time in EventListener, store safe content in timeline, no escaping at render time in formatObservation()
 - **Search tool uses ctx.http** — no Tavily SDK; configurable endpoint, thin wrapper
+- **Bot role cache uses silent degradation** — getGuildMember failure caches null for TTL to avoid repeated failed API calls
+- **classifyRole two-tier system** — owner/admin/administrator/moderator mapped to "owner" | "admin"; regular members get no role attribute
+- **Reverse short-ID map synced eviction** — forward and reverse maps evicted in lockstep to prevent stale lookups
 - **Entity ID uses session.userId** — stable platform account ID instead of session.author.id; nickname omitted when identical to username to reduce token noise
 
 ### Pending Todos
@@ -102,10 +105,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 33    | 01   | 3min     | 2     | 4     |
 | 33    | 02   | 2min     | 2     | 2     |
 | 34    | 01   | 2min     | 2     | 3     |
+| 34    | 02   | 3min     | 2     | 2     |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 34-01-PLAN.md (Entity Identity Enrichment)
+Stopped at: Completed 34-02-PLAN.md (Member Tag Rendering & Reverse Short-ID)
 Resume file: None
-Next action: `/gsd:execute-phase 34` (Phase 34 Plan 02)
+Next action: `/gsd:execute-phase 35` (Phase 35 Skill Visibility)
