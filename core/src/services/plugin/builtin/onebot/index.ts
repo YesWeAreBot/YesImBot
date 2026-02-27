@@ -263,7 +263,7 @@ export class OnebotPlugin extends Plugin {
     const MAX_BATCH = 10;
     const batch = ids.slice(0, MAX_BATCH);
 
-    const channelId = session.channelId;
+    const channelId = session.channelId ?? ctx.channelId;
     const errors: string[] = [];
     let successCount = 0;
 
@@ -288,6 +288,84 @@ export class OnebotPlugin extends Plugin {
     if (errors.length === 0) return Success(`已撤回 ${successCount} 条消息`);
     if (successCount === 0) return Failed(errors.join("；"));
     return Success(`已撤回 ${successCount} 条消息，${errors.length} 条失败：${errors.join("；")}`);
+  }
+
+  @Action({
+    name: "ban",
+    description: "禁言用户。duration 为禁言时长（秒），0 表示解除禁言。",
+    parameters: withInnerThoughts({
+      user_id: Schema.string().required().description("目标用户的平台 ID"),
+      duration: Schema.number().required().description("禁言时长（秒），0 = 解除禁言"),
+    }),
+    activators: [requireSession(), requireBotRole("admin")],
+    hidden: true,
+  })
+  async ban(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
+    const session = ctx.session;
+    if (!session) return Failed("无活跃会话");
+    if (!session.guildId) return Failed("禁言仅在群聊中可用");
+
+    const userId = String(params["user_id"] ?? "");
+    if (!userId) return Failed("user_id 不能为空");
+
+    const duration = Number(params["duration"]);
+    if (!Number.isFinite(duration) || duration < 0) return Failed("duration 必须为非负数");
+
+    // Safety intercept: block operating on bot self
+    if (userId === session.bot.selfId) return Failed("禁言失败：不能对 bot 自身执行此操作");
+
+    // Safety intercept: block operating on admin/owner
+    const targetRole = this.getEntityRole(ctx, userId);
+    if (targetRole === "admin" || targetRole === "owner") {
+      return Failed("禁言失败：目标用户是管理员或群主");
+    }
+
+    try {
+      await session.bot.muteGuildMember(session.guildId, userId, duration * 1000);
+      if (duration === 0) return Success(`已解除用户 ${userId} 的禁言`);
+      const minutes = Math.round(duration / 60);
+      return Success(
+        minutes > 0
+          ? `已禁言用户 ${userId} ${minutes} 分钟`
+          : `已禁言用户 ${userId} ${duration} 秒`,
+      );
+    } catch (e) {
+      return Failed(`禁言失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  @Action({
+    name: "kick",
+    description: "将用户移出群组。",
+    parameters: withInnerThoughts({
+      user_id: Schema.string().required().description("目标用户的平台 ID"),
+    }),
+    activators: [requireSession(), requireBotRole("admin")],
+    hidden: true,
+  })
+  async kick(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
+    const session = ctx.session;
+    if (!session) return Failed("无活跃会话");
+    if (!session.guildId) return Failed("踢人仅在群聊中可用");
+
+    const userId = String(params["user_id"] ?? "");
+    if (!userId) return Failed("user_id 不能为空");
+
+    // Safety intercept: block operating on bot self
+    if (userId === session.bot.selfId) return Failed("踢人失败：不能对 bot 自身执行此操作");
+
+    // Safety intercept: block operating on admin/owner
+    const targetRole = this.getEntityRole(ctx, userId);
+    if (targetRole === "admin" || targetRole === "owner") {
+      return Failed("踢人失败：目标用户是管理员或群主");
+    }
+
+    try {
+      await session.bot.kickGuildMember(session.guildId, userId);
+      return Success(`已将用户 ${userId} 移出群组`);
+    } catch (e) {
+      return Failed(`踢人失败：${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   private formatForwardMessages(messages: Message[]): string {
