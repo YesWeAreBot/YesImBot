@@ -34,6 +34,22 @@ export class OnebotPlugin extends Plugin {
     return horizon.lookupNativeMsgId(channelKey, shortId) ?? null;
   }
 
+  private getEntityRole(ctx: ToolExecutionContext, userId: string): "owner" | "admin" | null {
+    const entities = ctx["entities"] as
+      | Array<{
+          userId?: string;
+          attributes?: Record<string, unknown>;
+        }>
+      | undefined;
+    if (!entities) return null;
+    const entity = entities.find((e) => e.userId === userId);
+    if (!entity?.attributes?.roles) return null;
+    const roles = entity.attributes.roles as string[];
+    if (roles.some((r) => /^owner$/i.test(r))) return "owner";
+    if (roles.some((r) => /^(admin|administrator|moderator)$/i.test(r))) return "admin";
+    return null;
+  }
+
   @Action({
     name: "reaction_create",
     description:
@@ -222,6 +238,56 @@ export class OnebotPlugin extends Plugin {
     } catch (e) {
       return Failed(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  @Action({
+    name: "delmsg",
+    description: "撤回指定消息。传入消息短 ID 列表，支持批量撤回。",
+    parameters: withInnerThoughts({
+      message_ids: Schema.array(Schema.string())
+        .required()
+        .description("要撤回的消息短 ID 列表（来自 <msg id=...> 标签）"),
+    }),
+    activators: [requireSession(), requireBotRole("admin")],
+    hidden: true,
+  })
+  async delmsg(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
+    const session = ctx.session;
+    if (!session) return Failed("无活跃会话");
+    if (!session.guildId) return Failed("撤回消息仅在群聊中可用");
+
+    const rawIds = params["message_ids"];
+    const ids = Array.isArray(rawIds) ? rawIds.map(String) : [String(rawIds ?? "")];
+    if (!ids.length || ids.every((id) => !id)) return Failed("message_ids 不能为空");
+
+    const MAX_BATCH = 10;
+    const batch = ids.slice(0, MAX_BATCH);
+
+    const channelId = session.channelId;
+    const errors: string[] = [];
+    let successCount = 0;
+
+    for (const shortIdStr of batch) {
+      const nativeId = this.resolveNativeMsgId(ctx, shortIdStr);
+      if (!nativeId) {
+        errors.push(`消息 ${shortIdStr} 不在当前上下文中`);
+        continue;
+      }
+      try {
+        await session.bot.deleteMessage(channelId, nativeId);
+        successCount++;
+      } catch (e) {
+        errors.push(`撤回消息 ${shortIdStr} 失败：${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    if (ids.length > MAX_BATCH) {
+      errors.push(`仅处理前 ${MAX_BATCH} 条（共 ${ids.length} 条）`);
+    }
+
+    if (errors.length === 0) return Success(`已撤回 ${successCount} 条消息`);
+    if (successCount === 0) return Failed(errors.join("；"));
+    return Success(`已撤回 ${successCount} 条消息，${errors.length} 条失败：${errors.join("；")}`);
   }
 
   private formatForwardMessages(messages: Message[]): string {
