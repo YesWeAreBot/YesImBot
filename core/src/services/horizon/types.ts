@@ -83,6 +83,9 @@ export interface EntityRecord {
   id: string;
   type: string;
   name: string;
+  userId: string;
+  username: string;
+  nickname?: string;
   parentId?: string;
   refId?: string;
   attributes: Record<string, unknown>;
@@ -93,6 +96,9 @@ export interface Entity {
   id: string;
   type: string;
   name: string;
+  userId?: string;
+  username?: string;
+  nickname?: string;
   attributes?: Record<string, unknown>;
 }
 
@@ -108,6 +114,7 @@ export interface Environment {
 export interface SelfInfo {
   id: string;
   name: string;
+  role?: "owner" | "admin";
 }
 
 // ---- Observation ----

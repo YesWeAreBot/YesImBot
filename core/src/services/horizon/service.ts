@@ -95,6 +95,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         id: "string(64)",
         type: "string(32)",
         name: "string(255)",
+        userId: "string(255)",
+        username: "string(255)",
+        nickname: "string(255)",
         parentId: "string(255)",
         refId: "string(255)",
         attributes: "json",
@@ -198,6 +201,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       id: r.id,
       type: r.type,
       name: r.name,
+      userId: r.userId,
+      username: r.username,
+      nickname: r.nickname,
       attributes: r.attributes,
     }));
   }
