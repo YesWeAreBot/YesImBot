@@ -60,7 +60,13 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 
 ### Active
 
-- [ ] 模型组与负载均衡：多模型实例分组、group: 前缀路由、failover/round-robin/random 策略
+- [ ] Skill 驱动工具体系：核心只保留 send_message，Skill 声明/加载工具，默认搜索工具
+- [ ] Interactions 插件：独立插件迁移 v3 社交互动工具（reaction/essence/poke/forward），含 Skills + 平台检测
+- [ ] QManager 插件：独立插件迁移 v3 频道管理工具（delmsg/ban/kick），含 Skills + 管理员权限触发
+- [ ] 输入侧多模态（图片）：双模式可配置——原生多模态传图 + 外挂 VLM 描述
+- [ ] Environment 增强：members userId、username/nickname 区分、bot 自身 role、系统事件、消息引用链
+- [ ] 消息元素格式化：输入解析富文本 + 输出 send_message 扩展 + 用户消息转义防注入
+- [ ] 模型组与负载均衡：多模型实例分组、group: 前缀路由、failover/round-robin/random 策略（推迟）
 
 ### Out of Scope
 
@@ -69,11 +75,13 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - 唤醒机制（ArousalHandler、离线回顾）— 后续迭代
 - 知识图谱与用户画像 — 后续迭代
 - ChatMode 机制 — 已被 Trait + Skill 体系替代（v2.0 验证）
-- 内置工具迁移（CoreUtil/QManager/Interactions）— 后续迭代
+- CoreUtil 工具迁移（搜索/天气等）— 搜索工具在 v2.5 作为默认 Skill 工具实现，其余后续迭代
 - TTS/STT、RAG 记忆库 — 后续迭代
 - 全 provider 缓存抽象 — 各 provider 缓存语义不同，先做 Anthropic-only（v2.2 验证）
 - Scope 细粒度化（per-user/per-topic）— platform+channelId 足够，不过度设计（v2.3 验证）
 - 跨频道 scope 共享 — 伪命题，未来记忆系统 + 工具查询替代（v2.3 验证）
+- 语音多模态 — 图片优先，语音后续迭代
+- 提醒工具 — 需统一触发器机制，后续迭代
 
 ## Context
 
@@ -84,12 +92,13 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 - **v2.3 shipped:** 2026-02-26, 6,029 LOC TypeScript total, 3 phases, 6 plans
 - **v2.4 shipped:** 2026-02-27, +348 LOC TypeScript, 4 phases, 8 plans
 - **技术栈:** Koishi 4.x, ai-sdk, Turbo monorepo, Yarn workspaces
-- **包结构:** packages/shared-model + core + providers/provider-{openai,deepseek,anthropic} + plugins/persona
+- **包结构:** packages/shared-model + core + providers/provider-{openai,deepseek,anthropic} + plugins/{persona,interactions,qmanager}
 - **前身项目**：YesImBot-v3（`references/YesImBot-v3/`），YesImBot-dev（`references/YesImBot-dev/`）
 - **设计文档**：`references/books/` 目录为作者架构思考，`references/talks/` 为完整架构讨论
 - **v2.4 达成:** 消息队列积压合并、沉默渲染修复、WM 裁剪修复、AbstractProvider 统一、配置分组 i18n、Persona 插件
-- **已知技术债:** formatHorizonText deferred-judgment 路径省略 percept（设计决策）；REQ-04 模型组与负载均衡推迟
+- **已知技术债:** formatHorizonText deferred-judgment 路径省略 percept（设计决策）；REQ-04 模型组与负载均衡继续推迟
 - **测试覆盖:** vitest 基础设施已建立，JSON Parser 27 用例 + TokenBucket/Willingness/HorizonText 单测
+- **v3 参考工具:** Interactions（reaction/essence/poke/forward）、QManager（delmsg/ban/kick）待迁移为独立插件
 
 ## Constraints
 
@@ -145,10 +154,23 @@ Athena 是一个 Koishi 插件，让 AI 大语言模型自然融入 IM 平台的
 | Persona declare module 本地增强 | 不依赖 core devDependency，插件自包含 | ✓ Good — 轻量解耦 |
 | Persona preset merge-then-override | 预设为基础，用户字段覆盖非空值 | ✓ Good — 直觉化配置体验 |
 
+## Current Milestone: v2.5 Multimodal & Rich Interaction
+
+**Goal:** 让智能体具备多模态感知、富文本交互和插件化工具扩展能力
+
+**Target features:**
+
+- Skill 驱动工具体系（核心 send_message + Skill 加载工具 + 默认搜索）
+- Interactions 插件（v3 社交互动工具迁移为独立插件）
+- QManager 插件（v3 频道管理工具迁移为独立插件）
+- 输入侧多模态图片理解（原生 + 外挂 VLM 双模式）
+- Environment 增强（members/系统事件/引用链）
+- 消息元素格式化（输入解析 + 输出扩展 + 防注入）
+
 ## Latest Milestone: v2.4 Runtime & Polish (Shipped 2026-02-27)
 
 **Delivered:** 消息队列积压合并、沉默渲染修复、WM 裁剪修复、AbstractProvider 统一、配置分组 i18n、Persona 插件
 
 ---
 
-_Last updated: 2026-02-27 after v2.4 milestone_
+_Last updated: 2026-02-27 after v2.5 milestone started_

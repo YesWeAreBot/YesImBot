@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.4
-milestone_name: Runtime & Polish
-status: shipped
-last_updated: "2026-02-27T07:42:00.000Z"
+milestone: v2.5
+milestone_name: Multimodal & Rich Interaction
+status: defining_requirements
+last_updated: "2026-02-27T10:00:00.000Z"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,15 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.4 shipped — planning next milestone
+**Current focus:** Defining requirements for v2.5
 
 ## Current Position
 
-Milestone: v2.4 Runtime & Polish — SHIPPED 2026-02-27
-Status: All 4 phases (29-32) complete, 8/8 plans shipped
-Last activity: 2026-02-27 — Milestone v2.4 archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-27 — Milestone v2.5 started
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ## Performance Metrics
 
