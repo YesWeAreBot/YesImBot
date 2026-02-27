@@ -61,6 +61,10 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 
 - 探索更直观的人设自定义方式 (core) — phase26 移除 memory_block 后，需要比单一 SOUL 文件更友好的人设自定义方案
 
+### Roadmap Evolution
+
+- Phase 32 added: Persona Customization UX — 替代单一 SOUL 文件，提供更直观的人设自定义方案
+
 ### Blockers/Concerns
 
 - Phase 31 planning: failover vs fallbackChain interaction semantics need clarification before implementation
