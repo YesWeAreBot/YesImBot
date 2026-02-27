@@ -38,8 +38,8 @@
 - [ ] **QMGR-01**: `delmsg` 工具可撤回指定消息
 - [ ] **QMGR-02**: `ban` 工具可禁言用户（支持时长参数，0=解除）
 - [ ] **QMGR-03**: `kick` 工具可踢出用户
-- [ ] **QMGR-04**: 所有工具需 bot 具有管理员角色才激活（`requireBotRole` activator）
-- [ ] **QMGR-05**: 插件自带 Skill 定义，在 bot 有管理权限时自动激活管理工具
+- [x] **QMGR-04**: 所有工具需 bot 具有管理员角色才激活（`requireBotRole` activator）
+- [x] **QMGR-05**: 插件自带 Skill 定义，在 bot 有管理权限时自动激活管理工具
 
 ### Environment 增强
 
@@ -111,8 +111,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QMGR-01     | Phase 37 | Pending  |
 | QMGR-02     | Phase 37 | Pending  |
 | QMGR-03     | Phase 37 | Pending  |
-| QMGR-04     | Phase 37 | Pending  |
-| QMGR-05     | Phase 37 | Pending  |
+| QMGR-04     | Phase 37 | Complete |
+| QMGR-05     | Phase 37 | Complete |
 | IMG-01      | Phase 38 | Pending  |
 | IMG-02      | Phase 38 | Pending  |
 | IMG-03      | Phase 38 | Pending  |
