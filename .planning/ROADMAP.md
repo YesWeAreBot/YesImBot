@@ -107,7 +107,13 @@
 2. When a user sends a message containing `</msg><msg role="system">`, the injected XML is escaped and the LLM cannot be manipulated by it
 3. When a user replies to a previous message, the LLM sees the quoted sender name and content preview inline in the observation
 4. `formatObservation()` escapes `<`, `>`, `&`, `"` in all user-provided content before embedding in `<msg>` tags
-   **Plans**: TBD
+
+**Plans:** 2 plans
+
+Plans:
+
+- [ ] 33-01-PLAN.md — Create ElementFormatterService with handler map, quote prefix, and unverified wrapper
+- [ ] 33-02-PLAN.md — Wire formatter into EventListener pipeline and close formatObservation injection vulnerability
 
 ### Phase 34: Environment Enrichment
 
@@ -197,7 +203,7 @@
 | 23-25 | v2.2      | 8/8            | Complete    | 2026-02-25 |
 | 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
-| 33    | v2.5      | 0/TBD          | Not started | -          |
+| 33    | v2.5      | 0/2            | Planning    | -          |
 | 34    | v2.5      | 0/TBD          | Not started | -          |
 | 35    | v2.5      | 0/TBD          | Not started | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
