@@ -16,7 +16,7 @@
 - LLM passes face ID number directly — no semantic mapping
 - Max one reaction per message to prevent spam
 - Can react to any message in context, including bot's own
-- Only messages that appeared in context (via `<msg>` platformId) are valid targets
+- Only messages that appeared in context (via `<msg>` short ID) are valid targets
 
 **Essence:**
 
@@ -280,7 +280,7 @@ The CONTEXT.md decision: `get_forward_msg` is NOT via Skill — it's context-tri
 
 - **Calling `session.onebot._request()` without null-checking session:** Always guard with `if (!session) return Failed(...)` first
 - **Using `FunctionType.Tool` for side-effecting operations:** Reactions/essence/poke are `@Action` (sequential), not `@Tool` (parallel)
-- **Hardcoding message IDs:** Always resolve via `horizon.lookupPlatformId(channelKey, shortId)` — the LLM sees short IDs, not platform IDs
+- **Hardcoding message IDs:** Always resolve via `horizon.lookupNativeMsgId(channelKey, shortId)` — the LLM sees short IDs, not platform IDs
 - **Registering Skills in PluginService constructor:** Skills belong in `SkillRegistry`, not `PluginService`
 - **Forgetting `source: "plugin"` on programmatically registered skills:** File-based skills use `"file"`, plugin-registered use `"plugin"`
 
@@ -294,7 +294,7 @@ The CONTEXT.md decision: `get_forward_msg` is NOT via Skill — it's context-tri
 | Tool registration             | Manual Map manipulation              | `@Action`/`@Tool` decorators + `Plugin` base class | Decorator pattern handles binding, metadata         |
 | Platform gating               | Manual `if (platform === "onebot")`  | `requirePlatform("onebot")` activator              | Consistent, composable, already exists              |
 | Skill file loading            | Custom YAML parser                   | `loadSkillsFromDir()` + gray-matter                | Already handles frontmatter + code activators       |
-| Short ID → platform ID lookup | Custom lookup                        | `horizon.lookupPlatformId(channelKey, shortId)`    | Already implemented with eviction                   |
+| Short ID → platform ID lookup | Custom lookup                        | `horizon.lookupNativeMsgId(channelKey, shortId)`   | Already implemented with eviction                   |
 | Bot role check                | Direct `getGuildMember` call in tool | `requireBotRole` activator + `botRole` in toolCtx  | Cached in HorizonService, avoids repeated API calls |
 
 **Key insight:** The plugin infrastructure is complete. This phase is 90% configuration/wiring, 10% new logic (cooldown map, bot-role signal, forward cap).
@@ -307,7 +307,7 @@ The CONTEXT.md decision: `get_forward_msg` is NOT via Skill — it's context-tri
 
 **What goes wrong:** LLM passes short ID (e.g. `"42"`) but OneBot API needs platform message ID (e.g. `"7890123456"`).
 **Why it happens:** The `<msg id="42">` tag shows short IDs to the LLM. Tools receive whatever the LLM passes.
-**How to avoid:** In every message-targeting tool handler, resolve via `horizon.lookupPlatformId(channelKey, Number(params.message_id))`. Return `Failed("Message not found in current context")` if lookup returns undefined.
+**How to avoid:** In every message-targeting tool handler, resolve via `horizon.lookupNativeMsgId(channelKey, Number(params.message_id))`. Return `Failed("Message not found in current context")` if lookup returns undefined.
 **Warning signs:** OneBot API returning "message not found" errors.
 
 ### Pitfall 2: Skill B activates without bot having admin role
@@ -352,7 +352,7 @@ The CONTEXT.md decision: `get_forward_msg` is NOT via Skill — it's context-tri
 ### Resolving short ID to platform ID in a tool handler
 
 ```typescript
-// Source: core/src/services/horizon/service.ts — lookupPlatformId
+// Source: core/src/services/horizon/service.ts — lookupNativeMsgId
 async reactionCreate(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
   const session = ctx.session;
   if (!session) return Failed("No active session");
@@ -361,11 +361,11 @@ async reactionCreate(params: Record<string, unknown>, ctx: ToolExecutionContext)
   const shortId = Number(params["message_id"]);
   const channelKey = `${ctx.platform}:${ctx.channelId}`;
   const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
-  const platformId = horizon.lookupPlatformId(channelKey, shortId);
-  if (!platformId) return Failed("Message not found in current context");
+  const nativeMsgId = horizon.lookupNativeMsgId(channelKey, shortId);
+  if (!nativeMsgId) return Failed("Message not found in current context");
 
   await session.onebot._request("set_msg_emoji_like", {
-    message_id: platformId,
+    message_id: nativeMsgId,
     emoji_id: String(Number(params["face_id"])),
   });
   return Success("Reaction added");
@@ -440,10 +440,10 @@ effects:
 
 ```typescript
 // set_essence_msg — add message as group highlight
-await session.onebot._request("set_essence_msg", { message_id: platformId });
+await session.onebot._request("set_essence_msg", { message_id: nativeMsgId });
 
 // delete_essence_msg — remove group highlight
-await session.onebot._request("delete_essence_msg", { message_id: platformId });
+await session.onebot._request("delete_essence_msg", { message_id: nativeMsgId });
 ```
 
 ### Poke API call
@@ -467,7 +467,7 @@ await session.onebot._request("send_poke", { user_id: targetUserId });
 | `ctx.provide()` for services      | `Service` subclass pattern                  | Koishi 4.x   | Plugin auto-registers/disposes                           |
 | Inline tool registration          | `@Action`/`@Tool` decorators                | Phase 35     | Consistent metadata, binding                             |
 | Global tool visibility            | `hidden: true` + Skill `toolFilter.include` | Phase 35     | Tools only appear when contextually relevant             |
-| Hardcoded platform IDs in prompts | Short ID system + `lookupPlatformId`        | Phase 34     | LLM uses stable short IDs, tools resolve to platform IDs |
+| Hardcoded platform IDs in prompts | Short ID system + `lookupNativeMsgId`       | Phase 34     | LLM uses stable short IDs, tools resolve to platform IDs |
 
 **Confirmed current:** `session.onebot._request()` is the correct OneBot raw API call pattern — already used in `OnebotPlugin.getForwardMessage()`.
 
@@ -510,7 +510,7 @@ await session.onebot._request("send_poke", { user_id: targetUserId });
 - `core/src/services/skill/types.ts` — `SkillDefinition`, `ConditionNode`, `ToolFilter` types
 - `core/src/services/skill/loader.ts` — SKILL.md frontmatter schema, `activate.cjs` loading
 - `core/src/services/trait/detectors/scene.ts` — `scene` and `attention` signal emission, `view.self.role` availability
-- `core/src/services/horizon/service.ts` — `lookupPlatformId`, `getBotRole`, `view.self.role`
+- `core/src/services/horizon/service.ts` — `lookupNativeMsgId`, `getBotRole`, `view.self.role`
 - `core/src/services/agent/loop.ts` — how `toolCtxWithPercept` is built, where `botRole` can be injected
 - `core/resources/skills/search/SKILL.md` — reference Skill file format
 
