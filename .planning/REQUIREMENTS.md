@@ -7,8 +7,8 @@
 
 ### 消息元素格式化
 
-- [ ] **ELEM-01**: 用户消息中的 Koishi 元素（at/quote/image/face/forward/audio/video/file）被解析为 AI 可读文本
-- [ ] **ELEM-02**: 用户消息内容在注入 prompt 前经过 XML 转义，防止 prompt injection
+- [x] **ELEM-01**: 用户消息中的 Koishi 元素（at/quote/image/face/forward/audio/video/file）被解析为 AI 可读文本
+- [x] **ELEM-02**: 用户消息内容在注入 prompt 前经过 XML 转义，防止 prompt injection
 - [ ] **ELEM-03**: `session.quote` 引用内容内联展示（发送者 + 内容预览），LLM 可理解回复上下文
 - [ ] **ELEM-04**: `formatObservation()` 中用户内容经过转义处理，消除现有注入漏洞
 
@@ -90,36 +90,36 @@ Explicitly excluded. Documented to prevent scope creep.
 
 Which phases cover which requirements. Updated during roadmap creation.
 
-| Requirement | Phase    | Status  |
-| ----------- | -------- | ------- |
-| ELEM-01     | Phase 33 | Pending |
-| ELEM-02     | Phase 33 | Pending |
-| ELEM-03     | Phase 33 | Pending |
-| ELEM-04     | Phase 33 | Pending |
-| ENV-01      | Phase 34 | Pending |
-| ENV-02      | Phase 34 | Pending |
-| ENV-03      | Phase 34 | Pending |
-| ENV-04      | Phase 34 | Pending |
-| TOOL-01     | Phase 35 | Pending |
-| TOOL-02     | Phase 35 | Pending |
-| TOOL-03     | Phase 35 | Pending |
-| INTR-01     | Phase 36 | Pending |
-| INTR-02     | Phase 36 | Pending |
-| INTR-03     | Phase 36 | Pending |
-| INTR-04     | Phase 36 | Pending |
-| INTR-05     | Phase 36 | Pending |
-| QMGR-01     | Phase 37 | Pending |
-| QMGR-02     | Phase 37 | Pending |
-| QMGR-03     | Phase 37 | Pending |
-| QMGR-04     | Phase 37 | Pending |
-| QMGR-05     | Phase 37 | Pending |
-| IMG-01      | Phase 38 | Pending |
-| IMG-02      | Phase 38 | Pending |
-| IMG-03      | Phase 38 | Pending |
-| IMG-04      | Phase 38 | Pending |
-| OUT-01      | Phase 39 | Pending |
-| OUT-02      | Phase 39 | Pending |
-| OUT-03      | Phase 39 | Pending |
+| Requirement | Phase    | Status   |
+| ----------- | -------- | -------- |
+| ELEM-01     | Phase 33 | Complete |
+| ELEM-02     | Phase 33 | Complete |
+| ELEM-03     | Phase 33 | Pending  |
+| ELEM-04     | Phase 33 | Pending  |
+| ENV-01      | Phase 34 | Pending  |
+| ENV-02      | Phase 34 | Pending  |
+| ENV-03      | Phase 34 | Pending  |
+| ENV-04      | Phase 34 | Pending  |
+| TOOL-01     | Phase 35 | Pending  |
+| TOOL-02     | Phase 35 | Pending  |
+| TOOL-03     | Phase 35 | Pending  |
+| INTR-01     | Phase 36 | Pending  |
+| INTR-02     | Phase 36 | Pending  |
+| INTR-03     | Phase 36 | Pending  |
+| INTR-04     | Phase 36 | Pending  |
+| INTR-05     | Phase 36 | Pending  |
+| QMGR-01     | Phase 37 | Pending  |
+| QMGR-02     | Phase 37 | Pending  |
+| QMGR-03     | Phase 37 | Pending  |
+| QMGR-04     | Phase 37 | Pending  |
+| QMGR-05     | Phase 37 | Pending  |
+| IMG-01      | Phase 38 | Pending  |
+| IMG-02      | Phase 38 | Pending  |
+| IMG-03      | Phase 38 | Pending  |
+| IMG-04      | Phase 38 | Pending  |
+| OUT-01      | Phase 39 | Pending  |
+| OUT-02      | Phase 39 | Pending  |
+| OUT-03      | Phase 39 | Pending  |
 
 **Coverage:**
 

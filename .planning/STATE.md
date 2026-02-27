@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Multimodal & Rich Interaction
-status: roadmap_ready
-last_updated: "2026-02-27T10:35:23.000Z"
+status: executing
+last_updated: "2026-02-27T12:23:48.000Z"
 progress:
   total_phases: 7
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -22,15 +22,15 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 33 (not started)
-Plan: —
-Status: Roadmap ready, awaiting first plan
-Last activity: 2026-02-27 — Roadmap created for v2.5
+Phase: 33 (in progress)
+Plan: 01 complete, 02 pending
+Status: Executing Phase 33 — Plan 01 complete
+Last activity: 2026-02-27 — ElementFormatterService created (Plan 01)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ```
-Phase 33 [          ] 0%
+Phase 33 [=====     ] 50%  (1/2 plans)
 Phase 34 [          ] 0%
 Phase 35 [          ] 0%
 Phase 36 [          ] 0%
@@ -65,6 +65,8 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - **Image eager download** — CDN URLs expire in 5-30 min; base64 conversion happens at receive time in EventListener, not at LLM call time
 - **Hidden tool contract** — all builtins except `send_message` get `hidden: true` in Phase 35; Interactions/QManager plugins depend on this
 - **Plugin pattern** — Interactions and QManager follow the `persona` plugin pattern exactly (declare module, ctx.on dispose hook)
+- **ElementFormatterService uses handler map pattern** — Map<string, ElementHandler> with register() for extensibility, <unsupported> fallback for unknown types
+- **<unverified> threshold = 200 chars** — text-only length; more permissive than dev version's 100 to reduce false positives
 - **Search tool uses ctx.http** — no Tavily SDK; configurable endpoint, thin wrapper
 
 ### Pending Todos
@@ -91,9 +93,15 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 2   | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/)     |
 | 3   | Fix agent JSON output drift: unify format spec, improve raw-text fallback       | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 
+### v2.5 Execution Metrics
+
+| Phase | Plan | Duration | Tasks | Files |
+| ----- | ---- | -------- | ----- | ----- |
+| 33    | 01   | 3min     | 2     | 4     |
+
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: v2.5 roadmap created — 7 phases (33-39), 28 requirements mapped
+Stopped at: Completed 33-01-PLAN.md (ElementFormatterService)
 Resume file: None
-Next action: `/gsd:plan-phase 33`
+Next action: `/gsd:execute-phase 33` (Plan 02)

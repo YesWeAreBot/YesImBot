@@ -108,7 +108,7 @@
 3. When a user replies to a previous message, the LLM sees the quoted sender name and content preview inline in the observation
 4. `formatObservation()` escapes `<`, `>`, `&`, `"` in all user-provided content before embedding in `<msg>` tags
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 
@@ -203,7 +203,7 @@ Plans:
 | 23-25 | v2.2      | 8/8            | Complete    | 2026-02-25 |
 | 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
-| 33    | v2.5      | 0/2            | Planning    | -          |
+| 33    | 1/2       | In Progress    |             | -          |
 | 34    | v2.5      | 0/TBD          | Not started | -          |
 | 35    | v2.5      | 0/TBD          | Not started | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
