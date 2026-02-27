@@ -28,11 +28,11 @@ export function createProviderSchema<TExtra = Record<string, never>>(
         reasoning: Schema.boolean().default(false),
         modalities: Schema.array(
           Schema.union([
-            Schema.const(Modality.Audio),
+            Schema.const(Modality.Text),
             Schema.const(Modality.Image),
             Schema.const(Modality.Pdf),
-            Schema.const(Modality.Text),
             Schema.const(Modality.Video),
+            Schema.const(Modality.Audio),
           ]),
         )
           .default([Modality.Text])
