@@ -14,6 +14,7 @@ interface DecoratorOpts {
   description: string;
   parameters: Schema;
   activators?: Activator[];
+  hidden?: boolean;
 }
 
 export interface StaticEntry extends DecoratorOpts {

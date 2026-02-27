@@ -24,6 +24,7 @@ export abstract class Plugin {
         parameters: entry.parameters,
         handler: handler.bind(this),
         activators: entry.activators,
+        hidden: entry.hidden,
       });
     }
 
@@ -38,6 +39,7 @@ export abstract class Plugin {
         parameters: entry.parameters,
         handler: handler.bind(this),
         activators: entry.activators,
+        hidden: entry.hidden,
       });
     }
   }
