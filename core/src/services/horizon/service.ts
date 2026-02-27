@@ -11,6 +11,7 @@ import type {
   Environment,
   HorizonView,
   Observation,
+  SelfInfo,
   TimelineEntry,
   ViewOptions,
 } from "./types";
@@ -65,6 +66,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private horizonViewTpl?: string;
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (platformMsgId -> shortId)
+  private botRoleCache = new Map<string, { role: "owner" | "admin" | null; fetchedAt: number }>();
 
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
@@ -111,7 +113,33 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   }
 
   protected async stop(): Promise<void> {
+    this.botRoleCache.clear();
     this.logger.info("HorizonService stopped");
+  }
+
+  private classifyRole(roles: string[]): "owner" | "admin" | null {
+    if (roles.some((r) => /^owner$/i.test(r))) return "owner";
+    if (roles.some((r) => /^(admin|administrator|moderator)$/i.test(r))) return "admin";
+    return null;
+  }
+
+  private async getBotRole(key: ChannelKey, session?: Session): Promise<"owner" | "admin" | null> {
+    const cacheKey = `${key.platform}:${session?.guildId ?? key.channelId}`;
+    const cached = this.botRoleCache.get(cacheKey);
+    const ttl = 10 * 60 * 1000; // 10 minutes
+    if (cached && Date.now() - cached.fetchedAt < ttl) return cached.role;
+
+    if (!session?.guildId || !session?.bot?.selfId) return null;
+    try {
+      const member = await session.bot.getGuildMember(session.guildId, session.bot.selfId);
+      const roles: string[] = ((member as Record<string, unknown>).roles as string[]) ?? [];
+      const role = this.classifyRole(roles);
+      this.botRoleCache.set(cacheKey, { role, fetchedAt: Date.now() });
+      return role;
+    } catch {
+      this.botRoleCache.set(cacheKey, { role: null, fetchedAt: Date.now() });
+      return null; // silent degradation
+    }
   }
 
   async buildView(key: ChannelKey, options?: ViewOptions): Promise<HorizonView> {
@@ -124,9 +152,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const history = this.events.toObservations(entries.reverse());
     const environment = await this.getOrCreateEnvironment(key, options?.session);
     const entities = await this.getEntities(key, options?.session);
-    const self = {
+    const botRole = await this.getBotRole(key, options?.session);
+    const self: SelfInfo = {
       id: options?.selfId ?? "",
       name: this.config.botName || options?.selfName || options?.selfId || "",
+      role: botRole ?? undefined,
     };
     return { self, environment: environment ?? undefined, entities, history };
   }
@@ -304,13 +334,33 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     }
 
     let activeMembers = "";
-    if (view.entities?.length) {
-      activeMembers = view.entities
-        .map((e) => {
-          const badge = this.getRoleBadge(e.attributes);
-          return badge ? `${e.name} [${badge.trim().slice(1, -1)}]` : e.name;
-        })
-        .join(", ");
+    if (view.entities?.length || view.self.id) {
+      const lines: string[] = [];
+
+      // Render bot self entity first with self="true"
+      if (view.self.id) {
+        const selfParts = [`id="${view.self.id}"`, `name="${view.self.name}"`];
+        if (view.self.role) selfParts.push(`role="${view.self.role}"`);
+        selfParts.push(`self="true"`);
+        lines.push(`<member ${selfParts.join(" ")} />`);
+      }
+
+      // Render other members from entities
+      for (const e of view.entities ?? []) {
+        const userId = e.userId ?? e.id;
+        const username = e.username ?? e.name;
+        const nickname = e.nickname;
+        const displayName =
+          nickname && nickname !== username ? `${nickname} (${username})` : (nickname ?? username);
+        const parts = [`id="${userId}"`, `name="${displayName}"`];
+        const role = this.classifyRole(
+          Array.isArray(e.attributes?.roles) ? (e.attributes.roles as string[]) : [],
+        );
+        if (role) parts.push(`role="${role}"`);
+        lines.push(`<member ${parts.join(" ")} />`);
+      }
+
+      activeMembers = lines.join("\n");
     }
 
     const historyObs: string[] = [];
