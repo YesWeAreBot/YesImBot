@@ -141,7 +141,7 @@
 
 **Goal:** Provide a standalone persona plugin with a form-based config UI that injects supplementary persona traits into the soul injection point, complementing SOUL.md
 **Depends on:** Phase 31
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 

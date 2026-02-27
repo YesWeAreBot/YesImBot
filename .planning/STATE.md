@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Runtime & Polish
-status: unknown
-last_updated: "2026-02-26T19:08:31.970Z"
+status: complete
+last_updated: "2026-02-27T07:16:29.000Z"
 progress:
   total_phases: 3
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 7
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,13 +23,13 @@ See: .planning/PROJECT.md (updated 2026-02-26)
 ## Current Position
 
 Phase: 32 (Persona Customization UX)
-Plan: 01 of 2 — COMPLETE
-Status: Plan 01 complete — persona plugin scaffold with Schema, presets, and i18n
-Last activity: 2026-02-27 — Completed 32-01 (Persona plugin scaffold, Schema, presets & i18n)
+Plan: 02 of 2 — COMPLETE
+Status: Phase 32 complete — persona injection wiring and text assembly
+Last activity: 2026-02-27 — Completed 32-02 (Persona injection wiring & text assembly)
 
-Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | Phase 32 ◆
+Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | Phase 32 ✅
 
-[Phase 29 ✅] → [Phase 30 ✅] → [Phase 31 ✅] → [Phase 32 ◆]
+[Phase 29 ✅] → [Phase 30 ✅] → [Phase 31 ✅] → [Phase 32 ✅]
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 - 31-02: Removed hardcoded .description() from schema-factory advancedOverride; all provider config descriptions now come from i18n locale files
 - 31-01: Used `as never` cast for locale-aware .description() objects; inlined all field definitions into 5 groups in index.ts for grouping control
 - 32-01: Preset union uses inline .description() per const for bilingual dropdown labels; PersonaFields interface exported from presets.ts for reuse in Plan 02
+- 32-02: Used local declare module augmentation instead of core devDependency for PromptService typing; buildPersonaText returns pre-computed text string captured in renderFn closure
 
 ### Pending Todos
 
@@ -85,9 +86,10 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 | Phase 31 P02                | 6min                                                                            | 2 tasks    | 10 files |
 | Phase 31 P01                | 7min                                                                            | 2 tasks    | 9 files  |
 | Phase 32 P01                | 3min                                                                            | 2 tasks    | 6 files  |
+| Phase 32 P02                | 6min                                                                            | 2 tasks    | 1 files  |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 32-01-PLAN.md (Persona plugin scaffold, Schema, presets & i18n)
+Stopped at: Completed 32-02-PLAN.md (Persona injection wiring & text assembly) — Phase 32 complete
 Resume file: None
