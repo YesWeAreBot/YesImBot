@@ -108,6 +108,26 @@ export class SceneTrait implements TraitDetector {
       }
     }
 
+    // Bot role signal — enables role-gated Skills (e.g. essence management)
+    if (view.self?.role) {
+      signals.push({
+        dimension: "bot-role",
+        value: view.self.role,
+        confidence: 1.0,
+      });
+    }
+
+    // Forward-present signal — enables get_forward_msg tool when forwarded messages in context
+    const newMsgs = msgs.filter((o) => o.stage === "new");
+    const hasForward = newMsgs.some((m) => m.content.includes("<forward"));
+    if (hasForward) {
+      signals.push({
+        dimension: "has-forward",
+        value: "true",
+        confidence: 1.0,
+      });
+    }
+
     return signals;
   }
 }

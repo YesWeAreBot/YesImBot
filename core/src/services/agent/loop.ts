@@ -68,7 +68,7 @@ export class ThinkActLoop {
       },
     );
 
-    const toolCtxWithPercept = { ...toolCtx, percept };
+    const toolCtxWithPercept = { ...toolCtx, percept, botRole: view.self?.role };
 
     // Trait-Skill pipeline: analyze context, resolve active skills
     const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
