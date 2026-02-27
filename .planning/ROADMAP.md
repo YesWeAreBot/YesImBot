@@ -136,3 +136,14 @@
 | 29    | v2.4      | Complete       | 2026-02-26 | 2026-02-26 |
 | 30    | 2/2       | Complete       | 2026-02-26 | -          |
 | 31    | 2/2       | Complete       | 2026-02-26 | -          |
+
+### Phase 32: Persona Customization UX
+
+**Goal:** Provide a standalone persona plugin with a form-based config UI that injects supplementary persona traits into the soul injection point, complementing SOUL.md
+**Depends on:** Phase 31
+**Plans:** 2 plans
+
+Plans:
+
+- [ ] 32-01-PLAN.md — Persona plugin scaffold, Schema, presets & i18n
+- [ ] 32-02-PLAN.md — Persona injection wiring, text assembly & workspace integration
