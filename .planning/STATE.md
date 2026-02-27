@@ -59,7 +59,7 @@ v2.0–v2.3 decisions archived to milestones/v2.x-ROADMAP.md.
 
 ### Pending Todos
 
-None.
+- 探索更直观的人设自定义方式 (core) — phase26 移除 memory_block 后，需要比单一 SOUL 文件更友好的人设自定义方案
 
 ### Blockers/Concerns
 
