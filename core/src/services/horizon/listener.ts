@@ -1,7 +1,7 @@
 import type { Session } from "koishi";
 import { Context, Logger, h } from "koishi";
 
-import { formatQuotePrefix, wrapIfLong } from "../element-formatter/handlers";
+import { formatQuotePrefix, wrapIfLong } from "../formatter/handlers";
 import { TriggerType } from "../shared/types";
 import type { EventManager } from "./manager";
 import type { HorizonServiceConfig } from "./service";
@@ -83,7 +83,7 @@ export class EventListener {
     }
 
     // Format elements through ElementFormatterService
-    const formatter = this.ctx["yesimbot.element-formatter"];
+    const formatter = this.ctx["yesimbot.formatter"];
     const elements = session.elements?.length ? session.elements : h.parse(session.content ?? "");
     let formattedContent = formatter.format(elements, session);
 

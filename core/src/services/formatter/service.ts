@@ -5,15 +5,15 @@ import { type ElementHandler, registerBuiltinHandlers } from "./handlers";
 
 declare module "koishi" {
   interface Context {
-    "yesimbot.element-formatter": ElementFormatterService;
+    "yesimbot.formatter": FormatterService;
   }
 }
 
-export class ElementFormatterService extends Service {
+export class FormatterService extends Service {
   private handlers = new Map<string, ElementHandler>();
 
   constructor(ctx: Context) {
-    super(ctx, "yesimbot.element-formatter", true);
+    super(ctx, "yesimbot.formatter", true);
     registerBuiltinHandlers(this.register.bind(this));
   }
 

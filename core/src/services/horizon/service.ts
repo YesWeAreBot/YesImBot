@@ -57,7 +57,7 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
-  static inject = ["database", "yesimbot.prompt", "yesimbot.element-formatter"];
+  static inject = ["database", "yesimbot.prompt", "yesimbot.formatter"];
 
   public events: EventManager;
   public listener: EventListener;
