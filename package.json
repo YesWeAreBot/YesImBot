@@ -19,6 +19,7 @@
   "scripts": {
     "build": "turbo run build",
     "bump": "bumpp",
+    "bump:beta": "bumpp --release prerelease --preid beta",
     "clean": "turbo run clean && rimraf .turbo",
     "fmt": "turbo run fmt",
     "fmt:check": "yarn fmt -- --check",
