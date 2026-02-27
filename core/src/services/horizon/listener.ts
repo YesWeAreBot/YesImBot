@@ -1,6 +1,7 @@
 import type { Session } from "koishi";
-import { Context, Logger } from "koishi";
+import { Context, Logger, h } from "koishi";
 
+import { formatQuotePrefix, wrapIfLong } from "../element-formatter/handlers";
 import { TriggerType } from "../shared/types";
 import type { EventManager } from "./manager";
 import type { HorizonServiceConfig } from "./service";
@@ -27,7 +28,7 @@ export class EventListener {
       this.ctx.middleware(async (session, next) => {
         if (!this.isChannelAllowed(session)) return next();
         if (session.author?.isBot) return next();
-        await this.recordUserMessage(session);
+        const formattedContent = await this.recordUserMessage(session);
         await next();
         this.ctx.emit("horizon/message", {
           platform: session.platform,
@@ -37,7 +38,7 @@ export class EventListener {
             messageId: session.messageId ?? "",
             senderId: session.author?.id ?? session.userId ?? "",
             senderName: session.author?.nick || session.author?.name || session.userId || "",
-            content: session.content ?? "",
+            content: formattedContent,
           },
           triggerType: this.classifyTrigger(session),
           runtime: { session },
@@ -71,7 +72,7 @@ export class EventListener {
     return "random";
   }
 
-  private async recordUserMessage(session: Session): Promise<void> {
+  private async recordUserMessage(session: Session): Promise<string> {
     this.logger.info(
       `user message | ${session.author?.name} | ${session.cid} | ${session.content}`,
     );
@@ -80,6 +81,21 @@ export class EventListener {
     } else if (session.isDirect) {
       await this.updateMemberInfo(session, `direct:${session.platform}`);
     }
+
+    // Format elements through ElementFormatterService
+    const formatter = this.ctx["yesimbot.element-formatter"];
+    const elements = session.elements?.length ? session.elements : h.parse(session.content ?? "");
+    let formattedContent = formatter.format(elements, session);
+
+    // Prepend quote prefix if replying
+    const quotePrefix = formatQuotePrefix(session);
+    if (quotePrefix) {
+      formattedContent = quotePrefix + " " + formattedContent;
+    }
+
+    // Wrap long messages with <unverified> tag
+    formattedContent = wrapIfLong(formattedContent);
+
     await this.events.recordMessage({
       platform: session.platform,
       channelId: session.channelId ?? "",
@@ -89,9 +105,12 @@ export class EventListener {
         messageId: session.messageId ?? "",
         senderId: session.author?.id ?? session.userId ?? "",
         senderName: session.author?.nick || session.author?.name || session.userId || "",
-        content: session.content ?? "",
+        content: formattedContent,
+        replyTo: session.quote?.id,
       },
     });
+
+    return formattedContent;
   }
 
   private async recordBotSentMessage(session: Session): Promise<void> {
