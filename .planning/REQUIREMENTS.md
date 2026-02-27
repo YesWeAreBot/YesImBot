@@ -43,8 +43,8 @@
 
 ### Environment 增强
 
-- [ ] **ENV-01**: Entity 记录包含 `userId`（平台账号 ID）作为稳定标识
-- [ ] **ENV-02**: Entity 区分 `username`（账号名）和 `nickname`（群昵称/显示名）
+- [x] **ENV-01**: Entity 记录包含 `userId`（平台账号 ID）作为稳定标识
+- [x] **ENV-02**: Entity 区分 `username`（账号名）和 `nickname`（群昵称/显示名）
 - [ ] **ENV-03**: Bot 自身 role 信息可查询并注入 HorizonView，LLM 知道自己是否有管理权限
 - [ ] **ENV-04**: `<msg>` 标签中暴露 `platformId`，使 delmsg 等工具可引用真实消息 ID
 
@@ -96,8 +96,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ELEM-02     | Phase 33 | Complete |
 | ELEM-03     | Phase 33 | Complete |
 | ELEM-04     | Phase 33 | Complete |
-| ENV-01      | Phase 34 | Pending  |
-| ENV-02      | Phase 34 | Pending  |
+| ENV-01      | Phase 34 | Complete |
+| ENV-02      | Phase 34 | Complete |
 | ENV-03      | Phase 34 | Pending  |
 | ENV-04      | Phase 34 | Pending  |
 | TOOL-01     | Phase 35 | Pending  |

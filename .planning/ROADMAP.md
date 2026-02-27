@@ -127,7 +127,7 @@ Plans:
 3. The LLM can determine whether it has admin/moderator permissions in the current channel
 4. The `<msg>` tag in working memory exposes a `platformId` attribute so tools like `delmsg` can reference the real message ID
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 
@@ -210,7 +210,7 @@ Plans:
 | 26-28 | v2.3      | 6/6            | Complete    | 2026-02-26 |
 | 29-32 | v2.4      | 8/8            | Complete    | 2026-02-27 |
 | 33    | v2.5      | Complete       | 2026-02-27  | 2026-02-27 |
-| 34    | v2.5      | 0/2            | Planned     | -          |
+| 34    | 1/2       | In Progress    |             | -          |
 | 35    | v2.5      | 0/TBD          | Not started | -          |
 | 36    | v2.5      | 0/TBD          | Not started | -          |
 | 37    | v2.5      | 0/TBD          | Not started | -          |

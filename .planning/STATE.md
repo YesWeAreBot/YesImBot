@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 33 (complete)
-Plan: 02 complete (2/2 plans)
-Status: Phase 33 complete — ready for Phase 34
-Last activity: 2026-02-27 — Pipeline integration complete (Plan 02)
+Phase: 34 (in progress)
+Plan: 01 complete (1/2 plans)
+Status: Phase 34 Plan 01 complete — ready for Plan 02
+Last activity: 2026-02-27 — Entity identity enrichment complete (Plan 01)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
 ```
 Phase 33 [==========] 100% (2/2 plans)
-Phase 34 [          ] 0%
+Phase 34 [=====     ] 50% (1/2 plans)
 Phase 35 [          ] 0%
 Phase 36 [          ] 0%
 Phase 37 [          ] 0%
@@ -69,6 +69,7 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - **<unverified> threshold = 200 chars** — text-only length; more permissive than dev version's 100 to reduce false positives
 - **Pipeline fix strategy** — format at receive time in EventListener, store safe content in timeline, no escaping at render time in formatObservation()
 - **Search tool uses ctx.http** — no Tavily SDK; configurable endpoint, thin wrapper
+- **Entity ID uses session.userId** — stable platform account ID instead of session.author.id; nickname omitted when identical to username to reduce token noise
 
 ### Pending Todos
 
@@ -100,10 +101,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | ----- | ---- | -------- | ----- | ----- |
 | 33    | 01   | 3min     | 2     | 4     |
 | 33    | 02   | 2min     | 2     | 2     |
+| 34    | 01   | 2min     | 2     | 3     |
 
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 33-02-PLAN.md (Pipeline Integration)
+Stopped at: Completed 34-01-PLAN.md (Entity Identity Enrichment)
 Resume file: None
-Next action: `/gsd:execute-phase 34` (Phase 34 planning)
+Next action: `/gsd:execute-phase 34` (Phase 34 Plan 02)
