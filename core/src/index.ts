@@ -31,7 +31,12 @@ export type Config = AgentCoreConfig &
   PromptServiceConfig &
   RoleServiceConfig &
   SkillRegistryConfig &
-  TraitAnalyzerConfig;
+  TraitAnalyzerConfig & {
+    searchProvider?: string;
+    searchEndpoint?: string;
+    searchApiKey?: string;
+    searchDefaultLimit?: number;
+  };
 
 export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
@@ -95,6 +100,10 @@ export const Config: Schema<Config> = Schema.intersect([
     entityCacheTtl: Schema.number().default(3600000),
     maxActiveEntities: Schema.number().default(15),
     defaultTimeout: Schema.number().default(30000),
+    searchProvider: Schema.string().default("tavily"),
+    searchEndpoint: Schema.string().role("link"),
+    searchApiKey: Schema.string().role("secret"),
+    searchDefaultLimit: Schema.number().default(5),
     debugLevel: Schema.union([
       Schema.const(0),
       Schema.const(1),
@@ -123,7 +132,17 @@ export function apply(ctx: Context, config: Config) {
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });
-  ctx.plugin(PluginService, { defaultTimeout: config.defaultTimeout });
+  ctx.plugin(PluginService, {
+    defaultTimeout: config.defaultTimeout,
+    search: config.searchApiKey
+      ? {
+          provider: config.searchProvider,
+          endpoint: config.searchEndpoint,
+          apiKey: config.searchApiKey,
+          defaultLimit: config.searchDefaultLimit,
+        }
+      : undefined,
+  });
   ctx.plugin(TraitAnalyzer, {});
   ctx.plugin(SkillRegistry, {
     skillPaths: config.skillPaths,

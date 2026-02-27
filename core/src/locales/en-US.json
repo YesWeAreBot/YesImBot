@@ -90,6 +90,10 @@
     "entityCacheTtl": "Entity cache TTL (ms)",
     "maxActiveEntities": "Max entities shown to LLM",
     "defaultTimeout": "Tool execution default timeout (ms)",
+    "searchProvider": "Search service provider",
+    "searchEndpoint": "Search API endpoint",
+    "searchApiKey": "Search API key",
+    "searchDefaultLimit": "Search default result limit",
     "debugLevel": "Debug log level: 0=off, 1=basic, 2=detailed, 3=full"
   }
 }

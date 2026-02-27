@@ -1,7 +1,8 @@
 import { Context, Schema, Service } from "koishi";
 
 import { Plugin } from "./base-plugin";
-import { CorePlugin, DemoPlugin, OnebotPlugin, SessionInfoPlugin } from "./builtin";
+import { CorePlugin, DemoPlugin, OnebotPlugin, SearchPlugin, SessionInfoPlugin } from "./builtin";
+import type { SearchPluginConfig } from "./builtin/search/types";
 import { schemaToJSONSchema } from "./schema";
 import {
   FunctionType,
@@ -19,10 +20,17 @@ declare module "koishi" {
 
 export interface PluginServiceConfig {
   defaultTimeout?: number;
+  search?: SearchPluginConfig;
 }
 
 export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.object({
   defaultTimeout: Schema.number().default(30000),
+  search: Schema.object({
+    provider: Schema.string().default("tavily"),
+    endpoint: Schema.string().default("https://api.tavily.com/search"),
+    apiKey: Schema.string().role("secret"),
+    defaultLimit: Schema.number().default(5),
+  }).description("Search tool configuration"),
 });
 
 export class PluginService extends Service<PluginServiceConfig> {
@@ -35,6 +43,9 @@ export class PluginService extends Service<PluginServiceConfig> {
     this.register(new SessionInfoPlugin(ctx));
     this.register(new OnebotPlugin(ctx));
     this.register(new DemoPlugin(ctx));
+    if (config.search) {
+      this.register(new SearchPlugin(ctx, config.search));
+    }
   }
 
   register(plugin: Plugin): void {

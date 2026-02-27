@@ -90,6 +90,10 @@
     "entityCacheTtl": "实体缓存过期时间（毫秒）",
     "maxActiveEntities": "展示给 LLM 的最大实体数",
     "defaultTimeout": "工具执行默认超时（毫秒）",
+    "searchProvider": "搜索服务提供商",
+    "searchEndpoint": "搜索 API 端点",
+    "searchApiKey": "搜索 API 密钥",
+    "searchDefaultLimit": "搜索默认返回结果数",
     "debugLevel": "调试日志级别：0=关闭, 1=基础, 2=详细, 3=完整"
   }
 }
