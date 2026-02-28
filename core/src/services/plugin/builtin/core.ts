@@ -1,4 +1,4 @@
-import { Context, Schema, sleep } from "koishi";
+import { Context, h, Schema, sleep } from "koishi";
 
 import { requireSession } from "../activators";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
@@ -12,24 +12,42 @@ export class CorePlugin extends YesImPlugin {
     super(ctx);
   }
 
+  private resolveNativeMsgId(ctx: ToolExecutionContext, shortIdStr: string): string | null {
+    const shortId = Number(shortIdStr);
+    if (!Number.isInteger(shortId) || shortId < 0) return null;
+    const channelKey = `${ctx.platform}:${ctx.channelId}`;
+    const horizon = this.ctx["yesimbot.horizon"];
+    return horizon?.lookupNativeMsgId(channelKey, shortId) ?? null;
+  }
+
   @Action({
     name: "send_message",
     description:
-      "Sends a message to the channel. This is the only way you can talk to the human user.",
+      "Send a message to the current channel. This is the primary way to communicate with users. " +
+      "Supports plain text, message splitting with <sep/>, and replying to messages.",
     parameters: withInnerThoughts({
       content: Schema.string()
         .required()
         .description(
-          "Message content to send. Use `<sep/>` to split a long message into multiple parts (natural delays).",
+          "Message content to send. " +
+            "Use <sep/> to split long messages with natural delays between parts. " +
+            "Example: 'Hello <sep/> World' sends two separate messages.",
         ),
       target: Schema.object({
-        platform: Schema.string().required().description("Target platform (e.g., 'discord')"),
+        platform: Schema.string()
+          .required()
+          .description("Target platform (e.g., 'onebot', 'discord')"),
         channelId: Schema.string().required().description("Target channel ID"),
-      }).description(
-        "Optional target to specify which channel to send the message to. If not provided, it will send to the current session's channel.",
-      ),
+      })
+        .description(
+          "(Advanced) Optional target to send to a different channel. " +
+            "Most of the time you don't need this—just omit it to send to the current channel. " +
+            "Cannot use with replyTo.",
+        )
+        .hidden(),
       replyTo: Schema.string().description(
-        "Optional message ID to reply to. If provided, the bot will attempt to reply to the specified message.",
+        "Short message ID to reply to (from <msg id=...> tags in context). " +
+          "The reply is sent to the current channel automatically. Cannot use with target.",
       ),
     }),
     activators: [requireSession()],
@@ -41,11 +59,29 @@ export class CorePlugin extends YesImPlugin {
     try {
       const content = String(params["content"] ?? "");
       const target = params["target"] as { platform: string; channelId: string } | undefined;
+      const replyToStr = params["replyTo"] as string | undefined;
+
       const parts = content
         .split("<sep/>")
         .map((s) => s.trim())
         .filter(Boolean);
       const effectiveParts = parts.length ? parts : [content];
+
+      // Resolve replyTo to native message ID
+      let replyToNativeId: string | undefined;
+      if (replyToStr) {
+        if (target) {
+          return Failed(
+            "Cannot specify both 'replyTo' and 'target'. When replying to a message, " +
+              "the reply is sent to the current session's channel automatically.",
+          );
+        }
+        replyToNativeId =
+          this.resolveNativeMsgId(ctx, replyToStr) ?? ctx.session?.messageId ?? undefined;
+        if (!replyToNativeId) {
+          return Failed("Message not found in current context");
+        }
+      }
 
       if (target) {
         const { platform, channelId } = target;
@@ -58,7 +94,12 @@ export class CorePlugin extends YesImPlugin {
       } else {
         for (let i = 0; i < effectiveParts.length; i++) {
           if (i > 0) await sleep(1000);
-          await ctx.session?.send(effectiveParts[i]);
+          const msgContent = effectiveParts[i]!;
+          const elements =
+            i === 0 && replyToNativeId
+              ? [h("quote", { id: replyToNativeId }), msgContent]
+              : [msgContent];
+          await ctx.session?.send(elements);
         }
       }
       return Success(`Sent ${effectiveParts.length} message(s)`);
