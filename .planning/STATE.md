@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 Phase: 40.1 (complete)
 Plan: 01 complete (1/1 plans)
 Status: Phase 40.1 complete — history item template rendering with inline sender format
-Last activity: 2026-02-28 — migrated history rendering to Mustache partial, simplified XML tags, inline sender format
+Last activity: 2026-02-28 — integrated SearchPlugin with skill system (web-search skill registered)
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
@@ -133,6 +133,7 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 3              | Fix agent JSON output drift: unify format spec, improve raw-text fallback       | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
 | Phase 37 P01   | 1min                                                                            | 2 tasks    | 2 files |
 | Phase 40.1 P01 | 2min                                                                            | 2 tasks    | 4 files |
+| 5              | integrate SearchPlugin with skill system                                        | 2026-02-28 | 0635f22 |          | [5-feat-search-plugin-how-to-load-skill](./quick/5-feat-search-plugin-how-to-load-skill/)         |
 
 ### v2.5 Execution Metrics
 
