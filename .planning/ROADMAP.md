@@ -219,7 +219,7 @@ Plans:
 | 38    | v2.5      | 0/TBD          | Not started | -          |
 | 39    | v2.5      | 0/TBD          | Not started | -          |
 | 40    | v2.5      | 4/4            | Complete    | 2026-02-28 |
-| 40.1  | v2.5      | 1/1            | Complete    | 2026-02-28 |
+| 40.1  | v2.5      | Complete       | 2026-02-28  | 2026-02-28 |
 
 ### Phase 40: 数据结构和渲染格式优化
 
@@ -250,7 +250,7 @@ Plans:
 **Goal:** History item 渲染从硬编码 XML 字符串迁移到 Mustache 模板，action/tool 标签精简，时间格式改为相对时间，msg 格式调整为内联文本
 **Requirements**: None (rendering refactoring phase)
 **Depends on:** Phase 40
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 
