@@ -12,9 +12,9 @@ import type {
   AllowedChannel,
   Entity,
   EntityRecord,
-  Environment,
   HorizonView,
   Observation,
+  Role,
   SelfInfo,
   TimelineEntry,
   ViewOptions,
@@ -27,7 +27,7 @@ interface HistoryItemData {
   is_error: boolean;
   // message fields
   id?: number;
-  time?: string; // "DD:HH:MM"
+  time?: string; // "MM月DD日 HH:mm"
   senderLine?: string; // "SenderName(senderId)"
   replyLine?: string; // "[回复: N]" or undefined
   content?: string;
@@ -88,7 +88,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (nativeMsgId -> shortId)
   private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> nativeMsgId)
-  private botRoleCache = new Map<string, { role: "owner" | "admin" | null; fetchedAt: number }>();
+  private botRoleCache = new Map<string, { role: Role | null; fetchedAt: number }>();
 
   private environments: EnvironmentManager;
 
@@ -113,7 +113,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         stage: "string(16)",
         timestamp: "timestamp",
         data: "json",
-      } as Record<string, unknown> as never,
+      },
       { primary: "id", autoInc: false },
     );
 
@@ -143,13 +143,13 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.logger.info("HorizonService stopped");
   }
 
-  private classifyRole(roles: string[]): "owner" | "admin" | null {
+  private classifyRole(roles: string[]): Role | null {
     if (roles.some((r) => /^owner$/i.test(r))) return "owner";
     if (roles.some((r) => /^(admin|administrator|moderator)$/i.test(r))) return "admin";
     return null;
   }
 
-  private async getBotRole(key: ChannelKey, session?: Session): Promise<"owner" | "admin" | null> {
+  private async getBotRole(key: ChannelKey, session?: Session): Promise<Role | null> {
     const cacheKey = `${key.platform}:${session?.guildId ?? key.channelId}`;
     const cached = this.botRoleCache.get(cacheKey);
     const ttl = 10 * 60 * 1000; // 10 minutes
@@ -343,12 +343,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
           })();
       const senderId = isBot ? "bot" : obs.sender.id;
 
-      // Time format: DD:HH:MM (day-of-month:hour:minute, zero-padded)
+      // Time format: MM月DD日 HH:mm
       const d = obs.timestamp;
-      const dd = String(d.getDate()).padStart(2, "0");
       const hh = String(d.getHours()).padStart(2, "0");
       const mm = String(d.getMinutes()).padStart(2, "0");
-      const time = `${dd}:${hh}:${mm}`;
+      const time = `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`;
 
       // Inline sender format: SenderName(senderId)
       const senderLine = `${senderName}(${senderId})`;

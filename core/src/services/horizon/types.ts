@@ -4,6 +4,8 @@ import { TriggerType, type ChannelKey } from "../shared/types";
 
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
+export type Role = "owner" | "admin" | "member";
+
 // ---- Horizon Event ----
 
 export interface HorizonMessageEvent {
@@ -133,7 +135,7 @@ export interface Environment {
 export interface SelfInfo {
   id: string;
   name: string;
-  role?: "owner" | "admin";
+  role?: Role;
 }
 
 // ---- Observation ----

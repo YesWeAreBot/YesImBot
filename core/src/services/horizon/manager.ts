@@ -123,26 +123,12 @@ export class EventManager {
           timestamp: entry.timestamp,
           data: entry.data,
         });
-      } else {
-        // agent.response — handle both old and new shapes
-        const d = entry.data as AgentResponseData;
+      } else if (entry.type === TimelineEventType.AgentResponse) {
         result.push({
           type: "agent.response" as const,
           timestamp: entry.timestamp,
-          data: d,
+          data: entry.data,
         });
-        // Old rows with actions/toolResults: also emit AgentActionObservation
-        if (d.actions?.length) {
-          result.push({
-            type: "agent.action" as const,
-            timestamp: entry.timestamp,
-            data: {
-              round: d.round,
-              actions: d.actions,
-              toolResults: d.toolResults ?? [],
-            },
-          });
-        }
       }
     }
     return result;
