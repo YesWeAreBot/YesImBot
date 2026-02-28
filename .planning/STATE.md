@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 37 (complete)
-Plan: 02 complete (2/2 plans)
-Status: Phase 37 complete — QManager Plugin fully implemented
-Last activity: 2026-02-27 — delmsg/ban/kick tool handlers with safety intercepts
+Phase: 40 (in progress)
+Plan: 01 complete (1/4 plans)
+Status: Phase 40 Plan 01 complete — AgentResponse/AgentAction type split
+Last activity: 2026-02-28 — split AgentResponseRecord, added recordAgentAction(), rewired loop.ts
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
@@ -37,7 +37,7 @@ Phase 36 [==========] 100% (2/2 plans)
 Phase 37 [==========] 100% (2/2 plans)
 Phase 38 [          ] 0%
 Phase 39 [          ] 0%
-Phase 40 [          ] 0%
+Phase 40 [==        ] 25% (1/4 plans)
 ```
 
 ## Performance Metrics
@@ -59,6 +59,10 @@ Phase 40 [          ] 0%
 
 Full decision log in PROJECT.md Key Decisions table.
 v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
+
+- [Phase 40-01]: AgentResponseData.assistantText renamed to rawText; old field kept optional for backward compat with existing DB rows
+- [Phase 40-01]: toObservations() expands old agent.response rows with actions into both AgentResponseObservation and AgentActionObservation — seamless migration without DB backfill
+- [Phase 40-01]: Bot messages recorded with Random.id() as synthetic messageId; content split on <sep/> before recording
 
 - [Phase 37]: Entities passed as-is from view.entities into toolCtxWithPercept — index signature on ToolExecutionContext already supports arbitrary keys
 - [Phase 37]: All three QManager tools use requireBotRole('admin'), NOT requirePlatform('onebot') — standard Koishi Bot API is cross-platform
@@ -120,9 +124,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 37    | 01   | 1min     | 2     | 2     |
 | 37    | 02   | 3min     | 2     | 1     |
 
+| 40 | 01 | 5min | 2 | 4 |
+
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Phase 40 context gathered
-Resume file: .planning/phases/40-data-structure-render-optimization/40-CONTEXT.md
-Next action: `/gsd:plan-phase 40`
+Stopped at: Phase 40 Plan 01 complete
+Resume file: .planning/phases/40-data-structure-render-optimization/40-01-SUMMARY.md
+Next action: `/gsd:execute-phase 40 02`

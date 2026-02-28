@@ -222,7 +222,7 @@ Plans:
 **Goal:** Timeline data structures are split and normalized, all observations render through unified XML tags, the trimmer operates on structured data before rendering, and bot messages are recorded in the timeline
 **Requirements**: None (structural refactoring phase)
 **Depends on:** Phase 37
-**Plans:** 4 plans (3 waves sequential + 1 parallel)
+**Plans:** 1/4 plans executed
 
 **Success Criteria** (what must be TRUE):
 
