@@ -25,7 +25,7 @@ function scanPackages() {
         packages.push({
           name: pkg.name,
           version: pkg.version,
-          path: join(pattern.slice(0, -2), entry.name),
+          path: join(pattern.slice(0, -2), entry.name, "package.json"),
           tagKey: entry.name,
         });
       }
@@ -37,7 +37,7 @@ function scanPackages() {
       packages.push({
         name: pkg.name,
         version: pkg.version,
-        path: pattern,
+        path: join(pattern, "package.json"),
         tagKey: pattern,
       });
     }
@@ -88,8 +88,9 @@ function runBumpp(pkg, isBeta) {
   const commitTemplate = `release: ${pkg.tagKey}@%s`;
   const cmd = [
     "npx bumpp",
-    `--cwd ${pkg.path}`,
-    "--recursive false", // 覆盖 bump.config.ts 的 recursive: true
+    pkg.path, // 直接指定 package.json 路径
+    "-r",
+    "false", // -r 是 --recursive 的短选项
     `--tag "${tagTemplate}"`,
     `--commit "${commitTemplate}"`,
     "--no-push", // 统一最后再 push，多包时避免多次触发 CI
