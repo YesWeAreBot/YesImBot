@@ -21,6 +21,22 @@ import type {
 } from "./types";
 import { TimelineEventType } from "./types";
 
+interface HistoryItemData {
+  is_message: boolean;
+  is_action: boolean;
+  is_error: boolean;
+  // message fields
+  id?: number;
+  time?: string; // "DD:HH:MM"
+  senderLine?: string; // "SenderName(senderId)"
+  replyLine?: string; // "[回复: N]" or undefined
+  content?: string;
+  // action fields
+  actionContent?: string;
+  // error fields
+  errorContent?: string;
+}
+
 declare module "koishi" {
   interface Context {
     "yesimbot.horizon": HorizonService;
@@ -68,6 +84,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   public listener: EventListener;
 
   private horizonViewTpl?: string;
+  private historyItemTpl?: string;
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (nativeMsgId -> shortId)
   private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> nativeMsgId)
@@ -303,46 +320,62 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return lower === "owner" ? "[Owner] " : "[Admin] ";
   }
 
-  formatObservation(obs: Observation, selfId?: string, channelKey?: string): string {
+  formatObservation(
+    obs: Observation,
+    selfId?: string,
+    channelKey?: string,
+  ): HistoryItemData | null {
     // Escape dynamic values for XML attributes
     const esc = (v: string) =>
       v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
     if (obs.type === "message") {
-      const hhmm = obs.timestamp.toTimeString().slice(0, 5);
-      if (channelKey) {
-        const shortId = this.assignShortId(channelKey, obs.messageId);
-        const isBot = selfId && obs.sender.id === selfId;
-        const senderName = isBot
-          ? "[Bot]"
-          : (() => {
-              const badge = this.getRoleBadge(obs.sender.attributes);
-              return `${badge}${obs.sender.name}`;
-            })();
-        const senderId = isBot ? "bot" : obs.sender.id;
-        let attrs = `id="${shortId}" sender="${esc(senderName)}" senderId="${esc(senderId)}" time="${hhmm}"`;
-        if (obs.replyTo) {
-          const replyShortId = this.getShortId(channelKey, obs.replyTo);
-          if (replyShortId !== undefined) {
-            attrs += ` replyTo="${replyShortId}"`;
-          }
+      // formatObservation requires channelKey — no fallback path
+      if (!channelKey) return null;
+
+      const shortId = this.assignShortId(channelKey, obs.messageId);
+      const isBot = selfId && obs.sender.id === selfId;
+      const senderName = isBot
+        ? "[Bot]"
+        : (() => {
+            const badge = this.getRoleBadge(obs.sender.attributes);
+            return `${badge}${obs.sender.name}`;
+          })();
+      const senderId = isBot ? "bot" : obs.sender.id;
+
+      // Time format: DD:HH:MM (day-of-month:hour:minute, zero-padded)
+      const d = obs.timestamp;
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const time = `${dd}:${hh}:${mm}`;
+
+      // Inline sender format: SenderName(senderId)
+      const senderLine = `${senderName}(${senderId})`;
+
+      // Reply line: [回复: N] if replyTo shortId exists
+      let replyLine: string | undefined;
+      if (obs.replyTo) {
+        const replyShortId = this.getShortId(channelKey, obs.replyTo);
+        if (replyShortId !== undefined) {
+          replyLine = `[回复: ${replyShortId}]`;
         }
-        // obs.content is pre-formatted by ElementFormatterService — safe to embed directly
-        return `<msg ${attrs}>${obs.content}</msg>`;
       }
-      // Fallback: no channelKey — legacy [HH:MM] format (used by agent/service.ts willingness context)
-      if (selfId && obs.sender.id === selfId) {
-        return `[${hhmm}] [Bot] ${obs.sender.name}: ${obs.content}`;
-      }
-      const badge = this.getRoleBadge(obs.sender.attributes);
-      return `[${hhmm}] ${badge}${obs.sender.name}: ${obs.content}`;
+
+      return {
+        is_message: true,
+        is_action: false,
+        is_error: false,
+        id: shortId,
+        time,
+        senderLine,
+        replyLine,
+        content: obs.content,
+      };
     }
 
     if (obs.type === "agent.action") {
       const d = obs.data;
-      const triggerAttr = d.triggerMsgId
-        ? ` trigger="#${this.getShortId(channelKey ?? "", d.triggerMsgId) ?? "?"}"`
-        : "";
       const lines = d.actions.map((a) => {
         const r = d.toolResults.find((t) => t.name === a.name);
         if (a.name === "send_message") {
@@ -353,18 +386,28 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
         return `${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`;
       });
-      return `<bot-action round="${d.round}"${triggerAttr}>${lines.join("; ")}</bot-action>`;
+      return {
+        is_message: false,
+        is_action: true,
+        is_error: false,
+        actionContent: lines.join("; "),
+      };
     }
 
     if (obs.type === "agent.response") {
       if (obs.data.error) {
-        return `<bot-error round="${obs.data.round}">${esc(obs.data.error)}</bot-error>`;
+        return {
+          is_message: false,
+          is_action: false,
+          is_error: true,
+          errorContent: esc(obs.data.error),
+        };
       }
       // Successful LLM response — actions rendered via AgentActionObservation
-      return "";
+      return null;
     }
 
-    return "";
+    return null;
   }
 
   formatHorizonText(view: HorizonView, percept?: Percept): string {
@@ -408,18 +451,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       activeMembers = lines.join("\n");
     }
 
-    const historyObs: string[] = [];
-    const triggerObs: string[] = [];
+    const historyItems: HistoryItemData[] = [];
+    const triggerItems: HistoryItemData[] = [];
     const channelKey = view.environment
       ? `${view.environment.platform}:${view.environment.channelId}`
       : undefined;
     for (const obs of view.history ?? []) {
-      const formatted = this.formatObservation(obs, view.self.id, channelKey);
-      if (!formatted) continue; // skip empty (successful agent.response)
+      const item = this.formatObservation(obs, view.self.id, channelKey);
+      if (!item) continue; // skip null (successful agent.response)
       if (obs.type === "message" && obs.stage === "new") {
-        triggerObs.push(formatted);
+        triggerItems.push(item);
       } else {
-        historyObs.push(formatted);
+        historyItems.push(item);
       }
     }
 
@@ -451,13 +494,16 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       // Template data
       environment,
       activeMembers,
-      hasHistory: historyObs.length > 0,
-      history: historyObs,
-      hasTrigger: triggerObs.length > 0,
-      trigger: triggerObs,
+      hasHistory: historyItems.length > 0,
+      history: historyItems,
+      hasTrigger: triggerItems.length > 0,
+      trigger: triggerItems,
     };
 
-    const rendered = Mustache.render(this.horizonViewTpl, scope).trim();
+    this.historyItemTpl ??= this.ctx["yesimbot.prompt"].loadPartial("history-item");
+    const rendered = Mustache.render(this.horizonViewTpl, scope, {
+      "history-item": this.historyItemTpl,
+    }).trim();
     const unresolved = rendered.match(/\{\{[^}]+\}\}/g);
     if (unresolved) {
       this.logger.debug(`Unresolved template variables: ${unresolved.join(", ")}`);

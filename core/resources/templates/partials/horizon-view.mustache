@@ -1,5 +1,3 @@
-现在是 {{date.now}}。
-
 <environment>
 {{#environment}}
 {{environment}}
@@ -21,7 +19,7 @@ No member info available.
 <history>
 {{#hasHistory}}
 {{#history}}
-{{{.}}}
+{{>history-item}}
 {{/history}}
 {{/hasHistory}}
 {{^hasHistory}}
@@ -30,13 +28,13 @@ No recent messages.
 </history>
 
 <trigger>
+现在是 {{date.now}}。
 {{#hasTrigger}}
 {{#trigger}}
-{{{.}}}
+{{>history-item}}
 {{/trigger}}
 {{/hasTrigger}}
 {{^hasTrigger}}
 No new messages.
 {{/hasTrigger}}
 </trigger>
-
