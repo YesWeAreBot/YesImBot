@@ -1,31 +1,22 @@
-import { FunctionType, Metadata, Plugin, Success, withInnerThoughts } from "@yesimbot/plugin";
+import { join } from "node:path";
+
 import { Context, Schema } from "koishi";
+import {
+  FunctionType,
+  Metadata,
+  Success,
+  withInnerThoughts,
+  YesImPlugin,
+} from "koishi-plugin-yesimbot/services/plugin";
+import { loadSkillsFromDir } from "koishi-plugin-yesimbot/services/skill";
 
 import { TavilyBackend } from "./backends/tavily";
 import type { SearchBackend, SearchPluginConfig } from "./types";
 
-interface SkillDefinition {
-  name: string;
-  description?: string;
-  effects: {
-    tools?: { include?: string[]; exclude?: string[] };
-  };
-  lifecycle: "per-turn" | "sticky" | "trait-bound";
-  source: "file" | "plugin";
-}
-
-interface SkillRegistry {
-  register(def: SkillDefinition): () => void;
-}
-
-declare module "koishi" {
-  interface Context {
-    "yesimbot.skill": SkillRegistry;
-  }
-}
+const builtinSkillsDir = join(__dirname, "../", "resources/skills");
 
 @Metadata({ name: "search", description: "Web search tool" })
-export default class SearchPlugin extends Plugin {
+export default class SearchPlugin extends YesImPlugin {
   static name = "search";
   static inject = ["yesimbot.plugin", "yesimbot.skill"];
   static Config: Schema<SearchPluginConfig> = Schema.object({
@@ -65,23 +56,16 @@ export default class SearchPlugin extends Plugin {
       },
     });
 
-    // Register skill for search tool activation
-    const skillDispose = this.ctx["yesimbot.skill"].register({
-      name: "web-search",
-      description: "Enable web search capability",
-      lifecycle: "per-turn",
-      effects: {
-        tools: { include: ["search"] },
-      },
-      source: "plugin",
-    });
+    const skills = loadSkillsFromDir(builtinSkillsDir);
 
-    this.ctx.on("ready", () => {
+    const disposeSkills = skills.map((s) => this.ctx["yesimbot.skill"].register(s));
+
+    this.ctx.on("ready", async () => {
       this.ctx["yesimbot.plugin"].registerPlugin(this);
     });
 
     this.ctx.on("dispose", () => {
-      skillDispose();
+      disposeSkills.forEach((d) => d());
       this.ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
     });
   }

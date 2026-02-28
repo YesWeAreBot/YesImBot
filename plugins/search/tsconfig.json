@@ -7,7 +7,7 @@
   "include": ["src", "src/**/*.json"],
   "references": [
     {
-      "path": "../../packages/plugin"
+      "path": "../../core"
     }
   ]
 }
