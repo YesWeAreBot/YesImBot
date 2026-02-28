@@ -1,7 +1,6 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { FunctionType, ToolExecutionContext, ToolResult } from "@yesimbot/plugin";
 import type { SystemModelMessage } from "ai";
 import type { ModelMessage } from "ai";
 import { Context, Random } from "koishi";
@@ -10,6 +9,7 @@ import type { HorizonService } from "../horizon/service";
 import { TimelineStage } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
+import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { Section } from "../prompt/types";
 import type { Percept } from "../shared/types";

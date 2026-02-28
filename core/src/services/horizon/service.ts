@@ -385,6 +385,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
         return `${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`;
       });
+      if (lines.length === 0) {
+        lines.push(`(No actions)`);
+      }
       return {
         is_message: false,
         is_action: true,

@@ -1,9 +1,9 @@
-import { ToolExecutionContext } from "@yesimbot/plugin";
 import { Context, Random, Schema, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
+import { ToolExecutionContext } from "../plugin/types";
 import type { RoleService } from "../role/service";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";

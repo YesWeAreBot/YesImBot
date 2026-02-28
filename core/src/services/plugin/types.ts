@@ -1,6 +1,6 @@
 import type { Bot, Schema, Session } from "koishi";
 
-import type { Plugin } from "./plugin";
+import type { YesImPlugin } from "./plugin";
 
 // ---- Shared Types ----
 
@@ -78,7 +78,7 @@ export interface PluginMetadata {
 }
 
 export interface IPluginService {
-  registerPlugin(plugin: Plugin): void;
+  registerPlugin(plugin: YesImPlugin): void;
   unregisterPlugin(name: string): void;
   getDefinition(name: string): FunctionDefinition | undefined;
   getTools(

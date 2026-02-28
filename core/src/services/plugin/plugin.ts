@@ -9,7 +9,7 @@ declare module "koishi" {
   }
 }
 
-export abstract class Plugin {
+export abstract class YesImPlugin {
   public readonly ctx: Context;
   metadata: PluginMetadata;
   tools: Map<string, FunctionDefinition> = new Map();

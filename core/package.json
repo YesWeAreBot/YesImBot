@@ -15,6 +15,11 @@
       "require": "./dist/index.cjs",
       "import": "./dist/index.mjs"
     },
+    "./services/*": {
+      "types": "./dist/services/*/index.d.ts",
+      "require": "./dist/services/*/index.cjs",
+      "import": "./dist/services/*/index.mjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -29,7 +34,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@yesimbot/plugin": "workspace:*",
     "@yesimbot/shared-model": "workspace:*",
     "ai": "^6.0.0",
     "gray-matter": "^4.0.3",

@@ -1,18 +1,13 @@
-import {
-  Action,
-  Failed,
-  Metadata,
-  Plugin,
-  requireSession,
-  Success,
-  ToolExecutionContext,
-  ToolResult,
-  withInnerThoughts,
-} from "@yesimbot/plugin";
 import { Context, Schema, sleep } from "koishi";
 
+import { requireSession } from "../activators";
+import { Action, Metadata, withInnerThoughts } from "../decorators";
+import { YesImPlugin } from "../plugin";
+import { ToolExecutionContext, ToolResult } from "../types";
+import { Failed, Success } from "../utils";
+
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
-export class CorePlugin extends Plugin {
+export class CorePlugin extends YesImPlugin {
   constructor(ctx: Context) {
     super(ctx);
   }

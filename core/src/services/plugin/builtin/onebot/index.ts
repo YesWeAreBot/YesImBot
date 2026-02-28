@@ -1,20 +1,12 @@
-import {
-  Action,
-  Failed,
-  Metadata,
-  Plugin,
-  requireBotRole,
-  requirePlatform,
-  requireSession,
-  Success,
-  ToolExecutionContext,
-  ToolResult,
-  withInnerThoughts,
-} from "@yesimbot/plugin";
 import { Context, h, Schema } from "koishi";
 
 import type { FormatterService } from "../../../formatter/service";
 import type { HorizonService } from "../../../horizon/service";
+import { requireSession, requirePlatform, requireBotRole } from "../../activators";
+import { Action, Metadata, withInnerThoughts } from "../../decorators";
+import { YesImPlugin } from "../../plugin";
+import { ToolExecutionContext, ToolResult } from "../../types";
+import { Failed, Success } from "../../utils";
 import { ForwordMessageResponse, Message } from "./types";
 
 declare module "koishi" {
@@ -26,7 +18,7 @@ declare module "koishi" {
 }
 
 @Metadata({ name: "onebot", description: "Onebot built-in tools", builtin: true })
-export class OnebotPlugin extends Plugin {
+export class OnebotPlugin extends YesImPlugin {
   private pokeCooldowns = new Map<string, number>();
   private readonly POKE_COOLDOWN_MS = 60_000;
 

@@ -191,12 +191,12 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
 
   private async loadAllDirs(): Promise<void> {
     if (existsSync(builtinSkillsDir)) {
-      const builtins = await loadSkillsFromDir(builtinSkillsDir, this.logger);
+      const builtins = loadSkillsFromDir(builtinSkillsDir);
       for (const s of builtins) this.skills.set(s.name, s);
     }
     for (const dir of this.config.skillPaths ?? []) {
       if (!existsSync(dir)) continue;
-      const loaded = await loadSkillsFromDir(dir, this.logger);
+      const loaded = await loadSkillsFromDir(dir);
       for (const s of loaded) this.skills.set(s.name, s);
     }
   }

@@ -1,16 +1,16 @@
-import {
-  Failed,
-  FunctionDefinition,
-  FunctionType,
-  schemaToJSONSchema,
-  ToolExecutionContext,
-  ToolResult,
-  Plugin,
-  IPluginService,
-} from "@yesimbot/plugin";
 import { Context, Schema, Service } from "koishi";
 
 import { CorePlugin, OnebotPlugin } from "./builtin";
+import { YesImPlugin } from "./plugin";
+import { schemaToJSONSchema } from "./schema";
+import {
+  FunctionDefinition,
+  FunctionType,
+  IPluginService,
+  ToolExecutionContext,
+  ToolResult,
+} from "./types";
+import { Failed } from "./utils";
 
 export interface PluginServiceConfig {
   defaultTimeout?: number;
@@ -21,7 +21,7 @@ export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.obj
 });
 
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
-  private plugins: Map<string, Plugin> = new Map();
+  private plugins: Map<string, YesImPlugin> = new Map();
 
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
@@ -30,7 +30,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     this.registerPlugin(new OnebotPlugin(ctx));
   }
 
-  public registerPlugin(plugin: Plugin): void {
+  public registerPlugin(plugin: YesImPlugin): void {
     this.plugins.set(plugin.metadata.name, plugin);
     const logger = this.ctx.logger("yesimbot.plugin");
     logger.info(`Registered plugin: ${plugin.metadata.name}`);
