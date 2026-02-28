@@ -216,3 +216,27 @@ Plans:
 | 37    | 2/2       | Complete       | 2026-02-27  | -          |
 | 38    | v2.5      | 0/TBD          | Not started | -          |
 | 39    | v2.5      | 0/TBD          | Not started | -          |
+
+### Phase 40: 数据结构和渲染格式优化
+
+**Goal:** Timeline data structures are split and normalized, all observations render through unified XML tags, the trimmer operates on structured data before rendering, and bot messages are recorded in the timeline
+**Requirements**: None (structural refactoring phase)
+**Depends on:** Phase 37
+**Plans:** 4 plans (3 waves sequential + 1 parallel)
+
+**Success Criteria** (what must be TRUE):
+
+1. AgentResponseRecord is split into AgentResponse (LLM output) and AgentAction (execution results) as separate timeline types
+2. Bot send_message results are recorded as MessageRecord entries in the timeline
+3. All timeline observations render through unified XML tags — no plain-text `[HH:MM] [Bot]:` format
+4. The mustache template has no `<working-memory>` block — all content flows through `<history>`
+5. The trimmer operates on Observation[] before rendering, not on rendered strings
+6. Tool results use XML serialization format
+7. Environment management is decoupled from HorizonService into a standalone EnvironmentManager
+
+Plans:
+
+- [ ] 40-01-PLAN.md — Type system split (AgentResponse + AgentAction), EventManager update, loop.ts split recording + bot message recording
+- [ ] 40-02-PLAN.md — Render pipeline unification: formatObservation for all types, remove working-memory, XML tool results
+- [ ] 40-03-PLAN.md — Semantic trimmer: trimObservations on Observation[], image-strip scaffold, XML-aware round trimmer
+- [ ] 40-04-PLAN.md — Entity table normalization confirmation + Environment decoupling from HorizonService
