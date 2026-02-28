@@ -61,7 +61,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     const dispose = () => {
       this.skills.delete(def.name);
     };
-    this[Context.current]?.on("dispose", dispose);
+    this.ctx.on("dispose", dispose);
     return dispose;
   }
 
