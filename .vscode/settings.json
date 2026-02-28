@@ -26,5 +26,8 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "oxc.oxc-vscode",
     "editor.formatOnSave": true
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   }
 }
