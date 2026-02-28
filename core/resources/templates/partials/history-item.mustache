@@ -1,4 +1,4 @@
 {{#is_message}}<msg id="{{id}}" time="{{time}}">{{senderLine}}{{#replyLine}} {{replyLine}}{{/replyLine}} {{content}}</msg>
-{{/is_message}}{{#is_action}}<action>{{actionContent}}</action>
+{{/is_message}}{{#is_action}}<action>{{{actionContent}}}</action>
 {{/is_action}}{{#is_error}}<error>{{errorContent}}</error>
 {{/is_error}}

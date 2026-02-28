@@ -4,22 +4,22 @@ import { resolve } from "node:path";
 import Mustache from "mustache";
 import { describe, expect, it } from "vitest";
 
-/**
- * Smoke tests for BUGFIX-01: snippet variable rendering in horizon-view.
- *
- * Tests verify that the scope construction pattern used by formatHorizonText
- * correctly resolves snippet variables like {{date.now}} and {{bot.name}}.
- *
- * GREEN after 23-02 threads scope construction into formatHorizonText.
- */
-
 const TEMPLATE_PATH = resolve(
   __dirname,
   "../../../../resources/templates/partials/horizon-view.mustache",
 );
 
+const HISTORY_ITEM_TEMPLATE_PATH = resolve(
+  __dirname,
+  "../../../../resources/templates/partials/history-item.mustache",
+);
+
 function loadTemplate(): string {
   return readFileSync(TEMPLATE_PATH, "utf-8");
+}
+
+function loadHistoryItemTemplate(): string {
+  return readFileSync(HISTORY_ITEM_TEMPLATE_PATH, "utf-8");
 }
 
 /**
@@ -127,5 +127,143 @@ describe("formatHorizonText snippet rendering", () => {
     expect(rendered).toMatch(/现在是 \d{4}年/);
     // Should not contain empty "现在是 。"
     expect(rendered).not.toContain("现在是 。");
+  });
+});
+
+describe("history-item partial rendering", () => {
+  const historyItemTpl = loadHistoryItemTemplate();
+  const horizonViewTpl = loadTemplate();
+
+  it("renders message observation with inline sender format", () => {
+    const messageItem = {
+      is_message: true,
+      is_action: false,
+      is_error: false,
+      id: 1,
+      time: "28:13:32",
+      senderLine: "Alice(user-123)",
+      replyLine: undefined,
+      content: "Hello world",
+    };
+
+    const rendered = Mustache.render(historyItemTpl, messageItem);
+
+    expect(rendered).toContain('<msg id="1" time="28:13:32">');
+    expect(rendered).toContain("Alice(user-123)");
+    expect(rendered).toContain("Hello world");
+    expect(rendered).not.toContain("[回复:");
+  });
+
+  it("renders message with reply inline before content", () => {
+    const messageItem = {
+      is_message: true,
+      is_action: false,
+      is_error: false,
+      id: 2,
+      time: "28:13:33",
+      senderLine: "Bob(user-456)",
+      replyLine: "[回复: 1]",
+      content: "I agree",
+    };
+
+    const rendered = Mustache.render(historyItemTpl, messageItem);
+
+    expect(rendered).toContain('<msg id="2" time="28:13:33">');
+    expect(rendered).toContain("Bob(user-456)");
+    expect(rendered).toContain("[回复: 1]");
+    expect(rendered).toContain("I agree");
+  });
+
+  it("renders action observation with <action> tag (not <bot-action>)", () => {
+    const actionItem = {
+      is_message: false,
+      is_action: true,
+      is_error: false,
+      actionContent: "send_message -> sent",
+    };
+
+    const rendered = Mustache.render(historyItemTpl, actionItem);
+
+    expect(rendered).toContain("<action>send_message -> sent</action>");
+    expect(rendered).not.toContain("<bot-action>");
+    expect(rendered).not.toContain("round=");
+  });
+
+  it("renders error observation with <error> tag (not <bot-error>)", () => {
+    const errorItem = {
+      is_message: false,
+      is_action: false,
+      is_error: true,
+      errorContent: "API rate limit exceeded",
+    };
+
+    const rendered = Mustache.render(historyItemTpl, errorItem);
+
+    expect(rendered).toContain("<error>API rate limit exceeded</error>");
+    expect(rendered).not.toContain("<bot-error>");
+    expect(rendered).not.toContain("round=");
+  });
+
+  it("renders history items through partial in horizon-view template", () => {
+    const historyItem = {
+      is_message: true,
+      is_action: false,
+      is_error: false,
+      id: 3,
+      time: "28:13:34",
+      senderLine: "Charlie(user-789)",
+      replyLine: undefined,
+      content: "Test message",
+    };
+
+    const scope = buildFixedScope();
+    scope.hasHistory = true;
+    (scope.history as unknown[]) = [historyItem];
+
+    const partials = {
+      "history-item": historyItemTpl,
+    };
+
+    const rendered = Mustache.render(horizonViewTpl, scope, partials);
+
+    // History section should contain rendered message
+    expect(rendered).toContain('<msg id="3" time="28:13:34">');
+    expect(rendered).toContain("Charlie(user-789)");
+    expect(rendered).toContain("Test message");
+    // Should not contain raw object toString
+    expect(rendered).not.toContain("[object Object]");
+  });
+
+  it("renders trigger items through partial (not {{{.}}})", () => {
+    const triggerItem = {
+      is_message: true,
+      is_action: false,
+      is_error: false,
+      id: 4,
+      time: "28:13:35",
+      senderLine: "David(user-999)",
+      replyLine: undefined,
+      content: "New message",
+    };
+
+    const scope = buildFixedScope();
+    scope.hasTrigger = true;
+    (scope.trigger as unknown[]) = [triggerItem];
+
+    const partials = {
+      "history-item": historyItemTpl,
+    };
+
+    const rendered = Mustache.render(horizonViewTpl, scope, partials);
+
+    // Trigger section should contain rendered message
+    expect(rendered).toContain("<trigger>");
+    expect(rendered).toContain('<msg id="4" time="28:13:35">');
+    expect(rendered).toContain("David(user-999)");
+    expect(rendered).toContain("New message");
+    // Should not contain raw object toString
+    expect(rendered).not.toContain("[object Object]");
+    // Should not contain raw {{{.}}} interpolation
+    expect(rendered).not.toMatch(/\{\{\{\.?\}\}\}/);
   });
 });
