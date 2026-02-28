@@ -13,8 +13,8 @@ import { Context, Schema, sleep } from "koishi";
 
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
 export class CorePlugin extends Plugin {
-  constructor(private ctx: Context) {
-    super();
+  constructor(ctx: Context) {
+    super(ctx);
   }
 
   @Action({

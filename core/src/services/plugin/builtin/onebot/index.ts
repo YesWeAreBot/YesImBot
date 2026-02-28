@@ -30,8 +30,8 @@ export class OnebotPlugin extends Plugin {
   private pokeCooldowns = new Map<string, number>();
   private readonly POKE_COOLDOWN_MS = 60_000;
 
-  constructor(private ctx: Context) {
-    super();
+  constructor(ctx: Context) {
+    super(ctx);
   }
 
   private resolveNativeMsgId(ctx: ToolExecutionContext, shortIdStr: string): string | null {

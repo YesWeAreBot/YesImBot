@@ -6,16 +6,11 @@ import {
   ToolExecutionContext,
   ToolResult,
   Plugin,
+  IPluginService,
 } from "@yesimbot/plugin";
 import { Context, Schema, Service } from "koishi";
 
 import { CorePlugin, OnebotPlugin } from "./builtin";
-
-declare module "koishi" {
-  interface Context {
-    "yesimbot.plugin": PluginService;
-  }
-}
 
 export interface PluginServiceConfig {
   defaultTimeout?: number;
@@ -25,23 +20,23 @@ export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.obj
   defaultTimeout: Schema.number().default(30000),
 });
 
-export class PluginService extends Service<PluginServiceConfig> {
+export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
   private plugins: Map<string, Plugin> = new Map();
 
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
     this.config = config;
-    this.register(new CorePlugin(ctx));
-    this.register(new OnebotPlugin(ctx));
+    this.registerPlugin(new CorePlugin(ctx));
+    this.registerPlugin(new OnebotPlugin(ctx));
   }
 
-  register(plugin: Plugin): void {
+  public registerPlugin(plugin: Plugin): void {
     this.plugins.set(plugin.metadata.name, plugin);
     const logger = this.ctx.logger("yesimbot.plugin");
     logger.info(`Registered plugin: ${plugin.metadata.name}`);
   }
 
-  unregister(name: string): void {
+  public unregisterPlugin(name: string): void {
     this.plugins.delete(name);
   }
 
