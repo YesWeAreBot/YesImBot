@@ -165,47 +165,7 @@ export class ThinkActLoop {
 
       const channelKey = `${percept.platform}:${percept.channelId}`;
 
-      const wmLines: string[] = [];
-      for (let i = 0; i < (view.history ?? []).length; i++) {
-        const obs = view.history![i];
-        if (obs.type === "agent.response") {
-          const d = obs.data;
-          // Find last message before this agent response for triggered-by label (OPT-03)
-          let triggerLabel = "";
-          for (let j = i - 1; j >= 0; j--) {
-            const prev = view.history![j];
-            if (prev.type === "message") {
-              const shortId = horizon.getShortId(channelKey, prev.messageId);
-              if (shortId !== undefined) {
-                triggerLabel = ` (triggered by #${shortId})`;
-              }
-              break;
-            }
-          }
-          const lines = [`Round ${d.round}${triggerLabel}:`];
-          for (const a of d.actions ?? []) {
-            const r = (d.toolResults ?? []).find((t) => t.name === a.name);
-            if (a.name === "send_message") {
-              // OPT-04: omit content param, compact result
-              const ok = r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
-              if (ok) {
-                lines.push("  - send_message({}) -> sent, ok");
-              } else {
-                const errMsg = r?.error ?? "unknown";
-                lines.push(`  - send_message({}) -> sent, failed: ${errMsg}`);
-              }
-            } else {
-              const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
-              const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
-              lines.push(
-                `  - ${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`,
-              );
-            }
-          }
-          wmLines.push(lines.join("\n"));
-        }
-      }
-      const userContent = horizon.formatHorizonText(view, wmLines, percept);
+      const userContent = horizon.formatHorizonText(view, percept);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
@@ -612,14 +572,13 @@ function toToolResultEntry(
 }
 
 function formatToolResults(results: ToolResultEntry[]): string {
-  const compact = results.map((r) => ({
-    id: r.id,
-    name: r.name,
-    status: r.status,
-    ...(r.result !== undefined && { result: r.result }),
-    ...(r.error && { error: r.error }),
-  }));
-  return `Tool results:\n${JSON.stringify(compact)}\n\nRespond with a JSON object containing "actions" array.`;
+  const items = results.map((r) => {
+    const status = r.error ? "error" : r.status;
+    const content =
+      r.name === "send_message" ? "sent" : r.result != null ? String(r.result) : (r.error ?? "");
+    return `  <tool-result name="${r.name}" status="${status}">${content}</tool-result>`;
+  });
+  return `<tool-results>\n${items.join("\n")}\n</tool-results>\n\nRespond with a JSON object containing "actions" array.`;
 }
 
 function formatFinalRoundPrompt(results: ToolResultEntry[]): string {

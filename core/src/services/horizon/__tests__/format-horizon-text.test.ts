@@ -64,8 +64,6 @@ function buildFixedScope(overrides?: {
     history: [],
     hasTrigger: false,
     trigger: [],
-    hasWorkingMemory: false,
-    workingMemory: [],
   };
 }
 

@@ -367,7 +367,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return "";
   }
 
-  formatHorizonText(view: HorizonView, workingMemory?: string[], percept?: Percept): string {
+  formatHorizonText(view: HorizonView, percept?: Percept): string {
     this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
     let environment = "";
     if (view.environment) {
@@ -415,6 +415,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       : undefined;
     for (const obs of view.history ?? []) {
       const formatted = this.formatObservation(obs, view.self.id, channelKey);
+      if (!formatted) continue; // skip empty (successful agent.response)
       if (obs.type === "message" && obs.stage === "new") {
         triggerObs.push(formatted);
       } else {
@@ -454,8 +455,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       history: historyObs,
       hasTrigger: triggerObs.length > 0,
       trigger: triggerObs,
-      hasWorkingMemory: (workingMemory?.length ?? 0) > 0,
-      workingMemory,
     };
 
     const rendered = Mustache.render(this.horizonViewTpl, scope).trim();
