@@ -93,6 +93,8 @@
 - [x] **Phase 37: QManager Plugin** — New plugin package with moderation tools (delmsg/ban/kick) gated by bot admin role activator (completed 2026-02-27)
 - [ ] **Phase 38: Multimodal Image Input** — Extract images from messages, download eagerly to base64, pass as ImagePart to LLM with configurable mode
 - [ ] **Phase 39: Rich Output Extension** — Extend send_message with reply_to and Koishi element XML passthrough for rich bot responses
+- [x] **Phase 40: 数据结构和渲染格式优化** (4 plans) — Split timeline types, unified XML render, structured trimmer, environment decoupling (completed 2026-02-28)
+- [ ] **Phase 40.1: History Item 模板化与渲染格式精简** (1 plan) — Templatize history-item rendering, simplify action/tool tags, DD:HH:MM time format, inline sender
 
 ## Phase Details
 
@@ -216,6 +218,8 @@ Plans:
 | 37    | 2/2       | Complete       | 2026-02-27  | -          |
 | 38    | v2.5      | 0/TBD          | Not started | -          |
 | 39    | v2.5      | 0/TBD          | Not started | -          |
+| 40    | v2.5      | 4/4            | Complete    | 2026-02-28 |
+| 40.1  | v2.5      | 0/1            | Not started | -          |
 
 ### Phase 40: 数据结构和渲染格式优化
 
@@ -240,3 +244,23 @@ Plans:
 - [ ] 40-02-PLAN.md — Render pipeline unification: formatObservation for all types, remove working-memory, XML tool results
 - [ ] 40-03-PLAN.md — Semantic trimmer: trimObservations on Observation[], image-strip scaffold, XML-aware round trimmer
 - [ ] 40-04-PLAN.md — Entity table normalization confirmation + Environment decoupling from HorizonService
+
+### Phase 40.1: History Item 模板化与渲染格式精简
+
+**Goal:** History item 渲染从硬编码 XML 字符串迁移到 Mustache 模板，action/tool 标签精简，时间格式改为相对时间，msg 格式调整为内联文本
+**Requirements**: None (rendering refactoring phase)
+**Depends on:** Phase 40
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 40.1-01-PLAN.md — formatObservation returns HistoryItemData objects, history-item.mustache partial, inline sender format, DD:HH:MM time
+
+**Success Criteria** (what must be TRUE):
+
+1. `<bot-action>` 标签中不再有 `round` 和 `trigger` 属性 — 时间线合并后因果关系已由顺序表达
+2. `<bot-action>` 改名为 `<action>`，`<bot-tool>`（若有）改名为 `<tool>`
+3. 单条消息渲染格式为 `<msg id="N" time="DD:HH:MM">SenderName(senderId) content</msg>` — sender 信息内联到内容中而非作为属性
+4. 带回复的消息渲染为 `<msg id="N" time="DD:HH:MM">SenderName(senderId) [回复: quoteId quoteContent] content</msg>`
+5. `history-item.mustache` 模板定义了所有 observation 类型的渲染格式，`formatObservation()` 返回模板数据对象而非 XML 字符串
+6. `horizon-view.mustache` 通过 `{{>history-item}}` 引用模板渲染历史条目，不硬编码渲染格式
