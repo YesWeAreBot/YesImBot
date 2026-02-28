@@ -4,6 +4,26 @@ import { Context, Schema } from "koishi";
 import { TavilyBackend } from "./backends/tavily";
 import type { SearchBackend, SearchPluginConfig } from "./types";
 
+interface SkillDefinition {
+  name: string;
+  description?: string;
+  effects: {
+    tools?: { include?: string[]; exclude?: string[] };
+  };
+  lifecycle: "per-turn" | "sticky" | "trait-bound";
+  source: "file" | "plugin";
+}
+
+interface SkillRegistry {
+  register(def: SkillDefinition): () => void;
+}
+
+declare module "koishi" {
+  interface Context {
+    "yesimbot.skill": SkillRegistry;
+  }
+}
+
 @Metadata({ name: "search", description: "Web search tool" })
 export default class SearchPlugin extends Plugin {
   static name = "search";
@@ -45,11 +65,23 @@ export default class SearchPlugin extends Plugin {
       },
     });
 
+    // Register skill for search tool activation
+    const skillDispose = this.ctx["yesimbot.skill"].register({
+      name: "web-search",
+      description: "Enable web search capability",
+      lifecycle: "per-turn",
+      effects: {
+        tools: { include: ["search"] },
+      },
+      source: "plugin",
+    });
+
     this.ctx.on("ready", () => {
       this.ctx["yesimbot.plugin"].registerPlugin(this);
     });
 
     this.ctx.on("dispose", () => {
+      skillDispose();
       this.ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
     });
   }
