@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 Phase: 40 (in progress)
 Plan: 04 complete (4/4 plans)
-Status: Phase 40 Plan 04 complete — EnvironmentManager extraction
-Last activity: 2026-02-28 — extracted EnvironmentManager from HorizonService, delegation via this.environments.getOrCreate()
+Status: Phase 40 Plan 02 complete — render pipeline unification
+Last activity: 2026-02-28 — unified XML render pipeline, removed working-memory block, eliminated wmLines, XML formatToolResults
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
@@ -63,6 +63,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - [Phase 40-01]: AgentResponseData.assistantText renamed to rawText; old field kept optional for backward compat with existing DB rows
 - [Phase 40-01]: toObservations() expands old agent.response rows with actions into both AgentResponseObservation and AgentActionObservation — seamless migration without DB backfill
 - [Phase 40-01]: Bot messages recorded with Random.id() as synthetic messageId; content split on <sep/> before recording
+
+- [Phase 40-02]: agent.response observations with no error return empty string from formatObservation — actions already rendered via AgentActionObservation
+- [Phase 40-02]: esc() helper defined inline in formatObservation — escapes &, ", <, > in dynamic XML attribute values
+- [Phase 40-02]: formatToolResults switched to XML <tool-result name status> tags — consistent with unified XML prompt format
+- [Phase 40-02]: wmLines block removed from loop.ts entirely — working memory flows through AgentAction observations in history
 
 - [Phase 40-04]: EnvironmentManager takes cacheTtl in constructor — avoids coupling to HorizonServiceConfig shape
 - [Phase 40-04]: JsonDB import removed from service.ts — only EnvironmentManager owns the DB instance now
@@ -128,11 +133,12 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 37    | 02   | 3min     | 2     | 1     |
 
 | 40 | 01 | 5min | 2 | 4 |
+| 40 | 02 | 3min | 2 | 4 |
 | 40 | 04 | 4min | 1 | 2 |
 
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Phase 40 Plan 04 complete
-Resume file: .planning/phases/40-data-structure-render-optimization/40-04-SUMMARY.md
+Stopped at: Phase 40 Plan 02 complete
+Resume file: .planning/phases/40-data-structure-render-optimization/40-02-SUMMARY.md
 Next action: Phase 40 complete
