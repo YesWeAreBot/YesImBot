@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "core@*"
+      - "search@*"
       - "shared-model@*"
       - "persona@*"
       - "provider-openai@*"
