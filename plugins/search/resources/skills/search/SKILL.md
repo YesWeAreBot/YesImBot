@@ -1,6 +1,8 @@
 ---
 name: search
-description: Enables web search when user asks about current events or needs information lookup
+description: |
+  Enables web search capabilities when user queries require current information,
+  fact-checking, or web content lookup. Automatically activated by search intent.
 lifecycle: sticky
 stickyTimeout: 2
 conditions:
@@ -11,6 +13,33 @@ effects:
   tools:
     include:
       - search
+      - fetch
 ---
 
-当用户询问需要查找最新信息、新闻、事实核查或网络内容时，使用搜索工具获取相关信息。搜索后根据结果自然地回答用户的问题。
+## Usage Guidelines
+
+Enable this skill when the user's query falls into these categories:
+
+1. **Current Events & News**: Recent happenings, ongoing events, latest developments
+2. **Fact-Checking**: Verifying claims, statistics, or factual statements
+3. **Temporal Queries**: Information that changes over time (prices, dates, versions)
+4. **Web Content**: Specific URLs, online articles, documentation references
+5. **Beyond Training Data**: Topics not covered in the model's training cutoff
+
+## Tool Usage
+
+- **search**: Start with broad queries to find relevant sources
+- **fetch**: After getting search results, use fetch to read full content from promising URLs
+
+## Examples
+
+```
+User: "What's the latest news about OpenAI?"
+→ Use search tool with query "OpenAI latest news"
+
+User: "Is it true that Python 4.0 was released?"
+→ Use search tool to verify, then fetch sources
+
+User: "What's the current price of Bitcoin?"
+→ Use search tool with query "Bitcoin price"
+```

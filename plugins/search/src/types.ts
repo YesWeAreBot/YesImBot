@@ -22,4 +22,5 @@ export interface SearchPluginConfig {
   endpoint?: string;
   apiKey?: string;
   defaultLimit?: number;
+  jinaApiKey?: string;
 }
