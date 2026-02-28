@@ -1,6 +1,10 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
 import { Context, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
+import { JsonDB } from "../../utils";
 import { type ChannelKey, type Percept } from "../shared/types";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
@@ -69,11 +73,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> nativeMsgId)
   private botRoleCache = new Map<string, { role: "owner" | "admin" | null; fetchedAt: number }>();
 
+  private environmentDB: JsonDB<Record<string, Environment & { updatedAt: string }>>;
+
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
     this.config = config;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
+    this.loadShortIdMaps();
+    this.environmentDB = new JsonDB(
+      path.join(this.ctx.baseDir, "data", "yesimbot", "environments.json"),
+      {},
+    );
   }
 
   protected async start(): Promise<void> {
@@ -169,17 +180,10 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     if (!key.channelId) return null;
     const id = `${key.platform}:${key.channelId}`;
     const ttl = this.config.entityCacheTtl ?? 3600000;
-    const rows = await this.ctx.database.get("yesimbot.entity", { id, type: "channel" });
-    if (rows?.length) {
-      const row = rows[0];
-      if (Date.now() - new Date(row.updatedAt).getTime() < ttl) {
-        return {
-          type: (session?.isDirect ?? false) ? "private" : "group",
-          id: row.id,
-          name: row.name,
-          platform: row.attributes?.platform as string,
-          channelId: row.attributes?.channelId as string,
-        };
+    const env = this.environmentDB.get(id);
+    if (env) {
+      if (Date.now() - new Date(env.updatedAt ?? 0).getTime() < ttl) {
+        return env;
       }
     }
     let channelName = session?.event?.channel?.name || session?.event?.guild?.name || null;
@@ -190,28 +194,16 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       } catch {}
     }
     if (!channelName) channelName = `${key.platform}:${key.channelId}`;
-    await this.ctx.database.upsert("yesimbot.entity", [
-      {
-        id,
-        type: "channel",
-        name: channelName,
-        attributes: {
-          platform: key.platform,
-          isDirect: session?.isDirect ?? false,
-          channelId: key.channelId,
-          userId: session?.userId,
-          guildId: session?.guildId,
-        },
-        updatedAt: new Date(),
-      },
-    ]);
-    return {
+    const newEnv: Environment & { updatedAt: string } = {
       type: (session?.isDirect ?? false) ? "private" : "group",
       id,
       name: channelName,
       platform: key.platform,
       channelId: key.channelId,
+      updatedAt: new Date().toISOString(),
     };
+    this.environmentDB.set(id, newEnv).commit();
+    return newEnv;
   }
 
   async getEntities(key: ChannelKey, session?: Session): Promise<Entity[]> {
@@ -239,11 +231,59 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     }));
   }
 
+  private loadShortIdMaps(): void {
+    try {
+      const data = readFileSync(
+        path.join(this.ctx.baseDir, "data", "yesimbot", "shortIdMaps.json"),
+        "utf-8",
+      );
+      const obj: {
+        shortIdCounters: Record<string, number>;
+        shortIdMaps: Record<string, Record<string, number>>;
+      } = JSON.parse(data);
+      this.shortIdCounters = new Map(Object.entries(obj.shortIdCounters));
+      this.shortIdMaps = new Map(
+        Object.entries(obj.shortIdMaps).map(([k, v]) => [k, new Map(Object.entries(v))]),
+      );
+      this.shortIdReverse = new Map(
+        Object.entries(obj.shortIdMaps).map(([k, v]) => [
+          k,
+          new Map(Object.entries(v).map(([pid, sid]) => [Number(sid), pid])),
+        ]),
+      );
+    } catch (e) {
+      this.ctx.logger.warn("Failed to load shortIdMaps");
+      this.shortIdCounters = new Map();
+      this.shortIdMaps = new Map();
+    }
+  }
+
+  private saveShortIdMaps(): void {
+    const obj = {
+      shortIdCounters: Object.fromEntries(this.shortIdCounters),
+      shortIdMaps: Object.fromEntries(
+        Array.from(this.shortIdMaps.entries()).map(([k, v]) => [k, Object.fromEntries(v)]),
+      ),
+    };
+    const data = JSON.stringify(obj);
+    const filePath = path.join(this.ctx.baseDir, "data", "yesimbot", "shortIdMaps.json");
+
+    try {
+      if (!existsSync(filePath)) {
+        mkdirSync(path.dirname(filePath), { recursive: true });
+      }
+      writeFileSync(filePath, data);
+    } catch (e) {
+      this.ctx.logger.error("Failed to save shortIdMaps: %s", e);
+    }
+  }
+
   assignShortId(channelKey: string, nativeMsgId: string): number {
     let map = this.shortIdMaps.get(channelKey);
     if (!map) {
       map = new Map<string, number>();
       this.shortIdMaps.set(channelKey, map);
+      this.saveShortIdMaps();
     }
     const existing = map.get(nativeMsgId);
     if (existing !== undefined) return existing;
@@ -270,6 +310,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       this.shortIdReverse.set(channelKey, rev);
     }
     rev.set(counter, nativeMsgId);
+
+    this.saveShortIdMaps();
 
     return counter;
   }

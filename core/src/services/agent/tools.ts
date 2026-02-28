@@ -1,5 +1,6 @@
+import { FunctionType, ToolExecutionContext } from "@yesimbot/plugin";
+
 import type { PluginService } from "../plugin/service";
-import { FunctionType, type ToolExecutionContext } from "../plugin/types";
 import type { ToolFilter } from "../skill/types";
 
 export function buildToolSchemaForPrompt(

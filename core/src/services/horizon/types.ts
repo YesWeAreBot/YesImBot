@@ -10,7 +10,13 @@ export interface HorizonMessageEvent {
   platform: string;
   channelId: string;
   timestamp: Date;
-  payload: { messageId: string; senderId: string; senderName: string; content: string };
+  payload: {
+    messageId: string;
+    senderId: string;
+    senderName?: string;
+    content: string;
+    quoteId?: string;
+  };
   triggerType: TriggerType;
   runtime?: { session: Session };
 }
@@ -81,7 +87,7 @@ export type TimelineEntry = MessageRecord | AgentResponseRecord;
 
 export interface EntityRecord {
   id: string;
-  type: string;
+  type: "user" | "member";
   name: string;
   userId: string;
   username: string;

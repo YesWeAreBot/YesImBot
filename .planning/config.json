@@ -4,6 +4,10 @@
   "parallelization": true,
   "commit_docs": true,
   "model_profile": "balanced",
+  "model_overrides": {
+    "gsd-planner": "opus",
+    "gsd-roadmapper": "opus"
+  },
   "workflow": {
     "research": true,
     "plan_check": true,

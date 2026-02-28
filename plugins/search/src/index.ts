@@ -1,15 +1,34 @@
+import { FunctionType, Metadata, Plugin, Success, withInnerThoughts } from "@yesimbot/plugin";
 import { Context, Schema } from "koishi";
 
-import { Plugin } from "../../base-plugin";
-import { Metadata, withInnerThoughts } from "../../decorators";
-import { FunctionType } from "../../types";
-import { Success } from "../../utils";
+declare module "koishi" {
+  export interface Context {
+    "yesimbot.plugin": {
+      registerPlugin(plugin: Plugin): void;
+    };
+  }
+}
+
 import { TavilyBackend } from "./backends/tavily";
 import type { SearchBackend, SearchPluginConfig } from "./types";
 
-@Metadata({ name: "search", description: "Web search tool", builtin: true })
-export class SearchPlugin extends Plugin {
-  constructor(ctx: Context, config: SearchPluginConfig) {
+@Metadata({ name: "search", description: "Web search tool" })
+export default class SearchPlugin extends Plugin {
+  static name = "search";
+  static inject = ["yesimbot.plugin"];
+  static Config: Schema<SearchPluginConfig> = Schema.object({
+    provider: Schema.string().default("tavily").description("Search backend provider to use"),
+    apiKey: Schema.string().required().description("API key for the search backend"),
+    endpoint: Schema.string().description("Endpoint URL for the search backend"),
+    defaultLimit: Schema.number()
+      .default(5)
+      .description("Default number of search results to return"),
+  });
+
+  constructor(
+    private ctx: Context,
+    private config: SearchPluginConfig,
+  ) {
     super();
 
     const backend: SearchBackend = new TavilyBackend(ctx, config);
@@ -38,5 +57,7 @@ export class SearchPlugin extends Plugin {
         return Success(formatted);
       },
     });
+
+    this.ctx["yesimbot.plugin"].registerPlugin(this);
   }
 }

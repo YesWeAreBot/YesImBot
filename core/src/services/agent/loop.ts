@@ -1,10 +1,13 @@
+import { writeFileSync } from "node:fs";
+import path from "node:path";
+
+import { FunctionType, ToolExecutionContext, ToolResult } from "@yesimbot/plugin";
 import type { SystemModelMessage } from "ai";
 import { Context } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
-import { FunctionType, type ToolExecutionContext, type ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { Section } from "../prompt/types";
 import type { Percept } from "../shared/types";
@@ -119,6 +122,7 @@ export class ThinkActLoop {
     disposers.push(
       prompt.inject(this.ctx, "instructions", {
         name: `__loop_tool_schema_${percept.id}`,
+        after: "__role_tools",
         renderFn: () => toolSchema,
       }),
     );
@@ -239,9 +243,18 @@ export class ThinkActLoop {
         const callParams: CallParams = {
           system: systemParam,
           messages,
+          maxRetries: 0,
         };
 
-        this.logger.debug(`[loop] [${percept.traceId}] callParams=${JSON.stringify(callParams)}`);
+        try {
+          writeFileSync(
+            path.join(this.ctx.baseDir, "data", "yesimbot", "last_call_params.json"),
+            JSON.stringify(callParams, null, 2),
+            "utf-8",
+          );
+        } catch (e) {}
+
+        // this.logger.debug(`[loop] [${percept.traceId}] callParams=${JSON.stringify(callParams)}`);
 
         const callStart = Date.now();
         const result = await modelService.call(

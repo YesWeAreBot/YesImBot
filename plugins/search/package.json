@@ -1,9 +1,8 @@
 {
-  "name": "koishi-plugin-yesimbot",
+  "name": "@yesimbot/koishi-plugin-search",
   "version": "0.0.0",
   "files": [
-    "dist",
-    "resources"
+    "dist"
   ],
   "type": "module",
   "main": "./dist/index.cjs",
@@ -21,29 +20,26 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --noEmit && pkgroll --sourcemap",
+    "build": "tsc --noEmit && pkgroll",
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@yesimbot/plugin": "workspace:*",
-    "@yesimbot/shared-model": "workspace:*",
-    "ai": "^6.0.0",
-    "gray-matter": "^4.0.3",
-    "jsonrepair": "^3.13.2",
-    "mustache": "^4.2.0",
-    "p-queue": "^5.0.0",
-    "zod": "^3.25.76"
+    "@yesimbot/plugin": "workspace:*"
   },
   "devDependencies": {
-    "@types/mustache": "^4.2.6",
-    "koishi": "^4.18.3",
-    "vitest": "^4.0.18"
+    "koishi": "^4.18.3"
   },
   "peerDependencies": {
     "koishi": "^4.0.0"
+  },
+  "koishi": {
+    "service": {
+      "required": [
+        "yesimbot.prompt"
+      ]
+    }
   }
 }

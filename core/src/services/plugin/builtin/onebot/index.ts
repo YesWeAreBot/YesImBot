@@ -1,12 +1,20 @@
+import {
+  Action,
+  Failed,
+  Metadata,
+  Plugin,
+  requireBotRole,
+  requirePlatform,
+  requireSession,
+  Success,
+  ToolExecutionContext,
+  ToolResult,
+  withInnerThoughts,
+} from "@yesimbot/plugin";
 import { Context, h, Schema } from "koishi";
 
 import type { FormatterService } from "../../../formatter/service";
 import type { HorizonService } from "../../../horizon/service";
-import { requireBotRole, requirePlatform, requireSession } from "../../activators";
-import { Plugin } from "../../base-plugin";
-import { Action, Metadata, withInnerThoughts } from "../../decorators";
-import type { ToolExecutionContext, ToolResult } from "../../types";
-import { Failed, Success } from "../../utils";
 import { ForwordMessageResponse, Message } from "./types";
 
 declare module "koishi" {

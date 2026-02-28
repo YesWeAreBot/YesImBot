@@ -31,12 +31,7 @@ export type Config = AgentCoreConfig &
   PromptServiceConfig &
   RoleServiceConfig &
   SkillRegistryConfig &
-  TraitAnalyzerConfig & {
-    searchProvider?: string;
-    searchEndpoint?: string;
-    searchApiKey?: string;
-    searchDefaultLimit?: number;
-  };
+  TraitAnalyzerConfig;
 
 export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
@@ -134,14 +129,6 @@ export function apply(ctx: Context, config: Config) {
   ctx.plugin(RoleService, { rolePath: config.rolePath });
   ctx.plugin(PluginService, {
     defaultTimeout: config.defaultTimeout,
-    search: config.searchApiKey
-      ? {
-          provider: config.searchProvider,
-          endpoint: config.searchEndpoint,
-          apiKey: config.searchApiKey,
-          defaultLimit: config.searchDefaultLimit,
-        }
-      : undefined,
   });
   ctx.plugin(TraitAnalyzer, {});
   ctx.plugin(SkillRegistry, {

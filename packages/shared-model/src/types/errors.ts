@@ -31,6 +31,7 @@ export function classifyError(error: unknown): ErrorCategory {
   if (status === 401 || status === 403) return ErrorCategory.AUTH;
   if (status === 429) return ErrorCategory.RATE_LIMIT;
   if (status === 503) return ErrorCategory.TRANSIENT;
+  if (status === 500) return ErrorCategory.TRANSIENT;
 
   return ErrorCategory.PERMANENT;
 }
