@@ -94,7 +94,7 @@
 - [ ] **Phase 38: Multimodal Image Input** — Extract images from messages, download eagerly to base64, pass as ImagePart to LLM with configurable mode
 - [ ] **Phase 39: Rich Output Extension** — Extend send_message with reply_to and Koishi element XML passthrough for rich bot responses
 - [x] **Phase 40: 数据结构和渲染格式优化** (4 plans) — Split timeline types, unified XML render, structured trimmer, environment decoupling (completed 2026-02-28)
-- [ ] **Phase 40.1: History Item 模板化与渲染格式精简** (1 plan) — Templatize history-item rendering, simplify action/tool tags, DD:HH:MM time format, inline sender
+- [x] **Phase 40.1: History Item 模板化与渲染格式精简** (1 plan) — Templatize history-item rendering, simplify action/tool tags, DD:HH:MM time format, inline sender (completed 2026-02-28)
 
 ## Phase Details
 
@@ -219,7 +219,7 @@ Plans:
 | 38    | v2.5      | 0/TBD          | Not started | -          |
 | 39    | v2.5      | 0/TBD          | Not started | -          |
 | 40    | v2.5      | 4/4            | Complete    | 2026-02-28 |
-| 40.1  | v2.5      | 0/1            | Not started | -          |
+| 40.1  | v2.5      | 1/1            | Complete    | 2026-02-28 |
 
 ### Phase 40: 数据结构和渲染格式优化
 
@@ -254,7 +254,7 @@ Plans:
 
 Plans:
 
-- [ ] 40.1-01-PLAN.md — formatObservation returns HistoryItemData objects, history-item.mustache partial, inline sender format, DD:HH:MM time
+- [x] 40.1-01-PLAN.md — formatObservation returns HistoryItemData objects, history-item.mustache partial, inline sender format, DD:HH:MM time
 
 **Success Criteria** (what must be TRUE):
 

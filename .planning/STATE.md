@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.5
 milestone_name: Multimodal & Rich Interaction
-status: unknown
-last_updated: "2026-02-28T11:03:23.220Z"
+status: complete
+last_updated: "2026-02-28T13:35:41Z"
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 16
+  completed_plans: 16
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** 智能体能够像真人一样自然地参与群聊讨论，拥有合理的回复决策机制和可扩展的工具调用能力。
-**Current focus:** v2.5 — Phase 37 complete, ready for Phase 38
+**Current focus:** v2.5 — Phase 40.1 complete, ready for Phase 38 or 39
 
 ## Current Position
 
-Phase: 40 (in progress)
-Plan: 04 complete (4/4 plans)
-Status: Phase 40 Plan 02 complete — render pipeline unification
-Last activity: 2026-02-28 — unified XML render pipeline, removed working-memory block, eliminated wmLines, XML formatToolResults
+Phase: 40.1 (complete)
+Plan: 01 complete (1/1 plans)
+Status: Phase 40.1 complete — history item template rendering with inline sender format
+Last activity: 2026-02-28 — migrated history rendering to Mustache partial, simplified XML tags, inline sender format
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
@@ -38,6 +38,7 @@ Phase 37 [==========] 100% (2/2 plans)
 Phase 38 [          ] 0%
 Phase 39 [          ] 0%
 Phase 40 [==========] 100% (4/4 plans)
+Phase 40.1 [==========] 100% (1/1 plans)
 ```
 
 ## Performance Metrics
@@ -77,6 +78,15 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - [Phase 40-04]: EnvironmentManager takes cacheTtl in constructor — avoids coupling to HorizonServiceConfig shape
 - [Phase 40-04]: JsonDB import removed from service.ts — only EnvironmentManager owns the DB instance now
 
+- [Phase 40.1-01]: HistoryItemData interface defined outside HorizonService class (TypeScript restriction: interfaces cannot be declared inside classes)
+- [Phase 40.1-01]: formatObservation returns HistoryItemData | null instead of XML strings — template-based rendering decouples format from code
+- [Phase 40.1-01]: actionContent uses triple mustache {{{actionContent}}} for unescaped output (arrows -> render as HTML entities with double mustache)
+- [Phase 40.1-01]: No-channelKey fallback path removed from formatObservation (dead code — only called from formatHorizonText which always passes channelKey)
+- [Phase 40.1-01]: <bot-action> renamed to <action>, <bot-error> renamed to <error>, round/trigger attributes removed
+- [Phase 40.1-01]: Message format changed to inline sender: <msg id="N" time="DD:HH:MM">SenderName(senderId) content</msg>
+- [Phase 40.1-01]: Reply format: [回复: N] rendered inline before message content
+- [Phase 40.1-01]: Time format changed to DD:HH:MM (day-of-month:hour:minute) with zero-padding
+
 - [Phase 37]: Entities passed as-is from view.entities into toolCtxWithPercept — index signature on ToolExecutionContext already supports arbitrary keys
 - [Phase 37]: All three QManager tools use requireBotRole('admin'), NOT requirePlatform('onebot') — standard Koishi Bot API is cross-platform
 - [Phase 37]: Safety intercept blocks bot self and admin/owner targets before any destructive platform API call
@@ -104,10 +114,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 
 ### Roadmap Evolution
 
-- v2.5 roadmap: 7 phases (33-39), 28 requirements
-- Phase ordering: 33 → 34 → 35 → 36+37 (parallel) → 38 → 39
+- v2.5 roadmap: 8 phases (33-40.1), 28 requirements
+- Phase ordering: 33 → 34 → 35 → 36+37 (parallel) → 40 → 40.1 → 38 → 39
 - Phase 38 has research flag (GIF processing library decision)
 - Phase 40 added: 数据结构和渲染格式优化
+- Phase 40.1 added: History Item 模板化与渲染格式精简
 
 ### Blockers/Concerns
 
@@ -115,12 +126,13 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 
 ### Quick Tasks Completed
 
-| #            | Description                                                                     | Date       | Commit  | Status   | Directory                                                                                         |
-| ------------ | ------------------------------------------------------------------------------- | ---------- | ------- | -------- | ------------------------------------------------------------------------------------------------- |
-| 1            | 优化类型定义和接口：统一Percept类型，简化buildView参数                          | 2026-02-21 | 3977997 |          | [1-percept-buildview](./quick/1-percept-buildview/)                                               |
-| 2            | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/)     |
-| 3            | Fix agent JSON output drift: unify format spec, improve raw-text fallback       | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
-| Phase 37 P01 | 1min                                                                            | 2 tasks    | 2 files |
+| #              | Description                                                                     | Date       | Commit  | Status   | Directory                                                                                         |
+| -------------- | ------------------------------------------------------------------------------- | ---------- | ------- | -------- | ------------------------------------------------------------------------------------------------- |
+| 1              | 优化类型定义和接口：统一Percept类型，简化buildView参数                          | 2026-02-21 | 3977997 |          | [1-percept-buildview](./quick/1-percept-buildview/)                                               |
+| 2              | 使用gray-matter替换js-yaml和自定义解析实现。与memory_block模块和skill模块集成。 | 2026-02-23 | bc8184a | Verified | [2-gray-matter-js-yaml-memory-block-skill](./quick/2-gray-matter-js-yaml-memory-block-skill/)     |
+| 3              | Fix agent JSON output drift: unify format spec, improve raw-text fallback       | 2026-02-23 | b030d54 | Verified | [3-fix-unexpected-agent-outputs-agent-stops](./quick/3-fix-unexpected-agent-outputs-agent-stops/) |
+| Phase 37 P01   | 1min                                                                            | 2 tasks    | 2 files |
+| Phase 40.1 P01 | 2min                                                                            | 2 tasks    | 4 files |
 
 ### v2.5 Execution Metrics
 
@@ -141,10 +153,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 40 | 02 | 3min | 2 | 4 |
 | 40 | 03 | 5min | 2 | 2 |
 | 40 | 04 | 4min | 1 | 2 |
+| 40.1 | 01 | 2min | 2 | 4 |
 
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Phase 40 Plan 03 complete
-Resume file: .planning/phases/40-data-structure-render-optimization/40-03-SUMMARY.md
-Next action: Phase 40 complete (all 4 plans done)
+Stopped at: Phase 40.1 Plan 01 complete
+Resume file: .planning/phases/40.1-history-item-template-refactor/40.1-01-SUMMARY.md
+Next action: Phase 40.1 complete (all 1 plans done) — ready for Phase 38 or 39
