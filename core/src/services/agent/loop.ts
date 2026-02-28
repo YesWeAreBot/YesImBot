@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { FunctionType, ToolExecutionContext, ToolResult } from "@yesimbot/plugin";
 import type { SystemModelMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { Context, Random } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
@@ -18,7 +19,13 @@ import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
-import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
+import {
+  trimMessages,
+  trimObservations,
+  type LoopMessage,
+  type ObservationTrimConfig,
+  type TrimConfig,
+} from "./trimmer";
 
 interface AgentAction {
   name: string;
@@ -63,7 +70,7 @@ export class ThinkActLoop {
     const prompt = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    const view = await horizon.buildView(
+    let view = await horizon.buildView(
       { platform: percept.platform, channelId: percept.channelId },
       {
         session: toolCtx.session,
@@ -165,6 +172,23 @@ export class ThinkActLoop {
 
       const channelKey = `${percept.platform}:${percept.channelId}`;
 
+      const trimConfig: TrimConfig = {
+        charBudget: this.config.charBudget ?? 30000,
+        keepLastRounds: this.config.keepLastRounds ?? 2,
+        softTrimHead: this.config.softTrimHead ?? 800,
+        softTrimTail: this.config.softTrimTail ?? 800,
+        initialContextCharBudget: this.config.initialContextCharBudget ?? 20000,
+      };
+
+      // Trim history observations before rendering
+      const obsTrimConfig: ObservationTrimConfig = {
+        charBudget: trimConfig.charBudget,
+        // protect last N rounds worth of observations (each round ~= 1 message + 1 agent action)
+        keepLastCount: (trimConfig.keepLastRounds ?? 2) * 2 + 1,
+      };
+      const trimResult = trimObservations(view.history ?? [], obsTrimConfig);
+      view = { ...view, history: trimResult.observations };
+
       const userContent = horizon.formatHorizonText(view, percept);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
@@ -178,14 +202,6 @@ export class ThinkActLoop {
       );
 
       this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
-
-      const trimConfig: TrimConfig = {
-        charBudget: this.config.charBudget ?? 30000,
-        keepLastRounds: this.config.keepLastRounds ?? 2,
-        softTrimHead: this.config.softTrimHead ?? 800,
-        softTrimTail: this.config.softTrimTail ?? 800,
-        initialContextCharBudget: this.config.initialContextCharBudget ?? 20000,
-      };
 
       const messages: LoopMessage[] = [{ role: "user", content: userContent }];
 
@@ -203,7 +219,7 @@ export class ThinkActLoop {
 
         const callParams: CallParams = {
           system: systemParam,
-          messages,
+          messages: messages as ModelMessage[],
           maxRetries: 0,
         };
 
