@@ -28,6 +28,9 @@ export class CorePlugin extends YesImPlugin {
       }).description(
         "Optional target to specify which channel to send the message to. If not provided, it will send to the current session's channel.",
       ),
+      replyTo: Schema.string().description(
+        "Optional message ID to reply to. If provided, the bot will attempt to reply to the specified message.",
+      ),
     }),
     activators: [requireSession()],
   })

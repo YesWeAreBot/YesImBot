@@ -366,9 +366,12 @@ export class ThinkActLoop {
           }
         }
 
+        // continue if there were any tool calls, or if request_heartbeat is true (for pure Action calls), or if any tools failed (to allow error info to flow back to model)
+        const hasFailedTools = toolResults.some((r) => r.status === "failed" || r.error);
+
         // Determine continuation: Tool calls always continue (results must flow back),
         // request_heartbeat only controls continuation for pure Action calls
-        const shouldContinue = hasToolCalls || response.request_heartbeat;
+        const shouldContinue = hasToolCalls || response.request_heartbeat || hasFailedTools;
 
         if (!shouldContinue) break;
 
