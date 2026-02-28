@@ -2,6 +2,8 @@ import { Context, Random, Logger, Query } from "koishi";
 
 import { ChannelKey } from "../shared/types";
 import type {
+  AgentActionData,
+  AgentActionRecord,
   AgentResponseData,
   AgentResponseRecord,
   EventQueryOptions,
@@ -83,10 +85,30 @@ export class EventManager {
     return this.record(entry) as Promise<AgentResponseRecord>;
   }
 
+  async recordAgentAction(data: {
+    platform: string;
+    channelId: string;
+    timestamp: Date;
+    data: AgentActionData;
+  }): Promise<AgentActionRecord> {
+    const entry: AgentActionRecord = {
+      id: Random.id(),
+      type: TimelineEventType.AgentAction,
+      priority: TimelinePriority.Normal,
+      stage: TimelineStage.Active,
+      platform: data.platform,
+      channelId: data.channelId,
+      timestamp: data.timestamp,
+      data: data.data,
+    };
+    return this.record(entry) as Promise<AgentActionRecord>;
+  }
+
   toObservations(entries: TimelineEntry[], _selfId?: string): Observation[] {
-    return entries.map((entry) => {
+    const result: Observation[] = [];
+    for (const entry of entries) {
       if (entry.type === TimelineEventType.Message) {
-        return {
+        result.push({
           type: "message" as const,
           timestamp: entry.timestamp,
           sender: { id: entry.data.senderId, type: "user", name: entry.data.senderName },
@@ -94,14 +116,36 @@ export class EventManager {
           content: entry.data.content,
           stage: entry.stage,
           ...(entry.data.replyTo !== undefined && { replyTo: entry.data.replyTo }),
-        };
+        });
+      } else if (entry.type === TimelineEventType.AgentAction) {
+        result.push({
+          type: "agent.action" as const,
+          timestamp: entry.timestamp,
+          data: entry.data,
+        });
+      } else {
+        // agent.response — handle both old and new shapes
+        const d = entry.data as AgentResponseData;
+        result.push({
+          type: "agent.response" as const,
+          timestamp: entry.timestamp,
+          data: d,
+        });
+        // Old rows with actions/toolResults: also emit AgentActionObservation
+        if (d.actions?.length) {
+          result.push({
+            type: "agent.action" as const,
+            timestamp: entry.timestamp,
+            data: {
+              round: d.round,
+              actions: d.actions,
+              toolResults: d.toolResults ?? [],
+            },
+          });
+        }
       }
-      return {
-        type: "agent.response" as const,
-        timestamp: entry.timestamp,
-        data: entry.data,
-      };
-    });
+    }
+    return result;
   }
 
   async markAsActive(key: ChannelKey, before?: Date): Promise<void> {

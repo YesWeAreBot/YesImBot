@@ -157,7 +157,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   async buildView(key: ChannelKey, options?: ViewOptions): Promise<HorizonView> {
     const entries = await this.events.query({
       key: { platform: key.platform, channelId: key.channelId },
-      types: [TimelineEventType.Message, TimelineEventType.AgentResponse],
+      types: [
+        TimelineEventType.Message,
+        TimelineEventType.AgentResponse,
+        TimelineEventType.AgentAction,
+      ],
       limit: this.config.historyLimit ?? 30,
       orderBy: "desc",
     });
@@ -366,7 +370,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       const badge = this.getRoleBadge(obs.sender.attributes);
       return `[${hhmm}] ${badge}${obs.sender.name}: ${obs.content}`;
     }
-    const actions = obs.data.actions;
+    const actions = obs.data.actions ?? [];
     const sendAction = actions.find((a) => a.name === "send_message");
     const otherTools = actions.filter((a) => a.name !== "send_message").map((a) => a.name);
     if (sendAction) {

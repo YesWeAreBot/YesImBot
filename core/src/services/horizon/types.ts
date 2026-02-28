@@ -32,6 +32,7 @@ declare module "koishi" {
 export enum TimelineEventType {
   Message = "message",
   AgentResponse = "agent.response",
+  AgentAction = "agent.action",
 }
 
 export enum TimelinePriority {
@@ -71,9 +72,12 @@ export type MessageRecord = BaseTimelineEntry<TimelineEventType.Message, Message
 
 export interface AgentResponseData {
   round: number;
-  assistantText: string;
-  actions: Array<{ name: string; params?: Record<string, unknown> }>;
-  toolResults: Array<{ name: string; status: string; result?: unknown; error?: string }>;
+  rawText: string;
+  error?: string;
+  // Backward compat — old rows still have these fields
+  assistantText?: string;
+  actions?: Array<{ name: string; params?: Record<string, unknown> }>;
+  toolResults?: Array<{ name: string; status: string; result?: unknown; error?: string }>;
 }
 
 export type AgentResponseRecord = BaseTimelineEntry<
@@ -81,7 +85,16 @@ export type AgentResponseRecord = BaseTimelineEntry<
   AgentResponseData
 >;
 
-export type TimelineEntry = MessageRecord | AgentResponseRecord;
+export interface AgentActionData {
+  round: number;
+  triggerMsgId?: string;
+  actions: Array<{ name: string; params?: Record<string, unknown> }>;
+  toolResults: Array<{ name: string; status: string; result?: unknown; error?: string }>;
+}
+
+export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;
+
+export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord;
 
 // ---- Entity ----
 
@@ -141,7 +154,13 @@ export interface AgentResponseObservation {
   data: AgentResponseData;
 }
 
-export type Observation = MessageObservation | AgentResponseObservation;
+export interface AgentActionObservation {
+  type: "agent.action";
+  timestamp: Date;
+  data: AgentActionData;
+}
+
+export type Observation = MessageObservation | AgentResponseObservation | AgentActionObservation;
 
 // ---- ViewOptions ----
 
