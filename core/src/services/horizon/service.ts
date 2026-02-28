@@ -4,8 +4,8 @@ import path from "node:path";
 import { Context, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
-import { JsonDB } from "../../utils";
 import { type ChannelKey, type Percept } from "../shared/types";
+import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
 import type {
@@ -73,7 +73,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> nativeMsgId)
   private botRoleCache = new Map<string, { role: "owner" | "admin" | null; fetchedAt: number }>();
 
-  private environmentDB: JsonDB<Record<string, Environment & { updatedAt: string }>>;
+  private environments: EnvironmentManager;
 
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
@@ -81,10 +81,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
     this.loadShortIdMaps();
-    this.environmentDB = new JsonDB(
-      path.join(this.ctx.baseDir, "data", "yesimbot", "environments.json"),
-      {},
-    );
+    this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
   }
 
   protected async start(): Promise<void> {
@@ -166,7 +163,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       orderBy: "desc",
     });
     const history = this.events.toObservations(entries.reverse());
-    const environment = await this.getOrCreateEnvironment(key, options?.session);
+    const environment = await this.environments.getOrCreate(key, options?.session);
     const entities = await this.getEntities(key, options?.session);
     const botRole = await this.getBotRole(key, options?.session);
     const self: SelfInfo = {
@@ -175,39 +172,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       role: botRole ?? undefined,
     };
     return { self, environment: environment ?? undefined, entities, history };
-  }
-
-  private async getOrCreateEnvironment(
-    key: ChannelKey,
-    session?: Session,
-  ): Promise<Environment | null> {
-    if (!key.channelId) return null;
-    const id = `${key.platform}:${key.channelId}`;
-    const ttl = this.config.entityCacheTtl ?? 3600000;
-    const env = this.environmentDB.get(id);
-    if (env) {
-      if (Date.now() - new Date(env.updatedAt ?? 0).getTime() < ttl) {
-        return env;
-      }
-    }
-    let channelName = session?.event?.channel?.name || session?.event?.guild?.name || null;
-    if (!channelName && session?.bot) {
-      try {
-        const ch = await session.bot.getChannel(key.channelId, session?.guildId);
-        channelName = ch?.name || null;
-      } catch {}
-    }
-    if (!channelName) channelName = `${key.platform}:${key.channelId}`;
-    const newEnv: Environment & { updatedAt: string } = {
-      type: (session?.isDirect ?? false) ? "private" : "group",
-      id,
-      name: channelName,
-      platform: key.platform,
-      channelId: key.channelId,
-      updatedAt: new Date().toISOString(),
-    };
-    this.environmentDB.set(id, newEnv).commit();
-    return newEnv;
   }
 
   async getEntities(key: ChannelKey, session?: Session): Promise<Entity[]> {
