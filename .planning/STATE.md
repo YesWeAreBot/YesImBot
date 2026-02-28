@@ -69,6 +69,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - [Phase 40-02]: formatToolResults switched to XML <tool-result name status> tags — consistent with unified XML prompt format
 - [Phase 40-02]: wmLines block removed from loop.ts entirely — working memory flows through AgentAction observations in history
 
+- [Phase 40-03]: trimObservations is immutable (returns new array); trimMessages keeps mutation pattern for round-level messages
+- [Phase 40-03]: hardClearToolResult tries XML format first, falls back to legacy JSON format for in-flight messages
+- [Phase 40-03]: messages cast to ModelMessage[] for CallParams — all actual values are strings, cast is structurally safe
+- [Phase 40-03]: ObservationTrimConfig.keepLastCount derived from keepLastRounds \* 2 + 1 in loop.ts
+
 - [Phase 40-04]: EnvironmentManager takes cacheTtl in constructor — avoids coupling to HorizonServiceConfig shape
 - [Phase 40-04]: JsonDB import removed from service.ts — only EnvironmentManager owns the DB instance now
 
@@ -134,11 +139,12 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 
 | 40 | 01 | 5min | 2 | 4 |
 | 40 | 02 | 3min | 2 | 4 |
+| 40 | 03 | 5min | 2 | 2 |
 | 40 | 04 | 4min | 1 | 2 |
 
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Phase 40 Plan 02 complete
-Resume file: .planning/phases/40-data-structure-render-optimization/40-02-SUMMARY.md
-Next action: Phase 40 complete
+Stopped at: Phase 40 Plan 03 complete
+Resume file: .planning/phases/40-data-structure-render-optimization/40-03-SUMMARY.md
+Next action: Phase 40 complete (all 4 plans done)
