@@ -89,6 +89,7 @@ function runBumpp(pkg, isBeta) {
   const cmd = [
     "npx bumpp",
     `--cwd ${pkg.path}`,
+    "--recursive false", // 覆盖 bump.config.ts 的 recursive: true
     `--tag "${tagTemplate}"`,
     `--commit "${commitTemplate}"`,
     "--no-push", // 统一最后再 push，多包时避免多次触发 CI
