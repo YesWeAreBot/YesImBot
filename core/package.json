@@ -1,0 +1,53 @@
+{
+  "name": "koishi-plugin-yesimbot",
+  "version": "4.0.0-beta.1",
+  "files": [
+    "dist",
+    "resources"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs"
+    },
+    "./services/*": {
+      "types": "./dist/services/*/index.d.ts",
+      "require": "./dist/services/*/index.cjs",
+      "import": "./dist/services/*/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
+    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "fmt": "oxfmt",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@yesimbot/shared-model": "workspace:*",
+    "ai": "^6.0.0",
+    "gray-matter": "^4.0.3",
+    "jsonrepair": "^3.13.2",
+    "mustache": "^4.2.0",
+    "p-queue": "^5.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/mustache": "^4.2.6",
+    "koishi": "^4.18.3",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "koishi": "^4.0.0"
+  }
+}

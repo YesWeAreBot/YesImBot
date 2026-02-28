@@ -1,0 +1,33 @@
+{
+  "cSpell.words": ["yesimbot"],
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    ".env.universal": ".env.*",
+    "README.md": "CHANGELOG.md, LICENSE",
+    "tsconfig.json": "tsconfig.*.json, env.d.ts",
+    "package.json": ".editorconfig, .gitignore, .oxfmtrc.json, .oxlintrc.json, .yarnrc.yml, turbo.json, yarn.lock"
+  },
+  "oxc.typeAware": true,
+  "oxc.fmt.configPath": ".oxfmtrc.json",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxc": "always"
+  },
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.formatOnSave": true,
+  "[javascript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode",
+    "editor.formatOnSave": true
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  }
+}

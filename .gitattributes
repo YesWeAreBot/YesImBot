@@ -1,0 +1,6 @@
+# Exclude development docs from release branches
+# When merging from main to v4, keep v4's version (empty) of .planning/
+.planning/ merge=ours
+
+# Also apply to individual files in case they're added separately
+.planning/** merge=ours
