@@ -20,7 +20,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc --noEmit && pkgroll",
+    "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",

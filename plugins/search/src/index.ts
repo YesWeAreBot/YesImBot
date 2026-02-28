@@ -1,21 +1,13 @@
 import { FunctionType, Metadata, Plugin, Success, withInnerThoughts } from "@yesimbot/plugin";
 import { Context, Schema } from "koishi";
 
-declare module "koishi" {
-  export interface Context {
-    "yesimbot.plugin": {
-      registerPlugin(plugin: Plugin): void;
-    };
-  }
-}
-
 import { TavilyBackend } from "./backends/tavily";
 import type { SearchBackend, SearchPluginConfig } from "./types";
 
 @Metadata({ name: "search", description: "Web search tool" })
 export default class SearchPlugin extends Plugin {
   static name = "search";
-  static inject = ["yesimbot.plugin"];
+  static inject = ["yesimbot.plugin", "yesimbot.skill"];
   static Config: Schema<SearchPluginConfig> = Schema.object({
     provider: Schema.string().default("tavily").description("Search backend provider to use"),
     apiKey: Schema.string().required().description("API key for the search backend"),
@@ -25,14 +17,9 @@ export default class SearchPlugin extends Plugin {
       .description("Default number of search results to return"),
   });
 
-  constructor(
-    private ctx: Context,
-    private config: SearchPluginConfig,
-  ) {
-    super();
-
+  constructor(ctx: Context, config: SearchPluginConfig) {
+    super(ctx);
     const backend: SearchBackend = new TavilyBackend(ctx, config);
-
     this.registerTool({
       name: "search",
       description:
@@ -58,6 +45,12 @@ export default class SearchPlugin extends Plugin {
       },
     });
 
-    this.ctx["yesimbot.plugin"].registerPlugin(this);
+    this.ctx.on("ready", () => {
+      this.ctx["yesimbot.plugin"].registerPlugin(this);
+    });
+
+    this.ctx.on("dispose", () => {
+      this.ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
+    });
   }
 }
