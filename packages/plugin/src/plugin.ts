@@ -1,12 +1,22 @@
+import { Context } from "koishi";
+
 import { StaticEntry } from "./decorators";
-import type { FunctionDefinition, PluginMetadata } from "./types";
+import type { FunctionDefinition, IPluginService, PluginMetadata } from "./types";
+
+declare module "koishi" {
+  interface Context {
+    "yesimbot.plugin": IPluginService;
+  }
+}
 
 export abstract class Plugin {
+  public readonly ctx: Context;
   metadata: PluginMetadata;
   tools: Map<string, FunctionDefinition> = new Map();
   actions: Map<string, FunctionDefinition> = new Map();
 
-  constructor() {
+  constructor(ctx: Context) {
+    this.ctx = ctx;
     const proto = Object.getPrototypeOf(this) as Record<string, unknown>;
     this.metadata = (proto.__pluginMetadata as PluginMetadata) ?? {
       name: "unknown",

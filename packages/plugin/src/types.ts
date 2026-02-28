@@ -1,5 +1,7 @@
 import type { Bot, Schema, Session } from "koishi";
 
+import type { Plugin } from "./plugin";
+
 // ---- Shared Types ----
 
 export type TriggerType =
@@ -73,4 +75,19 @@ export interface PluginMetadata {
   name: string;
   description: string;
   builtin?: boolean;
+}
+
+export interface IPluginService {
+  registerPlugin(plugin: Plugin): void;
+  unregisterPlugin(name: string): void;
+  getDefinition(name: string): FunctionDefinition | undefined;
+  getTools(
+    execCtx?: ToolExecutionContext,
+    includeHidden?: boolean,
+  ): Array<{
+    type: "function";
+    functionType: FunctionType;
+    function: { name: string; description: string; parameters: Record<string, unknown> };
+  }>;
+  listPlugins(): string[];
 }
