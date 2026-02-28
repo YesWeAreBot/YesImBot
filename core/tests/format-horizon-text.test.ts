@@ -4,14 +4,11 @@ import { resolve } from "node:path";
 import Mustache from "mustache";
 import { describe, expect, it } from "vitest";
 
-const TEMPLATE_PATH = resolve(
-  __dirname,
-  "../../../../resources/templates/partials/horizon-view.mustache",
-);
+const TEMPLATE_PATH = resolve(__dirname, "../resources/templates/partials/horizon-view.mustache");
 
 const HISTORY_ITEM_TEMPLATE_PATH = resolve(
   __dirname,
-  "../../../../resources/templates/partials/history-item.mustache",
+  "../resources/templates/partials/history-item.mustache",
 );
 
 function loadTemplate(): string {

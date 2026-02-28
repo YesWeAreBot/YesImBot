@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -13,25 +13,17 @@ import type {
   ToolFilter,
 } from "./types";
 
-interface Logger {
-  warn: (msg: string, ...args: unknown[]) => void;
-}
-
-function validateInjectionPoint(
-  val: unknown,
-  logger: Logger,
-  skillName: string,
-): InjectionPoint | undefined {
+function validateInjectionPoint(val: unknown, skillName: string): InjectionPoint | undefined {
   if (val == null) return undefined;
   if (typeof val === "string" && (INJECTION_POINTS as readonly string[]).includes(val)) {
     return val as InjectionPoint;
   }
-  logger.warn("Invalid injection_point '%s' in skill %s, using default", val, skillName);
+  console.warn("Invalid injection_point '%s' in skill %s, using default", val, skillName);
   return undefined;
 }
 
-export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<SkillDefinition[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
+export function loadSkillsFromDir(dir: string): SkillDefinition[] {
+  const entries = readdirSync(dir, { withFileTypes: true });
   const skills: SkillDefinition[] = [];
 
   for (const entry of entries) {
@@ -40,7 +32,7 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
     const skillMdPath = join(skillDir, "SKILL.md");
 
     try {
-      const raw = await readFile(skillMdPath, "utf-8");
+      const raw = readFileSync(skillMdPath, "utf-8");
       const { meta, content } = parseFrontmatter(raw);
 
       const rawEffects = meta.effects as Record<string, unknown> | undefined;
@@ -56,8 +48,8 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
         conditions: meta.conditions as ConditionNode | undefined,
         lifecycle: (meta.lifecycle as LifecycleStrategy) ?? "per-turn",
         stickyTimeout: meta.stickyTimeout as number | undefined,
-        injectionPoint: validateInjectionPoint(meta.injection_point, logger, entry.name),
-        styleInjectionPoint: validateInjectionPoint(meta.style_injection_point, logger, entry.name),
+        injectionPoint: validateInjectionPoint(meta.injection_point, entry.name),
+        styleInjectionPoint: validateInjectionPoint(meta.style_injection_point, entry.name),
         effects,
         source: "file",
       };
@@ -73,14 +65,14 @@ export async function loadSkillsFromDir(dir: string, logger: Logger): Promise<Sk
           const fn = mod.default ?? mod;
           if (typeof fn === "function") def.activate = fn;
         } catch (e) {
-          logger.warn("Failed to load activator for %s: %s", entry.name, e);
+          console.warn("Failed to load activator for %s: %s", entry.name, e);
         }
         break;
       }
 
       skills.push(def);
     } catch (e) {
-      logger.warn("Skipping malformed skill %s: %s", entry.name, e);
+      console.warn("Skipping malformed skill %s: %s", entry.name, e);
     }
   }
 

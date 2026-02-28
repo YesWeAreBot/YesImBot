@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { WillingnessEngine } from "../willingness";
-import type { WillingnessConfig } from "../willingness";
+import { WillingnessEngine } from "../src/services/agent/willingness";
+import type { WillingnessConfig } from "../src/services/agent/willingness";
 
 /**
  * Unit tests for WILL-01: directBoost on DM trigger type.

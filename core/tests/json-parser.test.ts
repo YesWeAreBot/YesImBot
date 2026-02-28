@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { JsonParser } from "../json-parser";
+import { JsonParser } from "../src/services/agent/json-parser";
 
 interface ExpectedOutputType {
   name: string;

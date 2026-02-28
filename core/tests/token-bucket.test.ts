@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TokenBucket } from "../willingness";
+import { TokenBucket } from "../src/services/agent/willingness";
 
 /**
  * Unit tests for WILL-02: TokenBucket rate limiter.
