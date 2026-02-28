@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 40 (in progress)
-Plan: 01 complete (1/4 plans)
-Status: Phase 40 Plan 01 complete — AgentResponse/AgentAction type split
-Last activity: 2026-02-28 — split AgentResponseRecord, added recordAgentAction(), rewired loop.ts
+Plan: 04 complete (4/4 plans)
+Status: Phase 40 Plan 04 complete — EnvironmentManager extraction
+Last activity: 2026-02-28 — extracted EnvironmentManager from HorizonService, delegation via this.environments.getOrCreate()
 
 Progress: v1.0 ✅ | v2.0 ✅ | v2.1 ✅ | v2.2 ✅ | v2.3 ✅ | v2.4 ✅ | v2.5 ◆
 
@@ -37,7 +37,7 @@ Phase 36 [==========] 100% (2/2 plans)
 Phase 37 [==========] 100% (2/2 plans)
 Phase 38 [          ] 0%
 Phase 39 [          ] 0%
-Phase 40 [==        ] 25% (1/4 plans)
+Phase 40 [==========] 100% (4/4 plans)
 ```
 
 ## Performance Metrics
@@ -63,6 +63,9 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 - [Phase 40-01]: AgentResponseData.assistantText renamed to rawText; old field kept optional for backward compat with existing DB rows
 - [Phase 40-01]: toObservations() expands old agent.response rows with actions into both AgentResponseObservation and AgentActionObservation — seamless migration without DB backfill
 - [Phase 40-01]: Bot messages recorded with Random.id() as synthetic messageId; content split on <sep/> before recording
+
+- [Phase 40-04]: EnvironmentManager takes cacheTtl in constructor — avoids coupling to HorizonServiceConfig shape
+- [Phase 40-04]: JsonDB import removed from service.ts — only EnvironmentManager owns the DB instance now
 
 - [Phase 37]: Entities passed as-is from view.entities into toolCtxWithPercept — index signature on ToolExecutionContext already supports arbitrary keys
 - [Phase 37]: All three QManager tools use requireBotRole('admin'), NOT requirePlatform('onebot') — standard Koishi Bot API is cross-platform
@@ -125,10 +128,11 @@ v2.0–v2.4 decisions archived to milestones/ and PROJECT.md.
 | 37    | 02   | 3min     | 2     | 1     |
 
 | 40 | 01 | 5min | 2 | 4 |
+| 40 | 04 | 4min | 1 | 2 |
 
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Phase 40 Plan 01 complete
-Resume file: .planning/phases/40-data-structure-render-optimization/40-01-SUMMARY.md
-Next action: `/gsd:execute-phase 40 02`
+Stopped at: Phase 40 Plan 04 complete
+Resume file: .planning/phases/40-data-structure-render-optimization/40-04-SUMMARY.md
+Next action: Phase 40 complete
