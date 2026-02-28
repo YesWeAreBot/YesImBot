@@ -3,9 +3,10 @@ import path from "node:path";
 
 import { FunctionType, ToolExecutionContext, ToolResult } from "@yesimbot/plugin";
 import type { SystemModelMessage } from "ai";
-import { Context } from "koishi";
+import { Context, Random } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
+import { TimelineStage } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import type { PromptService } from "../prompt/service";
@@ -182,8 +183,8 @@ export class ThinkActLoop {
             }
           }
           const lines = [`Round ${d.round}${triggerLabel}:`];
-          for (const a of d.actions) {
-            const r = d.toolResults.find((t) => t.name === a.name);
+          for (const a of d.actions ?? []) {
+            const r = (d.toolResults ?? []).find((t) => t.name === a.name);
             if (a.name === "send_message") {
               // OPT-04: omit content param, compact result
               const ok = r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
@@ -347,11 +348,47 @@ export class ThinkActLoop {
           timestamp: new Date(),
           data: {
             round,
-            assistantText: rawText,
+            rawText,
+          },
+        });
+
+        // Record action execution results
+        await horizon.events.recordAgentAction({
+          platform: percept.platform,
+          channelId: percept.channelId,
+          timestamp: new Date(),
+          data: {
+            round,
+            triggerMsgId: (percept.metadata?.messageId as string) ?? undefined,
             actions: response.actions,
             toolResults,
           },
         });
+
+        // Record bot sent messages as MessageRecord
+        for (const action of response.actions) {
+          if (action.name !== "send_message") continue;
+          const r = toolResults.find((t) => t.name === "send_message");
+          const ok = r && (r.status === "ok" || r.status === "fulfilled" || !r.error);
+          if (!ok) continue;
+          const content = String(action.params?.content ?? "");
+          if (!content) continue;
+          const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
+          for (const part of parts) {
+            await horizon.events.recordMessage({
+              platform: percept.platform,
+              channelId: percept.channelId,
+              stage: TimelineStage.Active,
+              timestamp: new Date(),
+              data: {
+                messageId: Random.id(),
+                senderId: toolCtx.bot?.selfId ?? "",
+                senderName: toolCtx.bot?.user?.name ?? "",
+                content: part.trim(),
+              },
+            });
+          }
+        }
 
         // Determine continuation: Tool calls always continue (results must flow back),
         // request_heartbeat only controls continuation for pure Action calls
@@ -389,11 +426,47 @@ export class ThinkActLoop {
                 timestamp: new Date(),
                 data: {
                   round: round + 1,
-                  assistantText: wrapResult.text,
+                  rawText: wrapResult.text,
+                },
+              });
+
+              // Record wrap-up action execution results
+              await horizon.events.recordAgentAction({
+                platform: percept.platform,
+                channelId: percept.channelId,
+                timestamp: new Date(),
+                data: {
+                  round: round + 1,
+                  triggerMsgId: (percept.metadata?.messageId as string) ?? undefined,
                   actions: wrapParsed.data.actions,
                   toolResults: wrapToolResults,
                 },
               });
+
+              // Record bot sent messages from wrap-up round
+              for (const action of wrapParsed.data.actions) {
+                if (action.name !== "send_message") continue;
+                const r = wrapToolResults.find((t) => t.name === "send_message");
+                const ok = r && (r.status === "ok" || r.status === "fulfilled" || !r.error);
+                if (!ok) continue;
+                const content = String(action.params?.content ?? "");
+                if (!content) continue;
+                const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
+                for (const part of parts) {
+                  await horizon.events.recordMessage({
+                    platform: percept.platform,
+                    channelId: percept.channelId,
+                    stage: TimelineStage.Active,
+                    timestamp: new Date(),
+                    data: {
+                      messageId: Random.id(),
+                      senderId: toolCtx.bot?.selfId ?? "",
+                      senderName: toolCtx.bot?.user?.name ?? "",
+                      content: part.trim(),
+                    },
+                  });
+                }
+              }
             }
           }
           break;
