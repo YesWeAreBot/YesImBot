@@ -304,8 +304,12 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   }
 
   formatObservation(obs: Observation, selfId?: string, channelKey?: string): string {
-    const hhmm = obs.timestamp.toTimeString().slice(0, 5);
+    // Escape dynamic values for XML attributes
+    const esc = (v: string) =>
+      v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     if (obs.type === "message") {
+      const hhmm = obs.timestamp.toTimeString().slice(0, 5);
       if (channelKey) {
         const shortId = this.assignShortId(channelKey, obs.messageId);
         const isBot = selfId && obs.sender.id === selfId;
@@ -316,7 +320,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
               return `${badge}${obs.sender.name}`;
             })();
         const senderId = isBot ? "bot" : obs.sender.id;
-        let attrs = `id="${shortId}" sender="${senderName}" senderId="${senderId}"`;
+        let attrs = `id="${shortId}" sender="${esc(senderName)}" senderId="${esc(senderId)}" time="${hhmm}"`;
         if (obs.replyTo) {
           const replyShortId = this.getShortId(channelKey, obs.replyTo);
           if (replyShortId !== undefined) {
@@ -326,26 +330,41 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         // obs.content is pre-formatted by ElementFormatterService — safe to embed directly
         return `<msg ${attrs}>${obs.content}</msg>`;
       }
-      // obs.content is pre-formatted — safe for direct interpolation
-      // Fallback: no channelKey — legacy [HH:MM] format
+      // Fallback: no channelKey — legacy [HH:MM] format (used by agent/service.ts willingness context)
       if (selfId && obs.sender.id === selfId) {
         return `[${hhmm}] [Bot] ${obs.sender.name}: ${obs.content}`;
       }
       const badge = this.getRoleBadge(obs.sender.attributes);
       return `[${hhmm}] ${badge}${obs.sender.name}: ${obs.content}`;
     }
-    const actions = obs.data.actions ?? [];
-    const sendAction = actions.find((a) => a.name === "send_message");
-    const otherTools = actions.filter((a) => a.name !== "send_message").map((a) => a.name);
-    if (sendAction) {
-      const content = (sendAction.params?.content as string) ?? "";
-      const suffix = otherTools.length ? ` [also: ${otherTools.join(", ")}]` : "";
-      return `[${hhmm}] [Bot]: ${content}${suffix}`;
+
+    if (obs.type === "agent.action") {
+      const d = obs.data;
+      const triggerAttr = d.triggerMsgId
+        ? ` trigger="#${this.getShortId(channelKey ?? "", d.triggerMsgId) ?? "?"}"`
+        : "";
+      const lines = d.actions.map((a) => {
+        const r = d.toolResults.find((t) => t.name === a.name);
+        if (a.name === "send_message") {
+          const ok = r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
+          return ok ? "send_message -> sent" : `send_message -> failed: ${r?.error ?? "unknown"}`;
+        }
+        const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
+        const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
+        return `${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`;
+      });
+      return `<bot-action round="${d.round}"${triggerAttr}>${lines.join("; ")}</bot-action>`;
     }
-    if (actions.length === 0) {
-      return `[${hhmm}] [Bot]: (chose silence)`;
+
+    if (obs.type === "agent.response") {
+      if (obs.data.error) {
+        return `<bot-error round="${obs.data.round}">${esc(obs.data.error)}</bot-error>`;
+      }
+      // Successful LLM response — actions rendered via AgentActionObservation
+      return "";
     }
-    return `[${hhmm}] [Bot Action]: ${actions.map((a) => a.name).join(", ")}`;
+
+    return "";
   }
 
   formatHorizonText(view: HorizonView, workingMemory?: string[], percept?: Percept): string {
