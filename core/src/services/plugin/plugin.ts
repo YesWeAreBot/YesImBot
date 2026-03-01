@@ -52,6 +52,14 @@ export abstract class YesImPlugin {
         hidden: entry.hidden,
       });
     }
+
+    ctx.on("ready", async () => {
+      ctx["yesimbot.plugin"].registerPlugin(this);
+    });
+
+    ctx.on("dispose", async () => {
+      ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
+    });
   }
 
   getFunctions(): Map<string, FunctionDefinition> {

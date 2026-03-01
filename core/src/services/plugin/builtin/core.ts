@@ -8,9 +8,7 @@ import { Failed, Success } from "../utils";
 
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
 export class CorePlugin extends YesImPlugin {
-  constructor(ctx: Context) {
-    super(ctx);
-  }
+  static inject = ["yesimbot.plugin", "yesimbot.horizon"];
 
   private resolveNativeMsgId(ctx: ToolExecutionContext, shortIdStr: string): string | null {
     const shortId = Number(shortIdStr);

@@ -26,8 +26,8 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
     this.config = config;
-    this.registerPlugin(new CorePlugin(ctx));
-    this.registerPlugin(new OnebotPlugin(ctx));
+    this.ctx.plugin(CorePlugin);
+    this.ctx.plugin(OnebotPlugin);
   }
 
   public registerPlugin(plugin: YesImPlugin): void {
