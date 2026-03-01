@@ -4,19 +4,13 @@ on:
   push:
     tags:
       - "core@*"
-      - "search@*"
-      - "shared-model@*"
-      - "persona@*"
-      - "provider-openai@*"
-      - "provider-deepseek@*"
-      - "provider-anthropic@*"
 
 jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -31,28 +25,14 @@ jobs:
       - run: yarn install --immutable
       - run: yarn build
 
-      - name: Resolve package path
-        id: pkg
-        run: |
-          TAG="${{ github.ref_name }}"
-          KEY="${TAG%@*}"
-          case "$KEY" in
-            core)               echo "path=core" >> $GITHUB_OUTPUT ;;
-            search)             echo "path=search" >> $GITHUB_OUTPUT ;;
-            shared-model)       echo "path=packages/shared-model" >> $GITHUB_OUTPUT ;;
-            persona)            echo "path=plugins/persona" >> $GITHUB_OUTPUT ;;
-            provider-openai)    echo "path=providers/provider-openai" >> $GITHUB_OUTPUT ;;
-            provider-deepseek)  echo "path=providers/provider-deepseek" >> $GITHUB_OUTPUT ;;
-            provider-anthropic) echo "path=providers/provider-anthropic" >> $GITHUB_OUTPUT ;;
-            *)
-              echo "Unknown tag key: $KEY"
-              exit 1
-              ;;
-          esac
-
       - name: Publish
         run: |
-          PKG_NAME=$(node -p "require('./${{ steps.pkg.outputs.path }}/package.json').name")
+          PKG_NAME=$(node -p "require('./core/package.json').name")
           yarn workspace "$PKG_NAME" npm publish --provenance
         env:
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
