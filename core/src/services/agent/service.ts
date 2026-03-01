@@ -110,6 +110,20 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
   ]).default(2),
 });
 
+interface PendingWindow {
+  cancel: () => void;
+  lastEvent: HorizonMessageEvent;
+}
+
+interface DMWindow {
+  cancel: () => void;
+  capCancel: () => void;
+  firstMessageAt: number;
+  lastMessageAt: number;
+  lastEvent: HorizonMessageEvent;
+  traceId: string;
+}
+
 export class AgentCore extends Service<AgentCoreConfig> {
   static inject = [
     "yesimbot.horizon",
@@ -123,23 +137,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
   private queues = new Map<string, Promise<void>>();
   private pending = new Map<string, LoopPayload[]>();
-  private pendingWindows = new Map<
-    string,
-    { cancel: () => void; lastEvent: HorizonMessageEvent }
-  >();
+  private pendingWindows = new Map<string, PendingWindow>();
   private deferredTimers = new Map<string, () => void>();
   private deferredGen = new Map<string, number>();
-  private dmWindows = new Map<
-    string,
-    {
-      cancel: () => void;
-      capCancel: () => void;
-      firstMessageAt: number;
-      lastMessageAt: number;
-      lastEvent: HorizonMessageEvent;
-      traceId: string;
-    }
-  >();
+  private dmWindows = new Map<string, DMWindow>();
   private loop!: ThinkActLoop;
   private willingness!: WillingnessEngine;
   private rateLimiter!: { dm: TokenBucket; group: TokenBucket };
@@ -149,6 +150,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     this.config = config;
     this.logger = ctx.logger("agent");
     this.logger.level = config.debugLevel || 2;
+    this.ctx.command("yesimbot.agent", "AgentCore 调试指令", { authority: 3 });
   }
 
   protected async start(): Promise<void> {
