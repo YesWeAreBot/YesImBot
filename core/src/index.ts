@@ -50,7 +50,7 @@ export const Config: Schema<Config> = Schema.intersect([
       .role("table"),
     botName: Schema.string(),
     keywords: Schema.array(Schema.string()).default([]),
-  }).description({ "zh-CN": "基础", "en-US": "Basic" } as never),
+  }),
 
   // ── 模型 ──
   Schema.object({
@@ -59,13 +59,13 @@ export const Config: Schema<Config> = Schema.intersect([
     globalTimeout: Schema.number().default(120000),
     maxToolResultLength: Schema.number().default(4000),
     concurrency: Schema.number().default(5),
-  }).description({ "zh-CN": "模型", "en-US": "Model" } as never),
+  }),
 
   // ── 意愿值 ──
   Schema.object({
     willingness: WillingnessSchema,
     aggregationWindow: Schema.number().default(1500),
-  }).description({ "zh-CN": "意愿值", "en-US": "Willingness" } as never),
+  }),
 
   // ── 提示词 ──
   Schema.object({
@@ -75,12 +75,12 @@ export const Config: Schema<Config> = Schema.intersect([
     rolePath: Schema.path({ filters: ["directory"], allowCreate: true }).default(
       "data/yesimbot/roles",
     ),
-    skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default(
-      [],
-    ),
+    skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default([
+      "node_modules/koishi-plugin-yesimbot/resources/skills",
+    ]),
     confidenceThreshold: Schema.number().default(0.3),
     stickyDefaultTimeout: Schema.number().default(3),
-  }).description({ "zh-CN": "提示词", "en-US": "Prompt" } as never),
+  }),
 
   // ── 高级 ──
   Schema.object({
@@ -105,7 +105,7 @@ export const Config: Schema<Config> = Schema.intersect([
       Schema.const(2),
       Schema.const(3),
     ]).default(2),
-  }).description({ "zh-CN": "高级", "en-US": "Advanced" } as never),
+  }),
 ]).i18n({
   "zh-CN": zhCN._config,
   "en-US": enUS._config,
