@@ -28,6 +28,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     this.config = config;
     this.ctx.plugin(CorePlugin);
     this.ctx.plugin(OnebotPlugin);
+    this.ctx.command("yesimbot.plugin", "插件指令集", { authority: 3 });
   }
 
   public registerPlugin(plugin: YesImPlugin): void {
