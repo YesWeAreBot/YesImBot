@@ -18,6 +18,9 @@ declare module "koishi" {
   interface Context {
     "yesimbot.model": IModelService;
   }
+  interface Events {
+    "yesimbot/set-model": (provider: string, modelId: string) => void;
+  }
 }
 
 export type CallParams = CallSettings & Prompt;
@@ -42,6 +45,62 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     this.config = config;
     this.queue = new PQueue({ concurrency: config.concurrency || 5 });
     this.logger = ctx.logger("yesimbot.model");
+    const command = this.ctx.command("yesimbot.model", "模型指令集", { authority: 3 });
+
+    command
+      .subcommand(".set <model:string>", "设置当前会话使用的模型")
+      .action(({ session }, model) => {
+        try {
+          if (!model) return "请提供模型名称，格式为 provider:modelId";
+          const { provider, modelId } = this.resolveModel(model);
+          const providerInstance = this.getProvider(provider);
+          if (!providerInstance) return `提供商未找到: ${provider}`;
+          const modelInfo = providerInstance.getModel(modelId);
+          if (!modelInfo) return `模型未找到: ${model}`;
+          this.ctx.emit("yesimbot/set-model", provider, modelId);
+          return `已设置当前会话使用模型: ${provider}:${modelId}`;
+        } catch (error) {
+          return `无效的模型格式: ${model}`;
+        }
+      });
+
+    command.subcommand(".list", "列出当前会话可用的模型").action(() => {
+      const providers = this.listProviders();
+      if (providers.length === 0) return "没有注册的模型提供商";
+      let data = "当前会话可用的模型:\n";
+      for (const providerName of providers) {
+        const provider = this.getProvider(providerName);
+        if (!provider) continue;
+        const models = provider.listModels();
+        for (const modelId of Object.keys(models)) {
+          data += `- ${providerName}:${modelId}\n`;
+        }
+      }
+      return data;
+    });
+
+    const providerCommand = command.subcommand(".provider", "", { authority: 3 });
+    providerCommand.subcommand(".list", "列出所有模型提供商").action(() => {
+      const providers = this.listProviders();
+      if (providers.length === 0) return "没有注册的模型提供商";
+      return `共注册了 ${providers.length} 个模型提供商:\n` + providers.join("\n");
+    });
+    providerCommand
+      .subcommand(".models <providerName:string>", "列出指定提供商的模型")
+      .action(({ session, options }, providerName) => {
+        if (!providerName) return "请提供模型提供商名称";
+        const provder = this.getProvider(providerName);
+        if (!provder) return `提供商未找到: ${providerName}`;
+        const models = provder.listModels();
+        if (Object.keys(models).length === 0) return "该提供商没有注册任何模型";
+        const data =
+          `提供商 ${providerName} 的模型列表:\n` +
+          Object.entries(models)
+            .map(([id, _info]) => id)
+            .join("\n");
+        return data;
+      });
+
     this.refreshSchemas();
   }
 
