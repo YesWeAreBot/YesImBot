@@ -53,7 +53,6 @@ export interface HorizonServiceConfig {
   aggregationWindow?: number;
   historyLimit?: number;
   archiveThresholdMs?: number;
-  botName?: string;
   entityCacheTtl?: number;
   maxActiveEntities?: number;
 }
@@ -99,6 +98,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.listener = new EventListener(ctx, this.events, this.config);
     this.loadShortIdMaps();
     this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
+    this.ctx.command("yesimbot.history", "上下文指令集", { authority: 3 });
   }
 
   protected async start(): Promise<void> {
@@ -185,7 +185,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const botRole = await this.getBotRole(key, options?.session);
     const self: SelfInfo = {
       id: options?.selfId ?? "",
-      name: this.config.botName || options?.selfName || options?.selfId || "",
+      name: options?.selfName || options?.selfId || "",
       role: botRole ?? undefined,
     };
     return { self, environment: environment ?? undefined, entities, history };
