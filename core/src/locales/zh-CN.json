@@ -92,7 +92,7 @@
         "$desc": "提示词",
         "$inner": {
           "templates": "自定义提示词模板",
-          "timeout": "注入渲染超时时间（毫秒）",
+          "renderTimeout": "注入渲染超时时间（毫秒）",
           "resourcesDir": "自定义模板目录",
           "rolePath": "角色文件目录",
           "skillPaths": "技能文件目录列表",
@@ -114,10 +114,6 @@
           "entityCacheTtl": "实体缓存过期时间（毫秒）",
           "maxActiveEntities": "展示给 LLM 的最大实体数",
           "defaultTimeout": "工具执行默认超时（毫秒）",
-          "searchProvider": "搜索服务提供商",
-          "searchEndpoint": "搜索 API 端点",
-          "searchApiKey": "搜索 API 密钥",
-          "searchDefaultLimit": "搜索默认返回结果数",
           "debugLevel": "调试日志级别：0=关闭, 1=基础, 2=详细, 3=完整"
         }
       }

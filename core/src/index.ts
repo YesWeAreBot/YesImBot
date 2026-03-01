@@ -75,9 +75,9 @@ export const Config: Schema<Config> = Schema.intersect([
     rolePath: Schema.path({ filters: ["directory"], allowCreate: true }).default(
       "data/yesimbot/roles",
     ),
-    skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default([
-      "node_modules/koishi-plugin-yesimbot/resources/skills",
-    ]),
+    skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true }))
+      .default(["node_modules/koishi-plugin-yesimbot/resources/skills"])
+      .role("table"),
     confidenceThreshold: Schema.number().default(0.3),
     stickyDefaultTimeout: Schema.number().default(3),
   }),

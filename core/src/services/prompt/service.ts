@@ -15,13 +15,13 @@ declare module "koishi" {
 
 export interface PromptServiceConfig {
   templates?: Record<string, string>;
-  timeout?: number;
+  renderTimeout?: number;
   resourcesDir?: string;
 }
 
 export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
   templates: Schema.dict(Schema.string()),
-  timeout: Schema.number().default(5000),
+  renderTimeout: Schema.number().default(5000),
   resourcesDir: Schema.string(),
 });
 
@@ -110,7 +110,7 @@ export class PromptService extends Service<PromptServiceConfig> {
 
   async render(_templateName: string, initialScope?: Record<string, unknown>): Promise<Section[]> {
     const scope = await this.buildScope(initialScope ?? {});
-    const timeout = this.config.timeout ?? 5000;
+    const timeout = this.config.renderTimeout ?? 5000;
     const sections: Section[] = [];
 
     for (const point of INJECTION_POINTS) {
