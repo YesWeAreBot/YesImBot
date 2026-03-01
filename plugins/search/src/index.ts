@@ -14,6 +14,8 @@ import {
 import { loadSkillsFromDir } from "koishi-plugin-yesimbot/services/skill";
 
 import { TavilyBackend } from "./backends/tavily";
+import enUS from "./locales/en-US.json";
+import zhCN from "./locales/zh-CN.json";
 import type { SearchBackend, SearchPluginConfig } from "./types";
 
 const builtinSkillsDir = join(__dirname, "../", "resources/skills");
@@ -23,21 +25,28 @@ export default class SearchPlugin extends YesImPlugin {
   static name = "search";
   static inject = ["yesimbot.plugin", "yesimbot.skill"];
   static Config: Schema<SearchPluginConfig> = Schema.object({
-    provider: Schema.string().default("tavily").description("Search backend provider to use"),
-    apiKey: Schema.string().required().description("API key for the search backend"),
-    endpoint: Schema.string().description("Endpoint URL for the search backend"),
-    defaultLimit: Schema.number()
-      .default(5)
-      .description("Default number of search results to return"),
-    jinaApiKey: Schema.string().description("API key for Jina AI Reader, used in the fetch tool"),
+    provider: Schema.string().default("tavily"),
+    apiKey: Schema.string().required(),
+    endpoint: Schema.string(),
+    defaultLimit: Schema.number().default(5),
+    jinaApiKey: Schema.string(),
+  }).i18n({
+    "zh-CN": zhCN,
+    "en-US": enUS,
   });
+  private config: SearchPluginConfig;
 
-  constructor(
-    ctx: Context,
-    private config: SearchPluginConfig,
-  ) {
+  private disposeSkills: (() => void)[] = [];
+
+  constructor(ctx: Context, config: SearchPluginConfig) {
     super(ctx);
-    const backend: SearchBackend = new TavilyBackend(ctx, config);
+    this.config = config;
+    this.ctx.on("ready", async () => this.start());
+    this.ctx.on("dispose", async () => this.dispose());
+  }
+
+  private async start(): Promise<void> {
+    const backend: SearchBackend = new TavilyBackend(this.ctx, this.config);
     this.registerTool({
       name: "search",
       description:
@@ -69,17 +78,11 @@ export default class SearchPlugin extends YesImPlugin {
     });
 
     const skills = loadSkillsFromDir(builtinSkillsDir);
+    this.disposeSkills = skills.map((s) => this.ctx["yesimbot.skill"].register(s));
+  }
 
-    const disposeSkills = skills.map((s) => this.ctx["yesimbot.skill"].register(s));
-
-    this.ctx.on("ready", async () => {
-      this.ctx["yesimbot.plugin"].registerPlugin(this);
-    });
-
-    this.ctx.on("dispose", () => {
-      disposeSkills.forEach((d) => d());
-      this.ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
-    });
+  private async dispose(): Promise<void> {
+    this.disposeSkills.forEach((d) => d());
   }
 
   @Tool({
