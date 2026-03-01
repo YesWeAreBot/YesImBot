@@ -39,8 +39,7 @@
     "pkgroll": "^2.21.4",
     "rimraf": "^6.1.2",
     "turbo": "^2.8.9",
-    "typescript": "^5.9.3",
-    "yml-register": "^1.2.5"
+    "typescript": "^5.9.3"
   },
   "lint-staged": {
     "*.{ts,tsx,mjs,cjs,js,jsx}": [

@@ -16,6 +16,6 @@
     "experimentalDecorators": true,
     "jsx": "react-jsx",
     "jsxImportSource": "@satorijs/element",
-    "types": ["node", "yml-register/types"]
+    "types": ["node"]
   }
 }
