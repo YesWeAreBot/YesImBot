@@ -23,12 +23,25 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: yarn install --immutable
-      - run: yarn build
 
-      - name: Publish
+      # 先构建依赖包
+      - run: yarn build --filter=@yesimbot/shared-model
+      # 发布 shared-model
+      - name: Publish shared-model
         run: |
-          PKG_NAME=$(node -p "require('./core/package.json').name")
-          yarn workspace "$PKG_NAME" npm publish --provenance
+          yarn workspace @yesimbot/shared-model npm publish --provenance
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 等待 npm 注册表刷新
+      - name: Wait for npm registry
+        run: sleep 10
+
+      # 构建并发布 core
+      - run: yarn build --filter=koishi-plugin-yesimbot
+      - name: Publish core
+        run: |
+          yarn workspace koishi-plugin-yesimbot npm publish --provenance
         env:
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
