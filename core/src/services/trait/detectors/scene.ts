@@ -25,12 +25,11 @@ export class SceneTrait implements TraitDetector {
   private botName?: string;
   private logger!: Logger;
 
-  start(ctx: unknown, analyzer: unknown): void {
-    const context = ctx as Context;
+  start(ctx: Context, analyzer: unknown): void {
     this.analyzer = analyzer as TraitAnalyzer;
-    this.logger = context.logger("trait:scene");
+    this.logger = ctx.logger("trait:scene");
 
-    context.on("horizon/message", (event) => {
+    ctx.on("horizon/message", (event) => {
       const key = channelKey(event);
       const state = this.analyzer.getState<SceneState>(this.name, key) ?? {
         messagesSinceBotResponse: 0,
