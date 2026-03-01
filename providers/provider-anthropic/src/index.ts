@@ -1,11 +1,11 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createAnthropic, AnthropicProvider as Provider } from "@ai-sdk/anthropic";
 import {
   AbstractProvider,
   type BaseProviderConfig,
   createProviderSchema,
   Modality,
 } from "@yesimbot/shared-model";
-import { type Context, Schema } from "koishi";
+import { Schema } from "koishi";
 
 import enUS from "./locales/en-US.json";
 import zhCN from "./locales/zh-CN.json";
@@ -31,10 +31,7 @@ function parseBody(body: BodyInit | null | undefined): string | null {
   return null;
 }
 
-class AnthropicProvider extends AbstractProvider<
-  ReturnType<typeof createAnthropic>,
-  AnthropicConfig
-> {
+class AnthropicProvider extends AbstractProvider<Provider, AnthropicConfig> {
   static reusable = true;
   static inject = ["yesimbot.model"];
   readonly providerType = "anthropic";

@@ -1,16 +1,15 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAI, OpenAIProvider as Provider } from "@ai-sdk/openai";
 import {
   AbstractProvider,
   type BaseProviderConfig,
   createProviderSchema,
   Modality,
 } from "@yesimbot/shared-model";
-import type { Context } from "koishi";
 
 import enUS from "./locales/en-US.json";
 import zhCN from "./locales/zh-CN.json";
 
-class OpenAIProvider extends AbstractProvider<ReturnType<typeof createOpenAI>, BaseProviderConfig> {
+class OpenAIProvider extends AbstractProvider<Provider, BaseProviderConfig> {
   static reusable = true;
   static inject = ["yesimbot.model"];
   readonly providerType = "openai";
@@ -30,7 +29,7 @@ namespace OpenAIProvider {
     defaultBaseURL: "https://api.openai.com/v1",
     defaultModels: [
       {
-        id: "gpt-4o",
+        id: "gpt-5.2-chat-latest",
         tool_call: true,
         reasoning: false,
         modalities: [Modality.Text, Modality.Image],
