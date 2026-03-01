@@ -48,7 +48,6 @@ export const Config: Schema<Config> = Schema.intersect([
     )
       .default([])
       .role("table"),
-    botName: Schema.string(),
     keywords: Schema.array(Schema.string()).default([]),
   }),
 
@@ -113,6 +112,7 @@ export const Config: Schema<Config> = Schema.intersect([
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger("yesimbot");
+  const command = ctx.command("yesimbot", "Yes! I'm Bot! 指令集", { authority: 3 });
   ctx.plugin(FormatterService);
   ctx.plugin(ModelService, { concurrency: config.concurrency });
   ctx.plugin(HorizonService, {
@@ -121,7 +121,6 @@ export function apply(ctx: Context, config: Config) {
     aggregationWindow: config.aggregationWindow,
     historyLimit: config.historyLimit,
     archiveThresholdMs: config.archiveThresholdMs,
-    botName: config.botName,
     entityCacheTtl: config.entityCacheTtl,
     maxActiveEntities: config.maxActiveEntities,
   });
@@ -150,47 +149,21 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.on("ready", () => {
     logger.info("YesImBot core plugin initialized");
-    waitForServiceReady(ctx)
-      .then(() => {
-        logger.info("All services are ready");
-      })
-      .catch((err) => {
-        logger.error("Error while waiting for services to be ready:", err);
-      });
   });
 
   ctx.on("dispose", () => {
     logger.info("YesImBot core plugin disposed");
   });
-}
 
-async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void> {
-  const services = [
-    "yesimbot.agent",
-    "yesimbot.formatter",
-    "yesimbot.horizon",
-    "yesimbot.model",
-    "yesimbot.plugin",
-    "yesimbot.prompt",
-    "yesimbot.role",
-    "yesimbot.skill",
-    "yesimbot.trait",
-  ];
-  const resolvedServices = new Set<string>();
-  const startTime = Date.now();
+  ctx.on("yesimbot/set-model", (provider, modelId) => {
+    logger.info(`Model updated: ${provider} ${modelId}`);
+    config.model = `${provider}:${modelId}`;
+    ctx.scope.update(config, true);
+  });
 
-  while (resolvedServices.size < services.length) {
-    for (const service of services) {
-      if (!resolvedServices.has(service) && ctx.get(service)) {
-        resolvedServices.add(service);
-      }
-    }
-    if (Date.now() - startTime > timeout) {
-      const unresolvedServices = services.filter((s) => !resolvedServices.has(s));
-      throw new Error(
-        `Timeout while waiting for services to be ready: ${unresolvedServices.join(", ")}`,
-      );
-    }
-    await sleep(100);
-  }
+  command.subcommand(".model.current", "显示当前会话使用的模型").action(() => {
+    const currentModel = config.model;
+    if (!currentModel) return "当前会话未设置模型";
+    return `当前会话使用的模型: ${currentModel}`;
+  });
 }
