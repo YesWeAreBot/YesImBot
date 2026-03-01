@@ -1,5 +1,5 @@
 {
-  "name": "@yesimbot/koishi-plugin-search",
+  "name": "@yesimbot/koishi-plugin-search-service",
   "version": "0.1.0-beta.1",
   "files": [
     "dist",
@@ -18,22 +18,24 @@
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
+    "pub": "yarn npm publish --access public",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "koishi": "^4.18.3",
-    "koishi-plugin-yesimbot": "workspace:*"
+    "koishi-plugin-yesimbot": "workspace:^"
   },
   "peerDependencies": {
     "koishi": "^4.0.0",
-    "koishi-plugin-yesimbot": "workspace:*"
+    "koishi-plugin-yesimbot": "workspace:^"
   },
   "koishi": {
     "service": {
