@@ -1,0 +1,46 @@
+{
+  "name": "@yesimbot/koishi-plugin-mcp-client",
+  "version": "0.1.0-beta.1",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
+    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "fmt": "oxfmt",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.10",
+    "koishi-plugin-yesimbot": "workspace:*"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.10",
+    "koishi-plugin-yesimbot": "workspace:*"
+  },
+  "koishi": {
+    "description": {
+      "zh": "MCP 协议客户端插件 - 支持 HTTP/SSE/Stdio 传输，自动安装 UV",
+      "en": "MCP protocol client plugin - Supports HTTP/SSE/Stdio transport, auto-install UV"
+    }
+  }
+}
