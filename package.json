@@ -1,6 +1,5 @@
 {
   "name": "@root/yesimbot",
-  "version": "0.0.0",
   "private": true,
   "homepage": "github:HydroGest/YesImBot",
   "license": "MIT",
@@ -24,6 +23,7 @@
     "lint": "turbo run lint",
     "lint:fix": "yarn lint -- --fix",
     "prepare": "husky",
+    "pub": "turbo run pub",
     "release": "node scripts/release.mjs",
     "release:beta": "node scripts/release.mjs --beta",
     "test": "turbo run test",
