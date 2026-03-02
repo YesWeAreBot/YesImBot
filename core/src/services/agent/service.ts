@@ -84,6 +84,9 @@ export interface AgentCoreConfig {
   aggregationWindow?: number;
   errorReportChannel?: string;
   debugLevel?: 0 | 1 | 2 | 3;
+  imageMode?: "native" | "off";
+  maxImagesInContext?: number;
+  imageLifecycleCount?: number;
 }
 
 export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
@@ -108,6 +111,9 @@ export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
     Schema.const(2),
     Schema.const(3),
   ]).default(2),
+  imageMode: Schema.union([Schema.const("native"), Schema.const("off")]).default("native"),
+  maxImagesInContext: Schema.number().default(3),
+  imageLifecycleCount: Schema.number().default(3),
 });
 
 interface PendingWindow {
