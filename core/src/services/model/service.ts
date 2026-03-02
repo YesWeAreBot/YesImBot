@@ -165,7 +165,6 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
         return await fn();
       } catch (error) {
         lastError = error;
-        this.logger.error(lastError);
         const category = classifyError(error);
         if (category !== ErrorCategory.TRANSIENT && category !== ErrorCategory.RATE_LIMIT)
           throw error;

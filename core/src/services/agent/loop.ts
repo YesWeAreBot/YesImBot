@@ -194,7 +194,6 @@ export class ThinkActLoop {
         maxImagesInContext: this.config.maxImagesInContext ?? 3,
         imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
-      this.logger.info(imageConfig);
       const multiTurnMessages = horizon.formatHorizonText(view, percept, imageConfig);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
