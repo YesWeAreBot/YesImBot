@@ -180,7 +180,7 @@ export interface HorizonView {
   self: SelfInfo;
   environment?: Environment;
   entities?: Entity[];
-  history?: Observation[];
+  history?: TimelineEntry[];
 }
 
 // ---- Query ----

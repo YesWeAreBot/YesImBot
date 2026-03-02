@@ -19,13 +19,7 @@ import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
-import {
-  trimMessages,
-  trimObservations,
-  type LoopMessage,
-  type ObservationTrimConfig,
-  type TrimConfig,
-} from "./trimmer";
+import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentAction {
   name: string;
@@ -179,15 +173,6 @@ export class ThinkActLoop {
         softTrimTail: this.config.softTrimTail ?? 800,
         initialContextCharBudget: this.config.initialContextCharBudget ?? 20000,
       };
-
-      // Trim history observations before rendering
-      const obsTrimConfig: ObservationTrimConfig = {
-        charBudget: trimConfig.charBudget,
-        // protect last N rounds worth of observations (each round ~= 1 message + 1 agent action)
-        keepLastCount: (trimConfig.keepLastRounds ?? 2) * 2 + 1,
-      };
-      const trimResult = trimObservations(view.history ?? [], obsTrimConfig);
-      view = { ...view, history: trimResult.observations };
 
       const imageConfig = {
         imageMode: (this.config.imageMode ?? "native") as "native" | "off",

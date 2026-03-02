@@ -1,7 +1,5 @@
 import type { FilePart, ImagePart, TextPart, UserContent } from "ai";
 
-import type { AgentActionObservation, MessageObservation, Observation } from "../horizon/types";
-
 export interface TrimConfig {
   charBudget: number;
   keepLastRounds: number;
@@ -10,120 +8,10 @@ export interface TrimConfig {
   initialContextCharBudget?: number;
 }
 
-export interface ObservationTrimConfig {
-  charBudget: number;
-  /** Number of most-recent observations to protect from trimming */
-  keepLastCount: number;
-}
-
 export interface LoopMessage {
   role: "user" | "assistant";
   content: string | UserContent;
   _trimState?: "none" | "soft" | "hard";
-}
-
-function estimateObservationChars(obs: Observation): number {
-  if (obs.type === "message") {
-    if (typeof obs.content === "string") return obs.content.length + 60;
-    // UserContent array — sum text parts + estimate for image parts
-    let chars = 60;
-    const parts = obs.content as Array<TextPart | ImagePart | FilePart>;
-    for (const part of parts) {
-      if (part.type === "text") chars += part.text.length;
-      else if (part.type === "image") chars += 5000;
-    }
-    return chars;
-  }
-  if (obs.type === "agent.action") {
-    let chars = 40; // tag overhead
-    for (const a of obs.data.actions) {
-      chars += a.name.length + JSON.stringify(a.params ?? {}).length;
-    }
-    for (const r of obs.data.toolResults) {
-      chars += r.name.length + (r.result != null ? String(r.result).slice(0, 200).length : 0);
-    }
-    return chars;
-  }
-  // agent.response — error text or empty
-  if (obs.type === "agent.response") {
-    return obs.data.error ? obs.data.error.length + 40 : 0;
-  }
-  return 0;
-}
-
-export function trimObservations(
-  observations: Observation[],
-  config: ObservationTrimConfig,
-  trimState?: Set<Observation>,
-): { observations: Observation[]; trimState: Set<Observation> } {
-  const state = trimState ?? new Set<Observation>();
-  const total = observations.reduce((sum, o) => sum + estimateObservationChars(o), 0);
-
-  if (total <= config.charBudget) {
-    return { observations: [...observations], trimState: state };
-  }
-
-  // Protected: last N observations
-  const protectedStart = Math.max(0, observations.length - config.keepLastCount);
-
-  // Layer 1: Image strip — remove ImageParts from oldest non-protected observations
-  let currentTotal = total;
-  for (let i = 0; i < protectedStart; i++) {
-    if (currentTotal <= config.charBudget) break;
-    const obs = observations[i];
-    if (obs.type === "message" && typeof obs.content !== "string") {
-      const content = obs.content as Array<TextPart | ImagePart | FilePart>;
-      const imageCount = content.filter((p) => p.type === "image").length;
-      if (imageCount > 0) {
-        const stripped = content.filter((p) => p.type !== "image");
-        currentTotal -= imageCount * 5000;
-        const newContent =
-          stripped.length === 1 && stripped[0].type === "text" ? stripped[0].text : stripped;
-        observations[i] = { ...obs, content: newContent } as MessageObservation;
-      }
-    }
-  }
-
-  // Layer 2: softTrim — remove oldest non-protected observations entirely
-  for (let i = 0; i < protectedStart; i++) {
-    if (state.has(observations[i])) continue; // already trimmed
-    if (currentTotal <= config.charBudget) break;
-    const cost = estimateObservationChars(observations[i]);
-    currentTotal -= cost;
-    state.add(observations[i]);
-  }
-
-  // Build result: keep only non-trimmed observations
-  let result = observations.filter((o) => !state.has(o));
-
-  // Layer 3: hardClear — if still over budget after removing all eligible,
-  // replace oldest remaining non-protected observations with placeholder
-  // This is a safety net — in practice softTrim should suffice
-  if (result.reduce((s, o) => s + estimateObservationChars(o), 0) > config.charBudget) {
-    const hardProtectedStart = Math.max(0, result.length - config.keepLastCount);
-    for (let i = 0; i < hardProtectedStart; i++) {
-      if (result[i].type === "message") {
-        result[i] = {
-          ...result[i],
-          content: "[message trimmed]",
-        } as MessageObservation;
-      } else if (result[i].type === "agent.action") {
-        const d = result[i] as AgentActionObservation;
-        result[i] = {
-          ...d,
-          data: {
-            ...d.data,
-            toolResults: d.data.toolResults.map((r) => ({
-              ...r,
-              result: undefined,
-            })),
-          },
-        };
-      }
-    }
-  }
-
-  return { observations: result, trimState: state };
 }
 
 function softTrim(text: string, head: number, tail: number): string {
