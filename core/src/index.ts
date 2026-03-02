@@ -95,16 +95,15 @@ export const Config: Schema<Config> = Schema.intersect([
     entityCacheTtl: Schema.number().default(3600000),
     maxActiveEntities: Schema.number().default(15),
     defaultTimeout: Schema.number().default(30000),
-    searchProvider: Schema.string().default("tavily"),
-    searchEndpoint: Schema.string().role("link"),
-    searchApiKey: Schema.string().role("secret"),
-    searchDefaultLimit: Schema.number().default(5),
     debugLevel: Schema.union([
       Schema.const(0),
       Schema.const(1),
       Schema.const(2),
       Schema.const(3),
     ]).default(2),
+    imageMode: Schema.union([Schema.const("native"), Schema.const("off")]).default("native"),
+    maxImagesInContext: Schema.number().default(3),
+    imageLifecycleCount: Schema.number().default(3),
   }),
 ]).i18n({
   "zh-CN": zhCN._config,
@@ -147,6 +146,9 @@ export function apply(ctx: Context, config: Config) {
     willingness: config.willingness,
     errorReportChannel: config.errorReportChannel,
     debugLevel: config.debugLevel,
+    imageMode: config.imageMode,
+    maxImagesInContext: config.maxImagesInContext,
+    imageLifecycleCount: config.imageLifecycleCount,
   });
 
   ctx.on("ready", () => {
