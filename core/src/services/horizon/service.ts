@@ -3,7 +3,6 @@ import path from "node:path";
 
 import type { ImagePart, TextPart, UserContent } from "ai";
 import { Context, h, Schema, Service, type Session } from "koishi";
-import Mustache from "mustache";
 
 import type { LoopMessage } from "../agent/trimmer";
 import { type ChannelKey, type Percept } from "../shared/types";
@@ -16,29 +15,12 @@ import type {
   EntityRecord,
   HorizonView,
   ImageConfig,
-  Observation,
   Role,
   SelfInfo,
   TimelineEntry,
   ViewOptions,
 } from "./types";
 import { TimelineEventType } from "./types";
-
-interface HistoryItemData {
-  is_message: boolean;
-  is_action: boolean;
-  is_error: boolean;
-  // message fields
-  id?: number;
-  time?: string; // "MM月DD日 HH:mm"
-  senderLine?: string; // "SenderName(senderId)"
-  replyLine?: string; // "[回复: N]" or undefined
-  content?: string;
-  // action fields
-  actionContent?: string;
-  // error fields
-  errorContent?: string;
-}
 
 declare module "koishi" {
   interface Context {
@@ -85,7 +67,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   public events: EventManager;
   public listener: EventListener;
 
-  private historyItemTpl?: string;
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (nativeMsgId -> shortId)
   private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> nativeMsgId)
@@ -181,7 +162,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       limit: this.config.historyLimit ?? 30,
       orderBy: "desc",
     });
-    const history = this.events.toObservations(entries.reverse());
+    const history = entries.reverse();
     const environment = await this.environments.getOrCreate(key, options?.session);
     const entities = await this.getEntities(key, options?.session);
     const botRole = await this.getBotRole(key, options?.session);
@@ -322,101 +303,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return lower === "owner" ? "[Owner] " : "[Admin] ";
   }
 
-  formatObservation(
-    obs: Observation,
-    selfId?: string,
-    channelKey?: string,
-  ): HistoryItemData | null {
-    // Escape dynamic values for XML attributes
-    const esc = (v: string) =>
-      v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-    if (obs.type === "message") {
-      // formatObservation requires channelKey — no fallback path
-      if (!channelKey) return null;
-
-      const shortId = this.assignShortId(channelKey, obs.messageId);
-      const senderName = (() => {
-        const badge = this.getRoleBadge(obs.sender.attributes);
-        return `${badge}${obs.sender.name}`;
-      })();
-      const senderId = obs.sender.id;
-
-      // Time format: MM月DD日 HH:mm
-      const d = obs.timestamp;
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      const time = `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`;
-
-      // Inline sender format: SenderName(senderId)
-      const senderLine = `${senderName}(${senderId})`;
-
-      // Reply line: [回复: N] if replyTo shortId exists
-      let replyLine: string | undefined;
-      if (obs.replyTo) {
-        const replyShortId = this.getShortId(channelKey, obs.replyTo);
-        if (replyShortId !== undefined) {
-          replyLine = `[回复: ${replyShortId}]`;
-        }
-      }
-
-      return {
-        is_message: true,
-        is_action: false,
-        is_error: false,
-        id: shortId,
-        time,
-        senderLine,
-        replyLine,
-        content:
-          typeof obs.content === "string"
-            ? obs.content
-            : obs.content
-                .filter((p) => p.type === "text")
-                .map((p) => (p as TextPart).text)
-                .join(""),
-      };
-    }
-
-    if (obs.type === "agent.action") {
-      const d = obs.data;
-      const lines = d.actions.map((a) => {
-        const r = d.toolResults.find((t) => t.name === a.name);
-        if (a.name === "send_message") {
-          const ok = r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
-          return ok ? "send_message -> sent" : `send_message -> failed: ${r?.error ?? "unknown"}`;
-        }
-        const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
-        const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
-        return `${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`;
-      });
-      if (lines.length === 0) {
-        lines.push(`(No actions)`);
-      }
-      return {
-        is_message: false,
-        is_action: true,
-        is_error: false,
-        actionContent: lines.join("; "),
-      };
-    }
-
-    if (obs.type === "agent.response") {
-      if (obs.data.error) {
-        return {
-          is_message: false,
-          is_action: false,
-          is_error: true,
-          errorContent: esc(obs.data.error),
-        };
-      }
-      // Successful LLM response — actions rendered via AgentActionObservation
-      return null;
-    }
-
-    return null;
-  }
-
   formatHorizonText(
     view: HorizonView,
     percept?: Percept,
@@ -466,7 +352,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     if (memberLines.length) preambleParts.push(`<members>\n${memberLines.join("\n")}\n</members>`);
     const preamble = preambleParts.join("\n");
 
-    this.historyItemTpl ??= this.ctx["yesimbot.prompt"].loadPartial("history-item");
+    // Create BuildContextOptions for handlers
+    const options = {
+      selfId: view.self.id,
+      channelKey,
+      imageConfig,
+      shortIdAssigner: (ck: string, msgId: string) => this.assignShortId(ck, msgId),
+      getShortId: (ck: string, msgId: string) => this.getShortId(ck, msgId),
+      getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].get(id),
+    };
 
     // Per-render image lifecycle tracker
     const lifecycleTracker = new Map<string, number>();
@@ -537,10 +431,16 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     // Add preamble as first user message
     if (preamble) messages.push({ role: "user", content: preamble });
 
-    // Build history as multi-turn messages
+    // Split entries by stage
     const history = view.history ?? [];
-    let pendingMsgTexts: string[] = [];
+    const historyEntries = history.filter((e) => e.stage !== "new");
+    const triggerEntries = history.filter((e) => e.stage === "new");
 
+    // Build history messages using handler pipeline
+    const historyLoopMessages = this.events.buildLoopMessages(historyEntries, options);
+
+    // Group history messages by role and merge consecutive user messages
+    let pendingMsgTexts: string[] = [];
     const flushPending = () => {
       if (pendingMsgTexts.length === 0) return;
       const content = buildUserContent(pendingMsgTexts);
@@ -566,47 +466,37 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       }
     };
 
-    for (const obs of history) {
-      if (obs.type === "message" && obs.stage === "new") continue; // handled as trigger
-
-      if (obs.type === "message") {
-        const item = this.formatObservation(obs, view.self.id, channelKey);
-        if (!item) continue;
-        const text = Mustache.render(this.historyItemTpl, item).trim();
-        pendingMsgTexts.push(text);
-      } else if (obs.type === "agent.response") {
+    for (const msg of historyLoopMessages) {
+      if (msg.role === "assistant") {
         flushPending();
-        if (obs.data.error && !obs.data.rawText) continue;
-        const rawText = obs.data.rawText || "";
-        if (rawText) messages.push({ role: "assistant", content: rawText });
-      } else if (obs.type === "agent.action") {
-        flushPending();
-        const item = this.formatObservation(obs, view.self.id, channelKey);
-        if (!item) continue;
-        const text = Mustache.render(this.historyItemTpl, item).trim();
-        messages.push({ role: "user", content: text });
+        messages.push(msg);
+      } else {
+        // User message from handlers
+        const content = typeof msg.content === "string" ? msg.content : "";
+        pendingMsgTexts.push(content);
       }
     }
     flushPending();
 
-    // Build trigger block (new-stage messages)
-    const fmt = new Intl.DateTimeFormat("zh-CN", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      weekday: "long",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-    const triggerTexts: string[] = [`现在是 ${fmt.format(new Date())}。`];
-    for (const obs of history) {
-      if (obs.type !== "message" || obs.stage !== "new") continue;
-      const item = this.formatObservation(obs, view.self.id, channelKey);
-      if (!item) continue;
-      triggerTexts.push(Mustache.render(this.historyItemTpl, item).trim());
-    }
-    if (triggerTexts.length > 1) {
+    // Build trigger block (new-stage messages) using handler pipeline
+    if (triggerEntries.length > 0) {
+      const fmt = new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        weekday: "long",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+      const triggerTexts: string[] = [`现在是 ${fmt.format(new Date())}。`];
+
+      const triggerLoopMessages = this.events.buildLoopMessages(triggerEntries, options);
+      for (const msg of triggerLoopMessages) {
+        const content = typeof msg.content === "string" ? msg.content : "";
+        triggerTexts.push(content);
+      }
+
       const content = buildUserContent(triggerTexts);
       messages.push({ role: "user", content });
     }

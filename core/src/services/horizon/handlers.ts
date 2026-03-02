@@ -97,14 +97,16 @@ class AgentResponseHandler extends TimelineHandler<AgentResponseRecord> {
   handle(entry: AgentResponseRecord, _options: BuildContextOptions): LoopMessage[] {
     const { data } = entry;
 
-    // Only emit error observations; successful responses are silent
+    // Successful responses emit assistant message with rawText
     if (!data.error) {
+      if (data.rawText) {
+        return [{ role: "assistant", content: data.rawText }];
+      }
       return [];
     }
 
-    // Escape XML special characters
+    // Errors emit user message with error tag
     const escapedError = this.escapeXml(data.error);
-
     return [{ role: "user", content: `<error>${escapedError}</error>` }];
   }
 
@@ -135,7 +137,8 @@ class AgentActionHandler extends TimelineHandler<AgentActionRecord> {
     // Format tool results
     for (const result of data.toolResults) {
       if (result.name === "send_message") {
-        const preview = result.status === "sent" ? "sent" : "failed";
+        const ok = result.status === "ok" || result.status === "fulfilled" || !result.error;
+        const preview = ok ? "sent" : "failed";
         lines.push(`send_message -> ${preview}`);
       } else {
         const preview = result.result != null ? String(result.result).slice(0, 100) : "";
