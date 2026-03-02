@@ -1,4 +1,4 @@
-import type { UserContent } from "ai";
+import type { FilePart, ImagePart, TextPart, UserContent } from "ai";
 
 import type { AgentActionObservation, MessageObservation, Observation } from "../horizon/types";
 
@@ -24,9 +24,15 @@ export interface LoopMessage {
 
 function estimateObservationChars(obs: Observation): number {
   if (obs.type === "message") {
-    return typeof obs.content === "string"
-      ? obs.content.length + 60 // +60 for XML tag overhead
-      : 60; // multimodal — text parts summed separately when needed
+    if (typeof obs.content === "string") return obs.content.length + 60;
+    // UserContent array — sum text parts + estimate for image parts
+    let chars = 60;
+    const parts = obs.content as Array<TextPart | ImagePart | FilePart>;
+    for (const part of parts) {
+      if (part.type === "text") chars += part.text.length;
+      else if (part.type === "image") chars += 5000;
+    }
+    return chars;
   }
   if (obs.type === "agent.action") {
     let chars = 40; // tag overhead
@@ -60,13 +66,25 @@ export function trimObservations(
   // Protected: last N observations
   const protectedStart = Math.max(0, observations.length - config.keepLastCount);
 
-  // Layer 1: Image strip — remove image parts from multimodal messages
-  // (Placeholder for Phase 38 — currently all content is string)
-  // When content becomes UserContent, filter out ImagePart entries here
+  // Layer 1: Image strip — remove ImageParts from oldest non-protected observations
+  let currentTotal = total;
+  for (let i = 0; i < protectedStart; i++) {
+    if (currentTotal <= config.charBudget) break;
+    const obs = observations[i];
+    if (obs.type === "message" && typeof obs.content !== "string") {
+      const content = obs.content as Array<TextPart | ImagePart | FilePart>;
+      const imageCount = content.filter((p) => p.type === "image").length;
+      if (imageCount > 0) {
+        const stripped = content.filter((p) => p.type !== "image");
+        currentTotal -= imageCount * 5000;
+        const newContent =
+          stripped.length === 1 && stripped[0].type === "text" ? stripped[0].text : stripped;
+        observations[i] = { ...obs, content: newContent } as MessageObservation;
+      }
+    }
+  }
 
   // Layer 2: softTrim — remove oldest non-protected observations entirely
-  let currentTotal = total;
-
   for (let i = 0; i < protectedStart; i++) {
     if (state.has(observations[i])) continue; // already trimmed
     if (currentTotal <= config.charBudget) break;

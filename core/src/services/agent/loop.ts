@@ -189,7 +189,12 @@ export class ThinkActLoop {
       const trimResult = trimObservations(view.history ?? [], obsTrimConfig);
       view = { ...view, history: trimResult.observations };
 
-      const userContent = horizon.formatHorizonText(view, percept);
+      const imageConfig = {
+        imageMode: (this.config.imageMode ?? "native") as "native" | "off",
+        maxImagesInContext: this.config.maxImagesInContext ?? 3,
+        imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
+      };
+      const multiTurnMessages = horizon.formatHorizonText(view, percept, imageConfig);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
@@ -197,13 +202,23 @@ export class ThinkActLoop {
         );
       }
 
+      const totalUserBytes = multiTurnMessages.reduce((sum, m) => {
+        if (typeof m.content === "string") return sum + Buffer.byteLength(m.content, "utf8");
+        return (
+          sum +
+          m.content.reduce(
+            (s, p) => s + (p.type === "text" ? Buffer.byteLength(p.text, "utf8") : 0),
+            0,
+          )
+        );
+      }, 0);
       this.logger.debug(
-        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
+        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${totalUserBytes} messages=${multiTurnMessages.length}`,
       );
 
       this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
 
-      const messages: LoopMessage[] = [{ role: "user", content: userContent }];
+      const messages: LoopMessage[] = multiTurnMessages;
 
       const maxRounds = this.config.maxRounds ?? 3;
       const maxResultLen = this.config.maxToolResultLength ?? 4000;
