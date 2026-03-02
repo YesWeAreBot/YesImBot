@@ -1,3 +1,4 @@
+import type { UserContent } from "ai";
 import type { Session } from "koishi";
 
 import { TriggerType, type ChannelKey } from "../shared/types";
@@ -138,6 +139,14 @@ export interface SelfInfo {
   role?: Role;
 }
 
+// ---- Image Config ----
+
+export interface ImageConfig {
+  imageMode: "native" | "off";
+  maxImagesInContext: number;
+  imageLifecycleCount: number;
+}
+
 // ---- Observation ----
 
 export interface MessageObservation {
@@ -145,7 +154,7 @@ export interface MessageObservation {
   timestamp: Date;
   sender: Entity;
   messageId: string;
-  content: string;
+  content: string | UserContent;
   stage?: string;
   replyTo?: string;
 }

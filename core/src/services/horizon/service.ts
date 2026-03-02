@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import type { ImagePart, TextPart, UserContent } from "ai";
 import { Context, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
+import type { LoopMessage } from "../agent/trimmer";
 import { type ChannelKey, type Percept } from "../shared/types";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
@@ -13,6 +15,7 @@ import type {
   Entity,
   EntityRecord,
   HorizonView,
+  ImageConfig,
   Observation,
   Role,
   SelfInfo,
@@ -82,7 +85,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   public events: EventManager;
   public listener: EventListener;
 
-  private horizonViewTpl?: string;
   private historyItemTpl?: string;
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (nativeMsgId -> shortId)
@@ -369,7 +371,13 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         time,
         senderLine,
         replyLine,
-        content: obs.content,
+        content:
+          typeof obs.content === "string"
+            ? obs.content
+            : obs.content
+                .filter((p) => p.type === "text")
+                .map((p) => (p as TextPart).text)
+                .join(""),
       };
     }
 
@@ -412,62 +420,162 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return null;
   }
 
-  formatHorizonText(view: HorizonView, percept?: Percept): string {
-    this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
-    let environment = "";
-    if (view.environment) {
-      const env = view.environment;
-      const platform = env.platform || "";
-      const channelId = env.channelId || "";
-      const typeLabel = env.type === "private" ? "Private" : "Group";
-      environment = `Platform: ${platform}, Channel: ${channelId} (${typeLabel})`;
-    }
-
-    let activeMembers = "";
-    if (view.entities?.length || view.self.id) {
-      const lines: string[] = [];
-
-      // Render bot self entity first with self="true"
-      if (view.self.id) {
-        const selfParts = [`id="${view.self.id}"`, `name="${view.self.name}"`];
-        if (view.self.role) selfParts.push(`role="${view.self.role}"`);
-        selfParts.push(`self="true"`);
-        lines.push(`<member ${selfParts.join(" ")} />`);
-      }
-
-      // Render other members from entities
-      for (const e of view.entities ?? []) {
-        const userId = e.userId ?? e.id;
-        const username = e.username ?? e.name;
-        const nickname = e.nickname;
-        const displayName =
-          nickname && nickname !== username ? `${nickname} (${username})` : (nickname ?? username);
-        const parts = [`id="${userId}"`, `name="${displayName}"`];
-        const role = this.classifyRole(
-          Array.isArray(e.attributes?.roles) ? (e.attributes.roles as string[]) : [],
-        );
-        if (role) parts.push(`role="${role}"`);
-        lines.push(`<member ${parts.join(" ")} />`);
-      }
-
-      activeMembers = lines.join("\n");
-    }
-
-    const historyItems: HistoryItemData[] = [];
-    const triggerItems: HistoryItemData[] = [];
+  formatHorizonText(
+    view: HorizonView,
+    percept?: Percept,
+    imageConfig?: ImageConfig,
+  ): LoopMessage[] {
     const channelKey = view.environment
       ? `${view.environment.platform}:${view.environment.channelId}`
       : undefined;
-    for (const obs of view.history ?? []) {
-      const item = this.formatObservation(obs, view.self.id, channelKey);
-      if (!item) continue; // skip null (successful agent.response)
-      if (obs.type === "message" && obs.stage === "new") {
-        triggerItems.push(item);
-      } else {
-        historyItems.push(item);
-      }
+
+    // Build preamble (environment + members)
+    let environment = "";
+    if (view.environment) {
+      const env = view.environment;
+      const typeLabel = env.type === "private" ? "Private" : "Group";
+      environment = `Platform: ${env.platform || ""}, Channel: ${env.channelId || ""} (${typeLabel})`;
     }
 
+    const memberLines: string[] = [];
+    if (view.self.id) {
+      const parts = [`id="${view.self.id}"`, `name="${view.self.name}"`];
+      if (view.self.role) parts.push(`role="${view.self.role}"`);
+      parts.push(`self="true"`);
+      memberLines.push(`<member ${parts.join(" ")} />`);
+    }
+    for (const e of view.entities ?? []) {
+      const userId = e.userId ?? e.id;
+      const username = e.username ?? e.name;
+      const nickname = e.nickname;
+      const displayName =
+        nickname && nickname !== username ? `${nickname} (${username})` : (nickname ?? username);
+      const parts = [`id="${userId}"`, `name="${displayName}"`];
+      const role = this.classifyRole(
+        Array.isArray(e.attributes?.roles) ? (e.attributes.roles as string[]) : [],
+      );
+      if (role) parts.push(`role="${role}"`);
+      memberLines.push(`<member ${parts.join(" ")} />`);
+    }
+
+    const preambleParts: string[] = [];
+    if (environment) preambleParts.push(`<environment>${environment}</environment>`);
+    if (memberLines.length) preambleParts.push(`<members>\n${memberLines.join("\n")}\n</members>`);
+    const preamble = preambleParts.join("\n");
+
+    this.historyItemTpl ??= this.ctx["yesimbot.prompt"].loadPartial("history-item");
+
+    // Per-render image lifecycle tracker
+    const lifecycleTracker = new Map<string, number>();
+    let totalEmbedded = 0;
+    const maxImages = imageConfig?.maxImagesInContext ?? 3;
+    const maxLifecycle = imageConfig?.imageLifecycleCount ?? 3;
+    const imgRegex = /<img id="([a-f0-9]+)"(?:\s+status="failed")?\/>/g;
+
+    const buildUserContent = (texts: string[]): string | UserContent => {
+      if (imageConfig?.imageMode !== "native") return texts.join("\n");
+
+      const parts: Array<TextPart | ImagePart> = [];
+      for (const text of texts) {
+        let processedText = text;
+        const matches: Array<{ id: string; full: string }> = [];
+        let m: RegExpExecArray | null;
+        imgRegex.lastIndex = 0;
+        while ((m = imgRegex.exec(text)) !== null) {
+          matches.push({ id: m[1], full: m[0] });
+        }
+
+        if (matches.length === 0) {
+          parts.push({ type: "text", text });
+          continue;
+        }
+
+        // Process each image match
+        const imageParts: ImagePart[] = [];
+        for (const { id, full } of matches) {
+          const entry = this.ctx["yesimbot.image-cache"].get(id);
+          if (!entry) continue;
+          if (entry.status === "failed") {
+            processedText = processedText.replace(full, `<img id="${id}" status="failed"/>`);
+            continue;
+          }
+          const count = lifecycleTracker.get(id) ?? 0;
+          if (count >= maxLifecycle || totalEmbedded >= maxImages) continue;
+          lifecycleTracker.set(id, count + 1);
+          totalEmbedded++;
+          imageParts.push({
+            type: "image",
+            image: entry.base64,
+            mediaType: entry.mediaType,
+          } as ImagePart);
+        }
+
+        parts.push({ type: "text", text: processedText });
+        parts.push(...imageParts);
+      }
+
+      if (parts.length === 1 && parts[0].type === "text") return parts[0].text;
+      return parts;
+    };
+
+    const messages: LoopMessage[] = [];
+
+    // Add preamble as first user message
+    if (preamble) messages.push({ role: "user", content: preamble });
+
+    // Build history as multi-turn messages
+    const history = view.history ?? [];
+    let pendingMsgTexts: string[] = [];
+
+    const flushPending = () => {
+      if (pendingMsgTexts.length === 0) return;
+      const content = buildUserContent(pendingMsgTexts);
+      pendingMsgTexts = [];
+      // Merge with previous user message if both are strings
+      const last = messages[messages.length - 1];
+      if (last && last.role === "user") {
+        if (typeof last.content === "string" && typeof content === "string") {
+          last.content = last.content + "\n" + content;
+        } else {
+          const lastParts: Array<TextPart | ImagePart> =
+            typeof last.content === "string"
+              ? [{ type: "text", text: last.content }]
+              : (last.content as Array<TextPart | ImagePart>);
+          const newParts: Array<TextPart | ImagePart> =
+            typeof content === "string"
+              ? [{ type: "text", text: content }]
+              : (content as Array<TextPart | ImagePart>);
+          last.content = [...lastParts, ...newParts];
+        }
+      } else {
+        messages.push({ role: "user", content });
+      }
+    };
+
+    for (const obs of history) {
+      if (obs.type === "message" && obs.stage === "new") continue; // handled as trigger
+
+      if (obs.type === "message") {
+        const item = this.formatObservation(obs, view.self.id, channelKey);
+        if (!item) continue;
+        const text = Mustache.render(this.historyItemTpl, item).trim();
+        pendingMsgTexts.push(text);
+      } else if (obs.type === "agent.response") {
+        flushPending();
+        if (obs.data.error && !obs.data.rawText) continue;
+        const rawText = obs.data.rawText || obs.data.assistantText || "";
+        if (rawText) messages.push({ role: "assistant", content: rawText });
+      } else if (obs.type === "agent.action") {
+        flushPending();
+        const item = this.formatObservation(obs, view.self.id, channelKey);
+        if (!item) continue;
+        const text = Mustache.render(this.historyItemTpl, item).trim();
+        messages.push({ role: "user", content: text });
+      }
+    }
+    flushPending();
+
+    // Build trigger block (new-stage messages)
     const fmt = new Intl.DateTimeFormat("zh-CN", {
       year: "numeric",
       month: "long",
@@ -477,39 +585,35 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       minute: "2-digit",
       hour12: true,
     });
-
-    const scope = {
-      // Snippet variables — nested objects for dot-path access
-      date: { now: fmt.format(new Date()) },
-      bot: {
-        name: view.self.name || "{{bot.name}}",
-        id: view.self.id || "{{bot.id}}",
-      },
-      sender: {
-        name: (percept?.metadata?.senderName as string) || "{{sender.name}}",
-        id: (percept?.metadata?.senderId as string) || "{{sender.id}}",
-      },
-      channel: {
-        name: view.environment?.name || "{{channel.name}}",
-        platform: view.environment?.platform || "{{channel.platform}}",
-      },
-      // Template data
-      environment,
-      activeMembers,
-      hasHistory: historyItems.length > 0,
-      history: historyItems,
-      hasTrigger: triggerItems.length > 0,
-      trigger: triggerItems,
-    };
-
-    this.historyItemTpl ??= this.ctx["yesimbot.prompt"].loadPartial("history-item");
-    const rendered = Mustache.render(this.horizonViewTpl, scope, {
-      "history-item": this.historyItemTpl,
-    }).trim();
-    const unresolved = rendered.match(/\{\{[^}]+\}\}/g);
-    if (unresolved) {
-      this.logger.debug(`Unresolved template variables: ${unresolved.join(", ")}`);
+    const triggerTexts: string[] = [`现在是 ${fmt.format(new Date())}。`];
+    for (const obs of history) {
+      if (obs.type !== "message" || obs.stage !== "new") continue;
+      const item = this.formatObservation(obs, view.self.id, channelKey);
+      if (!item) continue;
+      triggerTexts.push(Mustache.render(this.historyItemTpl, item).trim());
     }
-    return rendered;
+    if (triggerTexts.length > 1) {
+      const content = buildUserContent(triggerTexts);
+      const last = messages[messages.length - 1];
+      if (last && last.role === "user") {
+        if (typeof last.content === "string" && typeof content === "string") {
+          last.content = last.content + "\n" + content;
+        } else {
+          const lastParts: Array<TextPart | ImagePart> =
+            typeof last.content === "string"
+              ? [{ type: "text", text: last.content }]
+              : (last.content as Array<TextPart | ImagePart>);
+          const newParts: Array<TextPart | ImagePart> =
+            typeof content === "string"
+              ? [{ type: "text", text: content }]
+              : (content as Array<TextPart | ImagePart>);
+          last.content = [...lastParts, ...newParts];
+        }
+      } else {
+        messages.push({ role: "user", content });
+      }
+    }
+
+    return messages;
   }
 }

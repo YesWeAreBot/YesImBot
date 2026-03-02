@@ -79,7 +79,11 @@ export class SceneTrait implements TraitDetector {
       const name = this.botName.toLowerCase();
       const recent = view.history.slice(-5);
       for (const obs of recent) {
-        if (obs.type === "message" && obs.content.toLowerCase().includes(name)) {
+        if (
+          obs.type === "message" &&
+          typeof obs.content === "string" &&
+          obs.content.toLowerCase().includes(name)
+        ) {
           mentioned = true;
           break;
         }
@@ -118,7 +122,9 @@ export class SceneTrait implements TraitDetector {
 
     // Forward-present signal — enables get_forward_msg tool when forwarded messages in context
     const newMsgs = msgs.filter((o) => o.stage === "new");
-    const hasForward = newMsgs.some((m) => m.content.includes("<forward"));
+    const hasForward = newMsgs.some(
+      (m) => typeof m.content === "string" && m.content.includes("<forward"),
+    );
     if (hasForward) {
       signals.push({
         dimension: "has-forward",
