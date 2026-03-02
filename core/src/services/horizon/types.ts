@@ -74,13 +74,8 @@ export interface MessageEventData {
 export type MessageRecord = BaseTimelineEntry<TimelineEventType.Message, MessageEventData>;
 
 export interface AgentResponseData {
-  round: number;
   rawText: string;
   error?: string;
-  // Backward compat — old rows still have these fields
-  assistantText?: string;
-  actions?: Array<{ name: string; params?: Record<string, unknown> }>;
-  toolResults?: Array<{ name: string; status: string; result?: unknown; error?: string }>;
 }
 
 export type AgentResponseRecord = BaseTimelineEntry<
@@ -89,8 +84,6 @@ export type AgentResponseRecord = BaseTimelineEntry<
 >;
 
 export interface AgentActionData {
-  round: number;
-  triggerMsgId?: string;
   actions: Array<{ name: string; params?: Record<string, unknown> }>;
   toolResults: Array<{ name: string; status: string; result?: unknown; error?: string }>;
 }

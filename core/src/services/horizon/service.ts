@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type { ImagePart, TextPart, UserContent } from "ai";
-import { Context, Schema, Service, type Session } from "koishi";
+import { Context, h, Schema, Service, type Session } from "koishi";
 import Mustache from "mustache";
 
 import type { LoopMessage } from "../agent/trimmer";
@@ -336,14 +336,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       if (!channelKey) return null;
 
       const shortId = this.assignShortId(channelKey, obs.messageId);
-      const isBot = selfId && obs.sender.id === selfId;
-      const senderName = isBot
-        ? "[Bot]"
-        : (() => {
-            const badge = this.getRoleBadge(obs.sender.attributes);
-            return `${badge}${obs.sender.name}`;
-          })();
-      const senderId = isBot ? "bot" : obs.sender.id;
+      const senderName = (() => {
+        const badge = this.getRoleBadge(obs.sender.attributes);
+        return `${badge}${obs.sender.name}`;
+      })();
+      const senderId = obs.sender.id;
 
       // Time format: MM月DD日 HH:mm
       const d = obs.timestamp;
@@ -439,10 +436,13 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
     const memberLines: string[] = [];
     if (view.self.id) {
-      const parts = [`id="${view.self.id}"`, `name="${view.self.name}"`];
-      if (view.self.role) parts.push(`role="${view.self.role}"`);
-      parts.push(`self="true"`);
-      memberLines.push(`<member ${parts.join(" ")} />`);
+      const line = h("member", {
+        id: view.self.id,
+        name: view.self.name,
+        role: view.self.role,
+        self: true,
+      });
+      memberLines.push(line.toString());
     }
     for (const e of view.entities ?? []) {
       const userId = e.userId ?? e.id;
@@ -450,12 +450,15 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       const nickname = e.nickname;
       const displayName =
         nickname && nickname !== username ? `${nickname} (${username})` : (nickname ?? username);
-      const parts = [`id="${userId}"`, `name="${displayName}"`];
       const role = this.classifyRole(
         Array.isArray(e.attributes?.roles) ? (e.attributes.roles as string[]) : [],
       );
-      if (role) parts.push(`role="${role}"`);
-      memberLines.push(`<member ${parts.join(" ")} />`);
+      const line = h("member", {
+        id: userId,
+        name: displayName,
+        role,
+      });
+      memberLines.push(line.toString());
     }
 
     const preambleParts: string[] = [];
@@ -572,7 +575,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       } else if (obs.type === "agent.response") {
         flushPending();
         if (obs.data.error && !obs.data.rawText) continue;
-        const rawText = obs.data.rawText || obs.data.assistantText || "";
+        const rawText = obs.data.rawText || "";
         if (rawText) messages.push({ role: "assistant", content: rawText });
       } else if (obs.type === "agent.action") {
         flushPending();

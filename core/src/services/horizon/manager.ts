@@ -124,11 +124,29 @@ export class EventManager {
           data: entry.data,
         });
       } else if (entry.type === TimelineEventType.AgentResponse) {
+        const d = entry.data as AgentResponseData & {
+          assistantText?: string;
+          actions?: unknown;
+          toolResults?: unknown;
+        };
+        // Migrate assistantText -> rawText for old rows
+        const rawData = d.rawText || d.assistantText || "";
         result.push({
           type: "agent.response" as const,
           timestamp: entry.timestamp,
-          data: entry.data,
+          data: { rawText: rawData, error: d.error },
         });
+        // Old rows with actions/toolResults: also emit AgentActionObservation
+        if (d.actions && Array.isArray(d.actions) && d.actions.length > 0) {
+          result.push({
+            type: "agent.action" as const,
+            timestamp: entry.timestamp,
+            data: {
+              actions: d.actions as AgentActionData["actions"],
+              toolResults: (d.toolResults ?? []) as AgentActionData["toolResults"],
+            },
+          });
+        }
       }
     }
     return result;

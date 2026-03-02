@@ -194,6 +194,7 @@ export class ThinkActLoop {
         maxImagesInContext: this.config.maxImagesInContext ?? 3,
         imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
+      this.logger.info(imageConfig);
       const multiTurnMessages = horizon.formatHorizonText(view, percept, imageConfig);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
@@ -338,7 +339,6 @@ export class ThinkActLoop {
           channelId: percept.channelId,
           timestamp: new Date(),
           data: {
-            round,
             rawText,
           },
         });
@@ -349,8 +349,6 @@ export class ThinkActLoop {
           channelId: percept.channelId,
           timestamp: new Date(),
           data: {
-            round,
-            triggerMsgId: (percept.metadata?.messageId as string) ?? undefined,
             actions: response.actions,
             toolResults,
           },
@@ -419,7 +417,6 @@ export class ThinkActLoop {
                 channelId: percept.channelId,
                 timestamp: new Date(),
                 data: {
-                  round: round + 1,
                   rawText: wrapResult.text,
                 },
               });
@@ -430,8 +427,6 @@ export class ThinkActLoop {
                 channelId: percept.channelId,
                 timestamp: new Date(),
                 data: {
-                  round: round + 1,
-                  triggerMsgId: (percept.metadata?.messageId as string) ?? undefined,
                   actions: wrapParsed.data.actions,
                   toolResults: wrapToolResults,
                 },
