@@ -1,10 +1,32 @@
-import { Context, h, Schema, sleep } from "koishi";
+import { Context, Element, h, Schema, sleep } from "koishi";
 
 import { requireSession } from "../activators";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
 import { YesImPlugin } from "../plugin";
 import { ToolExecutionContext, ToolResult } from "../types";
 import { Failed, Success } from "../utils";
+
+// Prohibited elements that the LLM must not trigger
+const PROHIBITED_ELEMENTS = ["execute", "prompt"];
+
+/**
+ * Filter out interactive components per security policy.
+ * Text nodes are kept, prohibited elements are removed,
+ * and children are recursively filtered.
+ */
+function filterInteractive(elements: Element[]): Element[] {
+  return elements.filter((elem) => {
+    if (typeof elem === "string") return true; // Keep text nodes
+    if (PROHIBITED_ELEMENTS.includes(elem.type)) {
+      return false; // Remove interactive components
+    }
+    // Recursively filter children
+    if (elem.children) {
+      elem.children = filterInteractive(elem.children);
+    }
+    return true;
+  });
+}
 
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
 export class CorePlugin extends YesImPlugin {
@@ -93,10 +115,12 @@ export class CorePlugin extends YesImPlugin {
         for (let i = 0; i < effectiveParts.length; i++) {
           if (i > 0) await sleep(1000);
           const msgContent = effectiveParts[i]!;
+          const parsedContent = h.parse(msgContent);
+          const filteredContent = filterInteractive(parsedContent);
           const elements =
             i === 0 && replyToNativeId
-              ? [h("quote", { id: replyToNativeId }), msgContent]
-              : [msgContent];
+              ? [h("quote", { id: replyToNativeId }), ...filteredContent]
+              : filteredContent;
           await ctx.session?.send(elements);
         }
       }
