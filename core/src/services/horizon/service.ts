@@ -475,23 +475,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const buildUserContent = (texts: string[]): string | UserContent => {
       if (imageConfig?.imageMode !== "native") return texts.join("\n");
 
-      const parts: Array<TextPart | ImagePart> = [];
-      for (const text of texts) {
-        let processedText = text;
+      type Candidate = { id: string; base64: string; mediaType: string; textIdx: number };
+      // Pass 1: collect all eligible candidates (lifecycle check only, no budget limit)
+      const processedTexts: string[] = [];
+      const allCandidates: Candidate[] = [];
+      for (let i = 0; i < texts.length; i++) {
+        let processedText = texts[i];
         const matches: Array<{ id: string; full: string }> = [];
         let m: RegExpExecArray | null;
         imgRegex.lastIndex = 0;
-        while ((m = imgRegex.exec(text)) !== null) {
+        while ((m = imgRegex.exec(texts[i])) !== null) {
           matches.push({ id: m[1], full: m[0] });
         }
-
-        if (matches.length === 0) {
-          parts.push({ type: "text", text });
-          continue;
-        }
-
-        // Process each image match
-        const imageParts: ImagePart[] = [];
         for (const { id, full } of matches) {
           const entry = this.ctx["yesimbot.image-cache"].get(id);
           if (!entry) continue;
@@ -500,18 +495,32 @@ export class HorizonService extends Service<HorizonServiceConfig> {
             continue;
           }
           const count = lifecycleTracker.get(id) ?? 0;
-          if (count >= maxLifecycle || totalEmbedded >= maxImages) continue;
-          lifecycleTracker.set(id, count + 1);
-          totalEmbedded++;
-          imageParts.push({
-            type: "image",
-            image: entry.base64,
-            mediaType: entry.mediaType,
-          } as ImagePart);
+          if (count >= maxLifecycle) continue;
+          allCandidates.push({ id, base64: entry.base64, mediaType: entry.mediaType, textIdx: i });
         }
+        processedTexts.push(processedText);
+      }
 
-        parts.push({ type: "text", text: processedText });
-        parts.push(...imageParts);
+      // FIFO eviction: keep only the LAST maxImages candidates (newest = latest in texts)
+      const keepFrom = Math.max(0, allCandidates.length - maxImages);
+      for (let i = keepFrom; i < allCandidates.length; i++) {
+        const c = allCandidates[i];
+        lifecycleTracker.set(c.id, (lifecycleTracker.get(c.id) ?? 0) + 1);
+        totalEmbedded++;
+      }
+
+      // Pass 2: build parts array
+      const parts: Array<TextPart | ImagePart> = [];
+      let candidateIdx = 0;
+      for (let i = 0; i < processedTexts.length; i++) {
+        parts.push({ type: "text", text: processedTexts[i] });
+        while (candidateIdx < allCandidates.length && allCandidates[candidateIdx].textIdx === i) {
+          const c = allCandidates[candidateIdx];
+          if (candidateIdx >= keepFrom) {
+            parts.push({ type: "image", image: c.base64, mediaType: c.mediaType } as ImagePart);
+          }
+          candidateIdx++;
+        }
       }
 
       if (parts.length === 1 && parts[0].type === "text") return parts[0].text;
@@ -594,24 +603,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     }
     if (triggerTexts.length > 1) {
       const content = buildUserContent(triggerTexts);
-      const last = messages[messages.length - 1];
-      if (last && last.role === "user") {
-        if (typeof last.content === "string" && typeof content === "string") {
-          last.content = last.content + "\n" + content;
-        } else {
-          const lastParts: Array<TextPart | ImagePart> =
-            typeof last.content === "string"
-              ? [{ type: "text", text: last.content }]
-              : (last.content as Array<TextPart | ImagePart>);
-          const newParts: Array<TextPart | ImagePart> =
-            typeof content === "string"
-              ? [{ type: "text", text: content }]
-              : (content as Array<TextPart | ImagePart>);
-          last.content = [...lastParts, ...newParts];
-        }
-      } else {
-        messages.push({ role: "user", content });
-      }
+      messages.push({ role: "user", content });
     }
 
     return messages;
