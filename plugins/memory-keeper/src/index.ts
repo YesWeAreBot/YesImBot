@@ -92,11 +92,11 @@ export default class MemoryKeeper extends YesImPlugin {
       await fs.mkdir(folderPath, { recursive: true });
       await fs.writeFile(filePath, params.content, "utf-8");
       return {
-        success: true,
-        message: `已更新${isPrivate ? "个人" : "群组"}记忆: ${params.topic}`,
+        status: "success",
+        content: `已更新${isPrivate ? "个人" : "群组"}记忆: ${params.topic}`,
       };
     } catch (e) {
-      return { error: `存储失败: ${(e as Error).message}` };
+      return { status: "error", content: `存储失败: ${(e as Error).message}` };
     }
   }
 
@@ -119,9 +119,9 @@ export default class MemoryKeeper extends YesImPlugin {
       const timestamp = new Date().toLocaleString();
       const entry = `\n- [${timestamp}]: ${params.newInsight}`;
       await fs.appendFile(filePath, entry, "utf-8");
-      return { success: true, message: `已追加到 ${params.topic}` };
+      return { status: "success", content: `已追加到 ${params.topic}` };
     } catch (e) {
-      return { error: `追加失败: ${(e as Error).message}` };
+      return { status: "error", content: `追加失败: ${(e as Error).message}` };
     }
   }
 

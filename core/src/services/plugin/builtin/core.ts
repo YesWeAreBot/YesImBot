@@ -15,17 +15,15 @@ const PROHIBITED_ELEMENTS = ["execute", "prompt"];
  * and children are recursively filtered.
  */
 function filterInteractive(elements: Element[]): Element[] {
-  return elements.filter((elem) => {
-    if (typeof elem === "string") return true; // Keep text nodes
-    if (PROHIBITED_ELEMENTS.includes(elem.type)) {
-      return false; // Remove interactive components
-    }
-    // Recursively filter children
-    if (elem.children) {
-      elem.children = filterInteractive(elem.children);
-    }
-    return true;
-  });
+  return elements
+    .filter((elem) => {
+      if (typeof elem === "string") return true;
+      return !PROHIBITED_ELEMENTS.includes(elem.type);
+    })
+    .map((elem) => {
+      if (typeof elem === "string" || !elem.children?.length) return elem;
+      return { ...elem, children: filterInteractive(elem.children) };
+    });
 }
 
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
@@ -109,7 +107,8 @@ export class CorePlugin extends YesImPlugin {
         if (!bot) return Failed(`Bot not found for platform: ${platform}`);
         for (let i = 0; i < effectiveParts.length; i++) {
           if (i > 0) await sleep(1000);
-          await bot.sendMessage(channelId, effectiveParts[i]!);
+          const parsed = filterInteractive(h.parse(effectiveParts[i]!));
+          await bot.sendMessage(channelId, parsed);
         }
       } else {
         for (let i = 0; i < effectiveParts.length; i++) {
