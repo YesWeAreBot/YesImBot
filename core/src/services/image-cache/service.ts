@@ -25,13 +25,14 @@ function mediaTypeFromUrl(url: string): string {
 
 export class ImageCacheService extends Service {
   private cache = new Map<string, CacheEntry>();
+  private urlIndex = new Map<string, string>();
 
   constructor(ctx: Context) {
     super(ctx, "yesimbot.image-cache", true);
   }
 
   urlToId(url: string): string {
-    return createHash("sha256").update(url).digest("hex").slice(0, 16);
+    return this.urlIndex.get(url) ?? createHash("sha256").update(url).digest("hex").slice(0, 16);
   }
 
   get(id: string): CacheEntry | undefined {
@@ -39,17 +40,26 @@ export class ImageCacheService extends Service {
   }
 
   async download(url: string): Promise<string> {
-    const id = this.urlToId(url);
-    if (this.cache.has(id)) return id;
+    const existing = this.urlIndex.get(url);
+    if (existing) return existing;
     try {
       const ab = await this.ctx.http.get<ArrayBuffer>(url, { responseType: "arraybuffer" });
-      const base64 = Buffer.from(ab).toString("base64");
-      const mediaType = mediaTypeFromUrl(url);
-      this.cache.set(id, { base64, mediaType, status: "ok" });
+      const contentId = createHash("sha256").update(Buffer.from(ab)).digest("hex").slice(0, 16);
+      this.urlIndex.set(url, contentId);
+      if (!this.cache.has(contentId)) {
+        const base64 = Buffer.from(ab).toString("base64");
+        const mediaType = mediaTypeFromUrl(url);
+        this.cache.set(contentId, { base64, mediaType, status: "ok" });
+      }
+      // Remove stale URL-hash entry if it exists
+      const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
+      if (urlHash !== contentId) this.cache.delete(urlHash);
+      return contentId;
     } catch {
-      this.cache.set(id, { base64: "", mediaType: "", status: "failed" });
+      const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
+      this.cache.set(urlHash, { base64: "", mediaType: "", status: "failed" });
+      return urlHash;
     }
-    return id;
   }
 
   evict(ids: string[]): void {
