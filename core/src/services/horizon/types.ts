@@ -140,7 +140,7 @@ export interface ImageConfig {
   imageLifecycleCount: number;
 }
 
-// ---- Observation ----
+// ---- Observation (TEMPORARY - will be removed in Plan 02) ----
 
 export interface MessageObservation {
   type: "message";

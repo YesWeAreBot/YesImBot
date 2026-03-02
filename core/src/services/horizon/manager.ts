@@ -1,6 +1,14 @@
 import { Context, Random, Logger, Query } from "koishi";
 
+import type { LoopMessage } from "../agent/trimmer";
 import { ChannelKey } from "../shared/types";
+import {
+  MessageHandler,
+  AgentResponseHandler,
+  AgentActionHandler,
+  BuildContextOptions,
+  type TimelineHandler,
+} from "./handlers";
 import type {
   AgentActionData,
   AgentActionRecord,
@@ -19,6 +27,11 @@ const TIMELINE_TABLE = "yesimbot.timeline";
 
 export class EventManager {
   private logger: Logger;
+  private handlers: TimelineHandler<TimelineEntry>[] = [
+    new MessageHandler(),
+    new AgentResponseHandler(),
+    new AgentActionHandler(),
+  ];
 
   constructor(private ctx: Context) {
     this.logger = ctx.logger("horizon");
@@ -104,6 +117,20 @@ export class EventManager {
     return this.record(entry) as Promise<AgentActionRecord>;
   }
 
+  buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): LoopMessage[] {
+    const messages: LoopMessage[] = [];
+    for (const entry of entries) {
+      for (const handler of this.handlers) {
+        if (handler.canHandle(entry)) {
+          messages.push(...handler.handle(entry, options));
+          break;
+        }
+      }
+    }
+    return messages;
+  }
+
+  // DEPRECATED: Kept for backward compatibility with buildView (will be removed in Plan 02)
   toObservations(entries: TimelineEntry[], _selfId?: string): Observation[] {
     const result: Observation[] = [];
     for (const entry of entries) {
