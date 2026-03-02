@@ -520,6 +520,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         while (candidateIdx < allCandidates.length && allCandidates[candidateIdx].textIdx === i) {
           const c = allCandidates[candidateIdx];
           if (candidateIdx >= keepFrom) {
+            // Add explicit text label before each image for clarity
+            parts.push({ type: "text", text: `\nThe following is an image with ID #${c.id}:\n` });
             parts.push({ type: "image", image: c.base64, mediaType: c.mediaType } as ImagePart);
           }
           candidateIdx++;
