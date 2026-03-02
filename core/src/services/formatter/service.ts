@@ -14,7 +14,7 @@ export class FormatterService extends Service {
 
   constructor(ctx: Context) {
     super(ctx, "yesimbot.formatter", true);
-    registerBuiltinHandlers(this.register.bind(this));
+    registerBuiltinHandlers(this.register.bind(this), ctx);
   }
 
   register(type: string, handler: ElementHandler): void {

@@ -1,5 +1,5 @@
 import { h } from "koishi";
-import type { Element, Session } from "koishi";
+import type { Context, Element, Session } from "koishi";
 
 export type ElementHandler = (attrs: Record<string, unknown>, children: Element[]) => string;
 
@@ -8,6 +8,7 @@ const UNVERIFIED_THRESHOLD = 200;
 
 export function registerBuiltinHandlers(
   register: (type: string, handler: ElementHandler) => void,
+  ctx: Context,
 ): void {
   register("at", (attrs) => {
     if (attrs.name != null) attrs.name = h.escape(String(attrs.name), true);
@@ -19,13 +20,23 @@ export function registerBuiltinHandlers(
   });
 
   register("img", (attrs) => {
-    const pureAttrs: Record<string, unknown> = {
-      summary: attrs.summary,
-      file: attrs.file,
-      "sub-type": attrs["sub-type"],
-      "file-size": attrs["file-size"],
-    };
-    return h("img", pureAttrs).toString();
+    const src = attrs.src as string | undefined;
+    if (!src) {
+      const pureAttrs: Record<string, unknown> = {
+        summary: attrs.summary,
+        file: attrs.file,
+        "sub-type": attrs["sub-type"],
+        "file-size": attrs["file-size"],
+      };
+      return h("img", pureAttrs).toString();
+    }
+    const cache = ctx["yesimbot.image-cache"];
+    if (!cache) {
+      return `<img summary="${h.escape(String(attrs.summary ?? "image"), true)}"/>`;
+    }
+    const id = cache.urlToId(src);
+    cache.download(src).catch(() => {});
+    return `<img id="${id}"/>`;
   });
 
   register("audio", (attrs) => {

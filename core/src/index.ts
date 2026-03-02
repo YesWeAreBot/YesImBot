@@ -8,6 +8,7 @@ import { WillingnessSchema } from "./services/agent/willingness";
 import { FormatterService } from "./services/formatter";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
+import { ImageCacheService } from "./services/image-cache/service";
 import type { ModelServiceConfig } from "./services/model";
 import { ModelService } from "./services/model";
 import type { PluginServiceConfig } from "./services/plugin";
@@ -113,6 +114,7 @@ export const Config: Schema<Config> = Schema.intersect([
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger("yesimbot");
   const command = ctx.command("yesimbot", "Yes! I'm Bot! 指令集", { authority: 3 });
+  ctx.plugin(ImageCacheService);
   ctx.plugin(FormatterService);
   ctx.plugin(ModelService, { concurrency: config.concurrency });
   ctx.plugin(HorizonService, {
