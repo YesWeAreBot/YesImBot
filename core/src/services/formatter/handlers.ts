@@ -21,22 +21,21 @@ export function registerBuiltinHandlers(
 
   register("img", (attrs) => {
     const src = attrs.src as string | undefined;
-    if (!src) {
-      const pureAttrs: Record<string, unknown> = {
-        summary: attrs.summary,
-        file: attrs.file,
-        "sub-type": attrs["sub-type"],
-        "file-size": attrs["file-size"],
-      };
-      return h("img", pureAttrs).toString();
+    const pureAttrs: Record<string, unknown> = {
+      summary: attrs.summary,
+      file: attrs.file,
+      "sub-type": attrs["sub-type"],
+      "file-size": attrs["file-size"],
+    };
+    if (src) {
+      const cache = ctx["yesimbot.image-cache"];
+      if (cache) {
+        const id = cache.urlToId(src);
+        cache.download(src).catch(() => {});
+        pureAttrs["id"] = id;
+      }
     }
-    const cache = ctx["yesimbot.image-cache"];
-    if (!cache) {
-      return `<img summary="${h.escape(String(attrs.summary ?? "image"), true)}"/>`;
-    }
-    const id = cache.urlToId(src);
-    cache.download(src).catch(() => {});
-    return `<img id="${id}"/>`;
+    return h("img", pureAttrs).toString();
   });
 
   register("audio", (attrs) => {
