@@ -9,6 +9,8 @@ import type {
   ImageConfig,
   MessageEventData,
   MessageRecord,
+  SummaryData,
+  SummaryRecord,
   TimelineEntry,
 } from "./types";
 import { TimelineEventType } from "./types";
@@ -156,5 +158,16 @@ class AgentActionHandler extends TimelineHandler<AgentActionRecord> {
   }
 }
 
-export { MessageHandler, AgentResponseHandler, AgentActionHandler };
+class SummaryHandler extends TimelineHandler<SummaryRecord> {
+  canHandle(entry: TimelineEntry): entry is SummaryRecord {
+    return entry.type === TimelineEventType.Summary;
+  }
+
+  handle(entry: SummaryRecord, _options: BuildContextOptions): LoopMessage[] {
+    // Summary renders separately in formatHorizonText, not in history
+    return [];
+  }
+}
+
+export { MessageHandler, AgentResponseHandler, AgentActionHandler, SummaryHandler };
 export type { TimelineHandler };

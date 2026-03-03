@@ -6,6 +6,7 @@ import {
   MessageHandler,
   AgentResponseHandler,
   AgentActionHandler,
+  SummaryHandler,
   BuildContextOptions,
   type TimelineHandler,
 } from "./handlers";
@@ -18,6 +19,7 @@ import type {
   MessageEventData,
   MessageRecord,
   Observation,
+  SummaryData,
   TimelineEntry,
 } from "./types";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "./types";
@@ -31,6 +33,7 @@ export class EventManager {
     new MessageHandler(),
     new AgentResponseHandler(),
     new AgentActionHandler(),
+    new SummaryHandler(),
   ];
 
   constructor(private ctx: Context) {
@@ -115,6 +118,24 @@ export class EventManager {
       data: data.data,
     };
     return this.record(entry) as Promise<AgentActionRecord>;
+  }
+
+  async recordSummary(params: {
+    platform: string;
+    channelId: string;
+    timestamp: Date;
+    data: SummaryData;
+  }): Promise<void> {
+    await this.record({
+      id: Random.id(),
+      type: TimelineEventType.Summary,
+      priority: TimelinePriority.Core,
+      stage: TimelineStage.Active,
+      platform: params.platform,
+      channelId: params.channelId,
+      timestamp: params.timestamp,
+      data: params.data,
+    });
   }
 
   buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): LoopMessage[] {
