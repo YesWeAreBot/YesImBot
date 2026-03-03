@@ -36,6 +36,7 @@ export enum TimelineEventType {
   Message = "message",
   AgentResponse = "agent.response",
   AgentAction = "agent.action",
+  Summary = "summary",
 }
 
 export enum TimelinePriority {
@@ -90,7 +91,15 @@ export interface AgentActionData {
 
 export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;
 
-export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord;
+export interface SummaryData {
+  content: string;
+  coveredUntil: Date;
+  previousSummaryId?: string;
+}
+
+export type SummaryRecord = BaseTimelineEntry<TimelineEventType.Summary, SummaryData>;
+
+export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord | SummaryRecord;
 
 // ---- Entity ----
 
