@@ -217,6 +217,18 @@ export class ThinkActLoop {
 
         trimMessages(messages, trimConfig);
 
+        // Trigger async summary on budget overflow (fire-and-forget)
+        if (round === 1) {
+          const compressor = horizon.compressor;
+          if (compressor && view.history && view.history.length > 0) {
+            compressor
+              .compress({ platform: percept.platform, channelId: percept.channelId }, view.history)
+              .catch((err) => {
+                this.logger.warn("Summary trigger failed:", err);
+              });
+          }
+        }
+
         const callParams: CallParams = {
           system: systemParam,
           messages: messages as ModelMessage[],

@@ -6,6 +6,7 @@ import { Context, h, Schema, Service, type Session } from "koishi";
 
 import type { LoopMessage } from "../agent/trimmer";
 import { type ChannelKey, type Percept } from "../shared/types";
+import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
@@ -67,6 +68,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
   public events: EventManager;
   public listener: EventListener;
+  public compressor: SummaryCompressor;
 
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (nativeMsgId -> shortId)
@@ -80,6 +82,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.config = config;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
+    this.compressor = new SummaryCompressor(ctx, this.events);
     this.loadShortIdMaps();
     this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
     this.ctx.command("yesimbot.history", "上下文指令集", { authority: 3 });
