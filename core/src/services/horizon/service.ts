@@ -374,6 +374,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       shortIdAssigner: (ck: string, msgId: string) => this.assignShortId(ck, msgId),
       getShortId: (ck: string, msgId: string) => this.getShortId(ck, msgId),
       getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].get(id),
+      buildUserContent: (text: string) => buildUserContent([text]),
     };
 
     // Per-render image lifecycle tracker

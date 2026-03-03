@@ -24,6 +24,7 @@ export interface BuildContextOptions {
   getImageCache?: (
     id: string,
   ) => { base64: string; mediaType: string; status: "ok" | "failed" } | undefined;
+  buildUserContent?: (text: string) => string | UserContent;
 }
 
 abstract class TimelineHandler<T extends TimelineEntry> {
@@ -37,7 +38,7 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
   }
 
   handle(entry: MessageRecord, options: BuildContextOptions): LoopMessage[] {
-    const { shortIdAssigner, getShortId, channelKey } = options;
+    const { shortIdAssigner, getShortId, channelKey, buildUserContent } = options;
     const { data, timestamp } = entry;
 
     // Assign short ID
@@ -59,33 +60,11 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
       }
     }
 
-    // Build content with image support
-    let content: string | UserContent;
-    if (typeof data.content === "string") {
-      content = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${data.content}</msg>`;
-    } else {
-      // UserContent array - wrap each part with appropriate formatting
-      const parts: Array<TextPart | ImagePart> = [];
-      parts.push({
-        type: "text",
-        text: `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}`,
-      });
+    // Build message text
+    const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${data.content}</msg>`;
 
-      const contentParts = data.content as Array<TextPart | ImagePart>;
-      let imgIndex = 0;
-      for (const part of contentParts) {
-        if (part.type === "text") {
-          parts.push(part);
-        } else if (part.type === "image") {
-          imgIndex++;
-          parts.push({ type: "text", text: `\n[图片 #${imgIndex}]` });
-          parts.push(part);
-        }
-      }
-
-      parts.push({ type: "text", text: "</msg>" });
-      content = parts;
-    }
+    // Use buildUserContent to embed images if available
+    const content = buildUserContent ? buildUserContent(msgText) : msgText;
 
     return [{ role: "user", content }];
   }
