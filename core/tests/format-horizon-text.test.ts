@@ -92,8 +92,7 @@ describe("MessageHandler", () => {
     const msg = result[0] as LoopMessage;
     expect(msg.role).toBe("user");
     expect(typeof msg.content).toBe("string");
-    // Time format is DD:HH:MM - depends on local timezone, just check format pattern
-    expect(msg.content).toMatch(/<msg id="0" time="\d{2}:\d{2}:\d{2}">/);
+    expect(msg.content).toMatch(/<msg id="0" time="\d{2}月\d{2}日 \d{2}:\d{2}">/);
     expect(msg.content).toContain("Alice(user-123)");
     expect(msg.content).toContain("Hello world");
     expect(msg.content).toContain("</msg>");
