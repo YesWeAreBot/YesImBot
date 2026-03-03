@@ -42,6 +42,7 @@ export interface HorizonServiceConfig {
   archiveThresholdMs?: number;
   entityCacheTtl?: number;
   maxActiveEntities?: number;
+  summaryModel?: string;
 }
 
 export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
@@ -82,7 +83,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.config = config;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
-    this.compressor = new SummaryCompressor(ctx, this.events);
+    this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel);
     this.loadShortIdMaps();
     this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
     this.ctx.command("yesimbot.history", "上下文指令集", { authority: 3 });
@@ -404,14 +405,21 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         }
         for (const { id, full } of matches) {
           const entry = this.ctx["yesimbot.image-cache"].get(id);
-          if (!entry) continue;
+          if (!entry) {
+            processedText = processedText.replace(full, "");
+            continue;
+          }
           if (entry.status === "failed") {
             processedText = processedText.replace(full, `<img id="${id}" status="failed"/>`);
             continue;
           }
           const count = lifecycleTracker.get(id) ?? 0;
-          if (count >= maxLifecycle) continue;
+          if (count >= maxLifecycle) {
+            processedText = processedText.replace(full, "");
+            continue;
+          }
           allCandidates.push({ id, base64: entry.base64, mediaType: entry.mediaType, textIdx: i });
+          processedText = processedText.replace(full, "");
         }
         processedTexts.push(processedText);
       }

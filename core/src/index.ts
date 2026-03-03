@@ -38,6 +38,7 @@ export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
   Schema.object({
     model: Schema.dynamic("registry.chatModels"),
+    summaryModel: Schema.dynamic("registry.chatModels"),
     fallbackChain: Schema.array(Schema.dynamic("registry.chatModels")).default([]),
     errorReportChannel: Schema.string(),
     allowedChannels: Schema.array(
@@ -71,7 +72,6 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     templates: Schema.dict(Schema.string()),
     timeout: Schema.number().default(5000),
-    resourcesDir: Schema.string(),
     rolePath: Schema.path({ filters: ["directory"], allowCreate: true }).default(
       "data/yesimbot/roles",
     ),
@@ -124,6 +124,7 @@ export function apply(ctx: Context, config: Config) {
     archiveThresholdMs: config.archiveThresholdMs,
     entityCacheTtl: config.entityCacheTtl,
     maxActiveEntities: config.maxActiveEntities,
+    summaryModel: config.summaryModel,
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });

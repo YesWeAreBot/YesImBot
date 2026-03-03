@@ -11,6 +11,7 @@ export class SummaryCompressor {
   constructor(
     private ctx: Context,
     private events: EventManager,
+    private summaryModel?: string,
   ) {
     this.logger = ctx.logger("horizon.compressor");
   }
@@ -21,7 +22,8 @@ export class SummaryCompressor {
       const prompt = this.buildPrompt(entries, prevSummary);
 
       const modelService = this.ctx["yesimbot.model"] as ModelService;
-      const result = await modelService.call("openai:gpt-4o-mini", {
+      const model = this.summaryModel || "openai:gpt-4o-mini";
+      const result = await modelService.call(model, {
         messages: [{ role: "user", content: prompt }],
         temperature: 0.3,
       });
