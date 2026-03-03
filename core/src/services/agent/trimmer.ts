@@ -44,7 +44,7 @@ function hardClearToolResult(content: string): string {
   return "[tool results cleared]";
 }
 
-function totalChars(messages: LoopMessage[]): number {
+export function totalChars(messages: LoopMessage[]): number {
   let sum = 0;
   for (const m of messages) {
     if (typeof m.content === "string") {
