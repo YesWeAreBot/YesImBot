@@ -398,13 +398,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         processedTexts.push(processedText);
       }
 
-      // FIFO eviction: keep only the LAST maxImages candidates (newest = latest in texts)
+      // Keep last N candidates (newest by Timeline position)
       const keepFrom = Math.max(0, allCandidates.length - maxImages);
-      for (let i = keepFrom; i < allCandidates.length; i++) {
-        const c = allCandidates[i];
-        lifecycleTracker.set(c.id, (lifecycleTracker.get(c.id) ?? 0) + 1);
-        totalEmbedded++;
-      }
 
       // Pass 2: build parts array
       const parts: Array<TextPart | ImagePart> = [];
@@ -414,7 +409,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         while (candidateIdx < allCandidates.length && allCandidates[candidateIdx].textIdx === i) {
           const c = allCandidates[candidateIdx];
           if (candidateIdx >= keepFrom) {
-            // Add explicit text label before each image for clarity
+            lifecycleTracker.set(c.id, (lifecycleTracker.get(c.id) ?? 0) + 1);
+            totalEmbedded++;
             parts.push({ type: "text", text: `\nThe following is an image with ID #${c.id}:\n` });
             parts.push({ type: "image", image: c.base64, mediaType: c.mediaType } as ImagePart);
           }
@@ -477,29 +473,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       }
     }
     flushPending();
-
-    // Build trigger block (new-stage messages) using handler pipeline
-    if (triggerEntries.length > 0) {
-      const fmt = new Intl.DateTimeFormat("zh-CN", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        weekday: "long",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-      const triggerTexts: string[] = [`现在是 ${fmt.format(new Date())}。`];
-
-      const triggerLoopMessages = this.events.buildLoopMessages(triggerEntries, options);
-      for (const msg of triggerLoopMessages) {
-        const content = typeof msg.content === "string" ? msg.content : "";
-        triggerTexts.push(content);
-      }
-
-      const content = buildUserContent(triggerTexts);
-      messages.push({ role: "user", content });
-    }
 
     return messages;
   }
