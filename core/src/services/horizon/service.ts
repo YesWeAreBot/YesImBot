@@ -441,13 +441,9 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     // Add preamble as first user message
     if (preamble) messages.push({ role: "user", content: preamble });
 
-    // Split entries by stage
+    // Build all history messages using handler pipeline (no trigger mechanism)
     const history = view.history ?? [];
-    const historyEntries = history.filter((e) => e.stage !== "new");
-    const triggerEntries = history.filter((e) => e.stage === "new");
-
-    // Build history messages using handler pipeline
-    const historyLoopMessages = this.events.buildLoopMessages(historyEntries, options);
+    const historyLoopMessages = this.events.buildLoopMessages(history, options);
 
     // Group history messages by role and merge consecutive user messages
     let pendingMsgTexts: string[] = [];
