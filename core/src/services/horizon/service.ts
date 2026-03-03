@@ -21,7 +21,7 @@ import type {
   TimelineEntry,
   ViewOptions,
 } from "./types";
-import { TimelineEventType } from "./types";
+import { TimelineEventType, TimelineStage } from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -163,7 +163,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       limit: this.config.historyLimit ?? 30,
       orderBy: "desc",
     });
-    const history = entries.reverse();
+    const activeEntries = entries.filter((e) => e.stage !== TimelineStage.Archived);
+    const history = activeEntries.reverse();
     const environment = await this.environments.getOrCreate(key, options?.session);
     const entities = await this.getEntities(key, options?.session);
     const botRole = await this.getBotRole(key, options?.session);
