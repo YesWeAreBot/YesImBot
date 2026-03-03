@@ -17,6 +17,7 @@ import type {
   ImageConfig,
   Role,
   SelfInfo,
+  SummaryRecord,
   TimelineEntry,
   ViewOptions,
 } from "./types";
@@ -350,6 +351,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const preambleParts: string[] = [];
     if (environment) preambleParts.push(`<environment>${environment}</environment>`);
     if (memberLines.length) preambleParts.push(`<members>\n${memberLines.join("\n")}\n</members>`);
+
+    // Add latest Summary if exists
+    const latestSummary = (view.history ?? [])
+      .filter((e) => e.type === TimelineEventType.Summary)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0] as
+      | SummaryRecord
+      | undefined;
+
+    if (latestSummary) {
+      preambleParts.push(`<summary>${latestSummary.data.content}</summary>`);
+    }
+
     const preamble = preambleParts.join("\n");
 
     // Create BuildContextOptions for handlers
