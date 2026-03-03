@@ -86,7 +86,13 @@ export type AgentResponseRecord = BaseTimelineEntry<
 
 export interface AgentActionData {
   actions: Array<{ name: string; params?: Record<string, unknown> }>;
-  toolResults: Array<{ name: string; status: string; result?: unknown; error?: string }>;
+  toolResults: Array<{
+    name: string;
+    success: boolean;
+    status?: string;
+    result?: unknown;
+    error?: string;
+  }>;
 }
 
 export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;

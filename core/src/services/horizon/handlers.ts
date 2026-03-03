@@ -1,15 +1,11 @@
-import type { ImagePart, TextPart, UserContent } from "ai";
+import type { UserContent } from "ai";
 
 import type { LoopMessage } from "../agent/trimmer";
 import type {
-  AgentActionData,
   AgentActionRecord,
-  AgentResponseData,
   AgentResponseRecord,
   ImageConfig,
-  MessageEventData,
   MessageRecord,
-  SummaryData,
   SummaryRecord,
   TimelineEntry,
 } from "./types";
@@ -44,12 +40,12 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
     // Assign short ID
     const shortId = shortIdAssigner && channelKey ? shortIdAssigner(channelKey, data.messageId) : 0;
 
-    // Format time as DD:HH:MM
     const date = new Date(timestamp);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     const hour = String(date.getHours()).padStart(2, "0");
     const minute = String(date.getMinutes()).padStart(2, "0");
-    const timeStr = `${day}:${hour}:${minute}`;
+    const timeStr = `${month}月${day}日 ${hour}:${minute}`;
 
     // Build reply line if replyTo exists
     let replyLine = "";
@@ -148,5 +144,5 @@ class SummaryHandler extends TimelineHandler<SummaryRecord> {
   }
 }
 
-export { MessageHandler, AgentResponseHandler, AgentActionHandler, SummaryHandler };
+export { AgentActionHandler, AgentResponseHandler, MessageHandler, SummaryHandler };
 export type { TimelineHandler };

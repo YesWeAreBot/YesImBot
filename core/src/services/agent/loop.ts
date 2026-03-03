@@ -19,7 +19,7 @@ import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
-import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
+import { trimMessages, totalChars, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentAction {
   name: string;
@@ -35,7 +35,8 @@ interface AgentResponse {
 interface ToolResultEntry {
   id: number;
   name: string;
-  status: string;
+  success: boolean;
+  status?: string;
   result?: unknown;
   error?: string;
 }
@@ -218,7 +219,8 @@ export class ThinkActLoop {
         trimMessages(messages, trimConfig);
 
         // Trigger async summary on budget overflow (fire-and-forget)
-        if (round === 1) {
+        const currentChars = totalChars(messages);
+        if (currentChars > trimConfig.charBudget) {
           const compressor = horizon.compressor;
           if (compressor && view.history && view.history.length > 0) {
             compressor
@@ -538,6 +540,7 @@ export class ThinkActLoop {
         toolResults.push({
           id: idx,
           name: action.name,
+          success: false,
           status: "failed",
           error: e instanceof Error ? e.message : String(e),
         });
@@ -589,11 +592,12 @@ function toToolResultEntry(
       id: idx,
       name,
       status: v.status,
+      success: v.success,
       ...(resultVal !== undefined && { result: resultVal }),
       ...(v.error && { error: v.error }),
     };
   }
-  return { id: idx, name, status: "failed", error: String(result.reason) };
+  return { id: idx, name, success: false, status: "failed", error: String(result.reason) };
 }
 
 function formatToolResults(results: ToolResultEntry[]): string {
