@@ -89,33 +89,6 @@ export interface AgentCoreConfig {
   imageLifecycleCount?: number;
 }
 
-export const AgentCoreConfigSchema: Schema<AgentCoreConfig> = Schema.object({
-  model: Schema.dynamic("registry.chatModels"),
-  fallbackChain: Schema.array(Schema.dynamic("registry.chatModels")).default([]),
-  maxRounds: Schema.number().default(3),
-  streamMode: Schema.boolean().default(false),
-  globalTimeout: Schema.number().default(120000),
-  maxToolResultLength: Schema.number().default(4000),
-  enableThoughts: Schema.boolean().default(true),
-  charBudget: Schema.number().default(30000),
-  keepLastRounds: Schema.number().default(2),
-  softTrimHead: Schema.number().default(800),
-  softTrimTail: Schema.number().default(800),
-  initialContextCharBudget: Schema.number().default(20000),
-  willingness: WillingnessSchema,
-  aggregationWindow: Schema.number().default(1500),
-  errorReportChannel: Schema.string(),
-  debugLevel: Schema.union([
-    Schema.const(0),
-    Schema.const(1),
-    Schema.const(2),
-    Schema.const(3),
-  ]).default(2),
-  imageMode: Schema.union([Schema.const("native"), Schema.const("off")]).default("native"),
-  maxImagesInContext: Schema.number().default(3),
-  imageLifecycleCount: Schema.number().default(3),
-});
-
 interface PendingWindow {
   cancel: () => void;
   lastEvent: HorizonMessageEvent;
