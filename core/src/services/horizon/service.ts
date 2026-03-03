@@ -445,44 +445,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     const history = view.history ?? [];
     const historyLoopMessages = this.events.buildLoopMessages(history, options);
 
-    // Group history messages by role and merge consecutive user messages
-    let pendingMsgTexts: string[] = [];
-    const flushPending = () => {
-      if (pendingMsgTexts.length === 0) return;
-      const content = buildUserContent(pendingMsgTexts);
-      pendingMsgTexts = [];
-      // Merge with previous user message if both are strings
-      const last = messages[messages.length - 1];
-      if (last && last.role === "user") {
-        if (typeof last.content === "string" && typeof content === "string") {
-          last.content = last.content + "\n" + content;
-        } else {
-          const lastParts: Array<TextPart | ImagePart> =
-            typeof last.content === "string"
-              ? [{ type: "text", text: last.content }]
-              : (last.content as Array<TextPart | ImagePart>);
-          const newParts: Array<TextPart | ImagePart> =
-            typeof content === "string"
-              ? [{ type: "text", text: content }]
-              : (content as Array<TextPart | ImagePart>);
-          last.content = [...lastParts, ...newParts];
-        }
-      } else {
-        messages.push({ role: "user", content });
-      }
-    };
-
-    for (const msg of historyLoopMessages) {
-      if (msg.role === "assistant") {
-        flushPending();
-        messages.push(msg);
-      } else {
-        // User message from handlers
-        const content = typeof msg.content === "string" ? msg.content : "";
-        pendingMsgTexts.push(content);
-      }
-    }
-    flushPending();
+    // Append each message directly - handlers already return proper format
+    messages.push(...historyLoopMessages);
 
     return messages;
   }
