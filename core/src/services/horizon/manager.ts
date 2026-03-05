@@ -139,11 +139,59 @@ export class EventManager {
   }
 
   buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): LoopMessage[] {
+    const { imageConfig, parseElements, getImageCache } = options;
+
+    // Image lifecycle tracking
+    const lifecycleTracker = new Map<string, number>();
+    const selectedImages = new Set<string>();
+
+    // Pass 1: Collect all image candidates if native mode enabled
+    if (imageConfig?.imageMode === "native" && parseElements && getImageCache) {
+      const candidates: Array<{ id: string; index: number }> = [];
+
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry.type !== "message") continue;
+
+        const elements = parseElements(entry.data.content);
+        const imgElements = elements.filter((el) => el.type === "img");
+
+        for (const el of imgElements) {
+          const id = el.attrs.id as string | undefined;
+          const status = el.attrs.status as string | undefined;
+          if (!id || status === "failed") continue;
+
+          const cache = getImageCache(id);
+          if (!cache || cache.status === "failed") continue;
+
+          const count = lifecycleTracker.get(id) ?? 0;
+          if (count >= imageConfig.imageLifecycleCount) continue;
+
+          candidates.push({ id, index: i });
+        }
+      }
+
+      // FIFO: Keep last N images
+      const keepFrom = Math.max(0, candidates.length - imageConfig.maxImagesInContext);
+      for (let i = keepFrom; i < candidates.length; i++) {
+        selectedImages.add(candidates[i].id);
+      }
+    }
+
+    // Pass 2: Build messages with image embedding decisions
+    const enhancedOptions: BuildContextOptions = {
+      ...options,
+      shouldEmbedImage: (id: string) => selectedImages.has(id),
+      incrementLifecycle: (id: string) => {
+        lifecycleTracker.set(id, (lifecycleTracker.get(id) ?? 0) + 1);
+      },
+    };
+
     const messages: LoopMessage[] = [];
     for (const entry of entries) {
       for (const handler of this.handlers) {
         if (handler.canHandle(entry)) {
-          messages.push(...handler.handle(entry, options));
+          messages.push(...handler.handle(entry, enhancedOptions));
           break;
         }
       }

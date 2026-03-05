@@ -23,6 +23,8 @@ export interface BuildContextOptions {
   parseElements?: (
     text: string,
   ) => Array<{ type: string; attrs: Record<string, unknown>; toString: () => string }>;
+  shouldEmbedImage?: (id: string) => boolean;
+  incrementLifecycle?: (id: string) => void;
 }
 
 abstract class TimelineHandler<T extends TimelineEntry> {
@@ -36,8 +38,16 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
   }
 
   handle(entry: MessageRecord, options: BuildContextOptions): LoopMessage[] {
-    const { shortIdAssigner, getShortId, channelKey, imageConfig, getImageCache, parseElements } =
-      options;
+    const {
+      shortIdAssigner,
+      getShortId,
+      channelKey,
+      imageConfig,
+      getImageCache,
+      parseElements,
+      shouldEmbedImage,
+      incrementLifecycle,
+    } = options;
     const { data, timestamp } = entry;
 
     // Assign short ID
@@ -63,7 +73,7 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
     const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${data.content}</msg>`;
 
     // Extract and append images if native mode enabled
-    if (imageConfig?.imageMode === "native" && parseElements && getImageCache) {
+    if (imageConfig?.imageMode === "native" && parseElements && getImageCache && shouldEmbedImage) {
       const elements = parseElements(data.content);
       const imgElements = elements.filter((el) => el.type === "img");
 
@@ -75,8 +85,14 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
           const status = el.attrs.status as string | undefined;
           if (!id || status === "failed") continue;
 
+          // Check if this image should be embedded (lifecycle + FIFO logic)
+          if (!shouldEmbedImage(id)) continue;
+
           const cache = getImageCache(id);
           if (!cache || cache.status === "failed") continue;
+
+          // Increment lifecycle counter
+          if (incrementLifecycle) incrementLifecycle(id);
 
           parts.push({
             type: "image",
