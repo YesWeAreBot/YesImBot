@@ -62,6 +62,9 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
   botName: Schema.string(),
   entityCacheTtl: Schema.number().default(3600000),
   maxActiveEntities: Schema.number().default(15),
+  summaryModel: Schema.string().description(
+    "Model ID for summary generation (e.g., 'openai:gpt-4o-mini')",
+  ),
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
