@@ -3,10 +3,11 @@ import { Context, Logger } from "koishi";
 import type { ModelService } from "../model/service";
 import { ChannelKey } from "../shared/types";
 import { EventManager } from "./manager";
-import { TimelineEntry, SummaryRecord, TimelineEventType } from "./types";
+import { TimelineEntry, SummaryRecord, TimelineEventType, TimelineStage } from "./types";
 
 export class SummaryCompressor {
   private logger: Logger;
+  private compressionInProgress = new Map<string, Promise<void>>();
 
   constructor(
     private ctx: Context,
@@ -17,6 +18,24 @@ export class SummaryCompressor {
   }
 
   async compress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<void> {
+    const key = `${channelKey.platform}:${channelKey.channelId}`;
+
+    // Deduplication: if compression already in progress for this channel, skip
+    if (this.compressionInProgress.has(key)) {
+      this.logger.debug(`Compression already in progress for ${key}, skipping`);
+      return;
+    }
+
+    // Create promise and store it
+    const compressionPromise = this.doCompress(channelKey, entries).finally(() => {
+      this.compressionInProgress.delete(key);
+    });
+
+    this.compressionInProgress.set(key, compressionPromise);
+    return compressionPromise;
+  }
+
+  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<void> {
     try {
       const prevSummary = await this.getLatestSummary(channelKey);
       const prompt = this.buildPrompt(entries, prevSummary);
@@ -79,5 +98,20 @@ export class SummaryCompressor {
 
   private async archiveEntries(key: ChannelKey, coveredUntil: Date): Promise<void> {
     this.logger.debug("Archiving entries until", coveredUntil);
+
+    // Archive all entries covered by the summary, excluding Summary entries themselves
+    const query = {
+      platform: key.platform,
+      channelId: key.channelId,
+      stage: TimelineStage.Active,
+      timestamp: { $lte: coveredUntil },
+      type: { $ne: TimelineEventType.Summary },
+    };
+
+    await this.ctx.database.set("yesimbot.timeline", query, {
+      stage: TimelineStage.Archived,
+    });
+
+    this.logger.info(`Archived entries until ${coveredUntil.toISOString()}`);
   }
 }
