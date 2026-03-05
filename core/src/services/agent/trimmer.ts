@@ -59,6 +59,40 @@ export function totalChars(messages: LoopMessage[]): number {
   return sum;
 }
 
+/**
+ * Identify conversation round boundaries.
+ *
+ * Round semantics: A round consists of one or more user messages followed by
+ * zero or more assistant messages, until the next user message or end of array.
+ *
+ * Examples:
+ * - [user, assistant, user, assistant] → 2 rounds
+ * - [user, user, assistant] → 1 round (consecutive user messages in same round)
+ * - [user, assistant, assistant, user] → 2 rounds (multiple assistant responses)
+ * - [user, user, user] → 1 round (all user messages)
+ *
+ * @returns Array of round boundaries: [[startIdx, endIdx], ...]
+ */
+function identifyRoundBoundaries(messages: LoopMessage[], startIdx: number = 1): number[][] {
+  if (startIdx >= messages.length) return [];
+
+  const rounds: number[][] = [];
+  let roundStart = startIdx;
+
+  for (let i = startIdx; i < messages.length; i++) {
+    const isLastMessage = i === messages.length - 1;
+    const nextIsUser = !isLastMessage && messages[i + 1].role === "user";
+
+    // Round ends when we hit the last message OR next message is user
+    if (isLastMessage || nextIsUser) {
+      rounds.push([roundStart, i]);
+      roundStart = i + 1;
+    }
+  }
+
+  return rounds;
+}
+
 export function trimMessages(messages: LoopMessage[], config: TrimConfig): void {
   if (totalChars(messages) <= config.charBudget) return;
 
@@ -81,19 +115,26 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
     if (totalChars(messages) <= config.charBudget) return;
   }
 
-  // Identify rounds: index 0 protected, rounds are (assistant, user) pairs from index 1
-  // round 1 = [1,2], round 2 = [3,4], etc.
-  const totalRounds = Math.floor((messages.length - 1) / 2);
-  const protectedRounds = Math.min(config.keepLastRounds, totalRounds);
-  const eligibleEnd = 1 + (totalRounds - protectedRounds) * 2;
+  // Identify conversation rounds (handles consecutive user messages correctly)
+  const rounds = identifyRoundBoundaries(messages);
+  if (rounds.length === 0) return;
 
-  // Collect eligible indices: user messages first (tool results), then assistant
+  // Protect last N rounds
+  const protectedRounds = Math.min(config.keepLastRounds, rounds.length);
+  const eligibleRounds = rounds.slice(0, rounds.length - protectedRounds);
+
+  // Collect eligible message indices from eligible rounds
+  // Priority: user messages first (tool results), then assistant
   const userIndices: number[] = [];
   const assistantIndices: number[] = [];
-  for (let i = 1; i < eligibleEnd; i++) {
-    if (messages[i].role === "user") userIndices.push(i);
-    else assistantIndices.push(i);
+
+  for (const [start, end] of eligibleRounds) {
+    for (let i = start; i <= end; i++) {
+      if (messages[i].role === "user") userIndices.push(i);
+      else assistantIndices.push(i);
+    }
   }
+
   const eligible = [...userIndices, ...assistantIndices];
 
   // First pass: softTrim
