@@ -71,22 +71,32 @@ export function totalChars(messages: LoopMessage[]): number {
  * - [user, assistant, assistant, user] → 2 rounds (multiple assistant responses)
  * - [user, user, user] → 1 round (all user messages)
  *
+ * @param messages - Array of messages to analyze
+ * @param startIdx - Index to start analyzing from (default 0)
  * @returns Array of round boundaries: [[startIdx, endIdx], ...]
  */
-function identifyRoundBoundaries(messages: LoopMessage[], startIdx: number = 1): number[][] {
+function identifyRoundBoundaries(messages: LoopMessage[], startIdx: number = 0): number[][] {
   if (startIdx >= messages.length) return [];
 
   const rounds: number[][] = [];
   let roundStart = startIdx;
+  let inRound = false;
 
   for (let i = startIdx; i < messages.length; i++) {
+    const current = messages[i];
     const isLastMessage = i === messages.length - 1;
-    const nextIsUser = !isLastMessage && messages[i + 1].role === "user";
+    const next = !isLastMessage ? messages[i + 1] : null;
 
-    // Round ends when we hit the last message OR next message is user
-    if (isLastMessage || nextIsUser) {
+    // Start a round when we see a user message
+    if (current.role === "user" && !inRound) {
+      roundStart = i;
+      inRound = true;
+    }
+
+    // End round when: (1) last message, OR (2) current is assistant and next is user
+    if (inRound && (isLastMessage || (current.role === "assistant" && next?.role === "user"))) {
       rounds.push([roundStart, i]);
-      roundStart = i + 1;
+      inRound = false;
     }
   }
 
@@ -115,8 +125,9 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
     if (totalChars(messages) <= config.charBudget) return;
   }
 
-  // Identify conversation rounds (handles consecutive user messages correctly)
-  const rounds = identifyRoundBoundaries(messages);
+  // Identify conversation rounds
+  // Start from index 0 to include all conversation messages in round detection
+  const rounds = identifyRoundBoundaries(messages, 0);
   if (rounds.length === 0) return;
 
   // Protect last N rounds
