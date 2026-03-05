@@ -223,10 +223,13 @@ export class ThinkActLoop {
         if (currentChars > trimConfig.charBudget) {
           const compressor = horizon.compressor;
           if (compressor && view.history && view.history.length > 0) {
+            this.logger.debug(
+              `Triggering summary compression (${currentChars} > ${trimConfig.charBudget} chars)`,
+            );
             compressor
               .compress({ platform: percept.platform, channelId: percept.channelId }, view.history)
               .catch((err) => {
-                this.logger.warn("Summary trigger failed:", err);
+                this.logger.warn("Summary compression failed (degraded silently):", err);
               });
           }
         }
