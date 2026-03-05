@@ -1,6 +1,19 @@
 {
   "name": "@yesimbot/koishi-plugin-provider-google",
   "version": "0.1.0-beta.1",
+  "description": "",
+  "bugs": {
+    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
+  },
+  "license": "MIT",
+  "contributors": [
+    "MiaowFISH <miaowfish@qq.com>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YesWeAreBot/YesImBot.git",
+    "directory": "providers/google"
+  },
   "files": [
     "dist"
   ],
@@ -37,9 +50,13 @@
     "koishi": "^4.18.3"
   },
   "peerDependencies": {
-    "koishi": "^4.0.0"
+    "koishi": "^4.18.3"
   },
   "koishi": {
+    "description": {
+      "zh": "",
+      "en": ""
+    },
     "service": {
       "required": [
         "yesimbot.model"

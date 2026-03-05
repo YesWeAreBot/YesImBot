@@ -1,6 +1,21 @@
 {
   "name": "koishi-plugin-yesimbot",
   "version": "4.0.0-beta.2",
+  "bugs": {
+    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
+  },
+  "license": "MIT",
+  "contributors": [
+    "HydroGest <2445691453@qq.com>",
+    "Dispure <3116716016@qq.com>",
+    "MiaowFISH <miaowfish@qq.com>",
+    "Touch-Night <1762918301@qq.com>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YesWeAreBot/YesImBot.git",
+    "directory": "core"
+  },
   "files": [
     "dist",
     "resources"
@@ -51,6 +66,20 @@
     "vitest": "^4.0.18"
   },
   "peerDependencies": {
-    "koishi": "^4.0.0"
+    "koishi": "^4.18.3"
+  },
+  "koishi": {
+    "description": {
+      "zh": "让语言大模型机器人假装群友并和群友聊天！",
+      "en": "A Koishi plugin that allows LLM chat in your guild."
+    },
+    "service": {
+      "required": [
+        "database"
+      ],
+      "implements": [
+        "yesimbot"
+      ]
+    }
   }
 }

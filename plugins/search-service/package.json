@@ -34,7 +34,7 @@
     "koishi-plugin-yesimbot": "workspace:^"
   },
   "peerDependencies": {
-    "koishi": "^4.0.0",
+    "koishi": "^4.18.3",
     "koishi-plugin-yesimbot": "workspace:^"
   },
   "koishi": {
