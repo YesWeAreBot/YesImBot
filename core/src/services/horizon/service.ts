@@ -390,7 +390,6 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     let totalEmbedded = 0;
     const maxImages = imageConfig?.maxImagesInContext ?? 3;
     const maxLifecycle = imageConfig?.imageLifecycleCount ?? 3;
-    const imgRegex = /<img id="([a-f0-9]+)"(?:\s+status="failed")?\/>/g;
 
     const buildUserContent = (texts: string[]): string | UserContent => {
       if (imageConfig?.imageMode !== "native") return texts.join("\n");
@@ -400,32 +399,25 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       const processedTexts: string[] = [];
       const allCandidates: Candidate[] = [];
       for (let i = 0; i < texts.length; i++) {
-        let processedText = texts[i];
-        const matches: Array<{ id: string; full: string }> = [];
-        let m: RegExpExecArray | null;
-        imgRegex.lastIndex = 0;
-        while ((m = imgRegex.exec(texts[i])) !== null) {
-          matches.push({ id: m[1], full: m[0] });
-        }
-        for (const { id, full } of matches) {
+        const elements = h.parse(texts[i]);
+        const imgElements = elements.filter((el) => el.type === "img");
+        const textElements = elements.filter((el) => el.type !== "img");
+
+        for (const el of imgElements) {
+          const id = el.attrs.id as string | undefined;
+          const status = el.attrs.status as string | undefined;
+          if (!id) continue;
+
           const entry = this.ctx["yesimbot.image-cache"].get(id);
-          if (!entry) {
-            processedText = processedText.replace(full, "");
-            continue;
-          }
-          if (entry.status === "failed") {
-            processedText = processedText.replace(full, `<img id="${id}" status="failed"/>`);
-            continue;
-          }
+          if (!entry) continue;
+          if (entry.status === "failed" || status === "failed") continue;
+
           const count = lifecycleTracker.get(id) ?? 0;
-          if (count >= maxLifecycle) {
-            processedText = processedText.replace(full, "");
-            continue;
-          }
+          if (count >= maxLifecycle) continue;
+
           allCandidates.push({ id, base64: entry.base64, mediaType: entry.mediaType, textIdx: i });
-          processedText = processedText.replace(full, "");
         }
-        processedTexts.push(processedText);
+        processedTexts.push(textElements.map((el) => el.toString()).join(""));
       }
 
       // Keep last N candidates (newest by Timeline position)
