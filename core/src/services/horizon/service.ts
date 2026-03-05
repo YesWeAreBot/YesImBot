@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import type { ImagePart, TextPart, UserContent } from "ai";
 import { Context, h, Schema, Service, type Session } from "koishi";
 
 import type { LoopMessage } from "../agent/trimmer";
@@ -382,66 +381,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       shortIdAssigner: (ck: string, msgId: string) => this.assignShortId(ck, msgId),
       getShortId: (ck: string, msgId: string) => this.getShortId(ck, msgId),
       getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].get(id),
-      buildUserContent: (text: string) => buildUserContent([text]),
-    };
-
-    // Per-render image lifecycle tracker
-    const lifecycleTracker = new Map<string, number>();
-    let totalEmbedded = 0;
-    const maxImages = imageConfig?.maxImagesInContext ?? 3;
-    const maxLifecycle = imageConfig?.imageLifecycleCount ?? 3;
-
-    const buildUserContent = (texts: string[]): string | UserContent => {
-      if (imageConfig?.imageMode !== "native") return texts.join("\n");
-
-      type Candidate = { id: string; base64: string; mediaType: string; textIdx: number };
-      // Pass 1: collect all eligible candidates (lifecycle check only, no budget limit)
-      const processedTexts: string[] = [];
-      const allCandidates: Candidate[] = [];
-      for (let i = 0; i < texts.length; i++) {
-        const elements = h.parse(texts[i]);
-        const imgElements = elements.filter((el) => el.type === "img");
-        const textElements = elements.filter((el) => el.type !== "img");
-
-        for (const el of imgElements) {
-          const id = el.attrs.id as string | undefined;
-          const status = el.attrs.status as string | undefined;
-          if (!id) continue;
-
-          const entry = this.ctx["yesimbot.image-cache"].get(id);
-          if (!entry) continue;
-          if (entry.status === "failed" || status === "failed") continue;
-
-          const count = lifecycleTracker.get(id) ?? 0;
-          if (count >= maxLifecycle) continue;
-
-          allCandidates.push({ id, base64: entry.base64, mediaType: entry.mediaType, textIdx: i });
-        }
-        processedTexts.push(textElements.map((el) => el.toString()).join(""));
-      }
-
-      // Keep last N candidates (newest by Timeline position)
-      const keepFrom = Math.max(0, allCandidates.length - maxImages);
-
-      // Pass 2: build parts array
-      const parts: Array<TextPart | ImagePart> = [];
-      let candidateIdx = 0;
-      for (let i = 0; i < processedTexts.length; i++) {
-        parts.push({ type: "text", text: processedTexts[i] });
-        while (candidateIdx < allCandidates.length && allCandidates[candidateIdx].textIdx === i) {
-          const c = allCandidates[candidateIdx];
-          if (candidateIdx >= keepFrom) {
-            lifecycleTracker.set(c.id, (lifecycleTracker.get(c.id) ?? 0) + 1);
-            totalEmbedded++;
-            parts.push({ type: "text", text: `\nThe following is an image with ID #${c.id}:\n` });
-            parts.push({ type: "image", image: c.base64, mediaType: c.mediaType } as ImagePart);
-          }
-          candidateIdx++;
-        }
-      }
-
-      if (parts.length === 1 && parts[0].type === "text") return parts[0].text;
-      return parts;
+      parseElements: (text: string) => h.parse(text),
     };
 
     const messages: LoopMessage[] = [];

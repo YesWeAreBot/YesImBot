@@ -1,4 +1,4 @@
-import type { UserContent } from "ai";
+import type { ImagePart, TextPart, UserContent } from "ai";
 
 import type { LoopMessage } from "../agent/trimmer";
 import type {
@@ -20,7 +20,9 @@ export interface BuildContextOptions {
   getImageCache?: (
     id: string,
   ) => { base64: string; mediaType: string; status: "ok" | "failed" } | undefined;
-  buildUserContent?: (text: string) => string | UserContent;
+  parseElements?: (
+    text: string,
+  ) => Array<{ type: string; attrs: Record<string, unknown>; toString: () => string }>;
 }
 
 abstract class TimelineHandler<T extends TimelineEntry> {
@@ -34,7 +36,8 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
   }
 
   handle(entry: MessageRecord, options: BuildContextOptions): LoopMessage[] {
-    const { shortIdAssigner, getShortId, channelKey, buildUserContent } = options;
+    const { shortIdAssigner, getShortId, channelKey, imageConfig, getImageCache, parseElements } =
+      options;
     const { data, timestamp } = entry;
 
     // Assign short ID
@@ -56,13 +59,43 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
       }
     }
 
-    // Build message text
+    // Extract images from content if native mode enabled and parseElements available
+    if (imageConfig?.imageMode === "native" && parseElements && getImageCache) {
+      const elements = parseElements(data.content);
+      const imgElements = elements.filter((el) => el.type === "img");
+      const textElements = elements.filter((el) => el.type !== "img");
+      const textContent = textElements.map((el) => el.toString()).join("");
+
+      // Build message text (without images)
+      const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${textContent}</msg>`;
+
+      if (imgElements.length > 0) {
+        const parts: Array<TextPart | ImagePart> = [{ type: "text", text: msgText }];
+
+        for (const el of imgElements) {
+          const id = el.attrs.id as string | undefined;
+          const status = el.attrs.status as string | undefined;
+          if (!id || status === "failed") continue;
+
+          const cache = getImageCache(id);
+          if (!cache || cache.status === "failed") continue;
+
+          parts.push({
+            type: "image",
+            image: `data:${cache.mediaType};base64,${cache.base64}`,
+          });
+        }
+
+        return [{ role: "user", content: parts }];
+      }
+
+      // No images found, return text only
+      return [{ role: "user", content: msgText }];
+    }
+
+    // Fallback: text only (no native mode or no parseElements)
     const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${data.content}</msg>`;
-
-    // Use buildUserContent to embed images if available
-    const content = buildUserContent ? buildUserContent(msgText) : msgText;
-
-    return [{ role: "user", content }];
+    return [{ role: "user", content: msgText }];
   }
 }
 
