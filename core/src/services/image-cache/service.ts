@@ -45,15 +45,16 @@ export class ImageCacheService extends Service {
     try {
       const ab = await this.ctx.http.get<ArrayBuffer>(url, { responseType: "arraybuffer" });
       const contentId = createHash("sha256").update(Buffer.from(ab)).digest("hex").slice(0, 16);
+      const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
       this.urlIndex.set(url, contentId);
       if (!this.cache.has(contentId)) {
         const base64 = Buffer.from(ab).toString("base64");
         const mediaType = mediaTypeFromUrl(url);
-        this.cache.set(contentId, { base64, mediaType, status: "ok" });
+        const entry = { base64, mediaType, status: "ok" as const };
+        this.cache.set(contentId, entry);
+        // Also store under URL-hash for backward compatibility
+        if (urlHash !== contentId) this.cache.set(urlHash, entry);
       }
-      // Remove stale URL-hash entry if it exists
-      const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
-      if (urlHash !== contentId) this.cache.delete(urlHash);
       return contentId;
     } catch {
       const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);

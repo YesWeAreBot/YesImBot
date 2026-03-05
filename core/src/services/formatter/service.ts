@@ -10,6 +10,8 @@ declare module "koishi" {
 }
 
 export class FormatterService extends Service {
+  static inject = ["yesimbot.image-cache"];
+
   private handlers = new Map<string, ElementHandler>();
 
   constructor(ctx: Context) {
