@@ -163,6 +163,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         TimelineEventType.Message,
         TimelineEventType.AgentResponse,
         TimelineEventType.AgentAction,
+        TimelineEventType.Summary,
       ],
       limit: this.config.historyLimit ?? 30,
       orderBy: "desc",
