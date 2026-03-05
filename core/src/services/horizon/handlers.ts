@@ -59,15 +59,13 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
       }
     }
 
-    // Extract images from content if native mode enabled and parseElements available
+    // Build message text with full content (including image tags)
+    const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${data.content}</msg>`;
+
+    // Extract and append images if native mode enabled
     if (imageConfig?.imageMode === "native" && parseElements && getImageCache) {
       const elements = parseElements(data.content);
       const imgElements = elements.filter((el) => el.type === "img");
-      const textElements = elements.filter((el) => el.type !== "img");
-      const textContent = textElements.map((el) => el.toString()).join("");
-
-      // Build message text (without images)
-      const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${textContent}</msg>`;
 
       if (imgElements.length > 0) {
         const parts: Array<TextPart | ImagePart> = [{ type: "text", text: msgText }];
@@ -88,13 +86,9 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
 
         return [{ role: "user", content: parts }];
       }
-
-      // No images found, return text only
-      return [{ role: "user", content: msgText }];
     }
 
-    // Fallback: text only (no native mode or no parseElements)
-    const msgText = `<msg id="${shortId}" time="${timeStr}">${data.senderName}(${data.senderId}) ${replyLine}${data.content}</msg>`;
+    // Fallback: text only
     return [{ role: "user", content: msgText }];
   }
 }
