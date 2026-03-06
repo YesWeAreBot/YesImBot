@@ -5,6 +5,8 @@ import type { SystemModelMessage } from "ai";
 import type { ModelMessage } from "ai";
 import { Context, Random } from "koishi";
 
+import type { HookService } from "../hook/service";
+import { HookType } from "../hook/types";
 import type { HorizonService } from "../horizon/service";
 import { TimelineStage } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
@@ -327,6 +329,7 @@ export class ThinkActLoop {
           pluginService,
           toolCtxWithPercept,
           maxResultLen,
+          percept,
         );
 
         totalToolCalls += toolResults.length;
@@ -415,6 +418,7 @@ export class ThinkActLoop {
                 pluginService,
                 toolCtxWithPercept,
                 maxResultLen,
+                percept,
               );
               await horizon.events.recordAgentResponse({
                 platform: percept.platform,
@@ -496,6 +500,7 @@ export class ThinkActLoop {
     pluginService: PluginService,
     toolCtx: ToolExecutionContext,
     maxResultLen: number,
+    percept: Percept,
   ): Promise<{
     toolResults: ToolResultEntry[];
     hasToolCalls: boolean;
@@ -504,6 +509,7 @@ export class ThinkActLoop {
     const toolResults: ToolResultEntry[] = [];
     let hasToolCalls = false;
     let hasActionCalls = false;
+    const hookService = this.ctx["hook"] as HookService | undefined;
 
     // Partition by type
     const toolActions: Array<{ idx: number; action: AgentAction }> = [];
@@ -524,9 +530,31 @@ export class ThinkActLoop {
     // Execute Tool-type in parallel
     if (toolActions.length) {
       const results = await Promise.allSettled(
-        toolActions.map(({ action }) =>
-          pluginService.invoke(action.name, action.params ?? {}, toolCtx),
-        ),
+        toolActions.map(async ({ action }) => {
+          let params = action.params ?? {};
+
+          // Before hook
+          if (hookService) {
+            const beforeResult = await hookService.executeBefore(
+              HookType.Tool,
+              params,
+              percept.traceId,
+            );
+            if (beforeResult.skipped) {
+              return beforeResult.result as ToolResult;
+            }
+            params = beforeResult.params;
+          }
+
+          const result = await pluginService.invoke(action.name, params, toolCtx);
+
+          // After hook
+          if (hookService) {
+            await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
+          }
+
+          return result;
+        }),
       );
       for (let i = 0; i < toolActions.length; i++) {
         const { idx, action } = toolActions[i];

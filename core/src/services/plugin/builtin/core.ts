@@ -1,5 +1,7 @@
-import { Context, Element, h, Schema, sleep } from "koishi";
+import { Element, h, Schema, sleep } from "koishi";
 
+import type { HookService } from "../../hook/service";
+import { HookType } from "../../hook/types";
 import { requireSession } from "../activators";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
 import { YesImPlugin } from "../plugin";
@@ -75,9 +77,23 @@ export class CorePlugin extends YesImPlugin {
     ctx: ToolExecutionContext,
   ): Promise<ToolResult> {
     try {
-      const content = String(params["content"] ?? "");
+      const hookService = this.ctx["hook"] as HookService | undefined;
+      let content = String(params["content"] ?? "");
       const target = params["target"] as { platform: string; channelId: string } | undefined;
       const replyToStr = params["replyTo"] as string | undefined;
+
+      // Message before hook
+      if (hookService) {
+        const beforeResult = await hookService.executeBefore(
+          HookType.Message,
+          { content, session: ctx.session },
+          ctx.percept?.traceId,
+        );
+        if (beforeResult.skipped) {
+          return beforeResult.result as ToolResult;
+        }
+        content = (beforeResult.params as { content: string }).content;
+      }
 
       const parts = content
         .split("<sep/>")

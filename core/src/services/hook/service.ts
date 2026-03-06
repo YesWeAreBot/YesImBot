@@ -8,6 +8,12 @@ interface RegisteredHook extends HookDefinition {
   ctx: Context;
 }
 
+declare module "koishi" {
+  interface Context {
+    hook: HookService;
+  }
+}
+
 export class HookService extends Service {
   static inject = [];
 
