@@ -455,7 +455,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
           selfName: built.toolCtx.bot?.user?.name,
         },
       );
-      const contextText = horizon.formatHorizonText(view);
+      const contextText = await horizon.formatHorizonText(view);
       const roleService = this.ctx["yesimbot.role"] as RoleService;
       const personaSummary = roleService.getSoulSummary(300);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";

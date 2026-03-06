@@ -343,11 +343,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return lower === "owner" ? "[Owner] " : "[Admin] ";
   }
 
-  formatHorizonText(
+  async formatHorizonText(
     view: HorizonView,
     percept?: Percept,
     imageConfig?: ImageConfig,
-  ): LoopMessage[] {
+  ): Promise<LoopMessage[]> {
     const channelKey = view.environment
       ? `${view.environment.platform}:${view.environment.channelId}`
       : undefined;
@@ -411,7 +411,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       imageConfig,
       shortIdAssigner: (ck: string, msgId: string) => this.assignShortId(ck, msgId),
       getShortId: (ck: string, msgId: string) => this.getShortId(ck, msgId),
-      getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].getSync(id),
+      getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].get(id),
       parseElements: (text: string) => h.parse(text),
     };
 
@@ -422,7 +422,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
     // Build all history messages using handler pipeline (no trigger mechanism)
     const history = view.history ?? [];
-    const historyLoopMessages = this.events.buildLoopMessages(history, options);
+    const historyLoopMessages = await this.events.buildLoopMessages(history, options);
 
     // Append each message directly - handlers already return proper format
     messages.push(...historyLoopMessages);

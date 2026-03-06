@@ -138,7 +138,7 @@ export class EventManager {
     });
   }
 
-  buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): LoopMessage[] {
+  async buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): Promise<LoopMessage[]> {
     const { imageConfig, parseElements, getImageCache } = options;
 
     // Image lifecycle tracking
@@ -161,7 +161,7 @@ export class EventManager {
           const status = el.attrs.status as string | undefined;
           if (!id || status === "failed") continue;
 
-          const cache = getImageCache(id);
+          const cache = await getImageCache(id);
           if (!cache || cache.status === "failed") continue;
 
           const count = lifecycleTracker.get(id) ?? 0;
@@ -191,7 +191,8 @@ export class EventManager {
     for (const entry of entries) {
       for (const handler of this.handlers) {
         if (handler.canHandle(entry)) {
-          messages.push(...handler.handle(entry, enhancedOptions));
+          const handlerMessages = await handler.handle(entry, enhancedOptions);
+          messages.push(...handlerMessages);
           break;
         }
       }
