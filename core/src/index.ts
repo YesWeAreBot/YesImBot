@@ -36,6 +36,9 @@ export type {
   HookHandler,
 } from "./services/hook/types";
 
+export { ImageCacheService } from "./services/image-cache/service";
+export type { ImageMetadata, CacheEntry, ImageCacheConfig } from "./services/image-cache/types";
+
 declare module "koishi" {
   interface Events {
     "athena:willingness.changed": (
