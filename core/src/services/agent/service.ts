@@ -530,6 +530,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const bot = this.ctx.bots.find((b) => b.platform === platform);
     if (!bot) return;
     const summary = `[Error] ${percept.channelId}: ${err instanceof Error ? err.message : String(err)}`;
+    // Error reporting bypasses message hooks intentionally
+    // Internal system messages should not be intercepted by plugins
+    // See docs/HOOK_COVERAGE.md for rationale
     await bot.sendMessage(channelId, summary).catch(() => {});
   }
 }

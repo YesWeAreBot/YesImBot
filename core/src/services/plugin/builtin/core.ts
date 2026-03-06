@@ -124,6 +124,8 @@ export class CorePlugin extends YesImPlugin {
         for (let i = 0; i < effectiveParts.length; i++) {
           if (i > 0) await sleep(1000);
           const parsed = filterInteractive(h.parse(effectiveParts[i]!));
+          // Cross-channel send - hook already executed above
+          // See docs/HOOK_COVERAGE.md for message hook coverage
           await bot.sendMessage(channelId, parsed);
         }
       } else {
@@ -136,6 +138,8 @@ export class CorePlugin extends YesImPlugin {
             i === 0 && replyToNativeId
               ? [h("quote", { id: replyToNativeId }), ...filteredContent]
               : filteredContent;
+          // Current channel send - hook already executed above
+          // See docs/HOOK_COVERAGE.md for message hook coverage
           await ctx.session?.send(elements);
         }
       }
