@@ -196,6 +196,8 @@ export interface HorizonView {
   environment?: Environment;
   entities?: Entity[];
   history?: TimelineEntry[];
+  traits?: import("../shared/types").TraitSignal[];
+  skills?: import("../shared/types").ActiveSkill[];
 }
 
 // ---- Query ----
