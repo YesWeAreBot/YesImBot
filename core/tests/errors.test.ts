@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 
+import { AgentError } from "../src/errors/agent";
 import { AthenaError } from "../src/errors/base";
+import { HorizonError } from "../src/errors/horizon";
+import { ModelError } from "../src/errors/model";
+import { PromptError } from "../src/errors/prompt";
 
 describe("AthenaError", () => {
   it("should accept message, code, context, and optional cause", () => {
@@ -92,5 +96,46 @@ describe("AthenaError", () => {
     });
 
     expect(error.context.traceId).toBe("trace-456");
+  });
+});
+
+describe("Service-specific errors", () => {
+  it("AgentError should auto-fill service='agent' in context", () => {
+    const error = new AgentError("Agent failed", "ERR_AGENT_001", "processMessage");
+
+    expect(error.name).toBe("AgentError");
+    expect(error.context.service).toBe("agent");
+    expect(error.context.operation).toBe("processMessage");
+  });
+
+  it("ModelError should auto-fill service='model' in context", () => {
+    const error = new ModelError("Model failed", "ERR_MODEL_001", "generateResponse");
+
+    expect(error.name).toBe("ModelError");
+    expect(error.context.service).toBe("model");
+    expect(error.context.operation).toBe("generateResponse");
+  });
+
+  it("HorizonError should auto-fill service='horizon' in context", () => {
+    const error = new HorizonError("Horizon failed", "ERR_HORIZON_001", "buildContext");
+
+    expect(error.name).toBe("HorizonError");
+    expect(error.context.service).toBe("horizon");
+    expect(error.context.operation).toBe("buildContext");
+  });
+
+  it("PromptError should auto-fill service='prompt' in context", () => {
+    const error = new PromptError("Prompt failed", "ERR_PROMPT_001", "renderTemplate");
+
+    expect(error.name).toBe("PromptError");
+    expect(error.context.service).toBe("prompt");
+    expect(error.context.operation).toBe("renderTemplate");
+  });
+
+  it("Service errors should preserve cause chain", () => {
+    const cause = new Error("Original error");
+    const error = new AgentError("Agent failed", "ERR_AGENT_002", "processMessage", cause);
+
+    expect(error.cause).toBe(cause);
   });
 });
