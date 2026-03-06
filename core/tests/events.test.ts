@@ -50,4 +50,42 @@ describe("Event Type Declarations", () => {
       expect(event.startsWith("athena:")).toBe(true);
     });
   });
+
+  it("should enforce type safety for event payloads", () => {
+    // Compile-time type check: these assignments should work
+    const willingnessHandler: Events["athena:willingness.changed"] = (key, old, newVal) => {
+      expect(key.platform).toBeDefined();
+      expect(key.channelId).toBeDefined();
+    };
+
+    const timelineHandler: Events["athena:timeline.compressed"] = (key, before, after) => {
+      expect(before).toBeGreaterThanOrEqual(after);
+    };
+
+    const cacheHandler: Events["athena:cache.evicted"] = (type, id, reason) => {
+      expect(type).toBeDefined();
+    };
+
+    // Execute handlers to satisfy test
+    willingnessHandler({ platform: "test", channelId: "ch1" }, 0.5, 0.8);
+    timelineHandler({ platform: "test", channelId: "ch1" }, 10, 5);
+    cacheHandler("image", "img-123", "ttl");
+  });
+
+  it("should support multiple event subscribers pattern", () => {
+    // Test that handler signature allows multiple subscribers
+    const handlers: Events["athena:willingness.changed"][] = [];
+
+    handlers.push((key, old, newVal) => {
+      expect(newVal).toBeGreaterThan(old);
+    });
+
+    handlers.push((key, old, newVal) => {
+      expect(key.platform).toBe("test");
+    });
+
+    // Execute all handlers
+    handlers.forEach((h) => h({ platform: "test", channelId: "ch1" }, 0.5, 0.8));
+    expect(handlers).toHaveLength(2);
+  });
 });
