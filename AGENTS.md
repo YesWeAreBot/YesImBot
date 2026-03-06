@@ -114,3 +114,10 @@ yarn lint
 - Keep tool/action distinction intact.
 - Validate dependency graph when touching service startup/injection.
 - Reference `references/YesImBot-v3/` for feature migration patterns.
+
+## Reference Documentation and Resources
+
+- [Koishi](references/koishi-docs/zh-CN)
+- [Letta Source Code](references/letta)
+- [OpenClaw docs](references/openclaw/docs)
+- [Plast Mem](references/plast-mem) an experimental llm memory layer for cyber waifu.
