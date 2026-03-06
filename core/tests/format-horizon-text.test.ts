@@ -84,9 +84,9 @@ describe("MessageHandler", () => {
     channelKey: "test:channel",
   };
 
-  it("renders <msg> tag with id, time, sender, content", () => {
+  it("renders <msg> tag with id, time, sender, content", async () => {
     const record = createMessageRecord();
-    const result = handler.handle(record, baseOptions);
+    const result = await handler.handle(record, baseOptions);
 
     expect(result).toHaveLength(1);
     const msg = result[0] as LoopMessage;
@@ -98,7 +98,7 @@ describe("MessageHandler", () => {
     expect(msg.content).toContain("</msg>");
   });
 
-  it("includes [回复: N] when replyTo provided and getShortId returns value", () => {
+  it("includes [回复: N] when replyTo provided and getShortId returns value", async () => {
     const record = createMessageRecord({
       data: {
         messageId: "msg-2",
@@ -117,19 +117,19 @@ describe("MessageHandler", () => {
       },
     };
 
-    const result = handler.handle(record, options);
+    const result = await handler.handle(record, options);
     expect(result[0].content).toContain("[回复: 1]");
     expect(result[0].content).toContain("I agree");
   });
 
-  it("returns user role LoopMessage", () => {
+  it("returns user role LoopMessage", async () => {
     const record = createMessageRecord();
-    const result = handler.handle(record, baseOptions);
+    const result = await handler.handle(record, baseOptions);
 
     expect(result[0].role).toBe("user");
   });
 
-  it("assigns short ID using shortIdAssigner", () => {
+  it("assigns short ID using shortIdAssigner", async () => {
     let lastAssignedId = 0;
     const record = createMessageRecord({
       id: "msg-10",
@@ -149,7 +149,7 @@ describe("MessageHandler", () => {
       },
     };
 
-    const result = handler.handle(record, options);
+    const result = await handler.handle(record, options);
     expect(result[0].content).toContain('<msg id="1"');
   });
 });
@@ -157,34 +157,34 @@ describe("MessageHandler", () => {
 describe("AgentResponseHandler", () => {
   const handler = new AgentResponseHandler();
 
-  it("returns empty array for successful response with no rawText", () => {
+  it("returns empty array for successful response with no rawText", async () => {
     const record = createAgentResponseRecord({
       data: { rawText: "" },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result).toEqual([]);
   });
 
-  it("returns assistant message for successful response with rawText", () => {
+  it("returns assistant message for successful response with rawText", async () => {
     const record = createAgentResponseRecord({
       data: { rawText: "This is the response text" },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe("assistant");
     expect(result[0].content).toBe("This is the response text");
   });
 
-  it("returns <error> tag for error response", () => {
+  it("returns <error> tag for error response", async () => {
     const record = createAgentResponseRecord({
       data: {
         rawText: "",
         error: "API rate limit exceeded",
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe("user");
@@ -193,14 +193,14 @@ describe("AgentResponseHandler", () => {
     expect(result[0].content).toContain("</error>");
   });
 
-  it("escapes XML special chars in error content", () => {
+  it("escapes XML special chars in error content", async () => {
     const record = createAgentResponseRecord({
       data: {
         rawText: "",
         error: 'Error: "unexpected" & <tag> in response',
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result[0].content).toContain("&quot;");
     expect(result[0].content).toContain("&amp;");
@@ -215,7 +215,7 @@ describe("AgentResponseHandler", () => {
 describe("AgentActionHandler", () => {
   const handler = new AgentActionHandler();
 
-  it("renders <action> tag with action summaries", () => {
+  it("renders <action> tag with action summaries", async () => {
     const record = createAgentActionRecord({
       data: {
         actions: [
@@ -225,7 +225,7 @@ describe("AgentActionHandler", () => {
         toolResults: [],
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe("user");
@@ -235,7 +235,7 @@ describe("AgentActionHandler", () => {
     expect(result[0].content).toContain("</action>");
   });
 
-  it("handles send_message specially (shows sent/failed)", () => {
+  it("handles send_message specially (shows sent/failed)", async () => {
     const record = createAgentActionRecord({
       data: {
         actions: [],
@@ -246,13 +246,13 @@ describe("AgentActionHandler", () => {
         ],
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result[0].content).toContain("send_message -> sent");
     expect(result[0].content).toContain("send_message -> failed");
   });
 
-  it("shows tool results with preview", () => {
+  it("shows tool results with preview", async () => {
     const record = createAgentActionRecord({
       data: {
         actions: [],
@@ -262,26 +262,26 @@ describe("AgentActionHandler", () => {
         ],
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result[0].content).toContain("get_weather -> ok: Sunny, 25°C");
     // Error status uses error message, not status string
     expect(result[0].content).toContain("search_web -> API timeout");
   });
 
-  it("shows (No actions) when empty", () => {
+  it("shows (No actions) when empty", async () => {
     const record = createAgentActionRecord({
       data: {
         actions: [],
         toolResults: [],
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     expect(result).toEqual([]);
   });
 
-  it("truncates long result previews to 100 chars", () => {
+  it("truncates long result previews to 100 chars", async () => {
     const longResult = "x".repeat(200);
     const record = createAgentActionRecord({
       data: {
@@ -289,7 +289,7 @@ describe("AgentActionHandler", () => {
         toolResults: [{ name: "search_web", status: "ok", result: longResult }],
       },
     });
-    const result = handler.handle(record, {});
+    const result = await handler.handle(record, {});
 
     // Should truncate to ~100 chars plus label
     expect(result[0].content).toMatch(/search_web -> ok: x{100}/);
@@ -304,7 +304,7 @@ describe("buildLoopMessages integration", () => {
 
   const eventManager = new EventManager(mockContext);
 
-  it("processes mixed entry types correctly", () => {
+  it("processes mixed entry types correctly", async () => {
     const messageRecord = createMessageRecord({
       id: "msg-1",
       data: {
@@ -334,7 +334,7 @@ describe("buildLoopMessages integration", () => {
       channelKey: "test:channel",
     };
 
-    const result = eventManager.buildLoopMessages(entries, options);
+    const result = await eventManager.buildLoopMessages(entries, options);
 
     // Should have user message (Alice), assistant message (response), user action
     expect(result.length).toBeGreaterThanOrEqual(2);
@@ -355,7 +355,7 @@ describe("buildLoopMessages integration", () => {
     expect(actionMsg).toBeDefined();
   });
 
-  it("dispatches handlers by entry type correctly", () => {
+  it("dispatches handlers by entry type correctly", async () => {
     const messageRecord = createMessageRecord();
     const errorRecord = createAgentResponseRecord({
       data: { rawText: "", error: "Test error" },
@@ -367,7 +367,7 @@ describe("buildLoopMessages integration", () => {
       channelKey: "test:channel",
     };
 
-    const result = eventManager.buildLoopMessages(entries, options);
+    const result = await eventManager.buildLoopMessages(entries, options);
 
     // Both should be user messages (message + error)
     expect(result).toHaveLength(2);
