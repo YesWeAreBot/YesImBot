@@ -98,6 +98,26 @@ export class ThinkActLoop {
       skills: effects.activeSkills,
     };
 
+    // Agent before hook - allows hooks to inject context or modify behavior
+    const hookService = this.ctx["hook"] as HookService | undefined;
+    if (hookService) {
+      const beforeResult = await hookService.executeBefore(
+        HookType.Agent,
+        { view, traits: signals, skills: effects.activeSkills, percept },
+        percept.traceId,
+      );
+      if (!beforeResult.skipped && beforeResult.params) {
+        const modifiedParams = beforeResult.params as {
+          view?: typeof view;
+          traits?: typeof signals;
+          skills?: typeof effects.activeSkills;
+        };
+        if (modifiedParams.view) view = modifiedParams.view;
+        if (modifiedParams.traits) Object.assign(signals, modifiedParams.traits);
+        if (modifiedParams.skills) Object.assign(effects.activeSkills, modifiedParams.skills);
+      }
+    }
+
     const disposers: Array<() => void> = [];
 
     // Apply prompt injections from active skills
