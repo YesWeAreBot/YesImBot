@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 
 import { Context, Service } from "koishi";
 
+import type { StaticHookEntry } from "./decorators";
 import type { HookDefinition, HookType, HookPhase, HookContext, BeforeHookResult } from "./types";
 
 interface RegisteredHook extends HookDefinition {
@@ -44,6 +45,7 @@ export class HookService extends Service {
     type: HookType,
     params: T,
     traceId?: string,
+    timeout?: number,
   ): Promise<{ params: T; skipped: boolean; result?: unknown }> {
     const hooks = this.getHooks(type, "before" as HookPhase);
     let currentParams = params;
@@ -57,10 +59,12 @@ export class HookService extends Service {
       };
 
       try {
-        const timeout = hook.timeout || 5000;
+        const effectiveTimeout = timeout ?? hook.timeout ?? 5000;
         const result = (await Promise.race([
           hook.handler(hookCtx),
-          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), timeout)),
+          new Promise<undefined>((resolve) =>
+            setTimeout(() => resolve(undefined), effectiveTimeout),
+          ),
         ])) as BeforeHookResult<T> | void;
 
         if (!result) continue;
@@ -85,6 +89,7 @@ export class HookService extends Service {
     params: T,
     result: unknown,
     traceId?: string,
+    timeout?: number,
   ): Promise<void> {
     const hooks = this.getHooks(type, "after" as HookPhase);
 
@@ -98,10 +103,10 @@ export class HookService extends Service {
       };
 
       try {
-        const timeout = hook.timeout || 5000;
+        const effectiveTimeout = timeout ?? hook.timeout ?? 5000;
         await Promise.race([
           hook.handler(hookCtx),
-          new Promise((resolve) => setTimeout(resolve, timeout)),
+          new Promise((resolve) => setTimeout(resolve, effectiveTimeout)),
         ]);
       } catch (error) {
         this.logger.warn(`Hook ${hook.id} failed:`, error);
@@ -109,17 +114,23 @@ export class HookService extends Service {
     }
   }
 
-  async executeError<T>(type: HookType, params: T, error: Error, traceId?: string): Promise<void> {
+  async executeError<T>(
+    type: HookType,
+    params: T,
+    error: Error,
+    traceId?: string,
+    timeout?: number,
+  ): Promise<void> {
     const hooks = this.getHooks(type, "error" as HookPhase);
 
     for (const hook of hooks) {
       const hookCtx: HookContext<T> = { type, phase: "error" as HookPhase, params, error, traceId };
 
       try {
-        const timeout = hook.timeout || 5000;
+        const effectiveTimeout = timeout ?? hook.timeout ?? 5000;
         await Promise.race([
           hook.handler(hookCtx),
-          new Promise((resolve) => setTimeout(resolve, timeout)),
+          new Promise((resolve) => setTimeout(resolve, effectiveTimeout)),
         ]);
       } catch (err) {
         this.logger.warn(`Hook ${hook.id} failed:`, err);
