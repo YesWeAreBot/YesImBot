@@ -1,4 +1,4 @@
-import { Context, Random, Schema, Service } from "koishi";
+import { Context, Random, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
@@ -8,12 +8,7 @@ import type { RoleService } from "../role/service";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
-import {
-  TokenBucket,
-  WillingnessConfig,
-  WillingnessEngine,
-  WillingnessSchema,
-} from "./willingness";
+import { TokenBucket, WillingnessConfig, WillingnessEngine } from "./willingness";
 
 interface JudgeResponse {
   decision: boolean;

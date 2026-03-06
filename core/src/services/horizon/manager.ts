@@ -138,7 +138,10 @@ export class EventManager {
     });
   }
 
-  async buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): Promise<LoopMessage[]> {
+  async buildLoopMessages(
+    entries: TimelineEntry[],
+    options: BuildContextOptions,
+  ): Promise<LoopMessage[]> {
     const { imageConfig, parseElements, getImageCache } = options;
 
     // Image lifecycle tracking

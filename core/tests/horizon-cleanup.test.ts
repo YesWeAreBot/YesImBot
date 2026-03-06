@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { EventManager } from "../src/services/horizon/manager";
 import { EnvironmentManager } from "../src/services/horizon/environment";
+import { EventManager } from "../src/services/horizon/manager";
 import { TimelineStage } from "../src/services/horizon/types";
 import { createMessageRecord } from "./fixtures/timeline-entries";
 
@@ -56,9 +56,7 @@ describe("EventManager.deleteStale", () => {
   });
 
   it("should remove all Archived-stage entries for a channel key", async () => {
-    const archivedEntries = [
-      createMessageRecord({ index: 1, stage: TimelineStage.Archived }),
-    ];
+    const archivedEntries = [createMessageRecord({ index: 1, stage: TimelineStage.Archived })];
     mockExecute.mockResolvedValue(archivedEntries);
 
     const count = await manager.deleteStale(
@@ -95,10 +93,7 @@ describe("EnvironmentManager.cleanup", () => {
    * We construct the manager, then replace the private `db` field
    * with a mock that returns controlled data.
    */
-  function createManagerWithMockDb(
-    mockData: Record<string, any>,
-    cacheTtl: number,
-  ) {
+  function createManagerWithMockDb(mockData: Record<string, any>, cacheTtl: number) {
     const mockCommit = vi.fn();
     const mockUpdate = vi.fn().mockImplementation(function (this: any, fn: (data: any) => void) {
       fn(mockData);

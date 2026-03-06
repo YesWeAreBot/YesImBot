@@ -62,12 +62,12 @@ export class ThinkActLoop {
     let totalTokens = 0;
     let totalToolCalls = 0;
 
-    const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
+    const horizonService = this.ctx["yesimbot.horizon"] as HorizonService;
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
-    const prompt = this.ctx["yesimbot.prompt"] as PromptService;
+    const promptService = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    let view = await horizon.buildView(
+    let view = await horizonService.buildView(
       { platform: percept.platform, channelId: percept.channelId },
       {
         session: toolCtx.session,
@@ -99,7 +99,7 @@ export class ThinkActLoop {
     };
 
     // Agent before hook - allows hooks to inject context or modify behavior
-    const hookService = this.ctx["hook"] as HookService | undefined;
+    const hookService = this.ctx["yesimbot.hook"];
     if (hookService) {
       const beforeResult = await hookService.executeBefore(
         HookType.Agent,
@@ -123,7 +123,7 @@ export class ThinkActLoop {
     // Apply prompt injections from active skills
     for (const inj of effects.promptInjections) {
       disposers.push(
-        prompt.inject(this.ctx, inj.point, {
+        promptService.inject(this.ctx, inj.point, {
           name: `__skill_${inj.skillName}_${percept.id}`,
           renderFn: () => inj.content,
         }),
@@ -133,7 +133,7 @@ export class ThinkActLoop {
     // Apply style override from highest-specificity skill
     if (effects.styleOverride) {
       disposers.push(
-        prompt.inject(this.ctx, effects.styleOverride.point, {
+        promptService.inject(this.ctx, effects.styleOverride.point, {
           name: `__skill_style_${percept.id}`,
           ...(effects.styleOverride.point === "soul" ? { after: "__role_soul" } : {}),
           renderFn: () => effects.styleOverride!.content,
@@ -148,7 +148,7 @@ export class ThinkActLoop {
       effects.toolFilter,
     );
     disposers.push(
-      prompt.inject(this.ctx, "instructions", {
+      promptService.inject(this.ctx, "instructions", {
         name: `__loop_tool_schema_${percept.id}`,
         after: "__role_tools",
         renderFn: () => toolSchema,
@@ -156,7 +156,7 @@ export class ThinkActLoop {
     );
 
     try {
-      const sections: Section[] = await prompt.render("system", { view, percept });
+      const sections: Section[] = await promptService.render("system", { view, percept });
       const stableContent = sections
         .filter((s) => s.name === "soul" || s.name === "instructions")
         .map((s) => s.content)
@@ -205,7 +205,7 @@ export class ThinkActLoop {
         maxImagesInContext: this.config.maxImagesInContext ?? 3,
         imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
-      const multiTurnMessages = await horizon.formatHorizonText(view, percept, imageConfig);
+      const multiTurnMessages = await horizonService.formatHorizonText(view, percept, imageConfig);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
@@ -246,7 +246,7 @@ export class ThinkActLoop {
         // Trigger async summary on budget overflow (fire-and-forget)
         const currentChars = totalChars(messages);
         if (currentChars > trimConfig.charBudget) {
-          const compressor = horizon.compressor;
+          const compressor = horizonService.compressor;
           if (compressor && view.history && view.history.length > 0) {
             this.logger.debug(
               `Triggering summary compression (${currentChars} > ${trimConfig.charBudget} chars)`,
@@ -361,7 +361,7 @@ export class ThinkActLoop {
         }
 
         // Record per-round AgentResponse immediately after tool execution
-        await horizon.events.recordAgentResponse({
+        await horizonService.events.recordAgentResponse({
           platform: percept.platform,
           channelId: percept.channelId,
           timestamp: new Date(),
@@ -371,7 +371,7 @@ export class ThinkActLoop {
         });
 
         // Record action execution results
-        await horizon.events.recordAgentAction({
+        await horizonService.events.recordAgentAction({
           platform: percept.platform,
           channelId: percept.channelId,
           timestamp: new Date(),
@@ -391,7 +391,7 @@ export class ThinkActLoop {
           if (!content) continue;
           const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
           for (const part of parts) {
-            await horizon.events.recordMessage({
+            await horizonService.events.recordMessage({
               platform: percept.platform,
               channelId: percept.channelId,
               stage: TimelineStage.Active,
@@ -440,7 +440,7 @@ export class ThinkActLoop {
                 maxResultLen,
                 percept,
               );
-              await horizon.events.recordAgentResponse({
+              await horizonService.events.recordAgentResponse({
                 platform: percept.platform,
                 channelId: percept.channelId,
                 timestamp: new Date(),
@@ -450,7 +450,7 @@ export class ThinkActLoop {
               });
 
               // Record wrap-up action execution results
-              await horizon.events.recordAgentAction({
+              await horizonService.events.recordAgentAction({
                 platform: percept.platform,
                 channelId: percept.channelId,
                 timestamp: new Date(),
@@ -470,7 +470,7 @@ export class ThinkActLoop {
                 if (!content) continue;
                 const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
                 for (const part of parts) {
-                  await horizon.events.recordMessage({
+                  await horizonService.events.recordMessage({
                     platform: percept.platform,
                     channelId: percept.channelId,
                     stage: TimelineStage.Active,
@@ -497,13 +497,12 @@ export class ThinkActLoop {
         });
       }
 
-      await horizon.events.markAsActive(
+      await horizonService.events.markAsActive(
         { platform: percept.platform, channelId: percept.channelId },
         percept.timestamp,
       );
-      const archiveMs =
-        (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
-      await horizon.events.archiveStale(
+      const archiveMs = horizonService.config.archiveThresholdMs ?? 86400000;
+      await horizonService.events.archiveStale(
         { platform: percept.platform, channelId: percept.channelId },
         archiveMs,
       );
@@ -529,7 +528,8 @@ export class ThinkActLoop {
     const toolResults: ToolResultEntry[] = [];
     let hasToolCalls = false;
     let hasActionCalls = false;
-    const hookService = this.ctx["hook"] as HookService | undefined;
+
+    const hookService = this.ctx["yesimbot.hook"];
 
     // Partition by type
     const toolActions: Array<{ idx: number; action: AgentAction }> = [];

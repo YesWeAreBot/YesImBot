@@ -1,8 +1,8 @@
 import { Context } from "koishi";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HookService } from "../src/services/hook/service";
-import { HookType, HookPhase, type HookDefinition } from "../src/services/hook/types";
+import { HookPhase, HookType } from "../src/services/hook/types";
 
 describe("Hook timeout override", () => {
   let ctx: Context;

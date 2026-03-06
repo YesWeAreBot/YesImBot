@@ -1,6 +1,26 @@
 import type { Events } from "koishi";
 import { describe, it, expect } from "vitest";
 
+declare module "koishi" {
+  interface Events {
+    "athena:willingness.changed": (
+      channelKey: { platform: string; channelId: string },
+      oldValue: number,
+      newValue: number,
+    ) => void;
+    "athena:timeline.compressed": (
+      channelKey: { platform: string; channelId: string },
+      beforeCount: number,
+      afterCount: number,
+    ) => void;
+    "athena:cache.evicted": (
+      cacheType: "image" | "entity",
+      id: string,
+      reason: "ttl" | "lru" | "manual",
+    ) => void;
+  }
+}
+
 describe("Event Type Declarations", () => {
   it("should declare athena:willingness.changed with correct signature", () => {
     type Handler = Events["athena:willingness.changed"];

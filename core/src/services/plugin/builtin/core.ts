@@ -77,7 +77,7 @@ export class CorePlugin extends YesImPlugin {
     ctx: ToolExecutionContext,
   ): Promise<ToolResult> {
     try {
-      const hookService = this.ctx["hook"] as HookService | undefined;
+      const hookService = this.ctx["yesimbot.hook"];
       let content = String(params["content"] ?? "");
       const target = params["target"] as { platform: string; channelId: string } | undefined;
       const replyToStr = params["replyTo"] as string | undefined;

@@ -11,7 +11,7 @@ interface RegisteredHook extends HookDefinition {
 
 declare module "koishi" {
   interface Context {
-    hook: HookService;
+    "yesimbot.hook": HookService;
   }
 }
 
@@ -21,7 +21,7 @@ export class HookService extends Service {
   private hooks = new Map<string, RegisteredHook>();
 
   constructor(ctx: Context) {
-    super(ctx, "hook", true);
+    super(ctx, "yesimbot.hook", true);
   }
 
   register(ctx: Context, def: HookDefinition): () => void {

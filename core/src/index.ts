@@ -1,4 +1,4 @@
-import { Context, Schema, sleep } from "koishi";
+import { Context, Schema } from "koishi";
 
 import enUS from "./locales/en-US.json";
 import zhCN from "./locales/zh-CN.json";
@@ -24,20 +24,6 @@ import { TraitAnalyzer } from "./services/trait";
 
 export const name = "yesimbot";
 export const inject = ["database"];
-
-export { HookService } from "./services/hook/service";
-export { Hook } from "./services/hook/decorators";
-export type {
-  HookType,
-  HookPhase,
-  HookContext,
-  HookDefinition,
-  BeforeHookResult,
-  HookHandler,
-} from "./services/hook/types";
-
-export { ImageCacheService } from "./services/image-cache/service";
-export type { ImageMetadata, CacheEntry, ImageCacheConfig } from "./services/image-cache/types";
 
 declare module "koishi" {
   interface Events {
