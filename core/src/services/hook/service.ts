@@ -137,4 +137,23 @@ export class HookService extends Service {
       }
     }
   }
+
+  registerFromDecorators(ctx: Context, instance: object): void {
+    const proto = Object.getPrototypeOf(instance) as Record<string, unknown>;
+    const staticHooks = (proto.__staticHooks as StaticHookEntry[] | undefined) ?? [];
+
+    for (const entry of staticHooks) {
+      const handler = (instance as Record<string, unknown>)[entry.methodKey] as (
+        ctx: HookContext,
+      ) => Promise<BeforeHookResult<unknown> | void>;
+
+      this.register(ctx, {
+        type: entry.type,
+        phase: entry.phase,
+        handler: handler.bind(instance),
+        timeout: entry.timeout,
+        metadata: entry.metadata,
+      });
+    }
+  }
 }
