@@ -16,7 +16,7 @@ describe("Hook Decorator", () => {
 
   beforeEach(() => {
     ctx = new Context();
-    ctx.on = () => {};
+    ctx.on = (() => () => true) as unknown as typeof ctx.on;
     hookService = new HookService(ctx);
   });
 
@@ -29,7 +29,7 @@ describe("Hook Decorator", () => {
       callCount = 0;
 
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async beforeToolHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async beforeToolHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         this.callCount++;
         return { modified: false };
       }
@@ -47,7 +47,7 @@ describe("Hook Decorator", () => {
       callCount = 0;
 
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async beforeToolHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async beforeToolHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         this.callCount++;
         return { modified: false };
       }
@@ -64,17 +64,17 @@ describe("Hook Decorator", () => {
   it("should support multiple decorated hooks", () => {
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async beforeToolHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async beforeToolHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
 
       @Hook({ type: HookType.Tool, phase: HookPhase.After })
-      async afterToolHook(hookCtx: HookContext): Promise<void> {
+      async afterToolHook(_hookCtx: HookContext): Promise<void> {
         // After hook
       }
 
       @Hook({ type: HookType.Message, phase: HookPhase.Before })
-      async beforeMessageHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async beforeMessageHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
     }
@@ -90,17 +90,17 @@ describe("Hook Decorator", () => {
   it("should support all hook types", () => {
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async toolHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async toolHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
 
       @Hook({ type: HookType.Message, phase: HookPhase.Before })
-      async messageHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async messageHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
 
       @Hook({ type: HookType.Agent, phase: HookPhase.Before })
-      async agentHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async agentHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
     }
@@ -116,17 +116,17 @@ describe("Hook Decorator", () => {
   it("should support all hook phases", () => {
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async beforeHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async beforeHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
 
       @Hook({ type: HookType.Tool, phase: HookPhase.After })
-      async afterHook(hookCtx: HookContext): Promise<void> {
+      async afterHook(_hookCtx: HookContext): Promise<void> {
         // After hook
       }
 
       @Hook({ type: HookType.Tool, phase: HookPhase.Error })
-      async errorHook(hookCtx: HookContext): Promise<void> {
+      async errorHook(_hookCtx: HookContext): Promise<void> {
         // Error hook
       }
     }
@@ -142,7 +142,7 @@ describe("Hook Decorator", () => {
   it("should pass timeout option to registered hook", async () => {
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before, timeout: 1000 })
-      async slowHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async slowHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         return { modified: false };
       }
@@ -164,7 +164,7 @@ describe("Hook Decorator", () => {
 
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before, metadata })
-      async metadataHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async metadataHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
     }
@@ -187,7 +187,7 @@ describe("Hook Decorator", () => {
 
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async beforeHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async beforeHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { modified: false };
       }
     }
@@ -238,7 +238,7 @@ describe("Hook Decorator", () => {
   it("should allow hook to skip execution", async () => {
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async skipHook(hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
+      async skipHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
         return { skip: true, result: "skipped" };
       }
     }
