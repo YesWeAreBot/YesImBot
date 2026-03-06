@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -23,8 +24,6 @@ export class ImageCacheService extends Service {
   private imagesDir: string;
   private flushTimer?: ReturnType<typeof setInterval>;
   private cleanupTimer?: ReturnType<typeof setInterval>;
-  private config: ImageCacheConfig;
-  private logger;
 
   constructor(ctx: Context, config?: Partial<ImageCacheConfig>) {
     super(ctx, "yesimbot.image-cache", false);
@@ -109,6 +108,23 @@ export class ImageCacheService extends Service {
     } catch (error) {
       this.logger.warn(`Failed to read image file ${filePath}, removing entry: ${error}`);
       this.removeEntry(id);
+      return undefined;
+    }
+  }
+
+  getSync(id: string): CacheEntry | undefined {
+    const meta = this.index.get(id);
+    if (!meta) return undefined;
+
+    const filePath = join(this.imagesDir, `${meta.id}.${meta.ext}`);
+    try {
+      const buffer = readFileSync(filePath);
+      return {
+        base64: buffer.toString("base64"),
+        mediaType: meta.mediaType,
+        status: "ok",
+      };
+    } catch {
       return undefined;
     }
   }
