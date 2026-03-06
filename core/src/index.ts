@@ -25,6 +25,28 @@ import { TraitAnalyzer } from "./services/trait";
 export const name = "yesimbot";
 export const inject = ["database"];
 
+declare module "koishi" {
+  interface Events {
+    "athena:willingness.changed": (
+      channelKey: { platform: string; channelId: string },
+      oldValue: number,
+      newValue: number,
+    ) => void;
+
+    "athena:timeline.compressed": (
+      channelKey: { platform: string; channelId: string },
+      beforeCount: number,
+      afterCount: number,
+    ) => void;
+
+    "athena:cache.evicted": (
+      cacheType: "image" | "entity",
+      id: string,
+      reason: "ttl" | "lru" | "manual",
+    ) => void;
+  }
+}
+
 export type Config = AgentCoreConfig &
   HorizonServiceConfig &
   ModelServiceConfig &
