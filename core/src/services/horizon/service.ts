@@ -42,6 +42,7 @@ export interface HorizonServiceConfig {
   entityCacheTtl?: number;
   maxActiveEntities?: number;
   summaryModel?: string;
+  cleanupIntervalMs?: number;
 }
 
 export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
@@ -64,6 +65,9 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
   summaryModel: Schema.string().description(
     "Model ID for summary generation (e.g., 'openai:gpt-4o-mini')",
   ),
+  cleanupIntervalMs: Schema.number()
+    .default(3_600_000)
+    .description("Interval in ms for periodic cleanup (default: 1 hour)"),
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
@@ -79,6 +83,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private botRoleCache = new Map<string, { role: Role | null; fetchedAt: number }>();
 
   private environments: EnvironmentManager;
+  private cleanupTimer?: ReturnType<typeof setInterval>;
 
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
@@ -125,12 +130,38 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     );
 
     this.listener.start();
+    this.cleanupTimer = setInterval(
+      () => this.runCleanup(),
+      this.config.cleanupIntervalMs ?? 3_600_000,
+    );
     this.logger.info("HorizonService started");
   }
 
   protected async stop(): Promise<void> {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     this.botRoleCache.clear();
     this.logger.info("HorizonService stopped");
+  }
+
+  private async runCleanup(): Promise<void> {
+    try {
+      // Remove all entries in Deleted stage across all channels
+      const deletedResult = await this.ctx.database.remove("yesimbot.timeline", {
+        stage: TimelineStage.Deleted,
+      } as any);
+      const deletedCount = typeof deletedResult === "number" ? deletedResult : 0;
+
+      // Clean up expired environment caches
+      const envRemoved = this.environments.cleanup();
+
+      if (deletedCount || envRemoved) {
+        this.logger.info(
+          `cleanup: removed ${deletedCount} deleted timeline entries, ${envRemoved} expired environments`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn("cleanup failed:", e);
+    }
   }
 
   private classifyRole(roles: string[]): Role | null {
@@ -380,7 +411,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       imageConfig,
       shortIdAssigner: (ck: string, msgId: string) => this.assignShortId(ck, msgId),
       getShortId: (ck: string, msgId: string) => this.getShortId(ck, msgId),
-      getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].get(id),
+      getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].getSync(id),
       parseElements: (text: string) => h.parse(text),
     };
 
