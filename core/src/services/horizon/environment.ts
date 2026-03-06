@@ -15,6 +15,23 @@ export class EnvironmentManager {
     this.db = new JsonDB(path.join(ctx.baseDir, "data", "yesimbot", "environments.json"), {});
   }
 
+  cleanup(): number {
+    const data = this.db.getData();
+    const now = Date.now();
+    let removed = 0;
+    for (const [id, env] of Object.entries(data)) {
+      const updatedAt = new Date(env.updatedAt).getTime();
+      if (now - updatedAt > this.cacheTtl) {
+        this.db.update((d) => {
+          delete d[id];
+        });
+        removed++;
+      }
+    }
+    if (removed > 0) this.db.commit();
+    return removed;
+  }
+
   async getOrCreate(key: ChannelKey, session?: Session): Promise<Environment | null> {
     if (!key.channelId) return null;
     const id = `${key.platform}:${key.channelId}`;

@@ -221,4 +221,16 @@ export class EventManager {
     } as unknown as Query.Expr<TimelineEntry>;
     await this.ctx.database.set(TIMELINE_TABLE, query, { stage: TimelineStage.Archived });
   }
+
+  async deleteStale(key: ChannelKey, stage: TimelineStage): Promise<number> {
+    const query = {
+      platform: key.platform,
+      channelId: key.channelId,
+      stage: stage,
+    } as unknown as Query.Expr<TimelineEntry>;
+    const entries = await this.ctx.database.select(TIMELINE_TABLE).where(query).execute();
+    if (entries.length === 0) return 0;
+    await this.ctx.database.remove(TIMELINE_TABLE, query);
+    return entries.length;
+  }
 }
