@@ -26,6 +26,7 @@ export const name = "yesimbot";
 export const inject = ["database"];
 
 export { HookService } from "./services/hook/service";
+export { Hook } from "./services/hook/decorators";
 export type {
   HookType,
   HookPhase,
