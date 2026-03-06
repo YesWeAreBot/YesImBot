@@ -147,6 +147,15 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
       promptInjections: [],
       styleOverride: null,
       toolFilter: { include: [], exclude: [] },
+      activeSkills: sorted.map((s) => ({
+        name: s.name,
+        effects: [
+          ...(s.effects.prompt ? ["prompt"] : []),
+          ...(s.effects.style ? ["style"] : []),
+          ...(s.effects.tools ? ["tools"] : []),
+        ],
+        metadata: { description: s.description },
+      })),
     };
 
     let bestStyle: {

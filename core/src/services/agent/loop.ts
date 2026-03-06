@@ -74,13 +74,6 @@ export class ThinkActLoop {
       },
     );
 
-    const toolCtxWithPercept = {
-      ...toolCtx,
-      percept,
-      botRole: view.self?.role,
-      entities: view.entities,
-    };
-
     // Trait-Skill pipeline: analyze context, resolve active skills
     const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
     const skill = this.ctx["yesimbot.skill"] as SkillRegistry;
@@ -92,6 +85,16 @@ export class ThinkActLoop {
       platform: percept.platform,
       channelId: percept.channelId,
     });
+
+    const toolCtxWithPercept = {
+      ...toolCtx,
+      percept,
+      botRole: view.self?.role,
+      entities: view.entities,
+      view,
+      traits: signals,
+      skills: effects.activeSkills,
+    };
 
     const disposers: Array<() => void> = [];
 
