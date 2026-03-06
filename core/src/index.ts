@@ -25,6 +25,16 @@ import { TraitAnalyzer } from "./services/trait";
 export const name = "yesimbot";
 export const inject = ["database"];
 
+export { HookService } from "./services/hook/service";
+export type {
+  HookType,
+  HookPhase,
+  HookContext,
+  HookDefinition,
+  BeforeHookResult,
+  HookHandler,
+} from "./services/hook/types";
+
 declare module "koishi" {
   interface Events {
     "athena:willingness.changed": (

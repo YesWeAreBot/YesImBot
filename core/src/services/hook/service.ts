@@ -12,11 +12,9 @@ export class HookService extends Service {
   static inject = [];
 
   private hooks = new Map<string, RegisteredHook>();
-  private logger;
 
   constructor(ctx: Context) {
     super(ctx, "hook", true);
-    this.logger = ctx.logger("hook");
   }
 
   register(ctx: Context, def: HookDefinition): () => void {
