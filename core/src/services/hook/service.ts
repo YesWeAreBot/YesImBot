@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 
 import { Context, Service } from "koishi";
 
-import type { HookDefinition, HookType, HookPhase } from "./types";
+import type { HookDefinition, HookType, HookPhase, HookContext, BeforeHookResult } from "./types";
 
 interface RegisteredHook extends HookDefinition {
   ctx: Context;
@@ -12,9 +12,11 @@ export class HookService extends Service {
   static inject = [];
 
   private hooks = new Map<string, RegisteredHook>();
+  private logger;
 
   constructor(ctx: Context) {
     super(ctx, "hook", true);
+    this.logger = ctx.logger("hook");
   }
 
   register(ctx: Context, def: HookDefinition): () => void {
@@ -32,5 +34,92 @@ export class HookService extends Service {
 
   getHooks(type: HookType, phase: HookPhase): RegisteredHook[] {
     return Array.from(this.hooks.values()).filter((h) => h.type === type && h.phase === phase);
+  }
+
+  async executeBefore<T>(
+    type: HookType,
+    params: T,
+    traceId?: string,
+  ): Promise<{ params: T; skipped: boolean; result?: unknown }> {
+    const hooks = this.getHooks(type, "before" as HookPhase);
+    let currentParams = params;
+
+    for (const hook of hooks) {
+      const hookCtx: HookContext<T> = {
+        type,
+        phase: "before" as HookPhase,
+        params: currentParams,
+        traceId,
+      };
+
+      try {
+        const timeout = hook.timeout || 5000;
+        const result = (await Promise.race([
+          hook.handler(hookCtx),
+          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), timeout)),
+        ])) as BeforeHookResult<T> | void;
+
+        if (!result) continue;
+
+        if ("skip" in result && result.skip) {
+          return { params: currentParams, skipped: true, result: result.result };
+        }
+
+        if ("modified" in result && result.modified) {
+          currentParams = result.params;
+        }
+      } catch (error) {
+        this.logger.warn(`Hook ${hook.id} failed:`, error);
+      }
+    }
+
+    return { params: currentParams, skipped: false };
+  }
+
+  async executeAfter<T>(
+    type: HookType,
+    params: T,
+    result: unknown,
+    traceId?: string,
+  ): Promise<void> {
+    const hooks = this.getHooks(type, "after" as HookPhase);
+
+    for (const hook of hooks) {
+      const hookCtx: HookContext<T> = {
+        type,
+        phase: "after" as HookPhase,
+        params,
+        result,
+        traceId,
+      };
+
+      try {
+        const timeout = hook.timeout || 5000;
+        await Promise.race([
+          hook.handler(hookCtx),
+          new Promise((resolve) => setTimeout(resolve, timeout)),
+        ]);
+      } catch (error) {
+        this.logger.warn(`Hook ${hook.id} failed:`, error);
+      }
+    }
+  }
+
+  async executeError<T>(type: HookType, params: T, error: Error, traceId?: string): Promise<void> {
+    const hooks = this.getHooks(type, "error" as HookPhase);
+
+    for (const hook of hooks) {
+      const hookCtx: HookContext<T> = { type, phase: "error" as HookPhase, params, error, traceId };
+
+      try {
+        const timeout = hook.timeout || 5000;
+        await Promise.race([
+          hook.handler(hookCtx),
+          new Promise((resolve) => setTimeout(resolve, timeout)),
+        ]);
+      } catch (err) {
+        this.logger.warn(`Hook ${hook.id} failed:`, err);
+      }
+    }
   }
 }
