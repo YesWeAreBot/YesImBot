@@ -1,12 +1,14 @@
 import { Context, Service } from "koishi";
 
 import type { ModelService } from "../model/service";
+import type { HorizonView } from "../horizon/types";
 import type { ChannelKey } from "../shared/types";
 import type { HorizonService } from "../horizon/service";
 import { TimelineEventType, TimelineStage } from "../horizon/types";
 import type { MemoryAgentConfig, MemoryRecord } from "./types";
 import { MemoryType, MemoryScope } from "./types";
 import { runMemoryExtraction } from "./agent";
+import { MemoryRecallPlugin } from "./recall-plugin";
 
 declare module "koishi" {
   interface Context {
@@ -31,7 +33,7 @@ const DEFAULT_CONFIG: MemoryAgentConfig = {
 };
 
 export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
-  static inject = ["database", "yesimbot.model", "yesimbot.horizon"];
+  static inject = ["database", "yesimbot.model", "yesimbot.horizon", "yesimbot.prompt"];
 
   private extractionInProgress = new Map<string, Promise<void>>();
   private agentConfig: MemoryAgentConfig;
@@ -69,6 +71,27 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
       "athena:timeline.compressed",
       (channelKey) => this.onTimelineCompressed(channelKey),
     );
+
+    // Inject core memories into prompt "extra" section
+    const promptService = this.ctx["yesimbot.prompt"];
+    promptService.inject(this.ctx, "extra", {
+      name: "__core_memories",
+      renderFn: async (scope) => {
+        const view = scope.view as HorizonView | undefined;
+        if (!view?.environment) return "";
+        const key: ChannelKey = {
+          platform: view.environment.platform,
+          channelId: view.environment.channelId,
+        };
+        const memories = await this.getCoreMemories(key, view.environment.platform);
+        if (memories.length === 0) return "";
+        const lines = memories.map((m) => `- [${m.type}] ${m.content}`);
+        return `<core_memories>\n${lines.join("\n")}\n</core_memories>`;
+      },
+    });
+
+    // Register recall tool plugin
+    this.ctx.plugin(MemoryRecallPlugin);
 
     this.logger.info("MemoryAgentService started");
   }
@@ -130,6 +153,26 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
     } catch (err) {
       this.logger.warn(`Memory extraction failed for ${key}:`, err);
     }
+  }
+
+  /**
+   * Get core memories for a channel, respecting scope visibility rules.
+   * - User-level memories are always visible
+   * - Channel-level memories only in that channel
+   * - Private-level memories only in DMs (caller must filter)
+   */
+  async getCoreMemories(channelKey: ChannelKey, platform: string): Promise<MemoryRecord[]> {
+    const scopeId = `${platform}:${channelKey.channelId}`;
+
+    const memories = await this.ctx.database.get("yesimbot.memory", {
+      isCore: true,
+      $or: [
+        { scope: MemoryScope.User, platform },
+        { scope: MemoryScope.Channel, scopeId },
+      ],
+    });
+
+    return memories as MemoryRecord[];
   }
 
   /**
