@@ -146,6 +146,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     };
     this.loop = new ThinkActLoop(this.ctx, this.config);
     this.ctx.on("horizon/message", (event) => this.handleEvent(event));
+    this.ctx.on("athena:heartbeat", (data) => this.handleHeartbeat(data));
     this.logger.info("AgentCore started");
   }
 
@@ -211,6 +212,42 @@ export class AgentCore extends Service<AgentCoreConfig> {
       this.pendingWindows.set(channelKey, { cancel, lastEvent: event });
     } catch (err: unknown) {
       this.logger.error(`handleEvent error: ${err}`);
+    }
+  }
+
+  private handleHeartbeat(data: {
+    platform: string;
+    channelId: string;
+    triggeredBy: string;
+  }): void {
+    try {
+      const channelKey = `${data.platform}:${data.channelId}`;
+      const traceId = `hb-${Random.id(8, 16)}`;
+
+      this.logger.info(`[heartbeat] channel=${channelKey} triggered by=${data.triggeredBy}`);
+
+      const built: LoopPayload = {
+        percept: {
+          id: Random.id(),
+          traceId,
+          type: "internal",
+          platform: data.platform,
+          channelId: data.channelId,
+          timestamp: new Date(),
+          metadata: {
+            isHeartbeat: true,
+            triggeredBy: data.triggeredBy,
+          },
+        },
+        toolCtx: {
+          platform: data.platform,
+          channelId: data.channelId,
+        },
+      };
+
+      this.enqueue(channelKey, built);
+    } catch (err: unknown) {
+      this.logger.error(`handleHeartbeat error: ${err}`);
     }
   }
 

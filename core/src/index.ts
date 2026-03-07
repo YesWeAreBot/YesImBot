@@ -5,10 +5,14 @@ import zhCN from "./locales/zh-CN.json";
 import type { AgentCoreConfig } from "./services/agent";
 import { AgentCore } from "./services/agent";
 import { WillingnessSchema } from "./services/agent/willingness";
+import type { ArousalConfig } from "./services/arousal";
+import { ArousalService } from "./services/arousal";
 import { FormatterService } from "./services/formatter";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
 import { ImageCacheService } from "./services/image-cache/service";
+import type { MemoryAgentServiceConfig } from "./services/memory-agent";
+import { MemoryAgentService } from "./services/memory-agent";
 import type { ModelServiceConfig } from "./services/model";
 import { ModelService } from "./services/model";
 import type { PluginServiceConfig } from "./services/plugin";
@@ -54,7 +58,9 @@ export type Config = AgentCoreConfig &
   PromptServiceConfig &
   RoleServiceConfig &
   SkillRegistryConfig &
-  TraitAnalyzerConfig;
+  TraitAnalyzerConfig &
+  MemoryAgentServiceConfig &
+  { arousal: ArousalConfig };
 
 export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
@@ -127,6 +133,30 @@ export const Config: Schema<Config> = Schema.intersect([
     maxImagesInContext: Schema.number().default(3),
     imageLifecycleCount: Schema.number().default(3),
   }),
+
+  // ── 记忆代理 ──
+  Schema.object({
+    memoryAgent: Schema.object({
+      compressionThreshold: Schema.number().default(80),
+      compressionIntervalMs: Schema.number().default(3600000),
+      inactivityTriggerMs: Schema.number().default(1800000),
+      coreMemoryBudget: Schema.number().default(2000),
+      summaryModel: Schema.dynamic("registry.chatModels"),
+      maxAgentSteps: Schema.number().default(15),
+      retainRecentEntries: Schema.number().default(10),
+    }),
+  }),
+
+  // ── 主动唤醒 ──
+  Schema.object({
+    arousal: Schema.object({
+      enabled: Schema.boolean().default(false),
+      heartbeatIntervalMs: Schema.number().default(1800000),
+      excludeChannels: Schema.array(Schema.string()).default([]),
+      dailyMessageLimit: Schema.number().default(3),
+      evaluationModel: Schema.dynamic("registry.chatModels"),
+    }),
+  }),
 ]).i18n({
   "zh-CN": zhCN._config,
   "en-US": enUS._config,
@@ -173,6 +203,10 @@ export function apply(ctx: Context, config: Config) {
     maxImagesInContext: config.maxImagesInContext,
     imageLifecycleCount: config.imageLifecycleCount,
   });
+  ctx.plugin(MemoryAgentService, {
+    memoryAgent: config.memoryAgent,
+  });
+  ctx.plugin(ArousalService, config.arousal);
 
   ctx.on("ready", () => {
     logger.info("YesImBot core plugin initialized");
