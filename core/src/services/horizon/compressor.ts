@@ -5,19 +5,102 @@ import { ChannelKey } from "../shared/types";
 import { EventManager } from "./manager";
 import { TimelineEntry, SummaryRecord, TimelineEventType, TimelineStage } from "./types";
 
+export interface CompressorConfig {
+  compressionThreshold: number; // Event count to trigger (default: 80)
+  inactivityTriggerMs: number; // Inactivity period to trigger (default: 1800000 = 30min)
+  retainRecentEntries: number; // Keep N most recent entries uncompressed (default: 10)
+}
+
+const DEFAULT_CONFIG: CompressorConfig = {
+  compressionThreshold: 80,
+  inactivityTriggerMs: 1800000,
+  retainRecentEntries: 10,
+};
+
 export class SummaryCompressor {
   private logger: Logger;
   private compressionInProgress = new Map<string, Promise<void>>();
+  private lastCompressionTime = new Map<string, number>();
+  private config: CompressorConfig;
 
   constructor(
     private ctx: Context,
     private events: EventManager,
     private summaryModel?: string,
+    config?: Partial<CompressorConfig>,
   ) {
     this.logger = ctx.logger("horizon.compressor");
+    this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  async compress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<void> {
+  /**
+   * Check hybrid trigger conditions and compress if needed.
+   * Triggers on:
+   *   a) Event count >= compressionThreshold
+   *   b) Time since last compression >= inactivityTriggerMs AND event count > retainRecentEntries
+   */
+  async maybeCompress(channelKey: ChannelKey): Promise<void> {
+    const key = `${channelKey.platform}:${channelKey.channelId}`;
+
+    // Skip if compression already in progress for this channel
+    if (this.compressionInProgress.has(key)) {
+      this.logger.debug(`Compression already in progress for ${key}, skipping`);
+      return;
+    }
+
+    // Query active timeline entries for this channel
+    const entries = await this.events.query({
+      key: channelKey,
+      types: [
+        TimelineEventType.Message,
+        TimelineEventType.AgentResponse,
+        TimelineEventType.AgentAction,
+        TimelineEventType.Heartbeat,
+      ],
+      orderBy: "asc",
+    });
+
+    const entryCount = entries.length;
+    const now = Date.now();
+    const lastTime = this.lastCompressionTime.get(key);
+
+    // Initialize lastCompressionTime if not set
+    if (lastTime === undefined) {
+      this.lastCompressionTime.set(key, now);
+      // Only trigger on event count for the very first check (no time baseline yet)
+      if (entryCount < this.config.compressionThreshold) {
+        return;
+      }
+    }
+
+    // Check hybrid trigger conditions
+    const countTrigger = entryCount >= this.config.compressionThreshold;
+    const timeSinceLastCompression = now - (this.lastCompressionTime.get(key) ?? now);
+    const inactivityTrigger =
+      timeSinceLastCompression >= this.config.inactivityTriggerMs &&
+      entryCount > this.config.retainRecentEntries;
+
+    if (!countTrigger && !inactivityTrigger) {
+      return;
+    }
+
+    this.logger.info(
+      `Compression triggered for ${key}: count=${entryCount}, ` +
+        `countTrigger=${countTrigger}, inactivityTrigger=${inactivityTrigger}`,
+    );
+
+    // Compress, retaining recent entries
+    await this.compress(channelKey, entries, this.config.retainRecentEntries);
+
+    // Update last compression time
+    this.lastCompressionTime.set(key, Date.now());
+  }
+
+  async compress(
+    channelKey: ChannelKey,
+    entries: TimelineEntry[],
+    retainCount?: number,
+  ): Promise<void> {
     const key = `${channelKey.platform}:${channelKey.channelId}`;
 
     // Deduplication: if compression already in progress for this channel, skip
@@ -26,8 +109,20 @@ export class SummaryCompressor {
       return;
     }
 
+    // When retainCount is specified, split entries into compressible and retained
+    let entriesToCompress = entries;
+    if (retainCount !== undefined && retainCount > 0) {
+      const splitIndex = Math.max(0, entries.length - retainCount);
+      entriesToCompress = entries.slice(0, splitIndex);
+
+      if (entriesToCompress.length === 0) {
+        this.logger.debug(`All entries within retain window (${entries.length} <= ${retainCount}), skipping`);
+        return;
+      }
+    }
+
     // Create promise and store it
-    const compressionPromise = this.doCompress(channelKey, entries).finally(() => {
+    const compressionPromise = this.doCompress(channelKey, entriesToCompress).finally(() => {
       this.compressionInProgress.delete(key);
     });
 

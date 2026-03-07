@@ -157,19 +157,23 @@ describe("SummaryCompressor hybrid triggers", () => {
       );
       mockEvents.query.mockResolvedValue(entries);
 
-      // Make model call slow to keep compression in progress
+      // Use a deferred promise to control when model call resolves
+      let resolveModel!: (value: { text: string }) => void;
       mockModelService.call.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ text: "summary" }), 5000)),
+        () => new Promise((resolve) => { resolveModel = resolve; }),
       );
 
       // Start first compression (won't complete immediately)
       const promise1 = compressor.maybeCompress(channelKey);
 
-      // Second call should skip
+      // Allow microtasks to settle so compression starts
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Second call should skip because first is still in progress
       const promise2 = compressor.maybeCompress(channelKey);
 
-      // Advance timers to let both complete
-      vi.advanceTimersByTime(5000);
+      // Resolve the model call
+      resolveModel({ text: "summary" });
       await Promise.all([promise1, promise2]);
 
       // Model should only be called once
@@ -218,20 +222,33 @@ describe("SummaryCompressor hybrid triggers", () => {
 
   describe("lastCompressionTime tracking", () => {
     it("updates lastCompressionTime after successful compression", async () => {
+      // Use entries above threshold to trigger first compression
       const entries = createTimelineSequence(85, (i) =>
         createMessageRecord({ index: i, minutesOffset: i }),
       );
       mockEvents.query.mockResolvedValue(entries);
 
-      const beforeTime = Date.now();
       await compressor.maybeCompress(channelKey);
-      const afterTime = Date.now();
-
-      // Second call should not trigger because time hasn't passed
-      await compressor.maybeCompress(channelKey);
-
-      // Model should only be called once (first trigger, second skipped due to recent compression)
       expect(mockModelService.call).toHaveBeenCalledTimes(1);
+
+      // Now reduce entries to below count threshold but above retainRecentEntries
+      const fewerEntries = createTimelineSequence(20, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(fewerEntries);
+
+      // Second call immediately -- time hasn't passed, count below threshold
+      await compressor.maybeCompress(channelKey);
+
+      // Model should still only be called once (not enough time or count)
+      expect(mockModelService.call).toHaveBeenCalledTimes(1);
+
+      // Now advance time past inactivity threshold and call again
+      vi.advanceTimersByTime(1800001);
+      await compressor.maybeCompress(channelKey);
+
+      // Now should trigger (inactivity + entries > retainRecentEntries)
+      expect(mockModelService.call).toHaveBeenCalledTimes(2);
     });
   });
 });
