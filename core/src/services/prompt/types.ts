@@ -16,7 +16,3 @@ export interface Section {
 }
 
 export type Snippet = (currentScope: Record<string, unknown>) => unknown | Promise<unknown>;
-
-export interface RenderOptions {
-  maxDepth?: number;
-}

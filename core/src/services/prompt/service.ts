@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
 
-import { MustacheRenderer } from "./renderer";
+import { HandlebarsRenderer } from "./renderer";
 import type { InjectionEntry, InjectionPoint, Section, Snippet } from "./types";
 import { INJECTION_POINTS } from "./types";
 
@@ -27,7 +27,7 @@ export class PromptService extends Service<PromptServiceConfig> {
   private snippets = new Map<string, Snippet>();
   private injections = new Map<InjectionPoint, InjectionEntry[]>();
   private partials = new Map<string, string>();
-  private renderer = new MustacheRenderer();
+  private renderer = new HandlebarsRenderer();
 
   constructor(ctx: Context, config: PromptServiceConfig) {
     super(ctx, "yesimbot.prompt", true);

@@ -2,7 +2,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, watch, type FSWatcher } fr
 import { join, resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
-import Mustache from "mustache";
+
+import { HandlebarsRenderer } from "../prompt/renderer";
 
 import type { HorizonView } from "../horizon";
 import type { PromptService } from "../prompt/service";
@@ -29,6 +30,7 @@ export class RoleService extends Service<RoleServiceConfig> {
   static Config = RoleServiceConfigSchema;
 
   private prompt: PromptService;
+  private templateRenderer = new HandlebarsRenderer();
   private watcher: FSWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private disposers: Array<() => void> = [];
@@ -118,11 +120,11 @@ export class RoleService extends Service<RoleServiceConfig> {
 
   private renderSafe(name: string, content: string, scope: Record<string, unknown>): string {
     try {
-      const rendered = Mustache.render(content, scope);
+      const rendered = this.templateRenderer.render(content, scope, `role:${name}`);
       this.lastValid.set(name, rendered);
       return rendered;
     } catch (e) {
-      this.logger.warn("Mustache render error in %s: %s", name, e);
+      this.logger.warn("Template render error in %s: %s", name, e);
       return this.lastValid.get(name) ?? content;
     }
   }

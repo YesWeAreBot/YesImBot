@@ -1,43 +1,98 @@
-import Mustache from "mustache";
+import Handlebars from "handlebars";
 
-import type { RenderOptions } from "./types";
+import { HelperRegistry, registerBuiltinHelpers } from "./helpers";
 
-Mustache.escape = (text) => text;
+/**
+ * Handlebars-based template renderer with precompilation caching.
+ *
+ * Uses an isolated Handlebars instance (via Handlebars.create()) to prevent
+ * helper/partial leaks between tests and production. HTML escaping is disabled
+ * since all prompt content needs unescaped rendering (XML tags like <timeline>, <msg>).
+ */
+export class HandlebarsRenderer {
+  private readonly hbs: typeof Handlebars;
+  private readonly templateCache = new Map<string, HandlebarsTemplateDelegate>();
+  private readonly registry: HelperRegistry;
 
-export class MustacheRenderer {
-  parse(template: string): { variables: Set<string>; partials: Set<string> } {
-    const tokens = Mustache.parse(template);
-    const variables = new Set<string>();
-    const partials = new Set<string>();
-    const traverse = (toks: unknown[][]) => {
-      for (const t of toks) {
-        if (t[0] === "name" || t[0] === "#" || t[0] === "^" || t[0] === "&") {
-          variables.add(t[1] as string);
-        } else if (t[0] === ">") {
-          partials.add(t[1] as string);
-        }
-        if (t[4] && Array.isArray(t[4])) traverse(t[4] as unknown[][]);
-      }
+  constructor() {
+    // Create isolated instance to avoid global pollution
+    this.hbs = Handlebars.create();
+
+    // Disable HTML escaping — prompts are not user-facing HTML.
+    // Coerce undefined/null to empty string (missing variables produce empty output)
+    // Handlebars passes the raw value (which may be undefined) to escapeExpression
+    this.hbs.Utils.escapeExpression = (str) => {
+      if (str == null) return "";
+      return String(str);
     };
-    traverse(tokens as unknown[][]);
-    return { variables, partials };
+
+    // Register built-in helpers
+    registerBuiltinHelpers(this.hbs);
+
+    // Create helper registry for custom helpers
+    this.registry = new HelperRegistry(this.hbs);
   }
 
-  render(
-    template: string,
-    scope: Record<string, unknown>,
-    partials?: Record<string, string>,
-    options?: RenderOptions,
-  ): string {
-    const maxDepth = options?.maxDepth ?? 3;
-    let output = template;
-    let prev = "";
-    let depth = 0;
-    while (output !== prev && depth < maxDepth) {
-      prev = output;
-      output = Mustache.render(prev, scope, partials);
-      depth++;
+  /**
+   * Compile a template source string, optionally caching the compiled function.
+   * When a cacheKey is provided and a cached version exists, the cached function is returned.
+   */
+  compile(source: string, cacheKey?: string): HandlebarsTemplateDelegate {
+    if (cacheKey) {
+      const cached = this.templateCache.get(cacheKey);
+      if (cached) return cached;
     }
-    return output;
+
+    const compiled = this.hbs.compile(source);
+
+    if (cacheKey) {
+      this.templateCache.set(cacheKey, compiled);
+    }
+
+    return compiled;
+  }
+
+  /**
+   * Render a template with the given context.
+   * When a cacheKey is provided, the compiled template is cached for reuse.
+   */
+  render(source: string, context: Record<string, unknown>, cacheKey?: string): string {
+    const template = this.compile(source, cacheKey);
+    return template(context);
+  }
+
+  /**
+   * Flush all cached compiled templates.
+   */
+  clearCache(): void {
+    this.templateCache.clear();
+  }
+
+  /**
+   * Register a custom helper on this renderer's Handlebars instance.
+   */
+  registerHelper(name: string, fn: (...args: unknown[]) => unknown): void {
+    this.registry.register(name, fn as Handlebars.HelperDelegate);
+  }
+
+  /**
+   * Unregister a custom helper.
+   */
+  unregisterHelper(name: string): void {
+    this.registry.unregister(name);
+  }
+
+  /**
+   * Register a partial template.
+   */
+  registerPartial(name: string, content: string): void {
+    this.hbs.registerPartial(name, content);
+  }
+
+  /**
+   * Unregister a partial template.
+   */
+  unregisterPartial(name: string): void {
+    this.hbs.unregisterPartial(name);
   }
 }
