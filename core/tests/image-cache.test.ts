@@ -1,5 +1,6 @@
 import { Context } from "koishi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 import { ImageCacheService } from "../src/services/image-cache/service";
 import type { ImageMetadata } from "../src/services/image-cache/types";
@@ -34,6 +35,11 @@ vi.mock("../src/utils/jsondb", () => ({
 describe("ImageCacheService", () => {
   let ctx: Context;
   let service: ImageCacheService;
+  let logger: {
+    info: ReturnType<typeof vi.fn>;
+    warn: ReturnType<typeof vi.fn>;
+    error: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,16 +47,18 @@ describe("ImageCacheService", () => {
     // Reset the shared mock
     sharedMockDb = createMockDb();
 
+    logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
     ctx = {
       baseDir: "/test",
       http: {
         get: vi.fn(),
       },
-      logger: vi.fn(() => ({
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      })),
+      logger: vi.fn(() => logger),
     } as unknown as Context;
   });
 
@@ -58,6 +66,10 @@ describe("ImageCacheService", () => {
     it("should create cache directories", async () => {
       const fs = await import("node:fs/promises");
       service = new ImageCacheService(ctx);
+      Object.defineProperty(service, "ctx", {
+        get: () => ctx,
+      });
+      expect((service as unknown as { ctx: Context }).ctx).toBe(ctx);
       await service.start();
       expect(fs.mkdir).toHaveBeenCalledWith(expect.stringContaining("images"), { recursive: true });
     });
@@ -281,6 +293,47 @@ describe("ImageCacheService", () => {
       expect(result1).toHaveLength(16); // Should be a hash
     });
 
+    it("should write downloaded image file and persist metadata on success", async () => {
+      const fs = await import("node:fs/promises");
+      const buffer = Buffer.from("downloaded-image-bytes");
+      const url = "https://example.com/photo.png";
+      const contentHash = createHash("sha256").update(buffer).digest("hex");
+      const contentId = contentHash.slice(0, 16);
+      (ctx.http.get as unknown).mockResolvedValue(buffer);
+
+      sharedMockDb.getData.mockReturnValue({});
+
+      service = new ImageCacheService(ctx);
+      Object.defineProperty(service, "ctx", {
+        value: ctx,
+        configurable: true,
+      });
+      await service.start();
+
+      const result = await service.download(url);
+
+      expect(ctx.http.get).toHaveBeenCalledWith(url, { responseType: "arraybuffer" });
+      expect(result).toBe(contentId);
+      expect(fs.writeFile).toHaveBeenCalledWith(
+        expect.stringContaining(`${contentId}.png`),
+        buffer,
+      );
+      expect(sharedMockDb.set).toHaveBeenCalledWith(
+        contentId,
+        expect.objectContaining({
+          id: contentId,
+          url,
+          contentHash,
+          mediaType: "image/png",
+          ext: "png",
+          size: buffer.byteLength,
+          accessCount: 0,
+          createdAt: expect.any(Number),
+          lastAccessedAt: expect.any(Number),
+        }),
+      );
+    });
+
     it("should trigger LRU eviction when over capacity", async () => {
       sharedMockDb.getData.mockReturnValue({});
 
@@ -396,6 +449,50 @@ describe("ImageCacheService", () => {
 
       // Verify old entry was removed
       expect(sharedMockDb.update).toHaveBeenCalled();
+    });
+
+    it("should execute periodic cleanup timer", async () => {
+      const fs = await import("node:fs/promises");
+      const now = new Date("2026-03-08T00:00:00.000Z");
+      const mockMetadata: Record<string, ImageMetadata> = {
+        expired123: {
+          id: "expired123",
+          url: "https://example.com/expired.jpg",
+          contentHash: "expired-hash",
+          mediaType: "image/jpeg",
+          ext: "jpg",
+          size: 512,
+          createdAt: now.getTime() - 5_000,
+          lastAccessedAt: now.getTime() - 5_000,
+          accessCount: 0,
+        },
+      };
+
+      sharedMockDb.getData.mockReturnValue(mockMetadata);
+      (fs.access as unknown as { mockResolvedValue: (v: undefined) => void }).mockResolvedValue(
+        undefined,
+      );
+
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(now);
+        service = new ImageCacheService(ctx, {
+          maxCachedImages: 1000,
+          imageTtlMs: 1_000,
+          flushIntervalMs: 60_000,
+          cleanupIntervalMs: 1_000,
+        });
+        const cleanupSpy = vi.spyOn(service as unknown as { cleanup: () => void }, "cleanup");
+        await service.start();
+
+        await vi.advanceTimersByTimeAsync(1_000);
+
+        expect(cleanupSpy).toHaveBeenCalledTimes(1);
+        expect(sharedMockDb.update).toHaveBeenCalled();
+      } finally {
+        await service.stop();
+        vi.useRealTimers();
+      }
     });
   });
 

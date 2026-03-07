@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { EnvironmentManager } from "../src/services/horizon/environment";
 import { EventManager } from "../src/services/horizon/manager";
+import { HorizonService } from "../src/services/horizon/service";
 import { TimelineStage } from "../src/services/horizon/types";
 import { createMessageRecord } from "./fixtures/timeline-entries";
 
@@ -191,5 +192,62 @@ describe("EnvironmentManager.cleanup", () => {
 
     expect(removed).toBe(0);
     expect(mockCommit).not.toHaveBeenCalled();
+  });
+});
+
+// ---- HorizonService.runCleanup Orchestration Tests ----
+
+describe("HorizonService.runCleanup", () => {
+  function createCleanupHarness({
+    deletedResult = 0,
+    environmentRemoved = 0,
+  }: {
+    deletedResult?: number;
+    environmentRemoved?: number;
+  }) {
+    const remove = vi.fn().mockResolvedValue(deletedResult);
+    const cleanup = vi.fn().mockReturnValue(environmentRemoved);
+    const info = vi.fn();
+    const warn = vi.fn();
+
+    const service = Object.create(HorizonService.prototype) as HorizonService;
+    Object.defineProperty(service, "ctx", {
+      value: { database: { remove } },
+      configurable: true,
+    });
+    Object.defineProperty(service, "environments", {
+      value: { cleanup },
+      configurable: true,
+    });
+    Object.defineProperty(service, "logger", {
+      value: { info, warn },
+      configurable: true,
+    });
+
+    return { service, remove, cleanup, info, warn };
+  }
+
+  it("should orchestrate Deleted-stage timeline cleanup", async () => {
+    const { service, remove } = createCleanupHarness({ deletedResult: 2, environmentRemoved: 0 });
+
+    await (service as unknown as { runCleanup: () => Promise<void> }).runCleanup();
+
+    expect(remove).toHaveBeenCalledWith("yesimbot.timeline", {
+      stage: TimelineStage.Deleted,
+    });
+  });
+
+  it("should call environment cleanup during HorizonService cleanup", async () => {
+    const { service, cleanup, info } = createCleanupHarness({
+      deletedResult: 0,
+      environmentRemoved: 3,
+    });
+
+    await (service as unknown as { runCleanup: () => Promise<void> }).runCleanup();
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(
+      "cleanup: removed 0 deleted timeline entries, 3 expired environments",
+    );
   });
 });
