@@ -37,6 +37,7 @@ export enum TimelineEventType {
   AgentResponse = "agent.response",
   AgentAction = "agent.action",
   Summary = "summary",
+  Heartbeat = "heartbeat",
 }
 
 export enum TimelinePriority {
@@ -105,7 +106,19 @@ export interface SummaryData {
 
 export type SummaryRecord = BaseTimelineEntry<TimelineEventType.Summary, SummaryData>;
 
-export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord | SummaryRecord;
+export interface HeartbeatData {
+  triggeredBy: "global" | "manual";
+  channelSummary?: string;
+}
+
+export type HeartbeatRecord = BaseTimelineEntry<TimelineEventType.Heartbeat, HeartbeatData>;
+
+export type TimelineEntry =
+  | MessageRecord
+  | AgentResponseRecord
+  | AgentActionRecord
+  | SummaryRecord
+  | HeartbeatRecord;
 
 // ---- Entity ----
 

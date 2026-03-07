@@ -4,6 +4,7 @@ import type { LoopMessage } from "../agent/trimmer";
 import type {
   AgentActionRecord,
   AgentResponseRecord,
+  HeartbeatRecord,
   ImageConfig,
   MessageRecord,
   SummaryRecord,
@@ -187,5 +188,16 @@ class SummaryHandler extends TimelineHandler<SummaryRecord> {
   }
 }
 
-export { AgentActionHandler, AgentResponseHandler, MessageHandler, SummaryHandler };
+class HeartbeatHandler extends TimelineHandler<HeartbeatRecord> {
+  canHandle(entry: TimelineEntry): entry is HeartbeatRecord {
+    return entry.type === TimelineEventType.Heartbeat;
+  }
+
+  async handle(_entry: HeartbeatRecord, _options: BuildContextOptions): Promise<LoopMessage[]> {
+    // Heartbeats are context markers, not conversation messages
+    return [];
+  }
+}
+
+export { AgentActionHandler, AgentResponseHandler, HeartbeatHandler, MessageHandler, SummaryHandler };
 export type { TimelineHandler };

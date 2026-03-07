@@ -7,6 +7,7 @@ import {
   AgentResponseHandler,
   AgentActionHandler,
   SummaryHandler,
+  HeartbeatHandler,
   BuildContextOptions,
   type TimelineHandler,
 } from "./handlers";
@@ -34,6 +35,7 @@ export class EventManager {
     new AgentResponseHandler(),
     new AgentActionHandler(),
     new SummaryHandler(),
+    new HeartbeatHandler(),
   ];
 
   constructor(private ctx: Context) {
