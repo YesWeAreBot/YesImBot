@@ -160,6 +160,25 @@ export class SummaryCompressor {
       });
 
       await this.archiveEntries(channelKey, coveredUntil);
+
+      // Emit compression event for downstream consumers (e.g., MemoryAgentService)
+      const afterEntries = await this.events.query({
+        key: channelKey,
+        types: [
+          TimelineEventType.Message,
+          TimelineEventType.AgentResponse,
+          TimelineEventType.AgentAction,
+          TimelineEventType.Heartbeat,
+        ],
+        orderBy: "asc",
+      });
+      this.ctx.emit(
+        "athena:timeline.compressed",
+        { platform: channelKey.platform, channelId: channelKey.channelId },
+        entries.length,
+        afterEntries.length,
+      );
+
       this.logger.info("Summary generated successfully");
     } catch (err) {
       this.logger.warn("Summary generation failed:", err);
