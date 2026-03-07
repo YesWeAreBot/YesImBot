@@ -133,6 +133,9 @@ export class RoleService extends Service<RoleServiceConfig> {
     for (const d of this.disposers) d();
     this.disposers = [];
 
+    // Invalidate stale compiled templates on reload
+    this.templateRenderer.clearCache();
+
     // SOUL.md -> soul point
     const soulContent = this.loadFile("SOUL.md") ?? "You are {{bot.name}}.";
     this.disposers.push(
