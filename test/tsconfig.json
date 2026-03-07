@@ -3,5 +3,5 @@
   "compilerOptions": {
     "moduleResolution": "bundler"
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../core/src/**/*.ts"]
 }
