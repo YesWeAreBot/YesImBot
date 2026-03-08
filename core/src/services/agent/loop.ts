@@ -191,6 +191,54 @@ export class ThinkActLoop {
       }
 
       const channelKey = `${percept.platform}:${percept.channelId}`;
+      const arousalService = this.ctx["yesimbot.arousal"] as
+        | { recordProactiveMessage?: (channelKey: string) => void }
+        | undefined;
+      const heartbeatRun = percept.metadata?.isHeartbeat === true;
+      let proactiveQuotaRecorded = false;
+
+      const recordSuccessfulSendMessages = async (
+        actions: AgentResponse["actions"],
+        toolResults: ToolResultEntry[],
+      ) => {
+        for (let actionId = 0; actionId < actions.length; actionId++) {
+          const action = actions[actionId]!;
+          if (action.name !== "send_message") continue;
+
+          const sendResult = toolResults.find((t) => t.id === actionId && t.name === "send_message");
+          if (!isSuccessfulSendResult(sendResult)) continue;
+
+          if (heartbeatRun) {
+            if (proactiveQuotaRecorded) {
+              this.logger.debug(
+                `[${percept.traceId}] proactive_quota_already_recorded action_id=${actionId}`,
+              );
+            } else if (typeof arousalService?.recordProactiveMessage === "function") {
+              const chargeChannelKey = resolveProactiveChargeChannelKey(action, channelKey);
+              arousalService.recordProactiveMessage(chargeChannelKey);
+              proactiveQuotaRecorded = true;
+            }
+          }
+
+          const content = String(action.params?.content ?? "");
+          if (!content) continue;
+          const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
+          for (const part of parts) {
+            await horizonService.events.recordMessage({
+              platform: percept.platform,
+              channelId: percept.channelId,
+              stage: TimelineStage.Active,
+              timestamp: new Date(),
+              data: {
+                messageId: Random.id(),
+                senderId: toolCtx.bot?.selfId ?? "",
+                senderName: toolCtx.bot?.user?.name ?? "",
+                content: part.trim(),
+              },
+            });
+          }
+        }
+      };
 
       const trimConfig: TrimConfig = {
         charBudget: this.config.charBudget ?? 30000,
@@ -382,29 +430,7 @@ export class ThinkActLoop {
         });
 
         // Record bot sent messages as MessageRecord
-        for (const action of response.actions) {
-          if (action.name !== "send_message") continue;
-          const r = toolResults.find((t) => t.name === "send_message");
-          const ok = r && (r.status === "ok" || r.status === "fulfilled" || !r.error);
-          if (!ok) continue;
-          const content = String(action.params?.content ?? "");
-          if (!content) continue;
-          const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
-          for (const part of parts) {
-            await horizonService.events.recordMessage({
-              platform: percept.platform,
-              channelId: percept.channelId,
-              stage: TimelineStage.Active,
-              timestamp: new Date(),
-              data: {
-                messageId: Random.id(),
-                senderId: toolCtx.bot?.selfId ?? "",
-                senderName: toolCtx.bot?.user?.name ?? "",
-                content: part.trim(),
-              },
-            });
-          }
-        }
+        await recordSuccessfulSendMessages(response.actions, toolResults);
 
         // continue if there were any tool calls, or if request_heartbeat is true (for pure Action calls), or if any tools failed (to allow error info to flow back to model)
         const hasFailedTools = toolResults.some((r) => r.status === "failed" || r.error);
@@ -461,29 +487,7 @@ export class ThinkActLoop {
               });
 
               // Record bot sent messages from wrap-up round
-              for (const action of wrapParsed.data.actions) {
-                if (action.name !== "send_message") continue;
-                const r = wrapToolResults.find((t) => t.name === "send_message");
-                const ok = r && (r.status === "ok" || r.status === "fulfilled" || !r.error);
-                if (!ok) continue;
-                const content = String(action.params?.content ?? "");
-                if (!content) continue;
-                const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
-                for (const part of parts) {
-                  await horizonService.events.recordMessage({
-                    platform: percept.platform,
-                    channelId: percept.channelId,
-                    stage: TimelineStage.Active,
-                    timestamp: new Date(),
-                    data: {
-                      messageId: Random.id(),
-                      senderId: toolCtx.bot?.selfId ?? "",
-                      senderName: toolCtx.bot?.user?.name ?? "",
-                      content: part.trim(),
-                    },
-                  });
-                }
-              }
+              await recordSuccessfulSendMessages(wrapParsed.data.actions, wrapToolResults);
             }
           }
           break;
@@ -672,4 +676,22 @@ function formatFinalRoundPrompt(results: ToolResultEntry[]): string {
     "Based on the information gathered so far, please provide your final response now. " +
     "You must call send_message with your response."
   );
+}
+
+function isSuccessfulSendResult(result: ToolResultEntry | undefined): boolean {
+  if (!result) return false;
+  if (result.error) return false;
+  return result.status === "ok" || result.status === "fulfilled";
+}
+
+function resolveProactiveChargeChannelKey(action: AgentAction, fallbackChannelKey: string): string {
+  const target = action.params?.target;
+  if (!target || typeof target !== "object") return fallbackChannelKey;
+
+  const sendTarget = target as { platform?: unknown; channelId?: unknown };
+  if (typeof sendTarget.platform !== "string" || typeof sendTarget.channelId !== "string") {
+    return fallbackChannelKey;
+  }
+
+  return `${sendTarget.platform}:${sendTarget.channelId}`;
 }
