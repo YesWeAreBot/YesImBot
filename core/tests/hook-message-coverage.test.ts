@@ -1,130 +1,209 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HookType } from "../src/services/hook/types";
+vi.mock("koishi", () => {
+  function createSchemaChain() {
+    const chain: Record<string, unknown> = {};
+    const handler: ProxyHandler<Record<string, unknown>> = {
+      get: (_target, prop) => {
+        if (prop === Symbol.toPrimitive || prop === Symbol.toStringTag) return undefined;
+        return (..._args: unknown[]) => new Proxy(chain, handler);
+      },
+    };
+    return new Proxy(chain, handler);
+  }
 
-/**
- * Message Hook Coverage Verification Tests
- *
- * Purpose: Verify that message send paths have correct hook coverage:
- * - User-facing messages (send_message action) are hooked
- * - Error reporting messages bypass hooks by design
- *
- * See docs/HOOK_COVERAGE.md for full coverage documentation
- */
+  const schemaMock = new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (prop === "intersect" || prop === "object" || prop === "array") {
+          return (..._args: unknown[]) => createSchemaChain();
+        }
+        if (prop === "number" || prop === "string" || prop === "boolean") {
+          return () => createSchemaChain();
+        }
+        if (prop === "dynamic") {
+          return () => createSchemaChain();
+        }
+        return (..._args: unknown[]) => createSchemaChain();
+      },
+    },
+  );
+
+  const hMock = Object.assign(
+    (type: string, attrs?: Record<string, unknown>) => ({ type, attrs, children: [] }),
+    {
+      parse: (content: string) => [content],
+    },
+  );
+
+  return {
+    Schema: schemaMock,
+    Context: class {},
+    Service: class {
+      logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
+      constructor(..._args: unknown[]) {}
+    },
+    h: hMock,
+    sleep: vi.fn(async () => undefined),
+  };
+});
+
+import { CorePlugin } from "../src/services/plugin/builtin/core";
+import { HookService } from "../src/services/hook/service";
+import { HookPhase, HookType } from "../src/services/hook/types";
+import type { ToolExecutionContext } from "../src/services/plugin/types";
+
+function createMessageRuntimeHarness() {
+  const pluginRegistry = {
+    registerPlugin: vi.fn(),
+    unregisterPlugin: vi.fn(),
+  };
+
+  const rootCtx = {
+    logger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() })),
+    on: vi.fn(),
+    bots: [],
+    "yesimbot.plugin": pluginRegistry,
+    "yesimbot.horizon": {
+      lookupNativeMsgId: vi.fn(() => null),
+    },
+  } as unknown as Record<string, unknown>;
+
+  const hookService = new HookService(rootCtx as never);
+  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+    warn: vi.fn(),
+  };
+  rootCtx["yesimbot.hook"] = hookService;
+
+  const plugin = new CorePlugin(rootCtx as never);
+
+  return {
+    rootCtx,
+    hookService,
+    plugin,
+    pluginRegistry,
+  };
+}
 
 describe("Message Hook Coverage", () => {
-  describe("Covered Paths", () => {
-    it("send_message action triggers Message hook", async () => {
-      // This test verifies the architecture decision that user-facing messages
-      // go through the hook system. The actual hook execution is tested in
-      // hook-integration.test.ts - this test documents the coverage expectation.
+  it("intercepts current-channel send_message through CorePlugin.sendMessage runtime path", async () => {
+    const harness = createMessageRuntimeHarness();
+    let capturedTraceId: string | undefined;
 
-      const hookService = {
-        executeBefore: vi.fn().mockResolvedValue({
-          skipped: false,
-          params: { content: "modified content", session: {} },
-        }),
-      };
-
-      // Simulate send_message action flow
-      const content = "original content";
-      const session = { send: vi.fn() };
-
-      // Hook should be called before sending
-      const beforeResult = await hookService.executeBefore(
-        HookType.Message,
-        { content, session },
-        "trace-123",
-      );
-
-      expect(hookService.executeBefore).toHaveBeenCalledWith(
-        HookType.Message,
-        { content, session },
-        "trace-123",
-      );
-
-      expect(beforeResult.skipped).toBe(false);
-      expect(beforeResult.params).toHaveProperty("content", "modified content");
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async (ctx) => {
+        capturedTraceId = ctx.traceId;
+        const params = ctx.params as { content: string; session: unknown };
+        return {
+          modified: true,
+          params: {
+            ...params,
+            content: "HOOKED CURRENT CHANNEL",
+          },
+        };
+      },
     });
 
-    it("hook can modify message content", async () => {
-      const hookService = {
-        executeBefore: vi.fn().mockResolvedValue({
-          skipped: false,
-          params: { content: "FILTERED CONTENT", session: {} },
-        }),
-      };
+    const sessionSend = vi.fn(async () => undefined);
+    const toolCtx: ToolExecutionContext = {
+      platform: "discord",
+      channelId: "c-1",
+      session: { send: sessionSend } as never,
+      percept: { traceId: "trace-message-1" } as never,
+    };
 
-      const originalContent = "bad word here";
-      const session = {};
+    const result = await harness.plugin.sendMessage({ content: "original message" }, toolCtx);
 
-      const result = await hookService.executeBefore(
-        HookType.Message,
-        { content: originalContent, session },
-        "trace-456",
-      );
+    expect(result.success).toBe(true);
+    expect(capturedTraceId).toBe("trace-message-1");
+    expect(sessionSend).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("HOOKED CURRENT CHANNEL");
+  });
 
-      const modifiedContent = (result.params as { content: string }).content;
-      expect(modifiedContent).toBe("FILTERED CONTENT");
-      expect(modifiedContent).not.toBe(originalContent);
+  it("intercepts cross-channel send_message and modifies payload before bot.sendMessage", async () => {
+    const harness = createMessageRuntimeHarness();
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async (ctx) => {
+        const params = ctx.params as { content: string; session: unknown };
+        return {
+          modified: true,
+          params: { ...params, content: "HOOKED CROSS CHANNEL" },
+        };
+      },
     });
 
-    it("hook can skip message sending", async () => {
-      const hookService = {
-        executeBefore: vi.fn().mockResolvedValue({
-          skipped: true,
-          result: { success: false, message: "Message blocked by filter" },
-        }),
-      };
+    const botSendMessage = vi.fn(async () => undefined);
+    harness.rootCtx.bots = [{ platform: "discord", sendMessage: botSendMessage }];
 
-      const content = "spam message";
-      const session = {};
+    const toolCtx: ToolExecutionContext = {
+      platform: "discord",
+      channelId: "c-1",
+      session: { send: vi.fn() } as never,
+      percept: { traceId: "trace-message-2" } as never,
+    };
 
-      const result = await hookService.executeBefore(
-        HookType.Message,
-        { content, session },
-        "trace-789",
-      );
+    const result = await harness.plugin.sendMessage(
+      {
+        content: "original cross message",
+        target: { platform: "discord", channelId: "cross-c-1" },
+      },
+      toolCtx,
+    );
 
-      expect(result.skipped).toBe(true);
-      expect(result.result).toEqual({
-        success: false,
-        message: "Message blocked by filter",
-      });
+    expect(result.success).toBe(true);
+    expect(botSendMessage).toHaveBeenCalledTimes(1);
+    expect(botSendMessage).toHaveBeenCalledWith(
+      "cross-c-1",
+      expect.any(Array),
+    );
+    expect(JSON.stringify(botSendMessage.mock.calls[0]?.[1])).toContain("HOOKED CROSS CHANNEL");
+  });
+
+  it("short-circuits send_message transport when Message hook returns skip", async () => {
+    const harness = createMessageRuntimeHarness();
+    const sessionSend = vi.fn(async () => undefined);
+    const botSendMessage = vi.fn(async () => undefined);
+    harness.rootCtx.bots = [{ platform: "discord", sendMessage: botSendMessage }];
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async () => ({
+        skip: true,
+        result: {
+          success: true,
+          status: "hook-skipped",
+          content: "blocked by message hook",
+        },
+      }),
     });
+
+    const toolCtx: ToolExecutionContext = {
+      platform: "discord",
+      channelId: "c-1",
+      session: { send: sessionSend } as never,
+      percept: { traceId: "trace-message-3" } as never,
+    };
+
+    const result = await harness.plugin.sendMessage({ content: "should be skipped" }, toolCtx);
+
+    expect(result).toEqual({
+      success: true,
+      status: "hook-skipped",
+      content: "blocked by message hook",
+    });
+    expect(sessionSend).not.toHaveBeenCalled();
+    expect(botSendMessage).not.toHaveBeenCalled();
   });
 
   describe("Uncovered Paths (By Design)", () => {
-    it("error reporting bypasses hooks", () => {
-      // This test documents the architectural decision that error reporting
-      // messages bypass the hook system to ensure reliability.
-      //
-      // Location: core/src/services/agent/service.ts:533
-      // Pattern: await bot.sendMessage(channelId, summary).catch(() => {});
-      //
-      // Rationale:
-      // 1. Error messages are system-level notifications
-      // 2. Must be reliable and not subject to plugin interference
-      // 3. Prevents infinite loops if hooks themselves cause errors
-      //
-      // See docs/HOOK_COVERAGE.md for full rationale
-
-      const bot = {
-        sendMessage: vi.fn().mockResolvedValue(undefined),
-      };
-
-      const channelId = "channel-123";
-      const errorSummary = "[Error] channel-123: Something went wrong";
-
-      // Error reporting sends directly without hook execution
-      bot.sendMessage(channelId, errorSummary);
-
-      expect(bot.sendMessage).toHaveBeenCalledWith(channelId, errorSummary);
-      expect(bot.sendMessage).toHaveBeenCalledTimes(1);
-    });
-
-    it("error reporting is fail-safe", async () => {
-      // Error reporting must work even if the send fails
+    it("error reporting bypasses hooks for reliability", async () => {
       const bot = {
         sendMessage: vi.fn().mockRejectedValue(new Error("Network error")),
       };
@@ -132,59 +211,12 @@ describe("Message Hook Coverage", () => {
       const channelId = "channel-456";
       const errorSummary = "[Error] channel-456: Agent loop failed";
 
-      // Error reporting catches and ignores send failures
+      // Mirrors core/src/services/agent/service.ts error-reporting path:
+      // await bot.sendMessage(channelId, summary).catch(() => {});
       await bot.sendMessage(channelId, errorSummary).catch(() => {});
 
       expect(bot.sendMessage).toHaveBeenCalledWith(channelId, errorSummary);
-      // No error thrown - failure is silently caught
-    });
-  });
-
-  describe("Coverage Documentation", () => {
-    it("documents all message send paths", () => {
-      // This test serves as a checklist for message send paths
-      // See docs/HOOK_COVERAGE.md for detailed documentation
-
-      const messageSendPaths = {
-        // Covered paths (user-facing)
-        "send_message action (current channel)": {
-          location: "core/src/services/plugin/builtin/core.ts:139",
-          hooked: true,
-          hookType: HookType.Message,
-        },
-        "send_message action (cross-channel)": {
-          location: "core/src/services/plugin/builtin/core.ts:127",
-          hooked: true,
-          hookType: HookType.Message,
-        },
-
-        // Uncovered paths (system-level)
-        "error reporting": {
-          location: "core/src/services/agent/service.ts:533",
-          hooked: false,
-          rationale: "System-level error notifications must be reliable",
-        },
-      };
-
-      // Verify covered paths have hook type
-      const coveredPaths = Object.entries(messageSendPaths).filter(([, config]) => config.hooked);
-      expect(coveredPaths.length).toBeGreaterThan(0);
-      for (const [, config] of coveredPaths) {
-        if ("hookType" in config) {
-          expect(config.hookType).toBe(HookType.Message);
-        }
-      }
-
-      // Verify uncovered paths have rationale
-      const uncoveredPaths = Object.entries(messageSendPaths).filter(
-        ([, config]) => !config.hooked,
-      );
-      expect(uncoveredPaths.length).toBeGreaterThan(0);
-      for (const [, config] of uncoveredPaths) {
-        if ("rationale" in config) {
-          expect(config.rationale).toBeDefined();
-        }
-      }
+      expect(bot.sendMessage).toHaveBeenCalledTimes(1);
     });
   });
 });
