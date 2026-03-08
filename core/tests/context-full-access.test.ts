@@ -35,7 +35,31 @@ describe("Full context access contract", () => {
       phase: HookPhase.Before,
       handler: async (ctx) => {
         hookParams = ctx.params as typeof hookParams;
-        return { modified: false };
+        const params = ctx.params as {
+          view: { self: { id: string } };
+          traits: Array<{ dimension: string; value: string; confidence: number }>;
+          skills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
+          percept: Percept;
+        };
+
+        return {
+          modified: true,
+          params: {
+            ...params,
+            traits: [
+              ...params.traits,
+              { dimension: "hook-injected", value: "yes", confidence: 1 },
+            ],
+            skills: [
+              ...params.skills,
+              {
+                name: "hook-context-check",
+                effects: ["runtime-visible"],
+                metadata: { injectedBy: "agent-hook" },
+              },
+            ],
+          },
+        };
       },
     });
 
@@ -150,12 +174,16 @@ describe("Full context access contract", () => {
     expect(hookParams?.view.self.id).toBe("bot-1");
     expect(hookParams?.traits[0].dimension).toBe("scene");
     expect(hookParams?.skills[0].name).toBe("answering");
+    expect(hookParams?.percept.traceId).toBe("trace-ctx-1");
     expect(hookParams?.percept.metadata).toEqual({ requestId: "req-123", custom: { lane: "a" } });
 
     expect(capturedToolCtx).toBeDefined();
     expect(capturedToolCtx?.view?.self.id).toBe("bot-1");
     expect(capturedToolCtx?.traits?.[0].dimension).toBe("scene");
+    expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toContain("hook-injected");
     expect(capturedToolCtx?.skills?.[0].name).toBe("answering");
+    expect(capturedToolCtx?.skills?.map((s) => s.name)).toContain("hook-context-check");
+    expect(capturedToolCtx?.percept?.traceId).toBe("trace-ctx-1");
     expect(capturedToolCtx?.percept?.metadata).toEqual({
       requestId: "req-123",
       custom: { lane: "a" },
