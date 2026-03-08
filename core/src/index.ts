@@ -177,6 +177,9 @@ export function apply(ctx: Context, config: Config) {
     entityCacheTtl: config.entityCacheTtl,
     maxActiveEntities: config.maxActiveEntities,
     summaryModel: config.summaryModel,
+    compressionThreshold: config.compressionThreshold,
+    inactivityTriggerMs: config.inactivityTriggerMs,
+    retainRecentEntries: config.retainRecentEntries,
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });

@@ -43,6 +43,9 @@ export interface HorizonServiceConfig {
   maxActiveEntities?: number;
   summaryModel?: string;
   cleanupIntervalMs?: number;
+  compressionThreshold?: number;
+  inactivityTriggerMs?: number;
+  retainRecentEntries?: number;
 }
 
 export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
@@ -90,7 +93,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.config = config;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
-    this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel);
+    this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel, {
+      compressionThreshold: config.compressionThreshold,
+      inactivityTriggerMs: config.inactivityTriggerMs,
+      retainRecentEntries: config.retainRecentEntries,
+    });
     this.loadShortIdMaps();
     this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
     this.ctx.command("yesimbot.history", "上下文指令集", { authority: 3 });

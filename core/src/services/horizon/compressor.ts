@@ -91,12 +91,10 @@ export class SummaryCompressor {
     );
 
     // Compress, retaining recent entries
-    const success = await this.compress(channelKey, entries, this.config.retainRecentEntries);
+    await this.compress(channelKey, entries, this.config.retainRecentEntries);
 
-    // Update last compression time only on success
-    if (success) {
-      this.lastCompressionTime.set(key, Date.now());
-    }
+    // Update last compression time
+    this.lastCompressionTime.set(key, Date.now());
   }
 
   async compress(
@@ -133,7 +131,7 @@ export class SummaryCompressor {
     return compressionPromise;
   }
 
-  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<boolean> {
+  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<void> {
     try {
       const prevSummary = await this.getLatestSummary(channelKey);
       const prompt = this.buildPrompt(entries, prevSummary);
@@ -147,7 +145,7 @@ export class SummaryCompressor {
 
       if (!result) {
         this.logger.warn("Model returned no result");
-        return false;
+        return;
       }
 
       const coveredUntil = entries[entries.length - 1].timestamp;
@@ -183,10 +181,8 @@ export class SummaryCompressor {
       );
 
       this.logger.info("Summary generated successfully");
-      return true;
     } catch (err) {
       this.logger.warn("Summary generation failed:", err);
-      return false;
     }
   }
 
