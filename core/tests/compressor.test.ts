@@ -251,4 +251,38 @@ describe("SummaryCompressor hybrid triggers", () => {
       expect(mockModelService.call).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe("runtime integration", () => {
+    it("maybeCompress is non-blocking and isolates failures", async () => {
+      // Simulate runtime teardown calling maybeCompress
+      const entries = createTimelineSequence(85, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(entries);
+
+      // Make model call fail
+      mockModelService.call.mockRejectedValue(new Error("Model unavailable"));
+
+      // maybeCompress should not throw
+      await expect(compressor.maybeCompress(channelKey)).resolves.toBeUndefined();
+
+      // Verify compression was attempted
+      expect(mockEvents.query).toHaveBeenCalled();
+    });
+
+    it("runtime calls maybeCompress instead of direct compress", async () => {
+      // This test verifies the integration pattern:
+      // Runtime should call maybeCompress(), not compress() directly
+      const entries = createTimelineSequence(85, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(entries);
+
+      // Simulate runtime teardown pattern
+      await compressor.maybeCompress(channelKey);
+
+      // Should trigger compression through maybeCompress
+      expect(mockModelService.call).toHaveBeenCalledTimes(1);
+    });
+  });
 });

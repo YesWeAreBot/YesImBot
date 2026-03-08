@@ -291,22 +291,6 @@ export class ThinkActLoop {
 
         trimMessages(messages, trimConfig);
 
-        // Trigger async summary on budget overflow (fire-and-forget)
-        const currentChars = totalChars(messages);
-        if (currentChars > trimConfig.charBudget) {
-          const compressor = horizonService.compressor;
-          if (compressor && view.history && view.history.length > 0) {
-            this.logger.debug(
-              `Triggering summary compression (${currentChars} > ${trimConfig.charBudget} chars)`,
-            );
-            compressor
-              .compress({ platform: percept.platform, channelId: percept.channelId }, view.history)
-              .catch((err) => {
-                this.logger.warn("Summary compression failed (degraded silently):", err);
-              });
-          }
-        }
-
         const callParams: CallParams = {
           system: systemParam,
           messages: messages as ModelMessage[],
@@ -505,6 +489,17 @@ export class ThinkActLoop {
         { platform: percept.platform, channelId: percept.channelId },
         percept.timestamp,
       );
+
+      // Trigger compression check (non-blocking, failure-isolated)
+      const compressor = horizonService.compressor;
+      if (compressor) {
+        compressor
+          .maybeCompress({ platform: percept.platform, channelId: percept.channelId })
+          .catch((err) => {
+            this.logger.warn(`[${percept.traceId}] Compression check failed (degraded):`, err);
+          });
+      }
+
       const archiveMs = horizonService.config.archiveThresholdMs ?? 86400000;
       await horizonService.events.archiveStale(
         { platform: percept.platform, channelId: percept.channelId },
