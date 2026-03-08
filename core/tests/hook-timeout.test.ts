@@ -16,7 +16,8 @@ describe("Hook timeout override", () => {
     hookService = new HookService(ctx);
   });
 
-  it("should use default timeout (5000ms) when no timeout specified", async () => {
+  it("uses default timeout (5000ms) when neither call nor hook timeout is provided", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const handler = vi.fn().mockResolvedValue({ modified: false });
 
     hookService.register(ctx, {
@@ -25,38 +26,36 @@ describe("Hook timeout override", () => {
       handler,
     });
 
-    const result = await hookService.executeBefore(HookType.Tool, { input: "test" });
+    const result = await hookService.executeBefore(HookType.Tool, { input: "default" });
 
     expect(handler).toHaveBeenCalled();
-    expect(result.params.input).toBe("test");
+    expect(result.params.input).toBe("default");
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 5000)).toBe(true);
+    timeoutSpy.mockRestore();
   });
 
-  it("should use hook-level timeout when specified", async () => {
-    const handler = vi
-      .fn()
-      .mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ modified: false }), 150)),
-      );
+  it("uses hook-level timeout when call override is absent", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const handler = vi.fn().mockResolvedValue({ modified: false });
 
     hookService.register(ctx, {
       type: HookType.Tool,
       phase: HookPhase.Before,
       handler,
-      timeout: 2000,
+      timeout: 1800,
     });
 
-    const result = await hookService.executeBefore(HookType.Tool, { input: "test" });
+    const result = await hookService.executeBefore(HookType.Tool, { input: "hook-level" });
 
     expect(handler).toHaveBeenCalled();
-    expect(result.params.input).toBe("test");
+    expect(result.params.input).toBe("hook-level");
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 1800)).toBe(true);
+    timeoutSpy.mockRestore();
   });
 
-  it("should use call-level timeout over hook timeout (executeBefore)", async () => {
-    const handler = vi
-      .fn()
-      .mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ modified: false }), 200)),
-      );
+  it("uses call-level timeout over hook timeout for executeBefore", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const handler = vi.fn().mockResolvedValue({ modified: false });
 
     hookService.register(ctx, {
       type: HookType.Tool,
@@ -65,17 +64,15 @@ describe("Hook timeout override", () => {
       timeout: 5000,
     });
 
-    const result = await hookService.executeBefore(
-      HookType.Tool,
-      { input: "test" },
-      "trace-1",
-      100,
-    );
+    const result = await hookService.executeBefore(HookType.Tool, { input: "call-level" }, "t-1", 120);
 
-    expect(result.params.input).toBe("test");
+    expect(result.params.input).toBe("call-level");
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 120)).toBe(true);
+    timeoutSpy.mockRestore();
   });
 
-  it("should use call-level timeout over hook timeout (executeAfter)", async () => {
+  it("uses call-level timeout over hook timeout for executeAfter", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const handler = vi
       .fn()
       .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 200)));
@@ -90,9 +87,12 @@ describe("Hook timeout override", () => {
     await hookService.executeAfter(HookType.Tool, { input: "test" }, "result", "trace-1", 100);
 
     expect(handler).toHaveBeenCalled();
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 100)).toBe(true);
+    timeoutSpy.mockRestore();
   });
 
-  it("should use call-level timeout over hook timeout (executeError)", async () => {
+  it("uses call-level timeout over hook timeout for executeError", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const handler = vi
       .fn()
       .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 200)));
@@ -109,24 +109,11 @@ describe("Hook timeout override", () => {
     await hookService.executeError(HookType.Tool, { input: "test" }, error, "trace-1", 100);
 
     expect(handler).toHaveBeenCalled();
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 100)).toBe(true);
+    timeoutSpy.mockRestore();
   });
 
-  it("should verify timeout precedence: call > hook > default", async () => {
-    const handler = vi.fn().mockResolvedValue({ modified: false });
-
-    hookService.register(ctx, {
-      type: HookType.Tool,
-      phase: HookPhase.Before,
-      handler,
-      timeout: 3000,
-    });
-
-    await hookService.executeBefore(HookType.Tool, { input: "test" }, "trace-1", 1000);
-
-    expect(handler).toHaveBeenCalled();
-  });
-
-  it("should timeout slow hook with call-level override", async () => {
+  it("times out slow hook with call-level override and preserves original params", async () => {
     let handlerCompleted = false;
     const handler = vi.fn().mockImplementation(
       () =>
@@ -149,10 +136,38 @@ describe("Hook timeout override", () => {
       HookType.Tool,
       { input: "original" },
       "trace-1",
-      100,
+      80,
     );
 
     expect(result.params.input).toBe("original");
     expect(handlerCompleted).toBe(false);
+  });
+
+  it("documents precedence contract as call override > hook timeout > default timeout", async () => {
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const handler = vi.fn().mockResolvedValue({ modified: false });
+
+    hookService.register(ctx, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      handler,
+      timeout: 900,
+    });
+
+    await hookService.executeBefore(HookType.Tool, { input: "call-wins" }, "t-call", 120);
+    await hookService.executeBefore(HookType.Tool, { input: "hook-wins" }, "t-hook");
+
+    const defaultHook = vi.fn().mockResolvedValue({ modified: false });
+    hookService.register(ctx, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: defaultHook,
+    });
+    await hookService.executeBefore(HookType.Message, { content: "default-wins" }, "t-default");
+
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 120)).toBe(true);
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 900)).toBe(true);
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 5000)).toBe(true);
+    timeoutSpy.mockRestore();
   });
 });
