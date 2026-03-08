@@ -285,4 +285,95 @@ describe("SummaryCompressor hybrid triggers", () => {
       expect(mockModelService.call).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("active-stage trigger semantics", () => {
+    it("queries only active-stage entries for trigger counting", async () => {
+      // Create 85 active entries (should trigger)
+      const activeEntries = createTimelineSequence(85, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(activeEntries);
+
+      await compressor.maybeCompress(channelKey);
+
+      // Verify query was called with active stage filter
+      expect(mockEvents.query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          key: channelKey,
+          types: [
+            TimelineEventType.Message,
+            TimelineEventType.AgentResponse,
+            TimelineEventType.AgentAction,
+            TimelineEventType.Heartbeat,
+          ],
+          stages: [TimelineStage.Active],
+          orderBy: "asc",
+        }),
+      );
+
+      // Should trigger compression
+      expect(mockModelService.call).toHaveBeenCalledTimes(1);
+    });
+
+    it("excludes archived entries from trigger count", async () => {
+      // Simulate scenario: 100 total entries but only 50 active
+      // First call returns 50 active entries (below threshold)
+      const activeEntries = createTimelineSequence(50, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(activeEntries);
+
+      await compressor.maybeCompress(channelKey);
+
+      // Should NOT trigger (50 < 80 threshold)
+      expect(mockModelService.call).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("success-gated timestamp updates", () => {
+    it("updates lastCompressionTime only after successful compression", async () => {
+      const entries = createTimelineSequence(85, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(entries);
+
+      // First compression succeeds
+      await compressor.maybeCompress(channelKey);
+      expect(mockModelService.call).toHaveBeenCalledTimes(1);
+
+      // Reduce entries below threshold
+      const fewerEntries = createTimelineSequence(20, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(fewerEntries);
+
+      // Advance time past inactivity threshold
+      vi.advanceTimersByTime(1800001);
+
+      // Should trigger again (inactivity + entries > retainRecentEntries)
+      await compressor.maybeCompress(channelKey);
+      expect(mockModelService.call).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not update lastCompressionTime when compression fails", async () => {
+      const entries = createTimelineSequence(85, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(entries);
+
+      // Make compression fail
+      mockModelService.call.mockRejectedValueOnce(new Error("Model failure"));
+
+      // First call triggers but fails
+      await compressor.maybeCompress(channelKey);
+      expect(mockModelService.call).toHaveBeenCalledTimes(1);
+
+      // Immediately call again - should trigger again because lastCompressionTime wasn't updated
+      mockModelService.call.mockResolvedValueOnce({ text: "Success" });
+      await compressor.maybeCompress(channelKey);
+
+      // Should trigger again (count still above threshold, time not updated on failure)
+      expect(mockModelService.call).toHaveBeenCalledTimes(2);
+    });
+  });
 });

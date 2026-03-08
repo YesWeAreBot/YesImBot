@@ -54,6 +54,8 @@ export class EventManager {
     }
     if (options.types?.length)
       query.type = { $in: options.types } as unknown as Query.Expr<TimelineEntry>["type"];
+    if (options.stages?.length)
+      query.stage = { $in: options.stages } as unknown as Query.Expr<TimelineEntry>["stage"];
     if (options.since) query.timestamp = { $gte: options.since };
     if (options.until) query.timestamp = { ...(query.timestamp as object), $lte: options.until };
 

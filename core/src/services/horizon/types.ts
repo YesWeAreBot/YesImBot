@@ -218,6 +218,7 @@ export interface HorizonView {
 export interface EventQueryOptions {
   key?: ChannelKey;
   types?: TimelineEventType[];
+  stages?: TimelineStage[];
   limit?: number;
   since?: Date;
   until?: Date;

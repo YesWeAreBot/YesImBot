@@ -48,7 +48,7 @@ export class SummaryCompressor {
       return;
     }
 
-    // Query active timeline entries for this channel
+    // Query active timeline entries for this channel (exclude archived/deleted)
     const entries = await this.events.query({
       key: channelKey,
       types: [
@@ -57,6 +57,7 @@ export class SummaryCompressor {
         TimelineEventType.AgentAction,
         TimelineEventType.Heartbeat,
       ],
+      stages: [TimelineStage.Active],
       orderBy: "asc",
     });
 
@@ -90,10 +91,12 @@ export class SummaryCompressor {
     );
 
     // Compress, retaining recent entries
-    await this.compress(channelKey, entries, this.config.retainRecentEntries);
+    const success = await this.compress(channelKey, entries, this.config.retainRecentEntries);
 
-    // Update last compression time
-    this.lastCompressionTime.set(key, Date.now());
+    // Update last compression time only on success
+    if (success) {
+      this.lastCompressionTime.set(key, Date.now());
+    }
   }
 
   async compress(
@@ -130,7 +133,7 @@ export class SummaryCompressor {
     return compressionPromise;
   }
 
-  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<void> {
+  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<boolean> {
     try {
       const prevSummary = await this.getLatestSummary(channelKey);
       const prompt = this.buildPrompt(entries, prevSummary);
@@ -144,7 +147,7 @@ export class SummaryCompressor {
 
       if (!result) {
         this.logger.warn("Model returned no result");
-        return;
+        return false;
       }
 
       const coveredUntil = entries[entries.length - 1].timestamp;
@@ -180,8 +183,10 @@ export class SummaryCompressor {
       );
 
       this.logger.info("Summary generated successfully");
+      return true;
     } catch (err) {
       this.logger.warn("Summary generation failed:", err);
+      return false;
     }
   }
 
