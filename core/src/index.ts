@@ -80,6 +80,9 @@ export const Config: Schema<Config> = Schema.intersect([
       .default([])
       .role("table"),
     keywords: Schema.array(Schema.string()).default([]),
+    compressionThreshold: Schema.number().default(100).description("Event count to trigger timeline compression"),
+    inactivityTriggerMs: Schema.number().default(3600000).description("Inactivity period (ms) to trigger timeline compression (default: 1 hour)"),
+    retainRecentEntries: Schema.number().default(10).description("Keep N most recent timeline entries uncompressed"),
   }),
 
   // ── 模型 ──
@@ -138,13 +141,9 @@ export const Config: Schema<Config> = Schema.intersect([
   // ── 记忆代理 ──
   Schema.object({
     memoryAgent: Schema.object({
-      compressionThreshold: Schema.number().default(80),
-      compressionIntervalMs: Schema.number().default(3600000),
-      inactivityTriggerMs: Schema.number().default(1800000),
       coreMemoryBudget: Schema.number().default(2000),
       summaryModel: Schema.dynamic("registry.chatModels"),
       maxAgentSteps: Schema.number().default(15),
-      retainRecentEntries: Schema.number().default(10),
     }),
   }),
 

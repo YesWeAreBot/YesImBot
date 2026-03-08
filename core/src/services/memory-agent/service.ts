@@ -24,12 +24,8 @@ export interface MemoryAgentServiceConfig {
 }
 
 const DEFAULT_CONFIG: MemoryAgentConfig = {
-  compressionThreshold: 80,
-  compressionIntervalMs: 3_600_000,
-  inactivityTriggerMs: 1_800_000,
   coreMemoryBudget: 2000,
   maxAgentSteps: 15,
-  retainRecentEntries: 10,
 };
 
 export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
@@ -60,12 +56,6 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
       updatedAt: "timestamp",
     }, { primary: "id", autoInc: false });
 
-    // Set up scheduled timer for periodic checks
-    this.ctx.setInterval(
-      () => this.scheduledCheck(),
-      this.agentConfig.compressionIntervalMs,
-    );
-
     // Listen for compression events to trigger memory extraction
     this.ctx.on(
       "athena:timeline.compressed",
@@ -94,20 +84,6 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
     this.ctx.plugin(MemoryRecallPlugin);
 
     this.logger.info("MemoryAgentService started");
-  }
-
-  /**
-   * Periodic scheduled check: iterate active channels and run memory extraction.
-   */
-  private async scheduledCheck(): Promise<void> {
-    try {
-      const channels = await this.getActiveChannels();
-      for (const channel of channels) {
-        await this.maybeRunAgent(channel);
-      }
-    } catch (err) {
-      this.logger.warn("Scheduled memory check failed:", err);
-    }
   }
 
   /**
@@ -173,34 +149,5 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
     });
 
     return memories as MemoryRecord[];
-  }
-
-  /**
-   * Query distinct platform+channelId combinations with recent timeline activity.
-   */
-  private async getActiveChannels(): Promise<ChannelKey[]> {
-    const cutoff = new Date(Date.now() - this.agentConfig.inactivityTriggerMs * 2);
-    const entries = await this.ctx.database
-      .select("yesimbot.timeline")
-      .where({
-        stage: TimelineStage.Active,
-        timestamp: { $gte: cutoff },
-      })
-      .orderBy("timestamp", "desc")
-      .limit(200)
-      .execute();
-
-    // Deduplicate by platform:channelId
-    const seen = new Set<string>();
-    const channels: ChannelKey[] = [];
-    for (const entry of entries) {
-      const key = `${entry.platform}:${entry.channelId}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        channels.push({ platform: entry.platform, channelId: entry.channelId });
-      }
-    }
-
-    return channels;
   }
 }

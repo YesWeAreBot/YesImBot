@@ -25,11 +25,7 @@ export interface MemoryRecord {
 }
 
 export interface MemoryAgentConfig {
-  compressionThreshold: number; // Event count to trigger compression (default: 80)
-  compressionIntervalMs: number; // Timer interval for compression check (default: 3600000 = 1hr)
-  inactivityTriggerMs: number; // Inactivity period to trigger compression (default: 1800000 = 30min)
   coreMemoryBudget: number; // Max chars for core memory injection (default: 2000)
-  summaryModel?: string; // Model for compression/extraction tasks
+  summaryModel?: string; // Model for memory extraction tasks (separate from timeline compression)
   maxAgentSteps: number; // Max tool calls for memory agent (default: 15)
-  retainRecentEntries: number; // Keep N most recent timeline entries uncompressed (default: 10)
 }
