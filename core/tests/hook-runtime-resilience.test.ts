@@ -301,3 +301,128 @@ describe("Hook runtime resilience (timeout)", () => {
     expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("original message");
   });
 });
+
+describe("Hook runtime resilience (error isolation)", () => {
+  it("isolates Tool before-hook errors in ThinkActLoop and allows later hooks to continue", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    const order: string[] = [];
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      handler: async () => {
+        order.push("before-1");
+        throw new Error("before failure");
+      },
+    });
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      handler: async (ctx) => {
+        order.push("before-2");
+        const params = ctx.params as { query: string };
+        return {
+          modified: true,
+          params: { ...params, query: `${params.query}-continued` },
+        };
+      },
+    });
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(order).toEqual(["before-1", "before-2"]);
+    expect(harness.pluginInvoke).toHaveBeenCalledWith(
+      "search_tool",
+      { query: "athena-continued" },
+      expect.any(Object),
+    );
+    expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
+    expect(String(harness.hookWarnSpy.mock.calls[0]?.[0])).toContain("Hook");
+  });
+
+  it("isolates Agent before-hook errors and keeps runtime tool execution alive", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Agent,
+      phase: HookPhase.Before,
+      handler: async () => {
+        throw new Error("agent before failure");
+      },
+    });
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
+    expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolates Message before-hook errors and still sends the final user-facing message", async () => {
+    const harness: MessageHarness = createMessageHarness();
+    const sessionSend = vi.fn(async () => undefined);
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async () => {
+        throw new Error("message before failure");
+      },
+    });
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async (ctx) => {
+        const params = ctx.params as { content: string; session: unknown };
+        return {
+          modified: true,
+          params: { ...params, content: "message still delivered" },
+        };
+      },
+    });
+
+    const result = await harness.plugin.sendMessage(
+      { content: "original message" },
+      {
+        platform: "discord",
+        channelId: "c-1",
+        session: { send: sessionSend } as never,
+        percept: { traceId: "trace-message-error" } as never,
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(sessionSend).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("message still delivered");
+    expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolates Tool after-hook errors and preserves completed runtime outcome", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Tool,
+      phase: HookPhase.After,
+      handler: async () => {
+        throw new Error("after hook failure");
+      },
+    });
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
+    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+      data?: { toolResults?: Array<{ status?: string }> };
+    };
+    expect(actionEventPayload.data?.toolResults?.[0]?.status).toBe("ok");
+    expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
+  });
+});

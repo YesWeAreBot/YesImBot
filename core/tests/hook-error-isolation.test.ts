@@ -52,6 +52,8 @@ describe("Hook error isolation", () => {
     expect(result.skipped).toBe(false);
     expect(result.params).toEqual({ input: "updated" });
     expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("Hook");
+    expect(warnSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
   });
 
   it("continues to later after hooks when an earlier after hook throws", async () => {
@@ -78,6 +80,8 @@ describe("Hook error isolation", () => {
 
     expect(order).toEqual(["after-1", "after-2"]);
     expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("Hook");
+    expect(warnSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
   });
 
   it("continues to later error hooks when an earlier error hook throws", async () => {
@@ -103,6 +107,65 @@ describe("Hook error isolation", () => {
     await hookService.executeError(HookType.Tool, { input: "v" }, new Error("upstream"), "t-3");
 
     expect(order).toEqual(["error-1", "error-2"]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("Hook");
+    expect(warnSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
+  });
+
+  it("keeps original params and non-skipped state when all before hooks throw", async () => {
+    hookService.register(ctx, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      handler: async () => {
+        throw new Error("before-1 failed");
+      },
+    });
+    hookService.register(ctx, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      handler: async () => {
+        throw new Error("before-2 failed");
+      },
+    });
+
+    const result = await hookService.executeBefore(HookType.Tool, { input: "original" }, "t-4");
+
+    expect(result).toEqual({
+      params: { input: "original" },
+      skipped: false,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies the same isolation behavior for message before hooks", async () => {
+    const order: string[] = [];
+
+    hookService.register(ctx, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async () => {
+        order.push("message-1");
+        throw new Error("message before failed");
+      },
+    });
+    hookService.register(ctx, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async (hookCtx) => {
+        order.push("message-2");
+        const params = hookCtx.params as { content: string };
+        return {
+          modified: true,
+          params: { ...params, content: "message-updated" },
+        };
+      },
+    });
+
+    const result = await hookService.executeBefore(HookType.Message, { content: "message" }, "t-5");
+
+    expect(order).toEqual(["message-1", "message-2"]);
+    expect(result.params).toEqual({ content: "message-updated" });
+    expect(result.skipped).toBe(false);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });
