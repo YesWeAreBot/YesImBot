@@ -1,147 +1,124 @@
-# Message Hook Coverage
+# Hook Coverage Contract
+
+## Runtime Activation Status
+
+Hook coverage is only meaningful when runtime activation order is correct.
+
+- Activation precondition: `HookService` must be registered before `PluginService` and `AgentCore`.
+- Current startup wiring: `core/src/index.ts` calls `ctx.plugin(HookService)` before both runtime consumers.
+- Runtime assertion coverage: `core/tests/hook-runtime-registration.test.ts` guards startup registration and ordering.
+
+This contract reflects the activated runtime used by Phase 47 hook-runtime regression tests.
 
 ## Overview
 
-This document defines which message send paths in Athena have hook coverage and which are intentionally excluded.
+Athena hooks are interception points for user-facing runtime flows. The system distinguishes:
 
-**Architecture Decision:** Message hooks are designed for **user-facing messages** sent through the agent's tool system. Internal system messages bypass hooks to prevent interference with error reporting and system operations.
+- Hooked runtime paths: tool, message, and agent interception chains.
+- intentionally unhooked path: internal error-reporting transport for fail-safe reliability.
 
-## Message Send Paths
+## Hooked Runtime Paths
 
-### 1. User-Facing Messages (Hooked)
+### 1. Message Path (`HookType.Message`)
 
-**Path:** `send_message` action in `CorePlugin`
+- Entry point: `CorePlugin.sendMessage`
+- Source: `core/src/services/plugin/builtin/core.ts`
+- Hook call: `hookService.executeBefore(HookType.Message, ...)`
+- Covered transports:
+  - Current channel send (`ctx.session?.send(...)`)
+  - Cross-channel send (`bot.sendMessage(...)` via `target`)
 
-**Location:** `core/src/services/plugin/builtin/core.ts:86-96`
+Coverage evidence:
 
-**Hook Coverage:** ✅ Full coverage via `HookType.Message`
+- `core/tests/hook-message-coverage.test.ts`
+- `core/tests/hook-runtime-resilience.test.ts` (timeout + error isolation continuity)
 
-**Flow:**
+### 2. Tool Path (`HookType.Tool`)
 
-```typescript
-// Before hook execution
-const beforeResult = await hookService.executeBefore(
-  HookType.Message,
-  { content, session: ctx.session },
-  ctx.percept?.traceId,
-);
-if (beforeResult.skipped) {
-  return beforeResult.result as ToolResult;
-}
-content = (beforeResult.params as { content: string }).content;
-```
+- Entry point: `ThinkActLoop.executeActions`
+- Source: `core/src/services/agent/loop.ts`
+- Hook calls:
+  - `executeBefore(HookType.Tool, ...)`
+  - `executeAfter(HookType.Tool, ...)`
 
-**Use Cases:**
+Coverage evidence:
 
-- Agent responses to user messages
-- Tool-triggered messages
-- All messages sent through the agent's think-act loop
+- `core/tests/hook-runtime-interception.test.ts` (before/skip propagation)
+- `core/tests/hook-timeout.test.ts` (timeout precedence contract)
+- `core/tests/hook-error-isolation.test.ts` (unit isolation guarantees)
+- `core/tests/hook-runtime-resilience.test.ts` (runtime timeout/error isolation)
 
-**Plugin Capabilities:**
+### 3. Agent Path (`HookType.Agent`)
 
-- Modify message content before sending
-- Skip message sending entirely
-- Add metadata or logging
-- Implement content filters or transformations
+- Entry point: `ThinkActLoop.run`
+- Source: `core/src/services/agent/loop.ts`
+- Hook call: `executeBefore(HookType.Agent, ...)`
 
-### 2. Cross-Channel Messages (Hooked)
+Coverage evidence:
 
-**Path:** Direct `bot.sendMessage()` call with target parameter
+- `core/tests/hook-runtime-interception.test.ts` (context mutation propagation)
+- `core/tests/hook-runtime-resilience.test.ts` (runtime continuation when hooks fail)
 
-**Location:** `core/src/services/plugin/builtin/core.ts:127`
+## intentionally unhooked Path (Fail-Safe Boundary)
 
-**Hook Coverage:** ✅ Covered (goes through same `send_message` action)
+### Error Reporting Transport
 
-**Flow:**
+- Path: direct `bot.sendMessage(channelId, summary).catch(() => {})`
+- Source: `core/src/services/agent/service.ts` (`reportError`)
+- Coverage: intentionally unhooked
 
-```typescript
-// Hook executes before this line
-await bot.sendMessage(channelId, parsed);
-```
+Rationale:
 
-**Note:** Cross-channel sends use the `target` parameter in `send_message` action, so they pass through the same hook point.
+- Error reporting is a system-level reliability channel.
+- Hook interception here could suppress or mutate critical failure notifications.
+- If hooks are unhealthy, error reporting still must succeed best-effort.
 
-### 3. Current Channel Messages (Hooked)
+## Timeout and Error Isolation Guarantees
 
-**Path:** Session send via `ctx.session?.send()`
+### Timeout contract
 
-**Location:** `core/src/services/plugin/builtin/core.ts:139`
+- Precedence: call override > hook timeout > default timeout (5000ms).
+- Timeout behavior:
+  - Slow before hooks fail open (runtime continues with original params).
+  - Slow after hooks do not block completed user-facing outcomes.
 
-**Hook Coverage:** ✅ Covered (goes through same `send_message` action)
+Evidence:
 
-**Flow:**
+- `core/tests/hook-timeout.test.ts`
+- `core/tests/hook-runtime-resilience.test.ts`
 
-```typescript
-// Hook executes before this line
-await ctx.session?.send(elements);
-```
+### Error isolation contract
 
-**Note:** Standard message sends to the current channel pass through the same hook point.
+- Throwing hooks are isolated (warning logged, chain continues).
+- Later hooks in the same phase still execute.
+- Runtime message/tool/agent outcomes remain available by default.
 
-## Uncovered Paths (By Design)
+Evidence:
 
-### 4. Error Reporting Messages (Intentionally Uncovered)
+- `core/tests/hook-error-isolation.test.ts`
+- `core/tests/hook-runtime-resilience.test.ts`
 
-**Path:** Direct `bot.sendMessage()` in error handler
+## Requirement Trace (Phase 47)
 
-**Location:** `core/src/services/agent/service.ts:533`
+- HOOK-03: runtime activation/order is enforced by startup and registration tests.
+- HOOK-06: timeout semantics verified both at unit hook API level and runtime interception level.
+- HOOK-07: error isolation verified both at unit hook API level and runtime interception level.
 
-**Hook Coverage:** ❌ Intentionally bypassed
+Phase 47 regression anchor:
 
-**Rationale:**
+- `core/tests/hook-runtime-resilience.test.ts` (hook-runtime timeout and error isolation continuation)
 
-- Error messages are system-level notifications
-- Must be reliable and not subject to plugin interference
-- Plugins should not be able to suppress error reports
-- Prevents infinite loops if hooks themselves cause errors
+## Design Rules for New Message Sends
 
-**Flow:**
+When adding new send paths:
 
-```typescript
-// No hook execution - direct send
-await bot.sendMessage(channelId, summary).catch(() => {});
-```
+1. If it is user-facing output, route through `send_message` so it inherits hook coverage.
+2. If it is internal reliability/error signaling, keep it intentionally unhooked and document why.
+3. Add or update regression tests for timeout and error-isolation behavior in the affected runtime path.
 
-**Use Cases:**
+## Related References
 
-- Agent loop errors
-- System failures
-- Critical error notifications
-
-## Design Principles
-
-1. **User-Facing = Hooked:** All messages sent through the agent's tool system have hook coverage
-2. **System-Level = Unhooked:** Internal error reporting and system messages bypass hooks
-3. **Single Hook Point:** All user-facing messages funnel through one hook point in `send_message` action
-4. **Fail-Safe:** Error reporting must work even if hooks are broken
-
-## Testing Strategy
-
-### Coverage Verification
-
-Test that hooked paths execute hooks:
-
-- `send_message` action triggers `HookType.Message` before hook
-- Hook can modify content
-- Hook can skip sending
-
-### Exception Verification
-
-Test that uncovered paths bypass hooks:
-
-- Error reporting sends directly without hook execution
-- System messages are not intercepted
-
-## Future Considerations
-
-If additional message send paths are added:
-
-1. **Ask:** Is this a user-facing message or system message?
-2. **User-facing:** Route through `send_message` action (automatic hook coverage)
-3. **System message:** Use direct `bot.sendMessage()` and document in this file
-
-## Related Documentation
-
-- Hook system architecture: `docs/ARCHITECTURE.md`
-- Hook integration: `.planning/phases/44-extensibility-infrastructure/44-03-SUMMARY.md`
 - Hook API: `core/src/services/hook/service.ts`
+- Runtime tool/agent loop: `core/src/services/agent/loop.ts`
+- Message runtime send path: `core/src/services/plugin/builtin/core.ts`
+- Fail-safe error reporting: `core/src/services/agent/service.ts`
