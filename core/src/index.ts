@@ -10,6 +10,7 @@ import { ArousalService } from "./services/arousal";
 import { FormatterService } from "./services/formatter";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
+import { HookService } from "./services/hook/service";
 import { ImageCacheService } from "./services/image-cache/service";
 import type { MemoryAgentServiceConfig } from "./services/memory-agent";
 import { MemoryAgentService } from "./services/memory-agent";
@@ -180,6 +181,7 @@ export function apply(ctx: Context, config: Config) {
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });
+  ctx.plugin(HookService);
   ctx.plugin(PluginService, {
     defaultTimeout: config.defaultTimeout,
   });
