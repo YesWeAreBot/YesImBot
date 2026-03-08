@@ -31,12 +31,8 @@ describe("Config - Compression Trigger Ownership", () => {
       summaryModel: "openai:gpt-4o-mini", // Timeline compression model
       memoryAgent: {
         summaryModel: "openai:gpt-4o", // Memory extraction model
-        compressionThreshold: 80,
-        compressionIntervalMs: 3600000,
-        inactivityTriggerMs: 1800000,
         coreMemoryBudget: 2000,
         maxAgentSteps: 15,
-        retainRecentEntries: 10,
       },
     };
 
