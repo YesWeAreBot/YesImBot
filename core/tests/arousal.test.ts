@@ -341,6 +341,54 @@ describe("ArousalService", () => {
   });
 
   describe("rate limiting", () => {
+    it("heartbeat eligibility does not consume quota until successful send accounting occurs (AROUS-05)", async () => {
+      const mockChannelEntries = [
+        {
+          id: "1",
+          type: "message",
+          platform: "discord",
+          channelId: "channel-1",
+          timestamp: new Date(Date.now() - 60000),
+          data: { content: "Hello", senderId: "user1", senderName: "User1", messageId: "m1" },
+          stage: "active",
+          priority: 1,
+        },
+      ];
+      const ctx = createMockContext({
+        "yesimbot.horizon": {
+          events: {
+            query: vi.fn().mockResolvedValue(mockChannelEntries),
+            record: vi.fn().mockResolvedValue({}),
+          },
+        },
+        "yesimbot.model": {
+          call: vi.fn().mockResolvedValue({
+            text: JSON.stringify([
+              { channelKey: "discord:channel-1", reason: "Active discussion" },
+            ]),
+          }),
+        },
+      });
+      const config = createDefaultConfig();
+      config.dailyMessageLimit = 1;
+      const service = new ArousalService(ctx as any, config);
+      service.start();
+
+      // Eligibility to run heartbeat should not burn quota by itself.
+      expect(service.checkRateLimit("discord:channel-1")).toBe(true);
+      await service.globalHeartbeat();
+      expect(ctx.emit).toHaveBeenCalledWith("athena:heartbeat", {
+        platform: "discord",
+        channelId: "channel-1",
+        triggeredBy: "global",
+      });
+      expect(service.checkRateLimit("discord:channel-1")).toBe(true);
+
+      // Quota is consumed only when success accounting is recorded.
+      service.recordProactiveMessage("discord:channel-1");
+      expect(service.checkRateLimit("discord:channel-1")).toBe(false);
+    });
+
     it("checkRateLimit returns true when under daily limit", () => {
       const ctx = createMockContext();
       const config = createDefaultConfig();

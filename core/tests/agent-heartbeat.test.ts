@@ -83,43 +83,46 @@ describe("AgentCore heartbeat integration", () => {
     vi.clearAllMocks();
   });
 
-  it("wires athena:heartbeat and enqueues an internal loop payload", async () => {
-    const { ctx, handlers } = createMockContext();
-    const service = new AgentCore(ctx as never, {});
+  it.each(["global", "manual"] as const)(
+    "wires athena:heartbeat and enqueues an internal payload with heartbeat metadata (%s)",
+    async (triggeredBy) => {
+      const { ctx, handlers } = createMockContext();
+      const service = new AgentCore(ctx as never, {});
 
-    const enqueueSpy = vi
-      .spyOn(service as never, "enqueue")
-      .mockImplementation(() => undefined);
+      const enqueueSpy = vi
+        .spyOn(service as never, "enqueue")
+        .mockImplementation(() => undefined);
 
-    await (service as never).start();
+      await (service as never).start();
 
-    expect(ctx.on).toHaveBeenCalledWith("athena:heartbeat", expect.any(Function));
+      expect(ctx.on).toHaveBeenCalledWith("athena:heartbeat", expect.any(Function));
 
-    const handler = handlers.get("athena:heartbeat");
-    expect(handler).toBeTypeOf("function");
+      const handler = handlers.get("athena:heartbeat");
+      expect(handler).toBeTypeOf("function");
 
-    handler?.({
-      platform: "discord",
-      channelId: "heartbeat-room",
-      triggeredBy: "global",
-    });
+      handler?.({
+        platform: "discord",
+        channelId: "heartbeat-room",
+        triggeredBy,
+      });
 
-    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
 
-    const [channelKey, payload] = enqueueSpy.mock.calls[0] as [string, Record<string, unknown>];
-    expect(channelKey).toBe("discord:heartbeat-room");
-    expect(payload.toolCtx).toMatchObject({
-      platform: "discord",
-      channelId: "heartbeat-room",
-    });
+      const [channelKey, payload] = enqueueSpy.mock.calls[0] as [string, Record<string, unknown>];
+      expect(channelKey).toBe("discord:heartbeat-room");
+      expect(payload.toolCtx).toMatchObject({
+        platform: "discord",
+        channelId: "heartbeat-room",
+      });
 
-    const percept = payload.percept as Record<string, unknown>;
-    expect(percept.type).toBe("internal");
-    expect(percept.platform).toBe("discord");
-    expect(percept.channelId).toBe("heartbeat-room");
-    expect(percept.metadata).toMatchObject({
-      isHeartbeat: true,
-      triggeredBy: "global",
-    });
-  });
+      const percept = payload.percept as Record<string, unknown>;
+      expect(percept.type).toBe("internal");
+      expect(percept.platform).toBe("discord");
+      expect(percept.channelId).toBe("heartbeat-room");
+      expect(percept.metadata).toMatchObject({
+        isHeartbeat: true,
+        triggeredBy,
+      });
+    },
+  );
 });
