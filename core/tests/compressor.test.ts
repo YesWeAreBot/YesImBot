@@ -75,6 +75,19 @@ describe("SummaryCompressor hybrid triggers", () => {
   });
 
   describe("maybeCompress() event count trigger", () => {
+    it("triggers compression when event count is exactly at threshold", async () => {
+      // Create exactly 80 entries (== threshold)
+      const entries = createTimelineSequence(80, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(entries);
+
+      await compressor.maybeCompress(channelKey);
+
+      // Should have called compress (model.call invoked)
+      expect(mockModelService.call).toHaveBeenCalledTimes(1);
+    });
+
     it("triggers compression when event count exceeds threshold", async () => {
       // Create 85 entries (> 80 threshold)
       const entries = createTimelineSequence(85, (i) =>
@@ -145,6 +158,21 @@ describe("SummaryCompressor hybrid triggers", () => {
       await compressor.maybeCompress(channelKey);
 
       // Should NOT trigger because not enough entries to compress
+      expect(mockModelService.call).not.toHaveBeenCalled();
+    });
+
+    it("does NOT trigger on inactivity when event count equals retainRecentEntries boundary", async () => {
+      // Exactly 10 entries (== retainRecentEntries) should not trigger inactivity compression
+      const entries = createTimelineSequence(10, (i) =>
+        createMessageRecord({ index: i, minutesOffset: i }),
+      );
+      mockEvents.query.mockResolvedValue(entries);
+
+      await compressor.maybeCompress(channelKey);
+      vi.advanceTimersByTime(1800001);
+      await compressor.maybeCompress(channelKey);
+
+      // Boundary is strict: entryCount > retainRecentEntries
       expect(mockModelService.call).not.toHaveBeenCalled();
     });
   });
@@ -356,23 +384,28 @@ describe("SummaryCompressor hybrid triggers", () => {
     });
 
     it("does not update lastCompressionTime when compression fails", async () => {
-      const entries = createTimelineSequence(85, (i) =>
+      // Use entries below threshold but above retainRecentEntries to isolate inactivity semantics
+      const entries = createTimelineSequence(20, (i) =>
         createMessageRecord({ index: i, minutesOffset: i }),
       );
       mockEvents.query.mockResolvedValue(entries);
 
-      // Make compression fail
-      mockModelService.call.mockRejectedValueOnce(new Error("Model failure"));
+      // First call only initializes baseline time (no trigger)
+      await compressor.maybeCompress(channelKey);
+      expect(mockModelService.call).not.toHaveBeenCalled();
 
-      // First call triggers but fails
+      // Advance beyond inactivity threshold and make triggered compression fail
+      vi.advanceTimersByTime(1800001);
+      mockModelService.call.mockRejectedValueOnce(new Error("Model failure"));
       await compressor.maybeCompress(channelKey);
       expect(mockModelService.call).toHaveBeenCalledTimes(1);
 
-      // Immediately call again - should trigger again because lastCompressionTime wasn't updated
+      // Immediately call again without advancing time.
+      // If failure incorrectly updated lastCompressionTime, this call would be suppressed.
       mockModelService.call.mockResolvedValueOnce({ text: "Success" });
       await compressor.maybeCompress(channelKey);
 
-      // Should trigger again (count still above threshold, time not updated on failure)
+      // Must trigger again because lastCompressionTime should remain unchanged on failure
       expect(mockModelService.call).toHaveBeenCalledTimes(2);
     });
   });

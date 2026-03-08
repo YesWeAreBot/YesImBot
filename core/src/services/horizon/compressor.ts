@@ -21,6 +21,7 @@ export class SummaryCompressor {
   private logger: Logger;
   private compressionInProgress = new Map<string, Promise<void>>();
   private lastCompressionTime = new Map<string, number>();
+  private lastCompressionSucceeded = new Map<string, boolean>();
   private config: CompressorConfig;
 
   constructor(
@@ -93,8 +94,10 @@ export class SummaryCompressor {
     // Compress, retaining recent entries
     await this.compress(channelKey, entries, this.config.retainRecentEntries);
 
-    // Update last compression time
-    this.lastCompressionTime.set(key, Date.now());
+    // Update only on successful compression.
+    if (this.lastCompressionSucceeded.get(key)) {
+      this.lastCompressionTime.set(key, Date.now());
+    }
   }
 
   async compress(
@@ -103,6 +106,7 @@ export class SummaryCompressor {
     retainCount?: number,
   ): Promise<void> {
     const key = `${channelKey.platform}:${channelKey.channelId}`;
+    this.lastCompressionSucceeded.set(key, false);
 
     // Deduplication: if compression already in progress for this channel, skip
     if (this.compressionInProgress.has(key)) {
@@ -123,15 +127,19 @@ export class SummaryCompressor {
     }
 
     // Create promise and store it
-    const compressionPromise = this.doCompress(channelKey, entriesToCompress).finally(() => {
-      this.compressionInProgress.delete(key);
-    });
+    const compressionPromise = this.doCompress(channelKey, entriesToCompress)
+      .then((success) => {
+        this.lastCompressionSucceeded.set(key, success);
+      })
+      .finally(() => {
+        this.compressionInProgress.delete(key);
+      });
 
     this.compressionInProgress.set(key, compressionPromise);
     return compressionPromise;
   }
 
-  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<void> {
+  private async doCompress(channelKey: ChannelKey, entries: TimelineEntry[]): Promise<boolean> {
     try {
       const prevSummary = await this.getLatestSummary(channelKey);
       const prompt = this.buildPrompt(entries, prevSummary);
@@ -145,7 +153,7 @@ export class SummaryCompressor {
 
       if (!result) {
         this.logger.warn("Model returned no result");
-        return;
+        return false;
       }
 
       const coveredUntil = entries[entries.length - 1].timestamp;
@@ -181,8 +189,10 @@ export class SummaryCompressor {
       );
 
       this.logger.info("Summary generated successfully");
+      return true;
     } catch (err) {
       this.logger.warn("Summary generation failed:", err);
+      return false;
     }
   }
 
