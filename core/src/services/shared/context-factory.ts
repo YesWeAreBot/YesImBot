@@ -1,12 +1,12 @@
 import type { Bot, Context, Session } from "koishi";
 
 import type { HookExecutionContext, HookPhase, HookType } from "../hook/types";
+import type { HorizonService } from "../horizon/service";
 import type { HorizonView } from "../horizon/types";
 import type { ToolExecutionContext } from "../plugin/types";
-import type { ActiveSkill, Percept, TraitSignal } from "./types";
-import type { HorizonService } from "../horizon/service";
 import type { SkillRegistry } from "../skill/service";
 import type { TraitAnalyzer } from "../trait/service";
+import type { ActiveSkill, Percept, TraitSignal } from "./types";
 
 export function buildMinimalContext(params: {
   platform: string;
@@ -14,12 +14,13 @@ export function buildMinimalContext(params: {
   session?: Session;
   bot?: Bot;
 }): ToolExecutionContext {
-  return {
+  const context: ToolExecutionContext = {
     platform: params.platform,
     channelId: params.channelId,
-    session: params.session,
-    bot: params.bot,
   };
+  if (params.session) context.session = params.session;
+  if (params.bot) context.bot = params.bot;
+  return context;
 }
 
 export async function buildAgentContext(
@@ -52,26 +53,29 @@ export async function buildAgentContext(
   }
 
   let traits: TraitSignal[] = [];
-  try {
-    const traitAnalyzer = ctx["yesimbot.trait"] as TraitAnalyzer;
-    traits = await traitAnalyzer.analyze(key, view!);
-  } catch (err) {
-    missingFields.push("traits");
-    logger.warn(
-      `[${params.percept.traceId}] ToolExecutionContext incomplete: failed to analyze traits — ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
   let skills: ActiveSkill[] = [];
-  try {
-    const skillRegistry = ctx["yesimbot.skill"] as SkillRegistry;
-    const effects = skillRegistry.resolve(traits, key);
-    skills = effects.activeSkills;
-  } catch (err) {
-    missingFields.push("skills");
-    logger.warn(
-      `[${params.percept.traceId}] ToolExecutionContext incomplete: failed to resolve skills — ${err instanceof Error ? err.message : String(err)}`,
-    );
+
+  if (view) {
+    try {
+      const traitAnalyzer = ctx["yesimbot.trait"] as TraitAnalyzer;
+      traits = await traitAnalyzer.analyze(key, view);
+    } catch (err) {
+      missingFields.push("traits");
+      logger.warn(
+        `[${params.percept.traceId}] ToolExecutionContext incomplete: failed to analyze traits — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    try {
+      const skillRegistry = ctx["yesimbot.skill"] as SkillRegistry;
+      const effects = skillRegistry.resolve(traits, key);
+      skills = effects.activeSkills;
+    } catch (err) {
+      missingFields.push("skills");
+      logger.warn(
+        `[${params.percept.traceId}] ToolExecutionContext incomplete: failed to resolve skills — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   if (missingFields.length > 0) {
