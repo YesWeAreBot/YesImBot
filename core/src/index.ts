@@ -9,6 +9,7 @@ import type { ArousalConfig } from "./services/arousal";
 import { ArousalService } from "./services/arousal";
 import { FormatterService } from "./services/formatter";
 import { HookService } from "./services/hook/service";
+import type { HookServiceConfig } from "./services/hook/types";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
 import { ImageCacheService } from "./services/image-cache/service";
@@ -49,6 +50,39 @@ declare module "koishi" {
       id: string,
       reason: "ttl" | "lru" | "manual",
     ) => void;
+
+    "athena:hook.registered": (
+      hookId: string,
+      hookType: string,
+      hookPhase: string,
+      source?: string,
+    ) => void;
+
+    "athena:hook.started": (
+      hookId: string,
+      hookType: string,
+      hookPhase: string,
+      traceId: string,
+    ) => void;
+
+    "athena:hook.completed": (
+      hookId: string,
+      hookType: string,
+      hookPhase: string,
+      traceId: string,
+      durationMs: number,
+      outcome: string,
+    ) => void;
+
+    "athena:hook.failed": (
+      hookId: string,
+      hookType: string,
+      hookPhase: string,
+      traceId: string,
+      durationMs: number,
+      reason: string,
+      error?: Error,
+    ) => void;
   }
 }
 
@@ -60,7 +94,8 @@ export type Config = AgentCoreConfig &
   RoleServiceConfig &
   SkillRegistryConfig &
   TraitAnalyzerConfig &
-  MemoryAgentServiceConfig & { arousal: ArousalConfig };
+  MemoryAgentServiceConfig &
+  HookServiceConfig & { arousal: ArousalConfig };
 
 export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
@@ -141,6 +176,11 @@ export const Config: Schema<Config> = Schema.intersect([
     imageMode: Schema.union([Schema.const("native"), Schema.const("off")]).default("native"),
     maxImagesInContext: Schema.number().default(3),
     imageLifecycleCount: Schema.number().default(3),
+    hookTimeouts: Schema.object({
+      tool: Schema.number().default(3000).description("Tool hook timeout in ms"),
+      message: Schema.number().default(1000).description("Message hook timeout in ms"),
+      agent: Schema.number().default(5000).description("Agent hook timeout in ms"),
+    }),
   }),
 
   // ── 记忆代理 ──
@@ -188,7 +228,9 @@ export function apply(ctx: Context, config: Config) {
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });
-  ctx.plugin(HookService);
+  ctx.plugin(HookService, {
+    hookTimeouts: config.hookTimeouts,
+  });
   ctx.plugin(PluginService, {
     defaultTimeout: config.defaultTimeout,
   });

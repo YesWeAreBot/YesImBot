@@ -27,6 +27,25 @@ export interface HookExecutionContext extends ToolExecutionContext {
   hookPhase: HookPhase;
 }
 
+export interface HookTimeoutsConfig {
+  tool?: number;
+  message?: number;
+  agent?: number;
+}
+
+export const DEFAULT_HOOK_TIMEOUTS: Required<HookTimeoutsConfig> = {
+  tool: 3000,
+  message: 1000,
+  agent: 5000,
+};
+
+export type HookOutcome = "success" | "skipped";
+export type HookFailureReason = "timeout" | "error";
+
+export interface HookServiceConfig {
+  hookTimeouts?: HookTimeoutsConfig;
+}
+
 export type BeforeHookResult<T> =
   | { modified: true; params: T }
   | { skip: true; result: unknown }
