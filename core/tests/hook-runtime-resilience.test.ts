@@ -72,6 +72,7 @@ function createLoopHarness(actionPayload: string) {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
     on: vi.fn(),
+    emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
   const hookService = new HookService(rootCtx as never);
@@ -192,6 +193,7 @@ function createMessageHarness() {
   const rootCtx = {
     logger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() })),
     on: vi.fn(),
+    emit: vi.fn(),
     bots: [],
     "yesimbot.plugin": pluginRegistry,
     "yesimbot.horizon": {
@@ -262,7 +264,9 @@ describe("Hook runtime resilience (timeout)", () => {
     expect(runResult.totalToolCalls).toBe(1);
     expect(afterCompleted).toBe(false);
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction.mock.calls as unknown[][]
+    )[0]?.[0] as {
       data?: { toolResults?: Array<{ status?: string }> };
     };
     expect(actionEventPayload.data?.toolResults?.[0]?.status).toBe("ok");
@@ -301,7 +305,8 @@ describe("Hook runtime resilience (timeout)", () => {
     expect(result.success).toBe(true);
     expect(hookCompleted).toBe(false);
     expect(sessionSend).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("original message");
+    const firstSend = (sessionSend.mock.calls as unknown[][])[0]?.[0];
+    expect(JSON.stringify(firstSend)).toContain("original message");
   });
 });
 
@@ -401,7 +406,8 @@ describe("Hook runtime resilience (error isolation)", () => {
 
     expect(result.success).toBe(true);
     expect(sessionSend).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("message still delivered");
+    const firstSend = (sessionSend.mock.calls as unknown[][])[0]?.[0];
+    expect(JSON.stringify(firstSend)).toContain("message still delivered");
     expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -422,10 +428,106 @@ describe("Hook runtime resilience (error isolation)", () => {
 
     expect(runResult.totalToolCalls).toBe(1);
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction.mock.calls as unknown[][]
+    )[0]?.[0] as {
       data?: { toolResults?: Array<{ status?: string }> };
     };
     expect(actionEventPayload.data?.toolResults?.[0]?.status).toBe("ok");
     expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Hook runtime resilience (error hooks)", () => {
+  it("fires tool error hook when tool invocation throws", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    const errorHookSpy = vi.fn();
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Tool,
+      phase: HookPhase.Error,
+      handler: async (ctx) => {
+        errorHookSpy(ctx.error);
+      },
+    });
+
+    harness.pluginInvoke.mockImplementationOnce(async () => {
+      throw new Error("tool failure");
+    });
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(errorHookSpy).toHaveBeenCalledTimes(1);
+    expect(errorHookSpy.mock.calls[0]?.[0]).toEqual(expect.any(Error));
+  });
+
+  it("fires message error hook when session.send throws", async () => {
+    const harness: MessageHarness = createMessageHarness();
+    const sessionSend = vi.fn(async () => {
+      throw new Error("send failed");
+    });
+
+    const errorHookSpy = vi.fn();
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Error,
+      handler: async (ctx) => {
+        errorHookSpy(ctx.error);
+      },
+    });
+
+    const result = await harness.plugin.sendMessage(
+      { content: "hello" },
+      {
+        platform: "discord",
+        channelId: "c-1",
+        session: { send: sessionSend } as never,
+        percept: { traceId: "trace-message-error-hook" } as never,
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(errorHookSpy).toHaveBeenCalledTimes(1);
+    expect(errorHookSpy.mock.calls[0]?.[0]).toEqual(expect.any(Error));
+  });
+});
+
+describe("Hook runtime resilience (agent snapshot)", () => {
+  it("shares agent before-hook committed view between prompt rendering and tool context", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Agent,
+      phase: HookPhase.Before,
+      handler: async (ctx) => {
+        const params = ctx.params as { view: Record<string, unknown> };
+        return {
+          modified: true,
+          params: {
+            ...params,
+            view: { ...params.view, testMarker: "from-hook" },
+          },
+        };
+      },
+    });
+
+    await harness.loop.run(harness.percept, harness.toolCtx);
+
+    const promptArgs = (
+      harness.rootCtx["yesimbot.prompt"] as {
+        render: ReturnType<typeof vi.fn>;
+      }
+    ).render.mock.calls[0]?.[1] as unknown as { view?: Record<string, unknown> };
+    const toolCtxArg = (harness.pluginInvoke.mock.calls as unknown[][])[0]?.[2] as {
+      view?: Record<string, unknown>;
+    };
+
+    expect(promptArgs?.view?.testMarker).toBe("from-hook");
+    expect(toolCtxArg?.view?.testMarker).toBe("from-hook");
   });
 });
