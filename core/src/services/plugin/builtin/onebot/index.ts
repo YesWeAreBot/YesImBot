@@ -33,12 +33,7 @@ export class OnebotPlugin extends YesImPlugin {
   }
 
   private getEntityRole(ctx: ToolExecutionContext, userId: string): "owner" | "admin" | null {
-    const entities = ctx["entities"] as
-      | Array<{
-          userId?: string;
-          attributes?: Record<string, unknown>;
-        }>
-      | undefined;
+    const entities = ctx.view?.entities;
     if (!entities) return null;
     const entity = entities.find((e) => e.userId === userId);
     if (!entity?.attributes?.roles) return null;

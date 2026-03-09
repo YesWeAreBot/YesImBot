@@ -5,6 +5,7 @@ import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ToolExecutionContext } from "../plugin/types";
 import type { RoleService } from "../role/service";
+import { buildMinimalContext } from "../shared/context-factory";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
@@ -107,6 +108,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
     "yesimbot.trait",
     "yesimbot.skill",
     "yesimbot.role",
+    "yesimbot.hook",
+    "yesimbot.arousal",
   ];
 
   private queues = new Map<string, Promise<void>>();
@@ -239,10 +242,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
             triggeredBy: data.triggeredBy,
           },
         },
-        toolCtx: {
+        toolCtx: buildMinimalContext({
           platform: data.platform,
           channelId: data.channelId,
-        },
+        }),
       };
 
       this.enqueue(channelKey, built);
@@ -378,7 +381,12 @@ export class AgentCore extends Service<AgentCoreConfig> {
           senderName: event.payload.senderName,
         },
       },
-      toolCtx: { platform: event.platform, channelId: event.channelId, session, bot: session?.bot },
+      toolCtx: buildMinimalContext({
+        platform: event.platform,
+        channelId: event.channelId,
+        session,
+        bot: session?.bot,
+      }),
     };
   }
 

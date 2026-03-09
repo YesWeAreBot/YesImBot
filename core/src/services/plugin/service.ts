@@ -1,5 +1,6 @@
 import { Context, Schema, Service } from "koishi";
 
+import { buildMinimalContext } from "../shared/context-factory";
 import { CorePlugin, OnebotPlugin } from "./builtin";
 import { YesImPlugin } from "./plugin";
 import { schemaToJSONSchema } from "./schema";
@@ -21,6 +22,7 @@ export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.obj
 });
 
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
+  static inject = ["yesimbot.hook"];
   private plugins: Map<string, YesImPlugin> = new Map();
 
   constructor(ctx: Context, config: PluginServiceConfig) {
@@ -44,13 +46,13 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
         if (!session) return "无法获取会话信息。";
         if (!session.platform) return "无法获取平台信息。";
         if (!session.channelId) return "无法获取频道信息。";
-        const tools = this.getTools({
+        const execCtx = buildMinimalContext({
           platform: session.platform,
-          session: session,
           channelId: session.channelId,
+          session: session,
           bot: session.bot,
-          includeHidden: options?.hidden ?? false,
         });
+        const tools = this.getTools(execCtx, options?.hidden ?? false);
         if (tools.length === 0) return "当前没有可用的工具。";
         return `可用的工具：\n${tools
           .map((tool) => `- ${tool.function.name}: ${tool.function.description}`)
@@ -84,12 +86,12 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
         if (!session) return "无法获取会话信息。";
         if (!session.platform) return "无法获取平台信息。";
         if (!session.channelId) return "无法获取频道信息。";
-        const toolCtx = {
+        const toolCtx = buildMinimalContext({
           platform: session.platform,
-          session: session,
           channelId: session.channelId,
+          session: session,
           bot: session.bot,
-        };
+        });
 
         const parsedParams: Record<string, unknown> = {};
         try {
@@ -159,7 +161,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     const timeout = this.config?.defaultTimeout ?? 30000;
     try {
       return await Promise.race([
-        fn.handler(params, context ?? { platform: "", channelId: "" }),
+        fn.handler(params, context ?? buildMinimalContext({ platform: "", channelId: "" })),
         new Promise<ToolResult>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout")), timeout),
         ),
@@ -182,6 +184,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     function: { name: string; description: string; parameters: Record<string, unknown> };
   }> {
     const result = [];
+    const logger = this.ctx.logger("yesimbot.plugin");
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
         if (fn.hidden && !includeHidden) continue;
@@ -198,6 +201,10 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
                   parameters: schemaToJSONSchema(fn.parameters),
                 },
               });
+            } else {
+              logger.debug(
+                `Tool ${fn.name} deactivated: ${failed.reason ?? "activator check failed"}`,
+              );
             }
             continue;
           }

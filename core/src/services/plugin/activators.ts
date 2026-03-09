@@ -20,7 +20,7 @@ export function requirePlatform(platform: string | string[], reason?: string): A
 export function requireBotRole(role: "admin" | "owner" = "admin", reason?: string): Activator {
   return {
     check: (ctx) => {
-      const botRole = ctx["botRole"] as string | undefined;
+      const botRole = ctx.view?.self?.role;
       if (role === "admin") return botRole === "admin" || botRole === "owner";
       return botRole === "owner";
     },

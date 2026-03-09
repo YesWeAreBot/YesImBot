@@ -88,11 +88,9 @@ export class ThinkActLoop {
       channelId: percept.channelId,
     });
 
-    const toolCtxWithPercept = {
+    const toolCtxWithPercept: ToolExecutionContext = {
       ...toolCtx,
       percept,
-      botRole: view.self?.role,
-      entities: view.entities,
       view,
       traits: signals,
       skills: effects.activeSkills,
@@ -205,7 +203,9 @@ export class ThinkActLoop {
           const action = actions[actionId]!;
           if (action.name !== "send_message") continue;
 
-          const sendResult = toolResults.find((t) => t.id === actionId && t.name === "send_message");
+          const sendResult = toolResults.find(
+            (t) => t.id === actionId && t.name === "send_message",
+          );
           if (!isSuccessfulSendResult(sendResult)) continue;
 
           if (heartbeatRun) {
