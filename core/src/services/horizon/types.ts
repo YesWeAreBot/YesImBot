@@ -206,11 +206,9 @@ export interface ViewOptions {
 
 export interface HorizonView {
   self: SelfInfo;
-  environment?: Environment;
-  entities?: Entity[];
-  history?: TimelineEntry[];
-  traits?: import("../shared/types").TraitSignal[];
-  skills?: import("../shared/types").ActiveSkill[];
+  environment: Environment;
+  entities: Entity[];
+  history: TimelineEntry[];
 }
 
 // ---- Query ----
