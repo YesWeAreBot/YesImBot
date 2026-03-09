@@ -6,34 +6,58 @@ import type { TraitSignal, ActiveSkill } from "../src/services/shared/types";
 
 describe("Context Interface Extensions", () => {
   describe("HorizonView", () => {
-    it("should accept traits field", () => {
-      const traits: TraitSignal[] = [{ dimension: "mood", value: "happy", confidence: 0.8 }];
+    it("should require all fields (self, environment, entities, history)", () => {
       const view: HorizonView = {
         self: { id: "bot1", name: "TestBot" },
-        traits,
+        environment: {
+          type: "guild",
+          id: "ch1",
+          name: "General",
+          platform: "discord",
+          channelId: "ch1",
+        },
+        entities: [{ id: "u1", type: "user", name: "Alice" }],
+        history: [],
       };
-      expect(view.traits).toBeDefined();
-      expect(view.traits?.[0].dimension).toBe("mood");
+      expect(view.self.id).toBe("bot1");
+      expect(view.environment.platform).toBe("discord");
+      expect(view.entities).toHaveLength(1);
+      expect(view.history).toHaveLength(0);
     });
 
-    it("should accept skills field", () => {
-      const skills: ActiveSkill[] = [
-        { name: "greeting", effects: ["friendly_tone"], metadata: {} },
-      ];
+    it("should not have traits or skills fields", () => {
       const view: HorizonView = {
         self: { id: "bot1", name: "TestBot" },
-        skills,
+        environment: {
+          type: "guild",
+          id: "ch1",
+          name: "General",
+          platform: "discord",
+          channelId: "ch1",
+        },
+        entities: [],
+        history: [],
       };
-      expect(view.skills).toBeDefined();
-      expect(view.skills?.[0].name).toBe("greeting");
+      expect("traits" in view).toBe(false);
+      expect("skills" in view).toBe(false);
     });
 
-    it("should work without traits/skills (backward compatible)", () => {
+    it("should work with minimal valid construction", () => {
       const view: HorizonView = {
-        self: { id: "bot1", name: "TestBot" },
+        self: { id: "", name: "" },
+        environment: {
+          type: "unknown",
+          id: "",
+          name: "",
+          platform: "unknown",
+          channelId: "",
+        },
+        entities: [],
+        history: [],
       };
-      expect(view.traits).toBeUndefined();
-      expect(view.skills).toBeUndefined();
+      expect(view).toBeDefined();
+      expect(view.entities).toEqual([]);
+      expect(view.history).toEqual([]);
     });
   });
 
@@ -42,7 +66,18 @@ describe("Context Interface Extensions", () => {
       const ctx: ToolExecutionContext = {
         platform: "discord",
         channelId: "123",
-        view: { self: { id: "bot1", name: "TestBot" } },
+        view: {
+          self: { id: "bot1", name: "TestBot" },
+          environment: {
+            type: "guild",
+            id: "ch1",
+            name: "General",
+            platform: "discord",
+            channelId: "ch1",
+          },
+          entities: [],
+          history: [],
+        },
       };
       expect(ctx.view).toBeDefined();
       expect(ctx.view?.self.id).toBe("bot1");
