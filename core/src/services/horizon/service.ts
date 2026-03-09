@@ -9,7 +9,6 @@ import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
-import { validateAndFixHorizonView } from "./validation";
 import type {
   AllowedChannel,
   Entity,
@@ -23,6 +22,7 @@ import type {
   ViewOptions,
 } from "./types";
 import { TimelineEventType, TimelineStage } from "./types";
+import { validateAndFixHorizonView } from "./validation";
 
 declare module "koishi" {
   interface Context {
@@ -75,7 +75,13 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
-  static inject = ["database", "yesimbot.prompt", "yesimbot.formatter", "yesimbot.image-cache"];
+  static inject = [
+    "database",
+    "yesimbot.prompt",
+    "yesimbot.formatter",
+    "yesimbot.image-cache",
+    "yesimbot.model",
+  ];
 
   public events: EventManager;
   public listener: EventListener;
@@ -156,7 +162,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       // Remove all entries in Deleted stage across all channels
       const deletedResult = await this.ctx.database.remove("yesimbot.timeline", {
         stage: TimelineStage.Deleted,
-      } as any);
+      });
       const deletedCount = typeof deletedResult === "number" ? deletedResult : 0;
 
       // Clean up expired environment caches
