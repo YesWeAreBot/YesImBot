@@ -9,6 +9,7 @@ import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
+import { validateAndFixHorizonView } from "./validation";
 import type {
   AllowedChannel,
   Entity,
@@ -218,7 +219,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       name: options?.selfName || options?.selfId || "",
       role: botRole ?? undefined,
     };
-    return { self, environment: environment ?? undefined, entities, history };
+    const view = { self, environment: environment ?? undefined, entities, history };
+    return validateAndFixHorizonView(view as Partial<HorizonView>, this.logger);
   }
 
   async getEntities(key: ChannelKey, session?: Session): Promise<Entity[]> {
@@ -355,9 +357,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     percept?: Percept,
     imageConfig?: ImageConfig,
   ): Promise<LoopMessage[]> {
-    const channelKey = view.environment
-      ? `${view.environment.platform}:${view.environment.channelId}`
-      : undefined;
+    const channelKey = `${view.environment.platform}:${view.environment.channelId}`;
 
     // Build preamble (environment + members)
     let environment = "";
@@ -377,7 +377,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       });
       memberLines.push(line.toString());
     }
-    for (const e of view.entities ?? []) {
+    for (const e of view.entities) {
       const userId = e.userId ?? e.id;
       const username = e.username ?? e.name;
       const nickname = e.nickname;
@@ -399,7 +399,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     if (memberLines.length) preambleParts.push(`<members>\n${memberLines.join("\n")}\n</members>`);
 
     // Add latest Summary if exists
-    const latestSummary = (view.history ?? [])
+    const latestSummary = view.history
       .filter((e) => e.type === TimelineEventType.Summary)
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0] as
       | SummaryRecord
@@ -428,7 +428,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     if (preamble) messages.push({ role: "user", content: preamble });
 
     // Build all history messages using handler pipeline (no trigger mechanism)
-    const history = view.history ?? [];
+    const history = view.history;
     const historyLoopMessages = await this.events.buildLoopMessages(history, options);
 
     // Append each message directly - handlers already return proper format
