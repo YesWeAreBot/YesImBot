@@ -8,18 +8,20 @@ describe("Hook error isolation", () => {
   let ctx: Context;
   let hookService: HookService;
   let warnSpy: ReturnType<typeof vi.fn>;
+  let debugSpy: ReturnType<typeof vi.fn>;
+  let emitSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     warnSpy = vi.fn();
+    debugSpy = vi.fn();
+    emitSpy = vi.fn();
     ctx = {
       on: vi.fn(),
-      logger: vi.fn(() => ({ warn: warnSpy })),
+      emit: emitSpy,
+      logger: vi.fn(() => ({ warn: warnSpy, debug: debugSpy })),
     } as unknown as Context;
 
     hookService = new HookService(ctx);
-    (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
-      warn: warnSpy,
-    };
   });
 
   it("continues to later before hooks when an earlier before hook throws", async () => {
@@ -53,7 +55,9 @@ describe("Hook error isolation", () => {
     expect(result.params).toEqual({ input: "updated" });
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0]?.[0])).toContain("Hook");
-    expect(warnSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
+    expect(warnSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ reason: "before failed" }),
+    );
   });
 
   it("continues to later after hooks when an earlier after hook throws", async () => {
@@ -81,7 +85,7 @@ describe("Hook error isolation", () => {
     expect(order).toEqual(["after-1", "after-2"]);
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0]?.[0])).toContain("Hook");
-    expect(warnSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
+    expect(warnSpy.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ reason: "after failed" }));
   });
 
   it("continues to later error hooks when an earlier error hook throws", async () => {
@@ -109,7 +113,9 @@ describe("Hook error isolation", () => {
     expect(order).toEqual(["error-1", "error-2"]);
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0]?.[0])).toContain("Hook");
-    expect(warnSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
+    expect(warnSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ reason: "error hook failed" }),
+    );
   });
 
   it("keeps original params and non-skipped state when all before hooks throw", async () => {
