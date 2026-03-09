@@ -3,7 +3,16 @@ import { randomUUID } from "crypto";
 import { Context, Service } from "koishi";
 
 import type { StaticHookEntry } from "./decorators";
-import type { HookDefinition, HookType, HookPhase, HookContext, BeforeHookResult } from "./types";
+import { DEFAULT_HOOK_TIMEOUTS, HookType } from "./types";
+import type {
+  HookDefinition,
+  HookPhase,
+  HookContext,
+  BeforeHookResult,
+  HookServiceConfig,
+  HookTimeoutsConfig,
+  HookOutcome,
+} from "./types";
 
 interface RegisteredHook extends HookDefinition {
   ctx: Context;
@@ -19,9 +28,20 @@ export class HookService extends Service {
   static inject = [];
 
   private hooks = new Map<string, RegisteredHook>();
+  private timeouts: Record<HookType, number>;
+  private eventContext: Context;
+  private log: ReturnType<Context["logger"]>;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, hookConfig?: HookServiceConfig) {
     super(ctx, "yesimbot.hook", true);
+    this.eventContext = ctx;
+    this.log = ctx.logger("yesimbot.hook");
+    const hookTimeouts: HookTimeoutsConfig = hookConfig?.hookTimeouts ?? {};
+    this.timeouts = {
+      [HookType.Tool]: hookTimeouts.tool ?? DEFAULT_HOOK_TIMEOUTS.tool,
+      [HookType.Message]: hookTimeouts.message ?? DEFAULT_HOOK_TIMEOUTS.message,
+      [HookType.Agent]: hookTimeouts.agent ?? DEFAULT_HOOK_TIMEOUTS.agent,
+    };
   }
 
   register(ctx: Context, def: HookDefinition): () => void {
@@ -29,6 +49,9 @@ export class HookService extends Service {
     const registered: RegisteredHook = { ...def, id: hookId, ctx };
 
     this.hooks.set(hookId, registered);
+
+    const source = typeof def.metadata?.source === "string" ? def.metadata.source : undefined;
+    this.eventContext.emit("athena:hook.registered", hookId, def.type, def.phase, source);
 
     ctx.on("dispose", () => {
       this.hooks.delete(hookId);
@@ -49,6 +72,7 @@ export class HookService extends Service {
   ): Promise<{ params: T; skipped: boolean; result?: unknown }> {
     const hooks = this.getHooks(type, "before" as HookPhase);
     let currentParams = params;
+    const traceValue = traceId ?? "-";
 
     for (const hook of hooks) {
       const hookCtx: HookContext<T> = {
@@ -58,26 +82,124 @@ export class HookService extends Service {
         traceId,
       };
 
+      const hookId = hook.id ?? "unknown";
+      const hookPhase = "before" as HookPhase;
+      const startMs = Date.now();
+      this.eventContext.emit("athena:hook.started", hookId, type, hookPhase, traceValue);
+
       try {
-        const effectiveTimeout = timeout ?? hook.timeout ?? 5000;
+        const effectiveTimeout = timeout ?? hook.timeout ?? this.timeouts[type];
+        const timeoutResult = Symbol("hook-timeout");
         const result = (await Promise.race([
-          hook.handler(hookCtx),
-          new Promise<undefined>((resolve) =>
-            setTimeout(() => resolve(undefined), effectiveTimeout),
+          hook.handler(hookCtx) as Promise<BeforeHookResult<T> | void>,
+          new Promise<typeof timeoutResult>((resolve) =>
+            setTimeout(() => resolve(timeoutResult), effectiveTimeout),
           ),
-        ])) as BeforeHookResult<T> | void;
+        ])) as BeforeHookResult<T> | void | typeof timeoutResult;
 
-        if (!result) continue;
+        const durationMs = Date.now() - startMs;
 
-        if ("skip" in result && result.skip) {
-          return { params: currentParams, skipped: true, result: result.result };
+        if (result === timeoutResult) {
+          const reason = "timeout";
+          this.eventContext.emit(
+            "athena:hook.failed",
+            hookId,
+            type,
+            hookPhase,
+            traceValue,
+            durationMs,
+            reason,
+          );
+          this.log.warn(
+            `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) timed out after ${durationMs}ms`,
+            {
+              hookId,
+              hookType: type,
+              hookPhase,
+              traceId: traceValue,
+              durationMs,
+              reason,
+            },
+          );
+          continue;
         }
 
-        if ("modified" in result && result.modified) {
-          currentParams = result.params;
+        if (result && typeof result === "object" && "skip" in result && result.skip) {
+          const skipResult = result as Extract<BeforeHookResult<T>, { skip: true }>;
+          const outcome: HookOutcome = "skipped";
+          this.eventContext.emit(
+            "athena:hook.completed",
+            hookId,
+            type,
+            hookPhase,
+            traceValue,
+            durationMs,
+            outcome,
+          );
+          this.log.debug(
+            `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
+            {
+              hookId,
+              hookType: type,
+              hookPhase,
+              traceId: traceValue,
+              durationMs,
+              outcome,
+            },
+          );
+          return { params: currentParams, skipped: true, result: skipResult.result };
         }
+
+        if (result && typeof result === "object" && "modified" in result && result.modified) {
+          const modifiedResult = result as Extract<BeforeHookResult<T>, { modified: true }>;
+          currentParams = modifiedResult.params;
+        }
+
+        const outcome: HookOutcome = "success";
+        this.eventContext.emit(
+          "athena:hook.completed",
+          hookId,
+          type,
+          hookPhase,
+          traceValue,
+          durationMs,
+          outcome,
+        );
+        this.log.debug(
+          `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
+          {
+            hookId,
+            hookType: type,
+            hookPhase,
+            traceId: traceValue,
+            durationMs,
+            outcome,
+          },
+        );
       } catch (error) {
-        this.logger.warn(`Hook ${hook.id} failed:`, error);
+        const durationMs = Date.now() - startMs;
+        const reason = error instanceof Error ? error.message : String(error);
+        this.eventContext.emit(
+          "athena:hook.failed",
+          hookId,
+          type,
+          hookPhase,
+          traceValue,
+          durationMs,
+          reason,
+          error instanceof Error ? error : undefined,
+        );
+        this.log.warn(
+          `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) failed after ${durationMs}ms: ${reason}`,
+          {
+            hookId,
+            hookType: type,
+            hookPhase,
+            traceId: traceValue,
+            durationMs,
+            reason,
+          },
+        );
       }
     }
 
@@ -92,6 +214,7 @@ export class HookService extends Service {
     timeout?: number,
   ): Promise<void> {
     const hooks = this.getHooks(type, "after" as HookPhase);
+    const traceValue = traceId ?? "-";
 
     for (const hook of hooks) {
       const hookCtx: HookContext<T> = {
@@ -102,14 +225,92 @@ export class HookService extends Service {
         traceId,
       };
 
+      const hookId = hook.id ?? "unknown";
+      const hookPhase = "after" as HookPhase;
+      const startMs = Date.now();
+      this.eventContext.emit("athena:hook.started", hookId, type, hookPhase, traceValue);
+
       try {
-        const effectiveTimeout = timeout ?? hook.timeout ?? 5000;
-        await Promise.race([
-          hook.handler(hookCtx),
-          new Promise((resolve) => setTimeout(resolve, effectiveTimeout)),
-        ]);
+        const effectiveTimeout = timeout ?? hook.timeout ?? this.timeouts[type];
+        const timeoutResult = Symbol("hook-timeout");
+        const raceResult = (await Promise.race([
+          hook.handler(hookCtx) as Promise<BeforeHookResult<T> | void>,
+          new Promise<typeof timeoutResult>((resolve) =>
+            setTimeout(() => resolve(timeoutResult), effectiveTimeout),
+          ),
+        ])) as void | typeof timeoutResult | BeforeHookResult<T>;
+        const durationMs = Date.now() - startMs;
+
+        if (raceResult === timeoutResult) {
+          const reason = "timeout";
+          this.eventContext.emit(
+            "athena:hook.failed",
+            hookId,
+            type,
+            hookPhase,
+            traceValue,
+            durationMs,
+            reason,
+          );
+          this.log.warn(
+            `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) timed out after ${durationMs}ms`,
+            {
+              hookId,
+              hookType: type,
+              hookPhase,
+              traceId: traceValue,
+              durationMs,
+              reason,
+            },
+          );
+          continue;
+        }
+
+        const outcome: HookOutcome = "success";
+        this.eventContext.emit(
+          "athena:hook.completed",
+          hookId,
+          type,
+          hookPhase,
+          traceValue,
+          durationMs,
+          outcome,
+        );
+        this.log.debug(
+          `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
+          {
+            hookId,
+            hookType: type,
+            hookPhase,
+            traceId: traceValue,
+            durationMs,
+            outcome,
+          },
+        );
       } catch (error) {
-        this.logger.warn(`Hook ${hook.id} failed:`, error);
+        const durationMs = Date.now() - startMs;
+        const reason = error instanceof Error ? error.message : String(error);
+        this.eventContext.emit(
+          "athena:hook.failed",
+          hookId,
+          type,
+          hookPhase,
+          traceValue,
+          durationMs,
+          reason,
+          error instanceof Error ? error : undefined,
+        );
+        this.log.warn(
+          `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) failed after ${durationMs}ms: ${reason}`,
+          {
+            hookId,
+            hookType: type,
+            hookPhase,
+            traceId: traceValue,
+            durationMs,
+            reason,
+          },
+        );
       }
     }
   }
@@ -122,18 +323,97 @@ export class HookService extends Service {
     timeout?: number,
   ): Promise<void> {
     const hooks = this.getHooks(type, "error" as HookPhase);
+    const traceValue = traceId ?? "-";
 
     for (const hook of hooks) {
       const hookCtx: HookContext<T> = { type, phase: "error" as HookPhase, params, error, traceId };
 
+      const hookId = hook.id ?? "unknown";
+      const hookPhase = "error" as HookPhase;
+      const startMs = Date.now();
+      this.eventContext.emit("athena:hook.started", hookId, type, hookPhase, traceValue);
+
       try {
-        const effectiveTimeout = timeout ?? hook.timeout ?? 5000;
-        await Promise.race([
-          hook.handler(hookCtx),
-          new Promise((resolve) => setTimeout(resolve, effectiveTimeout)),
-        ]);
+        const effectiveTimeout = timeout ?? hook.timeout ?? this.timeouts[type];
+        const timeoutResult = Symbol("hook-timeout");
+        const raceResult = (await Promise.race([
+          hook.handler(hookCtx) as Promise<BeforeHookResult<T> | void>,
+          new Promise<typeof timeoutResult>((resolve) =>
+            setTimeout(() => resolve(timeoutResult), effectiveTimeout),
+          ),
+        ])) as void | typeof timeoutResult | BeforeHookResult<T>;
+        const durationMs = Date.now() - startMs;
+
+        if (raceResult === timeoutResult) {
+          const reason = "timeout";
+          this.eventContext.emit(
+            "athena:hook.failed",
+            hookId,
+            type,
+            hookPhase,
+            traceValue,
+            durationMs,
+            reason,
+          );
+          this.log.warn(
+            `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) timed out after ${durationMs}ms`,
+            {
+              hookId,
+              hookType: type,
+              hookPhase,
+              traceId: traceValue,
+              durationMs,
+              reason,
+            },
+          );
+          continue;
+        }
+
+        const outcome: HookOutcome = "success";
+        this.eventContext.emit(
+          "athena:hook.completed",
+          hookId,
+          type,
+          hookPhase,
+          traceValue,
+          durationMs,
+          outcome,
+        );
+        this.log.debug(
+          `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
+          {
+            hookId,
+            hookType: type,
+            hookPhase,
+            traceId: traceValue,
+            durationMs,
+            outcome,
+          },
+        );
       } catch (err) {
-        this.logger.warn(`Hook ${hook.id} failed:`, err);
+        const durationMs = Date.now() - startMs;
+        const reason = err instanceof Error ? err.message : String(err);
+        this.eventContext.emit(
+          "athena:hook.failed",
+          hookId,
+          type,
+          hookPhase,
+          traceValue,
+          durationMs,
+          reason,
+          err instanceof Error ? err : undefined,
+        );
+        this.log.warn(
+          `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) failed after ${durationMs}ms: ${reason}`,
+          {
+            hookId,
+            hookType: type,
+            hookPhase,
+            traceId: traceValue,
+            durationMs,
+            reason,
+          },
+        );
       }
     }
   }
