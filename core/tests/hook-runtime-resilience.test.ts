@@ -154,11 +154,14 @@ function createLoopHarness(actionPayload: string) {
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.hook"] = hookService;
 
-  const loop = new ThinkActLoop(rootCtx as never, {
-    model: "mock:model",
-    maxRounds: 2,
-    debugLevel: 0,
-  } as never);
+  const loop = new ThinkActLoop(
+    rootCtx as never,
+    {
+      model: "mock:model",
+      maxRounds: 2,
+      debugLevel: 0,
+    } as never,
+  );
 
   const percept: Percept = {
     id: "p-1",

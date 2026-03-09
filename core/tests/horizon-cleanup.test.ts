@@ -1,3 +1,4 @@
+import { Context } from "koishi";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { EnvironmentManager } from "../src/services/horizon/environment";
@@ -31,7 +32,7 @@ describe("EventManager.deleteStale", () => {
         warn: vi.fn(),
         error: vi.fn(),
       }),
-    } as any;
+    } as unknown as Context;
 
     manager = new EventManager(mockCtx);
   });
@@ -94,9 +95,12 @@ describe("EnvironmentManager.cleanup", () => {
    * We construct the manager, then replace the private `db` field
    * with a mock that returns controlled data.
    */
-  function createManagerWithMockDb(mockData: Record<string, any>, cacheTtl: number) {
+  function createManagerWithMockDb(mockData: Record<string, unknown>, cacheTtl: number) {
     const mockCommit = vi.fn();
-    const mockUpdate = vi.fn().mockImplementation(function (this: any, fn: (data: any) => void) {
+    const mockUpdate = vi.fn().mockImplementation(function (
+      this: unknown,
+      fn: (data: unknown) => void,
+    ) {
       fn(mockData);
       return { commit: mockCommit };
     });
@@ -110,12 +114,14 @@ describe("EnvironmentManager.cleanup", () => {
 
     // Construct with a mock ctx that has baseDir. The constructor tries to
     // create a JsonDB on the filesystem, so we override the private `db` field.
-    const mockCtx = { baseDir: "/tmp/test-cleanup-env" } as any;
+    const mockCtx = { baseDir: "/tmp/test-cleanup-env" } as unknown as Context;
 
     // We need to bypass the constructor's JsonDB creation.
     // Use Object.create to skip constructor, then manually set fields.
     const envManager = Object.create(EnvironmentManager.prototype) as EnvironmentManager;
+    // oxlint-disable-next-line typescript/no-explicit-any
     (envManager as any).db = mockDb;
+    // oxlint-disable-next-line typescript/no-explicit-any
     (envManager as any).cacheTtl = cacheTtl;
 
     return { envManager, mockCommit, mockUpdate };
@@ -125,7 +131,7 @@ describe("EnvironmentManager.cleanup", () => {
     const now = Date.now();
     const shortTtl = 1000; // 1 second TTL
 
-    const mockData: Record<string, any> = {
+    const mockData: Record<string, unknown> = {
       "test:ch1": {
         type: "group",
         id: "test:ch1",
@@ -164,7 +170,7 @@ describe("EnvironmentManager.cleanup", () => {
     const now = Date.now();
     const longTtl = 60000; // 60 seconds TTL
 
-    const freshData: Record<string, any> = {
+    const freshData: Record<string, unknown> = {
       "test:ch1": {
         type: "group",
         id: "test:ch1",
@@ -184,7 +190,7 @@ describe("EnvironmentManager.cleanup", () => {
   });
 
   it("should handle empty environment store", () => {
-    const emptyData: Record<string, any> = {};
+    const emptyData: Record<string, unknown> = {};
 
     const { envManager, mockCommit } = createManagerWithMockDb(emptyData, 1000);
 

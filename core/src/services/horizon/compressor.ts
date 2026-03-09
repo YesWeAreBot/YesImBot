@@ -121,7 +121,9 @@ export class SummaryCompressor {
       entriesToCompress = entries.slice(0, splitIndex);
 
       if (entriesToCompress.length === 0) {
-        this.logger.debug(`All entries within retain window (${entries.length} <= ${retainCount}), skipping`);
+        this.logger.debug(
+          `All entries within retain window (${entries.length} <= ${retainCount}), skipping`,
+        );
         return;
       }
     }

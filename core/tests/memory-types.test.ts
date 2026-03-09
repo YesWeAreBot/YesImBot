@@ -1,11 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { MemoryType, MemoryScope } from "../src/services/memory-agent/types";
+import { HeartbeatHandler } from "../src/services/horizon/handlers";
 import { TimelineEventType } from "../src/services/horizon/types";
-import {
-  HeartbeatHandler,
-} from "../src/services/horizon/handlers";
 import type { TimelineEntry } from "../src/services/horizon/types";
+import { MemoryType, MemoryScope } from "../src/services/memory-agent/types";
 
 describe("Memory types", () => {
   it("MemoryType enum has four categories", () => {

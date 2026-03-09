@@ -115,11 +115,14 @@ function createRuntimeHarness(actionPayload: string) {
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.hook"] = hookService;
 
-  const loop = new ThinkActLoop(rootCtx as never, {
-    model: "mock:model",
-    maxRounds: 2,
-    debugLevel: 0,
-  } as never);
+  const loop = new ThinkActLoop(
+    rootCtx as never,
+    {
+      model: "mock:model",
+      maxRounds: 2,
+      debugLevel: 0,
+    } as never,
+  );
 
   const percept: Percept = {
     id: "p-1",
@@ -229,7 +232,9 @@ describe("Hook runtime interception", () => {
     const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ result?: Record<string, unknown> }> };
     };
-    expect((actionEventPayload.data?.toolResults?.[0]?.result?.params as Record<string, unknown>) ?? {}).toEqual({
+    expect(
+      (actionEventPayload.data?.toolResults?.[0]?.result?.params as Record<string, unknown>) ?? {},
+    ).toEqual({
       query: "ATHENA",
       intercepted: true,
     });

@@ -27,8 +27,8 @@ vi.mock("../src/services/memory-agent/recall-plugin", () => ({
   MemoryRecallPlugin: class MemoryRecallPlugin {},
 }));
 
-import { MemoryAgentService } from "../src/services/memory-agent/service";
 import { runMemoryExtraction } from "../src/services/memory-agent/agent";
+import { MemoryAgentService } from "../src/services/memory-agent/service";
 
 function createMockContext() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();

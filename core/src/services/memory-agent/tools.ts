@@ -25,7 +25,9 @@ export function createMemoryTools(
     inputSchema: z.object({
       type: z.nativeEnum(MemoryType).describe("Memory category"),
       scope: z.nativeEnum(MemoryScope).describe("Visibility scope"),
-      scopeId: z.string().describe("User ID (for user scope) or channel key (for channel/private scope)"),
+      scopeId: z
+        .string()
+        .describe("User ID (for user scope) or channel key (for channel/private scope)"),
       content: z.string().describe("Memory content text"),
       importance: z.number().int().min(0).max(100).describe("Importance score 0-100"),
     }),
@@ -86,7 +88,12 @@ export function createMemoryTools(
     inputSchema: z.object({
       sourceIds: z.array(z.string()).min(2).describe("IDs of memories to merge"),
       mergedContent: z.string().describe("Consolidated content for the merged memory"),
-      importance: z.number().int().min(0).max(100).describe("Importance score for the merged memory"),
+      importance: z
+        .number()
+        .int()
+        .min(0)
+        .max(100)
+        .describe("Importance score for the merged memory"),
     }),
     execute: async ({ sourceIds, mergedContent, importance }) => {
       // Fetch first source to inherit type/scope/scopeId
@@ -133,10 +140,7 @@ export function createMemoryTools(
 
       // Calculate total core memory budget usage
       const coreMemories = await ctx.database.get(MEMORY_TABLE, { isCore: true, platform });
-      const totalCoreChars = coreMemories.reduce(
-        (sum, m) => sum + (m.content?.length ?? 0),
-        0,
-      );
+      const totalCoreChars = coreMemories.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
 
       logger.debug(
         `Set memory ${id} isCore=${isCore}, total core budget: ${totalCoreChars}/${config.coreMemoryBudget}`,

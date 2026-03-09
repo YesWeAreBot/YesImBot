@@ -199,5 +199,11 @@ class HeartbeatHandler extends TimelineHandler<HeartbeatRecord> {
   }
 }
 
-export { AgentActionHandler, AgentResponseHandler, HeartbeatHandler, MessageHandler, SummaryHandler };
+export {
+  AgentActionHandler,
+  AgentResponseHandler,
+  HeartbeatHandler,
+  MessageHandler,
+  SummaryHandler,
+};
 export type { TimelineHandler };

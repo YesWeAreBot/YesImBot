@@ -1,11 +1,8 @@
+import { Logger } from "koishi";
 import { describe, expect, it, vi } from "vitest";
 
 import type { HorizonView } from "../src/services/horizon/types";
-import {
-  TimelineEventType,
-  TimelinePriority,
-  TimelineStage,
-} from "../src/services/horizon/types";
+import { TimelineEventType, TimelinePriority, TimelineStage } from "../src/services/horizon/types";
 import { validateAndFixHorizonView } from "../src/services/horizon/validation";
 
 describe("validateAndFixHorizonView", () => {
@@ -49,7 +46,7 @@ describe("validateAndFixHorizonView", () => {
   });
 
   it("should log warning when fixing fields", () => {
-    const mockLogger = { warn: vi.fn() } as any;
+    const mockLogger = { warn: vi.fn() } as unknown as Logger;
     validateAndFixHorizonView({}, mockLogger);
     expect(mockLogger.warn).toHaveBeenCalledOnce();
     expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -59,7 +56,7 @@ describe("validateAndFixHorizonView", () => {
   });
 
   it("should not log when all fields are present", () => {
-    const mockLogger = { warn: vi.fn() } as any;
+    const mockLogger = { warn: vi.fn() } as unknown as Logger;
     const view = {
       self: { id: "bot1", name: "TestBot" },
       environment: {

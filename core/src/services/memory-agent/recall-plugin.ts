@@ -83,9 +83,7 @@ export class MemoryRecallPlugin extends YesImPlugin {
       // Filter by query keyword if provided
       if (query) {
         const lowerQuery = query.toLowerCase();
-        results = results.filter((m) =>
-          m.content.toLowerCase().includes(lowerQuery),
-        );
+        results = results.filter((m) => m.content.toLowerCase().includes(lowerQuery));
       }
 
       // Sort by importance descending and limit
@@ -96,15 +94,11 @@ export class MemoryRecallPlugin extends YesImPlugin {
         return Success("No memories found.");
       }
 
-      const formatted = results
-        .map((m) => `[${m.type}/${m.scope}] ${m.content}`)
-        .join("\n");
+      const formatted = results.map((m) => `[${m.type}/${m.scope}] ${m.content}`).join("\n");
 
       return Success(formatted);
     } catch (err) {
-      return Failed(
-        `Memory recall failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      return Failed(`Memory recall failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }

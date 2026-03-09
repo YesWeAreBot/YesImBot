@@ -3,9 +3,8 @@ import { join, resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
 
-import { HandlebarsRenderer } from "../prompt/renderer";
-
 import type { HorizonView } from "../horizon";
+import { HandlebarsRenderer } from "../prompt/renderer";
 import type { PromptService } from "../prompt/service";
 import type { Percept } from "../shared/types";
 import type { RoleServiceConfig } from "./types";

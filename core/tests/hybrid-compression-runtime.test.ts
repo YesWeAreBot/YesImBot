@@ -95,11 +95,14 @@ function createCompressionHarness(options: CompressionHarnessOptions = {}) {
   rootCtx["yesimbot.trait"] = traitService;
   rootCtx["yesimbot.skill"] = skillService;
 
-  const loop = new ThinkActLoop(rootCtx as never, {
-    model: "mock:model",
-    maxRounds: 2,
-    debugLevel: 0,
-  } as never);
+  const loop = new ThinkActLoop(
+    rootCtx as never,
+    {
+      model: "mock:model",
+      maxRounds: 2,
+      debugLevel: 0,
+    } as never,
+  );
 
   const percept: Percept = {
     id: "percept-1",

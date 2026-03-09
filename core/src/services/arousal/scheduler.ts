@@ -20,7 +20,13 @@ export interface ChannelSummary {
  * @returns Array of selected channels with platform, channelId, and reason
  */
 export async function evaluateChannels(
-  modelService: { call: (model: string, params: unknown, fallback?: string[]) => Promise<{ text: string } | undefined> },
+  modelService: {
+    call: (
+      model: string,
+      params: unknown,
+      fallback?: string[],
+    ) => Promise<{ text: string } | undefined>;
+  },
   config: ArousalConfig,
   activeChannels: ChannelSummary[],
 ): Promise<SelectedChannel[]> {

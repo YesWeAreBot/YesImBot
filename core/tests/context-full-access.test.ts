@@ -46,10 +46,7 @@ describe("Full context access contract", () => {
           modified: true,
           params: {
             ...params,
-            traits: [
-              ...params.traits,
-              { dimension: "hook-injected", value: "yes", confidence: 1 },
-            ],
+            traits: [...params.traits, { dimension: "hook-injected", value: "yes", confidence: 1 }],
             skills: [
               ...params.skills,
               {
@@ -144,11 +141,14 @@ describe("Full context access contract", () => {
     rootCtx["yesimbot.skill"] = skillService;
     rootCtx["yesimbot.hook"] = hookService;
 
-    const loop = new ThinkActLoop(rootCtx as never, {
-      model: "mock:model",
-      maxRounds: 1,
-      debugLevel: 0,
-    } as never);
+    const loop = new ThinkActLoop(
+      rootCtx as never,
+      {
+        model: "mock:model",
+        maxRounds: 1,
+        debugLevel: 0,
+      } as never,
+    );
 
     const percept: Percept = {
       id: "p-1",

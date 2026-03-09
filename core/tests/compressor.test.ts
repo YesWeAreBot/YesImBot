@@ -4,10 +4,7 @@ import { SummaryCompressor } from "../src/services/horizon/compressor";
 import { EventManager } from "../src/services/horizon/manager";
 import { TimelineEventType, TimelineStage } from "../src/services/horizon/types";
 import type { ChannelKey } from "../src/services/shared/types";
-import {
-  createMessageRecord,
-  createTimelineSequence,
-} from "./fixtures/timeline-entries";
+import { createMessageRecord, createTimelineSequence } from "./fixtures/timeline-entries";
 
 describe("SummaryCompressor hybrid triggers", () => {
   let compressor: SummaryCompressor;
@@ -188,7 +185,10 @@ describe("SummaryCompressor hybrid triggers", () => {
       // Use a deferred promise to control when model call resolves
       let resolveModel!: (value: { text: string }) => void;
       mockModelService.call.mockImplementation(
-        () => new Promise((resolve) => { resolveModel = resolve; }),
+        () =>
+          new Promise((resolve) => {
+            resolveModel = resolve;
+          }),
       );
 
       // Start first compression (won't complete immediately)

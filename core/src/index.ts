@@ -8,9 +8,9 @@ import { WillingnessSchema } from "./services/agent/willingness";
 import type { ArousalConfig } from "./services/arousal";
 import { ArousalService } from "./services/arousal";
 import { FormatterService } from "./services/formatter";
+import { HookService } from "./services/hook/service";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
-import { HookService } from "./services/hook/service";
 import { ImageCacheService } from "./services/image-cache/service";
 import type { MemoryAgentServiceConfig } from "./services/memory-agent";
 import { MemoryAgentService } from "./services/memory-agent";
@@ -60,8 +60,7 @@ export type Config = AgentCoreConfig &
   RoleServiceConfig &
   SkillRegistryConfig &
   TraitAnalyzerConfig &
-  MemoryAgentServiceConfig &
-  { arousal: ArousalConfig };
+  MemoryAgentServiceConfig & { arousal: ArousalConfig };
 
 export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
@@ -80,9 +79,15 @@ export const Config: Schema<Config> = Schema.intersect([
       .default([])
       .role("table"),
     keywords: Schema.array(Schema.string()).default([]),
-    compressionThreshold: Schema.number().default(100).description("Event count to trigger timeline compression"),
-    inactivityTriggerMs: Schema.number().default(3600000).description("Inactivity period (ms) to trigger timeline compression (default: 1 hour)"),
-    retainRecentEntries: Schema.number().default(10).description("Keep N most recent timeline entries uncompressed"),
+    compressionThreshold: Schema.number()
+      .default(100)
+      .description("Event count to trigger timeline compression"),
+    inactivityTriggerMs: Schema.number()
+      .default(3600000)
+      .description("Inactivity period (ms) to trigger timeline compression (default: 1 hour)"),
+    retainRecentEntries: Schema.number()
+      .default(10)
+      .description("Keep N most recent timeline entries uncompressed"),
   }),
 
   // ── 模型 ──

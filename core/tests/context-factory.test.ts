@@ -87,13 +87,11 @@ describe("context factory", () => {
         "yesimbot.skill": {
           resolve:
             overrides.resolve ??
-            vi
-              .fn()
-              .mockReturnValue({
-                activeSkills: skills,
-                promptInjections: [],
-                toolFilter: undefined,
-              }),
+            vi.fn().mockReturnValue({
+              activeSkills: skills,
+              promptInjections: [],
+              toolFilter: undefined,
+            }),
         },
       } as unknown as Context;
 

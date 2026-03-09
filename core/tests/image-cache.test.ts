@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
+
 import { Context } from "koishi";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createHash } from "node:crypto";
 
 import { ImageCacheService } from "../src/services/image-cache/service";
 import type { ImageMetadata } from "../src/services/image-cache/types";

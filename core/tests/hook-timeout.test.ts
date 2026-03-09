@@ -64,7 +64,12 @@ describe("Hook timeout override", () => {
       timeout: 5000,
     });
 
-    const result = await hookService.executeBefore(HookType.Tool, { input: "call-level" }, "t-1", 120);
+    const result = await hookService.executeBefore(
+      HookType.Tool,
+      { input: "call-level" },
+      "t-1",
+      120,
+    );
 
     expect(result.params.input).toBe("call-level");
     expect(timeoutSpy.mock.calls.some((call) => call[1] === 120)).toBe(true);

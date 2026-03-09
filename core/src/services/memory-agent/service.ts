@@ -1,14 +1,14 @@
 import { Context, Service } from "koishi";
 
-import type { ModelService } from "../model/service";
-import type { HorizonView } from "../horizon/types";
-import type { ChannelKey } from "../shared/types";
 import type { HorizonService } from "../horizon/service";
+import type { HorizonView } from "../horizon/types";
 import { TimelineEventType, TimelineStage } from "../horizon/types";
-import type { MemoryAgentConfig, MemoryRecord } from "./types";
-import { MemoryType, MemoryScope } from "./types";
+import type { ModelService } from "../model/service";
+import type { ChannelKey } from "../shared/types";
 import { runMemoryExtraction } from "./agent";
 import { MemoryRecallPlugin } from "./recall-plugin";
+import type { MemoryAgentConfig, MemoryRecord } from "./types";
+import { MemoryType, MemoryScope } from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -43,23 +43,26 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
 
   protected async start(): Promise<void> {
     // Declare database model
-    this.ctx.model.extend("yesimbot.memory", {
-      id: "string(64)",
-      type: "string(32)",
-      scope: "string(16)",
-      scopeId: "string(255)",
-      platform: "string(64)",
-      content: "text",
-      importance: "unsigned",
-      isCore: { type: "boolean", initial: false },
-      createdAt: "timestamp",
-      updatedAt: "timestamp",
-    }, { primary: "id", autoInc: false });
+    this.ctx.model.extend(
+      "yesimbot.memory",
+      {
+        id: "string(64)",
+        type: "string(32)",
+        scope: "string(16)",
+        scopeId: "string(255)",
+        platform: "string(64)",
+        content: "text",
+        importance: "unsigned",
+        isCore: { type: "boolean", initial: false },
+        createdAt: "timestamp",
+        updatedAt: "timestamp",
+      },
+      { primary: "id", autoInc: false },
+    );
 
     // Listen for compression events to trigger memory extraction
-    this.ctx.on(
-      "athena:timeline.compressed",
-      (channelKey) => this.onTimelineCompressed(channelKey),
+    this.ctx.on("athena:timeline.compressed", (channelKey) =>
+      this.onTimelineCompressed(channelKey),
     );
 
     // Inject core memories into prompt "extra" section
@@ -89,9 +92,10 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
   /**
    * Triggered after summary compression completes for a channel.
    */
-  private async onTimelineCompressed(
-    channelKey: { platform: string; channelId: string },
-  ): Promise<void> {
+  private async onTimelineCompressed(channelKey: {
+    platform: string;
+    channelId: string;
+  }): Promise<void> {
     this.logger.info(
       `Timeline compressed for ${channelKey.platform}:${channelKey.channelId}, triggering memory extraction`,
     );

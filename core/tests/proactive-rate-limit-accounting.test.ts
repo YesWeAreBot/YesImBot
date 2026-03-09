@@ -82,7 +82,11 @@ function createHarness(options: {
     ),
     invoke: vi.fn(
       async (name: string) =>
-        invokeImpl?.(name) ?? { success: true, status: "ok", content: name === "send_message" ? "sent" : "tool-ok" },
+        invokeImpl?.(name) ?? {
+          success: true,
+          status: "ok",
+          content: name === "send_message" ? "sent" : "tool-ok",
+        },
     ),
     getTools: vi.fn(() => []),
   };
@@ -99,11 +103,14 @@ function createHarness(options: {
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.arousal"] = arousalService;
 
-  const loop = new ThinkActLoop(rootCtx as never, {
-    model: "mock:model",
-    maxRounds,
-    debugLevel: 0,
-  } as never);
+  const loop = new ThinkActLoop(
+    rootCtx as never,
+    {
+      model: "mock:model",
+      maxRounds,
+      debugLevel: 0,
+    } as never,
+  );
 
   const percept: Percept = {
     id: "p-1",
@@ -141,7 +148,9 @@ describe("proactive rate-limit accounting", () => {
     const harness = createHarness({
       responses: ['{"actions":[{"name":"send_message","params":{"content":"hello"}}]}'],
       invokeImpl: async (name) =>
-        name === "send_message" ? { success: false, status: "failed", content: "send-failed" } : { success: true, status: "ok" },
+        name === "send_message"
+          ? { success: false, status: "failed", content: "send-failed" }
+          : { success: true, status: "ok" },
     });
 
     await harness.loop.run(harness.percept, harness.toolCtx);
