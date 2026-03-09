@@ -174,4 +174,50 @@ describe("Hook error isolation", () => {
     expect(result.skipped).toBe(false);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("treats timed-out before hook as failure and continues to later hooks", async () => {
+    const order: string[] = [];
+
+    hookService.register(ctx, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      timeout: 30,
+      handler: async () => {
+        order.push("slow");
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      },
+    });
+
+    hookService.register(ctx, {
+      type: HookType.Tool,
+      phase: HookPhase.Before,
+      handler: async (hookCtx) => {
+        order.push("fast");
+        return {
+          modified: true,
+          params: { ...(hookCtx.params as { input: string }), input: "updated" },
+        };
+      },
+    });
+
+    const result = await hookService.executeBefore(HookType.Tool, { input: "original" }, "t-6");
+
+    expect(order).toEqual(["slow", "fast"]);
+    expect(result.params).toEqual({ input: "updated" });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("isolates error hook failure so executeError resolves", async () => {
+    hookService.register(ctx, {
+      type: HookType.Tool,
+      phase: HookPhase.Error,
+      handler: async () => {
+        throw new Error("error hook blew up");
+      },
+    });
+
+    await expect(
+      hookService.executeError(HookType.Tool, { input: "v" }, new Error("upstream"), "t-7"),
+    ).resolves.toBeUndefined();
+  });
 });
