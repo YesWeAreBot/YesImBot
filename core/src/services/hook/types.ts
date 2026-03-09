@@ -1,3 +1,5 @@
+import type { ToolExecutionContext } from "../plugin/types";
+
 export enum HookType {
   Tool = "tool",
   Message = "message",
@@ -10,6 +12,7 @@ export enum HookPhase {
   Error = "error",
 }
 
+/** @deprecated Use HookExecutionContext — will be removed in Phase 54 */
 export interface HookContext<T = unknown> {
   type: HookType;
   phase: HookPhase;
@@ -17,6 +20,11 @@ export interface HookContext<T = unknown> {
   result?: unknown;
   error?: Error;
   traceId?: string;
+}
+
+export interface HookExecutionContext extends ToolExecutionContext {
+  hookType: HookType;
+  hookPhase: HookPhase;
 }
 
 export type BeforeHookResult<T> =

@@ -53,7 +53,6 @@ export interface ToolExecutionContext {
   view?: import("../horizon/types").HorizonView;
   traits?: TraitSignal[];
   skills?: import("../shared/types").ActiveSkill[];
-  [key: string]: unknown;
 }
 
 export type ActivatorFn = (ctx: ToolExecutionContext) => boolean;
