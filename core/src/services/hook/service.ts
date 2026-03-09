@@ -75,10 +75,11 @@ export class HookService extends Service {
     const traceValue = traceId ?? "-";
 
     for (const hook of hooks) {
+      const snapshot = cloneHookParams(currentParams);
       const hookCtx: HookContext<T> = {
         type,
         phase: "before" as HookPhase,
-        params: currentParams,
+        params: snapshot,
         traceId,
       };
 
@@ -217,10 +218,11 @@ export class HookService extends Service {
     const traceValue = traceId ?? "-";
 
     for (const hook of hooks) {
+      const snapshot = cloneHookParams(params);
       const hookCtx: HookContext<T> = {
         type,
         phase: "after" as HookPhase,
-        params,
+        params: snapshot,
         result,
         traceId,
       };
@@ -326,7 +328,14 @@ export class HookService extends Service {
     const traceValue = traceId ?? "-";
 
     for (const hook of hooks) {
-      const hookCtx: HookContext<T> = { type, phase: "error" as HookPhase, params, error, traceId };
+      const snapshot = cloneHookParams(params);
+      const hookCtx: HookContext<T> = {
+        type,
+        phase: "error" as HookPhase,
+        params: snapshot,
+        error,
+        traceId,
+      };
 
       const hookId = hook.id ?? "unknown";
       const hookPhase = "error" as HookPhase;
@@ -436,4 +445,39 @@ export class HookService extends Service {
       });
     }
   }
+}
+
+function cloneHookParams<T>(params: T): T {
+  try {
+    return structuredClone(params);
+  } catch (error) {
+    return deepClonePreserveFunctions(params, new Map());
+  }
+}
+
+function deepClonePreserveFunctions<T>(value: T, seen: Map<object, unknown>): T {
+  if (typeof value !== "object" || value === null) return value;
+  const existing = seen.get(value as object);
+  if (existing) return existing as T;
+
+  if (Array.isArray(value)) {
+    const clone: unknown[] = [];
+    seen.set(value as object, clone);
+    for (const item of value) {
+      clone.push(deepClonePreserveFunctions(item, seen));
+    }
+    return clone as T;
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    return value;
+  }
+
+  const clone: Record<string, unknown> = {};
+  seen.set(value as object, clone);
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    clone[key] = deepClonePreserveFunctions(entry, seen);
+  }
+  return clone as T;
 }

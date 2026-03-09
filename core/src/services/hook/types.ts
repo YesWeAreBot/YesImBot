@@ -16,7 +16,7 @@ export enum HookPhase {
 export interface HookContext<T = unknown> {
   type: HookType;
   phase: HookPhase;
-  params: T;
+  params: Readonly<T>;
   result?: unknown;
   error?: Error;
   traceId?: string;

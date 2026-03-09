@@ -76,9 +76,9 @@ export class CorePlugin extends YesImPlugin {
     params: Record<string, unknown>,
     ctx: ToolExecutionContext,
   ): Promise<ToolResult> {
+    const hookService = this.ctx["yesimbot.hook"];
+    let content = String(params["content"] ?? "");
     try {
-      const hookService = this.ctx["yesimbot.hook"];
-      let content = String(params["content"] ?? "");
       const target = params["target"] as { platform: string; channelId: string } | undefined;
       const replyToStr = params["replyTo"] as string | undefined;
 
@@ -145,6 +145,14 @@ export class CorePlugin extends YesImPlugin {
       }
       return Success(`Sent ${effectiveParts.length} message(s)`);
     } catch (e) {
+      if (hookService) {
+        await hookService.executeError(
+          HookType.Message,
+          { content, session: ctx.session },
+          e instanceof Error ? e : new Error(String(e)),
+          ctx.percept?.traceId,
+        );
+      }
       return Failed(e instanceof Error ? e.message : String(e));
     }
   }

@@ -77,8 +77,13 @@ function createLoopHarness(actionPayload: string) {
 
   const hookService = new HookService(rootCtx as never);
   const hookWarnSpy = vi.fn();
-  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+  (
+    hookService as unknown as {
+      log: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+    }
+  ).log = {
     warn: hookWarnSpy,
+    debug: vi.fn(),
   };
 
   const horizonEvents = {
@@ -203,8 +208,13 @@ function createMessageHarness() {
 
   const hookService = new HookService(rootCtx as never);
   const hookWarnSpy = vi.fn();
-  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+  (
+    hookService as unknown as {
+      log: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+    }
+  ).log = {
     warn: hookWarnSpy,
+    debug: vi.fn(),
   };
   rootCtx["yesimbot.hook"] = hookService;
 

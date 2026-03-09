@@ -88,14 +88,6 @@ export class ThinkActLoop {
       channelId: percept.channelId,
     });
 
-    const toolCtxWithPercept: ToolExecutionContext = {
-      ...toolCtx,
-      percept,
-      view,
-      traits: signals,
-      skills: effects.activeSkills,
-    };
-
     // Agent before hook - allows hooks to inject context or modify behavior
     const hookService = this.ctx["yesimbot.hook"];
     if (hookService) {
@@ -115,6 +107,14 @@ export class ThinkActLoop {
         if (modifiedParams.skills) Object.assign(effects.activeSkills, modifiedParams.skills);
       }
     }
+
+    const toolCtxWithPercept: ToolExecutionContext = {
+      ...toolCtx,
+      percept,
+      view,
+      traits: signals,
+      skills: effects.activeSkills,
+    };
 
     const disposers: Array<() => void> = [];
 
@@ -565,14 +565,26 @@ export class ThinkActLoop {
             params = beforeResult.params;
           }
 
-          const result = await pluginService.invoke(action.name, params, toolCtx);
+          try {
+            const result = await pluginService.invoke(action.name, params, toolCtx);
 
-          // After hook
-          if (hookService) {
-            await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
+            // After hook
+            if (hookService) {
+              await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
+            }
+
+            return result;
+          } catch (error) {
+            if (hookService) {
+              await hookService.executeError(
+                HookType.Tool,
+                params,
+                error instanceof Error ? error : new Error(String(error)),
+                percept.traceId,
+              );
+            }
+            throw error;
           }
-
-          return result;
         }),
       );
       for (let i = 0; i < toolActions.length; i++) {
