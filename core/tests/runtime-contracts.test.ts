@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  RUNTIME_CONTRACT_VERSION,
+import { RUNTIME_CONTRACT_VERSION } from "../src/services/runtime/contracts";
+import type {
   Capabilities,
   CapabilityState,
   Percept,
@@ -25,9 +25,10 @@ describe("runtime contracts", () => {
     };
 
     expect(percept.type).toBe("mention");
-    expect("scenario" in (percept as Record<string, unknown>)).toBe(false);
-    expect("view" in (percept as Record<string, unknown>)).toBe(false);
-    expect("capabilities" in (percept as Record<string, unknown>)).toBe(false);
+    const perceptRecord = percept as unknown as Record<string, unknown>;
+    expect("scenario" in perceptRecord).toBe(false);
+    expect("view" in perceptRecord).toBe(false);
+    expect("capabilities" in perceptRecord).toBe(false);
 
     // @ts-expect-error Percept must not absorb Scenario.
     const invalidPercept: Percept = { ...percept, scenario: {} };
@@ -46,7 +47,7 @@ describe("runtime contracts", () => {
           channelId: "c1",
         },
         entities: [{ id: "u1", type: "user", name: "alice" }],
-        timeline: [{ id: "e1", type: "message" }] as unknown[],
+        timeline: [{ id: "e1", type: "message" }] as Array<Record<string, unknown>>,
         stimulusSource: {
           type: "message",
           messageId: "m1",
@@ -85,6 +86,9 @@ describe("runtime contracts", () => {
 
     expect(capabilities.core.sendMessage.status).toBe("available");
     expect(capabilities.core.readHistory.status).toBe("unavailable");
-    expect(capabilities.extended.moderation.reason).toBe("platform-not-supported");
+    expect(capabilities.extended.moderation.status).toBe("unavailable");
+    if (capabilities.extended.moderation.status === "unavailable") {
+      expect(capabilities.extended.moderation.reason).toBe("platform-not-supported");
+    }
   });
 });
