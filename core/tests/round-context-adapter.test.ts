@@ -134,7 +134,7 @@ describe("scenario adapter", () => {
     const capabilities = buildCapabilitiesFromRuntime({
       session: {
         isDirect: false,
-        quote: null,
+        quote: undefined,
       },
       bot: { selfId: "bot-1" },
     });
@@ -145,6 +145,23 @@ describe("scenario adapter", () => {
 
     if (capabilities.extended.replyByQuote.status === "unavailable") {
       expect(capabilities.extended.replyByQuote.reason).toBe("quote-message-unavailable");
+    }
+  });
+
+  it("reports session-derived capabilities as unavailable when session missing", () => {
+    const capabilities = buildCapabilitiesFromRuntime({
+      session: undefined,
+      bot: { selfId: "bot-1" },
+    });
+
+    expect(capabilities.extended.replyByQuote.status).toBe("unavailable");
+    if (capabilities.extended.replyByQuote.status === "unavailable") {
+      expect(capabilities.extended.replyByQuote.reason).toBe("session-unavailable");
+    }
+
+    expect(capabilities.extended.directMessage.status).toBe("unavailable");
+    if (capabilities.extended.directMessage.status === "unavailable") {
+      expect(capabilities.extended.directMessage.reason).toBe("session-unavailable");
     }
   });
 
@@ -239,7 +256,7 @@ describe("scenario adapter", () => {
         },
       },
       capabilities: buildCapabilitiesFromRuntime({
-        session: { isDirect: false, quote: null },
+        session: { isDirect: false, quote: undefined },
         bot: { selfId: "bot-1" },
       }),
     });
