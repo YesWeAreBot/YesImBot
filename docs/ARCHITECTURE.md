@@ -17,7 +17,7 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 
 - Ingests and stores timeline events (`yesimbot.timeline`)
 - Maintains entity and environment context (`yesimbot.entity`)
-- Builds `HorizonView` for downstream reasoning
+- Builds `HorizonView` as an internal read model (adapter source for `Scenario`)
 - Formats historical context into model-ready messages
 
 ### 2. Decision and Loop Layer (`agent`)
@@ -55,13 +55,25 @@ Koishi message event
   -> Horizon listener/event manager
   -> Agent willingness + token bucket check
   -> DM/group aggregation window
-  -> HorizonView build
+  -> HorizonView build (internal)
+  -> Scenario + Capabilities + RoundContext assembly (public runtime contracts)
   -> Trait analyze + Skill resolve
-  -> Prompt render/injection
+  -> Prompt render/injection (scope includes Scenario + RoundContext)
   -> ModelService call (with fallback)
-  -> Tool/Action execution
+  -> Tool/Action execution (reads from RoundContext/Scenario)
   -> Reply or silent finish
 ```
+
+## Public Runtime Contracts (Phase 54+)
+
+Athena's public runtime boundary is centered on:
+
+- `Percept` — wake semantics only (why the round started)
+- `Scenario` — layered runtime context (`raw` world projection + `derived` interpretation)
+- `Capabilities` — structured execution affordances (core/extended)
+- `RoundContext` — the committed snapshot carried through wake-to-response
+
+`HorizonView` remains a Horizon-internal read model and should be treated as an adapter source for building `Scenario`, not the default public contract for downstream integrations.
 
 ## Dependency Rules
 
