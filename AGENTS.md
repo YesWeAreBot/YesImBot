@@ -188,3 +188,5 @@ The repo is TypeScript-first, strict, and formatted with `oxfmt`.
 - [Letta Source Code](references/letta)
 - [OpenClaw docs](references/openclaw/docs)
 - [Plast Mem](references/plast-mem) an experimental llm memory layer for cyber waifu.
+
+When using the write tool, make sure to only write small blocks and avoid large chunks, as there is currently a bug in the write tool that can lead to timeouts.
