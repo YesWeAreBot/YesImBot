@@ -14,6 +14,13 @@ import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { Section } from "../prompt/types";
+import {
+  bindCommittedRoundContext,
+  buildScenarioFromView,
+  commitRoundContext,
+} from "../runtime/adapters";
+import type { RoundContext, Scenario } from "../runtime/contracts";
+import { buildAgentRoundContext } from "../shared/context-factory";
 import type { Percept } from "../shared/types";
 import type { SkillRegistry } from "../skill/service";
 import type { SkillEffect } from "../skill/types";
@@ -67,54 +74,134 @@ export class ThinkActLoop {
     const promptService = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    let view = await horizonService.buildView(
-      { platform: percept.platform, channelId: percept.channelId },
-      {
+    let runtimeToolCtx: ToolExecutionContext = toolCtx;
+    let roundContext: RoundContext | undefined = (
+      toolCtx as unknown as { roundContext?: RoundContext }
+    ).roundContext;
+    if (!roundContext) {
+      const built = await buildAgentRoundContext(this.ctx, {
+        platform: percept.platform,
+        channelId: percept.channelId,
         session: toolCtx.session,
-        selfId: toolCtx.bot?.selfId,
-        selfName: toolCtx.bot?.user?.name,
-      },
-    );
+        bot: toolCtx.bot,
+        percept,
+      });
+      runtimeToolCtx = built.toolCtx;
+      roundContext = built.roundContext;
+    }
+
+    let view = runtimeToolCtx.view;
+    if (!view) {
+      try {
+        view = await horizonService.buildView(
+          { platform: percept.platform, channelId: percept.channelId },
+          {
+            session: runtimeToolCtx.session,
+            selfId: runtimeToolCtx.bot?.selfId,
+            selfName: runtimeToolCtx.bot?.user?.name,
+          },
+        );
+      } catch (err) {
+        view = {
+          self: {
+            id: runtimeToolCtx.bot?.selfId ?? "unknown-bot",
+            name: runtimeToolCtx.bot?.user?.name ?? "assistant",
+          },
+          environment: {
+            type: "unknown",
+            id: percept.channelId,
+            name: percept.channelId,
+            platform: percept.platform,
+            channelId: percept.channelId,
+          },
+          entities: [],
+          history: [],
+        };
+        this.logger.warn(
+          `[${percept.traceId}] failed to build horizon view (degraded): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     // Trait-Skill pipeline: analyze context, resolve active skills
     const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
     const skill = this.ctx["yesimbot.skill"] as SkillRegistry;
-    const signals = await trait.analyze(
-      { platform: percept.platform, channelId: percept.channelId },
-      view,
-    );
+    let signals = runtimeToolCtx.traits;
+    if (!signals) {
+      signals = await trait.analyze(
+        { platform: percept.platform, channelId: percept.channelId },
+        view,
+      );
+    }
     const effects: SkillEffect = skill.resolve(signals, {
       platform: percept.platform,
       channelId: percept.channelId,
     });
 
-    // Agent before hook - allows hooks to inject context or modify behavior
-    const hookService = this.ctx["yesimbot.hook"];
+    const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
     if (hookService) {
       const beforeResult = await hookService.executeBefore(
         HookType.Agent,
-        { view, traits: signals, skills: effects.activeSkills, percept },
+        {
+          view,
+          traits: signals,
+          skills: effects.activeSkills,
+          percept,
+          roundContext,
+          scenario: roundContext.snapshot.scenario,
+          capabilities: roundContext.snapshot.capabilities,
+        },
         percept.traceId,
       );
-      if (!beforeResult.skipped && beforeResult.params) {
-        const modifiedParams = beforeResult.params as {
-          view?: typeof view;
-          traits?: typeof signals;
-          skills?: typeof effects.activeSkills;
-        };
-        if (modifiedParams.view) view = modifiedParams.view;
-        if (modifiedParams.traits) Object.assign(signals, modifiedParams.traits);
-        if (modifiedParams.skills) Object.assign(effects.activeSkills, modifiedParams.skills);
+      if (!beforeResult.skipped && beforeResult.params && typeof beforeResult.params === "object") {
+        const modifiedParams = beforeResult.params as Record<string, unknown>;
+
+        const updatedView = modifiedParams.view as typeof view | undefined;
+        const updatedTraits = modifiedParams.traits as typeof signals | undefined;
+        const updatedSkills = modifiedParams.skills as typeof effects.activeSkills | undefined;
+
+        if (updatedView) view = updatedView;
+        if (updatedTraits) signals = updatedTraits;
+        if (updatedSkills) effects.activeSkills = updatedSkills;
+
+        const updatedScenario = modifiedParams.scenario as Scenario | undefined;
+        const updatedCapabilities = modifiedParams.capabilities as
+          | RoundContext["capabilities"]
+          | undefined;
+        const updatedMetadata = modifiedParams.metadata as Record<string, unknown> | undefined;
+        const updatedSkillState = modifiedParams.skillState as
+          | RoundContext["skillState"]
+          | undefined;
+
+        const shouldRebuildScenarioFromView = updatedView && !updatedScenario;
+        const nextScenario = shouldRebuildScenarioFromView
+          ? buildScenarioFromView({
+              view,
+              stimulusSource: roundContext.snapshot.scenario.raw.stimulusSource,
+            })
+          : updatedScenario;
+
+        if (nextScenario || updatedCapabilities || updatedMetadata || updatedSkillState) {
+          roundContext = commitRoundContext(roundContext, {
+            scenario: nextScenario,
+            capabilities: updatedCapabilities,
+            metadata: updatedMetadata,
+            skillState: updatedSkillState,
+          });
+        }
       }
     }
 
-    const toolCtxWithPercept: ToolExecutionContext = {
-      ...toolCtx,
-      percept,
-      view,
-      traits: signals,
-      skills: effects.activeSkills,
-    };
+    const toolCtxWithPercept = bindCommittedRoundContext(
+      {
+        ...runtimeToolCtx,
+        percept,
+        view,
+        traits: signals,
+        skills: effects.activeSkills,
+      },
+      roundContext,
+    ) as ToolExecutionContext;
 
     const disposers: Array<() => void> = [];
 
@@ -154,7 +241,13 @@ export class ThinkActLoop {
     );
 
     try {
-      const sections: Section[] = await promptService.render("system", { view, percept });
+      const sections: Section[] = await promptService.render("system", {
+        view,
+        percept,
+        roundContext,
+        scenario: roundContext.snapshot.scenario,
+        capabilities: roundContext.snapshot.capabilities,
+      });
       const stableContent = sections
         .filter((s) => s.name === "soul" || s.name === "instructions")
         .map((s) => s.content)

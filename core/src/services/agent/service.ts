@@ -5,7 +5,7 @@ import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ToolExecutionContext } from "../plugin/types";
 import type { RoleService } from "../role/service";
-import { buildMinimalContext } from "../shared/context-factory";
+import { buildAgentRoundContext, buildMinimalContext } from "../shared/context-factory";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
@@ -376,9 +376,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
         timestamp: event.timestamp,
         metadata: {
           messageId: event.payload.messageId,
-          content: event.payload.content,
           senderId: event.payload.senderId,
-          senderName: event.payload.senderName,
         },
       },
       toolCtx: buildMinimalContext({
@@ -394,17 +392,11 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const first = backlog[0];
     if (backlog.length === 1) return first;
 
-    const combinedContent = backlog
-      .map((p) => (p.percept.metadata?.content as string) ?? "")
-      .filter(Boolean)
-      .join("\n");
-
     return {
       percept: {
         ...first.percept,
         metadata: {
           ...first.percept.metadata,
-          content: combinedContent,
           isBacklogDrain: true,
           backlogCount: backlog.length,
         },
@@ -434,7 +426,14 @@ export class AgentCore extends Service<AgentCoreConfig> {
   protected async runLoop(channelKey: string, built: LoopPayload): Promise<void> {
     try {
       const startedAt = Date.now();
-      const stats = await this.loop.run(built.percept, built.toolCtx);
+      const { toolCtx } = await buildAgentRoundContext(this.ctx, {
+        platform: built.percept.platform,
+        channelId: built.percept.channelId,
+        session: built.toolCtx.session,
+        bot: built.toolCtx.bot,
+        percept: built.percept,
+      });
+      const stats = await this.loop.run(built.percept, toolCtx);
       const latencyMs = Date.now() - startedAt;
       this.logger.info(
         `[${built.percept.traceId}] decision=RESPOND latency=${(latencyMs / 1000).toFixed(2)}s tokens=${stats.totalTokens} tools=${stats.totalToolCalls}`,
