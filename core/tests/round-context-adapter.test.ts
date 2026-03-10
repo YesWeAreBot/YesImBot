@@ -6,6 +6,7 @@ import type {
   HorizonScenarioProjection,
 } from "../src/services/horizon/types";
 import {
+  bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   buildScenarioFromView,
   commitRoundContext,
@@ -200,7 +201,62 @@ describe("scenario adapter", () => {
     expect(initial.metadata.phase).toBe("before");
     expect(next.metadata.phase).toBe("after");
     expect(initial.snapshot).not.toBe(next.snapshot);
+    expect(next.scenario).toBe(next.snapshot.scenario);
+    expect(next.capabilities).toBe(next.snapshot.capabilities);
     expect(initial.scenario.derived.attention).toEqual({});
     expect(next.scenario.derived.attention).toEqual({ level: "high" });
+  });
+
+  it("binds tool runtime data to the committed round context snapshot", () => {
+    const roundContext = createRoundContext({
+      percept: {
+        id: "wake-1",
+        traceId: "trace-1",
+        type: "mention",
+        platform: "discord",
+        channelId: "c1",
+        timestamp: new Date(),
+      },
+      scenario: {
+        raw: {
+          self: { id: "bot", name: "athena" },
+          environment: {
+            type: "group",
+            id: "room-1",
+            name: "General",
+            platform: "discord",
+            channelId: "c1",
+          },
+          entities: [],
+          timeline: [],
+          stimulusSource: { type: "message", messageId: "m1" },
+        },
+        derived: {
+          focus: {},
+          participants: [],
+          attention: {},
+          recentMetrics: {},
+        },
+      },
+      capabilities: buildCapabilitiesFromRuntime({
+        session: { isDirect: false, quote: null },
+        bot: { selfId: "bot-1" },
+      }),
+    });
+
+    const bound = bindCommittedRoundContext(
+      {
+        platform: "discord",
+        channelId: "c1",
+      },
+      roundContext,
+    );
+
+    expect(bound.roundContext).toBe(roundContext);
+    expect(bound.scenario).toBe(roundContext.snapshot.scenario);
+    expect(bound.capabilities).toBe(roundContext.snapshot.capabilities);
+    expect(() => {
+      (bound.scenario.derived.attention as Record<string, unknown>).level = "high";
+    }).toThrow();
   });
 });
