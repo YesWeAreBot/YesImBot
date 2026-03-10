@@ -1,10 +1,19 @@
 import type { Bot, Schema, Session } from "koishi";
 
-import type { ChannelKey, Percept, TriggerType } from "../runtime/contracts";
+import type { HorizonView } from "../horizon/types";
+import type {
+  Capabilities,
+  ChannelKey,
+  Percept,
+  RoundContext,
+  Scenario,
+  TriggerType,
+} from "../runtime/contracts";
+import type { ActiveSkill } from "../shared/types";
 import type { YesImPlugin } from "./plugin";
 
 // ---- Shared Types ----
-export type { ChannelKey, Percept, TriggerType };
+export type { Capabilities, ChannelKey, Percept, RoundContext, Scenario, TriggerType };
 
 export interface TraitSignal {
   dimension: string;
@@ -31,9 +40,18 @@ export interface ToolExecutionContext {
   session?: Session;
   bot?: Bot;
   percept?: Percept;
-  view?: import("../horizon/types").HorizonView;
+
+  /** Canonical runtime contract (Phase 54+). Prefer `roundContext` over legacy fields. */
+  roundContext?: RoundContext;
+  /** Canonical runtime contract (Phase 54+). Prefer `scenario` over `view`. */
+  scenario?: Scenario;
+  /** Canonical runtime contract (Phase 54+). */
+  capabilities?: Capabilities;
+
+  /** @deprecated `HorizonView` is an internal Horizon read model; use `scenario`/`roundContext`. */
+  view?: HorizonView;
   traits?: TraitSignal[];
-  skills?: import("../shared/types").ActiveSkill[];
+  skills?: ActiveSkill[];
 }
 
 export type ActivatorFn = (ctx: ToolExecutionContext) => boolean;
