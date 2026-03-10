@@ -1,29 +1,10 @@
 import type { Bot, Schema, Session } from "koishi";
 
+import type { ChannelKey, Percept, TriggerType } from "../runtime/contracts";
 import type { YesImPlugin } from "./plugin";
 
 // ---- Shared Types ----
-
-export type TriggerType =
-  | "mention"
-  | "reply"
-  | "keyword"
-  | "random"
-  | "direct"
-  | "timer"
-  | "internal";
-
-export type ChannelKey = { platform: string; channelId: string };
-
-export interface Percept {
-  id: string;
-  traceId: string;
-  type: TriggerType;
-  platform: string;
-  channelId: string;
-  timestamp: Date;
-  metadata?: Record<string, unknown>;
-}
+export type { ChannelKey, Percept, TriggerType };
 
 export interface TraitSignal {
   dimension: string;
