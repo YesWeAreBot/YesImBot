@@ -5,6 +5,7 @@ import type { HorizonService } from "../horizon/service";
 import type { HorizonView } from "../horizon/types";
 import type { ToolExecutionContext } from "../plugin/types";
 import {
+  bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   buildScenarioFromView,
   createRoundContext,
@@ -139,12 +140,10 @@ export async function buildAgentRoundContext(
     },
   });
 
-  const runtimeAwareToolCtx = {
-    ...toolCtx,
-    scenario: roundContext.scenario,
-    capabilities: roundContext.capabilities,
+  const runtimeAwareToolCtx = bindCommittedRoundContext(
+    toolCtx,
     roundContext,
-  } as ToolExecutionContext;
+  ) as ToolExecutionContext;
 
   return {
     toolCtx: runtimeAwareToolCtx,

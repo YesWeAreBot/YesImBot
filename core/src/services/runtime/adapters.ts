@@ -3,6 +3,12 @@ import type { Bot, Session } from "koishi";
 import type { HorizonScenarioAdapterSource } from "../horizon/types";
 import type { Capabilities, Percept, RoundContext, Scenario, SkillState } from "./contracts";
 
+export interface RuntimeBoundContext {
+  scenario: Scenario;
+  capabilities: Capabilities;
+  roundContext: RoundContext;
+}
+
 export function buildScenarioFromView(source: HorizonScenarioAdapterSource): Scenario {
   const timeline = source.view.history.map((entry) => ({
     id: entry.id,
@@ -90,10 +96,10 @@ export function createRoundContext(params: {
   metadata?: Record<string, unknown>;
   skillState?: SkillState;
 }): RoundContext {
-  const scenario = structuredClone(params.scenario);
-  const capabilities = structuredClone(params.capabilities);
-  const metadata = structuredClone(params.metadata ?? {});
-  const skillState = structuredClone(params.skillState ?? { active: [] });
+  const scenario = freezeClone(params.scenario);
+  const capabilities = freezeClone(params.capabilities);
+  const metadata = freezeClone(params.metadata ?? {});
+  const skillState = freezeClone(params.skillState ?? { active: [] });
   const createdAt = new Date();
 
   return {
@@ -105,9 +111,9 @@ export function createRoundContext(params: {
     snapshot: {
       version: 1,
       createdAt,
-      scenario: structuredClone(scenario),
-      capabilities: structuredClone(capabilities),
-      metadata: structuredClone(metadata),
+      scenario,
+      capabilities,
+      metadata,
     },
   };
 }
@@ -116,10 +122,10 @@ export function commitRoundContext(
   current: RoundContext,
   updates: Partial<Pick<RoundContext, "scenario" | "capabilities" | "metadata" | "skillState">>,
 ): RoundContext {
-  const scenario = structuredClone(updates.scenario ?? current.scenario);
-  const capabilities = structuredClone(updates.capabilities ?? current.capabilities);
-  const metadata = structuredClone(updates.metadata ?? current.metadata);
-  const skillState = structuredClone(updates.skillState ?? current.skillState);
+  const scenario = freezeClone(updates.scenario ?? current.scenario);
+  const capabilities = freezeClone(updates.capabilities ?? current.capabilities);
+  const metadata = freezeClone(updates.metadata ?? current.metadata);
+  const skillState = freezeClone(updates.skillState ?? current.skillState);
 
   return {
     percept: current.percept,
@@ -130,9 +136,43 @@ export function commitRoundContext(
     snapshot: {
       version: current.snapshot.version + 1,
       createdAt: new Date(),
-      scenario: structuredClone(scenario),
-      capabilities: structuredClone(capabilities),
-      metadata: structuredClone(metadata),
+      scenario,
+      capabilities,
+      metadata,
     },
   };
+}
+
+export function bindCommittedRoundContext<T extends object>(
+  baseContext: T,
+  roundContext: RoundContext,
+): T & RuntimeBoundContext {
+  return {
+    ...baseContext,
+    scenario: roundContext.snapshot.scenario,
+    capabilities: roundContext.snapshot.capabilities,
+    roundContext,
+  } as T & RuntimeBoundContext;
+}
+
+function freezeClone<T>(value: T): T {
+  return deepFreeze(structuredClone(value));
+}
+
+function deepFreeze<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      deepFreeze(item);
+    }
+    return Object.freeze(value);
+  }
+
+  if (value && typeof value === "object") {
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      deepFreeze(nested);
+    }
+    return Object.freeze(value);
+  }
+
+  return value;
 }
