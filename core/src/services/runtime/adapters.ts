@@ -55,6 +55,7 @@ export function buildCapabilitiesFromRuntime(params: {
   session?: Pick<Session, "isDirect" | "quote">;
   bot?: Pick<Bot, "selfId">;
 }): Capabilities {
+  const hasSession = Boolean(params.session);
   const sendMessage = params.bot?.selfId
     ? { status: "available" as const }
     : {
@@ -63,19 +64,31 @@ export function buildCapabilitiesFromRuntime(params: {
         recoverable: true,
       };
 
-  const replyByQuote = params.session?.quote
-    ? { status: "available" as const }
-    : {
+  const replyByQuote = !hasSession
+    ? {
         status: "unavailable" as const,
-        reason: "quote-message-unavailable",
-      };
+        reason: "session-unavailable",
+        recoverable: true,
+      }
+    : params.session?.quote
+      ? { status: "available" as const }
+      : {
+          status: "unavailable" as const,
+          reason: "quote-message-unavailable",
+        };
 
-  const directMessage = params.session?.isDirect
-    ? { status: "available" as const }
-    : {
+  const directMessage = !hasSession
+    ? {
         status: "unavailable" as const,
-        reason: "not-direct-channel",
-      };
+        reason: "session-unavailable",
+        recoverable: true,
+      }
+    : params.session?.isDirect
+      ? { status: "available" as const }
+      : {
+          status: "unavailable" as const,
+          reason: "not-direct-channel",
+        };
 
   return {
     core: {
