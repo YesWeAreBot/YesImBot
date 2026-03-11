@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type { Bot, Context, Session } from "koishi";
 
 import type { HookExecutionContext, HookPhase, HookType } from "../hook/types";
@@ -8,6 +10,7 @@ import {
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   buildScenarioFromView,
+  commitRoundContext,
   createRoundContext,
 } from "../runtime/adapters";
 import type { RoundContext, Scenario } from "../runtime/contracts";
@@ -18,6 +21,23 @@ import type { ActiveSkill, Percept, TraitSignal } from "./types";
 export interface AgentRoundContextResult {
   toolCtx: ToolExecutionContext;
   roundContext: RoundContext;
+}
+
+interface AgentRoundContextParams {
+  platform: string;
+  channelId: string;
+  session?: Session;
+  bot?: Bot;
+  percept: Percept;
+  toolCtx?: ToolExecutionContext;
+}
+
+interface RoundContextBaseline {
+  percept: Percept;
+  scenario: Scenario;
+  capabilities: RoundContext["capabilities"];
+  metadata: Record<string, unknown>;
+  skillState: RoundContext["skillState"];
 }
 
 export function buildMinimalContext(params: {
@@ -110,38 +130,17 @@ export async function buildAgentContext(
 
 export async function buildAgentRoundContext(
   ctx: Context,
-  params: {
-    platform: string;
-    channelId: string;
-    session?: Session;
-    bot?: Bot;
-    percept: Percept;
-  },
+  params: AgentRoundContextParams,
 ): Promise<AgentRoundContextResult> {
-  const toolCtx = await buildAgentContext(ctx, params);
-  const scenario = buildScenarioFromView({
-    view: toolCtx.view ?? createFallbackView(params),
-    stimulusSource: buildStimulusSource(params.percept),
-  });
-  const capabilities = buildCapabilitiesFromRuntime({
-    session: params.session,
-    bot: params.bot,
-  });
-  const roundContext = createRoundContext({
-    percept: params.percept,
-    scenario,
-    capabilities,
-    metadata: {
-      channelKey: `${params.platform}:${params.channelId}`,
-      traceId: params.percept.traceId,
-    },
-    skillState: {
-      active: (toolCtx.skills ?? []).map((skill) => skill.name),
-    },
-  });
+  const toolCtx = await resolveAgentToolContext(ctx, params);
+  const baseline = buildRoundContextBaseline(toolCtx, params);
+  const roundContext = calibrateRoundContext(toolCtx.roundContext, baseline);
 
   const runtimeAwareToolCtx = bindCommittedRoundContext(
-    toolCtx,
+    {
+      ...toolCtx,
+      percept: params.percept,
+    },
     roundContext,
   ) as ToolExecutionContext;
 
@@ -149,6 +148,97 @@ export async function buildAgentRoundContext(
     toolCtx: runtimeAwareToolCtx,
     roundContext,
   };
+}
+
+async function resolveAgentToolContext(
+  ctx: Context,
+  params: AgentRoundContextParams,
+): Promise<ToolExecutionContext> {
+  const inboundToolCtx = params.toolCtx;
+  const hasInboundRuntimeFields =
+    inboundToolCtx?.view !== undefined &&
+    inboundToolCtx?.traits !== undefined &&
+    inboundToolCtx?.skills !== undefined;
+  const builtToolCtx = hasInboundRuntimeFields ? undefined : await buildAgentContext(ctx, params);
+
+  return {
+    platform: params.platform,
+    channelId: params.channelId,
+    session: params.session ?? inboundToolCtx?.session ?? builtToolCtx?.session,
+    bot: params.bot ?? inboundToolCtx?.bot ?? builtToolCtx?.bot,
+    percept: params.percept,
+    view: inboundToolCtx?.view ?? builtToolCtx?.view,
+    traits: inboundToolCtx?.traits ?? builtToolCtx?.traits,
+    skills: inboundToolCtx?.skills ?? builtToolCtx?.skills,
+    roundContext: inboundToolCtx?.roundContext,
+    scenario: inboundToolCtx?.scenario ?? builtToolCtx?.scenario,
+    capabilities: inboundToolCtx?.capabilities ?? builtToolCtx?.capabilities,
+  };
+}
+
+function buildRoundContextBaseline(
+  toolCtx: ToolExecutionContext,
+  params: AgentRoundContextParams,
+): RoundContextBaseline {
+  return {
+    percept: params.percept,
+    scenario: buildScenarioFromView({
+      view: toolCtx.view ?? createFallbackView(params),
+      stimulusSource: buildStimulusSource(params.percept),
+    }),
+    capabilities: buildCapabilitiesFromRuntime({
+      session: params.session ?? toolCtx.session,
+      bot: params.bot ?? toolCtx.bot,
+    }),
+    metadata: {
+      channelKey: `${params.platform}:${params.channelId}`,
+      traceId: params.percept.traceId,
+    },
+    skillState: {
+      active: (toolCtx.skills ?? []).map((skill) => skill.name),
+    },
+  };
+}
+
+function calibrateRoundContext(
+  inboundRoundContext: RoundContext | undefined,
+  baseline: RoundContextBaseline,
+): RoundContext {
+  if (!inboundRoundContext || !isSameRound(inboundRoundContext, baseline.percept)) {
+    return createRoundContext(baseline);
+  }
+
+  const updates: Partial<
+    Pick<RoundContext, "scenario" | "capabilities" | "metadata" | "skillState">
+  > = {};
+
+  if (!isDeepStrictEqual(inboundRoundContext.snapshot.scenario, baseline.scenario)) {
+    updates.scenario = baseline.scenario;
+  }
+  if (!isDeepStrictEqual(inboundRoundContext.snapshot.capabilities, baseline.capabilities)) {
+    updates.capabilities = baseline.capabilities;
+  }
+  if (!isDeepStrictEqual(inboundRoundContext.metadata, baseline.metadata)) {
+    updates.metadata = baseline.metadata;
+  }
+  if (!isDeepStrictEqual(inboundRoundContext.skillState, baseline.skillState)) {
+    updates.skillState = baseline.skillState;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return inboundRoundContext;
+  }
+
+  return commitRoundContext(inboundRoundContext, updates);
+}
+
+function isSameRound(roundContext: RoundContext, percept: Percept): boolean {
+  return (
+    roundContext.percept.id === percept.id &&
+    roundContext.percept.traceId === percept.traceId &&
+    roundContext.percept.platform === percept.platform &&
+    roundContext.percept.channelId === percept.channelId
+  );
 }
 
 export function buildHookContext(
