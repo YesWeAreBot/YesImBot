@@ -306,4 +306,255 @@ describe("round context runtime", () => {
     expect(capturedCtx.roundContext).toBeTruthy();
     expect(capturedCtx.scenario).toBeTruthy();
   });
+
+  it("completes baseline runtime fields before agent-start hook mutation", async () => {
+    const capturedBeforeParams: Array<Record<string, unknown>> = [];
+    const ctx = {
+      baseDir: "/tmp",
+      logger: vi.fn(() => ({
+        level: 2,
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      })),
+      "yesimbot.horizon": {
+        buildView: vi.fn().mockResolvedValue({
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "c1",
+            name: "General",
+            platform: "discord",
+            channelId: "c1",
+          },
+          entities: [],
+          history: [],
+        }),
+        formatHorizonText: vi.fn().mockResolvedValue([]),
+        events: {
+          recordAgentResponse: vi.fn(),
+          recordAgentAction: vi.fn(),
+          recordMessage: vi.fn(),
+          markAsActive: vi.fn(),
+          archiveStale: vi.fn(),
+        },
+        compressor: undefined,
+        config: { archiveThresholdMs: 86400000 },
+      },
+      "yesimbot.plugin": {
+        getTools: vi.fn(() => []),
+        getDefinition: vi.fn(),
+        invoke: vi.fn(),
+      },
+      "yesimbot.prompt": {
+        render: vi.fn().mockResolvedValue([
+          { name: "soul", content: "soul" },
+          { name: "instructions", content: "instructions" },
+          { name: "extra", content: "extra" },
+        ]),
+        inject: vi.fn(() => () => undefined),
+      },
+      "yesimbot.model": {
+        getProvider: vi.fn(() => ({ providerType: "openai" })),
+        call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
+      },
+      "yesimbot.trait": {
+        analyze: vi.fn().mockResolvedValue([{ dimension: "scene", value: "group" }]),
+      },
+      "yesimbot.skill": {
+        resolve: vi.fn().mockReturnValue({
+          activeSkills: [{ name: "answering" }],
+          promptInjections: [],
+          toolFilter: undefined,
+          styleOverride: undefined,
+        }),
+      },
+      "yesimbot.hook": {
+        executeBefore: vi.fn(async (_type: unknown, params: unknown) => {
+          capturedBeforeParams.push(params as Record<string, unknown>);
+          return { skipped: false, params };
+        }),
+      },
+      "yesimbot.arousal": undefined,
+    } as unknown as ConstructorParameters<typeof ThinkActLoop>[0];
+
+    const loop = new ThinkActLoop(ctx, {
+      model: "openai:gpt",
+      fallbackChain: [],
+      maxRounds: 1,
+    });
+
+    const percept: Percept = {
+      id: "wake-2",
+      traceId: "trace-2",
+      type: "mention",
+      platform: "discord",
+      channelId: "c1",
+      timestamp: new Date("2026-03-10T00:00:00Z"),
+      metadata: { messageId: "m2", senderId: "u2" },
+    };
+
+    await loop.run(percept, {
+      platform: "discord",
+      channelId: "c1",
+      session: { isDirect: false, quote: undefined },
+      bot: { selfId: "bot-1", user: { name: "Athena" } },
+    } as never);
+
+    expect(capturedBeforeParams.length).toBe(1);
+    expect(capturedBeforeParams[0]).toEqual(
+      expect.objectContaining({
+        view: expect.any(Object),
+        traits: expect.any(Array),
+        skills: expect.any(Array),
+        percept,
+        roundContext: expect.any(Object),
+        scenario: expect.any(Object),
+        capabilities: expect.any(Object),
+      }),
+    );
+  });
+
+  it("recalibrates legacy direct loop calls with inbound roundContext through round-entry baseline", async () => {
+    const promptRenderSpy = vi.fn().mockResolvedValue([
+      { name: "soul", content: "soul" },
+      { name: "instructions", content: "instructions" },
+      { name: "extra", content: "extra" },
+    ]);
+
+    const ctx = {
+      baseDir: "/tmp",
+      logger: vi.fn(() => ({
+        level: 2,
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      })),
+      "yesimbot.horizon": {
+        buildView: vi.fn().mockResolvedValue({
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "fresh-c1",
+            name: "Fresh",
+            platform: "discord",
+            channelId: "fresh-c1",
+          },
+          entities: [],
+          history: [],
+        }),
+        formatHorizonText: vi.fn().mockResolvedValue([]),
+        events: {
+          recordAgentResponse: vi.fn(),
+          recordAgentAction: vi.fn(),
+          recordMessage: vi.fn(),
+          markAsActive: vi.fn(),
+          archiveStale: vi.fn(),
+        },
+        compressor: undefined,
+        config: { archiveThresholdMs: 86400000 },
+      },
+      "yesimbot.plugin": {
+        getTools: vi.fn(() => []),
+        getDefinition: vi.fn(),
+        invoke: vi.fn(),
+      },
+      "yesimbot.prompt": {
+        render: promptRenderSpy,
+        inject: vi.fn(() => () => undefined),
+      },
+      "yesimbot.model": {
+        getProvider: vi.fn(() => ({ providerType: "openai" })),
+        call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
+      },
+      "yesimbot.trait": {
+        analyze: vi.fn().mockResolvedValue([]),
+      },
+      "yesimbot.skill": {
+        resolve: vi.fn().mockReturnValue({
+          activeSkills: [],
+          promptInjections: [],
+          toolFilter: undefined,
+          styleOverride: undefined,
+        }),
+      },
+      "yesimbot.hook": undefined,
+      "yesimbot.arousal": undefined,
+    } as unknown as ConstructorParameters<typeof ThinkActLoop>[0];
+
+    const percept: Percept = {
+      id: "legacy-1",
+      traceId: "trace-legacy-1",
+      type: "mention",
+      platform: "discord",
+      channelId: "fresh-c1",
+      timestamp: new Date("2026-03-10T00:00:00Z"),
+      metadata: { messageId: "m-legacy", senderId: "u-legacy" },
+    };
+
+    const staleRoundContext = createRoundContext({
+      percept,
+      scenario: {
+        raw: {
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "stale-c1",
+            name: "Stale",
+            platform: "discord",
+            channelId: "stale-c1",
+          },
+          entities: [],
+          timeline: [],
+          stimulusSource: { type: "message", messageId: "stale", senderId: "u0" },
+        },
+        derived: {
+          focus: {},
+          participants: [],
+          attention: {},
+          recentMetrics: {},
+        },
+      },
+      capabilities: buildCapabilitiesFromRuntime({
+        session: { isDirect: true, quote: undefined },
+        bot: { selfId: "bot-1" },
+      }),
+      metadata: {
+        channelKey: "discord:stale-c1",
+        traceId: "trace-stale",
+      },
+      skillState: { active: [] },
+    });
+
+    const loop = new ThinkActLoop(ctx, {
+      model: "openai:gpt",
+      fallbackChain: [],
+      maxRounds: 1,
+    });
+
+    await loop.run(percept, {
+      platform: "discord",
+      channelId: "fresh-c1",
+      session: { isDirect: false, quote: undefined },
+      bot: { selfId: "bot-1", user: { name: "Athena" } },
+      roundContext: staleRoundContext,
+    } as never);
+
+    const passedScope = promptRenderSpy.mock.calls[0]?.[1] as {
+      scenario?: { raw?: { environment?: { id?: string } } };
+      roundContext?: {
+        snapshot?: {
+          metadata?: Record<string, unknown>;
+        };
+      };
+    };
+
+    expect(passedScope.scenario?.raw?.environment?.id).toBe("fresh-c1");
+    expect(passedScope.roundContext?.snapshot?.metadata).toMatchObject({
+      channelKey: "discord:fresh-c1",
+      traceId: "trace-legacy-1",
+    });
+  });
 });
