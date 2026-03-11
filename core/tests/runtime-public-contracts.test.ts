@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { HookPhase, HookType } from "../src/services/hook/types";
-import type { HookExecutionContext } from "../src/services/hook/types";
+import type {
+  AgentEndHookExecutionContext,
+  AgentStartHookExecutionContext,
+  HookExecutionContext,
+} from "../src/services/hook/types";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
 import {
   bindCommittedRoundContext,
@@ -33,6 +37,102 @@ describe("runtime public contracts", () => {
 
     expect(toolCtx.platform).toBe("discord");
     expect(hookCtx.hookType).toBe(HookType.Tool);
+  });
+
+  it("agent lifecycle contracts keep roundContext canonical at start and end", () => {
+    const scenario = {} as Scenario;
+    const capabilities = {} as Capabilities;
+    const roundContext = {} as RoundContext;
+
+    const startCtx: AgentStartHookExecutionContext = {
+      platform: "discord",
+      channelId: "c1",
+      hookType: HookType.Agent,
+      hookPhase: HookPhase.Before,
+      lifecycle: "start",
+      roundContext,
+      scenario,
+      capabilities,
+    };
+
+    const endCtx: AgentEndHookExecutionContext = {
+      ...startCtx,
+      hookPhase: HookPhase.After,
+      lifecycle: "end",
+      endSummary: {
+        finalOutcome: {
+          status: "success",
+          producedVisibleOutput: true,
+          actions: {
+            total: 1,
+            succeeded: 1,
+            failed: 0,
+            names: ["send_message"],
+          },
+          toolCalls: {
+            total: 1,
+            succeeded: 1,
+            failed: 0,
+            names: ["search_web"],
+          },
+        },
+        incidents: [
+          {
+            phase: "tool",
+            category: "tool-error",
+            summary: "transient provider timeout",
+            recovered: true,
+          },
+        ],
+      },
+    };
+
+    expect(startCtx.roundContext).toBe(roundContext);
+    expect(endCtx.endSummary.finalOutcome.status).toBe("success");
+    expect(endCtx.endSummary.incidents[0]?.recovered).toBe(true);
+  });
+
+  it("agent end summary separates final outcome from incidents", () => {
+    const endCtx: AgentEndHookExecutionContext = {
+      platform: "discord",
+      channelId: "c1",
+      hookType: HookType.Agent,
+      hookPhase: HookPhase.After,
+      lifecycle: "end",
+      roundContext: {} as RoundContext,
+      scenario: {} as Scenario,
+      capabilities: {} as Capabilities,
+      endSummary: {
+        finalOutcome: {
+          status: "skipped",
+          producedVisibleOutput: false,
+          actions: {
+            total: 0,
+            succeeded: 0,
+            failed: 0,
+            names: [],
+          },
+          toolCalls: {
+            total: 0,
+            succeeded: 0,
+            failed: 0,
+            names: [],
+          },
+        },
+        incidents: [
+          {
+            phase: "start",
+            category: "hook-skip",
+            summary: "agent start requested skip",
+            recovered: true,
+          },
+        ],
+      },
+    };
+
+    expect(endCtx.endSummary.finalOutcome.producedVisibleOutput).toBe(false);
+    expect(endCtx.endSummary.incidents).toHaveLength(1);
+    expect("incidents" in endCtx.endSummary.finalOutcome).toBe(false);
   });
 
   it("prompt scope exposes scenario", async () => {

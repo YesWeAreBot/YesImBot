@@ -1,5 +1,9 @@
-import type { HookExecutionContext } from "../hook/types";
-import type { Capabilities, RoundContext, Scenario } from "../runtime/contracts";
+import type {
+  AgentEndHookExecutionContext,
+  AgentStartHookExecutionContext,
+  HookExecutionContext,
+} from "../hook/types";
+import type { AgentEndSummary, Capabilities, RoundContext, Scenario } from "../runtime/contracts";
 import type { ToolExecutionContext } from "./types";
 
 type Assert<T extends true> = T;
@@ -25,5 +29,22 @@ type _ToolRoundContextCanonical = Assert<
 >;
 
 type _HookExtendsTool = Assert<HookExecutionContext extends ToolExecutionContext ? true : false>;
+
+type _AgentStartExtendsHook = Assert<
+  AgentStartHookExecutionContext extends HookExecutionContext ? true : false
+>;
+type _AgentEndExtendsHook = Assert<
+  AgentEndHookExecutionContext extends HookExecutionContext ? true : false
+>;
+
+type _AgentStartRoundContextCanonical = Assert<
+  [AgentStartHookExecutionContext["roundContext"]] extends [RoundContext] ? true : false
+>;
+type _AgentEndRoundContextCanonical = Assert<
+  [AgentEndHookExecutionContext["roundContext"]] extends [RoundContext] ? true : false
+>;
+type _AgentEndSummaryCanonical = Assert<
+  [AgentEndHookExecutionContext["endSummary"]] extends [AgentEndSummary] ? true : false
+>;
 
 export {};

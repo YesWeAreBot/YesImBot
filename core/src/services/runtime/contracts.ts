@@ -101,3 +101,34 @@ export interface RoundContext {
   skillState: SkillState;
   snapshot: RoundSnapshot;
 }
+
+export type AgentFinalOutcomeStatus = "success" | "silent" | "skipped" | "failed" | "degraded";
+
+export interface AgentOutcomeCountSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+  names: string[];
+}
+
+export interface AgentFinalOutcome {
+  status: AgentFinalOutcomeStatus;
+  producedVisibleOutput: boolean;
+  actions: AgentOutcomeCountSummary;
+  toolCalls: AgentOutcomeCountSummary;
+}
+
+export type AgentIncidentPhase = "start" | "think-act" | "tool" | "end";
+
+export interface AgentIncident {
+  phase: AgentIncidentPhase;
+  category: string;
+  summary: string;
+  recovered: boolean;
+  detail?: string;
+}
+
+export interface AgentEndSummary {
+  finalOutcome: AgentFinalOutcome;
+  incidents: AgentIncident[];
+}

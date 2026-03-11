@@ -1,4 +1,5 @@
 import type { ToolExecutionContext } from "../plugin/types";
+import type { AgentEndSummary, Capabilities, RoundContext, Scenario } from "../runtime/contracts";
 
 export enum HookType {
   Tool = "tool",
@@ -26,6 +27,31 @@ export interface HookExecutionContext extends ToolExecutionContext {
   hookType: HookType;
   hookPhase: HookPhase;
 }
+
+export type AgentLifecycleBoundary = "start" | "end";
+
+interface AgentLifecycleHookExecutionContextBase extends HookExecutionContext {
+  hookType: HookType.Agent;
+  roundContext: RoundContext;
+  scenario: Scenario;
+  capabilities: Capabilities;
+  lifecycle: AgentLifecycleBoundary;
+}
+
+export interface AgentStartHookExecutionContext extends AgentLifecycleHookExecutionContextBase {
+  hookPhase: HookPhase.Before;
+  lifecycle: "start";
+}
+
+export interface AgentEndHookExecutionContext extends AgentLifecycleHookExecutionContextBase {
+  hookPhase: HookPhase.After;
+  lifecycle: "end";
+  endSummary: AgentEndSummary;
+}
+
+export type AgentLifecycleHookExecutionContext =
+  | AgentStartHookExecutionContext
+  | AgentEndHookExecutionContext;
 
 export interface HookTimeoutsConfig {
   tool?: number;
