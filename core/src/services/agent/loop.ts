@@ -50,6 +50,18 @@ interface ToolResultEntry {
   error?: string;
 }
 
+interface AgentStartMutableParams {
+  view: ToolExecutionContext["view"];
+  traits: NonNullable<ToolExecutionContext["traits"]>;
+  skills: NonNullable<ToolExecutionContext["skills"]>;
+  percept: Percept;
+  roundContext: RoundContext;
+  scenario: RoundContext["scenario"];
+  capabilities: RoundContext["capabilities"];
+  metadata: RoundContext["metadata"];
+  skillState: RoundContext["skillState"];
+}
+
 export class ThinkActLoop {
   private logger;
 
@@ -135,38 +147,40 @@ export class ThinkActLoop {
 
     const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
     if (hookService) {
-      const beforeResult = await hookService.executeBefore(
-        HookType.Agent,
-        {
-          view,
-          traits: signals,
-          skills: effects.activeSkills,
-          percept,
-          roundContext,
-          scenario: roundContext.snapshot.scenario,
-          capabilities: roundContext.snapshot.capabilities,
-        },
-        percept.traceId,
-      );
+      const startParams: AgentStartMutableParams = {
+        view,
+        traits: signals,
+        skills: effects.activeSkills,
+        percept,
+        roundContext,
+        scenario: roundContext.snapshot.scenario,
+        capabilities: roundContext.snapshot.capabilities,
+        metadata: roundContext.snapshot.metadata,
+        skillState: roundContext.skillState,
+      };
+      const beforeResult =
+        typeof hookService.executeAgentStart === "function"
+          ? await hookService.executeAgentStart(startParams, percept.traceId)
+          : await hookService.executeBefore(HookType.Agent, startParams, percept.traceId);
       if (!beforeResult.skipped && beforeResult.params && typeof beforeResult.params === "object") {
-        const modifiedParams = beforeResult.params as Record<string, unknown>;
+        const modifiedParams = beforeResult.params;
 
-        const updatedView = modifiedParams.view as typeof view | undefined;
-        const updatedTraits = modifiedParams.traits as typeof signals | undefined;
-        const updatedSkills = modifiedParams.skills as typeof effects.activeSkills | undefined;
+        const updatedView = modifiedParams.view;
+        const updatedTraits = modifiedParams.traits;
+        const updatedSkills = modifiedParams.skills;
 
         if (updatedView) view = updatedView;
         if (updatedTraits) signals = updatedTraits;
         if (updatedSkills) effects.activeSkills = updatedSkills;
 
         const updatedScenario = modifiedParams.scenario as Scenario | undefined;
-        const updatedCapabilities = modifiedParams.capabilities as
-          | RoundContext["capabilities"]
-          | undefined;
-        const updatedMetadata = modifiedParams.metadata as Record<string, unknown> | undefined;
-        const updatedSkillState = modifiedParams.skillState as
-          | RoundContext["skillState"]
-          | undefined;
+        const updatedCapabilities = modifiedParams.capabilities as RoundContext["capabilities"];
+        const updatedMetadata = modifiedParams.metadata as Record<string, unknown>;
+        const updatedSkillState = modifiedParams.skillState as RoundContext["skillState"];
+        const derivedSkillState =
+          updatedSkills && !updatedSkillState
+            ? { active: updatedSkills.map((skill) => skill.name) }
+            : undefined;
 
         const shouldRebuildScenarioFromView = updatedView && !updatedScenario;
         const nextScenario = shouldRebuildScenarioFromView
@@ -176,12 +190,18 @@ export class ThinkActLoop {
             })
           : updatedScenario;
 
-        if (nextScenario || updatedCapabilities || updatedMetadata || updatedSkillState) {
+        if (
+          nextScenario ||
+          updatedCapabilities ||
+          updatedMetadata ||
+          updatedSkillState ||
+          derivedSkillState
+        ) {
           roundContext = commitRoundContext(roundContext, {
             scenario: nextScenario,
             capabilities: updatedCapabilities,
             metadata: updatedMetadata,
-            skillState: updatedSkillState,
+            skillState: updatedSkillState ?? derivedSkillState,
           });
         }
       }

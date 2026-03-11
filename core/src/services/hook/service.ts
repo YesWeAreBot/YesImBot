@@ -207,6 +207,14 @@ export class HookService extends Service {
     return { params: currentParams, skipped: false };
   }
 
+  async executeAgentStart<T>(
+    params: T,
+    traceId?: string,
+    timeout?: number,
+  ): Promise<{ params: T; skipped: boolean; result?: unknown }> {
+    return this.executeBefore(HookType.Agent, params, traceId, timeout);
+  }
+
   async executeAfter<T>(
     type: HookType,
     params: T,

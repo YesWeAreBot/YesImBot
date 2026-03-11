@@ -180,10 +180,12 @@ function buildRoundContextBaseline(
   toolCtx: ToolExecutionContext,
   params: AgentRoundContextParams,
 ): RoundContextBaseline {
+  const normalizedView = normalizeViewForScenario(toolCtx.view, params);
+
   return {
     percept: params.percept,
     scenario: buildScenarioFromView({
-      view: toolCtx.view ?? createFallbackView(params),
+      view: normalizedView,
       stimulusSource: buildStimulusSource(params.percept),
     }),
     capabilities: buildCapabilitiesFromRuntime({
@@ -303,5 +305,24 @@ function createFallbackView(params: {
     },
     entities: [],
     history: [],
+  };
+}
+
+function normalizeViewForScenario(
+  view: HorizonView | undefined,
+  params: {
+    platform: string;
+    channelId: string;
+    bot?: Bot;
+  },
+): HorizonView {
+  const fallback = createFallbackView(params);
+  if (!view) return fallback;
+
+  return {
+    self: view.self ?? fallback.self,
+    environment: view.environment ?? fallback.environment,
+    entities: Array.isArray(view.entities) ? view.entities : [],
+    history: Array.isArray(view.history) ? view.history : [],
   };
 }
