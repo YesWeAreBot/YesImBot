@@ -5,7 +5,7 @@ import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ToolExecutionContext } from "../plugin/types";
 import type { RoleService } from "../role/service";
-import { buildAgentRoundContext, buildMinimalContext } from "../shared/context-factory";
+import { buildMinimalContext } from "../shared/context-factory";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
@@ -426,14 +426,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
   protected async runLoop(channelKey: string, built: LoopPayload): Promise<void> {
     try {
       const startedAt = Date.now();
-      const { toolCtx } = await buildAgentRoundContext(this.ctx, {
-        platform: built.percept.platform,
-        channelId: built.percept.channelId,
-        session: built.toolCtx.session,
-        bot: built.toolCtx.bot,
-        percept: built.percept,
-      });
-      const stats = await this.loop.run(built.percept, toolCtx);
+      const stats = await this.loop.run(built.percept, built.toolCtx);
       const latencyMs = Date.now() - startedAt;
       this.logger.info(
         `[${built.percept.traceId}] decision=RESPOND latency=${(latencyMs / 1000).toFixed(2)}s tokens=${stats.totalTokens} tools=${stats.totalToolCalls}`,

@@ -74,21 +74,16 @@ export class ThinkActLoop {
     const promptService = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    let runtimeToolCtx: ToolExecutionContext = toolCtx;
-    let roundContext: RoundContext | undefined = (
-      toolCtx as unknown as { roundContext?: RoundContext }
-    ).roundContext;
-    if (!roundContext) {
-      const built = await buildAgentRoundContext(this.ctx, {
-        platform: percept.platform,
-        channelId: percept.channelId,
-        session: toolCtx.session,
-        bot: toolCtx.bot,
-        percept,
-      });
-      runtimeToolCtx = built.toolCtx;
-      roundContext = built.roundContext;
-    }
+    const built = await buildAgentRoundContext(this.ctx, {
+      platform: percept.platform,
+      channelId: percept.channelId,
+      session: toolCtx.session,
+      bot: toolCtx.bot,
+      percept,
+      toolCtx,
+    });
+    let runtimeToolCtx: ToolExecutionContext = built.toolCtx;
+    let roundContext: RoundContext = built.roundContext;
 
     let view = runtimeToolCtx.view;
     if (!view) {
