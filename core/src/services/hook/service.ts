@@ -215,6 +215,14 @@ export class HookService extends Service {
     return this.executeBefore(HookType.Agent, params, traceId, timeout);
   }
 
+  async executeAgentEnd<T extends { endSummary: unknown }>(
+    params: T,
+    traceId?: string,
+    timeout?: number,
+  ): Promise<void> {
+    return this.executeAfter(HookType.Agent, params, params.endSummary, traceId, timeout);
+  }
+
   async executeAfter<T>(
     type: HookType,
     params: T,

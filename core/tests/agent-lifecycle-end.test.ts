@@ -410,9 +410,9 @@ describe("Agent lifecycle end", () => {
     const toolCtxArg = harness.pluginInvoke.mock.calls[0]?.[2] as ToolExecutionContext;
     const endParams = endSpy.mock.calls[0]?.[0] as EndHookParams;
 
-    expect(endParams.roundContext).toBe(toolCtxArg.roundContext);
-    expect(endParams.scenario).toBe(toolCtxArg.roundContext?.snapshot.scenario);
-    expect(endParams.capabilities).toBe(toolCtxArg.roundContext?.snapshot.capabilities);
+    expect(endParams.roundContext).toStrictEqual(toolCtxArg.roundContext);
+    expect(endParams.scenario).toStrictEqual(toolCtxArg.roundContext?.snapshot.scenario);
+    expect(endParams.capabilities).toStrictEqual(toolCtxArg.roundContext?.snapshot.capabilities);
     expect(endParams.roundContext?.snapshot.metadata).toMatchObject({
       hookRevision: "end-shape-1",
     });

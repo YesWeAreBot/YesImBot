@@ -19,7 +19,13 @@ import {
   buildScenarioFromView,
   commitRoundContext,
 } from "../runtime/adapters";
-import type { RoundContext, Scenario } from "../runtime/contracts";
+import type {
+  AgentEndSummary,
+  AgentFinalOutcomeStatus,
+  AgentIncident,
+  RoundContext,
+  Scenario,
+} from "../runtime/contracts";
 import { buildAgentRoundContext } from "../shared/context-factory";
 import type { Percept } from "../shared/types";
 import type { SkillRegistry } from "../skill/service";
@@ -62,6 +68,21 @@ interface AgentStartMutableParams {
   skillState: RoundContext["skillState"];
 }
 
+interface AgentEndParams {
+  roundContext: RoundContext;
+  scenario: RoundContext["scenario"];
+  capabilities: RoundContext["capabilities"];
+  lifecycle: "end";
+  endSummary: AgentEndSummary;
+}
+
+interface SettlementCounters {
+  total: number;
+  succeeded: number;
+  failed: number;
+  names: Set<string>;
+}
+
 export class ThinkActLoop {
   private logger;
 
@@ -96,6 +117,11 @@ export class ThinkActLoop {
     });
     let runtimeToolCtx: ToolExecutionContext = built.toolCtx;
     let roundContext: RoundContext = built.roundContext;
+    const incidents: AgentIncident[] = [];
+    const actionCounters = createSettlementCounters();
+    const toolCounters = createSettlementCounters();
+    let producedVisibleOutput = false;
+    let finalStatus: AgentFinalOutcomeStatus = "silent";
 
     let view = runtimeToolCtx.view;
     if (!view) {
@@ -162,6 +188,41 @@ export class ThinkActLoop {
         typeof hookService.executeAgentStart === "function"
           ? await hookService.executeAgentStart(startParams, percept.traceId)
           : await hookService.executeBefore(HookType.Agent, startParams, percept.traceId);
+      if (beforeResult.skipped) {
+        finalStatus = "skipped";
+        incidents.push({
+          phase: "start",
+          category: "hook-skip",
+          summary: "agent start requested skip",
+          recovered: true,
+          detail:
+            beforeResult.result === undefined
+              ? undefined
+              : stringifyIncidentDetail(beforeResult.result),
+        });
+        const endSummary: AgentEndSummary = {
+          finalOutcome: {
+            status: "skipped",
+            producedVisibleOutput: false,
+            actions: settlementCountersToSummary(actionCounters),
+            toolCalls: settlementCountersToSummary(toolCounters),
+          },
+          incidents,
+        };
+        const endParams: AgentEndParams = {
+          roundContext,
+          scenario: roundContext.snapshot.scenario,
+          capabilities: roundContext.snapshot.capabilities,
+          lifecycle: "end",
+          endSummary,
+        };
+        if (typeof hookService.executeAgentEnd === "function") {
+          await hookService.executeAgentEnd(endParams, percept.traceId);
+        } else {
+          await hookService.executeAfter(HookType.Agent, endParams, endSummary, percept.traceId);
+        }
+        return { totalTokens, totalToolCalls };
+      }
       if (!beforeResult.skipped && beforeResult.params && typeof beforeResult.params === "object") {
         const modifiedParams = beforeResult.params;
 
@@ -493,6 +554,15 @@ export class ThinkActLoop {
         );
 
         totalToolCalls += toolResults.length;
+        const roundSettlement = collectRoundSettlement(
+          response.actions,
+          toolResults,
+          pluginService,
+        );
+        mergeSettlementCounters(actionCounters, roundSettlement.actions);
+        mergeSettlementCounters(toolCounters, roundSettlement.toolCalls);
+        producedVisibleOutput ||= roundSettlement.producedVisibleOutput;
+        incidents.push(...roundSettlement.incidents);
 
         for (const r of toolResults) {
           this.logger.debug(
@@ -558,6 +628,15 @@ export class ThinkActLoop {
                 maxResultLen,
                 percept,
               );
+              const wrapSettlement = collectRoundSettlement(
+                wrapParsed.data.actions,
+                wrapToolResults,
+                pluginService,
+              );
+              mergeSettlementCounters(actionCounters, wrapSettlement.actions);
+              mergeSettlementCounters(toolCounters, wrapSettlement.toolCalls);
+              producedVisibleOutput ||= wrapSettlement.producedVisibleOutput;
+              incidents.push(...wrapSettlement.incidents);
               await horizonService.events.recordAgentResponse({
                 platform: percept.platform,
                 channelId: percept.channelId,
@@ -614,10 +693,52 @@ export class ThinkActLoop {
         archiveMs,
       );
 
+      finalStatus = deriveFinalStatus({
+        current: finalStatus,
+        producedVisibleOutput,
+        incidents,
+      });
       this.logger.info(`[${percept.traceId}] Loop complete: ${round} rounds`);
       return { totalTokens, totalToolCalls };
+    } catch (err) {
+      finalStatus = "failed";
+      incidents.push({
+        phase: "think-act",
+        category: "runtime-error",
+        summary: err instanceof Error ? err.message : String(err),
+        recovered: false,
+      });
+      throw err;
     } finally {
       for (const d of disposers) d();
+      const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
+      if (hookService) {
+        const endSummary: AgentEndSummary = {
+          finalOutcome: {
+            status: deriveFinalStatus({
+              current: finalStatus,
+              producedVisibleOutput,
+              incidents,
+            }),
+            producedVisibleOutput,
+            actions: settlementCountersToSummary(actionCounters),
+            toolCalls: settlementCountersToSummary(toolCounters),
+          },
+          incidents,
+        };
+        const endParams: AgentEndParams = {
+          roundContext,
+          scenario: roundContext.snapshot.scenario,
+          capabilities: roundContext.snapshot.capabilities,
+          lifecycle: "end",
+          endSummary,
+        };
+        if (typeof hookService.executeAgentEnd === "function") {
+          await hookService.executeAgentEnd(endParams, percept.traceId);
+        } else {
+          await hookService.executeAfter(HookType.Agent, endParams, endSummary, percept.traceId);
+        }
+      }
     }
   }
 
@@ -809,4 +930,116 @@ function resolveProactiveChargeChannelKey(action: AgentAction, fallbackChannelKe
   }
 
   return `${sendTarget.platform}:${sendTarget.channelId}`;
+}
+
+function createSettlementCounters(): SettlementCounters {
+  return {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    names: new Set<string>(),
+  };
+}
+
+function mergeSettlementCounters(target: SettlementCounters, source: SettlementCounters): void {
+  target.total += source.total;
+  target.succeeded += source.succeeded;
+  target.failed += source.failed;
+  for (const name of source.names) {
+    target.names.add(name);
+  }
+}
+
+function settlementCountersToSummary(counters: SettlementCounters) {
+  return {
+    total: counters.total,
+    succeeded: counters.succeeded,
+    failed: counters.failed,
+    names: Array.from(counters.names),
+  };
+}
+
+function deriveFinalStatus(input: {
+  current: AgentFinalOutcomeStatus;
+  producedVisibleOutput: boolean;
+  incidents: AgentIncident[];
+}): AgentFinalOutcomeStatus {
+  if (input.current === "failed" || input.current === "skipped") {
+    return input.current;
+  }
+  if (input.incidents.some((incident) => !incident.recovered)) {
+    return "failed";
+  }
+  if (input.incidents.length > 0) {
+    return "degraded";
+  }
+  return input.producedVisibleOutput ? "success" : "silent";
+}
+
+function stringifyIncidentDetail(input: unknown): string {
+  if (typeof input === "string") return input;
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return String(input);
+  }
+}
+
+function collectRoundSettlement(
+  actions: AgentResponse["actions"],
+  toolResults: ToolResultEntry[],
+  pluginService: PluginService,
+): {
+  actions: SettlementCounters;
+  toolCalls: SettlementCounters;
+  producedVisibleOutput: boolean;
+  incidents: AgentIncident[];
+} {
+  const actionCounters = createSettlementCounters();
+  const toolCounters = createSettlementCounters();
+  const incidents: AgentIncident[] = [];
+
+  for (const action of actions) {
+    const def = pluginService.getDefinition(action.name);
+    const target = def?.type === FunctionType.Action ? actionCounters : toolCounters;
+    target.names.add(action.name);
+  }
+
+  let producedVisibleOutput = false;
+  for (const result of toolResults) {
+    const def = pluginService.getDefinition(result.name);
+    const isAction = def?.type === FunctionType.Action;
+    const target = isAction ? actionCounters : toolCounters;
+
+    target.total += 1;
+    target.names.add(result.name);
+
+    const success = !result.error && result.status !== "failed";
+    if (success) {
+      target.succeeded += 1;
+    } else {
+      target.failed += 1;
+    }
+
+    if (isAction && result.name === "send_message" && success) {
+      producedVisibleOutput = true;
+    }
+
+    if (!isAction && !success) {
+      incidents.push({
+        phase: "tool",
+        category: "tool-error",
+        summary: `${result.name} failed`,
+        recovered: true,
+        detail: result.error,
+      });
+    }
+  }
+
+  return {
+    actions: actionCounters,
+    toolCalls: toolCounters,
+    producedVisibleOutput,
+    incidents,
+  };
 }
