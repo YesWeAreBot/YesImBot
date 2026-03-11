@@ -46,7 +46,10 @@ vi.mock("koishi", () => {
     Context: class {},
     Service: class {
       logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), level: 0 };
-      constructor(..._args: unknown[]) {}
+      ctx: Record<string, unknown>;
+      constructor(ctx?: unknown, ..._args: unknown[]) {
+        this.ctx = (ctx ?? {}) as Record<string, unknown>;
+      }
     },
     Random: {
       id: () => `msg-${Math.random().toString(36).slice(2, 10)}`,
@@ -57,6 +60,7 @@ vi.mock("koishi", () => {
 });
 
 import { ThinkActLoop } from "../src/services/agent/loop";
+import { AgentCore } from "../src/services/agent/service";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { CorePlugin } from "../src/services/plugin/builtin/core";
@@ -539,5 +543,92 @@ describe("Hook runtime resilience (agent snapshot)", () => {
 
     expect(promptArgs?.view?.testMarker).toBe("from-hook");
     expect(toolCtxArg?.view?.testMarker).toBe("from-hook");
+  });
+});
+
+describe("Hook runtime resilience (fail-safe boundary)", () => {
+  it("runs fail-safe error transport after lifecycle closure and outside message hooks", async () => {
+    const order: string[] = [];
+    const messageHookSpy = vi.fn();
+    const sendSpy = vi.fn(async () => {
+      order.push("report-error");
+    });
+
+    const ctx = {
+      logger: vi.fn(() => ({
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
+        level: 0,
+      })),
+      command: vi.fn(),
+      on: vi.fn(),
+      setInterval: vi.fn(),
+      emit: vi.fn(),
+      bots: [{ platform: "discord", sendMessage: sendSpy }],
+    } as unknown as Record<string, unknown>;
+
+    const hookService = new HookService(ctx as never);
+    hookService.register(ctx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async () => {
+        messageHookSpy();
+        return { modified: false };
+      },
+    });
+    ctx["yesimbot.hook"] = hookService;
+
+    const agent = new AgentCore(
+      ctx as never,
+      {
+        debugLevel: 0,
+        errorReportChannel: "discord:ops-channel",
+      } as never,
+    );
+
+    (
+      agent as unknown as {
+        loop: { run: (percept: unknown, toolCtx: unknown) => Promise<unknown> };
+      }
+    ).loop = {
+      run: async () => {
+        order.push("agent-end");
+        throw new Error("runtime failed after lifecycle close");
+      },
+    };
+    (
+      agent as unknown as { willingness: { recordBotReply: ReturnType<typeof vi.fn> } }
+    ).willingness = {
+      recordBotReply: vi.fn(),
+    };
+
+    await (
+      agent as unknown as {
+        runLoop: (
+          channelKey: string,
+          built: { percept: Percept; toolCtx: ToolExecutionContext },
+        ) => Promise<void>;
+      }
+    ).runLoop("discord:c-1", {
+      percept: {
+        id: "p-failsafe",
+        traceId: "trace-failsafe",
+        type: "direct",
+        platform: "discord",
+        channelId: "c-1",
+        timestamp: new Date("2026-03-12T00:00:00Z"),
+        metadata: {},
+      },
+      toolCtx: {
+        platform: "discord",
+        channelId: "c-1",
+      } as ToolExecutionContext,
+    });
+
+    expect(order).toEqual(["agent-end", "report-error"]);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(messageHookSpy).not.toHaveBeenCalled();
   });
 });

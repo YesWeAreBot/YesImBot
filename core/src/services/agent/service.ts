@@ -435,6 +435,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
       this.logger.error(err);
+      // Keep the fail-safe error transport strictly after ThinkActLoop settles.
+      // ThinkActLoop closes the started-round lifecycle (agent end) before bubbling errors.
       await this.reportError(err, built.percept).catch(() => {});
     }
   }
