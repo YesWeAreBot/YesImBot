@@ -13,6 +13,7 @@ describe("Full context access contract", () => {
       baseDir: "/tmp",
       logger: vi.fn(() => agentLogger),
       on: vi.fn(),
+      emit: vi.fn(),
     } as unknown as Record<string, unknown>;
 
     const hookService = new HookService(rootCtx as never);
@@ -26,6 +27,8 @@ describe("Full context access contract", () => {
           traits: Array<{ dimension: string }>;
           skills: Array<{ name: string }>;
           percept: Percept;
+          metadata?: Record<string, unknown>;
+          skillState?: { active: string[] };
         }
       | undefined;
     let capturedToolCtx: ToolExecutionContext | undefined;
@@ -40,6 +43,8 @@ describe("Full context access contract", () => {
           traits: Array<{ dimension: string; value: string; confidence: number }>;
           skills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
           percept: Percept;
+          metadata?: Record<string, unknown>;
+          skillState?: { active: string[] };
         };
 
         return {
@@ -55,6 +60,13 @@ describe("Full context access contract", () => {
                 metadata: { injectedBy: "agent-hook" },
               },
             ],
+            metadata: {
+              ...(params.metadata ?? {}),
+              route: "agent-start",
+            },
+            skillState: {
+              active: ["answering", "hook-context-check"],
+            },
           },
         };
       },
@@ -176,6 +188,13 @@ describe("Full context access contract", () => {
     expect(hookParams?.skills[0].name).toBe("answering");
     expect(hookParams?.percept.traceId).toBe("trace-ctx-1");
     expect(hookParams?.percept.metadata).toEqual({ requestId: "req-123", custom: { lane: "a" } });
+    expect(hookParams?.metadata).toEqual(
+      expect.objectContaining({
+        channelKey: "discord:c-1",
+        traceId: "trace-ctx-1",
+      }),
+    );
+    expect(hookParams?.skillState).toEqual({ active: ["answering"] });
 
     expect(capturedToolCtx).toBeDefined();
     expect(capturedToolCtx?.view?.self.id).toBe("bot-1");
@@ -188,5 +207,19 @@ describe("Full context access contract", () => {
       requestId: "req-123",
       custom: { lane: "a" },
     });
+    expect(capturedToolCtx?.roundContext?.snapshot.metadata).toEqual(
+      expect.objectContaining({
+        channelKey: "discord:c-1",
+        traceId: "trace-ctx-1",
+        route: "agent-start",
+      }),
+    );
+    expect(capturedToolCtx?.roundContext?.skillState).toEqual({
+      active: ["answering", "hook-context-check"],
+    });
+    expect(capturedToolCtx?.scenario).toBe(capturedToolCtx?.roundContext?.snapshot.scenario);
+    expect(capturedToolCtx?.capabilities).toBe(
+      capturedToolCtx?.roundContext?.snapshot.capabilities,
+    );
   });
 });

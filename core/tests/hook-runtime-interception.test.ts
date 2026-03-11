@@ -14,6 +14,7 @@ function createRuntimeHarness(actionPayload: string) {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
     on: vi.fn(),
+    emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
   const hookService = new HookService(rootCtx as never);
@@ -149,6 +150,7 @@ function createRuntimeHarness(actionPayload: string) {
     toolCtx,
     pluginInvoke,
     horizonEvents,
+    promptRender: promptService.render,
   };
 }
 
@@ -177,6 +179,41 @@ describe("Hook runtime interception", () => {
               { dimension: "hook-injected", value: "active", confidence: 1 },
             ],
             skills: [...params.skills, { name: "hooked-skill", effects: ["runtime-tuned"] }],
+            scenario: {
+              ...((ctx.params as { scenario: { derived: { attention?: Record<string, unknown> } } })
+                .scenario ?? {}),
+              derived: {
+                ...(ctx.params as { scenario: { derived: Record<string, unknown> } }).scenario
+                  .derived,
+                attention: { lane: "hooked" },
+              },
+            },
+            capabilities: {
+              ...(
+                ctx.params as {
+                  capabilities: { extended: { directMessage: { status: string } } };
+                }
+              ).capabilities,
+              extended: {
+                ...(
+                  ctx.params as {
+                    capabilities: { extended: Record<string, unknown> };
+                  }
+                ).capabilities.extended,
+                directMessage: { status: "available" },
+              },
+            },
+            metadata: {
+              ...(
+                ctx.params as {
+                  metadata?: Record<string, unknown>;
+                }
+              ).metadata,
+              hookRevision: "start-1",
+            },
+            skillState: {
+              active: ["hooked-skill"],
+            },
           },
         };
       },
@@ -190,6 +227,22 @@ describe("Hook runtime interception", () => {
     const invokeCtx = harness.pluginInvoke.mock.calls[0]?.[2] as ToolExecutionContext;
     expect(invokeCtx.traits?.map((t) => t.dimension)).toContain("hook-injected");
     expect(invokeCtx.skills?.map((s) => s.name)).toContain("hooked-skill");
+    expect(invokeCtx.scenario?.derived.attention).toEqual({ lane: "hooked" });
+    expect(invokeCtx.capabilities?.extended.directMessage).toEqual({ status: "available" });
+    expect(invokeCtx.roundContext?.snapshot.metadata).toMatchObject({ hookRevision: "start-1" });
+    expect(invokeCtx.roundContext?.skillState).toEqual({ active: ["hooked-skill"] });
+    expect(invokeCtx.roundContext?.snapshot.scenario).toBe(invokeCtx.scenario);
+    expect(harness.promptRender).toHaveBeenCalledWith(
+      "system",
+      expect.objectContaining({
+        scenario: expect.objectContaining({
+          derived: expect.objectContaining({ attention: { lane: "hooked" } }),
+        }),
+        capabilities: expect.objectContaining({
+          extended: expect.objectContaining({ directMessage: { status: "available" } }),
+        }),
+      }),
+    );
 
     const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ result?: Record<string, unknown> }> };
