@@ -1,8 +1,11 @@
 import { Context } from "koishi";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { HookService } from "../src/services/hook/service";
 import { HookType, HookPhase } from "../src/services/hook/types";
+import * as builtinPlugins from "../src/services/plugin/builtin";
+import { CorePlugin } from "../src/services/plugin/builtin/core";
+import { OnebotPlugin } from "../src/services/plugin/builtin/onebot";
 
 describe("Hook Integration", () => {
   let ctx: Context;
@@ -11,6 +14,13 @@ describe("Hook Integration", () => {
   beforeEach(() => {
     ctx = new Context();
     ctx.on = () => {};
+    (ctx as unknown as { emit: (...args: unknown[]) => void }).emit = () => {};
+    (ctx as unknown as { logger: (name: string) => Record<string, unknown> }).logger = () => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      level: 2,
+    });
     hookService = new HookService(ctx);
   });
 
@@ -137,6 +147,16 @@ describe("Hook Integration", () => {
       const result = await hookService.executeBefore(HookType.Agent, agentParams, "trace-1");
 
       expect((result.params as typeof agentParams & { injected: boolean }).injected).toBe(true);
+    });
+  });
+
+  describe("Plugin register path", () => {
+    it("register path keeps production built-ins and skips hook-test fixture", () => {
+      expect(builtinPlugins).toMatchObject({
+        CorePlugin,
+        OnebotPlugin,
+      });
+      expect(Object.keys(builtinPlugins).sort()).toEqual(["CorePlugin", "OnebotPlugin"]);
     });
   });
 });

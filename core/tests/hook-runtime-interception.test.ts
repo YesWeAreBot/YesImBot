@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ThinkActLoop } from "../src/services/agent/loop";
+import { Hook } from "../src/services/hook/decorators";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
+import { YesImPlugin } from "../src/services/plugin/plugin";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
 import type { Percept } from "../src/services/shared/types";
 
@@ -10,10 +12,15 @@ type RuntimeHarness = ReturnType<typeof createRuntimeHarness>;
 
 function createRuntimeHarness(actionPayload: string) {
   const agentLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), level: 0 };
+  const lifecycleHandlers = new Map<string, Array<() => void>>();
   const rootCtx = {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
-    on: vi.fn(),
+    on: vi.fn((event: string, handler: () => void) => {
+      const handlers = lifecycleHandlers.get(event) ?? [];
+      handlers.push(handler);
+      lifecycleHandlers.set(event, handlers);
+    }),
     emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
@@ -111,6 +118,8 @@ function createRuntimeHarness(actionPayload: string) {
     getDefinition: vi.fn(() => ({ type: FunctionType.Tool })),
     invoke: pluginInvoke,
     getTools: vi.fn(() => []),
+    registerPlugin: vi.fn(),
+    unregisterPlugin: vi.fn(),
   };
 
   rootCtx["yesimbot.horizon"] = horizonService;
@@ -154,6 +163,12 @@ function createRuntimeHarness(actionPayload: string) {
     percept,
     toolCtx,
     pluginInvoke,
+    pluginRegistry: pluginService,
+    triggerLifecycle: (event: string) => {
+      for (const callback of lifecycleHandlers.get(event) ?? []) {
+        callback();
+      }
+    },
     horizonEvents,
     promptRender: promptService.render,
   };
@@ -333,5 +348,38 @@ describe("Hook runtime interception", () => {
       status: "hook-skipped",
       result: "blocked by hook",
     });
+  });
+
+  it("registers Agent before-hook decorators from plugin startup and applies skip", async () => {
+    const harness: RuntimeHarness = createRuntimeHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"ignored"}}]}',
+    );
+
+    class StartupAgentSkipPlugin extends YesImPlugin {
+      @Hook({ type: HookType.Agent, phase: HookPhase.Before })
+      async skipBeforeAgent() {
+        return {
+          skip: true,
+          result: {
+            success: true,
+            status: "startup-skip",
+            content: "skipped by decorator registration",
+          },
+        };
+      }
+    }
+
+    const plugin = new StartupAgentSkipPlugin(harness.rootCtx as never);
+    harness.triggerLifecycle("ready");
+
+    expect(harness.pluginRegistry.registerPlugin).toHaveBeenCalledWith(plugin);
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(0);
+    expect(harness.pluginInvoke).not.toHaveBeenCalled();
+
+    harness.triggerLifecycle("dispose");
+    expect(harness.pluginRegistry.unregisterPlugin).toHaveBeenCalled();
   });
 });
