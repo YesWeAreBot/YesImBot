@@ -14,7 +14,6 @@ import {
   createRoundContext,
 } from "../runtime/adapters";
 import type { RoundContext, Scenario } from "../runtime/contracts";
-import type { SkillRegistry } from "../skill/service";
 import type { TraitAnalyzer } from "../trait/service";
 import type { ActiveSkill, Percept, TraitSignal } from "./types";
 
@@ -85,7 +84,7 @@ export async function buildAgentContext(
   }
 
   let traits: TraitSignal[] = [];
-  let skills: ActiveSkill[] = [];
+  const skills: ActiveSkill[] = [];
 
   if (view) {
     try {
@@ -95,17 +94,6 @@ export async function buildAgentContext(
       missingFields.push("traits");
       logger.warn(
         `[${params.percept.traceId}] ToolExecutionContext incomplete: failed to analyze traits — ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-
-    try {
-      const skillRegistry = ctx["yesimbot.skill"] as SkillRegistry;
-      const effects = skillRegistry.resolve(traits, key);
-      skills = effects.activeSkills;
-    } catch (err) {
-      missingFields.push("skills");
-      logger.warn(
-        `[${params.percept.traceId}] ToolExecutionContext incomplete: failed to resolve skills — ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

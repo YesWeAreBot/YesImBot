@@ -18,8 +18,13 @@ function createRuntimeHarness(actionPayload: string) {
   } as unknown as Record<string, unknown>;
 
   const hookService = new HookService(rootCtx as never);
-  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+  (
+    hookService as unknown as {
+      logger: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+    }
+  ).logger = {
     warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   const horizonEvents = {

@@ -170,6 +170,11 @@ export class ThinkActLoop {
       platform: percept.platform,
       channelId: percept.channelId,
     });
+    roundContext = commitRoundContext(roundContext, {
+      skillState: {
+        active: effects.activeSkills.map((activeSkill) => activeSkill.name),
+      },
+    });
 
     const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
     if (hookService) {
