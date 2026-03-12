@@ -309,7 +309,7 @@ describe("round context runtime", () => {
   });
 
   it("completes baseline runtime fields before agent-start hook mutation", async () => {
-    const capturedBeforeParams: Array<Record<string, unknown>> = [];
+    const capturedStartParams: Array<Record<string, unknown>> = [];
     const skillResolve = vi
       .fn()
       .mockReturnValueOnce({
@@ -381,11 +381,11 @@ describe("round context runtime", () => {
         resolve: skillResolve,
       },
       "yesimbot.hook": {
-        executeBefore: vi.fn(async (_type: unknown, params: unknown) => {
-          capturedBeforeParams.push(params as Record<string, unknown>);
+        executeAgentStart: vi.fn(async (params: unknown) => {
+          capturedStartParams.push(params as Record<string, unknown>);
           return { skipped: false, params };
         }),
-        executeAfter: vi.fn(async () => undefined),
+        executeAgentEnd: vi.fn(async () => undefined),
       },
       "yesimbot.arousal": undefined,
     } as unknown as ConstructorParameters<typeof ThinkActLoop>[0];
@@ -413,8 +413,8 @@ describe("round context runtime", () => {
       bot: { selfId: "bot-1", user: { name: "Athena" } },
     } as never);
 
-    expect(capturedBeforeParams.length).toBe(1);
-    expect(capturedBeforeParams[0]).toEqual(
+    expect(capturedStartParams.length).toBe(1);
+    expect(capturedStartParams[0]).toEqual(
       expect.objectContaining({
         view: expect.any(Object),
         traits: expect.any(Array),
@@ -427,7 +427,7 @@ describe("round context runtime", () => {
     );
     expect(skillResolve).toHaveBeenCalledTimes(1);
 
-    const beforeParams = capturedBeforeParams[0] as {
+    const beforeParams = capturedStartParams[0] as {
       skills?: Array<{ name: string }>;
       skillState?: { active?: string[] };
       roundContext?: { skillState?: { active?: string[] } };

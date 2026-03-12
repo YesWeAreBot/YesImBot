@@ -350,6 +350,17 @@ describe("Hook runtime interception", () => {
     });
   });
 
+  it("does not globally skip rounds when no Agent before-hook is registered", async () => {
+    const harness: RuntimeHarness = createRuntimeHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"baseline"}}]}',
+    );
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
+  });
+
   it("registers Agent before-hook decorators from plugin startup and applies skip", async () => {
     const harness: RuntimeHarness = createRuntimeHarness(
       '{"actions":[{"name":"search_tool","params":{"query":"ignored"}}]}',
