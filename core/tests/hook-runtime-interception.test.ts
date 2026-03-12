@@ -373,6 +373,7 @@ describe("Hook runtime interception", () => {
     harness.triggerLifecycle("ready");
 
     expect(harness.pluginRegistry.registerPlugin).toHaveBeenCalledWith(plugin);
+    expect(harness.hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(1);
 
     const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
 
@@ -380,6 +381,7 @@ describe("Hook runtime interception", () => {
     expect(harness.pluginInvoke).not.toHaveBeenCalled();
 
     harness.triggerLifecycle("dispose");
+    expect(harness.hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(0);
     expect(harness.pluginRegistry.unregisterPlugin).toHaveBeenCalled();
   });
 });

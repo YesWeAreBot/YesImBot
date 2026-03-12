@@ -1,5 +1,6 @@
 import { Context } from "koishi";
 
+import type { HookService } from "../hook/service";
 import { StaticEntry } from "./decorators";
 import type { FunctionDefinition, IPluginService, PluginMetadata } from "./types";
 
@@ -14,6 +15,7 @@ export abstract class YesImPlugin {
   metadata: PluginMetadata;
   tools: Map<string, FunctionDefinition> = new Map();
   actions: Map<string, FunctionDefinition> = new Map();
+  private hooksRegistered = false;
 
   constructor(ctx: Context) {
     this.ctx = ctx;
@@ -54,10 +56,16 @@ export abstract class YesImPlugin {
     }
 
     ctx.on("ready", async () => {
+      const hookService = ctx["yesimbot.hook"] as HookService | undefined;
+      if (hookService && !this.hooksRegistered) {
+        hookService.registerFromDecorators(ctx, this);
+        this.hooksRegistered = true;
+      }
       ctx["yesimbot.plugin"].registerPlugin(this);
     });
 
     ctx.on("dispose", async () => {
+      this.hooksRegistered = false;
       ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
     });
   }
