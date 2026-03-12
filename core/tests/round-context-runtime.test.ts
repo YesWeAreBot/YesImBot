@@ -272,6 +272,7 @@ describe("round context runtime", () => {
           }).snapshot.scenario,
         },
       }),
+      executeAfter: vi.fn().mockResolvedValue(undefined),
     };
     (ctx as unknown as Record<string, unknown>)["yesimbot.hook"] = hookService;
 
@@ -309,6 +310,20 @@ describe("round context runtime", () => {
 
   it("completes baseline runtime fields before agent-start hook mutation", async () => {
     const capturedBeforeParams: Array<Record<string, unknown>> = [];
+    const skillResolve = vi
+      .fn()
+      .mockReturnValueOnce({
+        activeSkills: [{ name: "resolve-once" }],
+        promptInjections: [],
+        toolFilter: undefined,
+        styleOverride: undefined,
+      })
+      .mockReturnValueOnce({
+        activeSkills: [{ name: "resolve-twice" }],
+        promptInjections: [],
+        toolFilter: undefined,
+        styleOverride: undefined,
+      });
     const ctx = {
       baseDir: "/tmp",
       logger: vi.fn(() => ({
@@ -363,18 +378,14 @@ describe("round context runtime", () => {
         analyze: vi.fn().mockResolvedValue([{ dimension: "scene", value: "group" }]),
       },
       "yesimbot.skill": {
-        resolve: vi.fn().mockReturnValue({
-          activeSkills: [{ name: "answering" }],
-          promptInjections: [],
-          toolFilter: undefined,
-          styleOverride: undefined,
-        }),
+        resolve: skillResolve,
       },
       "yesimbot.hook": {
         executeBefore: vi.fn(async (_type: unknown, params: unknown) => {
           capturedBeforeParams.push(params as Record<string, unknown>);
           return { skipped: false, params };
         }),
+        executeAfter: vi.fn(async () => undefined),
       },
       "yesimbot.arousal": undefined,
     } as unknown as ConstructorParameters<typeof ThinkActLoop>[0];
@@ -414,6 +425,16 @@ describe("round context runtime", () => {
         capabilities: expect.any(Object),
       }),
     );
+    expect(skillResolve).toHaveBeenCalledTimes(1);
+
+    const beforeParams = capturedBeforeParams[0] as {
+      skills?: Array<{ name: string }>;
+      skillState?: { active?: string[] };
+      roundContext?: { skillState?: { active?: string[] } };
+    };
+    expect(beforeParams.skills?.map((skill) => skill.name)).toEqual(["resolve-once"]);
+    expect(beforeParams.skillState).toEqual({ active: ["resolve-once"] });
+    expect(beforeParams.roundContext?.skillState).toEqual({ active: ["resolve-once"] });
   });
 
   it("recalibrates legacy direct loop calls with inbound roundContext through round-entry baseline", async () => {
