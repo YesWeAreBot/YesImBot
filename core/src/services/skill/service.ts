@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
 
-import type { InjectionPoint } from "../prompt/types";
+import type { FragmentStability, PromptSectionName } from "../prompt/types";
 import type { ChannelKey, TraitSignal } from "../shared/types";
 import { evaluateCondition, filterByConfidence, specificity } from "./condition";
 import { loadSkillsFromDir } from "./loader";
@@ -38,6 +38,50 @@ const builtinSkillsDir = resolve(
   "../".repeat(__dirname.includes("dist") ? 1 : 2),
   "resources/skills",
 );
+
+function mapLegacyPointToSection(point: SkillDefinition["injectionPoint"]): PromptSectionName {
+  if (point === "soul") return "identity";
+  if (point === "instructions") return "policy";
+  return "situation";
+}
+
+function mapSectionToLegacyPoint(section: PromptSectionName): "soul" | "instructions" | "extra" {
+  if (section === "identity") return "soul";
+  if (section === "policy") return "instructions";
+  return "extra";
+}
+
+function normalizePromptMetadata(skill: SkillDefinition): {
+  section: PromptSectionName;
+  stability: FragmentStability;
+  priority: number;
+  cacheable: boolean;
+} {
+  const section = skill.promptFragment?.section ?? mapLegacyPointToSection(skill.injectionPoint);
+  return {
+    section,
+    stability: skill.promptFragment?.stability ?? "dynamic",
+    priority: skill.promptFragment?.priority ?? 400,
+    cacheable: skill.promptFragment?.cacheable ?? false,
+  };
+}
+
+function normalizeStyleMetadata(skill: SkillDefinition): {
+  section: Extract<PromptSectionName, "identity" | "policy">;
+  stability: FragmentStability;
+  priority: number;
+  cacheable: boolean;
+} {
+  const legacySection = mapLegacyPointToSection(skill.styleInjectionPoint);
+  const section =
+    skill.styleFragment?.section ?? (legacySection === "policy" ? "policy" : "identity");
+  return {
+    section,
+    stability: skill.styleFragment?.stability ?? "dynamic",
+    priority: skill.styleFragment?.priority ?? 650,
+    cacheable: skill.styleFragment?.cacheable ?? false,
+  };
+}
 
 export class SkillRegistry extends Service<SkillRegistryConfig> {
   static inject = ["yesimbot.trait"];
@@ -144,6 +188,8 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     });
 
     const result: SkillEffect = {
+      promptFragments: [],
+      styleFragment: null,
       promptInjections: [],
       styleOverride: null,
       toolFilter: { include: [], exclude: [] },
@@ -159,27 +205,48 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     };
 
     let bestStyle: {
+      skillName: string;
       content: string;
+      section: "identity" | "policy";
+      source: "skill";
+      stability: FragmentStability;
+      priority: number;
+      cacheable: boolean;
       specificity: number;
-      point: InjectionPoint;
     } | null = null;
 
     for (const skill of sorted) {
       if (skill.effects.prompt) {
-        result.promptInjections.push({
+        const promptMeta = normalizePromptMetadata(skill);
+        result.promptFragments.push({
           skillName: skill.name,
-          point: skill.injectionPoint ?? "extra",
+          section: promptMeta.section,
+          source: "skill",
+          stability: promptMeta.stability,
+          priority: promptMeta.priority,
+          cacheable: promptMeta.cacheable,
+          content: `<skill name="${skill.name}">${skill.effects.prompt}</skill>`,
+        });
+        result.promptInjections?.push({
+          skillName: skill.name,
+          point: mapSectionToLegacyPoint(promptMeta.section),
           content: `<skill name="${skill.name}">${skill.effects.prompt}</skill>`,
         });
       }
 
       if (skill.effects.style) {
         const spec = skill.conditions ? specificity(skill.conditions) : 0;
+        const styleMeta = normalizeStyleMetadata(skill);
         if (!bestStyle || spec >= bestStyle.specificity) {
           bestStyle = {
+            skillName: skill.name,
             content: skill.effects.style.content,
+            section: styleMeta.section,
+            source: "skill",
+            stability: styleMeta.stability,
+            priority: styleMeta.priority,
+            cacheable: styleMeta.cacheable,
             specificity: spec,
-            point: skill.styleInjectionPoint ?? "soul",
           };
         }
       }
@@ -194,7 +261,14 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
       }
     }
 
-    result.styleOverride = bestStyle;
+    result.styleFragment = bestStyle;
+    if (bestStyle) {
+      result.styleOverride = {
+        content: bestStyle.content,
+        specificity: bestStyle.specificity,
+        point: mapSectionToLegacyPoint(bestStyle.section),
+      };
+    }
     return result;
   }
 

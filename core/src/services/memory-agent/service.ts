@@ -65,22 +65,29 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
       this.onTimelineCompressed(channelKey),
     );
 
-    // Inject core memories into prompt "extra" section
+    // Register core memories as canonical prompt fragment source
     const promptService = this.ctx["yesimbot.prompt"];
-    promptService.inject(this.ctx, "extra", {
-      name: "__core_memories",
-      renderFn: async (scope) => {
-        const view = scope.view as HorizonView | undefined;
-        if (!view?.environment) return "";
-        const key: ChannelKey = {
-          platform: view.environment.platform,
-          channelId: view.environment.channelId,
-        };
-        const memories = await this.getCoreMemories(key, view.environment.platform);
-        if (memories.length === 0) return "";
-        const lines = memories.map((m) => `- [${m.type}] ${m.content}`);
-        return `<core_memories>\n${lines.join("\n")}\n</core_memories>`;
-      },
+    promptService.registerFragmentSource("memory.core", async (scope) => {
+      const view = scope.view as HorizonView | undefined;
+      if (!view?.environment) return [];
+      const key: ChannelKey = {
+        platform: view.environment.platform,
+        channelId: view.environment.channelId,
+      };
+      const memories = await this.getCoreMemories(key, view.environment.platform);
+      if (memories.length === 0) return [];
+      const lines = memories.map((m) => `- [${m.type}] ${m.content}`);
+      return [
+        {
+          id: "memory.core",
+          content: `<core_memories>\n${lines.join("\n")}\n</core_memories>`,
+          section: "memory",
+          source: "memory",
+          stability: "stable",
+          priority: 500,
+          cacheable: true,
+        },
+      ];
     });
 
     // Register recall tool plugin

@@ -1,10 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import matter from "gray-matter";
 
-import { INJECTION_POINTS, type InjectionPoint } from "../prompt/types";
+import { INJECTION_POINTS, type PromptSectionName } from "../prompt/types";
 import type {
   ConditionNode,
   LifecycleStrategy,
@@ -13,13 +12,68 @@ import type {
   ToolFilter,
 } from "./types";
 
-function validateInjectionPoint(val: unknown, skillName: string): InjectionPoint | undefined {
-  if (val == null) return undefined;
-  if (typeof val === "string" && (INJECTION_POINTS as readonly string[]).includes(val)) {
-    return val as InjectionPoint;
-  }
-  console.warn("Invalid injection_point '%s' in skill %s, using default", val, skillName);
+function mapLegacyPointToSection(point: unknown): PromptSectionName | undefined {
+  if (point === "soul") return "identity";
+  if (point === "instructions") return "policy";
+  if (point === "extra") return "situation";
   return undefined;
+}
+
+function normalizePromptSection(
+  metaSection: unknown,
+  legacyPoint: unknown,
+  skillName: string,
+): PromptSectionName {
+  if (typeof metaSection === "string") {
+    if ((["identity", "policy", "memory", "situation"] as const).includes(metaSection as never)) {
+      return metaSection as PromptSectionName;
+    }
+    console.warn("Invalid prompt section '%s' in skill %s, using default", metaSection, skillName);
+  }
+
+  if (legacyPoint != null) {
+    const mapped = mapLegacyPointToSection(legacyPoint);
+    if (mapped) {
+      console.warn("Skill %s uses deprecated alias injection_point", skillName);
+      return mapped;
+    }
+    console.warn("Invalid injection_point '%s' in skill %s, using default", legacyPoint, skillName);
+  }
+
+  return "situation";
+}
+
+function normalizeStyleSection(
+  metaSection: unknown,
+  legacyPoint: unknown,
+  skillName: string,
+): "identity" | "policy" {
+  if (metaSection === "identity" || metaSection === "policy") {
+    return metaSection;
+  }
+
+  if (typeof metaSection === "string") {
+    console.warn("Invalid style section '%s' in skill %s, using default", metaSection, skillName);
+  }
+
+  if (legacyPoint != null) {
+    const mapped = mapLegacyPointToSection(legacyPoint);
+    if (mapped === "policy") {
+      console.warn("Skill %s uses deprecated alias style_injection_point", skillName);
+      return "policy";
+    }
+    if (mapped === "identity") {
+      console.warn("Skill %s uses deprecated alias style_injection_point", skillName);
+      return "identity";
+    }
+    console.warn(
+      "Invalid style_injection_point '%s' in skill %s, using default",
+      legacyPoint,
+      skillName,
+    );
+  }
+
+  return "identity";
 }
 
 export function loadSkillsFromDir(dir: string): SkillDefinition[] {
@@ -36,6 +90,8 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
       const { meta, content } = parseFrontmatter(raw);
 
       const rawEffects = meta.effects as Record<string, unknown> | undefined;
+      const promptMeta = (meta.prompt_fragment ?? {}) as Record<string, unknown>;
+      const styleMeta = (meta.style_fragment ?? {}) as Record<string, unknown>;
       const effects: SkillDefinition["effects"] = {
         prompt: content || undefined,
         style: rawEffects?.style as StyleEffect | undefined,
@@ -48,8 +104,36 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
         conditions: meta.conditions as ConditionNode | undefined,
         lifecycle: (meta.lifecycle as LifecycleStrategy) ?? "per-turn",
         stickyTimeout: meta.stickyTimeout as number | undefined,
-        injectionPoint: validateInjectionPoint(meta.injection_point, entry.name),
-        styleInjectionPoint: validateInjectionPoint(meta.style_injection_point, entry.name),
+        injectionPoint:
+          typeof meta.injection_point === "string" &&
+          (INJECTION_POINTS as readonly string[]).includes(meta.injection_point)
+            ? (meta.injection_point as "soul" | "instructions" | "extra")
+            : undefined,
+        styleInjectionPoint:
+          typeof meta.style_injection_point === "string" &&
+          (INJECTION_POINTS as readonly string[]).includes(meta.style_injection_point)
+            ? (meta.style_injection_point as "soul" | "instructions" | "extra")
+            : undefined,
+        promptFragment: {
+          section: normalizePromptSection(
+            promptMeta.section,
+            meta.injection_point,
+            (meta.name as string) ?? entry.name,
+          ),
+          stability: (promptMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
+          priority: (promptMeta.priority as number | undefined) ?? 400,
+          cacheable: (promptMeta.cacheable as boolean | undefined) ?? false,
+        },
+        styleFragment: {
+          section: normalizeStyleSection(
+            styleMeta.section,
+            meta.style_injection_point,
+            (meta.name as string) ?? entry.name,
+          ),
+          stability: (styleMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
+          priority: (styleMeta.priority as number | undefined) ?? 650,
+          cacheable: (styleMeta.cacheable as boolean | undefined) ?? false,
+        },
         effects,
         source: "file",
       };

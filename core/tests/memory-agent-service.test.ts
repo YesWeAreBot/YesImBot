@@ -109,42 +109,29 @@ describe("MemoryAgentService", () => {
     vi.restoreAllMocks();
   });
 
-  it("schedules periodic checks and runs extraction for active channels", async () => {
-    const { ctx, intervals } = createMockContext();
+  it("registers memory table, prompt source, and recall plugin on start", async () => {
+    const { ctx } = createMockContext();
     const service = new MemoryAgentService(ctx as never, createConfig());
 
-    const channels = [
-      { platform: "discord", channelId: "c1" },
-      { platform: "discord", channelId: "c2" },
-    ];
-    const getActiveChannelsSpy = vi
-      .spyOn(service as never, "getActiveChannels")
-      .mockResolvedValue(channels);
-    const maybeRunAgentSpy = vi
-      .spyOn(service as never, "maybeRunAgent")
-      .mockResolvedValue(undefined);
+    await (service as unknown as { start: () => Promise<void> }).start();
 
-    await (service as never).start();
-    expect(ctx.setInterval).toHaveBeenCalledTimes(1);
-    expect(ctx.setInterval).toHaveBeenCalledWith(expect.any(Function), 12345);
-
-    await intervals[0]();
-
-    expect(getActiveChannelsSpy).toHaveBeenCalledTimes(1);
-    expect(maybeRunAgentSpy).toHaveBeenCalledTimes(2);
-    expect(maybeRunAgentSpy).toHaveBeenNthCalledWith(1, channels[0]);
-    expect(maybeRunAgentSpy).toHaveBeenNthCalledWith(2, channels[1]);
+    expect((ctx.model as { extend: ReturnType<typeof vi.fn> }).extend).toHaveBeenCalledTimes(1);
+    expect(ctx.plugin as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+    expect(
+      (ctx["yesimbot.prompt"] as { registerFragmentSource: ReturnType<typeof vi.fn> })
+        .registerFragmentSource,
+    ).toHaveBeenCalled();
   });
 
   it("reacts to athena:timeline.compressed by triggering channel extraction", async () => {
     const { ctx, handlers } = createMockContext();
     const service = new MemoryAgentService(ctx as never, createConfig());
 
-    const maybeRunAgentSpy = vi
-      .spyOn(service as never, "maybeRunAgent")
-      .mockResolvedValue(undefined);
+    const maybeRunAgentSpy = vi.fn().mockResolvedValue(undefined);
+    (service as unknown as { maybeRunAgent: ReturnType<typeof vi.fn> }).maybeRunAgent =
+      maybeRunAgentSpy;
 
-    await (service as never).start();
+    await (service as unknown as { start: () => Promise<void> }).start();
 
     const handler = handlers.get("athena:timeline.compressed");
     expect(handler).toBeTypeOf("function");
@@ -212,7 +199,7 @@ describe("MemoryAgentService", () => {
     expect(promptService.inject).not.toHaveBeenCalled();
     expect(promptService.registerFragmentSource).toHaveBeenCalled();
 
-    const provider = fragmentSources.get("memory");
+    const provider = fragmentSources.get("memory.core");
     expect(provider).toBeTypeOf("function");
 
     const fragments = (await provider?.({

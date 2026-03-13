@@ -1,4 +1,4 @@
-import type { InjectionPoint } from "../prompt/types";
+import type { FragmentStability, PromptSectionName } from "../prompt/types";
 import type { TraitSignal } from "../shared/types";
 
 // ---- Condition Nodes ----
@@ -47,24 +47,56 @@ export interface SkillDefinition {
   activate?: (signals: TraitSignal[]) => boolean;
   lifecycle: LifecycleStrategy;
   stickyTimeout?: number;
-  injectionPoint?: InjectionPoint;
-  styleInjectionPoint?: InjectionPoint;
+  promptFragment?: SkillFragmentMetadata;
+  styleFragment?: SkillStyleFragmentMetadata;
+  /** @deprecated use promptFragment.section */
+  injectionPoint?: "soul" | "instructions" | "extra";
+  /** @deprecated use styleFragment.section */
+  styleInjectionPoint?: "soul" | "instructions" | "extra";
   effects: SkillEffects;
   source: "file" | "plugin";
+}
+
+export interface SkillFragmentMetadata {
+  section: PromptSectionName;
+  stability?: FragmentStability;
+  priority?: number;
+  cacheable?: boolean;
+}
+
+export interface SkillStyleFragmentMetadata {
+  section?: Extract<PromptSectionName, "identity" | "policy">;
+  stability?: FragmentStability;
+  priority?: number;
+  cacheable?: boolean;
+}
+
+export interface SkillPromptFragment {
+  skillName: string;
+  content: string;
+  section: PromptSectionName;
+  source: "skill";
+  stability: FragmentStability;
+  priority: number;
+  cacheable: boolean;
 }
 
 // ---- Merged Result ----
 
 export interface SkillEffect {
+  promptFragments: SkillPromptFragment[];
+  styleFragment: (SkillPromptFragment & { specificity: number }) | null;
+  /** @deprecated compatibility alias; use promptFragments */
   promptInjections: Array<{
     skillName: string;
-    point: InjectionPoint;
+    point: "soul" | "instructions" | "extra";
     content: string;
   }>;
+  /** @deprecated compatibility alias; use styleFragment */
   styleOverride: {
     content: string;
     specificity: number;
-    point: InjectionPoint;
+    point: "soul" | "instructions" | "extra";
   } | null;
   toolFilter: { include: string[]; exclude: string[] };
   activeSkills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
