@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -13,7 +14,7 @@ import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
-import type { Section } from "../prompt/types";
+import type { PromptFragment, Section } from "../prompt/types";
 import {
   bindCommittedRoundContext,
   buildScenarioFromView,
@@ -162,21 +163,26 @@ export class ThinkActLoop {
     }
 
     const skillCatalog = this.ctx["yesimbot.skill"] as SkillRegistry | undefined;
+    const hasSkillCatalogGet = Boolean(skillCatalog && typeof skillCatalog.get === "function");
     let loadedSkills =
-      skillCatalog && roundContext.skillState.persistentRoster
-        ? inheritPersistentRoster(roundContext.skillState.persistentRoster, skillCatalog)
+      hasSkillCatalogGet && roundContext.skillState.persistentRoster
+        ? inheritPersistentRoster(
+            roundContext.skillState.persistentRoster,
+            skillCatalog as SkillRegistry,
+          )
         : new LoadedSkillSet();
     const applier = new SkillEffectApplier();
     let signals = runtimeToolCtx.traits ?? [];
+    let legacySkillsForToolCtx: NonNullable<ToolExecutionContext["skills"]> | undefined;
 
     const loadSkill = async (skillName: string): Promise<LoadResult> => {
-      if (!skillCatalog) {
+      if (!hasSkillCatalogGet) {
         const reason = "skill catalog unavailable";
         loadedSkills.recordLoadAttempt(skillName, "not_found", reason);
         return { status: "not_found", reason };
       }
 
-      const definition = skillCatalog.get(skillName);
+      const definition = (skillCatalog as SkillRegistry).get(skillName);
       if (!definition) {
         const reason = `skill "${skillName}" not found in catalog`;
         loadedSkills.recordLoadAttempt(skillName, "not_found", reason);
@@ -251,11 +257,15 @@ export class ThinkActLoop {
         if (updatedView) view = updatedView;
         if (updatedTraits) signals = updatedTraits;
         if (updatedSkills && !isSameActiveSkillList(updatedSkills, legacySkillsBeforeHook)) {
-          loadedSkills = this.syncLoadedSkillsFromLegacyCompat(
-            updatedSkills,
-            loadedSkills,
-            skillCatalog,
-          );
+          if (hasSkillCatalogGet) {
+            loadedSkills = this.syncLoadedSkillsFromLegacyCompat(
+              updatedSkills,
+              loadedSkills,
+              skillCatalog,
+            );
+          } else {
+            legacySkillsForToolCtx = updatedSkills;
+          }
         }
 
         const updatedScenario = modifiedParams.scenario as Scenario | undefined;
@@ -299,9 +309,13 @@ export class ThinkActLoop {
     const appliedEffects = applier.apply(loadedSkills);
     roundContext = commitRoundContext(roundContext, {
       skillState: {
-        active: loadedSkills.getLoadedNames(),
+        active: legacySkillsForToolCtx
+          ? legacySkillsForToolCtx.map((skill) => skill.name)
+          : loadedSkills.getLoadedNames(),
         loadHistory: loadedSkills.getLoadHistory(),
-        persistentRoster: loadedSkills.getLoadedNames(),
+        persistentRoster: legacySkillsForToolCtx
+          ? legacySkillsForToolCtx.map((skill) => skill.name)
+          : loadedSkills.getLoadedNames(),
       },
     });
 
@@ -311,7 +325,7 @@ export class ThinkActLoop {
         percept,
         view,
         traits: signals,
-        skills: toActiveSkills(loadedSkills.getLoaded()),
+        skills: legacySkillsForToolCtx ?? toActiveSkills(loadedSkills.getLoaded()),
       },
       roundContext,
     ) as ToolExecutionContext;
@@ -323,8 +337,12 @@ export class ThinkActLoop {
         ...appliedEffects.promptFragments,
         ...(appliedEffects.styleFragment ? [appliedEffects.styleFragment] : []),
       ];
-      disposers.push(
-        promptService.registerFragmentSource(`__skill_effects_${percept.id}`, () => allFragments),
+      registerPromptFragmentSource(
+        promptService,
+        this.ctx,
+        disposers,
+        `__skill_effects_${percept.id}`,
+        () => allFragments,
       );
     }
 
@@ -333,28 +351,29 @@ export class ThinkActLoop {
       toolCtxWithPercept,
       appliedEffects.toolVisibility,
     );
-    disposers.push(
-      promptService.registerFragmentSource(
-        `__loop_tool_fragments_${percept.id}`,
-        () => toolPromptFragments,
-      ),
+    registerPromptFragmentSource(
+      promptService,
+      this.ctx,
+      disposers,
+      `__loop_tool_fragments_${percept.id}`,
+      () => toolPromptFragments,
     );
 
     try {
       const providerType = modelService.getProvider(
         (this.config.model ?? "").split(":")[0],
       )?.providerType;
-      const emitted = await promptService.emitPromptBlocks(
-        "system",
-        {
-          view,
-          percept,
-          roundContext,
-          scenario: roundContext.snapshot.scenario,
-          capabilities: roundContext.snapshot.capabilities,
-        },
-        { providerType },
-      );
+      const promptScope = {
+        view,
+        percept,
+        roundContext,
+        scenario: roundContext.snapshot.scenario,
+        capabilities: roundContext.snapshot.capabilities,
+      };
+      const emitted =
+        typeof promptService.emitPromptBlocks === "function"
+          ? await promptService.emitPromptBlocks("system", promptScope, { providerType })
+          : await emitPromptBlocksCompat(promptService, promptScope);
       const sections: Section[] = emitted.sections;
       const stableContent = emitted.stableBlock;
       const dynamicContent = emitted.dynamicBlock;
@@ -963,6 +982,84 @@ function isSameActiveSkillList(next: ActiveSkill[], previous: ActiveSkill[]): bo
     if (next[i]?.name !== previous[i]?.name) return false;
   }
   return true;
+}
+
+function registerPromptFragmentSource(
+  promptService: PromptService,
+  ctx: Context,
+  disposers: Array<() => void>,
+  name: string,
+  provider: (scope: Record<string, unknown>) => PromptFragment[] | Promise<PromptFragment[]>,
+): void {
+  if (typeof promptService.registerFragmentSource === "function") {
+    disposers.push(promptService.registerFragmentSource(name, provider));
+    return;
+  }
+
+  if (typeof promptService.inject === "function") {
+    disposers.push(
+      promptService.inject(ctx, "extra", {
+        name,
+        renderFn: async (scope) => {
+          const fragments = await provider(scope);
+          if (!Array.isArray(fragments)) return "";
+          return fragments
+            .map((fragment) =>
+              fragment && typeof fragment === "object" && "content" in fragment
+                ? String((fragment as { content: unknown }).content)
+                : "",
+            )
+            .filter(Boolean)
+            .join("\n\n");
+        },
+      }),
+    );
+  }
+}
+
+async function emitPromptBlocksCompat(
+  promptService: PromptService,
+  scope: Record<string, unknown>,
+): Promise<{
+  sections: Section[];
+  stableBlock: string;
+  dynamicBlock: string;
+  stableSignature: string;
+}> {
+  const legacyPromptService = promptService as PromptService & {
+    render?: (
+      templateName: string,
+      initialScope?: Record<string, unknown>,
+    ) => Promise<Array<Section & { cacheable?: boolean }>>;
+  };
+
+  if (typeof legacyPromptService.render !== "function") {
+    return {
+      sections: [],
+      stableBlock: "",
+      dynamicBlock: "",
+      stableSignature: createHash("sha256").update("", "utf8").digest("hex"),
+    };
+  }
+
+  const renderedSections = await legacyPromptService.render("system", scope);
+  const sections = renderedSections.map((section) => ({
+    ...section,
+    cacheable: section.cacheable ?? (section.name !== "extra" && section.name !== "situation"),
+  }));
+
+  const stableSections = sections.filter((section) => section.cacheable !== false);
+  const dynamicSections = sections.filter((section) => section.cacheable === false);
+  const stableBlock = stableSections.map((section) => section.content).join("\n\n");
+  const dynamicBlock = dynamicSections.map((section) => section.content).join("\n\n");
+  const stableSignature = createHash("sha256").update(stableBlock, "utf8").digest("hex");
+
+  return {
+    sections,
+    stableBlock,
+    dynamicBlock,
+    stableSignature,
+  };
 }
 
 function toToolResultEntry(

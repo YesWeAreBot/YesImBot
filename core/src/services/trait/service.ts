@@ -16,6 +16,11 @@ export interface TraitAnalyzerConfig {}
 
 export const TraitAnalyzerConfigSchema: Schema<TraitAnalyzerConfig> = Schema.object({});
 
+/**
+ * Optional analyzer. Not required by the agent main loop.
+ * Hook authors may call `trait.analyze()` explicitly when they need
+ * trait signals to decide skill loading.
+ */
 export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
   static inject = ["yesimbot.horizon"];
 

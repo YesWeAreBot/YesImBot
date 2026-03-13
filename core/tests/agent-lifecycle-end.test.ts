@@ -416,6 +416,6 @@ describe("Agent lifecycle end", () => {
     expect(endParams.roundContext?.snapshot.metadata).toMatchObject({
       hookRevision: "end-shape-1",
     });
-    expect(endParams.roundContext?.skillState).toEqual({ active: ["hooked-skill"] });
+    expect(endParams.roundContext?.skillState).toMatchObject({ active: [] });
   });
 });

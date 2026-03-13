@@ -238,7 +238,7 @@ describe("Full context access contract", () => {
     expect(hookParams).toBeDefined();
     expect(hookParams?.view.self.id).toBe("bot-1");
     expect(hookParams?.traits[0].dimension).toBe("scene");
-    expect(hookParams?.skills[0].name).toBe("answering");
+    expect(hookParams?.skills ?? []).toEqual([]);
     expect(hookParams?.percept.traceId).toBe("trace-ctx-1");
     expect(hookParams?.percept.metadata).toEqual({ requestId: "req-123", custom: { lane: "a" } });
     expect(hookParams?.metadata).toEqual(
@@ -247,13 +247,13 @@ describe("Full context access contract", () => {
         traceId: "trace-ctx-1",
       }),
     );
-    expect(hookParams?.skillState).toEqual({ active: ["answering"] });
+    expect(hookParams?.skillState).toMatchObject({ active: [] });
 
     expect(capturedToolCtx).toBeDefined();
     expect(capturedToolCtx?.view?.self.id).toBe("bot-1");
     expect(capturedToolCtx?.traits?.[0].dimension).toBe("scene");
     expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toContain("hook-injected");
-    expect(capturedToolCtx?.skills?.[0].name).toBe("answering");
+    expect(capturedToolCtx?.skills?.[0].name).toBe("hook-context-check");
     expect(capturedToolCtx?.skills?.map((s) => s.name)).toContain("hook-context-check");
     expect(capturedToolCtx?.percept?.traceId).toBe("trace-ctx-1");
     expect(capturedToolCtx?.percept?.metadata).toEqual({
@@ -267,8 +267,8 @@ describe("Full context access contract", () => {
         route: "agent-start",
       }),
     );
-    expect(capturedToolCtx?.roundContext?.skillState).toEqual({
-      active: ["answering", "hook-context-check"],
+    expect(capturedToolCtx?.roundContext?.skillState).toMatchObject({
+      active: ["hook-context-check"],
     });
     expect(capturedToolCtx?.scenario).toBe(capturedToolCtx?.roundContext?.snapshot.scenario);
     expect(capturedToolCtx?.capabilities).toBe(

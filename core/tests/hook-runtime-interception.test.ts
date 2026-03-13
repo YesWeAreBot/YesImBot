@@ -250,7 +250,7 @@ describe("Hook runtime interception", () => {
     expect(invokeCtx.scenario?.derived.attention).toEqual({ lane: "hooked" });
     expect(invokeCtx.capabilities?.extended.directMessage).toEqual({ status: "available" });
     expect(invokeCtx.roundContext?.snapshot.metadata).toMatchObject({ hookRevision: "start-1" });
-    expect(invokeCtx.roundContext?.skillState).toEqual({ active: ["hooked-skill"] });
+    expect(invokeCtx.roundContext?.skillState).toMatchObject({ active: ["hooked-skill"] });
     expect(invokeCtx.roundContext?.snapshot.scenario).toBe(invokeCtx.scenario);
     expect(harness.promptRender).toHaveBeenCalledWith(
       "system",

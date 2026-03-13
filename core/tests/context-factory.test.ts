@@ -65,7 +65,6 @@ describe("context factory", () => {
       history: [],
     };
     const traits: TraitSignal[] = [{ dimension: "scene", value: "chat", confidence: 0.9 }];
-    const skills: ActiveSkill[] = [{ name: "search", effects: ["web_access"] }];
 
     let logger: { warn: ReturnType<typeof vi.fn> };
 
@@ -90,7 +89,7 @@ describe("context factory", () => {
           resolve:
             overrides.resolve ??
             vi.fn().mockReturnValue({
-              activeSkills: skills,
+              activeSkills: [],
               promptInjections: [],
               toolFilter: undefined,
             }),
@@ -110,7 +109,7 @@ describe("context factory", () => {
 
       expect(result.view).toEqual(view);
       expect(result.traits).toEqual(traits);
-      expect(result.skills).toEqual(skills);
+      expect(result.skills).toEqual([]);
       expect(result.percept).toEqual(percept);
     });
 
@@ -148,7 +147,7 @@ describe("context factory", () => {
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("traits"));
     });
 
-    it("returns defaults and warns when skill resolve fails", async () => {
+    it("does not depend on skill resolve when building agent context", async () => {
       const ctx = buildContext({
         resolve: vi.fn(() => {
           throw new Error("skill fail");
@@ -162,8 +161,7 @@ describe("context factory", () => {
       });
 
       expect(result.skills).toEqual([]);
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(traceId));
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("skills"));
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("skills"));
     });
   });
 

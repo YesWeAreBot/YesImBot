@@ -445,16 +445,16 @@ describe("round context runtime", () => {
         capabilities: expect.any(Object),
       }),
     );
-    expect(skillResolve).toHaveBeenCalledTimes(1);
+    expect(skillResolve).not.toHaveBeenCalled();
 
     const beforeParams = capturedStartParams[0] as {
       skills?: Array<{ name: string }>;
       skillState?: { active?: string[] };
       roundContext?: { skillState?: { active?: string[] } };
     };
-    expect(beforeParams.skills?.map((skill) => skill.name)).toEqual(["resolve-once"]);
-    expect(beforeParams.skillState).toEqual({ active: ["resolve-once"] });
-    expect(beforeParams.roundContext?.skillState).toEqual({ active: ["resolve-once"] });
+    expect(beforeParams.skills?.map((skill) => skill.name)).toEqual([]);
+    expect(beforeParams.skillState).toMatchObject({ active: [] });
+    expect(beforeParams.roundContext?.skillState).toMatchObject({ active: [] });
   });
 
   it("recalibrates legacy direct loop calls with inbound roundContext through round-entry baseline", async () => {
