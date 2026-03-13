@@ -70,6 +70,7 @@ export type HookFailureReason = "timeout" | "error";
 
 export interface HookServiceConfig {
   hookTimeouts?: HookTimeoutsConfig;
+  logLevel?: number;
 }
 
 export type BeforeHookResult<T> =

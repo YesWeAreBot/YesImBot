@@ -230,6 +230,7 @@ export function apply(ctx: Context, config: Config) {
   ctx.plugin(RoleService, { rolePath: config.rolePath });
   ctx.plugin(HookService, {
     hookTimeouts: config.hookTimeouts,
+    logLevel: config.debugLevel,
   });
   ctx.plugin(PluginService, {
     defaultTimeout: config.defaultTimeout,

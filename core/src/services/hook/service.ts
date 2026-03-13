@@ -24,18 +24,19 @@ declare module "koishi" {
   }
 }
 
-export class HookService extends Service {
+export class HookService extends Service<HookServiceConfig> {
   static inject = [];
 
   private hooks = new Map<string, RegisteredHook>();
   private timeouts: Record<HookType, number>;
   private eventContext: Context;
-  private log: ReturnType<Context["logger"]>;
 
   constructor(ctx: Context, hookConfig?: HookServiceConfig) {
     super(ctx, "yesimbot.hook", true);
+    this.config = hookConfig ?? {};
     this.eventContext = ctx;
-    this.log = ctx.logger("yesimbot.hook");
+    this.logger = ctx.logger("yesimbot.hook");
+    this.logger.level = this.config.logLevel ?? 2;
     const hookTimeouts: HookTimeoutsConfig = hookConfig?.hookTimeouts ?? {};
     this.timeouts = {
       [HookType.Tool]: hookTimeouts.tool ?? DEFAULT_HOOK_TIMEOUTS.tool,
@@ -111,7 +112,7 @@ export class HookService extends Service {
             durationMs,
             reason,
           );
-          this.log.warn(
+          this.logger.warn(
             `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) timed out after ${durationMs}ms`,
             {
               hookId,
@@ -137,7 +138,7 @@ export class HookService extends Service {
             durationMs,
             outcome,
           );
-          this.log.debug(
+          this.logger.debug(
             `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
             {
               hookId,
@@ -166,7 +167,7 @@ export class HookService extends Service {
           durationMs,
           outcome,
         );
-        this.log.debug(
+        this.logger.debug(
           `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
           {
             hookId,
@@ -190,7 +191,7 @@ export class HookService extends Service {
           reason,
           error instanceof Error ? error : undefined,
         );
-        this.log.warn(
+        this.logger.warn(
           `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) failed after ${durationMs}ms: ${reason}`,
           {
             hookId,
@@ -270,7 +271,7 @@ export class HookService extends Service {
             durationMs,
             reason,
           );
-          this.log.warn(
+          this.logger.warn(
             `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) timed out after ${durationMs}ms`,
             {
               hookId,
@@ -294,7 +295,7 @@ export class HookService extends Service {
           durationMs,
           outcome,
         );
-        this.log.debug(
+        this.logger.debug(
           `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
           {
             hookId,
@@ -318,7 +319,7 @@ export class HookService extends Service {
           reason,
           error instanceof Error ? error : undefined,
         );
-        this.log.warn(
+        this.logger.warn(
           `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) failed after ${durationMs}ms: ${reason}`,
           {
             hookId,
@@ -380,7 +381,7 @@ export class HookService extends Service {
             durationMs,
             reason,
           );
-          this.log.warn(
+          this.logger.warn(
             `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) timed out after ${durationMs}ms`,
             {
               hookId,
@@ -404,7 +405,7 @@ export class HookService extends Service {
           durationMs,
           outcome,
         );
-        this.log.debug(
+        this.logger.debug(
           `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) completed in ${durationMs}ms`,
           {
             hookId,
@@ -428,7 +429,7 @@ export class HookService extends Service {
           reason,
           err instanceof Error ? err : undefined,
         );
-        this.log.warn(
+        this.logger.warn(
           `[${traceValue}] Hook ${hookId} (${type}/${hookPhase}) failed after ${durationMs}ms: ${reason}`,
           {
             hookId,
