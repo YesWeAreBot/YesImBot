@@ -6,14 +6,16 @@ import type {
   HorizonScenarioProjection,
 } from "../src/services/horizon/types";
 import {
-  DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   buildScenarioFromView,
   commitRoundContext,
   createRoundContext,
 } from "../src/services/runtime/adapters";
-import type { ScenarioTimeline } from "../src/services/runtime/contracts";
+import {
+  DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+  type ScenarioTimeline,
+} from "../src/services/runtime/contracts";
 
 describe("scenario adapter", () => {
   it("marks HorizonView as internal Scenario adapter boundary", () => {
