@@ -9,6 +9,17 @@ import type {
 } from "../src/services/hook/types";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
 import {
+  LEGACY_INJECTION_POINT_SECTION_MAPPING,
+  PROMPT_FRAGMENT_SOURCE_PRECEDENCE,
+  PROMPT_SECTION_LAYOUT,
+} from "../src/services/prompt";
+import type {
+  FragmentSource,
+  PromptFragment,
+  PromptLayout,
+  PromptSectionName,
+} from "../src/services/prompt";
+import {
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   createRoundContext,
@@ -16,6 +27,44 @@ import {
 import type { Capabilities, RoundContext, Scenario } from "../src/services/runtime/contracts";
 
 describe("runtime public contracts", () => {
+  it("prompt fragment-first contracts are publicly exported", () => {
+    const layout: PromptLayout = PROMPT_SECTION_LAYOUT;
+    const sectionName: PromptSectionName = "memory";
+    const source: FragmentSource = "memory";
+    const fragment: PromptFragment = {
+      id: "memory-fragment",
+      section: sectionName,
+      source,
+      priority: 100,
+      stability: "stable",
+      cacheable: true,
+      content: "remember this",
+    };
+
+    expect(layout).toEqual(["identity", "policy", "memory", "situation"]);
+    expect(fragment.section).toBe("memory");
+    expect(fragment.source).toBe("memory");
+  });
+
+  it("source precedence and legacy injection compat surface stay explicit", () => {
+    expect(PROMPT_FRAGMENT_SOURCE_PRECEDENCE).toEqual([
+      "role",
+      "memory",
+      "scenario",
+      "capability",
+      "skill",
+      "hook",
+      "tooling",
+      "legacy",
+    ]);
+
+    expect(LEGACY_INJECTION_POINT_SECTION_MAPPING).toMatchObject({
+      soul: "identity",
+      instructions: "policy",
+      extra: "situation",
+    });
+  });
+
   it("tool and hook context contracts", () => {
     const scenario = {} as Scenario;
     const capabilities = {} as Capabilities;
