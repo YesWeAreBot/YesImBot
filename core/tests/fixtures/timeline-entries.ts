@@ -3,6 +3,8 @@ import type {
   AgentActionRecord,
   AgentResponseData,
   AgentResponseRecord,
+  HeartbeatData,
+  HeartbeatRecord,
   MessageEventData,
   MessageRecord,
   SummaryData,
@@ -153,6 +155,32 @@ export function createAgentActionRecord(
     data: {
       actions: [{ name: "test_action", params: { key: "value" } }],
       toolResults: [{ name: "test_action", success: true, result: "success" }],
+      ...overrides.data,
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Create HeartbeatRecord with sensible defaults
+ */
+export function createHeartbeatRecord(
+  overrides: Partial<HeartbeatRecord> & { index?: number; minutesOffset?: number } = {},
+): HeartbeatRecord {
+  const index = overrides.index ?? 1;
+  const minutesOffset = overrides.minutesOffset ?? 0;
+
+  return {
+    id: generateId("heartbeat", index),
+    timestamp: timestamp(minutesOffset),
+    platform: "test-platform",
+    channelId: "test-channel",
+    type: TimelineEventType.Heartbeat,
+    priority: TimelinePriority.Noise,
+    stage: TimelineStage.Active,
+    data: {
+      triggeredBy: "manual",
+      channelSummary: "heartbeat",
       ...overrides.data,
     },
     ...overrides,

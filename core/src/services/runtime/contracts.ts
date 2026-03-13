@@ -153,8 +153,8 @@ export interface Scenario {
       nickname?: string;
       attributes?: Record<string, unknown>;
     }>;
-    timeline: Array<Record<string, unknown>>;
-    scenarioTimeline?: ScenarioTimeline;
+    timeline: ScenarioTimeline;
+    scenarioTimeline: ScenarioTimeline;
     stimulusSource: {
       type: "message" | "event" | "system" | "timer" | "internal";
       messageId?: string;
@@ -169,59 +169,6 @@ export interface Scenario {
     attention: Record<string, unknown>;
     recentMetrics: Record<string, unknown>;
   };
-}
-
-export function getRecentTurns(timeline: ScenarioTimeline, limit: number = 5): ScenarioTurn[] {
-  if (limit <= 0) {
-    return [];
-  }
-
-  const activeTurns = getActiveSegmentTurns(timeline);
-  return activeTurns.slice(Math.max(activeTurns.length - limit, 0));
-}
-
-export function getMessageCount(timeline: ScenarioTimeline): number {
-  return getActiveSegmentTurns(timeline).reduce((count, turn) => count + turn.messages.length, 0);
-}
-
-export function getParticipants(timeline: ScenarioTimeline): ScenarioTimelineParticipant[] {
-  const participantMap = new Map<string, ScenarioTimelineParticipant>();
-  for (const turn of getActiveSegmentTurns(timeline)) {
-    for (const participant of turn.participants) {
-      participantMap.set(participant.id, participant);
-    }
-  }
-  return Array.from(participantMap.values());
-}
-
-export function getMarkedEvents(timeline: ScenarioTimeline): ScenarioMarkedEvent[] {
-  const activeTurnIds = new Set(getActiveSegmentTurns(timeline).map((turn) => turn.id));
-  const summaryCutoff = timeline.latestSummary?.coveredUntil;
-
-  return timeline.markedEvents.filter((event) => {
-    if (event.type === "summary") {
-      return false;
-    }
-
-    if (event.turnId) {
-      return activeTurnIds.has(event.turnId);
-    }
-
-    if (!summaryCutoff) {
-      return true;
-    }
-
-    return event.timestamp > summaryCutoff;
-  });
-}
-
-function getActiveSegmentTurns(timeline: ScenarioTimeline): ScenarioTurn[] {
-  const summaryCutoff = timeline.latestSummary?.coveredUntil;
-  if (!summaryCutoff) {
-    return timeline.turns;
-  }
-
-  return timeline.turns.filter((turn) => turn.settledAt > summaryCutoff);
 }
 
 export type CapabilityState =

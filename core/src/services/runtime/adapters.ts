@@ -1,7 +1,9 @@
 import type { Bot, Session } from "koishi";
 
-import type { HorizonScenarioAdapterSource } from "../horizon/types";
+import type { HorizonScenarioAdapterSource, MessageRecord, TimelineEntry } from "../horizon/types";
+import { TimelineEventType } from "../horizon/types";
 import type { Capabilities, Percept, RoundContext, Scenario, SkillState } from "./contracts";
+import { buildScenarioTimeline, getMessageCount, getParticipants } from "./scenario-timeline";
 
 export interface RuntimeBoundContext {
   scenario: Scenario;
@@ -10,17 +12,12 @@ export interface RuntimeBoundContext {
 }
 
 export function buildScenarioFromView(source: HorizonScenarioAdapterSource): Scenario {
-  const timeline = source.view.history.map((entry) => ({
-    id: entry.id,
-    type: entry.type,
-    timestamp: entry.timestamp,
-    data: entry.data,
-  })) as Scenario["raw"]["timeline"];
-
-  const participants = source.view.entities.map((entity) => ({
-    id: entity.id,
-    type: entity.type,
-    name: entity.name,
+  const timelineEntries = normalizeTimelineEntries(source);
+  const scenarioTimeline = buildScenarioTimeline(timelineEntries);
+  const participants = getParticipants(scenarioTimeline).map((participant) => ({
+    id: participant.id,
+    name: participant.name,
+    type: participant.type,
   }));
 
   return {
@@ -28,7 +25,8 @@ export function buildScenarioFromView(source: HorizonScenarioAdapterSource): Sce
       self: source.view.self,
       environment: source.view.environment,
       entities: source.view.entities,
-      timeline,
+      timeline: scenarioTimeline,
+      scenarioTimeline,
       stimulusSource: {
         type: source.stimulusSource.type,
         messageId: source.stimulusSource.messageId,
@@ -44,8 +42,10 @@ export function buildScenarioFromView(source: HorizonScenarioAdapterSource): Sce
       participants,
       attention: {},
       recentMetrics: {
-        eventCount: timeline.length,
-        messageCount: timeline.filter((entry) => entry.type === "message").length,
+        eventCount: timelineEntries.length,
+        turnCount: scenarioTimeline.turns.length,
+        messageCount: getMessageCount(scenarioTimeline),
+        participantCount: participants.length,
       },
     },
   };
@@ -188,4 +188,57 @@ function deepFreeze<T>(value: T): T {
   }
 
   return value;
+}
+
+function normalizeTimelineEntries(source: HorizonScenarioAdapterSource): TimelineEntry[] {
+  const entityById = new Map(source.view.entities.map((entity) => [entity.id, entity]));
+  const fallbackBase = Date.now();
+
+  return source.view.history.map((entry, index) => {
+    const timestamp = normalizeDate(entry.timestamp, fallbackBase + index * 1000);
+    if (entry.type !== TimelineEventType.Message) {
+      return {
+        ...entry,
+        timestamp,
+      };
+    }
+
+    const senderId =
+      readString(entry.data?.senderId) ?? source.stimulusSource.senderId ?? "unknown-sender";
+    const senderEntity = entityById.get(senderId);
+    const senderName = readString(entry.data?.senderName) ?? senderEntity?.name ?? senderId;
+
+    const messageRecord: MessageRecord = {
+      ...entry,
+      timestamp,
+      data: {
+        ...entry.data,
+        messageId: readString(entry.data?.messageId) ?? entry.id,
+        senderId,
+        senderName,
+        content: readString(entry.data?.content) ?? "",
+      },
+    };
+
+    return messageRecord;
+  });
+}
+
+function normalizeDate(value: unknown, fallbackEpoch: number): Date {
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return new Date(fallbackEpoch);
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
