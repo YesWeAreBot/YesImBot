@@ -120,11 +120,16 @@ describe("round context runtime", () => {
   });
 
   it("ThinkActLoop passes roundContext and scenario into prompt scope", async () => {
-    const promptRenderSpy = vi.fn().mockResolvedValue([
-      { name: "soul", content: "soul" },
-      { name: "instructions", content: "instructions" },
-      { name: "extra", content: "extra" },
-    ]);
+    const emitPromptBlocksSpy = vi.fn().mockResolvedValue({
+      sections: [
+        { name: "identity", content: "<identity>identity</identity>", cacheable: true },
+        { name: "policy", content: "<policy>policy</policy>", cacheable: true },
+        { name: "situation", content: "<situation>situation</situation>", cacheable: false },
+      ],
+      stableBlock: "<identity>identity</identity>\n\n<policy>policy</policy>",
+      dynamicBlock: "<situation>situation</situation>",
+      stableSignature: "stable-signature",
+    });
 
     const toolCtxCapture: unknown[] = [];
     const ctx = {
@@ -169,7 +174,8 @@ describe("round context runtime", () => {
         invoke: vi.fn(),
       },
       "yesimbot.prompt": {
-        render: promptRenderSpy,
+        render: vi.fn(),
+        emitPromptBlocks: emitPromptBlocksSpy,
         inject: vi.fn(() => () => undefined),
       },
       "yesimbot.model": {
@@ -284,16 +290,19 @@ describe("round context runtime", () => {
 
     await loop.run(percept as never, toolCtx as never);
 
-    expect(promptRenderSpy).toHaveBeenCalledWith(
+    expect(emitPromptBlocksSpy).toHaveBeenCalledWith(
       "system",
       expect.objectContaining({
         percept,
         roundContext: expect.any(Object),
         scenario: expect.any(Object),
       }),
+      expect.objectContaining({
+        providerType: "openai",
+      }),
     );
 
-    const passedScope = promptRenderSpy.mock.calls[0]![1] as Record<string, unknown>;
+    const passedScope = emitPromptBlocksSpy.mock.calls[0]![1] as Record<string, unknown>;
     expect(passedScope.roundContext).toBeTruthy();
     expect((passedScope.roundContext as Record<string, unknown>).snapshot).toBeTruthy();
     expect(passedScope.scenario).toEqual(
