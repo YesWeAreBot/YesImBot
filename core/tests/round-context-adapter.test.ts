@@ -6,12 +6,14 @@ import type {
   HorizonScenarioProjection,
 } from "../src/services/horizon/types";
 import {
+  DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   buildScenarioFromView,
   commitRoundContext,
   createRoundContext,
 } from "../src/services/runtime/adapters";
+import type { ScenarioTimeline } from "../src/services/runtime/contracts";
 
 describe("scenario adapter", () => {
   it("marks HorizonView as internal Scenario adapter boundary", () => {
@@ -275,5 +277,19 @@ describe("scenario adapter", () => {
     expect(() => {
       (bound.scenario.derived.attention as Record<string, unknown>).level = "high";
     }).toThrow();
+  });
+
+  it("keeps ScenarioTimeline semantics as explicit runtime contract defaults", () => {
+    const timeline: ScenarioTimeline = {
+      turns: [],
+      activeSegment: { mode: "after-latest-summary" },
+      markedEvents: [],
+      heartbeatEvents: [],
+      semantics: DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+    };
+
+    expect(timeline.semantics.summaryPosition).toBe("background");
+    expect(timeline.semantics.heartbeatRendering).toBe("query-only");
+    expect(timeline.semantics.visibleOutputSource).toBe("send_message-success");
   });
 });
