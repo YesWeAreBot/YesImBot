@@ -44,7 +44,7 @@ export class RoleService extends Service<RoleServiceConfig> {
 
   protected async start(): Promise<void> {
     this.ensureFiles();
-    this.loadAndInject();
+    this.loadAndRegisterFragments();
     this.registerSnippets();
     this.startWatching();
     this.logger.info("RoleService started");
@@ -128,42 +128,52 @@ export class RoleService extends Service<RoleServiceConfig> {
     }
   }
 
-  private loadAndInject(): void {
+  private loadAndRegisterFragments(): void {
     for (const d of this.disposers) d();
     this.disposers = [];
 
     // Invalidate stale compiled templates on reload
     this.templateRenderer.clearCache();
 
-    // SOUL.md -> soul point
+    // SOUL.md -> identity section
     const soulContent = this.loadFile("SOUL.md") ?? "You are {{bot.name}}.";
-    this.disposers.push(
-      this.prompt.inject(this.ctx, "soul", {
-        name: "__role_soul",
-        renderFn: (scope) => this.renderSafe("SOUL.md", soulContent, scope),
-      }),
-    );
 
-    // AGENTS.md -> instructions point
+    // AGENTS.md -> policy section
     const agentsContent = this.loadFile("AGENTS.md") ?? "Respond helpfully.";
-    this.disposers.push(
-      this.prompt.inject(this.ctx, "instructions", {
-        name: "__role_agents",
-        renderFn: (scope) => this.renderSafe("AGENTS.md", agentsContent, scope),
-      }),
-    );
 
-    // TOOLS.md -> instructions point (optional, silently skip if absent)
-    const toolsContent = this.loadFile("TOOLS.md");
-    if (toolsContent !== null) {
-      this.disposers.push(
-        this.prompt.inject(this.ctx, "instructions", {
-          name: "__role_tools",
-          after: "__role_agents",
-          renderFn: (scope) => this.renderSafe("TOOLS.md", toolsContent, scope),
-        }),
-      );
-    }
+    // TOOLS.md -> policy section (after AGENTS via lower priority)
+    const toolsContent = this.loadFile("TOOLS.md") ?? "";
+    this.disposers.push(
+      this.prompt.registerFragmentSource("role", (scope) => [
+        {
+          id: "role.soul",
+          content: this.renderSafe("SOUL.md", soulContent, scope),
+          section: "identity",
+          source: "role",
+          stability: "stable",
+          priority: 700,
+          cacheable: true,
+        },
+        {
+          id: "role.agents",
+          content: this.renderSafe("AGENTS.md", agentsContent, scope),
+          section: "policy",
+          source: "role",
+          stability: "stable",
+          priority: 700,
+          cacheable: true,
+        },
+        {
+          id: "role.tools",
+          content: this.renderSafe("TOOLS.md", toolsContent, scope),
+          section: "policy",
+          source: "role",
+          stability: "stable",
+          priority: 690,
+          cacheable: true,
+        },
+      ]),
+    );
   }
 
   getSoulSummary(maxChars = 300): string {
@@ -194,7 +204,7 @@ export class RoleService extends Service<RoleServiceConfig> {
     this.watcher = watch(dir, () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
-        this.loadAndInject();
+        this.loadAndRegisterFragments();
         this.logger.debug("Role files reloaded");
       }, 300);
     });
