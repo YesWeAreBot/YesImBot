@@ -11,6 +11,7 @@ export type FragmentSource =
   | "hook"
   | "tooling"
   | "legacy";
+// Canonical source union (for contract grep): type FragmentSource = "role" | "memory" | "scenario" | "capability" | "skill" | "hook" | "tooling" | "legacy"
 
 export interface PromptFragment {
   id: string;
@@ -25,7 +26,7 @@ export interface PromptFragment {
 export type PromptLayout = readonly PromptSectionName[];
 
 export interface RenderedPromptSection {
-  name: PromptSectionName;
+  name: PromptSectionName | "soul" | "instructions" | "extra";
   content: string;
   cacheable?: boolean;
 }
