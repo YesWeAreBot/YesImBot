@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", () => {
@@ -63,6 +65,7 @@ vi.mock("koishi", () => {
 
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { AgentCore } from "../src/services/agent/service";
+import type { AgentStartHookExecutionContext } from "../src/services/hook/types";
 import {
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
@@ -615,4 +618,114 @@ describe("round context runtime", () => {
       traceId: "trace-legacy-1",
     });
   });
+
+  it("RoundContext skillState includes loadHistory field", () => {
+    const now = Date.now();
+    const roundContext = createRoundContext({
+      percept: {
+        id: "wake-load-history",
+        traceId: "trace-load-history",
+        type: "mention",
+        platform: "discord",
+        channelId: "c1",
+        timestamp: new Date("2026-03-10T00:00:00Z"),
+      },
+      scenario: {
+        raw: {
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "c1",
+            name: "General",
+            platform: "discord",
+            channelId: "c1",
+          },
+          entities: [],
+          timeline: [],
+          stimulusSource: { type: "message" },
+        },
+        derived: {
+          focus: {},
+          participants: [],
+          attention: {},
+          recentMetrics: {},
+        },
+      },
+      capabilities: buildCapabilitiesFromRuntime({
+        session: { isDirect: false, quote: undefined },
+        bot: { selfId: "bot-1" },
+      }),
+      skillState: {
+        active: ["foo"],
+        loadHistory: [{ name: "foo", status: "loaded", timestamp: now }],
+      },
+    });
+
+    expect(roundContext.skillState.loadHistory).toEqual([
+      { name: "foo", status: "loaded", timestamp: now },
+    ]);
+  });
+
+  it("RoundContext skillState includes persistentRoster field", () => {
+    const roundContext = createRoundContext({
+      percept: {
+        id: "wake-persistent-roster",
+        traceId: "trace-persistent-roster",
+        type: "mention",
+        platform: "discord",
+        channelId: "c1",
+        timestamp: new Date("2026-03-10T00:00:00Z"),
+      },
+      scenario: {
+        raw: {
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "c1",
+            name: "General",
+            platform: "discord",
+            channelId: "c1",
+          },
+          entities: [],
+          timeline: [],
+          stimulusSource: { type: "message" },
+        },
+        derived: {
+          focus: {},
+          participants: [],
+          attention: {},
+          recentMetrics: {},
+        },
+      },
+      capabilities: buildCapabilitiesFromRuntime({
+        session: { isDirect: false, quote: undefined },
+        bot: { selfId: "bot-1" },
+      }),
+      skillState: {
+        active: ["foo"],
+        persistentRoster: ["foo"],
+      },
+    });
+
+    expect(roundContext.skillState.persistentRoster).toEqual(["foo"]);
+  });
+
+  it("runtime and hook contracts include explicit skill loading fields", () => {
+    const runtimeContracts = readFileSync(
+      new URL("../src/services/runtime/contracts.ts", import.meta.url),
+      "utf8",
+    );
+    const hookTypes = readFileSync(
+      new URL("../src/services/hook/types.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(runtimeContracts).toContain("loadHistory?: LoadAttempt[]");
+    expect(runtimeContracts).toContain("persistentRoster?: string[]");
+    expect(hookTypes).toContain("loadSkill(skillName: string): Promise<LoadResult>");
+    expect(hookTypes).toContain("getLoadedSkills(): SkillDefinition[]");
+  });
 });
+
+type _AgentStartHookHasLoadSkill = AgentStartHookExecutionContext["loadSkill"];
+type _AgentStartHookHasGetLoadedSkills = AgentStartHookExecutionContext["getLoadedSkills"];
