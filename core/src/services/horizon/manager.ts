@@ -1,6 +1,7 @@
 import { Context, Random, Logger, Query } from "koishi";
 
 import type { LoopMessage } from "../agent/trimmer";
+import type { ScenarioTimeline, ScenarioTimelineEvent } from "../runtime/contracts";
 import { ChannelKey } from "../shared/types";
 import {
   MessageHandler,
@@ -143,9 +144,12 @@ export class EventManager {
   }
 
   async buildLoopMessages(
-    entries: TimelineEntry[],
+    entries: TimelineEntry[] | ScenarioTimeline,
     options: BuildContextOptions,
   ): Promise<LoopMessage[]> {
+    const timelineEntries = Array.isArray(entries)
+      ? entries
+      : this.adaptScenarioTimelineEntries(entries, options);
     const { imageConfig, parseElements, getImageCache } = options;
 
     // Image lifecycle tracking
@@ -156,8 +160,8 @@ export class EventManager {
     if (imageConfig?.imageMode === "native" && parseElements && getImageCache) {
       const candidates: Array<{ id: string; index: number }> = [];
 
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
+      for (let i = 0; i < timelineEntries.length; i++) {
+        const entry = timelineEntries[i];
         if (entry.type !== "message") continue;
 
         const elements = parseElements(entry.data.content);
@@ -195,7 +199,7 @@ export class EventManager {
     };
 
     const messages: LoopMessage[] = [];
-    for (const entry of entries) {
+    for (const entry of timelineEntries) {
       for (const handler of this.handlers) {
         if (handler.canHandle(entry)) {
           const handlerMessages = await handler.handle(entry, enhancedOptions);
@@ -205,6 +209,106 @@ export class EventManager {
       }
     }
     return messages;
+  }
+
+  private adaptScenarioTimelineEntries(
+    timeline: ScenarioTimeline,
+    options: BuildContextOptions,
+  ): TimelineEntry[] {
+    const { platform, channelId } = this.resolveChannelIdentity(options.channelKey);
+    const entries: TimelineEntry[] = [];
+
+    for (const turn of timeline.turns) {
+      for (const message of turn.messages) {
+        entries.push({
+          id: message.id,
+          type: TimelineEventType.Message,
+          priority: TimelinePriority.Normal,
+          stage: TimelineStage.Active,
+          platform,
+          channelId,
+          timestamp: message.timestamp,
+          data: {
+            messageId: message.messageId,
+            senderId: message.senderId,
+            senderName: message.senderName,
+            content: message.content,
+          },
+        });
+      }
+
+      const turnEvents = turn.events;
+      for (let i = 0; i < turnEvents.length; i += 1) {
+        const event = turnEvents[i];
+        if (event.type !== "agent.action") {
+          continue;
+        }
+
+        const actionNames = readStringArray(event.detail?.actionNames);
+        const actions = actionNames.map((name) => ({ name }));
+        const toolResults: AgentActionData["toolResults"] = [];
+
+        let cursor = i + 1;
+        while (cursor < turnEvents.length && turnEvents[cursor]?.type === "tool.result") {
+          const toolResult = this.toToolResult(turnEvents[cursor]);
+          if (toolResult) {
+            toolResults.push(toolResult);
+          }
+          cursor += 1;
+        }
+
+        entries.push({
+          id: event.id,
+          type: TimelineEventType.AgentAction,
+          priority: TimelinePriority.Normal,
+          stage: TimelineStage.Active,
+          platform,
+          channelId,
+          timestamp: event.timestamp,
+          data: {
+            actions,
+            toolResults,
+          },
+        });
+
+        i = cursor - 1;
+      }
+    }
+
+    return entries;
+  }
+
+  private toToolResult(
+    event: ScenarioTimelineEvent,
+  ): AgentActionData["toolResults"][number] | undefined {
+    if (event.type !== "tool.result") {
+      return undefined;
+    }
+    const name = readString(event.detail?.name);
+    if (!name) {
+      return undefined;
+    }
+    return {
+      name,
+      success: event.detail?.success === true,
+      status: readString(event.detail?.status),
+      result: event.detail?.result,
+      error: readString(event.detail?.error),
+    };
+  }
+
+  private resolveChannelIdentity(channelKey?: string): { platform: string; channelId: string } {
+    if (!channelKey) {
+      return { platform: "unknown-platform", channelId: "unknown-channel" };
+    }
+    const separatorIndex = channelKey.indexOf(":");
+    if (separatorIndex <= 0) {
+      return { platform: channelKey, channelId: channelKey };
+    }
+    return {
+      platform: channelKey.slice(0, separatorIndex),
+      channelId: channelKey.slice(separatorIndex + 1),
+    };
   }
 
   async markAsActive(key: ChannelKey, before?: Date): Promise<void> {
@@ -241,4 +345,15 @@ export class EventManager {
     await this.ctx.database.remove(TIMELINE_TABLE, query);
     return entries.length;
   }
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
 }

@@ -158,7 +158,8 @@ class AgentActionHandler extends TimelineHandler<AgentActionRecord> {
     // Format tool results
     for (const result of data.toolResults) {
       if (result.name === "send_message") {
-        const ok = result.status === "ok" || result.status === "fulfilled" || !result.error;
+        const ok =
+          result.success === true || result.status === "ok" || result.status === "fulfilled";
         const preview = ok ? "sent" : "failed";
         lines.push(`send_message -> ${preview}`);
       } else {

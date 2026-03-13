@@ -31,9 +31,50 @@ const SchemaMock = new Proxy(
   },
 );
 
+const hMock = Object.assign(
+  (tag: string, attrs?: Record<string, unknown>) => ({
+    toString: () => {
+      const attrText = Object.entries(attrs ?? {})
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => ` ${key}="${String(value)}"`)
+        .join("");
+      return `<${tag}${attrText}/>`;
+    },
+  }),
+  {
+    parse: (text: string) => {
+      const matches = [...text.matchAll(/<img\s+id="([^"]+)"(?:\s+status="([^"]+)")?\s*\/>/g)];
+      return matches.map((match) => ({
+        type: "img",
+        attrs: {
+          id: match[1],
+          ...(match[2] ? { status: match[2] } : {}),
+        },
+        toString: () => match[0],
+      }));
+    },
+  },
+);
+
 vi.mock("koishi", () => ({
   Schema: SchemaMock,
   Context: class {},
-  Service: class {},
+  Service: class {
+    ctx: Record<string, unknown>;
+    logger: Record<string, unknown>;
+
+    constructor(ctx: Record<string, unknown>) {
+      this.ctx = ctx;
+      this.logger = (ctx.logger as ((name: string) => Record<string, unknown>) | undefined)?.(
+        "service",
+      ) ?? {
+        info: () => undefined,
+        warn: () => undefined,
+        debug: () => undefined,
+        error: () => undefined,
+      };
+    }
+  },
   Random: { id: () => "mock-id" },
+  h: hMock,
 }));
