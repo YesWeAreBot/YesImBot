@@ -26,7 +26,7 @@ describe("skill persistence", () => {
       get(name: string) {
         return byName.get(name);
       },
-    } as SkillRegistry;
+    } as unknown as SkillRegistry;
 
     const inherited = inheritPersistentRoster(["foo", "bar", "missing"], catalog);
 
@@ -40,7 +40,7 @@ describe("skill persistence", () => {
   });
 
   it("returns empty loaded set when previous roster is empty", () => {
-    const catalog = { get: () => undefined } as SkillRegistry;
+    const catalog = { get: () => undefined } as unknown as SkillRegistry;
 
     const inherited = inheritPersistentRoster([], catalog);
 
@@ -49,7 +49,7 @@ describe("skill persistence", () => {
   });
 
   it("returns empty loaded set when previous roster is undefined", () => {
-    const catalog = { get: () => undefined } as SkillRegistry;
+    const catalog = { get: () => undefined } as unknown as SkillRegistry;
 
     const inherited = inheritPersistentRoster(undefined, catalog);
 

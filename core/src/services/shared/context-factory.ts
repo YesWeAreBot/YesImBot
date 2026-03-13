@@ -14,6 +14,8 @@ import {
   createRoundContext,
 } from "../runtime/adapters";
 import type { RoundContext, Scenario } from "../runtime/contracts";
+import { LoadedSkillSet } from "../skill/loaded-skill-set";
+import type { SkillRegistry } from "../skill/service";
 import type { TraitAnalyzer } from "../trait/service";
 import type { ActiveSkill, Percept, TraitSignal } from "./types";
 
@@ -37,6 +39,28 @@ interface RoundContextBaseline {
   capabilities: RoundContext["capabilities"];
   metadata: Record<string, unknown>;
   skillState: RoundContext["skillState"];
+}
+
+export function inheritPersistentRoster(
+  previousRoster: string[] | undefined,
+  catalog: SkillRegistry,
+): LoadedSkillSet {
+  const loadedSkills = new LoadedSkillSet();
+  if (!previousRoster || previousRoster.length === 0) {
+    return loadedSkills;
+  }
+
+  for (const skillName of previousRoster) {
+    const definition = catalog.get(skillName);
+    if (!definition) {
+      loadedSkills.recordLoadAttempt(skillName, "not_found");
+      continue;
+    }
+
+    loadedSkills.load(definition);
+  }
+
+  return loadedSkills;
 }
 
 export function buildMinimalContext(params: {
