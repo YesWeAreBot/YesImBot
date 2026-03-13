@@ -1,3 +1,5 @@
+import type { LoadAttempt } from "../skill/types";
+
 export const RUNTIME_CONTRACT_VERSION = "54.1";
 
 export type TriggerType =
@@ -203,6 +205,8 @@ export interface RoundSnapshot {
 
 export interface SkillState {
   active: string[];
+  loadHistory?: LoadAttempt[];
+  persistentRoster?: string[];
   metadata?: Record<string, unknown>;
 }
 
