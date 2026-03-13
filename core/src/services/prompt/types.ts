@@ -44,18 +44,18 @@ export const PROMPT_FRAGMENT_SOURCE_PRECEDENCE: readonly FragmentSource[] = [
   "legacy",
 ];
 
-/**
- * @deprecated Compatibility-only alias for pre-fragment prompt sections.
- */
+/** @deprecated Use canonical fragment sections: identity, policy, memory, situation. */
 export type InjectionPoint = "soul" | "instructions" | "extra";
 
 /**
- * @deprecated Compatibility-only legacy injection points.
+ * @deprecated Legacy compat injection points. New prompt work must target
+ * canonical fragment sections (identity, policy, memory, situation).
  */
 export const INJECTION_POINTS: InjectionPoint[] = ["soul", "instructions", "extra"];
 
 /**
- * @deprecated Compatibility-only legacy injection mapping.
+ * @deprecated Compatibility mapping from legacy slots to canonical sections:
+ * soul -> identity, instructions -> policy, extra -> situation/memory compat.
  */
 export const LEGACY_INJECTION_POINT_SECTION_MAPPING: Record<InjectionPoint, PromptSectionName> = {
   soul: "identity",
@@ -64,7 +64,8 @@ export const LEGACY_INJECTION_POINT_SECTION_MAPPING: Record<InjectionPoint, Prom
 };
 
 /**
- * @deprecated Compatibility-only entry shape for legacy inject().
+ * @deprecated Legacy inject() entry shape. Use PromptFragment with canonical
+ * sections (identity/policy/memory/situation) via registerFragmentSource().
  */
 export interface InjectionEntry {
   name: string;
@@ -77,7 +78,8 @@ export interface InjectionEntry {
 }
 
 /**
- * @deprecated Use RenderedPromptSection.
+ * @deprecated Use RenderedPromptSection with canonical section names
+ * (identity, policy, memory, situation).
  */
 export type Section = RenderedPromptSection;
 

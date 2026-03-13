@@ -39,8 +39,8 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 
 - `trait`: analyzes scene/heat signals
 - `skill`: selects and merges skill effects
-- `role`: loads fixed role files (`SOUL.md`, `AGENTS.md`, `TOOLS.md`)
-- `prompt`: renders and injects prompt sections (`soul`, `instructions`, `memory`, `extra`)
+- `role`: content source provider for role/persona fragments (`SOUL.md`, `AGENTS.md`, `TOOLS.md`)
+- `prompt`: canonical `Fragment -> Section -> Layout` renderer (`identity -> policy -> memory -> situation`)
 
 ### 5. Tool Layer (`plugin`)
 
@@ -58,7 +58,8 @@ Koishi message event
   -> HorizonView build (internal)
   -> Scenario + Capabilities + RoundContext assembly (public runtime contracts)
   -> Trait analyze + Skill resolve
-  -> Prompt render/injection (scope includes Scenario + RoundContext)
+  -> Prompt canonical layout render (scope includes roundContext/scenario/capabilities; view.* is legacy compat)
+  -> Provider emit adaptation (e.g., Anthropic cache split from fragment stability/cacheable metadata)
   -> ModelService call (with fallback)
   -> Tool/Action execution (reads from RoundContext/Scenario)
   -> Reply or silent finish
@@ -89,3 +90,5 @@ core/services/* ---> yesimbot.model | shared-model pkg |
 - Cross-service access should go through declared `inject` dependencies.
 - Keep Horizon focused on data retrieval and formatting, not participation decisions.
 - Keep provider-specific behaviors in provider packages, not shared abstraction.
+- RoleService provides content sources only; prompt ordering is owned by canonical layout.
+- Provider adapters consume canonical rendered fragment trees and must not reorder sections.

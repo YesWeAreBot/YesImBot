@@ -184,12 +184,17 @@ describe("runtime public contracts", () => {
     expect("incidents" in endCtx.endSummary.finalOutcome).toBe(false);
   });
 
-  it("prompt scope exposes scenario", async () => {
-    const promptRenderSpy = vi.fn().mockResolvedValue([
-      { name: "soul", content: "soul", cacheable: true },
-      { name: "instructions", content: "instructions", cacheable: true },
-      { name: "extra", content: "extra", cacheable: true },
-    ]);
+  it("prompt scope exposes roundContext/scenario/capabilities and keeps view as legacy compat", async () => {
+    const emitPromptBlocksSpy = vi.fn().mockResolvedValue({
+      sections: [
+        { name: "identity", content: "<identity>identity</identity>", cacheable: true },
+        { name: "policy", content: "<policy>policy</policy>", cacheable: true },
+        { name: "situation", content: "<situation>situation</situation>", cacheable: false },
+      ],
+      stableBlock: "<identity>identity</identity>\n\n<policy>policy</policy>",
+      dynamicBlock: "<situation>situation</situation>",
+      stableSignature: "stable-signature",
+    });
 
     const ctx = {
       baseDir: "/tmp",
@@ -230,7 +235,9 @@ describe("runtime public contracts", () => {
         invoke: vi.fn(),
       },
       "yesimbot.prompt": {
-        render: promptRenderSpy,
+        render: vi.fn(),
+        emitPromptBlocks: emitPromptBlocksSpy,
+        registerFragmentSource: vi.fn(() => () => undefined),
         inject: vi.fn(() => () => undefined),
       },
       "yesimbot.model": {
@@ -320,13 +327,22 @@ describe("runtime public contracts", () => {
 
     await loop.run(percept as never, toolCtx as never);
 
-    expect(promptRenderSpy).toHaveBeenCalledWith(
+    expect(emitPromptBlocksSpy).toHaveBeenCalledWith(
       "system",
       expect.objectContaining({
         percept: expect.any(Object),
         roundContext: expect.any(Object),
         scenario: expect.any(Object),
+        capabilities: expect.any(Object),
+        view: expect.any(Object),
       }),
+      expect.objectContaining({ providerType: "openai" }),
     );
+
+    const scope = emitPromptBlocksSpy.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(scope.roundContext).toBeTruthy();
+    expect(scope.scenario).toBeTruthy();
+    expect(scope.capabilities).toBeTruthy();
+    expect(scope.view).toBeTruthy(); // legacy compat
   });
 });
