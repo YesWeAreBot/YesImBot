@@ -4,8 +4,20 @@ import { resolve } from "node:path";
 import { Context, Schema, Service } from "koishi";
 
 import { HandlebarsRenderer } from "./renderer";
-import type { InjectionEntry, InjectionPoint, Section, Snippet } from "./types";
-import { INJECTION_POINTS } from "./types";
+import type {
+  InjectionEntry,
+  InjectionPoint,
+  PromptFragment,
+  PromptSectionName,
+  Section,
+  Snippet,
+} from "./types";
+import {
+  INJECTION_POINTS,
+  LEGACY_INJECTION_POINT_SECTION_MAPPING,
+  PROMPT_FRAGMENT_SOURCE_PRECEDENCE,
+  PROMPT_SECTION_LAYOUT,
+} from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -24,10 +36,15 @@ export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.obj
 });
 
 export class PromptService extends Service<PromptServiceConfig> {
+  private fragmentSources = new Map<
+    string,
+    (scope: Record<string, unknown>) => PromptFragment[] | Promise<PromptFragment[]>
+  >();
   private snippets = new Map<string, Snippet>();
   private injections = new Map<InjectionPoint, InjectionEntry[]>();
   private partials = new Map<string, string>();
   private renderer = new HandlebarsRenderer();
+  private warnedLegacyInject = false;
 
   constructor(ctx: Context, config: PromptServiceConfig) {
     super(ctx, "yesimbot.prompt", true);
@@ -50,7 +67,27 @@ export class PromptService extends Service<PromptServiceConfig> {
     this.partials.set(name, content);
   }
 
+  registerFragmentSource(
+    name: string,
+    provider: (scope: Record<string, unknown>) => PromptFragment[] | Promise<PromptFragment[]>,
+  ): () => void {
+    if (this.fragmentSources.has(name)) {
+      throw new Error(`duplicate fragment source registration: "${name}"`);
+    }
+
+    this.fragmentSources.set(name, provider);
+    const dispose = () => {
+      this.fragmentSources.delete(name);
+    };
+    return dispose;
+  }
+
   inject(ctx: Context, point: InjectionPoint, entry: InjectionEntry): () => void {
+    if (!this.warnedLegacyInject) {
+      this.warnedLegacyInject = true;
+      this.logger.warn("prompt.inject() is deprecated; register fragment sources instead");
+    }
+
     const list = this.injections.get(point);
     if (!list) {
       throw new Error(`Unrecognized injection point: "${point}"`);
@@ -77,28 +114,39 @@ export class PromptService extends Service<PromptServiceConfig> {
 
   async render(_templateName: string, initialScope?: Record<string, unknown>): Promise<Section[]> {
     const scope = await this.buildScope(initialScope ?? {});
-    const timeout = this.config.renderTimeout ?? 5000;
-    const sections: Section[] = [];
+    return this.renderCanonicalLayout(scope);
+  }
 
-    for (const point of INJECTION_POINTS) {
-      const ordered = this.resolveOrder(this.injections.get(point)!);
-      const results = await Promise.allSettled(
-        ordered.map((entry) => this.renderWithTimeout(entry, scope, timeout)),
-      );
-      const fragments: string[] = [];
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
-        if (r.status === "fulfilled" && r.value) {
-          fragments.push(r.value);
-        } else if (r.status === "rejected") {
-          this.logger.warn(`Injection "${ordered[i].name}" in "${point}" failed: ${r.reason}`);
-        }
+  async renderCanonicalLayout(scope: Record<string, unknown>): Promise<Section[]> {
+    const timeout = this.config.renderTimeout ?? 5000;
+    const collected = await this.collectFragments(scope, timeout);
+    const validated = collected.map((fragment) => this.validateFragment(fragment));
+
+    const idSet = new Set<string>();
+    for (const fragment of validated) {
+      if (idSet.has(fragment.id)) {
+        throw new Error(`duplicate fragment id: "${fragment.id}"`);
       }
-      const content = fragments.join("\n\n");
+      idSet.add(fragment.id);
+    }
+
+    const sections: Section[] = [];
+    for (const sectionName of PROMPT_SECTION_LAYOUT) {
+      const sectionFragments = validated
+        .filter((fragment) => fragment.section === sectionName)
+        .sort((a, b) => this.compareFragments(a, b));
+
+      if (sectionFragments.length === 0) {
+        continue;
+      }
+
+      const content = sectionFragments.map((fragment) => fragment.content).join("\n\n");
       sections.push({
-        name: point,
-        content: `<${point}>\n${content}\n</${point}>`,
-        cacheable: true,
+        name: sectionName,
+        content: `<${sectionName}>\n${content}\n</${sectionName}>`,
+        cacheable: sectionFragments.every(
+          (fragment) => fragment.stability === "stable" && fragment.cacheable !== false,
+        ),
       });
     }
 
@@ -113,55 +161,98 @@ export class PromptService extends Service<PromptServiceConfig> {
     return sections.map((s) => s.content).join("\n\n");
   }
 
-  private resolveOrder(entries: InjectionEntry[]): InjectionEntry[] {
-    if (entries.length <= 1) return [...entries];
+  private async collectFragments(
+    scope: Record<string, unknown>,
+    timeout: number,
+  ): Promise<PromptFragment[]> {
+    const fragments: PromptFragment[] = [];
 
-    const nameMap = new Map<string, InjectionEntry>();
-    for (const e of entries) nameMap.set(e.name, e);
-
-    const inDegree = new Map<string, number>();
-    const graph = new Map<string, string[]>();
-    for (const e of entries) {
-      inDegree.set(e.name, 0);
-      graph.set(e.name, []);
-    }
-
-    for (const e of entries) {
-      if (e.before && nameMap.has(e.before)) {
-        graph.get(e.name)!.push(e.before);
-        inDegree.set(e.before, (inDegree.get(e.before) ?? 0) + 1);
+    for (const [sourceName, provider] of this.fragmentSources) {
+      const provided = await provider(scope);
+      if (!Array.isArray(provided)) {
+        throw new Error(`fragment source "${sourceName}" must return PromptFragment[]`);
       }
-      if (e.after && nameMap.has(e.after)) {
-        graph.get(e.after)!.push(e.name);
-        inDegree.set(e.name, (inDegree.get(e.name) ?? 0) + 1);
-      }
+      fragments.push(...provided);
     }
 
-    const queue: string[] = [];
-    for (const [name, deg] of inDegree) {
-      if (deg === 0) queue.push(name);
-    }
-
-    const sorted: InjectionEntry[] = [];
-    while (queue.length) {
-      const name = queue.shift()!;
-      sorted.push(nameMap.get(name)!);
-      for (const next of graph.get(name)!) {
-        const d = inDegree.get(next)! - 1;
-        inDegree.set(next, d);
-        if (d === 0) queue.push(next);
+    for (const point of INJECTION_POINTS) {
+      const entries = this.injections.get(point) ?? [];
+      for (const entry of entries) {
+        const content = await this.renderWithTimeout(entry, scope, timeout);
+        if (!content) {
+          continue;
+        }
+        const section = this.resolveLegacySection(point, entry.legacySectionHint);
+        fragments.push({
+          id: entry.name,
+          content,
+          section,
+          source: "legacy",
+          priority: 0,
+          stability: section === "situation" ? "dynamic" : "stable",
+          cacheable: section !== "situation",
+        });
       }
     }
 
-    if (sorted.length !== entries.length) {
-      const missing = entries.filter((e) => !sorted.includes(e)).map((e) => e.name);
-      this.logger.warn(
-        `Cycle detected in injection ordering: [${missing.join(", ")}], using registration order`,
-      );
-      return [...entries];
+    return fragments;
+  }
+
+  private resolveLegacySection(
+    point: InjectionPoint,
+    legacySectionHint?: InjectionEntry["legacySectionHint"],
+  ): PromptSectionName {
+    if (point === "extra") {
+      return legacySectionHint ?? LEGACY_INJECTION_POINT_SECTION_MAPPING.extra;
+    }
+    return LEGACY_INJECTION_POINT_SECTION_MAPPING[point];
+  }
+
+  private compareFragments(a: PromptFragment, b: PromptFragment): number {
+    if (a.priority !== b.priority) {
+      return b.priority - a.priority;
     }
 
-    return sorted;
+    const sourceRankA = PROMPT_FRAGMENT_SOURCE_PRECEDENCE.indexOf(a.source);
+    const sourceRankB = PROMPT_FRAGMENT_SOURCE_PRECEDENCE.indexOf(b.source);
+    if (sourceRankA !== sourceRankB) {
+      return sourceRankA - sourceRankB;
+    }
+
+    return a.id.localeCompare(b.id);
+  }
+
+  private validateFragment(fragment: PromptFragment): PromptFragment {
+    if (!fragment.id || typeof fragment.id !== "string" || fragment.id.trim().length === 0) {
+      throw new Error("fragment id is required");
+    }
+
+    if (!PROMPT_SECTION_LAYOUT.includes(fragment.section)) {
+      throw new Error(`unknown section: "${String(fragment.section)}"`);
+    }
+
+    if (!PROMPT_FRAGMENT_SOURCE_PRECEDENCE.includes(fragment.source)) {
+      throw new Error(`unknown fragment source: "${String(fragment.source)}"`);
+    }
+
+    if (!Number.isFinite(fragment.priority)) {
+      throw new Error(`invalid fragment priority for "${fragment.id}"`);
+    }
+
+    if (fragment.stability !== "stable" && fragment.stability !== "dynamic") {
+      throw new Error(`invalid fragment stability for "${fragment.id}"`);
+    }
+
+    if (fragment.stability === "dynamic" && fragment.cacheable === true) {
+      throw new Error(`dynamic fragment cannot set cacheable=true: "${fragment.id}"`);
+    }
+
+    return {
+      ...fragment,
+      id: fragment.id.trim(),
+      cacheable:
+        fragment.cacheable === undefined ? fragment.stability === "stable" : fragment.cacheable,
+    };
   }
 
   private async renderWithTimeout(

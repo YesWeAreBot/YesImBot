@@ -68,6 +68,10 @@ export const LEGACY_INJECTION_POINT_SECTION_MAPPING: Record<InjectionPoint, Prom
 export interface InjectionEntry {
   name: string;
   renderFn: (scope: Record<string, unknown>) => string | Promise<string>;
+  /** @deprecated Legacy-only ordering hint ignored by canonical renderer. */
+  before?: string;
+  /** @deprecated Legacy-only ordering hint ignored by canonical renderer. */
+  after?: string;
   legacySectionHint?: "memory" | "situation";
 }
 
