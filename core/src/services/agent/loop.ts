@@ -26,11 +26,12 @@ import type {
   RoundContext,
   Scenario,
 } from "../runtime/contracts";
-import { buildAgentRoundContext } from "../shared/context-factory";
-import type { Percept } from "../shared/types";
+import { buildAgentRoundContext, inheritPersistentRoster } from "../shared/context-factory";
+import type { ActiveSkill, Percept } from "../shared/types";
+import { SkillEffectApplier } from "../skill/applier";
+import { LoadedSkillSet } from "../skill/loaded-skill-set";
 import type { SkillRegistry } from "../skill/service";
-import type { SkillEffect } from "../skill/types";
-import type { TraitAnalyzer } from "../trait/service";
+import type { LoadResult, SkillDefinition } from "../skill/types";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolPromptFragments } from "./tools";
@@ -58,8 +59,12 @@ interface ToolResultEntry {
 
 interface AgentStartMutableParams {
   view: ToolExecutionContext["view"];
+  /** @deprecated Prefer hook-driven loadSkill() and getLoadedSkills(). */
   traits: NonNullable<ToolExecutionContext["traits"]>;
+  /** @deprecated Prefer hook-driven loadSkill() and getLoadedSkills(). */
   skills: NonNullable<ToolExecutionContext["skills"]>;
+  loadSkill(skillName: string): Promise<LoadResult>;
+  getLoadedSkills(): SkillDefinition[];
   percept: Percept;
   roundContext: RoundContext;
   scenario: RoundContext["scenario"];
@@ -156,32 +161,40 @@ export class ThinkActLoop {
       }
     }
 
-    // Trait-Skill pipeline: analyze context, resolve active skills
-    const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
-    const skill = this.ctx["yesimbot.skill"] as SkillRegistry;
-    let signals = runtimeToolCtx.traits;
-    if (!signals) {
-      signals = await trait.analyze(
-        { platform: percept.platform, channelId: percept.channelId },
-        view,
-      );
-    }
-    const effects: SkillEffect = skill.resolve(signals, {
-      platform: percept.platform,
-      channelId: percept.channelId,
-    });
-    roundContext = commitRoundContext(roundContext, {
-      skillState: {
-        active: effects.activeSkills.map((activeSkill) => activeSkill.name),
-      },
-    });
+    const skillCatalog = this.ctx["yesimbot.skill"] as SkillRegistry | undefined;
+    let loadedSkills =
+      skillCatalog && roundContext.skillState.persistentRoster
+        ? inheritPersistentRoster(roundContext.skillState.persistentRoster, skillCatalog)
+        : new LoadedSkillSet();
+    const applier = new SkillEffectApplier();
+    let signals = runtimeToolCtx.traits ?? [];
+
+    const loadSkill = async (skillName: string): Promise<LoadResult> => {
+      if (!skillCatalog) {
+        const reason = "skill catalog unavailable";
+        loadedSkills.recordLoadAttempt(skillName, "not_found", reason);
+        return { status: "not_found", reason };
+      }
+
+      const definition = skillCatalog.get(skillName);
+      if (!definition) {
+        const reason = `skill "${skillName}" not found in catalog`;
+        loadedSkills.recordLoadAttempt(skillName, "not_found", reason);
+        return { status: "not_found", reason };
+      }
+
+      return loadedSkills.load(definition);
+    };
 
     const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
     if (hookService) {
+      const legacySkillsBeforeHook = toActiveSkills(loadedSkills.getLoaded());
       const startParams: AgentStartMutableParams = {
         view,
         traits: signals,
-        skills: effects.activeSkills,
+        skills: legacySkillsBeforeHook,
+        loadSkill,
+        getLoadedSkills: () => loadedSkills.getLoaded(),
         percept,
         roundContext,
         scenario: roundContext.snapshot.scenario,
@@ -237,7 +250,13 @@ export class ThinkActLoop {
 
         if (updatedView) view = updatedView;
         if (updatedTraits) signals = updatedTraits;
-        if (updatedSkills) effects.activeSkills = updatedSkills;
+        if (updatedSkills && !isSameActiveSkillList(updatedSkills, legacySkillsBeforeHook)) {
+          loadedSkills = this.syncLoadedSkillsFromLegacyCompat(
+            updatedSkills,
+            loadedSkills,
+            skillCatalog,
+          );
+        }
 
         const updatedScenario = modifiedParams.scenario as Scenario | undefined;
         const updatedCapabilities = modifiedParams.capabilities as RoundContext["capabilities"];
@@ -245,7 +264,11 @@ export class ThinkActLoop {
         const updatedSkillState = modifiedParams.skillState as RoundContext["skillState"];
         const derivedSkillState =
           updatedSkills && !updatedSkillState
-            ? { active: updatedSkills.map((skill) => skill.name) }
+            ? {
+                active: loadedSkills.getLoadedNames(),
+                loadHistory: loadedSkills.getLoadHistory(),
+                persistentRoster: loadedSkills.getLoadedNames(),
+              }
             : undefined;
 
         const shouldRebuildScenarioFromView = updatedView && !updatedScenario;
@@ -273,44 +296,42 @@ export class ThinkActLoop {
       }
     }
 
+    const appliedEffects = applier.apply(loadedSkills);
+    roundContext = commitRoundContext(roundContext, {
+      skillState: {
+        active: loadedSkills.getLoadedNames(),
+        loadHistory: loadedSkills.getLoadHistory(),
+        persistentRoster: loadedSkills.getLoadedNames(),
+      },
+    });
+
     const toolCtxWithPercept = bindCommittedRoundContext(
       {
         ...runtimeToolCtx,
         percept,
         view,
         traits: signals,
-        skills: effects.activeSkills,
+        skills: toActiveSkills(loadedSkills.getLoaded()),
       },
       roundContext,
     ) as ToolExecutionContext;
 
     const disposers: Array<() => void> = [];
 
-    // Apply prompt injections from active skills
-    for (const inj of effects.promptInjections) {
+    if (appliedEffects.promptFragments.length > 0 || appliedEffects.styleFragment) {
+      const allFragments = [
+        ...appliedEffects.promptFragments,
+        ...(appliedEffects.styleFragment ? [appliedEffects.styleFragment] : []),
+      ];
       disposers.push(
-        promptService.inject(this.ctx, inj.point, {
-          name: `__skill_${inj.skillName}_${percept.id}`,
-          renderFn: () => inj.content,
-        }),
-      );
-    }
-
-    // Apply style override from highest-specificity skill
-    if (effects.styleOverride) {
-      disposers.push(
-        promptService.inject(this.ctx, effects.styleOverride.point, {
-          name: `__skill_style_${percept.id}`,
-          ...(effects.styleOverride.point === "soul" ? { after: "__role_soul" } : {}),
-          renderFn: () => effects.styleOverride!.content,
-        }),
+        promptService.registerFragmentSource(`__skill_effects_${percept.id}`, () => allFragments),
       );
     }
 
     const toolPromptFragments = buildToolPromptFragments(
       pluginService,
       toolCtxWithPercept,
-      effects.toolFilter,
+      appliedEffects.toolVisibility,
     );
     disposers.push(
       promptService.registerFragmentSource(
@@ -761,6 +782,42 @@ export class ThinkActLoop {
     }
   }
 
+  private syncLoadedSkillsFromLegacyCompat(
+    updatedSkills: NonNullable<ToolExecutionContext["skills"]>,
+    current: LoadedSkillSet,
+    skillCatalog: SkillRegistry | undefined,
+  ): LoadedSkillSet {
+    const updatedNames = new Set(updatedSkills.map((skill) => skill.name));
+
+    for (const existingName of current.getLoadedNames()) {
+      if (!updatedNames.has(existingName)) {
+        current.unload(existingName);
+      }
+    }
+
+    for (const skill of updatedSkills) {
+      if (current.has(skill.name)) continue;
+      if (!skillCatalog) {
+        current.recordLoadAttempt(skill.name, "not_found", "skill catalog unavailable");
+        continue;
+      }
+
+      const definition = skillCatalog.get(skill.name);
+      if (!definition) {
+        current.recordLoadAttempt(
+          skill.name,
+          "not_found",
+          `skill "${skill.name}" not found in catalog`,
+        );
+        continue;
+      }
+
+      current.load(definition);
+    }
+
+    return current;
+  }
+
   private async executeActions(
     actions: AgentResponse["actions"],
     pluginService: PluginService,
@@ -886,6 +943,26 @@ export class ThinkActLoop {
     }
     return { data: null, error: "LLM repair failed", logs: [] };
   }
+}
+
+function toActiveSkills(skills: SkillDefinition[]): ActiveSkill[] {
+  return skills.map((skill) => ({
+    name: skill.name,
+    effects: [
+      ...(skill.effects.prompt ? ["prompt"] : []),
+      ...(skill.effects.style ? ["style"] : []),
+      ...(skill.effects.tools ? ["tools"] : []),
+    ],
+    metadata: skill.description ? { description: skill.description } : undefined,
+  }));
+}
+
+function isSameActiveSkillList(next: ActiveSkill[], previous: ActiveSkill[]): boolean {
+  if (next.length !== previous.length) return false;
+  for (let i = 0; i < next.length; i++) {
+    if (next[i]?.name !== previous[i]?.name) return false;
+  }
+  return true;
 }
 
 function toToolResultEntry(
