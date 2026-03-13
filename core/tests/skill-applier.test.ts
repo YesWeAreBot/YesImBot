@@ -7,12 +7,13 @@ import type { SkillDefinition } from "../src/services/skill/types";
 function createSkill(
   overrides: Partial<SkillDefinition> & Pick<SkillDefinition, "name">,
 ): SkillDefinition {
+  const { name, ...rest } = overrides;
   return {
-    name: overrides.name,
+    name,
     lifecycle: "per-turn",
     source: "plugin",
     effects: {},
-    ...overrides,
+    ...rest,
   };
 }
 
