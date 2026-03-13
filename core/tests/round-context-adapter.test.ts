@@ -123,7 +123,20 @@ describe("scenario adapter", () => {
     };
 
     const scenario = buildScenarioFromView(source);
-    expect(scenario.raw.timeline[0]).toMatchObject({ id: "m1", type: "message" });
+    expect(scenario.raw.scenarioTimeline).toBeDefined();
+    expect(scenario.raw.timeline).toBe(scenario.raw.scenarioTimeline);
+    expect(scenario.raw.scenarioTimeline?.turns).toHaveLength(1);
+    expect(scenario.raw.scenarioTimeline?.turns[0]?.messages).toHaveLength(1);
+    expect(scenario.raw.scenarioTimeline?.turns[0]?.messages[0]).toMatchObject({
+      messageId: "m1",
+      senderId: "u1",
+    });
+    expect(scenario.derived.recentMetrics).toMatchObject({
+      messageCount: 1,
+      turnCount: 1,
+      participantCount: 1,
+    });
+    expect(scenario.derived.participants).toEqual([{ id: "u1", name: "alice", type: "user" }]);
     expect(scenario.raw.stimulusSource).toEqual({
       type: "message",
       messageId: "m1",
