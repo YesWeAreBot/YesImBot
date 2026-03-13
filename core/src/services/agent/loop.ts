@@ -33,7 +33,7 @@ import type { SkillEffect } from "../skill/types";
 import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
-import { buildToolSchemaForPrompt } from "./tools";
+import { buildToolPromptFragments } from "./tools";
 import { trimMessages, totalChars, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentAction {
@@ -307,57 +307,58 @@ export class ThinkActLoop {
       );
     }
 
-    // Inject tool schema into instructions point (with skill tool filter)
-    const toolSchema = buildToolSchemaForPrompt(
+    const toolPromptFragments = buildToolPromptFragments(
       pluginService,
       toolCtxWithPercept,
       effects.toolFilter,
     );
     disposers.push(
-      promptService.inject(this.ctx, "instructions", {
-        name: `__loop_tool_schema_${percept.id}`,
-        after: "__role_tools",
-        renderFn: () => toolSchema,
-      }),
+      promptService.registerFragmentSource(
+        `__loop_tool_fragments_${percept.id}`,
+        () => toolPromptFragments,
+      ),
     );
 
     try {
-      const sections: Section[] = await promptService.render("system", {
-        view,
-        percept,
-        roundContext,
-        scenario: roundContext.snapshot.scenario,
-        capabilities: roundContext.snapshot.capabilities,
-      });
-      const stableContent = sections
-        .filter((s) => s.name === "soul" || s.name === "instructions")
-        .map((s) => s.content)
-        .join("\n\n");
-      const dynamicContent = sections
-        .filter((s) => s.name === "extra")
-        .map((s) => s.content)
-        .join("\n\n");
-      const systemPromptString = stableContent + "\n\n" + dynamicContent;
-
       const providerType = modelService.getProvider(
         (this.config.model ?? "").split(":")[0],
       )?.providerType;
+      const emitted = await promptService.emitPromptBlocks(
+        "system",
+        {
+          view,
+          percept,
+          roundContext,
+          scenario: roundContext.snapshot.scenario,
+          capabilities: roundContext.snapshot.capabilities,
+        },
+        { providerType },
+      );
+      const sections: Section[] = emitted.sections;
+      const stableContent = emitted.stableBlock;
+      const dynamicContent = emitted.dynamicBlock;
+      const stableSignature = emitted.stableSignature;
+      const systemPromptString = [stableContent, dynamicContent].filter(Boolean).join("\n\n");
 
       let systemParam: string | SystemModelMessage[];
       if (providerType === "anthropic") {
-        systemParam = [
-          {
+        const anthropicBlocks: SystemModelMessage[] = [];
+        if (stableContent) {
+          anthropicBlocks.push({
             role: "system" as const,
             content: stableContent,
             providerOptions: {
               anthropic: { cacheControl: { type: "ephemeral" } },
             },
-          },
-          {
+          });
+        }
+        if (dynamicContent) {
+          anthropicBlocks.push({
             role: "system" as const,
             content: dynamicContent,
-          },
-        ];
+          });
+        }
+        systemParam = anthropicBlocks.length > 0 ? anthropicBlocks : "";
       } else {
         systemParam = systemPromptString;
       }
@@ -437,9 +438,14 @@ export class ThinkActLoop {
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
-          `[${percept.traceId}] system_stable_bytes=${Buffer.byteLength(stableContent, "utf8")} system_dynamic_bytes=${Buffer.byteLength(dynamicContent, "utf8")} provider=${providerType ?? "unknown"}`,
+          `[${percept.traceId}] system_stable_bytes=${Buffer.byteLength(stableContent, "utf8")} system_dynamic_bytes=${Buffer.byteLength(dynamicContent, "utf8")} provider=${providerType ?? "unknown"} stableSignature=${stableSignature}`,
         );
       }
+
+      const sectionNames = sections.map((section) => section.name).join("|");
+      this.logger.debug(
+        `[${percept.traceId}] emitPromptBlocks sections=${sectionNames} stableSignature=${stableSignature}`,
+      );
 
       const totalUserBytes = multiTurnMessages.reduce((sum, m) => {
         if (typeof m.content === "string") return sum + Buffer.byteLength(m.content, "utf8");
@@ -455,7 +461,9 @@ export class ThinkActLoop {
         `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${totalUserBytes} messages=${multiTurnMessages.length}`,
       );
 
-      this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
+      this.logger.info(
+        `[${percept.traceId}] tools=${toolPromptFragments.length > 0 ? "fragments" : "none"}`,
+      );
 
       const messages: LoopMessage[] = multiTurnMessages;
 

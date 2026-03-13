@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -28,6 +29,24 @@ declare module "koishi" {
 export interface PromptServiceConfig {
   templates?: Record<string, string>;
   renderTimeout?: number;
+}
+
+interface CanonicalPromptSection {
+  name: PromptSectionName;
+  content: string;
+  cacheable: boolean;
+  fragments: PromptFragment[];
+}
+
+export interface PromptEmitOptions {
+  providerType?: string;
+}
+
+export interface PromptEmitBlocks {
+  sections: Section[];
+  stableBlock: string;
+  dynamicBlock: string;
+  stableSignature: string;
 }
 
 export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
@@ -121,36 +140,43 @@ export class PromptService extends Service<PromptServiceConfig> {
     const timeout = this.config.renderTimeout ?? 5000;
     const collected = await this.collectFragments(scope, timeout);
     const validated = collected.map((fragment) => this.validateFragment(fragment));
+    const canonicalSections = this.buildCanonicalSections(validated);
+    return canonicalSections.map((section) => ({
+      name: section.name,
+      content: section.content,
+      cacheable: section.cacheable,
+    }));
+  }
 
-    const idSet = new Set<string>();
-    for (const fragment of validated) {
-      if (idSet.has(fragment.id)) {
-        throw new Error(`duplicate fragment id: "${fragment.id}"`);
-      }
-      idSet.add(fragment.id);
-    }
+  async emitPromptBlocks(
+    _templateName: string,
+    initialScope?: Record<string, unknown>,
+    _options?: PromptEmitOptions,
+  ): Promise<PromptEmitBlocks> {
+    const scope = await this.buildScope(initialScope ?? {});
+    const timeout = this.config.renderTimeout ?? 5000;
+    const collected = await this.collectFragments(scope, timeout);
+    const validated = collected.map((fragment) => this.validateFragment(fragment));
+    const canonicalSections = this.buildCanonicalSections(validated);
 
-    const sections: Section[] = [];
-    for (const sectionName of PROMPT_SECTION_LAYOUT) {
-      const sectionFragments = validated
-        .filter((fragment) => fragment.section === sectionName)
-        .sort((a, b) => this.compareFragments(a, b));
+    const sections: Section[] = canonicalSections.map((section) => ({
+      name: section.name,
+      content: section.content,
+      cacheable: section.cacheable,
+    }));
+    const stableSections = canonicalSections.filter((section) => section.cacheable);
+    const dynamicSections = canonicalSections.filter((section) => !section.cacheable);
 
-      if (sectionFragments.length === 0) {
-        continue;
-      }
+    const stableBlock = stableSections.map((section) => section.content).join("\n\n");
+    const dynamicBlock = dynamicSections.map((section) => section.content).join("\n\n");
+    const stableSignature = this.buildStableSignature(stableSections);
 
-      const content = sectionFragments.map((fragment) => fragment.content).join("\n\n");
-      sections.push({
-        name: sectionName,
-        content: `<${sectionName}>\n${content}\n</${sectionName}>`,
-        cacheable: sectionFragments.every(
-          (fragment) => fragment.stability === "stable" && fragment.cacheable !== false,
-        ),
-      });
-    }
-
-    return sections;
+    return {
+      sections,
+      stableBlock,
+      dynamicBlock,
+      stableSignature,
+    };
   }
 
   async renderToString(
@@ -220,6 +246,50 @@ export class PromptService extends Service<PromptServiceConfig> {
     }
 
     return a.id.localeCompare(b.id);
+  }
+
+  private buildCanonicalSections(fragments: PromptFragment[]): CanonicalPromptSection[] {
+    const idSet = new Set<string>();
+    for (const fragment of fragments) {
+      if (idSet.has(fragment.id)) {
+        throw new Error(`duplicate fragment id: "${fragment.id}"`);
+      }
+      idSet.add(fragment.id);
+    }
+
+    const sections: CanonicalPromptSection[] = [];
+    for (const sectionName of PROMPT_SECTION_LAYOUT) {
+      const sectionFragments = fragments
+        .filter((fragment) => fragment.section === sectionName)
+        .sort((a, b) => this.compareFragments(a, b));
+
+      if (sectionFragments.length === 0) {
+        continue;
+      }
+
+      const content = sectionFragments.map((fragment) => fragment.content).join("\n\n");
+      sections.push({
+        name: sectionName,
+        content: `<${sectionName}>\n${content}\n</${sectionName}>`,
+        cacheable: sectionFragments.every(
+          (fragment) => fragment.stability === "stable" && fragment.cacheable !== false,
+        ),
+        fragments: sectionFragments,
+      });
+    }
+
+    return sections;
+  }
+
+  private buildStableSignature(sections: CanonicalPromptSection[]): string {
+    const orderedStableFragments = sections.flatMap((section) =>
+      section.fragments.map((fragment) => {
+        const contentHash = createHash("sha256").update(fragment.content).digest("hex");
+        return `${section.name}:${fragment.id}:${contentHash}`;
+      }),
+    );
+
+    return createHash("sha256").update(orderedStableFragments.join("|"), "utf8").digest("hex");
   }
 
   private validateFragment(fragment: PromptFragment): PromptFragment {

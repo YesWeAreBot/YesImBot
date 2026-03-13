@@ -176,6 +176,7 @@ describe("round context runtime", () => {
       "yesimbot.prompt": {
         render: vi.fn(),
         emitPromptBlocks: emitPromptBlocksSpy,
+        registerFragmentSource: vi.fn(() => () => undefined),
         inject: vi.fn(() => () => undefined),
       },
       "yesimbot.model": {
@@ -372,11 +373,18 @@ describe("round context runtime", () => {
         invoke: vi.fn(),
       },
       "yesimbot.prompt": {
-        render: vi.fn().mockResolvedValue([
-          { name: "soul", content: "soul" },
-          { name: "instructions", content: "instructions" },
-          { name: "extra", content: "extra" },
-        ]),
+        render: vi.fn(),
+        emitPromptBlocks: vi.fn().mockResolvedValue({
+          sections: [
+            { name: "identity", content: "<identity>identity</identity>", cacheable: true },
+            { name: "policy", content: "<policy>policy</policy>", cacheable: true },
+            { name: "situation", content: "<situation>situation</situation>", cacheable: false },
+          ],
+          stableBlock: "<identity>identity</identity>\n\n<policy>policy</policy>",
+          dynamicBlock: "<situation>situation</situation>",
+          stableSignature: "stable-signature",
+        }),
+        registerFragmentSource: vi.fn(() => () => undefined),
         inject: vi.fn(() => () => undefined),
       },
       "yesimbot.model": {
@@ -492,7 +500,27 @@ describe("round context runtime", () => {
         invoke: vi.fn(),
       },
       "yesimbot.prompt": {
-        render: promptRenderSpy,
+        render: vi.fn(),
+        emitPromptBlocks: vi
+          .fn()
+          .mockImplementation(async (_template: string, scope: Record<string, unknown>) => {
+            promptRenderSpy("system", scope);
+            return {
+              sections: [
+                { name: "identity", content: "<identity>identity</identity>", cacheable: true },
+                { name: "policy", content: "<policy>policy</policy>", cacheable: true },
+                {
+                  name: "situation",
+                  content: "<situation>situation</situation>",
+                  cacheable: false,
+                },
+              ],
+              stableBlock: "<identity>identity</identity>\n\n<policy>policy</policy>",
+              dynamicBlock: "<situation>situation</situation>",
+              stableSignature: "stable-signature",
+            };
+          }),
+        registerFragmentSource: vi.fn(() => () => undefined),
         inject: vi.fn(() => () => undefined),
       },
       "yesimbot.model": {
