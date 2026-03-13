@@ -3,12 +3,10 @@ import { resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
 
-import type { FragmentStability, PromptSectionName } from "../prompt/types";
 import type { ChannelKey, TraitSignal } from "../shared/types";
 import { evaluateCondition, filterByConfidence, specificity } from "./condition";
 import { loadSkillsFromDir } from "./loader";
 import {
-  mapLegacyPointToSection,
   mapSectionToLegacyPoint,
   normalizePromptMetadata,
   normalizeStyleMetadata,
@@ -33,12 +31,6 @@ export const SkillRegistryConfigSchema: Schema<SkillRegistryConfig> = Schema.obj
   stickyDefaultTimeout: Schema.number().default(3),
 });
 
-interface ActiveSkillState {
-  lifecycle: SkillDefinition["lifecycle"];
-  roundsSinceActive: number;
-  stickyTimeout: number;
-}
-
 const builtinSkillsDir = resolve(
   __dirname,
   "../".repeat(__dirname.includes("dist") ? 1 : 2),
@@ -46,10 +38,7 @@ const builtinSkillsDir = resolve(
 );
 
 export class SkillRegistry extends Service<SkillRegistryConfig> {
-  static inject = ["yesimbot.trait"];
-
   private skills = new Map<string, SkillDefinition>();
-  private channelState = new Map<string, Map<string, ActiveSkillState>>();
 
   constructor(ctx: Context, config: SkillRegistryConfig) {
     super(ctx, "yesimbot.skill", false);
@@ -79,17 +68,26 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     this.logger.info("Skills reloaded, %d skills", this.skills.size);
   }
 
+  get(name: string): SkillDefinition | undefined {
+    return this.skills.get(name);
+  }
+
+  all(): SkillDefinition[] {
+    return Array.from(this.skills.values());
+  }
+
+  /** @deprecated Use explicit loadSkill() and SkillEffectApplier. */
   resolve(signals: TraitSignal[], key: ChannelKey): SkillEffect {
     const filtered = filterByConfidence(signals, this.config.confidenceThreshold ?? 0.3);
     this.logger.info(
       "resolve signals: %o",
       filtered.map((s) => ({ d: s.dimension, v: s.value, meta: s.metadata })),
     );
-    const channelKey = `${key.platform}:${key.channelId}`;
-    if (!this.channelState.has(channelKey)) {
-      this.channelState.set(channelKey, new Map());
-    }
-    const state = this.channelState.get(channelKey)!;
+    this.logger.warn(
+      "SkillRegistry.resolve() is deprecated for %s:%s; migrate to loadSkill() + SkillEffectApplier",
+      key.platform,
+      key.channelId,
+    );
 
     const active: SkillDefinition[] = [];
 
@@ -110,37 +108,13 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
       if (activated) {
         active.push(skill);
         this.logger.info("skill %s activated (lifecycle: %s)", skill.name, skill.lifecycle);
-        if (skill.lifecycle === "sticky") {
-          state.set(skill.name, {
-            lifecycle: "sticky",
-            roundsSinceActive: 0,
-            stickyTimeout: skill.stickyTimeout ?? this.config.stickyDefaultTimeout ?? 3,
-          });
-        } else if (skill.lifecycle === "trait-bound") {
-          state.set(skill.name, {
-            lifecycle: "trait-bound",
-            roundsSinceActive: 0,
-            stickyTimeout: 0,
-          });
-        }
-      } else if (skill.lifecycle === "sticky" && state.has(skill.name)) {
-        const s = state.get(skill.name)!;
-        s.roundsSinceActive++;
-        if (s.roundsSinceActive >= s.stickyTimeout) {
-          state.delete(skill.name);
-        } else {
-          active.push(skill);
-        }
-      } else if (skill.lifecycle === "trait-bound" && state.has(skill.name)) {
-        // Trait signal gone -> immediate removal, no grace period
-        state.delete(skill.name);
-        this.logger.info("trait-bound skill %s deactivated (trait signal lost)", skill.name);
       }
     }
 
     return this.mergeEffects(active);
   }
 
+  /** @deprecated Compatibility helper for resolve(). */
   private mergeEffects(active: SkillDefinition[]): SkillEffect {
     // Sort by specificity descending for prompt injection ordering
     const sorted = [...active].sort((a, b) => {
@@ -166,16 +140,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
       })),
     };
 
-    let bestStyle: {
-      skillName: string;
-      content: string;
-      section: "identity" | "policy";
-      source: "skill";
-      stability: FragmentStability;
-      priority: number;
-      cacheable: boolean;
-      specificity: number;
-    } | null = null;
+    let bestStyle: (SkillEffect["styleFragment"] & { specificity: number }) | null = null;
 
     for (const skill of sorted) {
       if (skill.effects.prompt) {
