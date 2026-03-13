@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { EventManager } from "../src/services/horizon/manager";
 import { HorizonService } from "../src/services/horizon/service";
 import type { HorizonView, ImageConfig } from "../src/services/horizon/types";
-import { buildScenarioTimeline } from "../src/services/runtime/scenario-timeline";
+import {
+  buildScenarioTimeline,
+  getMarkedEvents,
+  getMessageCount,
+  getParticipants,
+  getRecentTurns,
+} from "../src/services/runtime/scenario-timeline";
 import {
   createAgentActionRecord,
   createAgentResponseRecord,
@@ -84,6 +90,10 @@ describe("timeline adapter", () => {
       }),
     ];
     const timeline = buildScenarioTimeline(entries);
+    const messageCount = getMessageCount(timeline);
+    const participants = getParticipants(timeline);
+    const markedEvents = getMarkedEvents(timeline);
+    const recentTurns = getRecentTurns(timeline, 1);
 
     const messages = await eventManager.buildLoopMessages(timeline, {
       selfId: "bot-1",
@@ -97,6 +107,10 @@ describe("timeline adapter", () => {
     expect(transcript).not.toContain("before summary");
     expect(transcript).not.toContain("draft-only response");
     expect(transcript).not.toContain("heartbeat");
+    expect(messageCount).toBe(1);
+    expect(participants.map((participant) => participant.id)).toEqual(["user-a"]);
+    expect(markedEvents.some((event) => event.type === "tool-result")).toBe(true);
+    expect(recentTurns).toHaveLength(1);
   });
 
   it("keeps environment/members/latest-summary as preamble and adapts transcript from scenario timeline", async () => {

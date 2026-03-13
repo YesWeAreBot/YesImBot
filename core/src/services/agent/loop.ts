@@ -427,7 +427,13 @@ export class ThinkActLoop {
         maxImagesInContext: this.config.maxImagesInContext ?? 3,
         imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
-      const multiTurnMessages = await horizonService.formatHorizonText(view, percept, imageConfig);
+      const scenarioTimeline = roundContext.snapshot.scenario.raw.scenarioTimeline;
+      const multiTurnMessages = await horizonService.formatHorizonText(
+        view,
+        percept,
+        imageConfig,
+        scenarioTimeline,
+      );
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
