@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { FunctionDefinition } from "../src/services/plugin/types";
-import { RUNTIME_CONTRACT_VERSION, getCapabilityByKey } from "../src/services/runtime/contracts";
-import type {
+import { FunctionType, type FunctionDefinition } from "../src/services/plugin/types";
+import {
   CAPABILITY_KEYS,
+  RUNTIME_CONTRACT_VERSION,
+  getCapabilityByKey,
+} from "../src/services/runtime/contracts";
+import type {
   Capabilities,
   CapabilityState,
   Percept,
@@ -49,7 +52,32 @@ describe("runtime contracts", () => {
           channelId: "c1",
         },
         entities: [{ id: "u1", type: "user", name: "alice" }],
-        timeline: [{ id: "e1", type: "message" }] as Array<Record<string, unknown>>,
+        timeline: {
+          turns: [],
+          activeSegment: { mode: "after-latest-summary" },
+          markedEvents: [],
+          heartbeatEvents: [],
+          semantics: {
+            summaryPosition: "background",
+            heartbeatRendering: "query-only",
+            agentResponseVisibility: "internal-draft",
+            visibleOutputSource: "send_message-success",
+            defaultQueryWindow: "active-segment",
+          },
+        },
+        scenarioTimeline: {
+          turns: [],
+          activeSegment: { mode: "after-latest-summary" },
+          markedEvents: [],
+          heartbeatEvents: [],
+          semantics: {
+            summaryPosition: "background",
+            heartbeatRendering: "query-only",
+            agentResponseVisibility: "internal-draft",
+            visibleOutputSource: "send_message-success",
+            defaultQueryWindow: "active-segment",
+          },
+        },
         stimulusSource: {
           type: "message",
           messageId: "m1",
@@ -150,32 +178,27 @@ describe("runtime contracts", () => {
   });
 
   it("exposes canonical namespaced capability keys", () => {
-    const keys: typeof CAPABILITY_KEYS = {
-      MESSAGE_SEND: "message.send",
-      MESSAGE_REPLY: "message.reply",
-      MESSAGE_DELETE: "message.delete",
-      MESSAGE_READ_HISTORY: "message.read_history",
-      MESSAGE_DIRECT: "message.direct",
-      MEMBER_MODERATE: "member.moderate",
-      SOCIAL_ESSENCE: "social.essence",
-      SOCIAL_REACTION: "social.reaction",
-      PLATFORM_SESSION: "platform.session",
-    };
-
-    expect(keys.MESSAGE_SEND).toBe("message.send");
-    expect(keys.PLATFORM_SESSION).toBe("platform.session");
+    expect(CAPABILITY_KEYS.MESSAGE_SEND).toBe("message.send");
+    expect(CAPABILITY_KEYS.MESSAGE_REPLY).toBe("message.reply");
+    expect(CAPABILITY_KEYS.MESSAGE_DELETE).toBe("message.delete");
+    expect(CAPABILITY_KEYS.MESSAGE_READ_HISTORY).toBe("message.read_history");
+    expect(CAPABILITY_KEYS.MESSAGE_DIRECT).toBe("message.direct");
+    expect(CAPABILITY_KEYS.MEMBER_MODERATE).toBe("member.moderate");
+    expect(CAPABILITY_KEYS.SOCIAL_ESSENCE).toBe("social.essence");
+    expect(CAPABILITY_KEYS.SOCIAL_REACTION).toBe("social.reaction");
+    expect(CAPABILITY_KEYS.PLATFORM_SESSION).toBe("platform.session");
   });
 
   it("supports declarative capability requirements on function definitions", () => {
-    const definition = {
+    const definition: FunctionDefinition = {
       name: "send_message",
       description: "send",
-      type: "tool",
+      type: FunctionType.Tool,
       parameters: {} as never,
       handler: async () => ({ success: true }),
       requiredCapabilities: ["message.send"],
       onCapabilityMissing: "hint",
-    } as unknown as FunctionDefinition;
+    };
 
     expect(definition.requiredCapabilities).toEqual(["message.send"]);
     expect(definition.onCapabilityMissing).toBe("hint");

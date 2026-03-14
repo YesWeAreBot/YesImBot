@@ -3,6 +3,7 @@ import type { Bot, Schema, Session } from "koishi";
 import type { HorizonView } from "../horizon/types";
 import type {
   Capabilities,
+  CapabilityState,
   ChannelKey,
   Percept,
   RoundContext,
@@ -69,8 +70,21 @@ export interface FunctionDefinition {
   parameters: Schema;
   handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>;
   activators?: Activator[];
+  /** Capability keys required for this tool. All keys must be available. */
+  requiredCapabilities?: string[];
+  /** Strategy used when required capabilities are unavailable. Defaults to "remove". */
+  onCapabilityMissing?: "remove" | "hint";
   /** Hidden tools are excluded from getTools() unless explicitly included via skill toolFilter */
   hidden?: boolean;
+}
+
+export interface CapabilityResolver {
+  readonly platform?: string;
+  readonly resolver: (params: {
+    session?: Pick<Session, "isDirect" | "quote" | "guildId">;
+    scenario?: Scenario;
+    bot?: Pick<Bot, "selfId">;
+  }) => Record<string, CapabilityState>;
 }
 
 export interface PluginMetadata {
@@ -82,6 +96,8 @@ export interface PluginMetadata {
 export interface IPluginService {
   registerPlugin(plugin: YesImPlugin): void;
   unregisterPlugin(name: string): void;
+  registerCapabilityResolver(resolver: CapabilityResolver): void;
+  getCapabilityResolvers(platform?: string): CapabilityResolver["resolver"][];
   getDefinition(name: string): FunctionDefinition | undefined;
   getTools(
     execCtx?: ToolExecutionContext,

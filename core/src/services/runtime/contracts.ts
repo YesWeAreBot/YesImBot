@@ -178,21 +178,41 @@ export type CapabilityState =
       status: "available";
       detail?: string;
       limits?: Record<string, unknown>;
+      source?: string;
     }
   | {
       status: "unavailable";
       reason: string;
       recoverable?: boolean;
       detail?: string;
+      source?: string;
     };
 
 export interface Capabilities {
-  core: {
-    sendMessage: CapabilityState;
-    readHistory: CapabilityState;
-    [key: string]: CapabilityState;
-  };
+  core: Record<string, CapabilityState>;
   extended: Record<string, CapabilityState>;
+}
+
+export const CAPABILITY_KEYS = {
+  MESSAGE_SEND: "message.send",
+  MESSAGE_REPLY: "message.reply",
+  MESSAGE_DELETE: "message.delete",
+  MESSAGE_READ_HISTORY: "message.read_history",
+  MESSAGE_DIRECT: "message.direct",
+  MEMBER_MODERATE: "member.moderate",
+  SOCIAL_ESSENCE: "social.essence",
+  SOCIAL_REACTION: "social.reaction",
+  PLATFORM_SESSION: "platform.session",
+} as const;
+
+export function getCapabilityByKey(
+  capabilities: Capabilities | undefined,
+  key: string,
+): CapabilityState | undefined {
+  if (!capabilities) {
+    return undefined;
+  }
+  return capabilities.core[key] ?? capabilities.extended[key];
 }
 
 export interface RoundSnapshot {
