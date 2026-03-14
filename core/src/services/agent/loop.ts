@@ -112,7 +112,10 @@ export class ThinkActLoop {
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
     const promptService = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
-    const resolvers = pluginService.getCapabilityResolvers(percept.platform);
+    const resolvers =
+      typeof pluginService.getCapabilityResolvers === "function"
+        ? pluginService.getCapabilityResolvers(percept.platform)
+        : [];
 
     const built = await buildAgentRoundContext(this.ctx, {
       platform: percept.platform,
