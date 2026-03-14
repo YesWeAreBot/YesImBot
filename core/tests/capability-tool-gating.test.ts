@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { buildToolSchemaForPrompt } from "../src/services/agent/tools";
+import { buildToolPromptFragments } from "../src/services/agent/tools";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
 
 function createToolCtx(capabilities?: ToolExecutionContext["capabilities"]): ToolExecutionContext {
@@ -29,6 +29,12 @@ function createPluginServiceMock(definitions: Record<string, Record<string, unkn
     getTools: vi.fn(() => entries),
     getDefinition: vi.fn((name: string) => definitions[name]),
   };
+}
+
+function buildToolSchemaForPrompt(pluginService: never, toolCtx: ToolExecutionContext): string {
+  const fragments = buildToolPromptFragments(pluginService, toolCtx);
+  const availableFragment = fragments.find((f) => f.id === "tooling.available");
+  return availableFragment?.content ?? "";
 }
 
 describe("capability tool gating", () => {
