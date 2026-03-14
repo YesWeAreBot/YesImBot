@@ -13,7 +13,7 @@ import {
   commitRoundContext,
   createRoundContext,
 } from "../runtime/adapters";
-import type { RoundContext, Scenario } from "../runtime/contracts";
+import type { CapabilityState, RoundContext, Scenario } from "../runtime/contracts";
 import { LoadedSkillSet } from "../skill/loaded-skill-set";
 import type { SkillRegistry } from "../skill/service";
 import type { TraitAnalyzer } from "../trait/service";
@@ -31,6 +31,13 @@ interface AgentRoundContextParams {
   bot?: Bot;
   percept: Percept;
   toolCtx?: ToolExecutionContext;
+  resolvers?: Array<
+    (params: {
+      session?: Pick<Session, "isDirect" | "quote" | "guildId">;
+      scenario?: Scenario;
+      bot?: Pick<Bot, "selfId">;
+    }) => Record<string, CapabilityState>
+  >;
 }
 
 interface RoundContextBaseline {
@@ -193,16 +200,19 @@ function buildRoundContextBaseline(
   params: AgentRoundContextParams,
 ): RoundContextBaseline {
   const normalizedView = normalizeViewForScenario(toolCtx.view, params);
+  const scenario = buildScenarioFromView({
+    view: normalizedView,
+    stimulusSource: buildStimulusSource(params.percept),
+  });
 
   return {
     percept: params.percept,
-    scenario: buildScenarioFromView({
-      view: normalizedView,
-      stimulusSource: buildStimulusSource(params.percept),
-    }),
+    scenario,
     capabilities: buildCapabilitiesFromRuntime({
       session: params.session ?? toolCtx.session,
       bot: params.bot ?? toolCtx.bot,
+      scenario,
+      resolvers: params.resolvers,
     }),
     metadata: {
       channelKey: `${params.platform}:${params.channelId}`,

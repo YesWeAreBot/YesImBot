@@ -156,12 +156,12 @@ describe("scenario adapter", () => {
       bot: { selfId: "bot-1" },
     });
 
-    expect(capabilities.core.sendMessage.status).toBe("available");
-    expect(capabilities.core.readHistory.status).toBe("available");
-    expect(capabilities.extended.replyByQuote.status).toBe("unavailable");
+    expect(capabilities.core["message.send"]?.status).toBe("available");
+    expect(capabilities.core["message.read_history"]?.status).toBe("available");
+    expect(capabilities.core["message.reply"]?.status).toBe("unavailable");
 
-    if (capabilities.extended.replyByQuote.status === "unavailable") {
-      expect(capabilities.extended.replyByQuote.reason).toBe("quote-message-unavailable");
+    if (capabilities.core["message.reply"]?.status === "unavailable") {
+      expect(capabilities.core["message.reply"].reason).toBe("quote-message-unavailable");
     }
   });
 
@@ -171,14 +171,14 @@ describe("scenario adapter", () => {
       bot: { selfId: "bot-1" },
     });
 
-    expect(capabilities.extended.replyByQuote.status).toBe("unavailable");
-    if (capabilities.extended.replyByQuote.status === "unavailable") {
-      expect(capabilities.extended.replyByQuote.reason).toBe("session-unavailable");
+    expect(capabilities.core["message.reply"]?.status).toBe("unavailable");
+    if (capabilities.core["message.reply"]?.status === "unavailable") {
+      expect(capabilities.core["message.reply"].reason).toBe("session-unavailable");
     }
 
-    expect(capabilities.extended.directMessage.status).toBe("unavailable");
-    if (capabilities.extended.directMessage.status === "unavailable") {
-      expect(capabilities.extended.directMessage.reason).toBe("session-unavailable");
+    expect(capabilities.extended["message.direct"]?.status).toBe("unavailable");
+    if (capabilities.extended["message.direct"]?.status === "unavailable") {
+      expect(capabilities.extended["message.direct"].reason).toBe("session-unavailable");
     }
   });
 

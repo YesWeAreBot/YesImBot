@@ -2,7 +2,15 @@ import type { Bot, Session } from "koishi";
 
 import type { HorizonScenarioAdapterSource, MessageRecord, TimelineEntry } from "../horizon/types";
 import { TimelineEventType } from "../horizon/types";
-import type { Capabilities, Percept, RoundContext, Scenario, SkillState } from "./contracts";
+import {
+  CAPABILITY_KEYS,
+  type Capabilities,
+  type CapabilityState,
+  type Percept,
+  type RoundContext,
+  type Scenario,
+  type SkillState,
+} from "./contracts";
 import { buildScenarioTimeline, getMessageCount, getParticipants } from "./scenario-timeline";
 
 export interface RuntimeBoundContext {
@@ -52,11 +60,19 @@ export function buildScenarioFromView(source: HorizonScenarioAdapterSource): Sce
 }
 
 export function buildCapabilitiesFromRuntime(params: {
-  session?: Pick<Session, "isDirect" | "quote">;
+  session?: Pick<Session, "isDirect" | "quote" | "guildId">;
   bot?: Pick<Bot, "selfId">;
+  scenario?: Scenario;
+  resolvers?: Array<
+    (params: {
+      session?: Pick<Session, "isDirect" | "quote" | "guildId">;
+      scenario?: Scenario;
+      bot?: Pick<Bot, "selfId">;
+    }) => Record<string, CapabilityState>
+  >;
 }): Capabilities {
   const hasSession = Boolean(params.session);
-  const sendMessage = params.bot?.selfId
+  const sendMessage: CapabilityState = params.bot?.selfId
     ? { status: "available" as const }
     : {
         status: "unavailable" as const,
@@ -64,7 +80,7 @@ export function buildCapabilitiesFromRuntime(params: {
         recoverable: true,
       };
 
-  const replyByQuote = !hasSession
+  const replyByQuote: CapabilityState = !hasSession
     ? {
         status: "unavailable" as const,
         reason: "session-unavailable",
@@ -77,7 +93,7 @@ export function buildCapabilitiesFromRuntime(params: {
           reason: "quote-message-unavailable",
         };
 
-  const directMessage = !hasSession
+  const directMessage: CapabilityState = !hasSession
     ? {
         status: "unavailable" as const,
         reason: "session-unavailable",
@@ -90,16 +106,75 @@ export function buildCapabilitiesFromRuntime(params: {
           reason: "not-direct-channel",
         };
 
-  return {
-    core: {
-      sendMessage,
-      readHistory: { status: "available", detail: "horizon-history-access" },
-    },
-    extended: {
-      replyByQuote,
-      directMessage,
-    },
+  const platformSession: CapabilityState = hasSession
+    ? { status: "available" }
+    : {
+        status: "unavailable",
+        reason: "session-unavailable",
+        recoverable: true,
+      };
+
+  const messageDelete: CapabilityState = {
+    status: "unavailable",
+    reason: "not-supported",
   };
+
+  const core: Record<string, CapabilityState> = {
+    [CAPABILITY_KEYS.MESSAGE_SEND]: withCoreSource(sendMessage),
+    [CAPABILITY_KEYS.MESSAGE_REPLY]: withCoreSource(replyByQuote),
+    [CAPABILITY_KEYS.MESSAGE_READ_HISTORY]: withCoreSource({
+      status: "available",
+      detail: "horizon-history-access",
+    }),
+  };
+
+  const extended: Record<string, CapabilityState> = {
+    [CAPABILITY_KEYS.MESSAGE_DIRECT]: withCoreSource(directMessage),
+    [CAPABILITY_KEYS.MESSAGE_DELETE]: withCoreSource(messageDelete),
+    [CAPABILITY_KEYS.PLATFORM_SESSION]: withCoreSource(platformSession),
+  };
+
+  for (const resolver of params.resolvers ?? []) {
+    const result = resolver({
+      session: params.session,
+      scenario: params.scenario,
+      bot: params.bot,
+    });
+    for (const [key, state] of Object.entries(result ?? {})) {
+      if (!state || typeof state !== "object" || !("status" in state)) {
+        continue;
+      }
+
+      const existing = extended[key] ?? core[key];
+      if (!existing) {
+        extended[key] = state;
+        continue;
+      }
+
+      if (state.status === "unavailable") {
+        extended[key] = state;
+        continue;
+      }
+
+      if (existing.status === "unavailable") {
+        if (extended[key] === undefined) {
+          extended[key] = existing;
+        }
+        continue;
+      }
+
+      extended[key] = state;
+    }
+  }
+
+  return {
+    core,
+    extended,
+  };
+}
+
+function withCoreSource(state: CapabilityState): CapabilityState {
+  return { ...state, source: "core" };
 }
 
 export function createRoundContext(params: {

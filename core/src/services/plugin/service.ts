@@ -5,6 +5,7 @@ import { CorePlugin, OnebotPlugin } from "./builtin";
 import { YesImPlugin } from "./plugin";
 import { schemaToJSONSchema } from "./schema";
 import {
+  CapabilityResolver,
   FunctionDefinition,
   FunctionType,
   IPluginService,
@@ -24,6 +25,7 @@ export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.obj
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
   static inject = ["yesimbot.hook"];
   private plugins: Map<string, YesImPlugin> = new Map();
+  private capabilityResolvers: CapabilityResolver[] = [];
 
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
@@ -140,6 +142,20 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
 
   public unregisterPlugin(name: string): void {
     this.plugins.delete(name);
+  }
+
+  public registerCapabilityResolver(resolver: CapabilityResolver): void {
+    this.capabilityResolvers.push(resolver);
+    const logger = this.ctx.logger("yesimbot.plugin");
+    logger.info(
+      `Registered capability resolver${resolver.platform ? ` for platform: ${resolver.platform}` : " (all platforms)"}`,
+    );
+  }
+
+  public getCapabilityResolvers(platform?: string): CapabilityResolver["resolver"][] {
+    return this.capabilityResolvers
+      .filter((resolver) => !resolver.platform || resolver.platform === platform)
+      .map((resolver) => resolver.resolver);
   }
 
   private findFunction(name: string): FunctionDefinition | undefined {
