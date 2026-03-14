@@ -1,8 +1,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
-import type { SystemModelMessage } from "ai";
-import type { ModelMessage } from "ai";
+import type { ModelMessage, SystemModelMessage } from "ai";
 import { Context, Random } from "koishi";
 
 import type { HookService } from "../hook/service";
@@ -23,11 +22,12 @@ import type {
   AgentEndSummary,
   AgentFinalOutcomeStatus,
   AgentIncident,
+  Percept,
   RoundContext,
   Scenario,
 } from "../runtime/contracts";
 import { buildAgentRoundContext, inheritPersistentRoster } from "../shared/context-factory";
-import type { ActiveSkill, Percept } from "../shared/types";
+import type { ActiveSkill } from "../shared/types";
 import { SkillEffectApplier } from "../skill/applier";
 import { LoadedSkillSet } from "../skill/loaded-skill-set";
 import type { SkillRegistry } from "../skill/service";
@@ -35,7 +35,7 @@ import type { LoadResult, SkillDefinition } from "../skill/types";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolPromptFragments } from "./tools";
-import { trimMessages, totalChars, type LoopMessage, type TrimConfig } from "./trimmer";
+import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentAction {
   name: string;

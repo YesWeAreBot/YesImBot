@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
 
-import { TriggerType } from "../shared/types";
+import { TriggerType } from "../runtime/contracts";
 
 export class TokenBucket {
   private buckets = new Map<string, { tokens: number; lastRefill: number }>();

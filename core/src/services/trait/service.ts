@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from "koishi";
 
-import type { Scenario } from "../runtime/contracts";
-import type { ChannelKey, TraitSignal } from "../shared/types";
+import type { ChannelKey, Scenario } from "../runtime/contracts";
+import type { TraitSignal } from "../shared/types";
 import { HeatTrait } from "./detectors/heat";
 import { SceneTrait } from "./detectors/scene";
 import type { TraitDetector } from "./types";

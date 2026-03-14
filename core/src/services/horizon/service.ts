@@ -4,9 +4,8 @@ import path from "node:path";
 import { Context, h, Schema, Service, type Session } from "koishi";
 
 import type { LoopMessage } from "../agent/trimmer";
-import type { ScenarioTimeline } from "../runtime/contracts";
+import type { ChannelKey, Percept, ScenarioTimeline } from "../runtime/contracts";
 import { buildScenarioTimeline } from "../runtime/scenario-timeline";
-import { type ChannelKey, type Percept } from "../shared/types";
 import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";

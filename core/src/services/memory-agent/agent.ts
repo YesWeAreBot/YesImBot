@@ -4,9 +4,9 @@ import type { Context } from "koishi";
 import type { HorizonService } from "../horizon/service";
 import { TimelineEventType, type SummaryRecord, type TimelineEntry } from "../horizon/types";
 import type { ModelService } from "../model/service";
-import type { ChannelKey } from "../shared/types";
+import { ChannelKey } from "../runtime";
 import { createMemoryTools } from "./tools";
-import { MemoryType, MemoryScope, type MemoryAgentConfig } from "./types";
+import { type MemoryAgentConfig } from "./types";
 
 const MEMORY_AGENT_SYSTEM_PROMPT = `You are a memory management agent. Your job is to analyze conversation history and maintain structured memories about users, events, channels, and your own experiences.
 

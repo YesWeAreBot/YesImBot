@@ -1,8 +1,7 @@
 import { Context, Random, Logger, Query } from "koishi";
 
 import type { LoopMessage } from "../agent/trimmer";
-import type { ScenarioTimeline, ScenarioTimelineEvent } from "../runtime/contracts";
-import { ChannelKey } from "../shared/types";
+import type { ChannelKey, ScenarioTimeline, ScenarioTimelineEvent } from "../runtime/contracts";
 import {
   MessageHandler,
   AgentResponseHandler,

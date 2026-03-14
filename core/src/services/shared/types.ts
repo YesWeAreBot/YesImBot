@@ -1,15 +1,3 @@
-export type {
-  Capabilities,
-  CapabilityState,
-  ChannelKey,
-  Percept,
-  RoundContext,
-  RoundSnapshot,
-  Scenario,
-  SkillState,
-  TriggerType,
-} from "../runtime/contracts";
-
 export interface TraitSignal {
   dimension: string;
   value: string;

@@ -14,7 +14,7 @@ const MEMORY_TABLE = "yesimbot.memory";
   builtin: true,
 })
 export class MemoryRecallPlugin extends YesImPlugin {
-  static inject = ["yesimbot.plugin", "database"];
+  static inject = ["yesimbot.plugin", "database", "yesimbot.hook"];
 
   @Tool({
     name: "recall",

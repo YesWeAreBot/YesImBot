@@ -1,14 +1,10 @@
 import { Context, Service } from "koishi";
 
-import type { HorizonService } from "../horizon/service";
-import { TimelineEventType, TimelineStage } from "../horizon/types";
-import type { ModelService } from "../model/service";
-import type { Scenario } from "../runtime/contracts";
-import type { ChannelKey } from "../shared/types";
+import type { ChannelKey, Scenario } from "../runtime/contracts";
 import { runMemoryExtraction } from "./agent";
 import { MemoryRecallPlugin } from "./recall-plugin";
 import type { MemoryAgentConfig, MemoryRecord } from "./types";
-import { MemoryType, MemoryScope } from "./types";
+import { MemoryScope } from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -29,7 +25,13 @@ const DEFAULT_CONFIG: MemoryAgentConfig = {
 };
 
 export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
-  static inject = ["database", "yesimbot.model", "yesimbot.horizon", "yesimbot.prompt"];
+  static inject = [
+    "database",
+    "yesimbot.model",
+    "yesimbot.horizon",
+    "yesimbot.prompt",
+    "yesimbot.hook",
+  ];
 
   private extractionInProgress = new Map<string, Promise<void>>();
   private agentConfig: MemoryAgentConfig;

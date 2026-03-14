@@ -3,17 +3,12 @@ import type { Bot, Schema, Session } from "koishi";
 import type {
   Capabilities,
   CapabilityState,
-  ChannelKey,
   Percept,
   RoundContext,
   Scenario,
-  TriggerType,
 } from "../runtime/contracts";
 import type { ActiveSkill } from "../shared/types";
 import type { YesImPlugin } from "./plugin";
-
-// ---- Shared Types ----
-export type { Capabilities, ChannelKey, Percept, RoundContext, Scenario, TriggerType };
 
 export interface TraitSignal {
   dimension: string;

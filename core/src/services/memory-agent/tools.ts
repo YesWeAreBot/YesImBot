@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { Random, type Context } from "koishi";
 import { z } from "zod";
 
-import type { ChannelKey } from "../shared/types";
+import { ChannelKey } from "../runtime/contracts";
 import { MemoryScope, MemoryType, type MemoryAgentConfig, type MemoryRecord } from "./types";
 
 const MEMORY_TABLE = "yesimbot.memory";

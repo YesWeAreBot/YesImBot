@@ -5,8 +5,7 @@ import { Context, Schema, Service } from "koishi";
 
 import { HandlebarsRenderer } from "../prompt/renderer";
 import type { PromptService } from "../prompt/service";
-import type { Scenario } from "../runtime/contracts";
-import type { Percept } from "../shared/types";
+import type { Percept, Scenario } from "../runtime/contracts";
 import type { RoleServiceConfig } from "./types";
 import { RoleServiceConfigSchema } from "./types";
 

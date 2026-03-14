@@ -1,8 +1,7 @@
 import type { UserContent } from "ai";
 import type { Session } from "koishi";
 
-import type { Scenario } from "../runtime/contracts";
-import type { ChannelKey, TriggerType } from "../shared/types";
+import type { ChannelKey, Scenario, TriggerType } from "../runtime/contracts";
 
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 

@@ -13,11 +13,11 @@ import {
   commitRoundContext,
   createRoundContext,
 } from "../runtime/adapters";
-import type { CapabilityState, RoundContext, Scenario } from "../runtime/contracts";
+import type { CapabilityState, Percept, RoundContext, Scenario } from "../runtime/contracts";
 import { LoadedSkillSet } from "../skill/loaded-skill-set";
 import type { SkillRegistry } from "../skill/service";
 import type { TraitAnalyzer } from "../trait/service";
-import type { ActiveSkill, Percept, TraitSignal } from "./types";
+import type { ActiveSkill, TraitSignal } from "./types";
 
 export interface AgentRoundContextResult {
   toolCtx: ToolExecutionContext;
