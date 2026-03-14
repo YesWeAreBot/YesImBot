@@ -49,10 +49,6 @@ export interface SkillDefinition {
   stickyTimeout?: number;
   promptFragment?: SkillFragmentMetadata;
   styleFragment?: SkillStyleFragmentMetadata;
-  /** @deprecated use promptFragment.section */
-  injectionPoint?: "soul" | "instructions" | "extra";
-  /** @deprecated use styleFragment.section */
-  styleInjectionPoint?: "soul" | "instructions" | "extra";
   effects: SkillEffects;
   source: "file" | "plugin";
 }
@@ -86,18 +82,6 @@ export interface SkillPromptFragment {
 export interface SkillEffect {
   promptFragments: SkillPromptFragment[];
   styleFragment: (SkillPromptFragment & { specificity: number }) | null;
-  /** @deprecated compatibility alias; use promptFragments */
-  promptInjections: Array<{
-    skillName: string;
-    point: "soul" | "instructions" | "extra";
-    content: string;
-  }>;
-  /** @deprecated compatibility alias; use styleFragment */
-  styleOverride: {
-    content: string;
-    specificity: number;
-    point: "soul" | "instructions" | "extra";
-  } | null;
   toolFilter: { include: string[]; exclude: string[] };
   activeSkills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
 }

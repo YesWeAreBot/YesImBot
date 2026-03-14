@@ -7,7 +7,6 @@ import { DEFAULT_HOOK_TIMEOUTS, HookType } from "./types";
 import type {
   HookDefinition,
   HookPhase,
-  HookContext,
   BeforeHookResult,
   HookServiceConfig,
   HookTimeoutsConfig,
@@ -77,10 +76,10 @@ export class HookService extends Service<HookServiceConfig> {
 
     for (const hook of hooks) {
       const snapshot = cloneHookParams(currentParams);
-      const hookCtx: HookContext<T> = {
+      const hookCtx = {
         type,
         phase: "before" as HookPhase,
-        params: snapshot,
+        params: snapshot as Readonly<T>,
         traceId,
       };
 
@@ -236,10 +235,10 @@ export class HookService extends Service<HookServiceConfig> {
 
     for (const hook of hooks) {
       const snapshot = cloneHookParams(params);
-      const hookCtx: HookContext<T> = {
+      const hookCtx = {
         type,
         phase: "after" as HookPhase,
-        params: snapshot,
+        params: snapshot as Readonly<T>,
         result,
         traceId,
       };
@@ -346,10 +345,10 @@ export class HookService extends Service<HookServiceConfig> {
 
     for (const hook of hooks) {
       const snapshot = cloneHookParams(params);
-      const hookCtx: HookContext<T> = {
+      const hookCtx = {
         type,
         phase: "error" as HookPhase,
-        params: snapshot,
+        params: snapshot as Readonly<T>,
         error,
         traceId,
       };
@@ -450,7 +449,7 @@ export class HookService extends Service<HookServiceConfig> {
 
     for (const entry of staticHooks) {
       const handler = (instance as Record<string, unknown>)[entry.methodKey] as (
-        ctx: HookContext,
+        ctx: Parameters<HookDefinition["handler"]>[0],
       ) => Promise<BeforeHookResult<unknown> | void>;
 
       this.register(ctx, {

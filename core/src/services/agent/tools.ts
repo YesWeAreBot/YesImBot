@@ -114,12 +114,3 @@ export function buildToolPromptFragments(
     },
   ];
 }
-
-/** @deprecated Use buildToolPromptFragments() for canonical prompt path. */
-export function buildToolSchemaForPrompt(
-  pluginService: PluginService,
-  toolCtx: ToolExecutionContext,
-  toolFilter?: ToolFilter,
-): string {
-  return buildToolAvailability(pluginService, toolCtx, toolFilter);
-}

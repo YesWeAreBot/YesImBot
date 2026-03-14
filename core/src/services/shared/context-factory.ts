@@ -116,11 +116,20 @@ export async function buildAgentContext(
 
   let traits: TraitSignal[] = [];
   const skills: ActiveSkill[] = [];
+  const normalizedView = normalizeViewForScenario(view, {
+    platform: params.platform,
+    channelId: params.channelId,
+    bot: params.bot,
+  });
+  const scenario = buildScenarioFromView({
+    view: normalizedView,
+    stimulusSource: buildStimulusSource(params.percept),
+  });
 
-  if (view) {
+  if (normalizedView) {
     try {
       const traitAnalyzer = ctx["yesimbot.trait"] as TraitAnalyzer;
-      traits = await traitAnalyzer.analyze(key, view);
+      traits = await traitAnalyzer.analyze(key, normalizedView);
     } catch (err) {
       missingFields.push("traits");
       logger.warn(
@@ -141,9 +150,9 @@ export async function buildAgentContext(
     session: params.session,
     bot: params.bot,
     percept: params.percept,
-    view,
     traits,
     skills,
+    scenario,
   };
 }
 
@@ -175,7 +184,7 @@ async function resolveAgentToolContext(
 ): Promise<ToolExecutionContext> {
   const inboundToolCtx = params.toolCtx;
   const hasInboundRuntimeFields =
-    inboundToolCtx?.view !== undefined &&
+    inboundToolCtx?.scenario !== undefined &&
     inboundToolCtx?.traits !== undefined &&
     inboundToolCtx?.skills !== undefined;
   const builtToolCtx = hasInboundRuntimeFields ? undefined : await buildAgentContext(ctx, params);
@@ -186,7 +195,6 @@ async function resolveAgentToolContext(
     session: params.session ?? inboundToolCtx?.session ?? builtToolCtx?.session,
     bot: params.bot ?? inboundToolCtx?.bot ?? builtToolCtx?.bot,
     percept: params.percept,
-    view: inboundToolCtx?.view ?? builtToolCtx?.view,
     traits: inboundToolCtx?.traits ?? builtToolCtx?.traits,
     skills: inboundToolCtx?.skills ?? builtToolCtx?.skills,
     roundContext: inboundToolCtx?.roundContext,
@@ -199,11 +207,12 @@ function buildRoundContextBaseline(
   toolCtx: ToolExecutionContext,
   params: AgentRoundContextParams,
 ): RoundContextBaseline {
-  const normalizedView = normalizeViewForScenario(toolCtx.view, params);
-  const scenario = buildScenarioFromView({
-    view: normalizedView,
-    stimulusSource: buildStimulusSource(params.percept),
-  });
+  const scenario =
+    toolCtx.scenario ??
+    buildScenarioFromView({
+      view: createFallbackView(params),
+      stimulusSource: buildStimulusSource(params.percept),
+    });
 
   return {
     percept: params.percept,

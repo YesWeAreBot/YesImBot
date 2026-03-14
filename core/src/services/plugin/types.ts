@@ -1,6 +1,5 @@
 import type { Bot, Schema, Session } from "koishi";
 
-import type { HorizonView } from "../horizon/types";
 import type {
   Capabilities,
   CapabilityState,
@@ -48,19 +47,8 @@ export interface ToolExecutionContext {
   scenario?: Scenario;
   /** Canonical runtime contract (Phase 54+). */
   capabilities?: Capabilities;
-
-  /** @deprecated `HorizonView` is an internal Horizon read model; use `scenario`/`roundContext`. */
-  view?: HorizonView;
   traits?: TraitSignal[];
   skills?: ActiveSkill[];
-}
-
-export type ActivatorFn = (ctx: ToolExecutionContext) => boolean;
-
-export interface Activator {
-  check: ActivatorFn;
-  reason?: string;
-  onFail?: "remove" | "hint";
 }
 
 export interface FunctionDefinition {
@@ -69,7 +57,6 @@ export interface FunctionDefinition {
   type: FunctionType;
   parameters: Schema;
   handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>;
-  activators?: Activator[];
   /** Capability keys required for this tool. All keys must be available. */
   requiredCapabilities?: string[];
   /** Strategy used when required capabilities are unavailable. Defaults to "remove". */

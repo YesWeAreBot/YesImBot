@@ -244,31 +244,9 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     function: { name: string; description: string; parameters: Record<string, unknown> };
   }> {
     const result = [];
-    const logger = this.ctx.logger("yesimbot.plugin");
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
         if (fn.hidden && !includeHidden) continue;
-        if (execCtx && fn.activators?.length) {
-          const failed = fn.activators.find((a) => !a.check(execCtx));
-          if (failed) {
-            if (failed.onFail === "hint") {
-              result.push({
-                type: "function" as const,
-                functionType: fn.type,
-                function: {
-                  name: fn.name,
-                  description: `${fn.description} (unavailable: ${failed.reason ?? "prerequisite not met"})`,
-                  parameters: schemaToJSONSchema(fn.parameters),
-                },
-              });
-            } else {
-              logger.debug(
-                `Tool ${fn.name} deactivated: ${failed.reason ?? "activator check failed"}`,
-              );
-            }
-            continue;
-          }
-        }
         result.push({
           type: "function" as const,
           functionType: fn.type,

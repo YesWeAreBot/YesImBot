@@ -14,16 +14,6 @@ export enum HookPhase {
   Error = "error",
 }
 
-/** @deprecated Use HookExecutionContext — will be removed in Phase 54 */
-export interface HookContext<T = unknown> {
-  type: HookType;
-  phase: HookPhase;
-  params: Readonly<T>;
-  result?: unknown;
-  error?: Error;
-  traceId?: string;
-}
-
 export interface HookExecutionContext extends ToolExecutionContext {
   hookType: HookType;
   hookPhase: HookPhase;
@@ -81,7 +71,14 @@ export type BeforeHookResult<T> =
   | { skip: true; result: unknown }
   | { modified: false };
 
-export type HookHandler<T = unknown> = (ctx: HookContext<T>) => Promise<BeforeHookResult<T> | void>;
+export type HookHandler<T = unknown> = (ctx: {
+  type: HookType;
+  phase: HookPhase;
+  params: Readonly<T>;
+  result?: unknown;
+  error?: Error;
+  traceId?: string;
+}) => Promise<BeforeHookResult<T> | void>;
 
 export interface HookDefinition<T = unknown> {
   id?: string;

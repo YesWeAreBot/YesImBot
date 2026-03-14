@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import matter from "gray-matter";
 
-import { INJECTION_POINTS, type PromptSectionName } from "../prompt/types";
+import type { PromptSectionName } from "../prompt/types";
 import type {
   ConditionNode,
   LifecycleStrategy,
@@ -12,18 +12,7 @@ import type {
   ToolFilter,
 } from "./types";
 
-function mapLegacyPointToSection(point: unknown): PromptSectionName | undefined {
-  if (point === "soul") return "identity";
-  if (point === "instructions") return "policy";
-  if (point === "extra") return "situation";
-  return undefined;
-}
-
-function normalizePromptSection(
-  metaSection: unknown,
-  legacyPoint: unknown,
-  skillName: string,
-): PromptSectionName {
+function normalizePromptSection(metaSection: unknown, skillName: string): PromptSectionName {
   if (typeof metaSection === "string") {
     if ((["identity", "policy", "memory", "situation"] as const).includes(metaSection as never)) {
       return metaSection as PromptSectionName;
@@ -31,46 +20,16 @@ function normalizePromptSection(
     console.warn("Invalid prompt section '%s' in skill %s, using default", metaSection, skillName);
   }
 
-  if (legacyPoint != null) {
-    const mapped = mapLegacyPointToSection(legacyPoint);
-    if (mapped) {
-      console.warn("Skill %s uses deprecated alias injection_point", skillName);
-      return mapped;
-    }
-    console.warn("Invalid injection_point '%s' in skill %s, using default", legacyPoint, skillName);
-  }
-
   return "situation";
 }
 
-function normalizeStyleSection(
-  metaSection: unknown,
-  legacyPoint: unknown,
-  skillName: string,
-): "identity" | "policy" {
+function normalizeStyleSection(metaSection: unknown, skillName: string): "identity" | "policy" {
   if (metaSection === "identity" || metaSection === "policy") {
     return metaSection;
   }
 
   if (typeof metaSection === "string") {
     console.warn("Invalid style section '%s' in skill %s, using default", metaSection, skillName);
-  }
-
-  if (legacyPoint != null) {
-    const mapped = mapLegacyPointToSection(legacyPoint);
-    if (mapped === "policy") {
-      console.warn("Skill %s uses deprecated alias style_injection_point", skillName);
-      return "policy";
-    }
-    if (mapped === "identity") {
-      console.warn("Skill %s uses deprecated alias style_injection_point", skillName);
-      return "identity";
-    }
-    console.warn(
-      "Invalid style_injection_point '%s' in skill %s, using default",
-      legacyPoint,
-      skillName,
-    );
   }
 
   return "identity";
@@ -92,6 +51,21 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
       const rawEffects = meta.effects as Record<string, unknown> | undefined;
       const promptMeta = (meta.prompt_fragment ?? {}) as Record<string, unknown>;
       const styleMeta = (meta.style_fragment ?? {}) as Record<string, unknown>;
+      const skillName = (meta.name as string) ?? entry.name;
+
+      if (meta.injection_point != null) {
+        console.warn(
+          "Skill %s has deprecated injection_point field; use prompt_fragment.section instead",
+          skillName,
+        );
+      }
+      if (meta.style_injection_point != null) {
+        console.warn(
+          "Skill %s has deprecated style_injection_point field; use style_fragment.section instead",
+          skillName,
+        );
+      }
+
       const effects: SkillDefinition["effects"] = {
         prompt: content || undefined,
         style: rawEffects?.style as StyleEffect | undefined,
@@ -99,37 +73,19 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
       };
 
       const def: SkillDefinition = {
-        name: (meta.name as string) ?? entry.name,
+        name: skillName,
         description: meta.description as string | undefined,
         conditions: meta.conditions as ConditionNode | undefined,
         lifecycle: (meta.lifecycle as LifecycleStrategy) ?? "per-turn",
         stickyTimeout: meta.stickyTimeout as number | undefined,
-        injectionPoint:
-          typeof meta.injection_point === "string" &&
-          (INJECTION_POINTS as readonly string[]).includes(meta.injection_point)
-            ? (meta.injection_point as "soul" | "instructions" | "extra")
-            : undefined,
-        styleInjectionPoint:
-          typeof meta.style_injection_point === "string" &&
-          (INJECTION_POINTS as readonly string[]).includes(meta.style_injection_point)
-            ? (meta.style_injection_point as "soul" | "instructions" | "extra")
-            : undefined,
         promptFragment: {
-          section: normalizePromptSection(
-            promptMeta.section,
-            meta.injection_point,
-            (meta.name as string) ?? entry.name,
-          ),
+          section: normalizePromptSection(promptMeta.section, skillName),
           stability: (promptMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
           priority: (promptMeta.priority as number | undefined) ?? 400,
           cacheable: (promptMeta.cacheable as boolean | undefined) ?? false,
         },
         styleFragment: {
-          section: normalizeStyleSection(
-            styleMeta.section,
-            meta.style_injection_point,
-            (meta.name as string) ?? entry.name,
-          ),
+          section: normalizeStyleSection(styleMeta.section, skillName),
           stability: (styleMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
           priority: (styleMeta.priority as number | undefined) ?? 650,
           cacheable: (styleMeta.cacheable as boolean | undefined) ?? false,

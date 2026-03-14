@@ -9,12 +9,12 @@ import { Context, Random } from "koishi";
 import type { HookService } from "../hook/service";
 import { HookType } from "../hook/types";
 import type { HorizonService } from "../horizon/service";
-import { TimelineStage } from "../horizon/types";
+import { TimelineStage, type HorizonView } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
-import type { PromptFragment, Section } from "../prompt/types";
+import type { PromptFragment, RenderedPromptSection } from "../prompt/types";
 import {
   bindCommittedRoundContext,
   buildScenarioFromView,
@@ -59,7 +59,7 @@ interface ToolResultEntry {
 }
 
 interface AgentStartMutableParams {
-  view: ToolExecutionContext["view"];
+  view: HorizonView | undefined;
   /** @deprecated Prefer hook-driven loadSkill() and getLoadedSkills(). */
   traits: NonNullable<ToolExecutionContext["traits"]>;
   /** @deprecated Prefer hook-driven loadSkill() and getLoadedSkills(). */
@@ -134,7 +134,8 @@ export class ThinkActLoop {
     let producedVisibleOutput = false;
     let finalStatus: AgentFinalOutcomeStatus = "silent";
 
-    let view = runtimeToolCtx.view;
+    const runtimeToolCtxWithView = runtimeToolCtx as ToolExecutionContext & { view?: HorizonView };
+    let view = runtimeToolCtxWithView.view;
     if (!view) {
       try {
         view = await horizonService.buildView(
@@ -344,7 +345,6 @@ export class ThinkActLoop {
       ];
       registerPromptFragmentSource(
         promptService,
-        this.ctx,
         disposers,
         `__skill_effects_${percept.id}`,
         () => allFragments,
@@ -358,7 +358,6 @@ export class ThinkActLoop {
     );
     registerPromptFragmentSource(
       promptService,
-      this.ctx,
       disposers,
       `__loop_tool_fragments_${percept.id}`,
       () => toolPromptFragments,
@@ -379,7 +378,7 @@ export class ThinkActLoop {
         typeof promptService.emitPromptBlocks === "function"
           ? await promptService.emitPromptBlocks("system", promptScope, { providerType })
           : await emitPromptBlocksCompat(promptService, promptScope);
-      const sections: Section[] = emitted.sections;
+      const sections: RenderedPromptSection[] = emitted.sections;
       const stableContent = emitted.stableBlock;
       const dynamicContent = emitted.dynamicBlock;
       const stableSignature = emitted.stableSignature;
@@ -991,34 +990,12 @@ function isSameActiveSkillList(next: ActiveSkill[], previous: ActiveSkill[]): bo
 
 function registerPromptFragmentSource(
   promptService: PromptService,
-  ctx: Context,
   disposers: Array<() => void>,
   name: string,
   provider: (scope: Record<string, unknown>) => PromptFragment[] | Promise<PromptFragment[]>,
 ): void {
   if (typeof promptService.registerFragmentSource === "function") {
     disposers.push(promptService.registerFragmentSource(name, provider));
-    return;
-  }
-
-  if (typeof promptService.inject === "function") {
-    disposers.push(
-      promptService.inject(ctx, "extra", {
-        name,
-        renderFn: async (scope) => {
-          const fragments = await provider(scope);
-          if (!Array.isArray(fragments)) return "";
-          return fragments
-            .map((fragment) =>
-              fragment && typeof fragment === "object" && "content" in fragment
-                ? String((fragment as { content: unknown }).content)
-                : "",
-            )
-            .filter(Boolean)
-            .join("\n\n");
-        },
-      }),
-    );
   }
 }
 
@@ -1026,7 +1003,7 @@ async function emitPromptBlocksCompat(
   promptService: PromptService,
   scope: Record<string, unknown>,
 ): Promise<{
-  sections: Section[];
+  sections: RenderedPromptSection[];
   stableBlock: string;
   dynamicBlock: string;
   stableSignature: string;
@@ -1035,7 +1012,7 @@ async function emitPromptBlocksCompat(
     render?: (
       templateName: string,
       initialScope?: Record<string, unknown>,
-    ) => Promise<Array<Section & { cacheable?: boolean }>>;
+    ) => Promise<Array<RenderedPromptSection & { cacheable?: boolean }>>;
   };
 
   if (typeof legacyPromptService.render !== "function") {

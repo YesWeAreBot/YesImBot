@@ -5,20 +5,8 @@ import { resolve } from "node:path";
 import { Context, Schema, Service } from "koishi";
 
 import { HandlebarsRenderer } from "./renderer";
-import type {
-  InjectionEntry,
-  InjectionPoint,
-  PromptFragment,
-  PromptSectionName,
-  Section,
-  Snippet,
-} from "./types";
-import {
-  INJECTION_POINTS,
-  LEGACY_INJECTION_POINT_SECTION_MAPPING,
-  PROMPT_FRAGMENT_SOURCE_PRECEDENCE,
-  PROMPT_SECTION_LAYOUT,
-} from "./types";
+import type { PromptFragment, PromptSectionName, RenderedPromptSection, Snippet } from "./types";
+import { PROMPT_FRAGMENT_SOURCE_PRECEDENCE, PROMPT_SECTION_LAYOUT } from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -43,7 +31,7 @@ export interface PromptEmitOptions {
 }
 
 export interface PromptEmitBlocks {
-  sections: Section[];
+  sections: RenderedPromptSection[];
   stableBlock: string;
   dynamicBlock: string;
   stableSignature: string;
@@ -60,19 +48,13 @@ export class PromptService extends Service<PromptServiceConfig> {
     (scope: Record<string, unknown>) => PromptFragment[] | Promise<PromptFragment[]>
   >();
   private snippets = new Map<string, Snippet>();
-  private injections = new Map<InjectionPoint, InjectionEntry[]>();
   private partials = new Map<string, string>();
   private renderer = new HandlebarsRenderer();
-  private warnedLegacyInject = false;
 
   constructor(ctx: Context, config: PromptServiceConfig) {
     super(ctx, "yesimbot.prompt", true);
     this.config = config;
     this.logger = this.ctx.logger("yesimbot.prompt");
-
-    for (const point of INJECTION_POINTS) {
-      this.injections.set(point, []);
-    }
   }
 
   registerSnippet(name: string, fn: Snippet): void {
@@ -101,44 +83,16 @@ export class PromptService extends Service<PromptServiceConfig> {
     return dispose;
   }
 
-  inject(ctx: Context, point: InjectionPoint, entry: InjectionEntry): () => void {
-    if (!this.warnedLegacyInject) {
-      this.warnedLegacyInject = true;
-      this.logger.warn("prompt.inject() is deprecated; register fragment sources instead");
-    }
-
-    const list = this.injections.get(point);
-    if (!list) {
-      throw new Error(`Unrecognized injection point: "${point}"`);
-    }
-    if (list.some((e) => e.name === entry.name)) {
-      this.logger.warn(`Duplicate injection "${entry.name}" in point "${point}", ignoring`);
-      return () => {};
-    }
-    list.push(entry);
-    const dispose = () => {
-      const idx = list.indexOf(entry);
-      if (idx >= 0) list.splice(idx, 1);
-    };
-    ctx.on("dispose", dispose);
-    return dispose;
-  }
-
-  removeInjection(name: string): void {
-    for (const list of this.injections.values()) {
-      const idx = list.findIndex((e) => e.name === name);
-      if (idx >= 0) list.splice(idx, 1);
-    }
-  }
-
-  async render(_templateName: string, initialScope?: Record<string, unknown>): Promise<Section[]> {
+  async render(
+    _templateName: string,
+    initialScope?: Record<string, unknown>,
+  ): Promise<RenderedPromptSection[]> {
     const scope = await this.buildScope(initialScope ?? {});
     return this.renderCanonicalLayout(scope);
   }
 
-  async renderCanonicalLayout(scope: Record<string, unknown>): Promise<Section[]> {
-    const timeout = this.config.renderTimeout ?? 5000;
-    const collected = await this.collectFragments(scope, timeout);
+  async renderCanonicalLayout(scope: Record<string, unknown>): Promise<RenderedPromptSection[]> {
+    const collected = await this.collectFragments(scope);
     const validated = collected.map((fragment) => this.validateFragment(fragment));
     const canonicalSections = this.buildCanonicalSections(validated);
     return canonicalSections.map((section) => ({
@@ -154,12 +108,11 @@ export class PromptService extends Service<PromptServiceConfig> {
     _options?: PromptEmitOptions,
   ): Promise<PromptEmitBlocks> {
     const scope = await this.buildScope(initialScope ?? {});
-    const timeout = this.config.renderTimeout ?? 5000;
-    const collected = await this.collectFragments(scope, timeout);
+    const collected = await this.collectFragments(scope);
     const validated = collected.map((fragment) => this.validateFragment(fragment));
     const canonicalSections = this.buildCanonicalSections(validated);
 
-    const sections: Section[] = canonicalSections.map((section) => ({
+    const sections: RenderedPromptSection[] = canonicalSections.map((section) => ({
       name: section.name,
       content: section.content,
       cacheable: section.cacheable,
@@ -187,10 +140,7 @@ export class PromptService extends Service<PromptServiceConfig> {
     return sections.map((s) => s.content).join("\n\n");
   }
 
-  private async collectFragments(
-    scope: Record<string, unknown>,
-    timeout: number,
-  ): Promise<PromptFragment[]> {
+  private async collectFragments(scope: Record<string, unknown>): Promise<PromptFragment[]> {
     const fragments: PromptFragment[] = [];
 
     for (const [sourceName, provider] of this.fragmentSources) {
@@ -201,37 +151,7 @@ export class PromptService extends Service<PromptServiceConfig> {
       fragments.push(...provided);
     }
 
-    for (const point of INJECTION_POINTS) {
-      const entries = this.injections.get(point) ?? [];
-      for (const entry of entries) {
-        const content = await this.renderWithTimeout(entry, scope, timeout);
-        if (!content) {
-          continue;
-        }
-        const section = this.resolveLegacySection(point, entry.legacySectionHint);
-        fragments.push({
-          id: entry.name,
-          content,
-          section,
-          source: "legacy",
-          priority: 0,
-          stability: section === "situation" ? "dynamic" : "stable",
-          cacheable: section !== "situation",
-        });
-      }
-    }
-
     return fragments;
-  }
-
-  private resolveLegacySection(
-    point: InjectionPoint,
-    legacySectionHint?: InjectionEntry["legacySectionHint"],
-  ): PromptSectionName {
-    if (point === "extra") {
-      return legacySectionHint ?? LEGACY_INJECTION_POINT_SECTION_MAPPING.extra;
-    }
-    return LEGACY_INJECTION_POINT_SECTION_MAPPING[point];
   }
 
   private compareFragments(a: PromptFragment, b: PromptFragment): number {
@@ -323,19 +243,6 @@ export class PromptService extends Service<PromptServiceConfig> {
       cacheable:
         fragment.cacheable === undefined ? fragment.stability === "stable" : fragment.cacheable,
     };
-  }
-
-  private async renderWithTimeout(
-    entry: InjectionEntry,
-    scope: Record<string, unknown>,
-    timeout: number,
-  ): Promise<string> {
-    return Promise.race([
-      Promise.resolve(entry.renderFn(scope)).then((r) => r ?? ""),
-      new Promise<string>((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout),
-      ),
-    ]);
   }
 
   private async buildScope(
