@@ -3,7 +3,6 @@ import { Context, h, Schema } from "koishi";
 import type { FormatterService } from "../../../formatter/service";
 import type { HorizonService } from "../../../horizon/service";
 import type { CapabilityState } from "../../../runtime/contracts";
-import { requirePlatform, requireSession } from "../../activators";
 import { Action, Metadata, Tool, withInnerThoughts } from "../../decorators";
 import { YesImPlugin } from "../../plugin";
 import { ToolExecutionContext, ToolResult } from "../../types";
@@ -97,13 +96,15 @@ export class OnebotPlugin extends YesImPlugin {
   }
 
   private getEntityRole(ctx: ToolExecutionContext, userId: string): "owner" | "admin" | null {
-    const entities = ctx.view?.entities;
+    const entities = ctx.scenario?.raw.entities;
     if (!entities) return null;
-    const entity = entities.find((e) => e.userId === userId);
+    const entity = entities.find((entity) => entity.userId === userId);
     if (!entity?.attributes?.roles) return null;
-    const roles = entity.attributes.roles as string[];
-    if (roles.some((r) => /^owner$/i.test(r))) return "owner";
-    if (roles.some((r) => /^(admin|administrator|moderator)$/i.test(r))) return "admin";
+    const roles = Array.isArray(entity.attributes.roles)
+      ? entity.attributes.roles.filter((role): role is string => typeof role === "string")
+      : [];
+    if (roles.some((role) => /^owner$/i.test(role))) return "owner";
+    if (roles.some((role) => /^(admin|administrator|moderator)$/i.test(role))) return "admin";
     return null;
   }
 
@@ -116,7 +117,6 @@ export class OnebotPlugin extends YesImPlugin {
       message_id: Schema.string().required().description("Short message ID from <msg id=...> tag"),
       face_id: Schema.number().required().description("QQ face ID number"),
     }),
-    activators: [requireSession(), requirePlatform("onebot")],
     requiredCapabilities: ["social.reaction"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -158,7 +158,6 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       message_id: Schema.string().required().description("Short message ID from <msg id=...> tag"),
     }),
-    activators: [requireSession(), requirePlatform("onebot")],
     requiredCapabilities: ["social.essence"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -193,7 +192,6 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       message_id: Schema.string().required().description("Short message ID from <msg id=...> tag"),
     }),
-    activators: [requireSession(), requirePlatform("onebot")],
     requiredCapabilities: ["social.essence"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -229,7 +227,6 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       target_user_id: Schema.string().required().description("Platform user ID of the target user"),
     }),
-    activators: [requireSession(), requirePlatform("onebot")],
     requiredCapabilities: ["platform.session"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -273,7 +270,6 @@ export class OnebotPlugin extends YesImPlugin {
         .required()
         .description("Forward message ID from <forward id=...> tag"),
     }),
-    activators: [requireSession(), requirePlatform("onebot")],
     requiredCapabilities: ["platform.session"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -315,7 +311,6 @@ export class OnebotPlugin extends YesImPlugin {
         .required()
         .description("要撤回的消息短 ID 列表（来自 <msg id=...> 标签）"),
     }),
-    activators: [requireSession()],
     requiredCapabilities: ["message.delete"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -366,7 +361,6 @@ export class OnebotPlugin extends YesImPlugin {
       user_id: Schema.string().required().description("目标用户的平台 ID"),
       duration: Schema.number().required().description("禁言时长（秒），0 = 解除禁言"),
     }),
-    activators: [requireSession()],
     requiredCapabilities: ["member.moderate"],
     onCapabilityMissing: "remove",
     hidden: true,
@@ -411,7 +405,6 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       user_id: Schema.string().required().description("目标用户的平台 ID"),
     }),
-    activators: [requireSession()],
     requiredCapabilities: ["member.moderate"],
     onCapabilityMissing: "remove",
     hidden: true,

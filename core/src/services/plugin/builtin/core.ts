@@ -2,7 +2,6 @@ import { Element, h, Schema, sleep } from "koishi";
 
 import type { HookService } from "../../hook/service";
 import { HookType } from "../../hook/types";
-import { requireSession } from "../activators";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
 import { YesImPlugin } from "../plugin";
 import { ToolExecutionContext, ToolResult } from "../types";
@@ -70,8 +69,7 @@ export class CorePlugin extends YesImPlugin {
           "The reply is sent to the current channel automatically. Cannot use with target.",
       ),
     }),
-    activators: [requireSession()],
-    requiredCapabilities: ["message.send"],
+    requiredCapabilities: ["platform.session"],
     onCapabilityMissing: "remove",
   })
   async sendMessage(
