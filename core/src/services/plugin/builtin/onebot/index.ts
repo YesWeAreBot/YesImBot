@@ -2,7 +2,8 @@ import { Context, h, Schema } from "koishi";
 
 import type { FormatterService } from "../../../formatter/service";
 import type { HorizonService } from "../../../horizon/service";
-import { requireSession, requirePlatform, requireBotRole } from "../../activators";
+import type { CapabilityState } from "../../../runtime/contracts";
+import { requirePlatform, requireSession } from "../../activators";
 import { Action, Metadata, Tool, withInnerThoughts } from "../../decorators";
 import { YesImPlugin } from "../../plugin";
 import { ToolExecutionContext, ToolResult } from "../../types";
@@ -23,6 +24,69 @@ export class OnebotPlugin extends YesImPlugin {
 
   private pokeCooldowns = new Map<string, number>();
   private readonly POKE_COOLDOWN_MS = 60_000;
+
+  constructor(ctx: Context) {
+    super(ctx);
+    this.registerCapabilityResolver();
+  }
+
+  private registerCapabilityResolver(): void {
+    this.ctx["yesimbot.plugin"].registerCapabilityResolver({
+      platform: "onebot",
+      resolver: (params) => {
+        const capabilities: Record<string, CapabilityState> = {};
+        const isGroup = !!params.session?.guildId;
+        capabilities["social.reaction"] = isGroup
+          ? { status: "available", source: "onebot" }
+          : {
+              status: "unavailable",
+              reason: "reactions-group-only",
+              source: "onebot",
+            };
+
+        const entities = params.scenario?.raw.entities ?? [];
+        const botSelfId = params.bot?.selfId;
+        const botEntity = entities.find((entity) => {
+          const id = typeof entity.id === "string" ? entity.id : undefined;
+          const userId = typeof entity.userId === "string" ? entity.userId : undefined;
+          return !!botSelfId && (id === botSelfId || userId === botSelfId);
+        });
+        const rawRoles = botEntity?.attributes?.["roles"];
+        const roles = Array.isArray(rawRoles)
+          ? rawRoles.filter((role): role is string => typeof role === "string")
+          : [];
+        const hasModerationRole = roles.some((role) =>
+          /^(admin|administrator|owner|moderator)$/i.test(role),
+        );
+
+        capabilities["member.moderate"] = hasModerationRole
+          ? { status: "available", source: "onebot" }
+          : {
+              status: "unavailable",
+              reason: "bot-not-admin",
+              source: "onebot",
+            };
+
+        capabilities["social.essence"] = hasModerationRole
+          ? { status: "available", source: "onebot" }
+          : {
+              status: "unavailable",
+              reason: "essence-admin-required",
+              source: "onebot",
+            };
+
+        capabilities["message.delete"] = hasModerationRole
+          ? { status: "available", source: "onebot" }
+          : {
+              status: "unavailable",
+              reason: "delete-admin-required",
+              source: "onebot",
+            };
+
+        return capabilities;
+      },
+    });
+  }
 
   private resolveNativeMsgId(ctx: ToolExecutionContext, shortIdStr: string): string | null {
     const shortId = Number(shortIdStr);
@@ -53,6 +117,8 @@ export class OnebotPlugin extends YesImPlugin {
       face_id: Schema.number().required().description("QQ face ID number"),
     }),
     activators: [requireSession(), requirePlatform("onebot")],
+    requiredCapabilities: ["social.reaction"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async reactionCreate(
@@ -92,7 +158,9 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       message_id: Schema.string().required().description("Short message ID from <msg id=...> tag"),
     }),
-    activators: [requireSession(), requirePlatform("onebot"), requireBotRole("admin")],
+    activators: [requireSession(), requirePlatform("onebot")],
+    requiredCapabilities: ["social.essence"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async essenceCreate(
@@ -125,7 +193,9 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       message_id: Schema.string().required().description("Short message ID from <msg id=...> tag"),
     }),
-    activators: [requireSession(), requirePlatform("onebot"), requireBotRole("admin")],
+    activators: [requireSession(), requirePlatform("onebot")],
+    requiredCapabilities: ["social.essence"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async essenceDelete(
@@ -160,6 +230,8 @@ export class OnebotPlugin extends YesImPlugin {
       target_user_id: Schema.string().required().description("Platform user ID of the target user"),
     }),
     activators: [requireSession(), requirePlatform("onebot")],
+    requiredCapabilities: ["platform.session"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async sendPoke(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
@@ -202,6 +274,8 @@ export class OnebotPlugin extends YesImPlugin {
         .description("Forward message ID from <forward id=...> tag"),
     }),
     activators: [requireSession(), requirePlatform("onebot")],
+    requiredCapabilities: ["platform.session"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async getForwardMessage(
@@ -241,7 +315,9 @@ export class OnebotPlugin extends YesImPlugin {
         .required()
         .description("要撤回的消息短 ID 列表（来自 <msg id=...> 标签）"),
     }),
-    activators: [requireSession(), requireBotRole("admin")],
+    activators: [requireSession()],
+    requiredCapabilities: ["message.delete"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async delmsg(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
@@ -290,7 +366,9 @@ export class OnebotPlugin extends YesImPlugin {
       user_id: Schema.string().required().description("目标用户的平台 ID"),
       duration: Schema.number().required().description("禁言时长（秒），0 = 解除禁言"),
     }),
-    activators: [requireSession(), requireBotRole("admin")],
+    activators: [requireSession()],
+    requiredCapabilities: ["member.moderate"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async ban(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {
@@ -333,7 +411,9 @@ export class OnebotPlugin extends YesImPlugin {
     parameters: withInnerThoughts({
       user_id: Schema.string().required().description("目标用户的平台 ID"),
     }),
-    activators: [requireSession(), requireBotRole("admin")],
+    activators: [requireSession()],
+    requiredCapabilities: ["member.moderate"],
+    onCapabilityMissing: "remove",
     hidden: true,
   })
   async kick(params: Record<string, unknown>, ctx: ToolExecutionContext): Promise<ToolResult> {

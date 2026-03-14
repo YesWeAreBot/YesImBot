@@ -36,6 +36,8 @@ export abstract class YesImPlugin {
         parameters: entry.parameters,
         handler: handler.bind(this),
         activators: entry.activators,
+        requiredCapabilities: entry.requiredCapabilities,
+        onCapabilityMissing: entry.onCapabilityMissing,
         hidden: entry.hidden,
       });
     }
@@ -51,6 +53,8 @@ export abstract class YesImPlugin {
         parameters: entry.parameters,
         handler: handler.bind(this),
         activators: entry.activators,
+        requiredCapabilities: entry.requiredCapabilities,
+        onCapabilityMissing: entry.onCapabilityMissing,
         hidden: entry.hidden,
       });
     }

@@ -71,6 +71,8 @@ export class CorePlugin extends YesImPlugin {
       ),
     }),
     activators: [requireSession()],
+    requiredCapabilities: ["message.send"],
+    onCapabilityMissing: "remove",
   })
   async sendMessage(
     params: Record<string, unknown>,

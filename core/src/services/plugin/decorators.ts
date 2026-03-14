@@ -14,6 +14,8 @@ interface DecoratorOpts {
   description: string;
   parameters: Schema;
   activators?: Activator[];
+  requiredCapabilities?: string[];
+  onCapabilityMissing?: "remove" | "hint";
   hidden?: boolean;
 }
 
