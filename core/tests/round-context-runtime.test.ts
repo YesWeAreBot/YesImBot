@@ -192,9 +192,9 @@ describe("round context runtime", () => {
       "yesimbot.skill": {
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
-          promptInjections: [],
-          toolFilter: undefined,
-          styleOverride: undefined,
+          promptFragments: [],
+          toolFilter: { include: [], exclude: [] },
+          styleFragment: null,
         }),
       },
       "yesimbot.arousal": undefined,
@@ -327,15 +327,15 @@ describe("round context runtime", () => {
       .fn()
       .mockReturnValueOnce({
         activeSkills: [{ name: "resolve-once" }],
-        promptInjections: [],
-        toolFilter: undefined,
-        styleOverride: undefined,
+        promptFragments: [],
+        toolFilter: { include: [], exclude: [] },
+        styleFragment: null,
       })
       .mockReturnValueOnce({
         activeSkills: [{ name: "resolve-twice" }],
-        promptInjections: [],
-        toolFilter: undefined,
-        styleOverride: undefined,
+        promptFragments: [],
+        toolFilter: { include: [], exclude: [] },
+        styleFragment: null,
       });
     const ctx = {
       baseDir: "/tmp",
@@ -536,9 +536,9 @@ describe("round context runtime", () => {
       "yesimbot.skill": {
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
-          promptInjections: [],
-          toolFilter: undefined,
-          styleOverride: undefined,
+          promptFragments: [],
+          toolFilter: { include: [], exclude: [] },
+          styleFragment: null,
         }),
       },
       "yesimbot.hook": undefined,

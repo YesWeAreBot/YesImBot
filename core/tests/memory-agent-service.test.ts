@@ -203,10 +203,12 @@ describe("MemoryAgentService", () => {
     expect(provider).toBeTypeOf("function");
 
     const fragments = (await provider?.({
-      view: {
-        environment: {
-          platform: "discord",
-          channelId: "test-channel",
+      scenario: {
+        raw: {
+          environment: {
+            platform: "discord",
+            channelId: "test-channel",
+          },
         },
       },
     })) as Array<{ id: string; section: string; stability: string; content: string }>;

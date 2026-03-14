@@ -8,11 +8,7 @@ import type {
   HookExecutionContext,
 } from "../src/services/hook/types";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
-import {
-  LEGACY_INJECTION_POINT_SECTION_MAPPING,
-  PROMPT_FRAGMENT_SOURCE_PRECEDENCE,
-  PROMPT_SECTION_LAYOUT,
-} from "../src/services/prompt";
+import { PROMPT_FRAGMENT_SOURCE_PRECEDENCE, PROMPT_SECTION_LAYOUT } from "../src/services/prompt";
 import type {
   FragmentSource,
   PromptFragment,
@@ -46,7 +42,7 @@ describe("runtime public contracts", () => {
     expect(fragment.source).toBe("memory");
   });
 
-  it("source precedence and legacy injection compat surface stay explicit", () => {
+  it("source precedence stays explicit", () => {
     expect(PROMPT_FRAGMENT_SOURCE_PRECEDENCE).toEqual([
       "role",
       "memory",
@@ -55,14 +51,7 @@ describe("runtime public contracts", () => {
       "skill",
       "hook",
       "tooling",
-      "legacy",
     ]);
-
-    expect(LEGACY_INJECTION_POINT_SECTION_MAPPING).toMatchObject({
-      soul: "identity",
-      instructions: "policy",
-      extra: "situation",
-    });
   });
 
   it("tool and hook context contracts", () => {
@@ -184,7 +173,7 @@ describe("runtime public contracts", () => {
     expect("incidents" in endCtx.endSummary.finalOutcome).toBe(false);
   });
 
-  it("prompt scope exposes roundContext/scenario/capabilities and keeps view as legacy compat", async () => {
+  it("prompt scope exposes roundContext/scenario/capabilities", async () => {
     const emitPromptBlocksSpy = vi.fn().mockResolvedValue({
       sections: [
         { name: "identity", content: "<identity>identity</identity>", cacheable: true },
@@ -250,9 +239,9 @@ describe("runtime public contracts", () => {
       "yesimbot.skill": {
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
-          promptInjections: [],
-          toolFilter: undefined,
-          styleOverride: undefined,
+          promptFragments: [],
+          toolFilter: { include: [], exclude: [] },
+          styleFragment: null,
         }),
       },
       "yesimbot.arousal": undefined,
@@ -301,18 +290,6 @@ describe("runtime public contracts", () => {
       {
         platform: "discord",
         channelId: "c1",
-        view: {
-          self: { id: "bot", name: "Athena" },
-          environment: {
-            type: "group",
-            id: "c1",
-            name: "General",
-            platform: "discord",
-            channelId: "c1",
-          },
-          entities: [],
-          history: [],
-        },
         traits: [],
         skills: [],
       },
@@ -334,7 +311,6 @@ describe("runtime public contracts", () => {
         roundContext: expect.any(Object),
         scenario: expect.any(Object),
         capabilities: expect.any(Object),
-        view: expect.any(Object),
       }),
       expect.objectContaining({ providerType: "openai" }),
     );
@@ -343,6 +319,5 @@ describe("runtime public contracts", () => {
     expect(scope.roundContext).toBeTruthy();
     expect(scope.scenario).toBeTruthy();
     expect(scope.capabilities).toBeTruthy();
-    expect(scope.view).toBeTruthy(); // legacy compat
   });
 });

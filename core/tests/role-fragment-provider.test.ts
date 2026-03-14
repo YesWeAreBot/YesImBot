@@ -87,7 +87,14 @@ describe("RoleService fragment provider migration", () => {
     const provider = fragmentSources.get("role");
     expect(provider).toBeTypeOf("function");
 
-    const fragments = (await provider?.({ view: { self: { name: "Athena" } } })) as Array<{
+    const fragments = (await provider?.({
+      scenario: {
+        raw: {
+          self: { name: "Athena" },
+          environment: { name: "General", platform: "discord" },
+        },
+      },
+    })) as Array<{
       id: string;
       section: string;
       priority: number;
@@ -111,6 +118,8 @@ describe("RoleService fragment provider migration", () => {
     expect(
       await snippets.get("sender.name")?.({ percept: { metadata: { senderName: "Alice" } } }),
     ).toBe("Alice");
-    expect(await snippets.get("bot.name")?.({ view: { self: { name: "Athena" } } })).toBe("Athena");
+    expect(
+      await snippets.get("bot.name")?.({ scenario: { raw: { self: { name: "Athena" } } } }),
+    ).toBe("Athena");
   });
 });

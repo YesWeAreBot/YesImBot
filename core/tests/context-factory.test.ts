@@ -33,9 +33,8 @@ describe("context factory", () => {
       expect(ctx.bot).toBe(bot);
     });
 
-    it("does not include view/traits/skills/percept", () => {
+    it("does not include traits/skills/percept", () => {
       const ctx = buildMinimalContext({ platform: "onebot", channelId: "100" });
-      expect(ctx.view).toBeUndefined();
       expect(ctx.traits).toBeUndefined();
       expect(ctx.skills).toBeUndefined();
       expect(ctx.percept).toBeUndefined();
@@ -90,8 +89,9 @@ describe("context factory", () => {
             overrides.resolve ??
             vi.fn().mockReturnValue({
               activeSkills: [],
-              promptInjections: [],
-              toolFilter: undefined,
+              promptFragments: [],
+              styleFragment: null,
+              toolFilter: { include: [], exclude: [] },
             }),
         },
       } as unknown as Context;
@@ -107,7 +107,7 @@ describe("context factory", () => {
         percept,
       });
 
-      expect(result.view).toEqual(view);
+      expect(result.scenario?.raw.environment).toEqual(view.environment);
       expect(result.traits).toEqual(traits);
       expect(result.skills).toEqual([]);
       expect(result.percept).toEqual(percept);
@@ -124,8 +124,8 @@ describe("context factory", () => {
         percept,
       });
 
-      expect(result.view).toBeUndefined();
-      expect(result.traits).toEqual([]);
+      expect(result.scenario).toBeTruthy();
+      expect(result.traits).toEqual(traits);
       expect(result.skills).toEqual([]);
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(traceId));
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("view"));
@@ -211,8 +211,9 @@ describe("context factory", () => {
       const skill = {
         resolve: vi.fn().mockReturnValue({
           activeSkills: [{ name: "search", effects: ["web_access"] }],
-          promptInjections: [],
-          toolFilter: undefined,
+          promptFragments: [],
+          styleFragment: null,
+          toolFilter: { include: [], exclude: [] },
         }),
       };
 
@@ -290,7 +291,6 @@ describe("context factory", () => {
           platform: "discord",
           channelId: "c1",
           percept,
-          view,
           traits: [{ dimension: "scene", value: "chat", confidence: 1 }],
           skills: [{ name: "search", effects: ["web_access"] }],
           roundContext: inboundRoundContext,
@@ -304,8 +304,8 @@ describe("context factory", () => {
         channelKey: "discord:c1",
         traceId: percept.traceId,
       });
-      expect(horizon.buildView).not.toHaveBeenCalled();
-      expect(trait.analyze).not.toHaveBeenCalled();
+      expect(horizon.buildView).toHaveBeenCalledTimes(1);
+      expect(trait.analyze).toHaveBeenCalledTimes(1);
       expect(skill.resolve).not.toHaveBeenCalled();
     });
 
@@ -345,7 +345,6 @@ describe("context factory", () => {
           platform: "discord",
           channelId: "c1",
           percept,
-          view,
           traits: [],
           skills: [{ name: "search", effects: ["web_access"] }],
           roundContext: inboundRoundContext,

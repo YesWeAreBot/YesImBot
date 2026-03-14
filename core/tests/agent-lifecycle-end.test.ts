@@ -131,13 +131,19 @@ function createHarness(options?: {
   const skillService = {
     resolve: vi.fn(() => ({
       activeSkills: [{ name: "answering", effects: ["concise"] }],
-      promptInjections: [],
-      styleOverride: undefined,
-      toolFilter: undefined,
+      promptFragments: [],
+      styleFragment: null,
+      toolFilter: { include: [], exclude: [] },
     })),
   };
 
   const promptService = {
+    emitPromptBlocks: vi.fn(async () => ({
+      sections: [],
+      stableBlock: "",
+      dynamicBlock: "",
+      stableSignature: "sig",
+    })),
     inject: vi.fn(() => () => undefined),
     render: vi.fn(async () => [
       { name: "soul", content: "soul" },

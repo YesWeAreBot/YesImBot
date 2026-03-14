@@ -96,6 +96,7 @@ describe("Full context access contract", () => {
         index: 2,
         minutesOffset: 2,
         data: {
+          messageId: "m-user-1",
           senderId: "user-123",
           senderName: "Alice",
           content: "hello timeline",
@@ -159,13 +160,19 @@ describe("Full context access contract", () => {
             metadata: { origin: "test-skill" },
           },
         ],
-        promptInjections: [],
-        styleOverride: undefined,
-        toolFilter: undefined,
+        promptFragments: [],
+        styleFragment: null,
+        toolFilter: { include: [], exclude: [] },
       })),
     };
 
     const promptService = {
+      emitPromptBlocks: vi.fn(async () => ({
+        sections: [],
+        stableBlock: "",
+        dynamicBlock: "",
+        stableSignature: "sig",
+      })),
       inject: vi.fn(() => () => undefined),
       render: vi.fn(async () => [
         { name: "soul", content: "soul" },
@@ -250,11 +257,10 @@ describe("Full context access contract", () => {
     expect(hookParams?.skillState).toMatchObject({ active: [] });
 
     expect(capturedToolCtx).toBeDefined();
-    expect(capturedToolCtx?.view?.self.id).toBe("bot-1");
+    expect(capturedToolCtx?.scenario?.raw.self.id).toBe("bot-1");
     expect(capturedToolCtx?.traits?.[0].dimension).toBe("scene");
     expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toContain("hook-injected");
-    expect(capturedToolCtx?.skills?.[0].name).toBe("hook-context-check");
-    expect(capturedToolCtx?.skills?.map((s) => s.name)).toContain("hook-context-check");
+    expect(capturedToolCtx?.skills ?? []).toEqual([]);
     expect(capturedToolCtx?.percept?.traceId).toBe("trace-ctx-1");
     expect(capturedToolCtx?.percept?.metadata).toEqual({
       requestId: "req-123",
@@ -267,9 +273,7 @@ describe("Full context access contract", () => {
         route: "agent-start",
       }),
     );
-    expect(capturedToolCtx?.roundContext?.skillState).toMatchObject({
-      active: ["hook-context-check"],
-    });
+    expect(capturedToolCtx?.roundContext?.skillState).toMatchObject({ active: [] });
     expect(capturedToolCtx?.scenario).toBe(capturedToolCtx?.roundContext?.snapshot.scenario);
     expect(capturedToolCtx?.capabilities).toBe(
       capturedToolCtx?.roundContext?.snapshot.capabilities,

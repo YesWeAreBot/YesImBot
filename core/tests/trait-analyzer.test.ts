@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ThinkActLoop } from "../src/services/agent/loop";
-import type { HorizonView } from "../src/services/horizon/types";
-import type { Percept, RoundContext } from "../src/services/runtime/contracts";
+import {
+  DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+  type Percept,
+  type RoundContext,
+  type Scenario,
+} from "../src/services/runtime/contracts";
 import { TraitAnalyzer } from "../src/services/trait/service";
 
 function createPercept(): Percept {
@@ -54,14 +58,12 @@ describe("trait analyzer optional posture", () => {
       },
       "yesimbot.plugin": { getTools: vi.fn(() => []), getDefinition: vi.fn(), invoke: vi.fn() },
       "yesimbot.prompt": {
-        emitPromptBlocks: vi
-          .fn()
-          .mockResolvedValue({
-            sections: [],
-            stableBlock: "",
-            dynamicBlock: "",
-            stableSignature: "sig",
-          }),
+        emitPromptBlocks: vi.fn().mockResolvedValue({
+          sections: [],
+          stableBlock: "",
+          dynamicBlock: "",
+          stableSignature: "sig",
+        }),
         registerFragmentSource: vi.fn(() => () => undefined),
       },
       "yesimbot.model": {
@@ -92,23 +94,40 @@ describe("trait analyzer optional posture", () => {
       logger,
     };
 
-    const view: HorizonView = {
-      self: { id: "bot", name: "Athena" },
-      environment: {
-        type: "group",
-        id: "c1",
-        name: "General",
-        platform: "discord",
-        channelId: "c1",
+    const scenario: Scenario = {
+      raw: {
+        self: { id: "bot", name: "Athena" },
+        environment: {
+          type: "group",
+          id: "c1",
+          name: "General",
+          platform: "discord",
+          channelId: "c1",
+        },
+        entities: [],
+        timeline: {
+          turns: [],
+          activeSegment: { mode: "after-latest-summary" },
+          markedEvents: [],
+          heartbeatEvents: [],
+          semantics: DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+        },
+        scenarioTimeline: {
+          turns: [],
+          activeSegment: { mode: "after-latest-summary" },
+          markedEvents: [],
+          heartbeatEvents: [],
+          semantics: DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+        },
+        stimulusSource: { type: "message" },
       },
-      entities: [],
-      history: [],
+      derived: { focus: {}, participants: [], attention: {}, recentMetrics: {} },
     };
 
     const result = await TraitAnalyzer.prototype.analyze.call(
       analyzerLike,
       { platform: "discord", channelId: "c1" },
-      view,
+      scenario,
     );
     expect(result).toEqual([
       expect.objectContaining({ dimension: "scene", value: "group-chat", confidence: 1 }),
@@ -141,7 +160,7 @@ describe("trait analyzer optional posture", () => {
         | {
             analyze: (
               key: { platform: string; channelId: string },
-              view: unknown,
+              scenario: unknown,
             ) => Promise<Array<{ dimension: string; value: string }>>;
           }
         | undefined;

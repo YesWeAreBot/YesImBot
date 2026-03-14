@@ -67,13 +67,19 @@ function createRuntimeHarness(actionPayload: string) {
   const skillService = {
     resolve: vi.fn(() => ({
       activeSkills: [{ name: "answering", effects: ["concise"] }],
-      promptInjections: [],
-      styleOverride: undefined,
-      toolFilter: undefined,
+      promptFragments: [],
+      styleFragment: null,
+      toolFilter: { include: [], exclude: [] },
     })),
   };
 
   const promptService = {
+    emitPromptBlocks: vi.fn(async () => ({
+      sections: [],
+      stableBlock: "",
+      dynamicBlock: "",
+      stableSignature: "sig",
+    })),
     inject: vi.fn(() => () => undefined),
     render: vi.fn(async () => [
       { name: "soul", content: "soul" },
@@ -170,7 +176,7 @@ function createRuntimeHarness(actionPayload: string) {
       }
     },
     horizonEvents,
-    promptRender: promptService.render,
+    promptRender: promptService.emitPromptBlocks,
   };
 }
 
@@ -246,11 +252,11 @@ describe("Hook runtime interception", () => {
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
     const invokeCtx = harness.pluginInvoke.mock.calls[0]?.[2] as ToolExecutionContext;
     expect(invokeCtx.traits?.map((t) => t.dimension)).toContain("hook-injected");
-    expect(invokeCtx.skills?.map((s) => s.name)).toContain("hooked-skill");
+    expect(invokeCtx.skills ?? []).toEqual([]);
     expect(invokeCtx.scenario?.derived.attention).toEqual({ lane: "hooked" });
     expect(invokeCtx.capabilities?.extended.directMessage).toEqual({ status: "available" });
     expect(invokeCtx.roundContext?.snapshot.metadata).toMatchObject({ hookRevision: "start-1" });
-    expect(invokeCtx.roundContext?.skillState).toMatchObject({ active: ["hooked-skill"] });
+    expect(invokeCtx.roundContext?.skillState).toMatchObject({ active: [] });
     expect(invokeCtx.roundContext?.snapshot.scenario).toBe(invokeCtx.scenario);
     expect(harness.promptRender).toHaveBeenCalledWith(
       "system",
@@ -262,6 +268,7 @@ describe("Hook runtime interception", () => {
           extended: expect.objectContaining({ directMessage: { status: "available" } }),
         }),
       }),
+      expect.objectContaining({ providerType: undefined }),
     );
 
     const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {

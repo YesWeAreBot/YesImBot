@@ -88,8 +88,8 @@ describe("agent loop skill loading", () => {
         get: vi.fn(),
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
-          promptInjections: [],
-          styleOverride: null,
+          promptFragments: [],
+          styleFragment: null,
           toolFilter: { include: [], exclude: [] },
         }),
       },
@@ -146,14 +146,12 @@ describe("agent loop skill loading", () => {
       },
       "yesimbot.plugin": { getTools: vi.fn(() => []), getDefinition: vi.fn(), invoke: vi.fn() },
       "yesimbot.prompt": {
-        emitPromptBlocks: vi
-          .fn()
-          .mockResolvedValue({
-            sections: [],
-            stableBlock: "",
-            dynamicBlock: "",
-            stableSignature: "sig",
-          }),
+        emitPromptBlocks: vi.fn().mockResolvedValue({
+          sections: [],
+          stableBlock: "",
+          dynamicBlock: "",
+          stableSignature: "sig",
+        }),
         registerFragmentSource: vi.fn(() => () => undefined),
         inject: vi.fn(() => () => undefined),
       },
@@ -166,8 +164,8 @@ describe("agent loop skill loading", () => {
         get: vi.fn((name: string) => (name === "test-skill" ? skill : undefined)),
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
-          promptInjections: [],
-          styleOverride: null,
+          promptFragments: [],
+          styleFragment: null,
           toolFilter: { include: [], exclude: [] },
         }),
       },
@@ -228,14 +226,12 @@ describe("agent loop skill loading", () => {
       },
       "yesimbot.plugin": { getTools: vi.fn(() => []), getDefinition: vi.fn(), invoke: vi.fn() },
       "yesimbot.prompt": {
-        emitPromptBlocks: vi
-          .fn()
-          .mockResolvedValue({
-            sections: [],
-            stableBlock: "",
-            dynamicBlock: "",
-            stableSignature: "sig",
-          }),
+        emitPromptBlocks: vi.fn().mockResolvedValue({
+          sections: [],
+          stableBlock: "",
+          dynamicBlock: "",
+          stableSignature: "sig",
+        }),
         registerFragmentSource,
         inject: vi.fn(() => () => undefined),
       },
@@ -248,8 +244,8 @@ describe("agent loop skill loading", () => {
         get: vi.fn((name: string) => (name === "fragment-skill" ? skill : undefined)),
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
-          promptInjections: [],
-          styleOverride: null,
+          promptFragments: [],
+          styleFragment: null,
           toolFilter: { include: [], exclude: [] },
         }),
       },

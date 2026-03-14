@@ -83,9 +83,9 @@ function createLoopHarness(actionPayload: string) {
   const hookWarnSpy = vi.fn();
   (
     hookService as unknown as {
-      log: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+      logger: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
     }
-  ).log = {
+  ).logger = {
     warn: hookWarnSpy,
     debug: vi.fn(),
   };
@@ -117,13 +117,19 @@ function createLoopHarness(actionPayload: string) {
   const skillService = {
     resolve: vi.fn(() => ({
       activeSkills: [{ name: "answering", effects: ["concise"] }],
-      promptInjections: [],
-      styleOverride: undefined,
-      toolFilter: undefined,
+      promptFragments: [],
+      styleFragment: null,
+      toolFilter: { include: [], exclude: [] },
     })),
   };
 
   const promptService = {
+    emitPromptBlocks: vi.fn(async () => ({
+      sections: [],
+      stableBlock: "",
+      dynamicBlock: "",
+      stableSignature: "sig",
+    })),
     inject: vi.fn(() => () => undefined),
     render: vi.fn(async () => [
       { name: "soul", content: "soul" },
@@ -214,9 +220,9 @@ function createMessageHarness() {
   const hookWarnSpy = vi.fn();
   (
     hookService as unknown as {
-      log: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+      logger: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
     }
-  ).log = {
+  ).logger = {
     warn: hookWarnSpy,
     debug: vi.fn(),
   };
@@ -524,7 +530,14 @@ describe("Hook runtime resilience (agent snapshot)", () => {
           modified: true,
           params: {
             ...params,
-            view: { ...params.view, testMarker: "from-hook" },
+            scenario: {
+              ...((ctx.params as { scenario: Record<string, unknown> }).scenario ?? {}),
+              derived: {
+                ...((ctx.params as { scenario: { derived?: Record<string, unknown> } }).scenario
+                  ?.derived ?? {}),
+                testMarker: "from-hook",
+              },
+            },
           },
         };
       },
@@ -534,15 +547,17 @@ describe("Hook runtime resilience (agent snapshot)", () => {
 
     const promptArgs = (
       harness.rootCtx["yesimbot.prompt"] as {
-        render: ReturnType<typeof vi.fn>;
+        emitPromptBlocks: ReturnType<typeof vi.fn>;
       }
-    ).render.mock.calls[0]?.[1] as unknown as { view?: Record<string, unknown> };
+    ).emitPromptBlocks.mock.calls[0]?.[1] as unknown as {
+      scenario?: { derived?: Record<string, unknown> };
+    };
     const toolCtxArg = (harness.pluginInvoke.mock.calls as unknown[][])[0]?.[2] as {
-      view?: Record<string, unknown>;
+      scenario?: { derived?: Record<string, unknown> };
     };
 
-    expect(promptArgs?.view?.testMarker).toBe("from-hook");
-    expect(toolCtxArg?.view?.testMarker).toBe("from-hook");
+    expect(promptArgs?.scenario?.derived?.testMarker).toBe("from-hook");
+    expect(toolCtxArg?.scenario?.derived?.testMarker).toBe("from-hook");
   });
 });
 
