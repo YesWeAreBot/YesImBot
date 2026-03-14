@@ -1,5 +1,6 @@
 import { Context, Schema, Service } from "koishi";
 
+import { getCapabilityByKey } from "../runtime/contracts";
 import { buildMinimalContext } from "../shared/context-factory";
 import { CorePlugin, OnebotPlugin } from "./builtin";
 import { YesImPlugin } from "./plugin";
@@ -21,6 +22,27 @@ export interface PluginServiceConfig {
 export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.object({
   defaultTimeout: Schema.number().default(30000),
 });
+
+export class CapabilityUnavailableError extends Error {
+  public readonly toolName: string;
+  public readonly requiredCapabilities: string[];
+  public readonly unsatisfied: Array<{ key: string; reason: string }>;
+
+  constructor(
+    toolName: string,
+    requiredCapabilities: string[],
+    unsatisfied: Array<{ key: string; reason: string }>,
+  ) {
+    super(
+      `Tool "${toolName}" requires capabilities: ${requiredCapabilities.join(", ")}. ` +
+        `Unavailable: ${unsatisfied.map((item) => `${item.key} (${item.reason})`).join("; ")}`,
+    );
+    this.name = "CapabilityUnavailableError";
+    this.toolName = toolName;
+    this.requiredCapabilities = requiredCapabilities;
+    this.unsatisfied = unsatisfied;
+  }
+}
 
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
   static inject = ["yesimbot.hook"];
@@ -173,6 +195,28 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   ): Promise<ToolResult> {
     const fn = this.findFunction(name);
     if (!fn) return Failed(`Function not found: ${name}`);
+
+    if (fn.requiredCapabilities?.length && context?.capabilities) {
+      const unsatisfied: Array<{ key: string; reason: string }> = [];
+
+      for (const key of fn.requiredCapabilities) {
+        const capability = getCapabilityByKey(context.capabilities, key);
+        if (!capability || capability.status !== "available") {
+          unsatisfied.push({
+            key,
+            reason:
+              capability?.status === "unavailable"
+                ? (capability.reason ?? "unknown")
+                : "capability-not-found",
+          });
+        }
+      }
+
+      if (unsatisfied.length > 0) {
+        const error = new CapabilityUnavailableError(name, fn.requiredCapabilities, unsatisfied);
+        return Failed(error.message);
+      }
+    }
 
     const timeout = this.config?.defaultTimeout ?? 30000;
     try {
