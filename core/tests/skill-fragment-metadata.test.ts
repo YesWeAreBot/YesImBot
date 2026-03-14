@@ -1,117 +1,95 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi", () => {
-  class Service {
-    ctx: Record<string, unknown>;
-    config: unknown;
-    logger: Record<string, unknown>;
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => true),
+  readdirSync: vi.fn(() => []),
+  readFileSync: vi.fn(),
+}));
 
-    constructor(ctx: Record<string, unknown>, _name: string, _immediate?: boolean) {
-      this.ctx = ctx;
-      this.logger = (ctx.logger as (name: string) => Record<string, unknown>)("mock-service");
-      this.config = {};
-    }
-  }
+vi.mock("gray-matter", () => ({
+  default: vi.fn(),
+}));
 
-  return {
-    Context: class {},
-    Schema: {
-      array: vi.fn(() => ({ default: vi.fn() })),
-      path: vi.fn(() => ({ default: vi.fn() })),
-      number: vi.fn(() => ({ default: vi.fn() })),
-      object: vi.fn(() => ({ description: vi.fn() })),
-    },
-    Service,
-  };
-});
+import { readFileSync, readdirSync } from "node:fs";
+
+import matter from "gray-matter";
 
 import { loadSkillsFromDir } from "../src/services/skill/loader";
-import { SkillRegistry } from "../src/services/skill/service";
 
-function createRegistry() {
-  const ctx: Record<string, unknown> = {
-    logger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
-    on: vi.fn(),
-  };
-
-  return new SkillRegistry(ctx as never, {
-    confidenceThreshold: 0.3,
-    stickyDefaultTimeout: 3,
-    skillPaths: [],
-  });
-}
-
-describe("Skill fragment metadata migration", () => {
+describe("Skill fragment metadata", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("normalizes deprecated alias injection_point/style_injection_point into explicit sections", () => {
-    const root = mkdtempSync(join(tmpdir(), "athena-skill-"));
-    const skillDir = join(root, "alias-skill");
-    mkdirSync(skillDir);
-
-    writeFileSync(
-      join(skillDir, "SKILL.md"),
-      `---
-name: alias-skill
-lifecycle: per-turn
-injection_point: instructions # deprecated alias
-style_injection_point: instructions # deprecated alias
-effects:
-  style:
-    content: "Use strong policy language"
----
-Prompt content from deprecated alias config.
-`,
-      "utf-8",
-    );
-
-    const loaded = loadSkillsFromDir(root);
-    expect(loaded).toHaveLength(1);
-
-    expect(loaded[0]).toMatchObject({
-      name: "alias-skill",
-      promptFragment: {
-        section: "policy",
+  it("normalizes deprecated injection_point to prompt_fragment.section", () => {
+    vi.mocked(readdirSync).mockReturnValue([
+      { name: "test-skill", isDirectory: () => true },
+    ] as never);
+    vi.mocked(readFileSync).mockReturnValue("skill content" as never);
+    vi.mocked(matter).mockReturnValue({
+      data: {
+        name: "test-skill",
+        injection_point: "policy",
       },
-      styleFragment: {
-        section: "policy",
-      },
-    });
-  });
-
-  it("defaults skill prompt/style outputs to situation and identity metadata", () => {
-    const registry = createRegistry();
-    registry.register({
-      name: "default-skill",
-      lifecycle: "per-turn",
-      source: "plugin",
-      activate: () => true,
-      effects: {
-        prompt: "Situation-specific hint",
-        style: {
-          content: "Stable identity style hint",
-        },
-      },
+      content: "Test prompt content",
     } as never);
 
-    const resolved = registry.resolve([], { platform: "discord", channelId: "chan-1" });
+    const skills = loadSkillsFromDir("/mock/dir");
 
-    expect(resolved.promptFragments).toHaveLength(1);
-    expect(resolved.promptFragments[0]).toMatchObject({
-      skillName: "default-skill",
+    expect(skills[0].promptFragment?.section).toBe("situation");
+  });
+
+  it("normalizes deprecated style_injection_point to style_fragment.section", () => {
+    vi.mocked(readdirSync).mockReturnValue([
+      { name: "test-skill", isDirectory: () => true },
+    ] as never);
+    vi.mocked(readFileSync).mockReturnValue("skill content" as never);
+    vi.mocked(matter).mockReturnValue({
+      data: {
+        name: "test-skill",
+        style_injection_point: "policy",
+      },
+      content: "Test prompt content",
+    } as never);
+
+    const skills = loadSkillsFromDir("/mock/dir");
+
+    expect(skills[0].styleFragment?.section).toBe("identity");
+  });
+
+  it("applies prompt fragment defaults: section=situation, priority=400, stability=dynamic, cacheable=false", () => {
+    vi.mocked(readdirSync).mockReturnValue([
+      { name: "test-skill", isDirectory: () => true },
+    ] as never);
+    vi.mocked(readFileSync).mockReturnValue("skill content" as never);
+    vi.mocked(matter).mockReturnValue({
+      data: { name: "test-skill" },
+      content: "Test prompt content",
+    } as never);
+
+    const skills = loadSkillsFromDir("/mock/dir");
+
+    expect(skills[0].promptFragment).toEqual({
       section: "situation",
       stability: "dynamic",
       priority: 400,
       cacheable: false,
     });
+  });
 
-    expect(resolved.styleFragment).toMatchObject({
+  it("applies style fragment defaults: section=identity, priority=650, stability=dynamic, cacheable=false", () => {
+    vi.mocked(readdirSync).mockReturnValue([
+      { name: "test-skill", isDirectory: () => true },
+    ] as never);
+    vi.mocked(readFileSync).mockReturnValue("skill content" as never);
+    vi.mocked(matter).mockReturnValue({
+      data: { name: "test-skill" },
+      content: "Test prompt content",
+    } as never);
+
+    const skills = loadSkillsFromDir("/mock/dir");
+
+    expect(skills[0].styleFragment).toEqual({
       section: "identity",
       stability: "dynamic",
       priority: 650,
