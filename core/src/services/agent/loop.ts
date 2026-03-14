@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -14,7 +13,7 @@ import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
-import type { PromptFragment, RenderedPromptSection } from "../prompt/types";
+import type { PromptFragment } from "../prompt/types";
 import {
   bindCommittedRoundContext,
   buildScenarioFromView,
@@ -179,7 +178,6 @@ export class ThinkActLoop {
         : new LoadedSkillSet();
     const applier = new SkillEffectApplier();
     let signals = runtimeToolCtx.traits ?? [];
-    let legacySkillsForToolCtx: NonNullable<ToolExecutionContext["skills"]> | undefined;
 
     const loadSkill = async (skillName: string): Promise<LoadResult> => {
       if (!hasSkillCatalogGet) {
@@ -263,30 +261,15 @@ export class ThinkActLoop {
         if (updatedView) view = updatedView;
         if (updatedTraits) signals = updatedTraits;
         if (updatedSkills && !isSameActiveSkillList(updatedSkills, legacySkillsBeforeHook)) {
-          if (hasSkillCatalogGet) {
-            loadedSkills = this.syncLoadedSkillsFromLegacyCompat(
-              updatedSkills,
-              loadedSkills,
-              skillCatalog,
-            );
-          } else {
-            legacySkillsForToolCtx = updatedSkills;
-          }
+          this.logger.warn(
+            `[${percept.traceId}] agent start hook attempted legacy skills mutation; ignored in canonical loadSkill() path`,
+          );
         }
 
         const updatedScenario = modifiedParams.scenario as Scenario | undefined;
         const updatedCapabilities = modifiedParams.capabilities as RoundContext["capabilities"];
         const updatedMetadata = modifiedParams.metadata as Record<string, unknown>;
         const updatedSkillState = modifiedParams.skillState as RoundContext["skillState"];
-        const derivedSkillState =
-          updatedSkills && !updatedSkillState
-            ? {
-                active: loadedSkills.getLoadedNames(),
-                loadHistory: loadedSkills.getLoadHistory(),
-                persistentRoster: loadedSkills.getLoadedNames(),
-              }
-            : undefined;
-
         const shouldRebuildScenarioFromView = updatedView && !updatedScenario;
         const nextScenario = shouldRebuildScenarioFromView
           ? buildScenarioFromView({
@@ -295,18 +278,12 @@ export class ThinkActLoop {
             })
           : updatedScenario;
 
-        if (
-          nextScenario ||
-          updatedCapabilities ||
-          updatedMetadata ||
-          updatedSkillState ||
-          derivedSkillState
-        ) {
+        if (nextScenario || updatedCapabilities || updatedMetadata || updatedSkillState) {
           roundContext = commitRoundContext(roundContext, {
             scenario: nextScenario,
             capabilities: updatedCapabilities,
             metadata: updatedMetadata,
-            skillState: updatedSkillState ?? derivedSkillState,
+            skillState: updatedSkillState,
           });
         }
       }
@@ -315,13 +292,9 @@ export class ThinkActLoop {
     const appliedEffects = applier.apply(loadedSkills);
     roundContext = commitRoundContext(roundContext, {
       skillState: {
-        active: legacySkillsForToolCtx
-          ? legacySkillsForToolCtx.map((skill) => skill.name)
-          : loadedSkills.getLoadedNames(),
+        active: loadedSkills.getLoadedNames(),
         loadHistory: loadedSkills.getLoadHistory(),
-        persistentRoster: legacySkillsForToolCtx
-          ? legacySkillsForToolCtx.map((skill) => skill.name)
-          : loadedSkills.getLoadedNames(),
+        persistentRoster: loadedSkills.getLoadedNames(),
       },
     });
 
@@ -329,9 +302,8 @@ export class ThinkActLoop {
       {
         ...runtimeToolCtx,
         percept,
-        view,
         traits: signals,
-        skills: legacySkillsForToolCtx ?? toActiveSkills(loadedSkills.getLoaded()),
+        skills: toActiveSkills(loadedSkills.getLoaded()),
       },
       roundContext,
     ) as ToolExecutionContext;
@@ -368,17 +340,15 @@ export class ThinkActLoop {
         (this.config.model ?? "").split(":")[0],
       )?.providerType;
       const promptScope = {
-        view,
         percept,
         roundContext,
         scenario: roundContext.snapshot.scenario,
         capabilities: roundContext.snapshot.capabilities,
       };
-      const emitted =
-        typeof promptService.emitPromptBlocks === "function"
-          ? await promptService.emitPromptBlocks("system", promptScope, { providerType })
-          : await emitPromptBlocksCompat(promptService, promptScope);
-      const sections: RenderedPromptSection[] = emitted.sections;
+      const emitted = await promptService.emitPromptBlocks("system", promptScope, {
+        providerType,
+      });
+      const sections = emitted.sections;
       const stableContent = emitted.stableBlock;
       const dynamicContent = emitted.dynamicBlock;
       const stableSignature = emitted.stableSignature;
@@ -805,42 +775,6 @@ export class ThinkActLoop {
     }
   }
 
-  private syncLoadedSkillsFromLegacyCompat(
-    updatedSkills: NonNullable<ToolExecutionContext["skills"]>,
-    current: LoadedSkillSet,
-    skillCatalog: SkillRegistry | undefined,
-  ): LoadedSkillSet {
-    const updatedNames = new Set(updatedSkills.map((skill) => skill.name));
-
-    for (const existingName of current.getLoadedNames()) {
-      if (!updatedNames.has(existingName)) {
-        current.unload(existingName);
-      }
-    }
-
-    for (const skill of updatedSkills) {
-      if (current.has(skill.name)) continue;
-      if (!skillCatalog) {
-        current.recordLoadAttempt(skill.name, "not_found", "skill catalog unavailable");
-        continue;
-      }
-
-      const definition = skillCatalog.get(skill.name);
-      if (!definition) {
-        current.recordLoadAttempt(
-          skill.name,
-          "not_found",
-          `skill "${skill.name}" not found in catalog`,
-        );
-        continue;
-      }
-
-      current.load(definition);
-    }
-
-    return current;
-  }
-
   private async executeActions(
     actions: AgentResponse["actions"],
     pluginService: PluginService,
@@ -997,51 +931,6 @@ function registerPromptFragmentSource(
   if (typeof promptService.registerFragmentSource === "function") {
     disposers.push(promptService.registerFragmentSource(name, provider));
   }
-}
-
-async function emitPromptBlocksCompat(
-  promptService: PromptService,
-  scope: Record<string, unknown>,
-): Promise<{
-  sections: RenderedPromptSection[];
-  stableBlock: string;
-  dynamicBlock: string;
-  stableSignature: string;
-}> {
-  const legacyPromptService = promptService as PromptService & {
-    render?: (
-      templateName: string,
-      initialScope?: Record<string, unknown>,
-    ) => Promise<Array<RenderedPromptSection & { cacheable?: boolean }>>;
-  };
-
-  if (typeof legacyPromptService.render !== "function") {
-    return {
-      sections: [],
-      stableBlock: "",
-      dynamicBlock: "",
-      stableSignature: createHash("sha256").update("", "utf8").digest("hex"),
-    };
-  }
-
-  const renderedSections = await legacyPromptService.render("system", scope);
-  const sections = renderedSections.map((section) => ({
-    ...section,
-    cacheable: section.cacheable ?? (section.name !== "extra" && section.name !== "situation"),
-  }));
-
-  const stableSections = sections.filter((section) => section.cacheable !== false);
-  const dynamicSections = sections.filter((section) => section.cacheable === false);
-  const stableBlock = stableSections.map((section) => section.content).join("\n\n");
-  const dynamicBlock = dynamicSections.map((section) => section.content).join("\n\n");
-  const stableSignature = createHash("sha256").update(stableBlock, "utf8").digest("hex");
-
-  return {
-    sections,
-    stableBlock,
-    dynamicBlock,
-    stableSignature,
-  };
 }
 
 function toToolResultEntry(

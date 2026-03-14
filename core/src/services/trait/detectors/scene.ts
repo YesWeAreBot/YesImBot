@@ -1,7 +1,6 @@
 import type { Context, Logger } from "koishi";
 
-import type { HorizonView, MessageRecord } from "../../horizon/types";
-import { TimelineEventType } from "../../horizon/types";
+import type { Scenario } from "../../runtime/contracts";
 import type { ChannelKey, TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
 import type { TraitDetector } from "../types";
@@ -52,23 +51,23 @@ export class SceneTrait implements TraitDetector {
     });
   }
 
-  detect(key: ChannelKey, view: HorizonView): TraitSignal[] {
-    // Lazy-init bot name from view
-    if (!this.botName && view.self?.name) {
-      this.botName = view.self.name;
+  detect(key: ChannelKey, scenario: Scenario): TraitSignal[] {
+    // Lazy-init bot name from scenario
+    if (!this.botName && scenario.raw.self.name) {
+      this.botName = scenario.raw.self.name;
     }
 
     const signals: TraitSignal[] = [];
     const ck = channelKey(key);
+    const allMessages = scenario.raw.scenarioTimeline.turns.flatMap((turn) => turn.messages);
 
-    // Scene dimension — prefer stage:"new" messages as trigger content
-    const msgs = view.history?.filter((o) => o.type === "message") ?? [];
-    const triggerMsg = msgs.filter((o) => o.stage === "new").slice(-1)[0] ?? msgs.slice(-1)[0];
+    // Scene dimension
+    const triggerMsg = allMessages[allMessages.length - 1];
     signals.push({
       dimension: "scene",
-      value: view.environment?.type === "private" ? "private-chat" : "group-chat",
+      value: scenario.raw.environment.type === "private" ? "private-chat" : "group-chat",
       confidence: 1.0,
-      ...(triggerMsg && { metadata: { triggerContent: triggerMsg.data.content } }),
+      ...(triggerMsg && { metadata: { triggerContent: triggerMsg.content } }),
     });
 
     // Attention dimension
@@ -76,15 +75,11 @@ export class SceneTrait implements TraitDetector {
 
     // Check mentioned: scan recent history for bot name
     let mentioned = false;
-    if (this.botName && view.history) {
+    if (this.botName) {
       const name = this.botName.toLowerCase();
-      const recent = view.history.slice(-5);
-      for (const entry of recent) {
-        if (
-          entry.type === TimelineEventType.Message &&
-          typeof entry.data.content === "string" &&
-          entry.data.content.toLowerCase().includes(name)
-        ) {
+      const recent = allMessages.slice(-5);
+      for (const message of recent) {
+        if (message.content.toLowerCase().includes(name)) {
           mentioned = true;
           break;
         }
@@ -113,18 +108,20 @@ export class SceneTrait implements TraitDetector {
     }
 
     // Bot role signal — enables role-gated Skills (e.g. essence management)
-    if (view.self?.role) {
+    if (scenario.raw.self.role) {
       signals.push({
         dimension: "bot-role",
-        value: view.self.role,
+        value: scenario.raw.self.role,
         confidence: 1.0,
       });
     }
 
     // Forward-present signal — enables get_forward_msg tool when forwarded messages in context
-    const newMsgs = msgs.filter((o) => o.stage === "new");
-    const hasForward = newMsgs.some(
-      (m) => typeof m.data.content === "string" && m.data.content.includes("<forward"),
+    const lastTurnMessages =
+      scenario.raw.scenarioTimeline.turns[scenario.raw.scenarioTimeline.turns.length - 1]
+        ?.messages ?? [];
+    const hasForward = lastTurnMessages.some(
+      (message) => typeof message.content === "string" && message.content.includes("<forward"),
     );
     if (hasForward) {
       signals.push({

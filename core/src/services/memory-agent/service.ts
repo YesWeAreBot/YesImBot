@@ -1,9 +1,9 @@
 import { Context, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
-import type { HorizonView } from "../horizon/types";
 import { TimelineEventType, TimelineStage } from "../horizon/types";
 import type { ModelService } from "../model/service";
+import type { Scenario } from "../runtime/contracts";
 import type { ChannelKey } from "../shared/types";
 import { runMemoryExtraction } from "./agent";
 import { MemoryRecallPlugin } from "./recall-plugin";
@@ -68,13 +68,13 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
     // Register core memories as canonical prompt fragment source
     const promptService = this.ctx["yesimbot.prompt"];
     promptService.registerFragmentSource("memory.core", async (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      if (!view?.environment) return [];
+      const scenario = scope.scenario as Scenario | undefined;
+      if (!scenario?.raw.environment) return [];
       const key: ChannelKey = {
-        platform: view.environment.platform,
-        channelId: view.environment.channelId,
+        platform: scenario.raw.environment.platform,
+        channelId: scenario.raw.environment.channelId,
       };
-      const memories = await this.getCoreMemories(key, view.environment.platform);
+      const memories = await this.getCoreMemories(key, scenario.raw.environment.platform);
       if (memories.length === 0) return [];
       const lines = memories.map((m) => `- [${m.type}] ${m.content}`);
       return [

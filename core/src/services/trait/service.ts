@@ -1,6 +1,6 @@
 import { Context, Schema, Service } from "koishi";
 
-import type { HorizonView } from "../horizon/types";
+import type { Scenario } from "../runtime/contracts";
 import type { ChannelKey, TraitSignal } from "../shared/types";
 import { HeatTrait } from "./detectors/heat";
 import { SceneTrait } from "./detectors/scene";
@@ -51,9 +51,9 @@ export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
     this.stateStore.set(`${detectorName}:${channelKey}`, state);
   }
 
-  async analyze(key: ChannelKey, view: HorizonView): Promise<TraitSignal[]> {
+  async analyze(key: ChannelKey, scenario: Scenario): Promise<TraitSignal[]> {
     const results = await Promise.allSettled(
-      this.detectors.map((d) => Promise.resolve(d.detect(key, view))),
+      this.detectors.map((d) => Promise.resolve(d.detect(key, scenario))),
     );
     const signals: TraitSignal[] = [];
     for (const result of results) {

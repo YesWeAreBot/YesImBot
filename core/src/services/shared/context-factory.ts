@@ -129,7 +129,7 @@ export async function buildAgentContext(
   if (normalizedView) {
     try {
       const traitAnalyzer = ctx["yesimbot.trait"] as TraitAnalyzer;
-      traits = await traitAnalyzer.analyze(key, normalizedView);
+      traits = await traitAnalyzer.analyze(key, scenario);
     } catch (err) {
       missingFields.push("traits");
       logger.warn(

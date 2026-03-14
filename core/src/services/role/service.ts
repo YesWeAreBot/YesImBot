@@ -3,9 +3,9 @@ import { join, resolve } from "node:path";
 
 import { Context, Schema, Service } from "koishi";
 
-import type { HorizonView } from "../horizon";
 import { HandlebarsRenderer } from "../prompt/renderer";
 import type { PromptService } from "../prompt/service";
+import type { Scenario } from "../runtime/contracts";
 import type { Percept } from "../shared/types";
 import type { RoleServiceConfig } from "./types";
 import { RoleServiceConfigSchema } from "./types";
@@ -73,21 +73,25 @@ export class RoleService extends Service<RoleServiceConfig> {
     });
 
     this.prompt.registerSnippet("channel.name", (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      return view?.environment?.name ?? "";
+      const scenario = scope.scenario as Scenario | undefined;
+      if (!scenario) return "";
+      return scenario.raw.environment.name ?? "";
     });
     this.prompt.registerSnippet("channel.platform", (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      return view?.environment?.platform ?? "";
+      const scenario = scope.scenario as Scenario | undefined;
+      if (!scenario) return "";
+      return scenario.raw.environment.platform ?? "";
     });
 
     this.prompt.registerSnippet("bot.name", (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      return view?.self?.name ?? "";
+      const scenario = scope.scenario as Scenario | undefined;
+      if (!scenario) return "";
+      return scenario.raw.self.name ?? "";
     });
     this.prompt.registerSnippet("bot.id", (scope) => {
-      const view = scope.view as HorizonView | undefined;
-      return view?.self?.id ?? "";
+      const scenario = scope.scenario as Scenario | undefined;
+      if (!scenario) return "";
+      return scenario.raw.self.id ?? "";
     });
   }
 
