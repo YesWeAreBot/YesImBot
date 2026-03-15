@@ -7,18 +7,6 @@ declare module "koishi" {
   }
 }
 
-type LegacyPromptInjector = (ctx: Context, section: string, options: LegacyPromptOptions) => void;
-
-interface LegacyPromptOptions {
-  name: string;
-  after?: string;
-  renderFn: () => string;
-}
-
-interface LegacyCompatiblePromptService extends PromptService {
-  inject?: LegacyPromptInjector;
-}
-
 export const name = "yesimbot-persona";
 export const inject = ["yesimbot.prompt"] as const;
 
@@ -80,7 +68,7 @@ export function apply(ctx: Context, config: Config): void {
   const text = buildPersonaText(config);
   if (!text) return;
 
-  const prompt = ctx["yesimbot.prompt"] as LegacyCompatiblePromptService;
+  const prompt = ctx["yesimbot.prompt"] as PromptService;
   if (typeof prompt.registerFragmentSource === "function") {
     const dispose = prompt.registerFragmentSource("persona", async (): Promise<PromptFragment[]> => [
       buildPersonaFragment(text),
@@ -89,14 +77,5 @@ export function apply(ctx: Context, config: Config): void {
     return;
   }
 
-  if (typeof prompt.inject === "function") {
-    prompt.inject(ctx, "soul", {
-      name: "__persona_supplement",
-      after: "__role_soul",
-      renderFn: () => text,
-    });
-    return;
-  }
-
-  throw new TypeError("yesimbot.prompt does not expose registerFragmentSource() or inject().");
+  throw new TypeError("yesimbot.prompt does not expose registerFragmentSource().");
 }

@@ -91,31 +91,19 @@ describe("persona plugin", () => {
     expect(String(fragments?.[0]?.content)).toContain("Curious and playful");
   });
 
-  it("falls back to legacy prompt.inject when fragment registration is unavailable", () => {
-    const inject = vi.fn();
+  it("throws when fragment registration is unavailable", () => {
     const ctx = {
       on: vi.fn(),
-      "yesimbot.prompt": {
-        inject,
-      },
+      "yesimbot.prompt": {},
     };
 
-    apply(ctx as never, {
-      name: "Athena",
-      personality: "",
-      tone: "",
-      extra: "",
-    });
-
-    expect(inject).toHaveBeenCalledTimes(1);
-    expect(inject).toHaveBeenCalledWith(
-      ctx,
-      "soul",
-      expect.objectContaining({
-        name: "__persona_supplement",
-        after: "__role_soul",
-        renderFn: expect.any(Function),
+    expect(() =>
+      apply(ctx as never, {
+        name: "Athena",
+        personality: "",
+        tone: "",
+        extra: "",
       }),
-    );
+    ).toThrowError("yesimbot.prompt does not expose registerFragmentSource().");
   });
 });
