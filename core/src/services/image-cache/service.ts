@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Context, Service } from "koishi";
 
@@ -155,8 +156,7 @@ export class ImageCacheService extends Service {
 
   private async doDownload(url: string): Promise<string> {
     try {
-      const ab = await this.ctx.http.get<ArrayBuffer>(url, { responseType: "arraybuffer" });
-      const buffer = Buffer.from(ab);
+      const { buffer, mediaType } = await this.readImageSource(url);
 
       // Compute content hash
       const contentHash = createHash("sha256").update(buffer).digest("hex");
@@ -169,7 +169,6 @@ export class ImageCacheService extends Service {
       }
 
       // Determine media type and extension
-      const mediaType = mediaTypeFromUrl(url);
       const ext = extFromMediaType(mediaType);
 
       // Write file to disk
@@ -210,6 +209,45 @@ export class ImageCacheService extends Service {
       const urlHash = createHash("sha256").update(url).digest("hex").slice(0, 16);
       return urlHash;
     }
+  }
+
+  private async readImageSource(url: string): Promise<{ buffer: Buffer; mediaType: string }> {
+    if (url.startsWith("data:")) {
+      return this.readDataUrl(url);
+    }
+
+    if (url.startsWith("file://")) {
+      const filePath = fileURLToPath(url);
+      const buffer = await readFile(filePath);
+      return {
+        buffer,
+        mediaType: mediaTypeFromUrl(filePath),
+      };
+    }
+
+    const ab = await this.ctx.http.get<ArrayBuffer>(url, { responseType: "arraybuffer" });
+    return {
+      buffer: Buffer.from(ab),
+      mediaType: mediaTypeFromUrl(url),
+    };
+  }
+
+  private readDataUrl(url: string): { buffer: Buffer; mediaType: string } {
+    const commaIndex = url.indexOf(",");
+    if (commaIndex < 0) {
+      throw new Error("Invalid data URL");
+    }
+
+    const header = url.slice(5, commaIndex);
+    const payload = url.slice(commaIndex + 1);
+    const parts = header.split(";");
+    const mediaType = parts[0] || "image/jpeg";
+    const isBase64 = parts.some((part) => part.toLowerCase() === "base64");
+
+    return {
+      buffer: isBase64 ? Buffer.from(payload, "base64") : Buffer.from(decodeURIComponent(payload)),
+      mediaType,
+    };
   }
 
   urlToId(url: string): string {

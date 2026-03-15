@@ -1,7 +1,10 @@
 import { h } from "koishi";
 import type { Context, Element, Session } from "koishi";
 
-export type ElementHandler = (attrs: Record<string, unknown>, children: Element[]) => string;
+export type ElementHandler = (
+  attrs: Record<string, unknown>,
+  children: Element[],
+) => string | Promise<string>;
 
 const QUOTE_PREVIEW_MAX = 80;
 const UNVERIFIED_THRESHOLD = 200;
@@ -27,15 +30,18 @@ export function registerBuiltinHandlers(
       "sub-type": attrs["sub-type"],
       "file-size": attrs["file-size"],
     };
-    if (src) {
+    if (!src) {
+      return h("img", pureAttrs).toString();
+    }
+
+    return (async () => {
       const cache = ctx["yesimbot.image-cache"];
       if (cache) {
-        const id = cache.urlToId(src);
-        cache.download(src).catch(() => {});
+        const id = await cache.download(src);
         pureAttrs["id"] = id;
       }
-    }
-    return h("img", pureAttrs).toString();
+      return h("img", pureAttrs).toString();
+    })();
   });
 
   register("audio", (attrs) => {

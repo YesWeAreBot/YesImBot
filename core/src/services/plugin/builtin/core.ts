@@ -81,7 +81,7 @@ export class CorePlugin extends YesImPlugin {
       const formatter = this.ctx["yesimbot.formatter"] as FormatterService | undefined;
       const content = Array.isArray(result)
         ? formatter
-          ? formatter.format(result as Element[], session).trim()
+          ? (await formatter.format(result as Element[], session)).trim()
           : result
               .map((part) => (typeof part === "string" ? part : part.toString()))
               .join("")

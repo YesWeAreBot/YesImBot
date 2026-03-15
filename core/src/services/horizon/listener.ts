@@ -85,7 +85,7 @@ export class EventListener {
     // Format elements through ElementFormatterService
     const formatter = this.ctx["yesimbot.formatter"];
     const elements = session.elements?.length ? session.elements : h.parse(session.content ?? "");
-    let formattedContent = formatter.format(elements, session);
+    let formattedContent = await formatter.format(elements, session);
 
     // Prepend quote prefix if replying
     const quotePrefix = formatQuotePrefix(session);

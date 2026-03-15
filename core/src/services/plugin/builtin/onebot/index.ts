@@ -293,7 +293,7 @@ export class OnebotPlugin extends YesImPlugin {
       const messages = allMessages.slice(0, MAX_FORWARD_MESSAGES);
       const truncated = allMessages.length > MAX_FORWARD_MESSAGES;
 
-      const formatted = this.formatForwardMessages(messages);
+      const formatted = await this.formatForwardMessages(messages);
       const suffix = truncated
         ? `\n\n[Showing ${MAX_FORWARD_MESSAGES} of ${allMessages.length} messages]`
         : "";
@@ -434,24 +434,26 @@ export class OnebotPlugin extends YesImPlugin {
     }
   }
 
-  private formatForwardMessages(messages: Message[]): string {
+  private async formatForwardMessages(messages: Message[]): Promise<string> {
     const formatter = this.ctx["yesimbot.formatter"] as FormatterService | undefined;
 
-    return messages
-      .map((msg) => {
+    const rendered = await Promise.all(
+      messages.map(async (msg) => {
         const sender = `Sender: ${msg.sender.nickname || msg.sender.card || String(msg.sender.user_id)}`;
         const time = `Time: ${new Date(msg.time * 1000).toLocaleString()}`;
 
         let content: string;
         if (formatter && msg.message?.length) {
           const elements = msg.message.map((seg) => h(seg.type, seg.data));
-          content = formatter.format(elements);
+          content = await formatter.format(elements);
         } else {
           content = msg.raw_message;
         }
 
         return `${sender}\n${time}\nContent: ${content}`;
-      })
-      .join("\n\n---\n\n");
+      }),
+    );
+
+    return rendered.join("\n\n---\n\n");
   }
 }
