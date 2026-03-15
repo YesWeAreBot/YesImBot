@@ -1,8 +1,9 @@
 import { Element, h, Schema, sleep } from "koishi";
 
+import type { FormatterService } from "../../formatter/service";
 import type { HookService } from "../../hook/service";
 import { HookType } from "../../hook/types";
-import { Action, Metadata, withInnerThoughts } from "../decorators";
+import { Action, Metadata, Tool, withInnerThoughts } from "../decorators";
 import { YesImPlugin } from "../plugin";
 import { ToolExecutionContext, ToolResult } from "../types";
 import { Failed, Success } from "../utils";
@@ -29,7 +30,7 @@ function filterInteractive(elements: Element[]): Element[] {
 
 @Metadata({ name: "core", description: "Core built-in tools", builtin: true })
 export class CorePlugin extends YesImPlugin {
-  static inject = ["yesimbot.plugin", "yesimbot.horizon"];
+  static inject = ["yesimbot.plugin", "yesimbot.horizon", "yesimbot.hook", "yesimbot.formatter"];
 
   private resolveNativeMsgId(ctx: ToolExecutionContext, shortIdStr: string): string | null {
     const shortId = Number(shortIdStr);
@@ -37,6 +38,84 @@ export class CorePlugin extends YesImPlugin {
     const channelKey = `${ctx.platform}:${ctx.channelId}`;
     const horizon = this.ctx["yesimbot.horizon"];
     return horizon?.lookupNativeMsgId(channelKey, shortId) ?? null;
+  }
+
+  @Tool({
+    name: "execute",
+    description:
+      "Execute a Koishi command from another plugin in the current session and return its output. " +
+      "The command runs with the current channel, user authority, locale, and plugin context. " +
+      "Use this when an existing Koishi command already provides the capability you need.",
+    parameters: withInnerThoughts({
+      command: Schema.string()
+        .required()
+        .description(
+          "Koishi command text to execute in the current session. " +
+            "Use plain command text such as 'help weather' or 'status --verbose'. " +
+            "Do not use this for normal chatting; use send_message for that.",
+        ),
+      expose_to_user: Schema.boolean()
+        .default(false)
+        .description(
+          "Whether to also send the captured command output directly to the current conversation. " +
+            "Keep false when you only need the result privately for reasoning. " +
+            "Set true only when the command result itself should be shown to the user.",
+        ),
+    }),
+    requiredCapabilities: ["platform.session"],
+    onCapabilityMissing: "remove",
+  })
+  async executeCommand(
+    params: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolResult> {
+    try {
+      const session = ctx.session;
+      if (!session) return Failed("No active session");
+
+      const command = String(params["command"] ?? "").trim();
+      if (!command) return Failed("command is required");
+      const exposeToUser = params["expose_to_user"] === true;
+
+      const result = await session.execute(command, true);
+      const formatter = this.ctx["yesimbot.formatter"] as FormatterService | undefined;
+      const content = Array.isArray(result)
+        ? formatter
+          ? formatter.format(result as Element[], session).trim()
+          : result
+              .map((part) => (typeof part === "string" ? part : part.toString()))
+              .join("")
+              .trim()
+        : result == null
+          ? ""
+          : String(result).trim();
+
+      if (exposeToUser && content) {
+        try {
+          const exposed = Array.isArray(result)
+            ? filterInteractive(result as Element[])
+            : filterInteractive(h.parse(content));
+          await session.send(exposed);
+        } catch (emitError) {
+          return Success(
+            `${content}\n\n[Warning: failed to expose command output to user: ${
+              emitError instanceof Error ? emitError.message : String(emitError)
+            }]`,
+          );
+        }
+      }
+
+      if (!content) {
+        return Success(
+          "Command finished with no visible output. " +
+            "It may have succeeded silently, been filtered by context/authority, or produced no response.",
+        );
+      }
+
+      return Success(content);
+    } catch (e) {
+      return Failed(e instanceof Error ? e.message : String(e));
+    }
   }
 
   @Action({
