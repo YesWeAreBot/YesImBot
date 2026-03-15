@@ -279,6 +279,10 @@ describe("timeline adapter", () => {
         expect(textPart.text).toContain('<img id="img-001"/>');
       }
       expect(imagePart?.type).toBe("image");
+      if (imagePart?.type === "image") {
+        expect(imagePart.image).toBe("aGVsbG8=");
+        expect(imagePart.mediaType).toBe("image/png");
+      }
     }
   });
 });

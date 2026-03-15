@@ -97,7 +97,8 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
 
           parts.push({
             type: "image",
-            image: `data:${cache.mediaType};base64,${cache.base64}`,
+            image: cache.base64,
+            mediaType: cache.mediaType,
           });
         }
 

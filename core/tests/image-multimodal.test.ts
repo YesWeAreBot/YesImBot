@@ -94,15 +94,15 @@ describe("Image Multimodal Conversion", () => {
     imageCache = new Map([
       [
         "abc123",
-        { base64: "data:image/jpeg;base64,/9j/4AAQ", mediaType: "image/jpeg", status: "ready" },
+        { base64: "/9j/4AAQ", mediaType: "image/jpeg", status: "ready" },
       ],
       [
         "def456",
-        { base64: "data:image/png;base64,iVBORw0KGgo", mediaType: "image/png", status: "ready" },
+        { base64: "iVBORw0KGgo", mediaType: "image/png", status: "ready" },
       ],
       ["ghi789", { base64: "", mediaType: "", status: "failed" }],
-      ["aaa", { base64: "data:image/jpeg;base64,AAA", mediaType: "image/jpeg", status: "ready" }],
-      ["bbb", { base64: "data:image/png;base64,BBB", mediaType: "image/png", status: "ready" }],
+      ["aaa", { base64: "AAA", mediaType: "image/jpeg", status: "ready" }],
+      ["bbb", { base64: "BBB", mediaType: "image/png", status: "ready" }],
     ]);
     lifecycleTracker = new Map();
   });
