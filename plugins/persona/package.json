@@ -1,0 +1,52 @@
+{
+  "name": "@yesimbot/koishi-plugin-persona",
+  "version": "0.1.0-beta.1",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
+    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "fmt": "oxfmt",
+    "lint": "oxlint",
+    "pub": "yarn npm publish --access public",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.10",
+    "koishi-plugin-yesimbot": "workspace:^",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.10",
+    "koishi-plugin-yesimbot": "workspace:^"
+  },
+  "koishi": {
+    "description": {
+      "zh": "Supplemental persona prompt fragments for YesImBot v4",
+      "en": "Supplemental persona prompt fragments for YesImBot v4"
+    },
+    "service": {
+      "required": [
+        "yesimbot.prompt"
+      ]
+    }
+  }
+}
