@@ -2,16 +2,16 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Context, Schema } from "koishi";
 import {
+  Failed,
+  FunctionDefinition,
+  FunctionType,
   Metadata,
   YesImPlugin,
   jsonSchemaToSchema,
-  FunctionDefinition,
-  FunctionType,
   Success,
-  Failed,
-} from "koishi-plugin-yesimbot/services/plugin";
+} from "@yesimbot/plugin-sdk/tools";
+import { Context, Schema } from "koishi";
 
 interface McpServer {
   type: "stdio" | "http" | "sse";
@@ -137,10 +137,13 @@ export default class McpClientPlugin extends YesImPlugin {
                 arguments: structuredClone(params),
               });
               if (result.isError) {
-                return Failed("");
-              } else {
-                return Success(JSON.stringify(result.content));
+                return Failed("MCP tool returned an error", {
+                  server: name,
+                  tool: tool.name,
+                  content: result.content,
+                });
               }
+              return Success(result.content);
             } catch (error) {
               this.ctx.logger.error(`调用工具 ${tool.name} 失败: ${(error as Error).message}`);
               return Failed(`调用工具失败: ${(error as Error).message}`);

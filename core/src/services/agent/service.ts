@@ -5,7 +5,7 @@ import { buildMinimalContext } from "../../shared/context-factory";
 import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
-import { ToolExecutionContext } from "../plugin/types";
+import { RuntimeToolExecutionContext } from "../plugin/types";
 import type { PersonaService } from "../role/service";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
@@ -54,7 +54,7 @@ confidence: 0.0-1.0 (for logging only, does not affect decision)`;
 
 interface LoopPayload {
   percept: Percept;
-  toolCtx: ToolExecutionContext;
+  toolCtx: RuntimeToolExecutionContext;
 }
 
 declare module "koishi" {
@@ -368,7 +368,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     traceId?: string,
   ): {
     percept: Percept;
-    toolCtx: ToolExecutionContext;
+    toolCtx: RuntimeToolExecutionContext;
   } {
     const session = event.runtime?.session;
     return {

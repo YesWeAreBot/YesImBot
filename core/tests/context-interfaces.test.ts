@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 
 import type { HorizonView } from "../src/services/horizon/types";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
-import type { TraitSignal, ActiveSkill } from "../src/shared/types";
 
 describe("Context Interface Extensions", () => {
   describe("HorizonView", () => {
@@ -62,45 +61,27 @@ describe("Context Interface Extensions", () => {
   });
 
   describe("ToolExecutionContext", () => {
-    it("should accept view field", () => {
+    it("should expose canonical context fields", () => {
       const ctx: ToolExecutionContext = {
         platform: "discord",
         channelId: "123",
-        view: {
-          self: { id: "bot1", name: "TestBot" },
-          environment: {
-            type: "guild",
-            id: "ch1",
-            name: "General",
-            platform: "discord",
-            channelId: "ch1",
-          },
-          entities: [],
-          history: [],
-        },
+        roundContext: {} as ToolExecutionContext["roundContext"],
+        scenario: {} as ToolExecutionContext["scenario"],
+        capabilities: {} as ToolExecutionContext["capabilities"],
       };
-      expect(ctx.view).toBeDefined();
-      expect(ctx.view?.self.id).toBe("bot1");
+      expect(ctx.roundContext).toBeDefined();
+      expect(ctx.scenario).toBeDefined();
+      expect(ctx.capabilities).toBeDefined();
     });
 
-    it("should accept traits field", () => {
+    it("should keep canonical fields without legacy assumptions", () => {
       const ctx: ToolExecutionContext = {
         platform: "discord",
         channelId: "123",
-        traits: [{ dimension: "scene", value: "casual", confidence: 0.9 }],
+        scenario: {} as ToolExecutionContext["scenario"],
       };
-      expect(ctx.traits).toBeDefined();
-      expect(ctx.traits?.[0].dimension).toBe("scene");
-    });
-
-    it("should accept skills field", () => {
-      const ctx: ToolExecutionContext = {
-        platform: "discord",
-        channelId: "123",
-        skills: [{ name: "search", effects: ["web_access"] }],
-      };
-      expect(ctx.skills).toBeDefined();
-      expect(ctx.skills?.[0].name).toBe("search");
+      expect(ctx.platform).toBe("discord");
+      expect(ctx.scenario).toBeDefined();
     });
 
     it("should work without new fields (backward compatible)", () => {
@@ -108,9 +89,7 @@ describe("Context Interface Extensions", () => {
         platform: "discord",
         channelId: "123",
       };
-      expect(ctx.view).toBeUndefined();
-      expect(ctx.traits).toBeUndefined();
-      expect(ctx.skills).toBeUndefined();
+      expect(ctx.scenario).toBeUndefined();
     });
   });
 });

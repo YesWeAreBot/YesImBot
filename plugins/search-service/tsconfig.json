@@ -7,6 +7,9 @@
   "include": ["src", "src/**/*.json"],
   "references": [
     {
+      "path": "../../packages/plugin-sdk"
+    },
+    {
       "path": "../../core"
     }
   ]

@@ -13,14 +13,14 @@ import type { CapabilityState, Percept, RoundContext, Scenario } from "../runtim
 import type { HookExecutionContext, HookPhase, HookType } from "../services/hook/types";
 import type { HorizonService } from "../services/horizon/service";
 import type { HorizonView } from "../services/horizon/types";
-import type { ToolExecutionContext } from "../services/plugin/types";
+import type { RuntimeToolExecutionContext, ToolExecutionContext } from "../services/plugin/types";
 import type { SkillRegistry } from "../services/skill/service";
 import { AgentSessionStore, projectSkillState } from "../services/skill/session-store";
 import type { SkillDefinition } from "../services/skill/types";
 import type { ActiveSkill, TraitSignal } from "./types";
 
 export interface AgentRoundContextResult {
-  toolCtx: ToolExecutionContext;
+  toolCtx: RuntimeToolExecutionContext;
   roundContext: RoundContext;
 }
 
@@ -30,7 +30,7 @@ interface AgentRoundContextParams {
   session?: Session;
   bot?: Bot;
   percept: Percept;
-  toolCtx?: ToolExecutionContext;
+  toolCtx?: RuntimeToolExecutionContext;
   resolvers?: Array<
     (params: {
       session?: Pick<Session, "isDirect" | "quote" | "guildId">;
@@ -86,7 +86,7 @@ export async function buildAgentContext(
     bot?: Bot;
     percept: Percept;
   },
-): Promise<ToolExecutionContext> {
+): Promise<RuntimeToolExecutionContext> {
   const logger = ctx.logger("context-factory");
   const key = { platform: params.platform, channelId: params.channelId };
   const sessionStore = ctx["yesimbot.session"] as AgentSessionStore | undefined;
@@ -133,6 +133,7 @@ export async function buildAgentContext(
     session: params.session,
     bot: params.bot,
     percept: params.percept,
+    view: normalizedView,
     traits,
     skills,
     scenario,
@@ -153,7 +154,7 @@ export async function buildAgentRoundContext(
       percept: params.percept,
     },
     roundContext,
-  ) as ToolExecutionContext;
+  ) as RuntimeToolExecutionContext;
 
   return {
     toolCtx: runtimeAwareToolCtx,
@@ -164,7 +165,7 @@ export async function buildAgentRoundContext(
 async function resolveAgentToolContext(
   ctx: Context,
   params: AgentRoundContextParams,
-): Promise<ToolExecutionContext> {
+): Promise<RuntimeToolExecutionContext> {
   const inboundToolCtx = params.toolCtx;
   const hasInboundRuntimeFields =
     inboundToolCtx?.scenario !== undefined &&
@@ -180,6 +181,7 @@ async function resolveAgentToolContext(
     percept: params.percept,
     traits: inboundToolCtx?.traits ?? builtToolCtx?.traits,
     skills: inboundToolCtx?.skills ?? builtToolCtx?.skills,
+    view: inboundToolCtx?.view ?? builtToolCtx?.view,
     roundContext: inboundToolCtx?.roundContext,
     scenario: inboundToolCtx?.scenario ?? builtToolCtx?.scenario,
     capabilities: inboundToolCtx?.capabilities ?? builtToolCtx?.capabilities,
@@ -188,7 +190,7 @@ async function resolveAgentToolContext(
 
 function buildRoundContextBaseline(
   ctx: Context,
-  toolCtx: ToolExecutionContext,
+  toolCtx: RuntimeToolExecutionContext,
   params: AgentRoundContextParams,
 ): RoundContextBaseline {
   const sessionStore = ctx["yesimbot.session"] as AgentSessionStore | undefined;
@@ -270,7 +272,7 @@ function isSameRound(roundContext: RoundContext, percept: Percept): boolean {
 }
 
 export function buildHookContext(
-  toolCtx: ToolExecutionContext,
+  toolCtx: RuntimeToolExecutionContext,
   hookType: HookType,
   hookPhase: HookPhase,
 ): HookExecutionContext {

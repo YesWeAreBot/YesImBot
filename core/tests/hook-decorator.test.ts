@@ -10,6 +10,10 @@ import {
   type BeforeHookResult,
 } from "../src/services/hook/types";
 
+// NOTE: This test intentionally imports hook authoring symbols from core service paths.
+// Importing via @yesimbot/plugin-sdk/hooks from within core introduces a test-only package
+// boundary cycle because the SDK barrel re-exports this module through package exports.
+
 describe("Hook Decorator", () => {
   let ctx: Context;
   let hookService: HookService;
@@ -154,11 +158,12 @@ describe("Hook Decorator", () => {
   it("should auto-cleanup decorated hooks on context dispose", () => {
     const childCtx = new Context();
     const disposeCallbacks: Array<() => void> = [];
-    childCtx.on = (event: string, callback: () => void) => {
+    childCtx.on = ((event: string, callback: () => void) => {
       if (event === "dispose") {
         disposeCallbacks.push(callback);
       }
-    };
+      return () => true;
+    }) as unknown as typeof childCtx.on;
 
     class TestPlugin {
       @Hook({ type: HookType.Tool, phase: HookPhase.Before })
@@ -225,5 +230,37 @@ describe("Hook Decorator", () => {
 
     expect(result.skipped).toBe(true);
     expect(result.result).toBe("skipped");
+  });
+
+  it("should preserve before-hook modify then skip lifecycle semantics", async () => {
+    class TestPlugin {
+      @Hook({ type: HookType.Tool, phase: HookPhase.Before })
+      async modifyHook(
+        hookCtx: HookContext<{ value: number; tag?: string }>,
+      ): Promise<BeforeHookResult<{ value: number; tag?: string }>> {
+        return {
+          modified: true,
+          params: { ...hookCtx.params, value: hookCtx.params.value + 1, tag: "modified" },
+        };
+      }
+
+      @Hook({ type: HookType.Tool, phase: HookPhase.Before })
+      async skipHook(
+        hookCtx: HookContext<{ value: number; tag?: string }>,
+      ): Promise<BeforeHookResult<{ value: number; tag?: string }>> {
+        return {
+          skip: true,
+          result: `skip-${hookCtx.params.value}-${hookCtx.params.tag ?? "none"}`,
+        };
+      }
+    }
+
+    const plugin = new TestPlugin();
+    hookService.registerFromDecorators(ctx, plugin);
+
+    const result = await hookService.executeBefore(HookType.Tool, { value: 1 });
+
+    expect(result.skipped).toBe(true);
+    expect(result.result).toBe("skip-2-modified");
   });
 });

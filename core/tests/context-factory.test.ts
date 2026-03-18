@@ -46,8 +46,8 @@ describe("context factory", () => {
 
     it("does not include traits/skills/percept", () => {
       const ctx = buildMinimalContext({ platform: "onebot", channelId: "100" });
-      expect(ctx.traits).toBeUndefined();
-      expect(ctx.skills).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(ctx, "traits")).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(ctx, "skills")).toBe(false);
       expect(ctx.percept).toBeUndefined();
     });
   });
@@ -126,6 +126,7 @@ describe("context factory", () => {
         percept,
       });
 
+      expect(result.view).toEqual(view);
       expect(result.scenario?.raw.environment).toEqual(view.environment);
       expect(result.traits).toEqual([]);
       expect(result.skills).toEqual([]);
@@ -143,6 +144,7 @@ describe("context factory", () => {
         percept,
       });
 
+      expect(result.view?.environment.channelId).toBe("100");
       expect(result.scenario).toBeTruthy();
       expect(result.traits).toEqual([]);
       expect(result.skills).toEqual([]);
@@ -278,6 +280,7 @@ describe("context factory", () => {
       expect(result.toolCtx.roundContext).toBe(result.roundContext);
       expect(result.toolCtx.scenario).toBe(result.roundContext.snapshot.scenario);
       expect(result.toolCtx.capabilities).toBe(result.roundContext.snapshot.capabilities);
+      expect(result.toolCtx.view?.environment.channelId).toBe("c1");
       expect(result.toolCtx.percept).toBe(percept);
       expect(result.roundContext.skillState).toMatchObject({
         active: ["search"],

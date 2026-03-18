@@ -4,10 +4,5 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src", "src/**/*.json"],
-  "references": [
-    {
-      "path": "../../packages/plugin-sdk"
-    }
-  ]
+  "include": ["src"]
 }

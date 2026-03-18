@@ -82,12 +82,12 @@ describe("CorePlugin send_message regression", () => {
       },
     );
 
-    if (!result.success) {
+    if (!result.ok) {
       throw new Error(result.error ?? "send_message failed unexpectedly");
     }
 
-    expect(result.success).toBe(true);
-    expect(result.content).toEqual(
+    expect(result.ok).toBe(true);
+    expect(result.data).toEqual(
       expect.objectContaining({
         status: "sent",
         partCount: 2,

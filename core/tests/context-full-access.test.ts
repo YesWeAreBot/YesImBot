@@ -10,7 +10,11 @@ import {
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import {
+  FunctionType,
+  type RuntimeToolExecutionContext,
+  type ToolExecutionContext,
+} from "../src/services/plugin/types";
 import {
   createAgentActionRecord,
   createMessageRecord,
@@ -42,7 +46,8 @@ describe("Full context access contract", () => {
           skillState?: { active: string[] };
         }
       | undefined;
-    let capturedToolCtx: ToolExecutionContext | undefined;
+    let capturedRuntimeCtx: RuntimeToolExecutionContext | undefined;
+    let capturedHandlerCtx: ToolExecutionContext | undefined;
 
     hookService.register(rootCtx as never, {
       type: HookType.Agent,
@@ -169,7 +174,8 @@ describe("Full context access contract", () => {
     const pluginService = {
       getDefinition: vi.fn(() => ({ type: FunctionType.Tool })),
       invoke: vi.fn(async (_name: string, _params: Record<string, unknown>, ctx) => {
-        capturedToolCtx = ctx as ToolExecutionContext;
+        capturedRuntimeCtx = ctx as RuntimeToolExecutionContext;
+        capturedHandlerCtx = ctx as ToolExecutionContext;
         return { success: true, status: "ok", content: "done" };
       }),
       getTools: vi.fn(() => []),
@@ -225,29 +231,34 @@ describe("Full context access contract", () => {
     );
     expect(hookParams?.skillState).toMatchObject({ active: [] });
 
-    expect(capturedToolCtx).toBeDefined();
-    expect(capturedToolCtx?.scenario?.raw.self.id).toBe("bot-1");
-    expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toEqual(["hook-injected"]);
-    expect(capturedToolCtx?.skills ?? []).toEqual([]);
-    expect(capturedToolCtx?.percept?.traceId).toBe("trace-ctx-1");
-    expect(capturedToolCtx?.percept?.metadata).toEqual({
+    expect(capturedRuntimeCtx).toBeDefined();
+    expect(capturedRuntimeCtx?.scenario?.raw.self.id).toBe("bot-1");
+    expect(capturedRuntimeCtx?.traits?.map((t) => t.dimension)).toEqual(["hook-injected"]);
+    expect(capturedRuntimeCtx?.skills ?? []).toEqual([]);
+    expect(capturedRuntimeCtx?.percept?.traceId).toBe("trace-ctx-1");
+    expect(capturedRuntimeCtx?.percept?.metadata).toEqual({
       requestId: "req-123",
       custom: { lane: "a" },
     });
-    expect(capturedToolCtx?.roundContext?.snapshot.metadata).toEqual(
+    expect(capturedRuntimeCtx?.roundContext?.snapshot.metadata).toEqual(
       expect.objectContaining({
         channelKey: "discord:c-1",
         traceId: "trace-ctx-1",
         route: "agent-start",
       }),
     );
-    expect(capturedToolCtx?.roundContext?.skillState).toMatchObject({ active: [] });
-    expect(capturedToolCtx?.scenario).toBe(capturedToolCtx?.roundContext?.snapshot.scenario);
-    expect(capturedToolCtx?.capabilities).toBe(
-      capturedToolCtx?.roundContext?.snapshot.capabilities,
+    expect(capturedRuntimeCtx?.roundContext?.skillState).toMatchObject({ active: [] });
+    expect(capturedRuntimeCtx?.scenario).toBe(capturedRuntimeCtx?.roundContext?.snapshot.scenario);
+    expect(capturedRuntimeCtx?.capabilities).toBe(
+      capturedRuntimeCtx?.roundContext?.snapshot.capabilities,
     );
 
-    const scenarioTimeline = capturedToolCtx?.roundContext?.snapshot.scenario.raw.scenarioTimeline;
+    expect(capturedHandlerCtx?.roundContext).toBeDefined();
+    expect(capturedHandlerCtx?.scenario).toBeDefined();
+    expect(capturedHandlerCtx?.capabilities).toBeDefined();
+
+    const scenarioTimeline =
+      capturedRuntimeCtx?.roundContext?.snapshot.scenario.raw.scenarioTimeline;
     expect(scenarioTimeline).toBeDefined();
     const messageCount = getMessageCount(scenarioTimeline!);
     const participants = getParticipants(scenarioTimeline!);
@@ -257,7 +268,7 @@ describe("Full context access contract", () => {
     expect(participants.map((participant) => participant.id)).toContain("user-123");
     expect(markedEvents.some((event) => event.type === "error")).toBe(true);
     expect(recentTurns).toHaveLength(1);
-    expect(capturedToolCtx?.roundContext?.snapshot.scenario.derived.recentMetrics).toEqual(
+    expect(capturedRuntimeCtx?.roundContext?.snapshot.scenario.derived.recentMetrics).toEqual(
       expect.objectContaining({
         messageCount: 1,
       }),

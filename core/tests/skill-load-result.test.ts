@@ -31,15 +31,19 @@ describe("loadSkill tool payload", () => {
       channelId: "c1",
     } as never);
 
-    expect(result.success).toBe(true);
-    expect(result.content).toMatchObject({
+    if (!result.ok) {
+      throw new Error(result.error ?? "loadSkill failed unexpectedly");
+    }
+
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
       status: "loaded",
       name: "search",
       description: "Search skill",
       enabledTools: ["search", "fetch"],
       guidance: "Use search when freshness matters.",
     });
-    expect(result.content).toMatchObject({
+    expect(result.data).toMatchObject({
       resources: [{ storeKey: "guide.txt", path: "guide.txt", description: "Search usage guide" }],
     });
   });

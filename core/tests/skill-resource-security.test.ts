@@ -28,8 +28,12 @@ describe("loadResource safety", () => {
     } as never);
 
     const result = await plugin.loadResourceTool({ resourceId: "search/guide.txt" }, {} as never);
-    expect(result.success).toBe(true);
-    expect(result.content).toMatchObject({
+    if (!result.ok) {
+      throw new Error(result.error ?? "loadResource should succeed");
+    }
+
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
       resourceId: "search/guide.txt",
       content: "guide content",
     });
@@ -45,7 +49,11 @@ describe("loadResource safety", () => {
     } as never);
 
     const result = await plugin.loadResourceTool({ resourceId: "search" }, {} as never);
-    expect(result.success).toBe(false);
+    if (result.ok) {
+      throw new Error("loadResource should fail for invalid resourceId format");
+    }
+
+    expect(result.ok).toBe(false);
     expect(result.error).toContain("resourceId must use the format <skill-name>/<store-key>");
   });
 
@@ -74,7 +82,11 @@ describe("loadResource safety", () => {
       { resourceId: "search/../secret.txt" },
       {} as never,
     );
-    expect(result.success).toBe(false);
+    if (result.ok) {
+      throw new Error("loadResource should reject traversal resourceId");
+    }
+
+    expect(result.ok).toBe(false);
     expect(result.error).toContain("Invalid resource path");
   });
 });

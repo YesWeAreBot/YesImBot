@@ -25,7 +25,12 @@ import type { HorizonService } from "../horizon/service";
 import type { HorizonView } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
-import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
+import {
+  FunctionType,
+  RuntimeToolExecutionContext,
+  ToolExecutionContext,
+  ToolResult,
+} from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { PromptFragment } from "../prompt/types";
 import type { SkillRegistry } from "../skill/service";
@@ -58,8 +63,8 @@ interface ToolResultEntry {
 
 interface AgentStartMutableParams {
   view: HorizonView | undefined;
-  traits: NonNullable<ToolExecutionContext["traits"]>;
-  skills: NonNullable<ToolExecutionContext["skills"]>;
+  traits: NonNullable<RuntimeToolExecutionContext["traits"]>;
+  skills: NonNullable<RuntimeToolExecutionContext["skills"]>;
   percept: Percept;
   roundContext: RoundContext;
   scenario: RoundContext["scenario"];
@@ -120,7 +125,7 @@ export class ThinkActLoop {
       toolCtx,
       resolvers,
     });
-    let runtimeToolCtx: ToolExecutionContext = built.toolCtx;
+    let runtimeToolCtx: RuntimeToolExecutionContext = built.toolCtx;
     let roundContext: RoundContext = built.roundContext;
     const incidents: AgentIncident[] = [];
     const actionCounters = createSettlementCounters();
@@ -128,8 +133,7 @@ export class ThinkActLoop {
     let producedVisibleOutput = false;
     let finalStatus: AgentFinalOutcomeStatus = "silent";
 
-    const runtimeToolCtxWithView = runtimeToolCtx as ToolExecutionContext & { view?: HorizonView };
-    let view = runtimeToolCtxWithView.view;
+    let view = runtimeToolCtx.view;
     if (!view) {
       try {
         view = await horizonService.buildView(
@@ -290,7 +294,7 @@ export class ThinkActLoop {
           skills: toActiveSkills(currentLoadedSkills),
         },
         roundContext,
-      ) as ToolExecutionContext;
+      ) as RuntimeToolExecutionContext;
     };
 
     refreshRuntimeSkillState();
@@ -983,7 +987,7 @@ function toToolResultEntry(
 ): ToolResultEntry {
   if (result.status === "fulfilled") {
     const v = result.value;
-    let resultVal = v.content;
+    let resultVal = v.ok ? v.data : undefined;
     if (resultVal !== undefined) {
       const str = typeof resultVal === "string" ? resultVal : JSON.stringify(resultVal);
       if (str.length > maxLen) resultVal = str.slice(0, maxLen) + "...(truncated)";
@@ -991,10 +995,10 @@ function toToolResultEntry(
     return {
       id: idx,
       name,
-      status: v.status,
-      success: v.success,
+      status: v.ok ? "ok" : "failed",
+      success: v.ok,
       ...(resultVal !== undefined && { result: resultVal }),
-      ...(v.error && { error: v.error }),
+      ...(!v.ok && v.error && { error: v.error }),
     };
   }
   return { id: idx, name, success: false, status: "failed", error: String(result.reason) };

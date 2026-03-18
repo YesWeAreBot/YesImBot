@@ -141,10 +141,10 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
 
         const result = await this.invoke(name, parsedParams, toolCtx);
 
-        if (result.success) {
+        if (result.ok) {
           return [
             `工具调用成功：${name}`,
-            result.content ? `返回值：\n${JSON.stringify(result.content, null, 2)}` : "无返回值",
+            result.data ? `返回值：\n${JSON.stringify(result.data, null, 2)}` : "无返回值",
           ].join("\n");
         } else {
           return [

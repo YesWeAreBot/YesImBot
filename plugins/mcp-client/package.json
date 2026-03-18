@@ -32,10 +32,12 @@
     "@modelcontextprotocol/sdk": "^1.27.1"
   },
   "devDependencies": {
+    "@yesimbot/plugin-sdk": "workspace:^",
     "koishi": "^4.18.10",
     "koishi-plugin-yesimbot": "workspace:^"
   },
   "peerDependencies": {
+    "@yesimbot/plugin-sdk": "workspace:^",
     "koishi": "^4.18.10",
     "koishi-plugin-yesimbot": "workspace:^"
   },

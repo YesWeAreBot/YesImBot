@@ -1,9 +1,8 @@
 {
-  "name": "@yesimbot/koishi-plugin-search-service",
+  "name": "@yesimbot/plugin-sdk",
   "version": "0.1.0-beta.1",
   "files": [
-    "dist",
-    "resources"
+    "dist"
   ],
   "type": "module",
   "main": "./dist/index.cjs",
@@ -12,8 +11,18 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.mjs",
+      "require": "./dist/tools/index.cjs"
+    },
+    "./hooks": {
+      "types": "./dist/hooks/index.d.ts",
+      "import": "./dist/hooks/index.mjs",
+      "require": "./dist/hooks/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -26,24 +35,16 @@
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
-    "pub": "yarn npm publish --access public",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
   "devDependencies": {
-    "@yesimbot/plugin-sdk": "workspace:^",
     "koishi": "^4.18.3",
-    "koishi-plugin-yesimbot": "workspace:^"
+    "koishi-plugin-yesimbot": "workspace:^",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
-    "@yesimbot/plugin-sdk": "workspace:^",
     "koishi": "^4.18.3",
     "koishi-plugin-yesimbot": "workspace:^"
-  },
-  "koishi": {
-    "service": {
-      "required": [
-        "yesimbot.prompt"
-      ]
-    }
   }
 }

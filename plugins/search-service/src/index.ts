@@ -1,6 +1,5 @@
 import { join } from "node:path";
 
-import { Context, Schema } from "koishi";
 import {
   Failed,
   FunctionType,
@@ -10,7 +9,8 @@ import {
   ToolResult,
   withInnerThoughts,
   YesImPlugin,
-} from "koishi-plugin-yesimbot/services/plugin";
+} from "@yesimbot/plugin-sdk/tools";
+import { Context, Schema } from "koishi";
 import { loadSkillsFromDir } from "koishi-plugin-yesimbot/services/skill";
 
 import { TavilyBackend } from "./backends/tavily";

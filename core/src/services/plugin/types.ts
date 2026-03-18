@@ -8,6 +8,7 @@ import type {
   Scenario,
 } from "../../runtime/contracts";
 import type { ActiveSkill } from "../../shared/types";
+import type { HorizonView } from "../horizon/types";
 import type { YesImPlugin } from "./plugin";
 
 export interface TraitSignal {
@@ -22,12 +23,19 @@ export enum FunctionType {
   Action = "action",
 }
 
-export interface ToolResult<T = unknown> {
-  success: boolean;
-  status?: "success" | "failed" | string;
-  content?: T;
-  error?: string;
+export interface ToolSuccess<T = unknown> {
+  ok: true;
+  data: T;
+  metadata?: Record<string, unknown>;
 }
+
+export interface ToolFailure {
+  ok: false;
+  error: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type ToolResult<T = unknown> = ToolSuccess<T> | ToolFailure;
 
 export interface ToolExecutionContext {
   platform: string;
@@ -42,8 +50,12 @@ export interface ToolExecutionContext {
   scenario?: Scenario;
   /** Canonical runtime contract (Phase 54+). */
   capabilities?: Capabilities;
+}
+
+export interface RuntimeToolExecutionContext extends ToolExecutionContext {
   traits?: TraitSignal[];
   skills?: ActiveSkill[];
+  view?: HorizonView;
 }
 
 export interface FunctionDefinition {
