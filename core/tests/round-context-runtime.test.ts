@@ -63,16 +63,25 @@ vi.mock("koishi", () => {
   };
 });
 
-import { ThinkActLoop } from "../src/services/agent/loop";
-import { AgentCore } from "../src/services/agent/service";
-import type { AgentStartHookExecutionContext } from "../src/services/hook/types";
 import {
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   commitRoundContext,
   createRoundContext,
-} from "../src/services/runtime/adapters";
-import type { Percept } from "../src/services/runtime/contracts";
+} from "../src/runtime/adapters";
+import { DEFAULT_SCENARIO_TIMELINE_SEMANTICS, type Percept } from "../src/runtime/contracts";
+import { ThinkActLoop } from "../src/services/agent/loop";
+import { AgentCore } from "../src/services/agent/service";
+
+function createScenarioTimeline() {
+  return {
+    turns: [],
+    activeSegment: { mode: "after-latest-summary" as const },
+    markedEvents: [],
+    heartbeatEvents: [],
+    semantics: DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+  };
+}
 
 describe("round context runtime", () => {
   it("AgentCore builds Percept without copying message content or sender name", () => {
@@ -223,7 +232,8 @@ describe("round context runtime", () => {
             channelId: "c1",
           },
           entities: [],
-          timeline: [],
+          timeline: createScenarioTimeline(),
+          scenarioTimeline: createScenarioTimeline(),
           stimulusSource: { type: "message", messageId: "m1", senderId: "u1" },
         },
         derived: {
@@ -315,10 +325,10 @@ describe("round context runtime", () => {
       }),
     );
 
-    expect(toolCtxCapture.length).toBeGreaterThan(0);
-    const capturedCtx = toolCtxCapture[0] as Record<string, unknown>;
-    expect(capturedCtx.roundContext).toBeTruthy();
-    expect(capturedCtx.scenario).toBeTruthy();
+    expect(ctx["yesimbot.prompt"].registerFragmentSource).toHaveBeenCalledWith(
+      expect.stringContaining("__loop_tool_fragments_"),
+      expect.any(Function),
+    );
   });
 
   it("completes baseline runtime fields before agent-start hook mutation", async () => {
@@ -568,7 +578,8 @@ describe("round context runtime", () => {
             channelId: "stale-c1",
           },
           entities: [],
-          timeline: [],
+          timeline: createScenarioTimeline(),
+          scenarioTimeline: createScenarioTimeline(),
           stimulusSource: { type: "message", messageId: "stale", senderId: "u0" },
         },
         derived: {
@@ -641,7 +652,8 @@ describe("round context runtime", () => {
             channelId: "c1",
           },
           entities: [],
-          timeline: [],
+          timeline: createScenarioTimeline(),
+          scenarioTimeline: createScenarioTimeline(),
           stimulusSource: { type: "message" },
         },
         derived: {
@@ -687,7 +699,8 @@ describe("round context runtime", () => {
             channelId: "c1",
           },
           entities: [],
-          timeline: [],
+          timeline: createScenarioTimeline(),
+          scenarioTimeline: createScenarioTimeline(),
           stimulusSource: { type: "message" },
         },
         derived: {
@@ -710,9 +723,9 @@ describe("round context runtime", () => {
     expect(roundContext.skillState.persistentRoster).toEqual(["foo"]);
   });
 
-  it("runtime and hook contracts include explicit skill loading fields", () => {
+  it("runtime and hook contracts expose persisted skill state without hook-side skill loading", () => {
     const runtimeContracts = readFileSync(
-      new URL("../src/services/runtime/contracts.ts", import.meta.url),
+      new URL("../src/runtime/contracts.ts", import.meta.url),
       "utf8",
     );
     const hookTypes = readFileSync(
@@ -722,10 +735,7 @@ describe("round context runtime", () => {
 
     expect(runtimeContracts).toContain("loadHistory?: LoadAttempt[]");
     expect(runtimeContracts).toContain("persistentRoster?: string[]");
-    expect(hookTypes).toContain("loadSkill(skillName: string): Promise<LoadResult>");
-    expect(hookTypes).toContain("getLoadedSkills(): SkillDefinition[]");
+    expect(hookTypes).not.toContain("loadSkill(skillName: string)");
+    expect(hookTypes).not.toContain("getLoadedSkills(): SkillDefinition[]");
   });
 });
-
-type _AgentStartHookHasLoadSkill = AgentStartHookExecutionContext["loadSkill"];
-type _AgentStartHookHasGetLoadedSkills = AgentStartHookExecutionContext["getLoadedSkills"];

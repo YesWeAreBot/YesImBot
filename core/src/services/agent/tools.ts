@@ -1,33 +1,34 @@
+import { getCapabilityByKey } from "../../runtime/contracts";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext } from "../plugin/types";
 import type { PromptFragment } from "../prompt/types";
-import { getCapabilityByKey } from "../runtime/contracts";
-import type { ToolFilter } from "../skill/types";
 
 const TOOL_PROTOCOL_CONTENT = [
+  "## Tool Protocol",
+  "",
+  "Tools retrieve information or compute results. Actions produce side effects.",
+  "",
   "Use tools only when they directly improve accuracy or actionability.",
   "Prefer minimal, deterministic parameters and avoid speculative tool calls.",
-  "If no tool is needed, answer directly via send_message.",
+  "",
+  "If no tool or action is needed, answer directly without calling tools.",
 ].join("\n");
 
 function buildToolAvailability(
   pluginService: PluginService,
   toolCtx: ToolExecutionContext,
-  toolFilter?: ToolFilter,
+  allowedTools?: string[],
 ): string {
   let entries = pluginService.getTools(toolCtx);
-  if (toolFilter?.include?.length) {
+  if (allowedTools?.length) {
     // Fetch hidden tools that are explicitly included by skill
     const all = pluginService.getTools(toolCtx, true);
     const hidden = all.filter(
       (e) =>
         !entries.some((v) => v.function.name === e.function.name) &&
-        toolFilter.include!.includes(e.function.name),
+        allowedTools.includes(e.function.name),
     );
     entries = entries.concat(hidden);
-  }
-  if (toolFilter?.exclude?.length) {
-    entries = entries.filter((e) => !toolFilter.exclude!.includes(e.function.name));
   }
 
   const visibleEntries: typeof entries = [];
@@ -72,9 +73,9 @@ function buildToolAvailability(
   lines.push(...unavailableHints);
 
   // Warn about skill-requested tools that don't exist
-  if (toolFilter?.include?.length) {
+  if (allowedTools?.length) {
     const available = new Set(visibleEntries.map((e) => e.function.name));
-    for (const name of toolFilter.include) {
+    for (const name of allowedTools) {
       if (!available.has(name)) {
         lines.push(`- ${name}: [unavailable — tool not installed]`);
       }
@@ -86,12 +87,12 @@ function buildToolAvailability(
 export function buildToolPromptFragments(
   pluginService: PluginService,
   toolCtx: ToolExecutionContext,
-  toolFilter?: ToolFilter,
+  allowedTools?: string[],
 ): PromptFragment[] {
-  const availability = buildToolAvailability(pluginService, toolCtx, toolFilter);
+  const availability = buildToolAvailability(pluginService, toolCtx, allowedTools);
   const availableContent = availability
-    ? `Available tools/actions this round:\n${availability}`
-    : "No tools/actions are available this round.";
+    ? `<tools>\nTools/actions available this round:\n${availability}\n</tools>`
+    : "<tools>\nNo tools/actions are available this round.\n</tools>";
 
   return [
     {

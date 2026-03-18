@@ -2,6 +2,7 @@
  * Configuration for the ArousalService heartbeat system.
  */
 export interface ArousalConfig {
+  debugLevel?: number;
   /** Master switch for the arousal system (default: false) */
   enabled: boolean;
   /** Global heartbeat interval in milliseconds (default: 1800000 = 30 min) */

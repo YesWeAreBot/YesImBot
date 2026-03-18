@@ -1,10 +1,10 @@
 import { Context } from "koishi";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+import type { ChannelKey } from "../src/runtime/contracts";
 import { SummaryCompressor } from "../src/services/horizon/compressor";
 import { EventManager } from "../src/services/horizon/manager";
 import { TimelineStage, TimelineEventType } from "../src/services/horizon/types";
-import type { ChannelKey } from "../src/services/shared/types";
 import {
   createMessageRecord,
   createAgentResponseRecord,

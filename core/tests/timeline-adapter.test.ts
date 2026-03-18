@@ -1,16 +1,16 @@
 import type { Context } from "koishi";
 import { describe, expect, it, vi } from "vitest";
 
-import { EventManager } from "../src/services/horizon/manager";
-import { HorizonService } from "../src/services/horizon/service";
-import type { HorizonView, ImageConfig } from "../src/services/horizon/types";
 import {
   buildScenarioTimeline,
   getMarkedEvents,
   getMessageCount,
   getParticipants,
   getRecentTurns,
-} from "../src/services/runtime/scenario-timeline";
+} from "../src/runtime/scenario-timeline";
+import { EventManager } from "../src/services/horizon/manager";
+import { HorizonService } from "../src/services/horizon/service";
+import type { HorizonView, ImageConfig } from "../src/services/horizon/types";
 import {
   createAgentActionRecord,
   createAgentResponseRecord,
@@ -280,5 +280,60 @@ describe("timeline adapter", () => {
       }
       expect(imagePart?.type).toBe("image");
     }
+  });
+
+  it("adapts scenario timeline agent actions with params into transcript lines", async () => {
+    const eventManager = new EventManager({
+      logger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() })),
+    } as unknown as Context);
+
+    const history = [
+      createSummaryRecord({
+        index: 40,
+        minutesOffset: 1,
+        data: {
+          content: "summary boundary",
+          coveredUntil: new Date("2026-03-05T10:01:00Z"),
+        },
+      }),
+      createMessageRecord({
+        index: 41,
+        minutesOffset: 2,
+        data: {
+          senderId: "user-41",
+          senderName: "User41",
+          content: "request",
+        },
+      }),
+      createAgentActionRecord({
+        index: 41,
+        minutesOffset: 3,
+        data: {
+          actions: [
+            {
+              name: "send_message",
+              params: { content: "visible output", replyTo: "12" },
+            },
+          ],
+          toolResults: [
+            {
+              name: "send_message",
+              success: true,
+              status: "ok",
+              result: { messageId: "sent-41", content: "visible output" },
+            },
+          ],
+        },
+      }),
+    ];
+
+    const timeline = buildScenarioTimeline(history);
+    const messages = await eventManager.buildLoopMessages(timeline, {
+      selfId: "bot-1",
+      channelKey: "test:channel",
+    });
+    const transcript = messages.map((message) => flattenContent(message.content)).join("\n");
+
+    expect(transcript).toContain('send_message({"content":"visible output","replyTo":"12"})');
   });
 });

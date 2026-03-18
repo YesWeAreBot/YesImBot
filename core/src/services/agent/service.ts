@@ -1,12 +1,12 @@
 import { Context, Random, Service } from "koishi";
 
+import { Percept } from "../../runtime/contracts";
+import { buildMinimalContext } from "../../shared/context-factory";
 import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ToolExecutionContext } from "../plugin/types";
-import type { RoleService } from "../role/service";
-import { Percept } from "../runtime/contracts";
-import { buildMinimalContext } from "../shared/context-factory";
+import type { PersonaService } from "../role/service";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
 import { TokenBucket, WillingnessConfig, WillingnessEngine } from "./willingness";
@@ -105,9 +105,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
     "yesimbot.plugin",
     "yesimbot.prompt",
     "yesimbot.model",
-    "yesimbot.trait",
     "yesimbot.skill",
-    "yesimbot.role",
+    "yesimbot.session",
+    "yesimbot.persona",
     "yesimbot.hook",
     "yesimbot.arousal",
   ];
@@ -126,7 +126,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     super(ctx, "yesimbot.agent", false);
     this.config = config;
     this.logger = ctx.logger("agent");
-    this.logger.level = config.debugLevel || 2;
+    this.logger.level = config.debugLevel ?? 2;
     this.ctx.command("yesimbot.agent", "AgentCore 调试指令", { authority: 3 });
   }
 
@@ -225,9 +225,12 @@ export class AgentCore extends Service<AgentCoreConfig> {
   }): void {
     try {
       const channelKey = `${data.platform}:${data.channelId}`;
-      const traceId = `hb-${Random.id(8, 16)}`;
+      const source = data.triggeredBy === "global" ? "global" : "manual";
+      const traceId = `hb-${source}-${Random.id(8, 16)}`;
 
-      this.logger.info(`[heartbeat] channel=${channelKey} triggered by=${data.triggeredBy}`);
+      this.logger.info(
+        `Heartbeat: channel=${channelKey} source=${data.triggeredBy} trace_id=${traceId}`,
+      );
 
       const built: LoopPayload = {
         percept: {
@@ -250,7 +253,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
 
       this.enqueue(channelKey, built);
     } catch (err: unknown) {
-      this.logger.error(`handleHeartbeat error: ${err}`);
+      this.logger.error(
+        `Heartbeat handling failed: error=${err instanceof Error ? err.message : String(err)} channel=${data.platform}:${data.channelId} source=${data.triggeredBy}`,
+      );
     }
   }
 
@@ -490,8 +495,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
         },
       );
       const contextText = await horizon.formatHorizonText(view);
-      const roleService = this.ctx["yesimbot.role"] as RoleService;
-      const personaSummary = roleService.getSoulSummary(300);
+      const personaService = this.ctx["yesimbot.persona"] as PersonaService;
+      const personaSummary = personaService.getSoulSummary(300);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";
       const fallbackChain = this.config.willingness?.deferred?.fallbackChain ?? [];
       const result = await modelService.call(

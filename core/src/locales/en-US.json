@@ -6,9 +6,9 @@
         "$inner": {
           "model": "Primary chat model",
           "fallbackChain": "Fallback model chain (tried in order)",
+          "summaryModel": "Summary generation model",
           "errorReportChannel": "Error report channel (platform:channelId)",
           "allowedChannels": "Channels allowed to respond in",
-          "botName": "Bot display name (overrides platform name)",
           "keywords": "Trigger keywords (regex patterns)"
         }
       },
@@ -92,8 +92,7 @@
         "$desc": "Prompts",
         "$inner": {
           "templates": "Custom prompt templates",
-          "renderTimeout": "Injection render timeout (ms)",
-          "resourcesDir": "Custom templates directory",
+          "timeout": "Prompt injection timeout (ms)",
           "rolePath": "Role files directory",
           "skillPaths": "Skill file directories",
           "confidenceThreshold": "Skill match confidence threshold",
@@ -101,20 +100,69 @@
         }
       },
       {
-        "$desc": "Advanced",
+        "$desc": "Image",
         "$inner": {
-          "enableThoughts": "Enable chain-of-thought output",
+          "imageMode": "Image handling mode",
+          "maxImagesInContext": "Maximum images included in context",
+          "imageLifecycleCount": "Image lifecycle round count"
+        }
+      },
+      {
+        "$inner": {
+          "memoryAgent": {
+            "$desc": "Memory agent settings",
+            "$inner": {
+              "coreMemoryBudget": "Core memory character budget",
+              "summaryModel": "Memory summary model",
+              "maxAgentSteps": "Maximum memory-agent steps"
+            }
+          },
+          "compressionThreshold": "Event count threshold to trigger timeline compression",
+          "inactivityTriggerMs": "Inactivity duration to trigger timeline compression (ms)",
+          "retainRecentEntries": "Number of recent timeline entries kept uncompressed"
+        }
+      },
+      {
+        "$inner": {
+          "arousal": {
+            "$desc": "Arousal settings",
+            "$inner": {
+              "enabled": "Enable proactive arousal",
+              "heartbeatIntervalMs": "Heartbeat check interval (ms)",
+              "excludeChannels": "Channels excluded from proactive arousal",
+              "dailyMessageLimit": "Daily proactive message limit",
+              "evaluationModel": "Arousal evaluation model"
+            }
+          }
+        }
+      },
+      {
+        "$desc": "Context Management",
+        "$inner": {
           "charBudget": "Working memory trim character budget",
           "keepLastRounds": "Recent rounds kept untrimmed",
           "softTrimHead": "Soft trim head chars preserved",
           "softTrimTail": "Soft trim tail chars preserved",
           "initialContextCharBudget": "Initial context block char budget",
-          "historyLimit": "Timeline history message limit",
+          "historyLimit": "Timeline history message limit"
+        }
+      },
+      {
+        "$desc": "Advanced",
+        "$inner": {
+          "enableThoughts": "Enable chain-of-thought output",
           "archiveThresholdMs": "Timeline archive threshold (ms)",
           "entityCacheTtl": "Entity cache TTL (ms)",
           "maxActiveEntities": "Max entities shown to LLM",
           "defaultTimeout": "Tool execution default timeout (ms)",
-          "debugLevel": "Debug log level: 0=off, 1=basic, 2=detailed, 3=full"
+          "debugLevel": "Debug log level: 0=off, 1=basic, 2=detailed, 3=full",
+          "hookTimeouts": {
+            "$desc": "Hook timeout settings",
+            "$inner": {
+              "tool": "Tool hook timeout (ms)",
+              "agent": "Agent hook timeout (ms)"
+            }
+          }
         }
       }
     ]

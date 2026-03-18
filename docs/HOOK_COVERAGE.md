@@ -1,5 +1,7 @@
 # Hook Coverage Contract
 
+> **Phase 64 update:** Message-hook interception was removed. Athena hooks now cover only agent and tool lifecycle interception. Message send operations proceed without hook interception.
+
 ## Runtime Activation Status
 
 Hook coverage is only meaningful when runtime activation order is correct.
@@ -15,25 +17,12 @@ This contract reflects the activated runtime used by Phase 47 hook-runtime regre
 Athena hooks are interception points for user-facing runtime flows. The system distinguishes:
 
 - Hooked runtime paths: tool, message, and agent interception chains.
+- Hooked runtime paths: tool and agent interception chains.
 - intentionally unhooked path: internal error-reporting transport for fail-safe reliability.
 
 ## Hooked Runtime Paths
 
-### 1. Message Path (`HookType.Message`)
-
-- Entry point: `CorePlugin.sendMessage`
-- Source: `core/src/services/plugin/builtin/core.ts`
-- Hook call: `hookService.executeBefore(HookType.Message, ...)`
-- Covered transports:
-  - Current channel send (`ctx.session?.send(...)`)
-  - Cross-channel send (`bot.sendMessage(...)` via `target`)
-
-Coverage evidence:
-
-- `core/tests/hook-message-coverage.test.ts`
-- `core/tests/hook-runtime-resilience.test.ts` (timeout + error isolation continuity)
-
-### 2. Tool Path (`HookType.Tool`)
+### 1. Tool Path (`HookType.Tool`)
 
 - Entry point: `ThinkActLoop.executeActions`
 - Source: `core/src/services/agent/loop.ts`
@@ -48,7 +37,7 @@ Coverage evidence:
 - `core/tests/hook-error-isolation.test.ts` (unit isolation guarantees)
 - `core/tests/hook-runtime-resilience.test.ts` (runtime timeout/error isolation)
 
-### 3. Agent Path (`HookType.Agent`)
+### 2. Agent Path (`HookType.Agent`)
 
 - Entry point: `ThinkActLoop.run`
 - Source: `core/src/services/agent/loop.ts`
@@ -100,7 +89,7 @@ Evidence:
 
 - Throwing hooks are isolated (warning logged, chain continues).
 - Later hooks in the same phase still execute.
-- Runtime message/tool/agent outcomes remain available by default.
+- Runtime tool/agent outcomes remain available by default.
 
 Evidence:
 
@@ -117,17 +106,8 @@ Phase 47 regression anchor:
 
 - `core/tests/hook-runtime-resilience.test.ts` (hook-runtime timeout and error isolation continuation)
 
-## Design Rules for New Message Sends
-
-When adding new send paths:
-
-1. If it is user-facing output, route through `send_message` so it inherits hook coverage.
-2. If it is internal reliability/error signaling, keep it intentionally unhooked and document why.
-3. Add or update regression tests for timeout and error-isolation behavior in the affected runtime path.
-
 ## Related References
 
 - Hook API: `core/src/services/hook/service.ts`
 - Runtime tool/agent loop: `core/src/services/agent/loop.ts`
-- Message runtime send path: `core/src/services/plugin/builtin/core.ts`
 - Fail-safe error reporting: `core/src/services/agent/service.ts`

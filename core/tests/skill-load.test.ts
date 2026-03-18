@@ -6,9 +6,10 @@ import type { SkillDefinition } from "../src/services/skill/types";
 function createSkill(name: string): SkillDefinition {
   return {
     name,
-    lifecycle: "per-turn",
+    description: `${name} description`,
+    guidance: `${name} guidance`,
     source: "plugin",
-    effects: {},
+    rootDir: `/skills/${name}`,
   };
 }
 

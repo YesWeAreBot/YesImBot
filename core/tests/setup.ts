@@ -77,4 +77,5 @@ vi.mock("koishi", () => ({
   },
   Random: { id: () => "mock-id" },
   h: hMock,
+  sleep: async () => undefined,
 }));

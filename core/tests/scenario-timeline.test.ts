@@ -6,7 +6,7 @@ import {
   getMessageCount,
   getParticipants,
   getRecentTurns,
-} from "../src/services/runtime/scenario-timeline";
+} from "../src/runtime/scenario-timeline";
 import {
   createAgentActionRecord,
   createAgentResponseRecord,
@@ -140,7 +140,7 @@ describe("scenario timeline", () => {
     expect(timeline.activeSegment.mode).toBe("after-latest-summary");
   });
 
-  it("locks summary as background and heartbeat as query-only while agent.response is not visible output", () => {
+  it("keeps summary in background and renders heartbeat as visible with detail while agent.response stays non-visible", () => {
     const entries = [
       createSummaryRecord({
         index: 3,
@@ -183,9 +183,58 @@ describe("scenario timeline", () => {
     const turn = timeline.turns[0];
 
     expect(timeline.latestSummary?.content).toBe("background summary");
-    expect(timeline.heartbeatEvents[0]?.queryOnly).toBe(true);
+    expect(timeline.semantics.heartbeatRendering).toBe("visible");
+    expect(timeline.heartbeatEvents[0]?.detail?.channelSummary).toBe("heartbeat only");
     expect(turn?.events.some((event) => event.type === "agent.response")).toBe(true);
     expect(turn?.visibleOutputs).toHaveLength(0);
     expect(turn?.settlement).toBe("failed");
+  });
+
+  it("derives visibleOutputs messageId and content from structured send_message result payloads", () => {
+    const entries = [
+      createMessageRecord({
+        index: 11,
+        minutesOffset: 1,
+        data: {
+          senderId: "user-structured",
+          senderName: "Structured",
+          content: "hello",
+        },
+      }),
+      createAgentActionRecord({
+        index: 11,
+        minutesOffset: 2,
+        data: {
+          actions: [{ name: "send_message", params: { content: "structured visible output" } }],
+          toolResults: [
+            {
+              name: "send_message",
+              success: true,
+              result: {
+                status: "sent",
+                messageId: "sent-structured-1",
+                content: "structured visible output",
+                messages: [
+                  {
+                    platform: "test-platform",
+                    channelId: "test-channel",
+                    messageId: "sent-structured-1",
+                    content: "structured visible output",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    ];
+
+    const timeline = buildScenarioTimeline(entries);
+    const turn = timeline.turns[0];
+
+    expect(turn?.visibleOutputs[0]).toMatchObject({
+      messageId: "sent-structured-1",
+      content: "structured visible output",
+    });
   });
 });

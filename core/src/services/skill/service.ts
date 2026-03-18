@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { Context, Schema, Service } from "koishi";
+import { Context, Service } from "koishi";
 
 import { loadSkillsFromDir } from "./loader";
 import type { SkillDefinition } from "./types";
@@ -16,13 +16,8 @@ export interface SkillRegistryConfig {
   skillPaths?: string[];
   confidenceThreshold?: number;
   stickyDefaultTimeout?: number;
+  debugLevel?: number;
 }
-
-export const SkillRegistryConfigSchema: Schema<SkillRegistryConfig> = Schema.object({
-  skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default([]),
-  confidenceThreshold: Schema.number().default(0.3),
-  stickyDefaultTimeout: Schema.number().default(3),
-});
 
 const builtinSkillsDir = join(
   __dirname,
@@ -37,6 +32,7 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     super(ctx, "yesimbot.skill", false);
     this.config = config;
     this.logger = ctx.logger("skill");
+    this.logger.level = config.debugLevel ?? 2;
   }
 
   protected async start(): Promise<void> {
@@ -69,14 +65,14 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     return Array.from(this.skills.values());
   }
 
-  private async loadAllDirs(): Promise<void> {
+  async loadAllDirs(): Promise<void> {
     if (existsSync(builtinSkillsDir)) {
       const builtins = loadSkillsFromDir(builtinSkillsDir);
       for (const s of builtins) this.skills.set(s.name, s);
     }
     for (const dir of this.config.skillPaths ?? []) {
       if (!existsSync(dir)) continue;
-      const loaded = await loadSkillsFromDir(dir);
+      const loaded = loadSkillsFromDir(dir);
       for (const s of loaded) this.skills.set(s.name, s);
     }
   }

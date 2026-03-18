@@ -54,7 +54,7 @@ Keep these boundaries intact:
 - Do not use `ctx.provide()` for service creation
 - Reuse a logger from context, usually `ctx.logger("...")`
 - Preserve per-channel isolation using `platform + channelId`
-- Do not commit `.planning/` changes from the main repository; `.planning/` is a separate git repo
+- **`.planning/` is an independent documentation repository** — it is a separate git submodule/repo and must be committed separately after tasks complete. After completing any task that modifies `.planning/`, switch to the `.planning/` directory and commit changes there.
 - Reference `references/YesImBot-v3/` when migrating older behavior patterns
 
 ## Workspace Commands

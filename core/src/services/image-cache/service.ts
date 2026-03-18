@@ -15,7 +15,7 @@ declare module "koishi" {
   }
 }
 
-export class ImageCacheService extends Service {
+export class ImageCacheService extends Service<ImageCacheConfig> {
   private index = new Map<string, ImageMetadata>();
   private urlIndex = new Map<string, string>();
   private pending = new Map<string, Promise<string>>();
@@ -31,11 +31,13 @@ export class ImageCacheService extends Service {
     this.cacheDir = join(ctx.baseDir, "data", "yesimbot", "cache");
     this.imagesDir = join(this.cacheDir, "images");
     this.config = {
+      debugLevel: config?.debugLevel,
       maxCachedImages: config?.maxCachedImages ?? 1000,
       imageTtlMs: config?.imageTtlMs ?? 7 * 24 * 3600 * 1000,
       flushIntervalMs: config?.flushIntervalMs ?? 30_000,
       cleanupIntervalMs: config?.cleanupIntervalMs ?? 3_600_000,
     };
+    this.logger.level = this.config.debugLevel ?? 2;
   }
 
   async start(): Promise<void> {

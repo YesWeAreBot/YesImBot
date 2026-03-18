@@ -1,7 +1,7 @@
 import type { Context, Logger } from "koishi";
 
-import type { ChannelKey, Scenario } from "../../runtime/contracts";
-import type { TraitSignal } from "../../shared/types";
+import type { ChannelKey, Scenario } from "../../../runtime/contracts";
+import type { TraitSignal } from "../../../shared/types";
 import type { TraitAnalyzer } from "../service";
 import type { TraitDetector } from "../types";
 

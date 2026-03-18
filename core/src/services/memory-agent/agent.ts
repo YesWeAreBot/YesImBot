@@ -1,10 +1,10 @@
 import { generateText, stepCountIs } from "ai";
 import type { Context } from "koishi";
 
+import { ChannelKey } from "../../runtime";
 import type { HorizonService } from "../horizon/service";
 import { TimelineEventType, type SummaryRecord, type TimelineEntry } from "../horizon/types";
 import type { ModelService } from "../model/service";
-import { ChannelKey } from "../runtime";
 import { createMemoryTools } from "./tools";
 import { type MemoryAgentConfig } from "./types";
 

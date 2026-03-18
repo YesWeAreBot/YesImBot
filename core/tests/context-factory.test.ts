@@ -1,17 +1,28 @@
 import type { Context } from "koishi";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { createRoundContext } from "../src/runtime/adapters";
+import { DEFAULT_SCENARIO_TIMELINE_SEMANTICS, type Percept } from "../src/runtime/contracts";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import type { HorizonView } from "../src/services/horizon/types";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
-import { createRoundContext } from "../src/services/runtime/adapters";
+import { AgentSessionStore } from "../src/services/skill/session-store";
 import {
   buildAgentContext,
   buildAgentRoundContext,
   buildHookContext,
   buildMinimalContext,
-} from "../src/services/shared/context-factory";
-import type { ActiveSkill, Percept, TraitSignal } from "../src/services/shared/types";
+} from "../src/shared/context-factory";
+
+function createTimeline() {
+  return {
+    turns: [],
+    activeSegment: { mode: "after-latest-summary" as const },
+    markedEvents: [],
+    heartbeatEvents: [],
+    semantics: DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
+  };
+}
 
 describe("context factory", () => {
   describe("buildMinimalContext", () => {
@@ -63,8 +74,6 @@ describe("context factory", () => {
       entities: [],
       history: [],
     };
-    const traits: TraitSignal[] = [{ dimension: "scene", value: "chat", confidence: 0.9 }];
-
     let logger: { warn: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
@@ -73,27 +82,37 @@ describe("context factory", () => {
 
     const buildContext = (overrides: {
       buildView?: () => Promise<HorizonView>;
-      analyze?: () => Promise<TraitSignal[]>;
-      resolve?: () => { activeSkills: ActiveSkill[] };
+      loadedSkills?: string[];
+      get?: (name: string) => unknown;
     }) => {
+      const sessionStore = new AgentSessionStore({ logger: () => logger } as never);
+      for (const skillName of overrides.loadedSkills ?? []) {
+        sessionStore.loadSkill("onebot", "100", {
+          name: skillName,
+          description: `${skillName} description`,
+          guidance: `${skillName} guidance`,
+          rootDir: `/skills/${skillName}`,
+          source: "plugin",
+        });
+      }
+
       const ctx = {
         logger: () => logger,
         "yesimbot.horizon": {
           buildView: overrides.buildView ?? vi.fn().mockResolvedValue(view),
         },
-        "yesimbot.trait": {
-          analyze: overrides.analyze ?? vi.fn().mockResolvedValue(traits),
-        },
         "yesimbot.skill": {
-          resolve:
-            overrides.resolve ??
-            vi.fn().mockReturnValue({
-              activeSkills: [],
-              promptFragments: [],
-              styleFragment: null,
-              toolFilter: { include: [], exclude: [] },
-            }),
+          get:
+            overrides.get ??
+            vi.fn((name: string) => ({
+              name,
+              description: `${name} description`,
+              guidance: `${name} guidance`,
+              rootDir: `/skills/${name}`,
+              source: "plugin",
+            })),
         },
+        "yesimbot.session": sessionStore,
       } as unknown as Context;
 
       return ctx;
@@ -108,7 +127,7 @@ describe("context factory", () => {
       });
 
       expect(result.scenario?.raw.environment).toEqual(view.environment);
-      expect(result.traits).toEqual(traits);
+      expect(result.traits).toEqual([]);
       expect(result.skills).toEqual([]);
       expect(result.percept).toEqual(percept);
     });
@@ -125,16 +144,14 @@ describe("context factory", () => {
       });
 
       expect(result.scenario).toBeTruthy();
-      expect(result.traits).toEqual(traits);
+      expect(result.traits).toEqual([]);
       expect(result.skills).toEqual([]);
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(traceId));
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("view"));
     });
 
-    it("returns defaults and warns when trait analyze fails", async () => {
-      const ctx = buildContext({
-        analyze: vi.fn().mockRejectedValue(new Error("trait fail")),
-      });
+    it("does not depend on trait analysis when building agent context", async () => {
+      const ctx = buildContext({});
 
       const result = await buildAgentContext(ctx, {
         platform: "onebot",
@@ -143,15 +160,12 @@ describe("context factory", () => {
       });
 
       expect(result.traits).toEqual([]);
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(traceId));
-      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("traits"));
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("traits"));
     });
 
-    it("does not depend on skill resolve when building agent context", async () => {
+    it("projects active skills from session state", async () => {
       const ctx = buildContext({
-        resolve: vi.fn(() => {
-          throw new Error("skill fail");
-        }),
+        loadedSkills: ["search"],
       });
 
       const result = await buildAgentContext(ctx, {
@@ -160,7 +174,13 @@ describe("context factory", () => {
         percept,
       });
 
-      expect(result.skills).toEqual([]);
+      expect(result.skills).toEqual([
+        expect.objectContaining({
+          name: "search",
+          effects: ["guidance"],
+          metadata: expect.objectContaining({ description: "search description" }),
+        }),
+      ]);
       expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("skills"));
     });
   });
@@ -205,16 +225,31 @@ describe("context factory", () => {
       const horizon = {
         buildView: vi.fn().mockResolvedValue(view),
       };
+      const sessionStore = new AgentSessionStore({ logger: () => logger } as never);
+      sessionStore.loadSkill("discord", "c1", {
+        name: "search",
+        description: "Search skill",
+        guidance: "Use search.",
+        rootDir: "/skills/search",
+        source: "plugin",
+        allowedTools: ["search"],
+      });
       const trait = {
         analyze: vi.fn().mockResolvedValue([{ dimension: "scene", value: "chat", confidence: 1 }]),
       };
       const skill = {
-        resolve: vi.fn().mockReturnValue({
-          activeSkills: [{ name: "search", effects: ["web_access"] }],
-          promptFragments: [],
-          styleFragment: null,
-          toolFilter: { include: [], exclude: [] },
-        }),
+        get: vi.fn((name: string) =>
+          name === "search"
+            ? {
+                name: "search",
+                description: "Search skill",
+                guidance: "Use search.",
+                rootDir: "/skills/search",
+                source: "plugin",
+                allowedTools: ["search"],
+              }
+            : undefined,
+        ),
       };
 
       const ctx = {
@@ -222,6 +257,7 @@ describe("context factory", () => {
         "yesimbot.horizon": horizon,
         "yesimbot.trait": trait,
         "yesimbot.skill": skill,
+        "yesimbot.session": sessionStore,
       } as unknown as Context;
 
       return { ctx, horizon, trait, skill };
@@ -243,6 +279,18 @@ describe("context factory", () => {
       expect(result.toolCtx.scenario).toBe(result.roundContext.snapshot.scenario);
       expect(result.toolCtx.capabilities).toBe(result.roundContext.snapshot.capabilities);
       expect(result.toolCtx.percept).toBe(percept);
+      expect(result.roundContext.skillState).toMatchObject({
+        active: ["search"],
+        persistentRoster: ["search"],
+      });
+      expect(result.roundContext.skillState.loadHistory).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "search",
+            status: "loaded",
+          }),
+        ]),
+      );
     });
 
     it("calibrates and rebinds an inbound roundContext exactly once", async () => {
@@ -260,7 +308,8 @@ describe("context factory", () => {
               channelId: "c1",
             },
             entities: [],
-            timeline: [],
+            timeline: createTimeline(),
+            scenarioTimeline: createTimeline(),
             stimulusSource: { type: "message" },
           },
           derived: {
@@ -291,8 +340,8 @@ describe("context factory", () => {
           platform: "discord",
           channelId: "c1",
           percept,
-          traits: [{ dimension: "scene", value: "chat", confidence: 1 }],
-          skills: [{ name: "search", effects: ["web_access"] }],
+          traits: [],
+          skills: [{ name: "search", effects: ["tools"] }],
           roundContext: inboundRoundContext,
         },
       });
@@ -304,9 +353,10 @@ describe("context factory", () => {
         channelKey: "discord:c1",
         traceId: percept.traceId,
       });
+      expect(result.roundContext.skillState.persistentRoster).toEqual(["search"]);
       expect(horizon.buildView).toHaveBeenCalledTimes(1);
-      expect(trait.analyze).toHaveBeenCalledTimes(1);
-      expect(skill.resolve).not.toHaveBeenCalled();
+      expect(trait.analyze).toHaveBeenCalledTimes(0);
+      expect(skill.get).toHaveBeenCalledWith("search");
     });
 
     it("preserves same-round identity while advancing the committed snapshot", async () => {
@@ -316,7 +366,8 @@ describe("context factory", () => {
         scenario: {
           raw: {
             ...view,
-            timeline: [],
+            timeline: createTimeline(),
+            scenarioTimeline: createTimeline(),
             stimulusSource: { type: "message", messageId: "legacy-message" },
           },
           derived: {
@@ -346,7 +397,7 @@ describe("context factory", () => {
           channelId: "c1",
           percept,
           traits: [],
-          skills: [{ name: "search", effects: ["web_access"] }],
+          skills: [{ name: "search", effects: ["tools"] }],
           roundContext: inboundRoundContext,
         },
       });

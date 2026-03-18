@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { buildCapabilitiesFromRuntime } from "../src/runtime/adapters";
 import type { CapabilityResolver } from "../src/services/plugin/types";
-import { buildCapabilitiesFromRuntime } from "../src/services/runtime/adapters";
 
 class MockCapabilityRegistry {
   private resolvers: CapabilityResolver[] = [];

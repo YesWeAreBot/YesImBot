@@ -1,8 +1,8 @@
 import type { Session } from "koishi";
 import { Context, Logger, h } from "koishi";
 
+import { TriggerType } from "../../runtime/contracts";
 import { formatQuotePrefix, wrapIfLong } from "../formatter/handlers";
-import { TriggerType } from "../runtime/contracts";
 import type { EventManager } from "./manager";
 import type { HorizonServiceConfig } from "./service";
 import { TimelineStage } from "./types";

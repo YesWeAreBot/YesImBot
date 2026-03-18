@@ -1,7 +1,7 @@
-import { Context, Schema, Service } from "koishi";
+import { Context, Service } from "koishi";
 
-import type { ChannelKey, Scenario } from "../runtime/contracts";
-import type { TraitSignal } from "../shared/types";
+import type { ChannelKey, Scenario } from "../../runtime/contracts";
+import type { TraitSignal } from "../../shared/types";
 import { HeatTrait } from "./detectors/heat";
 import { SceneTrait } from "./detectors/scene";
 import type { TraitDetector } from "./types";
@@ -12,14 +12,15 @@ declare module "koishi" {
   }
 }
 
-export interface TraitAnalyzerConfig {}
-
-export const TraitAnalyzerConfigSchema: Schema<TraitAnalyzerConfig> = Schema.object({});
+export interface TraitAnalyzerConfig {
+  debugLevel?: number;
+}
 
 /**
- * Optional analyzer. Not required by the agent main loop.
- * Hook authors may call `trait.analyze()` explicitly when they need
- * trait signals to decide skill loading.
+ * Internal legacy compatibility analyzer. Not required by the agent main loop.
+ * Hook authors may call `trait.analyze()` explicitly if needed, but this is
+ * deprecated and will be removed in a future version.
+ * @deprecated Use Scenario.raw fields directly instead of trait signals.
  */
 export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
   static inject = ["yesimbot.horizon"];
@@ -29,7 +30,9 @@ export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
 
   constructor(ctx: Context, config: TraitAnalyzerConfig) {
     super(ctx, "yesimbot.trait", false);
+    this.config = config;
     this.logger = ctx.logger("trait");
+    this.logger.level = config.debugLevel ?? 2;
   }
 
   protected async start(): Promise<void> {

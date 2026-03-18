@@ -56,12 +56,12 @@ vi.mock("koishi", () => {
   };
 });
 
+import type { AgentEndSummary } from "../src/runtime/contracts";
+import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
-import type { AgentEndSummary } from "../src/services/runtime/contracts";
-import type { Percept } from "../src/services/shared/types";
 
 type EndHookParams = {
   lifecycle: "end";
@@ -416,9 +416,9 @@ describe("Agent lifecycle end", () => {
     const toolCtxArg = harness.pluginInvoke.mock.calls[0]?.[2] as ToolExecutionContext;
     const endParams = endSpy.mock.calls[0]?.[0] as EndHookParams;
 
-    expect(endParams.roundContext).toStrictEqual(toolCtxArg.roundContext);
-    expect(endParams.scenario).toStrictEqual(toolCtxArg.roundContext?.snapshot.scenario);
-    expect(endParams.capabilities).toStrictEqual(toolCtxArg.roundContext?.snapshot.capabilities);
+    expect(endParams.roundContext?.percept).toStrictEqual(toolCtxArg.roundContext?.percept);
+    expect(endParams.scenario).toStrictEqual(endParams.roundContext?.snapshot.scenario);
+    expect(endParams.capabilities).toStrictEqual(endParams.roundContext?.snapshot.capabilities);
     expect(endParams.roundContext?.snapshot.metadata).toMatchObject({
       hookRevision: "end-shape-1",
     });

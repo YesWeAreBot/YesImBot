@@ -1,2 +1,2 @@
-export { ModelService, ModelServiceConfigSchema } from "./service";
+export { ModelService } from "./service";
 export type { ModelServiceConfig } from "./service";

@@ -13,7 +13,6 @@ import {
 describe("Hook Types", () => {
   it("should define HookType enum", () => {
     expect(HookType.Tool).toBe("tool");
-    expect(HookType.Message).toBe("message");
     expect(HookType.Agent).toBe("agent");
   });
 
@@ -99,7 +98,6 @@ describe("HookService", () => {
   it("should filter hooks by type and phase", () => {
     const handler1 = vi.fn();
     const handler2 = vi.fn();
-    const handler3 = vi.fn();
 
     hookService.register(ctx, {
       type: HookType.Tool,
@@ -113,15 +111,8 @@ describe("HookService", () => {
       handler: handler2,
     });
 
-    hookService.register(ctx, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: handler3,
-    });
-
     expect(hookService.getHooks(HookType.Tool, HookPhase.Before)).toHaveLength(1);
     expect(hookService.getHooks(HookType.Tool, HookPhase.After)).toHaveLength(1);
-    expect(hookService.getHooks(HookType.Message, HookPhase.Before)).toHaveLength(1);
   });
 
   it("should execute before hooks and apply modifications", async () => {

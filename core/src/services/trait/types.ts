@@ -1,5 +1,5 @@
-import type { ChannelKey, Scenario } from "../runtime/contracts";
-import type { TraitSignal } from "../shared/types";
+import type { ChannelKey, Scenario } from "../../runtime/contracts";
+import type { TraitSignal } from "../../shared/types";
 
 export interface TraitDetector {
   name: string;

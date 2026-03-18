@@ -1,0 +1,765 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`prompt regression basic > captures basic-direct-message 1`] = `
+{
+  "fragments": [
+    {
+      "cacheable": true,
+      "content": "You are Athena. Respond naturally and helpfully.",
+      "id": "fixture.identity",
+      "priority": 900,
+      "section": "identity",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": true,
+      "content": "Follow platform policy and heartbeat interpretation guidance.",
+      "id": "fixture.policy",
+      "priority": 800,
+      "section": "policy",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "Recent memory:
+- User 1: hello in dm",
+      "id": "fixture.memory",
+      "priority": 700,
+      "section": "memory",
+      "source": "memory",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>",
+      "id": "skill.catalog",
+      "priority": 510,
+      "section": "situation",
+      "source": "skill",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": true,
+      "content": "## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.",
+      "id": "tooling.protocol",
+      "priority": 500,
+      "section": "policy",
+      "source": "tooling",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>",
+      "id": "tooling.available",
+      "priority": 520,
+      "section": "situation",
+      "source": "tooling",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "Scenario basic-direct-message trigger=direct",
+      "id": "fixture.situation",
+      "priority": 600,
+      "section": "situation",
+      "source": "scenario",
+      "stability": "dynamic",
+    },
+  ],
+  "fullPrompt": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>
+
+<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>
+
+<memory>
+Recent memory:
+- User 1: hello in dm
+</memory>
+
+<situation>
+Scenario basic-direct-message trigger=direct
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+  "metadata": {
+    "allowedTools": [],
+    "generatedAt": "2026-03-15T10:00:00.000Z",
+    "loadedSkills": [],
+    "scenarioId": "basic-direct-message",
+    "sectionOrder": [
+      "identity",
+      "policy",
+      "memory",
+      "situation",
+    ],
+    "stableSignature": "9a2c04ee899bfc56a1e090cbc0155c87bccc7eec2a24e1635b716f80f30184e4",
+  },
+  "sections": [
+    {
+      "cacheable": true,
+      "content": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>",
+      "name": "identity",
+    },
+    {
+      "cacheable": true,
+      "content": "<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>",
+      "name": "policy",
+    },
+    {
+      "cacheable": false,
+      "content": "<memory>
+Recent memory:
+- User 1: hello in dm
+</memory>",
+      "name": "memory",
+    },
+    {
+      "cacheable": false,
+      "content": "<situation>
+Scenario basic-direct-message trigger=direct
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+      "name": "situation",
+    },
+  ],
+}
+`;
+
+exports[`prompt regression basic > captures basic-empty-history 1`] = `
+{
+  "fragments": [
+    {
+      "cacheable": true,
+      "content": "You are Athena. Respond naturally and helpfully.",
+      "id": "fixture.identity",
+      "priority": 900,
+      "section": "identity",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": true,
+      "content": "Follow platform policy and heartbeat interpretation guidance.",
+      "id": "fixture.policy",
+      "priority": 800,
+      "section": "policy",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "Recent memory:
+",
+      "id": "fixture.memory",
+      "priority": 700,
+      "section": "memory",
+      "source": "memory",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>",
+      "id": "skill.catalog",
+      "priority": 510,
+      "section": "situation",
+      "source": "skill",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": true,
+      "content": "## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.",
+      "id": "tooling.protocol",
+      "priority": 500,
+      "section": "policy",
+      "source": "tooling",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>",
+      "id": "tooling.available",
+      "priority": 520,
+      "section": "situation",
+      "source": "tooling",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "Scenario basic-empty-history trigger=mention",
+      "id": "fixture.situation",
+      "priority": 600,
+      "section": "situation",
+      "source": "scenario",
+      "stability": "dynamic",
+    },
+  ],
+  "fullPrompt": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>
+
+<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>
+
+<memory>
+Recent memory:
+
+</memory>
+
+<situation>
+Scenario basic-empty-history trigger=mention
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+  "metadata": {
+    "allowedTools": [],
+    "generatedAt": "2026-03-15T10:00:00.000Z",
+    "loadedSkills": [],
+    "scenarioId": "basic-empty-history",
+    "sectionOrder": [
+      "identity",
+      "policy",
+      "memory",
+      "situation",
+    ],
+    "stableSignature": "9a2c04ee899bfc56a1e090cbc0155c87bccc7eec2a24e1635b716f80f30184e4",
+  },
+  "sections": [
+    {
+      "cacheable": true,
+      "content": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>",
+      "name": "identity",
+    },
+    {
+      "cacheable": true,
+      "content": "<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>",
+      "name": "policy",
+    },
+    {
+      "cacheable": false,
+      "content": "<memory>
+Recent memory:
+
+</memory>",
+      "name": "memory",
+    },
+    {
+      "cacheable": false,
+      "content": "<situation>
+Scenario basic-empty-history trigger=mention
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+      "name": "situation",
+    },
+  ],
+}
+`;
+
+exports[`prompt regression basic > captures basic-group-chat 1`] = `
+{
+  "fragments": [
+    {
+      "cacheable": true,
+      "content": "You are Athena. Respond naturally and helpfully.",
+      "id": "fixture.identity",
+      "priority": 900,
+      "section": "identity",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": true,
+      "content": "Follow platform policy and heartbeat interpretation guidance.",
+      "id": "fixture.policy",
+      "priority": 800,
+      "section": "policy",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "Recent memory:
+- User 1: team sync update",
+      "id": "fixture.memory",
+      "priority": 700,
+      "section": "memory",
+      "source": "memory",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>",
+      "id": "skill.catalog",
+      "priority": 510,
+      "section": "situation",
+      "source": "skill",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": true,
+      "content": "## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.",
+      "id": "tooling.protocol",
+      "priority": 500,
+      "section": "policy",
+      "source": "tooling",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>",
+      "id": "tooling.available",
+      "priority": 520,
+      "section": "situation",
+      "source": "tooling",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "Scenario basic-group-chat trigger=mention",
+      "id": "fixture.situation",
+      "priority": 600,
+      "section": "situation",
+      "source": "scenario",
+      "stability": "dynamic",
+    },
+  ],
+  "fullPrompt": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>
+
+<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>
+
+<memory>
+Recent memory:
+- User 1: team sync update
+</memory>
+
+<situation>
+Scenario basic-group-chat trigger=mention
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+  "metadata": {
+    "allowedTools": [],
+    "generatedAt": "2026-03-15T10:00:00.000Z",
+    "loadedSkills": [],
+    "scenarioId": "basic-group-chat",
+    "sectionOrder": [
+      "identity",
+      "policy",
+      "memory",
+      "situation",
+    ],
+    "stableSignature": "9a2c04ee899bfc56a1e090cbc0155c87bccc7eec2a24e1635b716f80f30184e4",
+  },
+  "sections": [
+    {
+      "cacheable": true,
+      "content": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>",
+      "name": "identity",
+    },
+    {
+      "cacheable": true,
+      "content": "<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>",
+      "name": "policy",
+    },
+    {
+      "cacheable": false,
+      "content": "<memory>
+Recent memory:
+- User 1: team sync update
+</memory>",
+      "name": "memory",
+    },
+    {
+      "cacheable": false,
+      "content": "<situation>
+Scenario basic-group-chat trigger=mention
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+      "name": "situation",
+    },
+  ],
+}
+`;
+
+exports[`prompt regression basic > captures basic-mention-message 1`] = `
+{
+  "fragments": [
+    {
+      "cacheable": true,
+      "content": "You are Athena. Respond naturally and helpfully.",
+      "id": "fixture.identity",
+      "priority": 900,
+      "section": "identity",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": true,
+      "content": "Follow platform policy and heartbeat interpretation guidance.",
+      "id": "fixture.policy",
+      "priority": 800,
+      "section": "policy",
+      "source": "persona",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "Recent memory:
+- User 1: @athena can you summarize this?",
+      "id": "fixture.memory",
+      "priority": 700,
+      "section": "memory",
+      "source": "memory",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>",
+      "id": "skill.catalog",
+      "priority": 510,
+      "section": "situation",
+      "source": "skill",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": true,
+      "content": "## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.",
+      "id": "tooling.protocol",
+      "priority": 500,
+      "section": "policy",
+      "source": "tooling",
+      "stability": "stable",
+    },
+    {
+      "cacheable": false,
+      "content": "<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>",
+      "id": "tooling.available",
+      "priority": 520,
+      "section": "situation",
+      "source": "tooling",
+      "stability": "dynamic",
+    },
+    {
+      "cacheable": false,
+      "content": "Scenario basic-mention-message trigger=mention",
+      "id": "fixture.situation",
+      "priority": 600,
+      "section": "situation",
+      "source": "scenario",
+      "stability": "dynamic",
+    },
+  ],
+  "fullPrompt": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>
+
+<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>
+
+<memory>
+Recent memory:
+- User 1: @athena can you summarize this?
+</memory>
+
+<situation>
+Scenario basic-mention-message trigger=mention
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+  "metadata": {
+    "allowedTools": [],
+    "generatedAt": "2026-03-15T10:00:00.000Z",
+    "loadedSkills": [],
+    "scenarioId": "basic-mention-message",
+    "sectionOrder": [
+      "identity",
+      "policy",
+      "memory",
+      "situation",
+    ],
+    "stableSignature": "9a2c04ee899bfc56a1e090cbc0155c87bccc7eec2a24e1635b716f80f30184e4",
+  },
+  "sections": [
+    {
+      "cacheable": true,
+      "content": "<identity>
+You are Athena. Respond naturally and helpfully.
+</identity>",
+      "name": "identity",
+    },
+    {
+      "cacheable": true,
+      "content": "<policy>
+Follow platform policy and heartbeat interpretation guidance.
+
+## Tool Protocol
+
+Tools retrieve information or compute results. Actions produce side effects.
+
+Use tools only when they directly improve accuracy or actionability.
+Prefer minimal, deterministic parameters and avoid speculative tool calls.
+
+If no tool or action is needed, answer directly without calling tools.
+</policy>",
+      "name": "policy",
+    },
+    {
+      "cacheable": false,
+      "content": "<memory>
+Recent memory:
+- User 1: @athena can you summarize this?
+</memory>",
+      "name": "memory",
+    },
+    {
+      "cacheable": false,
+      "content": "<situation>
+Scenario basic-mention-message trigger=mention
+
+<tools>
+Tools/actions available this round:
+- send_message (action): Send a message to current channel
+  Parameters: {"type":"object","properties":{"content":{"type":"string"}}}
+</tools>
+
+<skills>
+Registered skills (use loadSkill to activate):
+- mention-aware: Handle mention trigger nuances.
+- search-service: Use search tools when needed.
+- forward-present: Summarize and forward context.
+</skills>
+</situation>",
+      "name": "situation",
+    },
+  ],
+}
+`;

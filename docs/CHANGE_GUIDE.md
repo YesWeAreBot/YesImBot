@@ -7,7 +7,7 @@ This guide describes concrete edit paths for common changes.
 | Change Type                     | Primary Paths                                                                      | Notes                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Add/modify agent behavior       | `core/src/services/agent/`, `core/src/services/trait/`, `core/src/services/skill/` | Keep Trait/Skill responsibilities separate                                                           |
-| Change runtime context contract | `core/src/services/runtime/`, `core/src/services/shared/context-factory.ts`        | Prefer `Percept -> Scenario -> Capabilities -> RoundContext`                                         |
+| Change runtime context contract | `core/src/runtime/`, `core/src/shared/context-factory.ts`                          | Prefer `Percept -> Scenario -> Capabilities -> RoundContext`                                         |
 | Add model provider capability   | `providers/provider-*/`, `packages/shared-model/`                                  | Reuse `AbstractProvider`                                                                             |
 | Add/modify tool or action       | `core/src/services/plugin/`, `plugins/*`                                           | Preserve Tool vs Action loop semantics                                                               |
 | Change prompt composition       | `core/src/services/prompt/`, `core/src/services/role/`, `core/resources/roles/`    | Use canonical `identity/policy/memory/situation`; legacy injection points are deprecated compat only |
@@ -20,6 +20,9 @@ This guide describes concrete edit paths for common changes.
 
 1. Define/update related types first.
 2. Implement in target service module under `core/src/services/<name>/`.
+
+   > Every top-level directory under `core/src/services/` must be a real service module with a `service.ts` entry point. Cross-service utilities belong in `core/src/shared/` or `core/src/runtime/`, not under `services/`.
+
 3. Wire dependency via `static inject`.
 4. Expose minimal API surface through service methods/events.
 5. Add tests in `core/tests/`.
@@ -63,6 +66,7 @@ Runtime context note (Phase 54+): prefer `ToolExecutionContext.roundContext` / `
 - Avoid direct cross-layer shortcuts; follow declared service boundaries.
 - Horizon is context data provider, not response decider.
 - Tool fetch operations should continue loop; action operations should end round.
+- `core/src/services/` contains service modules only; shared utilities live in `core/src/shared/` and runtime contracts in `core/src/runtime/`.
 
 ## Testing Checklist
 

@@ -149,7 +149,7 @@ describe("Hook timeout override", () => {
     expect(handlerCompleted).toBe(false);
   });
 
-  it("documents precedence contract as call override > hook timeout > default timeout", async () => {
+  it("documents precedence contract as call override > hook timeout", async () => {
     const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const handler = vi.fn().mockResolvedValue({ modified: false });
 
@@ -165,15 +165,14 @@ describe("Hook timeout override", () => {
 
     const defaultHook = vi.fn().mockResolvedValue({ modified: false });
     hookService.register(ctx, {
-      type: HookType.Message,
+      type: HookType.Agent,
       phase: HookPhase.Before,
       handler: defaultHook,
     });
-    await hookService.executeBefore(HookType.Message, { content: "default-wins" }, "t-default");
+    await hookService.executeBefore(HookType.Agent, { content: "default-wins" }, "t-default");
 
     expect(timeoutSpy.mock.calls.some((call) => call[1] === 120)).toBe(true);
     expect(timeoutSpy.mock.calls.some((call) => call[1] === 900)).toBe(true);
-    expect(timeoutSpy.mock.calls.some((call) => call[1] === 1000)).toBe(true);
     timeoutSpy.mockRestore();
   });
 });

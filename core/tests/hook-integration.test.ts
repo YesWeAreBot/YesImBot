@@ -112,25 +112,6 @@ describe("Hook Integration", () => {
     });
   });
 
-  describe("Message hooks", () => {
-    it("should intercept message send with before hook", async () => {
-      const messageParams = { content: "Hello", session: {} };
-
-      hookService.register(ctx, {
-        type: HookType.Message,
-        phase: HookPhase.Before,
-        handler: async (ctx) => ({
-          modified: true,
-          params: { ...(ctx.params as typeof messageParams), content: "Modified: Hello" },
-        }),
-      });
-
-      const result = await hookService.executeBefore(HookType.Message, messageParams, "trace-1");
-
-      expect(result.params.content).toBe("Modified: Hello");
-    });
-  });
-
   describe("Agent hooks", () => {
     it("should intercept agent cycle with before hook", async () => {
       const agentParams = { view: {}, traits: [], skills: [] };

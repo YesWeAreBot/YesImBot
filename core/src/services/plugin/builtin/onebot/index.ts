@@ -1,8 +1,8 @@
 import { Context, h, Schema } from "koishi";
 
+import type { CapabilityState } from "../../../../runtime/contracts";
 import type { FormatterService } from "../../../formatter/service";
 import type { HorizonService } from "../../../horizon/service";
-import type { CapabilityState } from "../../../runtime/contracts";
 import { Action, Metadata, Tool, withInnerThoughts } from "../../decorators";
 import { YesImPlugin } from "../../plugin";
 import { ToolExecutionContext, ToolResult } from "../../types";

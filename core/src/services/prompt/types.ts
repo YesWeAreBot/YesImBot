@@ -3,14 +3,14 @@ export type PromptSectionName = "identity" | "policy" | "memory" | "situation";
 export type FragmentStability = "stable" | "dynamic";
 
 export type FragmentSource =
-  | "role"
+  | "persona"
   | "memory"
   | "scenario"
   | "capability"
   | "skill"
   | "hook"
   | "tooling";
-// Canonical source union (for contract grep): type FragmentSource = "role" | "memory" | "scenario" | "capability" | "skill" | "hook" | "tooling"
+// Canonical source union (for contract grep): type FragmentSource = "persona" | "memory" | "scenario" | "capability" | "skill" | "hook" | "tooling"
 
 export interface PromptFragment {
   id: string;
@@ -33,7 +33,7 @@ export interface RenderedPromptSection {
 export const PROMPT_SECTION_LAYOUT: PromptLayout = ["identity", "policy", "memory", "situation"];
 
 export const PROMPT_FRAGMENT_SOURCE_PRECEDENCE: readonly FragmentSource[] = [
-  "role",
+  "persona",
   "memory",
   "scenario",
   "capability",

@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from "koishi";
 
-import { getCapabilityByKey } from "../runtime/contracts";
-import { buildMinimalContext } from "../shared/context-factory";
+import { getCapabilityByKey } from "../../runtime/contracts";
+import { buildMinimalContext } from "../../shared/context-factory";
 import { CorePlugin, OnebotPlugin } from "./builtin";
 import { YesImPlugin } from "./plugin";
 import { schemaToJSONSchema } from "./schema";
@@ -17,11 +17,8 @@ import { Failed } from "./utils";
 
 export interface PluginServiceConfig {
   defaultTimeout?: number;
+  debugLevel?: number;
 }
-
-export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.object({
-  defaultTimeout: Schema.number().default(30000),
-});
 
 export class CapabilityUnavailableError extends Error {
   public readonly toolName: string;
@@ -52,6 +49,8 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
     this.config = config;
+    this.logger = ctx.logger("yesimbot.plugin");
+    this.logger.level = config.debugLevel ?? 2;
     this.ctx.plugin(CorePlugin);
     this.ctx.plugin(OnebotPlugin);
     const command = this.ctx.command("yesimbot.plugin", "插件指令集", { authority: 3 });
@@ -158,8 +157,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
 
   public registerPlugin(plugin: YesImPlugin): void {
     this.plugins.set(plugin.metadata.name, plugin);
-    const logger = this.ctx.logger("yesimbot.plugin");
-    logger.info(`Registered plugin: ${plugin.metadata.name}`);
+    this.logger.info(`Registered plugin: ${plugin.metadata.name}`);
   }
 
   public unregisterPlugin(name: string): void {
@@ -168,8 +166,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
 
   public registerCapabilityResolver(resolver: CapabilityResolver): void {
     this.capabilityResolvers.push(resolver);
-    const logger = this.ctx.logger("yesimbot.plugin");
-    logger.info(
+    this.logger.info(
       `Registered capability resolver${resolver.platform ? ` for platform: ${resolver.platform}` : " (all platforms)"}`,
     );
   }

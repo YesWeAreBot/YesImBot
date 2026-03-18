@@ -143,38 +143,6 @@ describe("Hook error isolation", () => {
     expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("applies the same isolation behavior for message before hooks", async () => {
-    const order: string[] = [];
-
-    hookService.register(ctx, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: async () => {
-        order.push("message-1");
-        throw new Error("message before failed");
-      },
-    });
-    hookService.register(ctx, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: async (hookCtx) => {
-        order.push("message-2");
-        const params = hookCtx.params as { content: string };
-        return {
-          modified: true,
-          params: { ...params, content: "message-updated" },
-        };
-      },
-    });
-
-    const result = await hookService.executeBefore(HookType.Message, { content: "message" }, "t-5");
-
-    expect(order).toEqual(["message-1", "message-2"]);
-    expect(result.params).toEqual({ content: "message-updated" });
-    expect(result.skipped).toBe(false);
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("treats timed-out before hook as failure and continues to later hooks", async () => {
     const order: string[] = [];
 

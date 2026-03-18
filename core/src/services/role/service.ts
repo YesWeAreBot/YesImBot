@@ -1,21 +1,21 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, watch, type FSWatcher } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { Context, Schema, Service } from "koishi";
+import { Context, Service } from "koishi";
 
+import type { Percept, Scenario } from "../../runtime/contracts";
 import { HandlebarsRenderer } from "../prompt/renderer";
 import type { PromptService } from "../prompt/service";
-import type { Percept, Scenario } from "../runtime/contracts";
-import type { RoleServiceConfig } from "./types";
-import { RoleServiceConfigSchema } from "./types";
+import type { PersonaServiceConfig } from "./types";
+import { PersonaServiceConfigSchema } from "./types";
 
 declare module "koishi" {
   interface Context {
-    "yesimbot.role": RoleService;
+    "yesimbot.persona": PersonaService;
   }
 }
 
-const ROLE_FILES = ["SOUL.md", "AGENTS.md", "TOOLS.md"] as const;
+const ROLE_FILES = ["SOUL.md", "AGENTS.md", "TOOLS.md", "POLICY.md"] as const;
 
 const builtinRolesDir = resolve(
   __dirname,
@@ -23,9 +23,9 @@ const builtinRolesDir = resolve(
   "resources/roles",
 );
 
-export class RoleService extends Service<RoleServiceConfig> {
+export class PersonaService extends Service<PersonaServiceConfig> {
   static inject = ["yesimbot.prompt"];
-  static Config = RoleServiceConfigSchema;
+  static Config = PersonaServiceConfigSchema;
 
   private prompt: PromptService;
   private templateRenderer = new HandlebarsRenderer();
@@ -34,10 +34,11 @@ export class RoleService extends Service<RoleServiceConfig> {
   private disposers: Array<() => void> = [];
   private lastValid = new Map<string, string>();
 
-  constructor(ctx: Context, config: RoleServiceConfig) {
-    super(ctx, "yesimbot.role", false);
+  constructor(ctx: Context, config: PersonaServiceConfig) {
+    super(ctx, "yesimbot.persona", false);
     this.config = config;
-    this.logger = ctx.logger("role");
+    this.logger = ctx.logger("persona");
+    this.logger.level = config.debugLevel ?? 2;
     this.prompt = ctx["yesimbot.prompt"];
   }
 
@@ -46,7 +47,7 @@ export class RoleService extends Service<RoleServiceConfig> {
     this.loadAndRegisterFragments();
     this.registerSnippets();
     this.startWatching();
-    this.logger.info("RoleService started");
+    this.logger.info("PersonaService started");
   }
 
   private registerSnippets(): void {
@@ -144,35 +145,47 @@ export class RoleService extends Service<RoleServiceConfig> {
     // AGENTS.md -> policy section
     const agentsContent = this.loadFile("AGENTS.md") ?? "Respond helpfully.";
 
-    // TOOLS.md -> policy section (after AGENTS via lower priority)
+    // TOOLS.md -> situation section (static appendix)
     const toolsContent = this.loadFile("TOOLS.md") ?? "";
+
+    // POLICY.md -> policy section
+    const policyContent = this.loadFile("POLICY.md") ?? "";
     this.disposers.push(
-      this.prompt.registerFragmentSource("role", (scope) => [
+      this.prompt.registerFragmentSource("persona", (scope) => [
         {
-          id: "role.soul",
+          id: "persona.soul",
           content: this.renderSafe("SOUL.md", soulContent, scope),
           section: "identity",
-          source: "role",
+          source: "persona",
           stability: "stable",
           priority: 700,
           cacheable: true,
         },
         {
-          id: "role.agents",
+          id: "persona.agents",
           content: this.renderSafe("AGENTS.md", agentsContent, scope),
           section: "policy",
-          source: "role",
+          source: "persona",
           stability: "stable",
           priority: 700,
           cacheable: true,
         },
         {
-          id: "role.tools",
-          content: this.renderSafe("TOOLS.md", toolsContent, scope),
+          id: "persona.policy",
+          content: this.renderSafe("POLICY.md", policyContent, scope),
           section: "policy",
-          source: "role",
+          source: "persona",
           stability: "stable",
-          priority: 690,
+          priority: 700,
+          cacheable: true,
+        },
+        {
+          id: "persona.tools",
+          content: this.renderSafe("TOOLS.md", toolsContent, scope),
+          section: "situation",
+          source: "persona",
+          stability: "stable",
+          priority: 500,
           cacheable: true,
         },
       ]),
@@ -219,5 +232,5 @@ export class RoleService extends Service<RoleServiceConfig> {
   }
 }
 
-export { RoleServiceConfigSchema } from "./types";
-export type { RoleServiceConfig } from "./types";
+export { PersonaServiceConfigSchema } from "./types";
+export type { PersonaServiceConfig } from "./types";

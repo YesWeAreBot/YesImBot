@@ -1,6 +1,6 @@
 import { Context, Service } from "koishi";
 
-import type { ChannelKey, Scenario } from "../runtime/contracts";
+import type { ChannelKey, Scenario } from "../../runtime/contracts";
 import { runMemoryExtraction } from "./agent";
 import { MemoryRecallPlugin } from "./recall-plugin";
 import type { MemoryAgentConfig, MemoryRecord } from "./types";
@@ -17,6 +17,7 @@ declare module "koishi" {
 
 export interface MemoryAgentServiceConfig {
   memoryAgent: MemoryAgentConfig;
+  debugLevel?: number;
 }
 
 const DEFAULT_CONFIG: MemoryAgentConfig = {
@@ -40,6 +41,7 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
     super(ctx, "yesimbot.memory-agent", true);
     this.config = config;
     this.logger = ctx.logger("memory-agent");
+    this.logger.level = config.debugLevel ?? 2;
     this.agentConfig = { ...DEFAULT_CONFIG, ...config.memoryAgent };
   }
 

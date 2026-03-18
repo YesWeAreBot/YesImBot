@@ -151,7 +151,7 @@ class AgentActionHandler extends TimelineHandler<AgentActionRecord> {
 
     // Format actions
     for (const action of data.actions) {
-      const paramsStr = action.params ? JSON.stringify(action.params) : "";
+      const paramsStr = JSON.stringify(action.params ?? {});
       lines.push(`${action.name}(${paramsStr})`);
     }
 

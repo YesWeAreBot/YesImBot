@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ThinkActLoop } from "../src/services/agent/loop";
 import {
   DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
   type Percept,
   type RoundContext,
   type Scenario,
-} from "../src/services/runtime/contracts";
+} from "../src/runtime/contracts";
+import { ThinkActLoop } from "../src/services/agent/loop";
 import { TraitAnalyzer } from "../src/services/trait/service";
 
 function createPercept(): Percept {
@@ -134,8 +134,8 @@ describe("trait analyzer optional posture", () => {
     ]);
   });
 
-  it("Hook can use TraitAnalyzer as optional detector to decide loadSkill", async () => {
-    const loadSkill = vi.fn(async () => ({ status: "loaded" }));
+  it("Hook can use TraitAnalyzer as optional detector without mutating skill state", async () => {
+    const onSignal = vi.fn();
     const roundContext = {
       percept: createPercept(),
       scenario: { raw: {}, derived: {} },
@@ -154,7 +154,7 @@ describe("trait analyzer optional posture", () => {
     const hook = async (hookCtx: {
       runtimeCtx: Record<string, unknown>;
       roundContext: RoundContext;
-      loadSkill(name: string): Promise<unknown>;
+      onSignal(name: string): void;
     }) => {
       const detector = hookCtx.runtimeCtx["yesimbot.trait"] as
         | {
@@ -173,7 +173,7 @@ describe("trait analyzer optional posture", () => {
         hookCtx.roundContext.scenario,
       );
       if (signals.some((signal) => signal.dimension === "scene" && signal.value === "group-chat")) {
-        await hookCtx.loadSkill("group-chat-skill");
+        hookCtx.onSignal("group-chat-skill");
       }
     };
 
@@ -184,12 +184,12 @@ describe("trait analyzer optional posture", () => {
         },
       },
       roundContext,
-      loadSkill,
+      onSignal,
     });
-    expect(loadSkill).toHaveBeenCalledWith("group-chat-skill");
+    expect(onSignal).toHaveBeenCalledWith("group-chat-skill");
 
-    loadSkill.mockClear();
-    await hook({ runtimeCtx: {}, roundContext, loadSkill });
-    expect(loadSkill).not.toHaveBeenCalled();
+    onSignal.mockClear();
+    await hook({ runtimeCtx: {}, roundContext, onSignal });
+    expect(onSignal).not.toHaveBeenCalled();
   });
 });

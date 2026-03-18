@@ -9,13 +9,20 @@ declare module "koishi" {
   }
 }
 
-export class FormatterService extends Service {
+export interface FormatterServiceConfig {
+  debugLevel?: number;
+}
+
+export class FormatterService extends Service<FormatterServiceConfig> {
   static inject = ["yesimbot.image-cache"];
 
   private handlers = new Map<string, ElementHandler>();
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: FormatterServiceConfig = {}) {
     super(ctx, "yesimbot.formatter", true);
+    this.config = config;
+    this.logger = ctx.logger("formatter");
+    this.logger.level = this.config.debugLevel ?? 2;
     registerBuiltinHandlers(this.register.bind(this), ctx);
   }
 

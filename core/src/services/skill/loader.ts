@@ -1,38 +1,84 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative } from "node:path";
 
 import matter from "gray-matter";
 
-import type { PromptSectionName } from "../prompt/types";
-import type {
-  ConditionNode,
-  LifecycleStrategy,
-  SkillDefinition,
-  StyleEffect,
-  ToolFilter,
-} from "./types";
+import type { SkillDefinition, SkillResourceMap, SkillResourceReference } from "./types";
 
-function normalizePromptSection(metaSection: unknown, skillName: string): PromptSectionName {
-  if (typeof metaSection === "string") {
-    if ((["identity", "policy", "memory", "situation"] as const).includes(metaSection as never)) {
-      return metaSection as PromptSectionName;
-    }
-    console.warn("Invalid prompt section '%s' in skill %s, using default", metaSection, skillName);
+function normalizeAllowedTools(input: unknown): string[] | undefined {
+  if (!Array.isArray(input)) {
+    return undefined;
   }
 
-  return "situation";
+  const allowedTools = input.filter((entry): entry is string => typeof entry === "string");
+  return allowedTools.length > 0 ? allowedTools : undefined;
 }
 
-function normalizeStyleSection(metaSection: unknown, skillName: string): "identity" | "policy" {
-  if (metaSection === "identity" || metaSection === "policy") {
-    return metaSection;
+function normalizeResourceReference(input: unknown): SkillResourceReference | null {
+  if (typeof input === "string") {
+    return { path: input };
   }
 
-  if (typeof metaSection === "string") {
-    console.warn("Invalid style section '%s' in skill %s, using default", metaSection, skillName);
+  if (!input || typeof input !== "object") {
+    return null;
   }
 
-  return "identity";
+  const maybeReference = input as Record<string, unknown>;
+  if (typeof maybeReference.path !== "string") {
+    return null;
+  }
+
+  return {
+    path: maybeReference.path,
+    description:
+      typeof maybeReference.description === "string" ? maybeReference.description : undefined,
+  };
+}
+
+function normalizeResources(input: unknown): SkillResourceMap | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const resources: SkillResourceMap = {};
+  for (const [storeKey, value] of Object.entries(input as Record<string, unknown>)) {
+    const reference = normalizeResourceReference(value);
+    if (!reference) {
+      continue;
+    }
+    resources[storeKey] = reference;
+  }
+
+  return Object.keys(resources).length > 0 ? resources : undefined;
+}
+
+function scanSkillResources(skillDir: string): SkillResourceMap | undefined {
+  const resources: SkillResourceMap = {};
+
+  const walk = (dir: string) => {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = join(dir, entry.name);
+      const relativePath = relative(skillDir, entryPath).replace(/\\/g, "/");
+
+      if (entry.isDirectory()) {
+        if (relativePath === "scripts" || relativePath.startsWith("scripts/")) {
+          continue;
+        }
+        walk(entryPath);
+        continue;
+      }
+
+      if (relativePath === "SKILL.md") {
+        continue;
+      }
+
+      resources[relativePath] = { path: relativePath };
+    }
+  };
+
+  walk(skillDir);
+  return Object.keys(resources).length > 0 ? resources : undefined;
 }
 
 export function loadSkillsFromDir(dir: string): SkillDefinition[] {
@@ -41,78 +87,29 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+
     const skillDir = join(dir, entry.name);
     const skillMdPath = join(skillDir, "SKILL.md");
+    if (!existsSync(skillMdPath)) {
+      continue;
+    }
 
     try {
       const raw = readFileSync(skillMdPath, "utf-8");
       const { meta, content } = parseFrontmatter(raw);
+      const resources = normalizeResources(meta.resources) ?? scanSkillResources(skillDir);
 
-      const rawEffects = meta.effects as Record<string, unknown> | undefined;
-      const promptMeta = (meta.prompt_fragment ?? {}) as Record<string, unknown>;
-      const styleMeta = (meta.style_fragment ?? {}) as Record<string, unknown>;
-      const skillName = (meta.name as string) ?? entry.name;
-
-      if (meta.injection_point != null) {
-        console.warn(
-          "Skill %s has deprecated injection_point field; use prompt_fragment.section instead",
-          skillName,
-        );
-      }
-      if (meta.style_injection_point != null) {
-        console.warn(
-          "Skill %s has deprecated style_injection_point field; use style_fragment.section instead",
-          skillName,
-        );
-      }
-
-      const effects: SkillDefinition["effects"] = {
-        prompt: content || undefined,
-        style: rawEffects?.style as StyleEffect | undefined,
-        tools: rawEffects?.tools as ToolFilter | undefined,
-      };
-
-      const def: SkillDefinition = {
-        name: skillName,
-        description: meta.description as string | undefined,
-        conditions: meta.conditions as ConditionNode | undefined,
-        lifecycle: (meta.lifecycle as LifecycleStrategy) ?? "per-turn",
-        stickyTimeout: meta.stickyTimeout as number | undefined,
-        promptFragment: {
-          section: normalizePromptSection(promptMeta.section, skillName),
-          stability: (promptMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
-          priority: (promptMeta.priority as number | undefined) ?? 400,
-          cacheable: (promptMeta.cacheable as boolean | undefined) ?? false,
-        },
-        styleFragment: {
-          section: normalizeStyleSection(styleMeta.section, skillName),
-          stability: (styleMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
-          priority: (styleMeta.priority as number | undefined) ?? 650,
-          cacheable: (styleMeta.cacheable as boolean | undefined) ?? false,
-        },
-        effects,
+      skills.push({
+        name: typeof meta.name === "string" ? meta.name : entry.name,
+        description: typeof meta.description === "string" ? meta.description : "",
+        guidance: content.trim(),
+        allowedTools: normalizeAllowedTools(meta.allowed_tools ?? meta["allowed-tools"]),
+        resources,
+        rootDir: skillDir,
         source: "file",
-      };
-
-      // Load code activator if present (.cjs preferred, .js fallback)
-      for (const ext of ["activate.cjs", "activate.js"]) {
-        const activatorPath = resolve(join(skillDir, "scripts", ext));
-        if (!existsSync(activatorPath)) continue;
-        try {
-          delete require.cache[activatorPath];
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const mod = require(activatorPath);
-          const fn = mod.default ?? mod;
-          if (typeof fn === "function") def.activate = fn;
-        } catch (e) {
-          console.warn("Failed to load activator for %s: %s", entry.name, e);
-        }
-        break;
-      }
-
-      skills.push(def);
-    } catch (e) {
-      console.warn("Skipping malformed skill %s: %s", entry.name, e);
+      });
+    } catch (error) {
+      console.warn("Skipping malformed skill %s: %s", entry.name, error);
     }
   }
 
@@ -124,5 +121,5 @@ function parseFrontmatter(raw: string): {
   content: string;
 } {
   const { data, content } = matter(raw);
-  return { meta: data, content: content.trim() };
+  return { meta: data, content };
 }

@@ -6,9 +6,9 @@
         "$inner": {
           "model": "主要对话模型",
           "fallbackChain": "备用模型链（按顺序尝试）",
+          "summaryModel": "摘要生成模型",
           "errorReportChannel": "错误上报频道（platform:channelId 格式）",
           "allowedChannels": "允许响应的频道列表",
-          "botName": "机器人显示名称（覆盖平台名称）",
           "keywords": "触发关键词列表（正则表达式）"
         }
       },
@@ -92,8 +92,7 @@
         "$desc": "提示词",
         "$inner": {
           "templates": "自定义提示词模板",
-          "renderTimeout": "注入渲染超时时间（毫秒）",
-          "resourcesDir": "自定义模板目录",
+          "timeout": "提示词注入超时时间（毫秒）",
           "rolePath": "角色文件目录",
           "skillPaths": "技能文件目录列表",
           "confidenceThreshold": "技能匹配置信度阈值",
@@ -101,20 +100,69 @@
         }
       },
       {
-        "$desc": "高级",
+        "$desc": "图片",
         "$inner": {
-          "enableThoughts": "启用思维链输出",
+          "imageMode": "图片处理模式",
+          "maxImagesInContext": "上下文中最大图片数量",
+          "imageLifecycleCount": "图片生命周期轮数"
+        }
+      },
+      {
+        "$inner": {
+          "memoryAgent": {
+            "$desc": "记忆代理配置",
+            "$inner": {
+              "coreMemoryBudget": "核心记忆字符预算",
+              "summaryModel": "记忆摘要模型",
+              "maxAgentSteps": "记忆代理最大步骤数"
+            }
+          },
+          "compressionThreshold": "触发时间线压缩的事件数量阈值",
+          "inactivityTriggerMs": "触发时间线压缩的不活跃时长（毫秒）",
+          "retainRecentEntries": "保留未压缩的最近时间线条目数"
+        }
+      },
+      {
+        "$inner": {
+          "arousal": {
+            "$desc": "主动唤醒配置",
+            "$inner": {
+              "enabled": "启用主动唤醒",
+              "heartbeatIntervalMs": "心跳检查间隔（毫秒）",
+              "excludeChannels": "主动唤醒排除频道列表",
+              "dailyMessageLimit": "每日主动发言上限",
+              "evaluationModel": "主动唤醒评估模型"
+            }
+          }
+        }
+      },
+      {
+        "$desc": "上下文管理",
+        "$inner": {
           "charBudget": "工作记忆裁剪字符预算",
           "keepLastRounds": "保留不裁剪的最近轮数",
           "softTrimHead": "软裁剪保留头部字符数",
           "softTrimTail": "软裁剪保留尾部字符数",
           "initialContextCharBudget": "初始上下文块字符预算",
-          "historyLimit": "时间线历史消息条数上限",
+          "historyLimit": "时间线历史消息条数上限"
+        }
+      },
+      {
+        "$desc": "高级",
+        "$inner": {
+          "enableThoughts": "启用思维链输出",
           "archiveThresholdMs": "时间线归档阈值（毫秒）",
           "entityCacheTtl": "实体缓存过期时间（毫秒）",
           "maxActiveEntities": "展示给 LLM 的最大实体数",
           "defaultTimeout": "工具执行默认超时（毫秒）",
-          "debugLevel": "调试日志级别：0=关闭, 1=基础, 2=详细, 3=完整"
+          "debugLevel": "调试日志级别：0=关闭, 1=基础, 2=详细, 3=完整",
+          "hookTimeouts": {
+            "$desc": "钩子超时配置",
+            "$inner": {
+              "tool": "工具钩子超时（毫秒）",
+              "agent": "代理钩子超时（毫秒）"
+            }
+          }
         }
       }
     ]

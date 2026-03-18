@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
-import type { Percept } from "../src/services/shared/types";
 
 function createHarness(options: {
   responses: string[];

@@ -6,8 +6,8 @@ import type {
   Percept,
   RoundContext,
   Scenario,
-} from "../runtime/contracts";
-import type { ActiveSkill } from "../shared/types";
+} from "../../runtime/contracts";
+import type { ActiveSkill } from "../../shared/types";
 import type { YesImPlugin } from "./plugin";
 
 export interface TraitSignal {

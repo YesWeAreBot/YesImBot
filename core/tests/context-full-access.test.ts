@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ThinkActLoop } from "../src/services/agent/loop";
-import { HookService } from "../src/services/hook/service";
-import { HookPhase, HookType } from "../src/services/hook/types";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import type { Percept } from "../src/runtime/contracts";
 import {
   getMarkedEvents,
   getMessageCount,
   getParticipants,
   getRecentTurns,
-} from "../src/services/runtime/scenario-timeline";
-import type { Percept } from "../src/services/shared/types";
+} from "../src/runtime/scenario-timeline";
+import { ThinkActLoop } from "../src/services/agent/loop";
+import { HookService } from "../src/services/hook/service";
+import { HookPhase, HookType } from "../src/services/hook/types";
+import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
 import {
   createAgentActionRecord,
   createMessageRecord,
@@ -63,20 +63,12 @@ describe("Full context access contract", () => {
           params: {
             ...params,
             traits: [...params.traits, { dimension: "hook-injected", value: "yes", confidence: 1 }],
-            skills: [
-              ...params.skills,
-              {
-                name: "hook-context-check",
-                effects: ["runtime-visible"],
-                metadata: { injectedBy: "agent-hook" },
-              },
-            ],
             metadata: {
               ...(params.metadata ?? {}),
               route: "agent-start",
             },
             skillState: {
-              active: ["answering", "hook-context-check"],
+              active: ["hook-context-check"],
             },
           },
         };
@@ -140,30 +132,8 @@ describe("Full context access contract", () => {
       compressor: undefined,
     };
 
-    const traitService = {
-      analyze: vi.fn(async () => [
-        {
-          dimension: "scene",
-          value: "group-chat",
-          confidence: 0.92,
-          metadata: { source: "test" },
-        },
-      ]),
-    };
-
     const skillService = {
-      resolve: vi.fn(() => ({
-        activeSkills: [
-          {
-            name: "answering",
-            effects: ["concise"],
-            metadata: { origin: "test-skill" },
-          },
-        ],
-        promptFragments: [],
-        styleFragment: null,
-        toolFilter: { include: [], exclude: [] },
-      })),
+      get: vi.fn(),
     };
 
     const promptService = {
@@ -209,7 +179,6 @@ describe("Full context access contract", () => {
     rootCtx["yesimbot.plugin"] = pluginService;
     rootCtx["yesimbot.prompt"] = promptService;
     rootCtx["yesimbot.model"] = modelService;
-    rootCtx["yesimbot.trait"] = traitService;
     rootCtx["yesimbot.skill"] = skillService;
     rootCtx["yesimbot.hook"] = hookService;
 
@@ -244,7 +213,7 @@ describe("Full context access contract", () => {
     expect(result.totalToolCalls).toBe(1);
     expect(hookParams).toBeDefined();
     expect(hookParams?.view.self.id).toBe("bot-1");
-    expect(hookParams?.traits[0].dimension).toBe("scene");
+    expect(hookParams?.traits).toEqual([]);
     expect(hookParams?.skills ?? []).toEqual([]);
     expect(hookParams?.percept.traceId).toBe("trace-ctx-1");
     expect(hookParams?.percept.metadata).toEqual({ requestId: "req-123", custom: { lane: "a" } });
@@ -258,8 +227,7 @@ describe("Full context access contract", () => {
 
     expect(capturedToolCtx).toBeDefined();
     expect(capturedToolCtx?.scenario?.raw.self.id).toBe("bot-1");
-    expect(capturedToolCtx?.traits?.[0].dimension).toBe("scene");
-    expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toContain("hook-injected");
+    expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toEqual(["hook-injected"]);
     expect(capturedToolCtx?.skills ?? []).toEqual([]);
     expect(capturedToolCtx?.percept?.traceId).toBe("trace-ctx-1");
     expect(capturedToolCtx?.percept?.metadata).toEqual({
@@ -294,8 +262,8 @@ describe("Full context access contract", () => {
         messageCount: 1,
       }),
     );
-    expect((horizonService.formatHorizonText as ReturnType<typeof vi.fn>).mock.calls[0]?.[3]).toBe(
-      scenarioTimeline,
-    );
+    expect(
+      (horizonService.formatHorizonText as ReturnType<typeof vi.fn>).mock.calls[0]?.[3],
+    ).toStrictEqual(scenarioTimeline);
   });
 });

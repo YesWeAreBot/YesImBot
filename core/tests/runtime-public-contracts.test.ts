@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  bindCommittedRoundContext,
+  buildCapabilitiesFromRuntime,
+  createRoundContext,
+} from "../src/runtime/adapters";
+import type { Capabilities, RoundContext, Scenario } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import type {
@@ -15,12 +21,6 @@ import type {
   PromptLayout,
   PromptSectionName,
 } from "../src/services/prompt";
-import {
-  bindCommittedRoundContext,
-  buildCapabilitiesFromRuntime,
-  createRoundContext,
-} from "../src/services/runtime/adapters";
-import type { Capabilities, RoundContext, Scenario } from "../src/services/runtime/contracts";
 
 describe("runtime public contracts", () => {
   it("prompt fragment-first contracts are publicly exported", () => {

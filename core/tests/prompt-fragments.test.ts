@@ -35,7 +35,7 @@ describe("prompt fragments", () => {
       {
         id: "identity.base",
         section: "identity",
-        source: "role",
+        source: "persona",
         priority: 10,
         stability: "stable",
         cacheable: true,
@@ -84,17 +84,17 @@ describe("prompt fragments", () => {
       {
         id: "policy.a-high-role",
         section: "policy",
-        source: "role",
+        source: "persona",
         priority: 20,
         stability: "stable",
         cacheable: true,
-        content: "role high",
+        content: "persona high",
       },
     ]);
 
     const sections = await service.render("system", {});
     expect(sections.find((section) => section.name === "policy")?.content).toContain(
-      "role high\n\nmemory high\n\ntooling low",
+      "persona high\n\nmemory high\n\ntooling low",
     );
   });
 
@@ -109,7 +109,7 @@ describe("prompt fragments", () => {
       {
         id: "dup.id",
         section: "identity",
-        source: "role",
+        source: "persona",
         priority: 0,
         stability: "stable",
         cacheable: true,

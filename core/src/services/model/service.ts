@@ -29,11 +29,8 @@ export type StreamResult = Awaited<ReturnType<typeof streamText>>;
 
 export interface ModelServiceConfig {
   concurrency?: number;
+  debugLevel?: number;
 }
-
-export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
-  concurrency: Schema.number().default(5),
-});
 
 export class ModelService extends Service<ModelServiceConfig> implements IModelService {
   private providers = new Map<string, IModelProvider>();
@@ -45,6 +42,7 @@ export class ModelService extends Service<ModelServiceConfig> implements IModelS
     this.config = config;
     this.queue = new PQueue({ concurrency: config.concurrency || 5 });
     this.logger = ctx.logger("yesimbot.model");
+    this.logger.level = config.debugLevel ?? 2;
     const command = this.ctx.command("yesimbot.model", "模型指令集", { authority: 3 });
 
     command

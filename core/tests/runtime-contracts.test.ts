@@ -1,17 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { FunctionType, type FunctionDefinition } from "../src/services/plugin/types";
 import {
   CAPABILITY_KEYS,
   RUNTIME_CONTRACT_VERSION,
   getCapabilityByKey,
-} from "../src/services/runtime/contracts";
-import type {
-  Capabilities,
-  CapabilityState,
-  Percept,
-  Scenario,
-} from "../src/services/runtime/contracts";
+} from "../src/runtime/contracts";
+import type { Capabilities, CapabilityState, Percept, Scenario } from "../src/runtime/contracts";
+import { FunctionType, type FunctionDefinition } from "../src/services/plugin/types";
 
 describe("runtime contracts", () => {
   it("exposes runtime contract module", () => {

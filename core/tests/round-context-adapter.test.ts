@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { HORIZON_SCENARIO_BOUNDARY } from "../src/services/horizon/types";
-import type {
-  HorizonScenarioAdapterSource,
-  HorizonScenarioProjection,
-} from "../src/services/horizon/types";
 import {
   bindCommittedRoundContext,
   buildCapabilitiesFromRuntime,
   buildScenarioFromView,
   commitRoundContext,
   createRoundContext,
-} from "../src/services/runtime/adapters";
+} from "../src/runtime/adapters";
 import {
   DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
   type ScenarioTimeline,
-} from "../src/services/runtime/contracts";
+} from "../src/runtime/contracts";
+import { HORIZON_SCENARIO_BOUNDARY } from "../src/services/horizon/types";
+import type {
+  HorizonScenarioAdapterSource,
+  HorizonScenarioProjection,
+} from "../src/services/horizon/types";
 
 describe("scenario adapter", () => {
   it("marks HorizonView as internal Scenario adapter boundary", () => {

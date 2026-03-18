@@ -31,6 +31,8 @@ export class ArousalService extends Service<ArousalConfig> {
   constructor(ctx: Context, config: ArousalConfig) {
     super(ctx, "yesimbot.arousal", false);
     this.config = config;
+    this.logger = ctx.logger("arousal");
+    this.logger.level = config.debugLevel ?? 2;
   }
 
   start(): void {
@@ -70,6 +72,8 @@ export class ArousalService extends Service<ArousalConfig> {
    * select interesting ones, and emit heartbeat events.
    */
   async globalHeartbeat(): Promise<void> {
+    this.logger.info("Arousal heartbeat starting: service=arousal");
+
     try {
       const horizon = this.ctx["yesimbot.horizon"] as {
         events: {
@@ -124,6 +128,15 @@ export class ArousalService extends Service<ArousalConfig> {
         return;
       }
 
+      const nowMs = Date.now();
+      for (const channel of activeChannels) {
+        const ageMs = nowMs - channel.lastMessageTime.getTime();
+        const channelSummary = channel.lastContent.replace(/\s+/g, " ").slice(0, 120);
+        this.logger.debug(
+          `Channel evaluated: channel=${channel.channelKey} last_message_age_ms=${ageMs} message_count=${channel.messageCount} reason=${channelSummary}`,
+        );
+      }
+
       // Evaluate channels with small model
       const modelService = this.ctx["yesimbot.model"] as unknown as {
         call: (
@@ -133,55 +146,90 @@ export class ArousalService extends Service<ArousalConfig> {
         ) => Promise<{ text: string } | undefined>;
       };
 
-      const selected = await evaluateChannels(modelService, this.config, activeChannels);
+      let selected;
+      try {
+        selected = await evaluateChannels(modelService, this.config, activeChannels);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(
+          `Arousal evaluation failed: error=${message} channel_count=${activeChannels.length}`,
+        );
+        return;
+      }
 
       let emitted = 0;
+      let rateLimitedCount = 0;
 
       for (const channel of selected) {
         const channelKey = `${channel.platform}:${channel.channelId}`;
 
+        this.logger.debug(`Channel selected: channel=${channelKey} reason=${channel.reason}`);
+
         // Check rate limit (daily ceiling)
-        if (!this.checkRateLimit(channelKey)) {
-          this.logger.debug(`Rate limit exceeded for ${channelKey}, skipping heartbeat`);
+        try {
+          const dailyEntry = this.dailyMessageCounts.get(channelKey);
+          const currentCount =
+            !dailyEntry || Date.now() >= dailyEntry.resetAt ? 0 : dailyEntry.count;
+
+          if (!this.checkRateLimit(channelKey)) {
+            this.logger.info(
+              `Rate limit: channel=${channelKey} daily_count=${currentCount} limit=${this.config.dailyMessageLimit}`,
+            );
+            rateLimitedCount++;
+            continue;
+          }
+
+          // Check TokenBucket rate limiter
+          if (this.rateLimiter && !this.rateLimiter.consume(channelKey)) {
+            this.logger.info(
+              `Rate limit: channel=${channelKey} daily_count=${currentCount} limit=${this.config.dailyMessageLimit} reason=token_bucket_depleted`,
+            );
+            rateLimitedCount++;
+            continue;
+          }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error(`Rate limit check failed: error=${message} channel=${channelKey}`);
+          rateLimitedCount++;
           continue;
         }
 
-        // Check TokenBucket rate limiter
-        if (this.rateLimiter && !this.rateLimiter.consume(channelKey)) {
-          this.logger.debug(`Token bucket depleted for ${channelKey}, skipping heartbeat`);
-          continue;
+        try {
+          // Record HeartbeatRecord in timeline
+          await horizon.events.record({
+            id: Random.id(),
+            type: TimelineEventType.Heartbeat,
+            priority: TimelinePriority.Normal,
+            stage: TimelineStage.Active,
+            platform: channel.platform,
+            channelId: channel.channelId,
+            timestamp: new Date(),
+            data: {
+              triggeredBy: "global" as const,
+              channelSummary: channel.reason,
+            },
+          });
+
+          // Emit heartbeat event
+          this.ctx.emit("athena:heartbeat", {
+            platform: channel.platform,
+            channelId: channel.channelId,
+            triggeredBy: "global",
+          });
+
+          emitted++;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error(`Event emission failed: error=${message} channel=${channelKey}`);
         }
-
-        // Record HeartbeatRecord in timeline
-        await horizon.events.record({
-          id: Random.id(),
-          type: TimelineEventType.Heartbeat,
-          priority: TimelinePriority.Normal,
-          stage: TimelineStage.Active,
-          platform: channel.platform,
-          channelId: channel.channelId,
-          timestamp: new Date(),
-          data: {
-            triggeredBy: "global" as const,
-            channelSummary: channel.reason,
-          },
-        });
-
-        // Emit heartbeat event
-        this.ctx.emit("athena:heartbeat", {
-          platform: channel.platform,
-          channelId: channel.channelId,
-          triggeredBy: "global",
-        });
-
-        emitted++;
       }
 
       this.logger.info(
-        `Heartbeat: evaluated ${activeChannels.length} channels, selected ${selected.length}, emitted ${emitted}`,
+        `Heartbeat: evaluated=${activeChannels.length} selected=${selected.length} emitted=${emitted} rate_limited=${rateLimitedCount}`,
       );
     } catch (err) {
-      this.logger.error(`Global heartbeat error: ${err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Arousal evaluation failed: error=${message} channel_count=unknown`);
     }
   }
 

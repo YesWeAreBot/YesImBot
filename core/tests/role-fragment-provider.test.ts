@@ -37,7 +37,7 @@ vi.mock("koishi", () => {
   };
 });
 
-import { RoleService } from "../src/services/role/service";
+import { PersonaService } from "../src/services/role/service";
 
 function createMockContext() {
   const fragmentSources = new Map<string, (scope: Record<string, unknown>) => unknown>();
@@ -70,21 +70,21 @@ function createMockContext() {
   return { ctx, promptService, fragmentSources, snippets };
 }
 
-describe("RoleService fragment provider migration", () => {
+describe("PersonaService fragment provider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("does not call prompt.inject and emits identity/policy role fragments", async () => {
+  it("does not call prompt.inject and emits identity/policy/situation persona fragments", async () => {
     const { ctx, promptService, fragmentSources } = createMockContext();
-    const service = new RoleService(ctx as never, { rolePath: "core/resources/roles" });
+    const service = new PersonaService(ctx as never, { rolePath: "core/resources/roles" });
 
     await (service as unknown as { start: () => Promise<void> }).start();
 
     expect(promptService.inject).not.toHaveBeenCalled();
     expect(promptService.registerFragmentSource).toHaveBeenCalled();
 
-    const provider = fragmentSources.get("role");
+    const provider = fragmentSources.get("persona");
     expect(provider).toBeTypeOf("function");
 
     const fragments = (await provider?.({
@@ -101,17 +101,21 @@ describe("RoleService fragment provider migration", () => {
     }>;
 
     expect(fragments.map((fragment) => fragment.id)).toEqual([
-      "role.soul",
-      "role.agents",
-      "role.tools",
+      "persona.soul",
+      "persona.agents",
+      "persona.tools",
     ]);
-    expect(fragments.map((fragment) => fragment.section)).toEqual(["identity", "policy", "policy"]);
-    expect(fragments.map((fragment) => fragment.priority)).toEqual([700, 700, 690]);
+    expect(fragments.map((fragment) => fragment.section)).toEqual([
+      "identity",
+      "policy",
+      "situation",
+    ]);
+    expect(fragments.map((fragment) => fragment.priority)).toEqual([700, 700, 500]);
   });
 
-  it("keeps snippet-backed role template data available", async () => {
+  it("keeps snippet-backed persona template data available", async () => {
     const { ctx, snippets } = createMockContext();
-    const service = new RoleService(ctx as never, { rolePath: "core/resources/roles" });
+    const service = new PersonaService(ctx as never, { rolePath: "core/resources/roles" });
 
     await (service as unknown as { start: () => Promise<void> }).start();
 

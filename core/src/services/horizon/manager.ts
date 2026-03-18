@@ -1,7 +1,7 @@
 import { Context, Random, Logger, Query } from "koishi";
 
+import type { ChannelKey, ScenarioTimeline, ScenarioTimelineEvent } from "../../runtime/contracts";
 import type { LoopMessage } from "../agent/trimmer";
-import type { ChannelKey, ScenarioTimeline, ScenarioTimelineEvent } from "../runtime/contracts";
 import {
   MessageHandler,
   AgentResponseHandler,
@@ -244,7 +244,9 @@ export class EventManager {
         }
 
         const actionNames = readStringArray(event.detail?.actionNames);
-        const actions = actionNames.map((name) => ({ name }));
+        const detailActions = readActions(event.detail?.actions);
+        const actions =
+          detailActions.length > 0 ? detailActions : actionNames.map((name) => ({ name }));
         const toolResults: AgentActionData["toolResults"] = [];
 
         let cursor = i + 1;
@@ -355,4 +357,27 @@ function readStringArray(value: unknown): string[] {
     return [];
   }
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function readActions(value: unknown): AgentActionData["actions"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const actions: AgentActionData["actions"] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const action = item as Record<string, unknown>;
+    const name = readString(action.name);
+    if (!name) {
+      continue;
+    }
+    const params =
+      action.params && typeof action.params === "object"
+        ? (action.params as Record<string, unknown>)
+        : undefined;
+    actions.push({ name, params });
+  }
+  return actions;
 }

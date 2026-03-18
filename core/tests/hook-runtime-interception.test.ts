@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { Hook } from "../src/services/hook/decorators";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { YesImPlugin } from "../src/services/plugin/plugin";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
-import type { Percept } from "../src/services/shared/types";
 
 type RuntimeHarness = ReturnType<typeof createRuntimeHarness>;
 

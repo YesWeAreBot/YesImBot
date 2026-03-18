@@ -59,13 +59,13 @@ vi.mock("koishi", () => {
   };
 });
 
+import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { AgentCore } from "../src/services/agent/service";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { CorePlugin } from "../src/services/plugin/builtin/core";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
-import type { Percept } from "../src/services/shared/types";
 
 type LoopHarness = ReturnType<typeof createLoopHarness>;
 type MessageHarness = ReturnType<typeof createMessageHarness>;
@@ -291,43 +291,6 @@ describe("Hook runtime resilience (timeout)", () => {
     };
     expect(actionEventPayload.data?.toolResults?.[0]?.status).toBe("ok");
   });
-
-  it("times out slow Message before-hook and still sends original content", async () => {
-    const harness: MessageHarness = createMessageHarness();
-    const sessionSend = vi.fn(async () => undefined);
-    let hookCompleted = false;
-
-    harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      timeout: 25,
-      handler: async (ctx) => {
-        await new Promise((resolve) => setTimeout(resolve, 120));
-        hookCompleted = true;
-        const params = ctx.params as { content: string; session: unknown };
-        return {
-          modified: true,
-          params: { ...params, content: "HOOKED MESSAGE" },
-        };
-      },
-    });
-
-    const result = await harness.plugin.sendMessage(
-      { content: "original message" },
-      {
-        platform: "discord",
-        channelId: "c-1",
-        session: { send: sessionSend } as never,
-        percept: { traceId: "trace-message-timeout" } as never,
-      },
-    );
-
-    expect(result.success).toBe(true);
-    expect(hookCompleted).toBe(false);
-    expect(sessionSend).toHaveBeenCalledTimes(1);
-    const firstSend = (sessionSend.mock.calls as unknown[][])[0]?.[0];
-    expect(JSON.stringify(firstSend)).toContain("original message");
-  });
 });
 
 describe("Hook runtime resilience (error isolation)", () => {
@@ -391,46 +354,6 @@ describe("Hook runtime resilience (error isolation)", () => {
     expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("isolates Message before-hook errors and still sends the final user-facing message", async () => {
-    const harness: MessageHarness = createMessageHarness();
-    const sessionSend = vi.fn(async () => undefined);
-
-    harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: async () => {
-        throw new Error("message before failure");
-      },
-    });
-    harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: async (ctx) => {
-        const params = ctx.params as { content: string; session: unknown };
-        return {
-          modified: true,
-          params: { ...params, content: "message still delivered" },
-        };
-      },
-    });
-
-    const result = await harness.plugin.sendMessage(
-      { content: "original message" },
-      {
-        platform: "discord",
-        channelId: "c-1",
-        session: { send: sessionSend } as never,
-        percept: { traceId: "trace-message-error" } as never,
-      },
-    );
-
-    expect(result.success).toBe(true);
-    expect(sessionSend).toHaveBeenCalledTimes(1);
-    const firstSend = (sessionSend.mock.calls as unknown[][])[0]?.[0];
-    expect(JSON.stringify(firstSend)).toContain("message still delivered");
-    expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("isolates Tool after-hook errors and preserves completed runtime outcome", async () => {
     const harness: LoopHarness = createLoopHarness(
       '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
@@ -480,36 +403,6 @@ describe("Hook runtime resilience (error hooks)", () => {
     const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
 
     expect(runResult.totalToolCalls).toBe(1);
-    expect(errorHookSpy).toHaveBeenCalledTimes(1);
-    expect(errorHookSpy.mock.calls[0]?.[0]).toEqual(expect.any(Error));
-  });
-
-  it("fires message error hook when session.send throws", async () => {
-    const harness: MessageHarness = createMessageHarness();
-    const sessionSend = vi.fn(async () => {
-      throw new Error("send failed");
-    });
-
-    const errorHookSpy = vi.fn();
-    harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
-      phase: HookPhase.Error,
-      handler: async (ctx) => {
-        errorHookSpy(ctx.error);
-      },
-    });
-
-    const result = await harness.plugin.sendMessage(
-      { content: "hello" },
-      {
-        platform: "discord",
-        channelId: "c-1",
-        session: { send: sessionSend } as never,
-        percept: { traceId: "trace-message-error-hook" } as never,
-      },
-    );
-
-    expect(result.success).toBe(false);
     expect(errorHookSpy).toHaveBeenCalledTimes(1);
     expect(errorHookSpy.mock.calls[0]?.[0]).toEqual(expect.any(Error));
   });
@@ -564,7 +457,6 @@ describe("Hook runtime resilience (agent snapshot)", () => {
 describe("Hook runtime resilience (fail-safe boundary)", () => {
   it("runs fail-safe error transport after lifecycle closure and outside message hooks", async () => {
     const order: string[] = [];
-    const messageHookSpy = vi.fn();
     const sendSpy = vi.fn(async () => {
       order.push("report-error");
     });
@@ -585,14 +477,6 @@ describe("Hook runtime resilience (fail-safe boundary)", () => {
     } as unknown as Record<string, unknown>;
 
     const hookService = new HookService(ctx as never);
-    hookService.register(ctx as never, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: async () => {
-        messageHookSpy();
-        return { modified: false };
-      },
-    });
     ctx["yesimbot.hook"] = hookService;
 
     const agent = new AgentCore(
@@ -644,6 +528,5 @@ describe("Hook runtime resilience (fail-safe boundary)", () => {
 
     expect(order).toEqual(["agent-end", "report-error"]);
     expect(sendSpy).toHaveBeenCalledTimes(1);
-    expect(messageHookSpy).not.toHaveBeenCalled();
   });
 });

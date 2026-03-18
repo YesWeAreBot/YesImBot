@@ -2,8 +2,8 @@ import path from "node:path";
 
 import type { Context, Session } from "koishi";
 
+import { ChannelKey } from "../../runtime/contracts";
 import { JsonDB } from "../../utils";
-import { ChannelKey } from "../runtime/contracts";
 import type { Environment } from "./types";
 
 export class EnvironmentManager {

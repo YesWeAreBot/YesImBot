@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Context, h, Schema, Service, type Session } from "koishi";
+import { Context, h, Service, type Session } from "koishi";
 
+import type { ChannelKey, Percept, ScenarioTimeline } from "../../runtime/contracts";
+import { buildScenarioTimeline } from "../../runtime/scenario-timeline";
 import type { LoopMessage } from "../agent/trimmer";
-import type { ChannelKey, Percept, ScenarioTimeline } from "../runtime/contracts";
-import { buildScenarioTimeline } from "../runtime/scenario-timeline";
 import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
@@ -36,6 +36,7 @@ declare module "koishi" {
 
 export interface HorizonServiceConfig {
   allowedChannels: AllowedChannel[];
+  debugLevel?: number;
   keywords?: string[];
   aggregationWindow?: number;
   historyLimit?: number;
@@ -48,31 +49,6 @@ export interface HorizonServiceConfig {
   inactivityTriggerMs?: number;
   retainRecentEntries?: number;
 }
-
-export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
-  allowedChannels: Schema.array(
-    Schema.object({
-      platform: Schema.string().required(),
-      type: Schema.union(["private", "guild"]).required(),
-      id: Schema.string().required(),
-    }),
-  )
-    .default([])
-    .role("table"),
-  keywords: Schema.array(Schema.string()).default([]),
-  aggregationWindow: Schema.number().default(1500),
-  historyLimit: Schema.number().default(30),
-  archiveThresholdMs: Schema.number().default(86400000),
-  botName: Schema.string(),
-  entityCacheTtl: Schema.number().default(3600000),
-  maxActiveEntities: Schema.number().default(15),
-  summaryModel: Schema.string().description(
-    "Model ID for summary generation (e.g., 'openai:gpt-4o-mini')",
-  ),
-  cleanupIntervalMs: Schema.number()
-    .default(3_600_000)
-    .description("Interval in ms for periodic cleanup (default: 1 hour)"),
-});
 
 export class HorizonService extends Service<HorizonServiceConfig> {
   static inject = [
@@ -98,6 +74,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
     this.config = config;
+    this.logger.level = config.debugLevel ?? 2;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
     this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel, {

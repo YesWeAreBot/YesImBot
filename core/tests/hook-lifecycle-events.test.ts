@@ -21,7 +21,7 @@ describe("Hook lifecycle events", () => {
       logger: vi.fn(() => ({ debug: debugSpy, warn: warnSpy })),
     } as unknown as Context;
     hookService = new HookService(ctx, {
-      hookTimeouts: { tool: 100, message: 110, agent: 120 },
+      hookTimeouts: { tool: 100, agent: 120 },
     });
   });
 
@@ -171,13 +171,6 @@ describe("Hook lifecycle events", () => {
     });
 
     hookService.register(ctx, {
-      id: "hook-7",
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: vi.fn().mockResolvedValue({ modified: false }),
-    });
-
-    hookService.register(ctx, {
       id: "hook-8",
       type: HookType.Agent,
       phase: HookPhase.Before,
@@ -186,12 +179,11 @@ describe("Hook lifecycle events", () => {
     });
 
     await hookService.executeBefore(HookType.Tool, { input: "tool" }, "t-tool");
-    await hookService.executeBefore(HookType.Message, { input: "msg" }, "t-msg");
     await hookService.executeBefore(HookType.Agent, { input: "agent" }, "t-agent");
     await hookService.executeBefore(HookType.Agent, { input: "override" }, "t-ovr", 20);
 
     const timeoutValues = timeoutSpy.mock.calls.map((call) => call[1]);
-    expect(timeoutValues).toEqual(expect.arrayContaining([100, 110, 50, 20]));
+    expect(timeoutValues).toEqual(expect.arrayContaining([100, 50, 20]));
     timeoutSpy.mockRestore();
   });
 });

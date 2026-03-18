@@ -35,7 +35,7 @@ describe("prompt emit anthropic cache", () => {
       {
         id: "identity.base",
         section: "identity",
-        source: "role",
+        source: "persona",
         priority: 100,
         stability: "stable",
         cacheable: true,
@@ -99,7 +99,7 @@ describe("prompt emit anthropic cache", () => {
       {
         id: "identity.base",
         section: "identity",
-        source: "role",
+        source: "persona",
         priority: 100,
         stability: "stable",
         cacheable: true,

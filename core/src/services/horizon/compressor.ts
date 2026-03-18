@@ -1,7 +1,7 @@
 import { Context, Logger } from "koishi";
 
+import { ChannelKey } from "../../runtime/contracts";
 import type { ModelService } from "../model/service";
-import { ChannelKey } from "../runtime/contracts";
 import { EventManager } from "./manager";
 import { TimelineEntry, SummaryRecord, TimelineEventType, TimelineStage } from "./types";
 

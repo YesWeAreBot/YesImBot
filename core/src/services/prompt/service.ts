@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
-import { Context, Schema, Service } from "koishi";
+import { Context, Service } from "koishi";
 
 import { HandlebarsRenderer } from "./renderer";
 import type { PromptFragment, PromptSectionName, RenderedPromptSection, Snippet } from "./types";
@@ -17,6 +15,7 @@ declare module "koishi" {
 export interface PromptServiceConfig {
   templates?: Record<string, string>;
   renderTimeout?: number;
+  debugLevel?: number;
 }
 
 interface CanonicalPromptSection {
@@ -37,11 +36,6 @@ export interface PromptEmitBlocks {
   stableSignature: string;
 }
 
-export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
-  templates: Schema.dict(Schema.string()),
-  renderTimeout: Schema.number().default(5000),
-});
-
 export class PromptService extends Service<PromptServiceConfig> {
   private fragmentSources = new Map<
     string,
@@ -55,6 +49,7 @@ export class PromptService extends Service<PromptServiceConfig> {
     super(ctx, "yesimbot.prompt", true);
     this.config = config;
     this.logger = this.ctx.logger("yesimbot.prompt");
+    this.logger.level = config.debugLevel ?? 2;
   }
 
   registerSnippet(name: string, fn: Snippet): void {

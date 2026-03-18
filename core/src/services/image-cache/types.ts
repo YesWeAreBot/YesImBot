@@ -39,6 +39,7 @@ export interface CacheEntry {
  * Service configuration.
  */
 export interface ImageCacheConfig {
+  debugLevel?: number;
   /** Maximum number of cached images before LRU eviction */
   maxCachedImages: number;
   /** Time-to-live in milliseconds (default 7 days) */

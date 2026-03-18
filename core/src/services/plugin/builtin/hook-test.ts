@@ -1,7 +1,6 @@
 import { Context, Logger } from "koishi";
 
 import { Hook } from "../../hook/decorators";
-import { HookService } from "../../hook/service";
 import {
   AgentStartHookExecutionContext,
   BeforeHookResult,

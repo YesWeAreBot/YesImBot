@@ -17,6 +17,13 @@ describe("Hook Decorator", () => {
   beforeEach(() => {
     ctx = new Context();
     ctx.on = (() => () => true) as unknown as typeof ctx.on;
+    (ctx as unknown as { emit: (...args: unknown[]) => void }).emit = () => undefined;
+    (ctx as unknown as { logger: (name: string) => Record<string, unknown> }).logger = () => ({
+      warn: () => undefined,
+      debug: () => undefined,
+      info: () => undefined,
+      level: 2,
+    });
     hookService = new HookService(ctx);
   });
 
@@ -72,11 +79,6 @@ describe("Hook Decorator", () => {
       async afterToolHook(_hookCtx: HookContext): Promise<void> {
         // After hook
       }
-
-      @Hook({ type: HookType.Message, phase: HookPhase.Before })
-      async beforeMessageHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
-        return { modified: false };
-      }
     }
 
     const plugin = new TestPlugin();
@@ -84,33 +86,6 @@ describe("Hook Decorator", () => {
 
     expect(hookService.getHooks(HookType.Tool, HookPhase.Before)).toHaveLength(1);
     expect(hookService.getHooks(HookType.Tool, HookPhase.After)).toHaveLength(1);
-    expect(hookService.getHooks(HookType.Message, HookPhase.Before)).toHaveLength(1);
-  });
-
-  it("should support all hook types", () => {
-    class TestPlugin {
-      @Hook({ type: HookType.Tool, phase: HookPhase.Before })
-      async toolHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
-        return { modified: false };
-      }
-
-      @Hook({ type: HookType.Message, phase: HookPhase.Before })
-      async messageHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
-        return { modified: false };
-      }
-
-      @Hook({ type: HookType.Agent, phase: HookPhase.Before })
-      async agentHook(_hookCtx: HookContext): Promise<BeforeHookResult<unknown>> {
-        return { modified: false };
-      }
-    }
-
-    const plugin = new TestPlugin();
-    hookService.registerFromDecorators(ctx, plugin);
-
-    expect(hookService.getHooks(HookType.Tool, HookPhase.Before)).toHaveLength(1);
-    expect(hookService.getHooks(HookType.Message, HookPhase.Before)).toHaveLength(1);
-    expect(hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(1);
   });
 
   it("should support all hook phases", () => {

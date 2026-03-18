@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import type { HorizonView } from "../src/services/horizon/types";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
-import type { TraitSignal, ActiveSkill } from "../src/services/shared/types";
+import type { TraitSignal, ActiveSkill } from "../src/shared/types";
 
 describe("Context Interface Extensions", () => {
   describe("HorizonView", () => {
