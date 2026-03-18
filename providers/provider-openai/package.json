@@ -1,0 +1,47 @@
+{
+  "name": "@yesimbot/koishi-plugin-provider-openai",
+  "version": "0.0.0",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
+    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "fmt": "oxfmt",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.0",
+    "@yesimbot/shared-model": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.3"
+  },
+  "peerDependencies": {
+    "koishi": "^4.0.0"
+  },
+  "koishi": {
+    "service": {
+      "required": [
+        "yesimbot.model"
+      ]
+    }
+  }
+}
