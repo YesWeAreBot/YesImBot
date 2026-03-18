@@ -13,7 +13,8 @@
     "core",
     "packages/*",
     "plugins/*",
-    "providers/*"
+    "providers/*",
+    "test"
   ],
   "scripts": {
     "build": "turbo run build",

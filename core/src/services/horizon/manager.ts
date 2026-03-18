@@ -7,6 +7,7 @@ import {
   AgentResponseHandler,
   AgentActionHandler,
   SummaryHandler,
+  HeartbeatHandler,
   BuildContextOptions,
   type TimelineHandler,
 } from "./handlers";
@@ -34,6 +35,7 @@ export class EventManager {
     new AgentResponseHandler(),
     new AgentActionHandler(),
     new SummaryHandler(),
+    new HeartbeatHandler(),
   ];
 
   constructor(private ctx: Context) {
@@ -52,6 +54,8 @@ export class EventManager {
     }
     if (options.types?.length)
       query.type = { $in: options.types } as unknown as Query.Expr<TimelineEntry>["type"];
+    if (options.stages?.length)
+      query.stage = { $in: options.stages } as unknown as Query.Expr<TimelineEntry>["stage"];
     if (options.since) query.timestamp = { $gte: options.since };
     if (options.until) query.timestamp = { ...(query.timestamp as object), $lte: options.until };
 
@@ -138,7 +142,10 @@ export class EventManager {
     });
   }
 
-  buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): LoopMessage[] {
+  async buildLoopMessages(
+    entries: TimelineEntry[],
+    options: BuildContextOptions,
+  ): Promise<LoopMessage[]> {
     const { imageConfig, parseElements, getImageCache } = options;
 
     // Image lifecycle tracking
@@ -161,7 +168,7 @@ export class EventManager {
           const status = el.attrs.status as string | undefined;
           if (!id || status === "failed") continue;
 
-          const cache = getImageCache(id);
+          const cache = await getImageCache(id);
           if (!cache || cache.status === "failed") continue;
 
           const count = lifecycleTracker.get(id) ?? 0;
@@ -191,7 +198,8 @@ export class EventManager {
     for (const entry of entries) {
       for (const handler of this.handlers) {
         if (handler.canHandle(entry)) {
-          messages.push(...handler.handle(entry, enhancedOptions));
+          const handlerMessages = await handler.handle(entry, enhancedOptions);
+          messages.push(...handlerMessages);
           break;
         }
       }
@@ -220,5 +228,17 @@ export class EventManager {
       timestamp: { $lte: cutoff },
     } as unknown as Query.Expr<TimelineEntry>;
     await this.ctx.database.set(TIMELINE_TABLE, query, { stage: TimelineStage.Archived });
+  }
+
+  async deleteStale(key: ChannelKey, stage: TimelineStage): Promise<number> {
+    const query = {
+      platform: key.platform,
+      channelId: key.channelId,
+      stage: stage,
+    } as unknown as Query.Expr<TimelineEntry>;
+    const entries = await this.ctx.database.select(TIMELINE_TABLE).where(query).execute();
+    if (entries.length === 0) return 0;
+    await this.ctx.database.remove(TIMELINE_TABLE, query);
+    return entries.length;
   }
 }

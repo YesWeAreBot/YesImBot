@@ -27,3 +27,9 @@ export interface TraitSignal {
   confidence: number;
   metadata?: Record<string, unknown>;
 }
+
+export interface ActiveSkill {
+  name: string;
+  effects: string[];
+  metadata?: Record<string, unknown>;
+}

@@ -6,7 +6,7 @@ import { createMessageRecord, createSummaryRecord } from "./fixtures/timeline-en
 
 // Mock HorizonService for formatHorizonText testing
 class MockHorizonService {
-  formatHorizonText(view: HorizonView): Array<{ role: string; content: string }> {
+  async formatHorizonText(view: HorizonView): Promise<Array<{ role: string; content: string }>> {
     const preambleParts: string[] = [];
 
     // Add environment
@@ -68,7 +68,7 @@ describe("formatHorizonText Summary rendering", () => {
     service = new MockHorizonService();
   });
 
-  it("should render latest Summary between members and history", () => {
+  it("should render latest Summary between members and history", async () => {
     const summary = createSummaryRecord({
       index: 1,
       minutesOffset: 10,
@@ -88,7 +88,7 @@ describe("formatHorizonText Summary rendering", () => {
       history: [summary],
     };
 
-    const messages = service.formatHorizonText(view);
+    const messages = await service.formatHorizonText(view);
     expect(messages).toHaveLength(1);
     expect(messages[0].role).toBe("user");
 
@@ -105,7 +105,7 @@ describe("formatHorizonText Summary rendering", () => {
     expect(membersIdx).toBeLessThan(summaryIdx);
   });
 
-  it("should use only latest Summary when multiple exist", () => {
+  it("should use only latest Summary when multiple exist", async () => {
     const oldSummary = createSummaryRecord({
       index: 1,
       minutesOffset: 5,
@@ -123,14 +123,14 @@ describe("formatHorizonText Summary rendering", () => {
       history: [oldSummary, newSummary],
     };
 
-    const messages = service.formatHorizonText(view);
+    const messages = await service.formatHorizonText(view);
     const preamble = messages[0].content;
 
     expect(preamble).toContain("<summary>Latest summary</summary>");
     expect(preamble).not.toContain("Old summary");
   });
 
-  it("should skip Summary block when no Summary exists", () => {
+  it("should skip Summary block when no Summary exists", async () => {
     const message = createMessageRecord({ index: 1, minutesOffset: 5 });
 
     const view: HorizonView = {
@@ -138,7 +138,7 @@ describe("formatHorizonText Summary rendering", () => {
       history: [message],
     };
 
-    const messages = service.formatHorizonText(view);
+    const messages = await service.formatHorizonText(view);
     const preamble = messages[0]?.content ?? "";
 
     expect(preamble).not.toContain("<summary>");

@@ -50,6 +50,9 @@ export interface ToolExecutionContext {
   session?: Session;
   bot?: Bot;
   percept?: Percept;
+  view?: import("../horizon/types").HorizonView;
+  traits?: TraitSignal[];
+  skills?: import("../shared/types").ActiveSkill[];
   [key: string]: unknown;
 }
 

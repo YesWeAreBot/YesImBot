@@ -70,6 +70,18 @@ Load these files as needed for focused work:
 - `.planning/ROADMAP.md`: current phase ordering and execution targets
 - `core/resources/roles/AGENTS.md`: runtime role prompt instructions
 
+## GSD Planning Docs Repository Rules
+
+- GSD project planning documents are stored under `.planning/`.
+- `.planning/` is excluded from the main Athena repository and is managed as a separate repository.
+- Do not commit `.planning/` changes from the main repository.
+- To submit planning document changes, switch into `.planning/` first, then commit and push there.
+- Recommended workflow:
+  - `cd .planning`
+  - `git status`
+  - `git add <files>`
+  - `git commit -m "<message>"`
+
 ## Implementation Strategy
 
 1. Start with types in `packages/shared-model` or target service types.
@@ -114,3 +126,10 @@ yarn lint
 - Keep tool/action distinction intact.
 - Validate dependency graph when touching service startup/injection.
 - Reference `references/YesImBot-v3/` for feature migration patterns.
+
+## Reference Documentation and Resources
+
+- [Koishi](references/koishi-docs/zh-CN)
+- [Letta Source Code](references/letta)
+- [OpenClaw docs](references/openclaw/docs)
+- [Plast Mem](references/plast-mem) an experimental llm memory layer for cyber waifu.

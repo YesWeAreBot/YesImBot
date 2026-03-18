@@ -1,4 +1,4 @@
-import { Context, Random, Schema, Service } from "koishi";
+import { Context, Random, Service } from "koishi";
 
 import type { HorizonService } from "../horizon/service";
 import type { HorizonMessageEvent } from "../horizon/types";
@@ -8,12 +8,7 @@ import type { RoleService } from "../role/service";
 import type { Percept } from "../shared/types";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
-import {
-  TokenBucket,
-  WillingnessConfig,
-  WillingnessEngine,
-  WillingnessSchema,
-} from "./willingness";
+import { TokenBucket, WillingnessConfig, WillingnessEngine } from "./willingness";
 
 interface JudgeResponse {
   decision: boolean;
@@ -151,6 +146,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
     };
     this.loop = new ThinkActLoop(this.ctx, this.config);
     this.ctx.on("horizon/message", (event) => this.handleEvent(event));
+    this.ctx.on("athena:heartbeat", (data) => this.handleHeartbeat(data));
     this.logger.info("AgentCore started");
   }
 
@@ -216,6 +212,42 @@ export class AgentCore extends Service<AgentCoreConfig> {
       this.pendingWindows.set(channelKey, { cancel, lastEvent: event });
     } catch (err: unknown) {
       this.logger.error(`handleEvent error: ${err}`);
+    }
+  }
+
+  private handleHeartbeat(data: {
+    platform: string;
+    channelId: string;
+    triggeredBy: string;
+  }): void {
+    try {
+      const channelKey = `${data.platform}:${data.channelId}`;
+      const traceId = `hb-${Random.id(8, 16)}`;
+
+      this.logger.info(`[heartbeat] channel=${channelKey} triggered by=${data.triggeredBy}`);
+
+      const built: LoopPayload = {
+        percept: {
+          id: Random.id(),
+          traceId,
+          type: "internal",
+          platform: data.platform,
+          channelId: data.channelId,
+          timestamp: new Date(),
+          metadata: {
+            isHeartbeat: true,
+            triggeredBy: data.triggeredBy,
+          },
+        },
+        toolCtx: {
+          platform: data.platform,
+          channelId: data.channelId,
+        },
+      };
+
+      this.enqueue(channelKey, built);
+    } catch (err: unknown) {
+      this.logger.error(`handleHeartbeat error: ${err}`);
     }
   }
 
@@ -455,7 +487,7 @@ export class AgentCore extends Service<AgentCoreConfig> {
           selfName: built.toolCtx.bot?.user?.name,
         },
       );
-      const contextText = horizon.formatHorizonText(view);
+      const contextText = await horizon.formatHorizonText(view);
       const roleService = this.ctx["yesimbot.role"] as RoleService;
       const personaSummary = roleService.getSoulSummary(300);
       const judgmentModel = this.config.willingness?.deferred?.model ?? "";
@@ -530,6 +562,9 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const bot = this.ctx.bots.find((b) => b.platform === platform);
     if (!bot) return;
     const summary = `[Error] ${percept.channelId}: ${err instanceof Error ? err.message : String(err)}`;
+    // Error reporting bypasses message hooks intentionally
+    // Internal system messages should not be intercepted by plugins
+    // See docs/HOOK_COVERAGE.md for rationale
     await bot.sendMessage(channelId, summary).catch(() => {});
   }
 }

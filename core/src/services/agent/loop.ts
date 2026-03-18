@@ -5,6 +5,8 @@ import type { SystemModelMessage } from "ai";
 import type { ModelMessage } from "ai";
 import { Context, Random } from "koishi";
 
+import type { HookService } from "../hook/service";
+import { HookType } from "../hook/types";
 import type { HorizonService } from "../horizon/service";
 import { TimelineStage } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
@@ -60,12 +62,12 @@ export class ThinkActLoop {
     let totalTokens = 0;
     let totalToolCalls = 0;
 
-    const horizon = this.ctx["yesimbot.horizon"] as HorizonService;
+    const horizonService = this.ctx["yesimbot.horizon"] as HorizonService;
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
-    const prompt = this.ctx["yesimbot.prompt"] as PromptService;
+    const promptService = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
 
-    let view = await horizon.buildView(
+    let view = await horizonService.buildView(
       { platform: percept.platform, channelId: percept.channelId },
       {
         session: toolCtx.session,
@@ -73,13 +75,6 @@ export class ThinkActLoop {
         selfName: toolCtx.bot?.user?.name,
       },
     );
-
-    const toolCtxWithPercept = {
-      ...toolCtx,
-      percept,
-      botRole: view.self?.role,
-      entities: view.entities,
-    };
 
     // Trait-Skill pipeline: analyze context, resolve active skills
     const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
@@ -93,12 +88,42 @@ export class ThinkActLoop {
       channelId: percept.channelId,
     });
 
+    const toolCtxWithPercept = {
+      ...toolCtx,
+      percept,
+      botRole: view.self?.role,
+      entities: view.entities,
+      view,
+      traits: signals,
+      skills: effects.activeSkills,
+    };
+
+    // Agent before hook - allows hooks to inject context or modify behavior
+    const hookService = this.ctx["yesimbot.hook"];
+    if (hookService) {
+      const beforeResult = await hookService.executeBefore(
+        HookType.Agent,
+        { view, traits: signals, skills: effects.activeSkills, percept },
+        percept.traceId,
+      );
+      if (!beforeResult.skipped && beforeResult.params) {
+        const modifiedParams = beforeResult.params as {
+          view?: typeof view;
+          traits?: typeof signals;
+          skills?: typeof effects.activeSkills;
+        };
+        if (modifiedParams.view) view = modifiedParams.view;
+        if (modifiedParams.traits) Object.assign(signals, modifiedParams.traits);
+        if (modifiedParams.skills) Object.assign(effects.activeSkills, modifiedParams.skills);
+      }
+    }
+
     const disposers: Array<() => void> = [];
 
     // Apply prompt injections from active skills
     for (const inj of effects.promptInjections) {
       disposers.push(
-        prompt.inject(this.ctx, inj.point, {
+        promptService.inject(this.ctx, inj.point, {
           name: `__skill_${inj.skillName}_${percept.id}`,
           renderFn: () => inj.content,
         }),
@@ -108,7 +133,7 @@ export class ThinkActLoop {
     // Apply style override from highest-specificity skill
     if (effects.styleOverride) {
       disposers.push(
-        prompt.inject(this.ctx, effects.styleOverride.point, {
+        promptService.inject(this.ctx, effects.styleOverride.point, {
           name: `__skill_style_${percept.id}`,
           ...(effects.styleOverride.point === "soul" ? { after: "__role_soul" } : {}),
           renderFn: () => effects.styleOverride!.content,
@@ -123,7 +148,7 @@ export class ThinkActLoop {
       effects.toolFilter,
     );
     disposers.push(
-      prompt.inject(this.ctx, "instructions", {
+      promptService.inject(this.ctx, "instructions", {
         name: `__loop_tool_schema_${percept.id}`,
         after: "__role_tools",
         renderFn: () => toolSchema,
@@ -131,7 +156,7 @@ export class ThinkActLoop {
     );
 
     try {
-      const sections: Section[] = await prompt.render("system", { view, percept });
+      const sections: Section[] = await promptService.render("system", { view, percept });
       const stableContent = sections
         .filter((s) => s.name === "soul" || s.name === "instructions")
         .map((s) => s.content)
@@ -166,6 +191,54 @@ export class ThinkActLoop {
       }
 
       const channelKey = `${percept.platform}:${percept.channelId}`;
+      const arousalService = this.ctx["yesimbot.arousal"] as
+        | { recordProactiveMessage?: (channelKey: string) => void }
+        | undefined;
+      const heartbeatRun = percept.metadata?.isHeartbeat === true;
+      let proactiveQuotaRecorded = false;
+
+      const recordSuccessfulSendMessages = async (
+        actions: AgentResponse["actions"],
+        toolResults: ToolResultEntry[],
+      ) => {
+        for (let actionId = 0; actionId < actions.length; actionId++) {
+          const action = actions[actionId]!;
+          if (action.name !== "send_message") continue;
+
+          const sendResult = toolResults.find((t) => t.id === actionId && t.name === "send_message");
+          if (!isSuccessfulSendResult(sendResult)) continue;
+
+          if (heartbeatRun) {
+            if (proactiveQuotaRecorded) {
+              this.logger.debug(
+                `[${percept.traceId}] proactive_quota_already_recorded action_id=${actionId}`,
+              );
+            } else if (typeof arousalService?.recordProactiveMessage === "function") {
+              const chargeChannelKey = resolveProactiveChargeChannelKey(action, channelKey);
+              arousalService.recordProactiveMessage(chargeChannelKey);
+              proactiveQuotaRecorded = true;
+            }
+          }
+
+          const content = String(action.params?.content ?? "");
+          if (!content) continue;
+          const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
+          for (const part of parts) {
+            await horizonService.events.recordMessage({
+              platform: percept.platform,
+              channelId: percept.channelId,
+              stage: TimelineStage.Active,
+              timestamp: new Date(),
+              data: {
+                messageId: Random.id(),
+                senderId: toolCtx.bot?.selfId ?? "",
+                senderName: toolCtx.bot?.user?.name ?? "",
+                content: part.trim(),
+              },
+            });
+          }
+        }
+      };
 
       const trimConfig: TrimConfig = {
         charBudget: this.config.charBudget ?? 30000,
@@ -180,7 +253,7 @@ export class ThinkActLoop {
         maxImagesInContext: this.config.maxImagesInContext ?? 3,
         imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
-      const multiTurnMessages = horizon.formatHorizonText(view, percept, imageConfig);
+      const multiTurnMessages = await horizonService.formatHorizonText(view, percept, imageConfig);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
@@ -217,22 +290,6 @@ export class ThinkActLoop {
         this.logger.info(`[${percept.traceId}] Round ${round}/${maxRounds}`);
 
         trimMessages(messages, trimConfig);
-
-        // Trigger async summary on budget overflow (fire-and-forget)
-        const currentChars = totalChars(messages);
-        if (currentChars > trimConfig.charBudget) {
-          const compressor = horizon.compressor;
-          if (compressor && view.history && view.history.length > 0) {
-            this.logger.debug(
-              `Triggering summary compression (${currentChars} > ${trimConfig.charBudget} chars)`,
-            );
-            compressor
-              .compress({ platform: percept.platform, channelId: percept.channelId }, view.history)
-              .catch((err) => {
-                this.logger.warn("Summary compression failed (degraded silently):", err);
-              });
-          }
-        }
 
         const callParams: CallParams = {
           system: systemParam,
@@ -324,6 +381,7 @@ export class ThinkActLoop {
           pluginService,
           toolCtxWithPercept,
           maxResultLen,
+          percept,
         );
 
         totalToolCalls += toolResults.length;
@@ -335,7 +393,7 @@ export class ThinkActLoop {
         }
 
         // Record per-round AgentResponse immediately after tool execution
-        await horizon.events.recordAgentResponse({
+        await horizonService.events.recordAgentResponse({
           platform: percept.platform,
           channelId: percept.channelId,
           timestamp: new Date(),
@@ -345,7 +403,7 @@ export class ThinkActLoop {
         });
 
         // Record action execution results
-        await horizon.events.recordAgentAction({
+        await horizonService.events.recordAgentAction({
           platform: percept.platform,
           channelId: percept.channelId,
           timestamp: new Date(),
@@ -356,29 +414,7 @@ export class ThinkActLoop {
         });
 
         // Record bot sent messages as MessageRecord
-        for (const action of response.actions) {
-          if (action.name !== "send_message") continue;
-          const r = toolResults.find((t) => t.name === "send_message");
-          const ok = r && (r.status === "ok" || r.status === "fulfilled" || !r.error);
-          if (!ok) continue;
-          const content = String(action.params?.content ?? "");
-          if (!content) continue;
-          const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
-          for (const part of parts) {
-            await horizon.events.recordMessage({
-              platform: percept.platform,
-              channelId: percept.channelId,
-              stage: TimelineStage.Active,
-              timestamp: new Date(),
-              data: {
-                messageId: Random.id(),
-                senderId: toolCtx.bot?.selfId ?? "",
-                senderName: toolCtx.bot?.user?.name ?? "",
-                content: part.trim(),
-              },
-            });
-          }
-        }
+        await recordSuccessfulSendMessages(response.actions, toolResults);
 
         // continue if there were any tool calls, or if request_heartbeat is true (for pure Action calls), or if any tools failed (to allow error info to flow back to model)
         const hasFailedTools = toolResults.some((r) => r.status === "failed" || r.error);
@@ -412,8 +448,9 @@ export class ThinkActLoop {
                 pluginService,
                 toolCtxWithPercept,
                 maxResultLen,
+                percept,
               );
-              await horizon.events.recordAgentResponse({
+              await horizonService.events.recordAgentResponse({
                 platform: percept.platform,
                 channelId: percept.channelId,
                 timestamp: new Date(),
@@ -423,7 +460,7 @@ export class ThinkActLoop {
               });
 
               // Record wrap-up action execution results
-              await horizon.events.recordAgentAction({
+              await horizonService.events.recordAgentAction({
                 platform: percept.platform,
                 channelId: percept.channelId,
                 timestamp: new Date(),
@@ -434,29 +471,7 @@ export class ThinkActLoop {
               });
 
               // Record bot sent messages from wrap-up round
-              for (const action of wrapParsed.data.actions) {
-                if (action.name !== "send_message") continue;
-                const r = wrapToolResults.find((t) => t.name === "send_message");
-                const ok = r && (r.status === "ok" || r.status === "fulfilled" || !r.error);
-                if (!ok) continue;
-                const content = String(action.params?.content ?? "");
-                if (!content) continue;
-                const parts = content.split(/<sep\s*\/?>/i).filter(Boolean);
-                for (const part of parts) {
-                  await horizon.events.recordMessage({
-                    platform: percept.platform,
-                    channelId: percept.channelId,
-                    stage: TimelineStage.Active,
-                    timestamp: new Date(),
-                    data: {
-                      messageId: Random.id(),
-                      senderId: toolCtx.bot?.selfId ?? "",
-                      senderName: toolCtx.bot?.user?.name ?? "",
-                      content: part.trim(),
-                    },
-                  });
-                }
-              }
+              await recordSuccessfulSendMessages(wrapParsed.data.actions, wrapToolResults);
             }
           }
           break;
@@ -470,13 +485,23 @@ export class ThinkActLoop {
         });
       }
 
-      await horizon.events.markAsActive(
+      await horizonService.events.markAsActive(
         { platform: percept.platform, channelId: percept.channelId },
         percept.timestamp,
       );
-      const archiveMs =
-        (this.ctx["yesimbot.horizon"] as HorizonService).config.archiveThresholdMs ?? 86400000;
-      await horizon.events.archiveStale(
+
+      // Trigger compression check (non-blocking, failure-isolated)
+      const compressor = horizonService.compressor;
+      if (compressor) {
+        compressor
+          .maybeCompress({ platform: percept.platform, channelId: percept.channelId })
+          .catch((err) => {
+            this.logger.warn(`[${percept.traceId}] Compression check failed (degraded):`, err);
+          });
+      }
+
+      const archiveMs = horizonService.config.archiveThresholdMs ?? 86400000;
+      await horizonService.events.archiveStale(
         { platform: percept.platform, channelId: percept.channelId },
         archiveMs,
       );
@@ -493,6 +518,7 @@ export class ThinkActLoop {
     pluginService: PluginService,
     toolCtx: ToolExecutionContext,
     maxResultLen: number,
+    percept: Percept,
   ): Promise<{
     toolResults: ToolResultEntry[];
     hasToolCalls: boolean;
@@ -501,6 +527,8 @@ export class ThinkActLoop {
     const toolResults: ToolResultEntry[] = [];
     let hasToolCalls = false;
     let hasActionCalls = false;
+
+    const hookService = this.ctx["yesimbot.hook"];
 
     // Partition by type
     const toolActions: Array<{ idx: number; action: AgentAction }> = [];
@@ -521,9 +549,31 @@ export class ThinkActLoop {
     // Execute Tool-type in parallel
     if (toolActions.length) {
       const results = await Promise.allSettled(
-        toolActions.map(({ action }) =>
-          pluginService.invoke(action.name, action.params ?? {}, toolCtx),
-        ),
+        toolActions.map(async ({ action }) => {
+          let params = action.params ?? {};
+
+          // Before hook
+          if (hookService) {
+            const beforeResult = await hookService.executeBefore(
+              HookType.Tool,
+              params,
+              percept.traceId,
+            );
+            if (beforeResult.skipped) {
+              return beforeResult.result as ToolResult;
+            }
+            params = beforeResult.params;
+          }
+
+          const result = await pluginService.invoke(action.name, params, toolCtx);
+
+          // After hook
+          if (hookService) {
+            await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
+          }
+
+          return result;
+        }),
       );
       for (let i = 0; i < toolActions.length; i++) {
         const { idx, action } = toolActions[i];
@@ -621,4 +671,22 @@ function formatFinalRoundPrompt(results: ToolResultEntry[]): string {
     "Based on the information gathered so far, please provide your final response now. " +
     "You must call send_message with your response."
   );
+}
+
+function isSuccessfulSendResult(result: ToolResultEntry | undefined): boolean {
+  if (!result) return false;
+  if (result.error) return false;
+  return result.status === "ok" || result.status === "fulfilled";
+}
+
+function resolveProactiveChargeChannelKey(action: AgentAction, fallbackChannelKey: string): string {
+  const target = action.params?.target;
+  if (!target || typeof target !== "object") return fallbackChannelKey;
+
+  const sendTarget = target as { platform?: unknown; channelId?: unknown };
+  if (typeof sendTarget.platform !== "string" || typeof sendTarget.channelId !== "string") {
+    return fallbackChannelKey;
+  }
+
+  return `${sendTarget.platform}:${sendTarget.channelId}`;
 }

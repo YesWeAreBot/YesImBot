@@ -37,6 +37,7 @@ export enum TimelineEventType {
   AgentResponse = "agent.response",
   AgentAction = "agent.action",
   Summary = "summary",
+  Heartbeat = "heartbeat",
 }
 
 export enum TimelinePriority {
@@ -105,7 +106,19 @@ export interface SummaryData {
 
 export type SummaryRecord = BaseTimelineEntry<TimelineEventType.Summary, SummaryData>;
 
-export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord | SummaryRecord;
+export interface HeartbeatData {
+  triggeredBy: "global" | "manual";
+  channelSummary?: string;
+}
+
+export type HeartbeatRecord = BaseTimelineEntry<TimelineEventType.Heartbeat, HeartbeatData>;
+
+export type TimelineEntry =
+  | MessageRecord
+  | AgentResponseRecord
+  | AgentActionRecord
+  | SummaryRecord
+  | HeartbeatRecord;
 
 // ---- Entity ----
 
@@ -196,6 +209,8 @@ export interface HorizonView {
   environment?: Environment;
   entities?: Entity[];
   history?: TimelineEntry[];
+  traits?: import("../shared/types").TraitSignal[];
+  skills?: import("../shared/types").ActiveSkill[];
 }
 
 // ---- Query ----
@@ -203,6 +218,7 @@ export interface HorizonView {
 export interface EventQueryOptions {
   key?: ChannelKey;
   types?: TimelineEventType[];
+  stages?: TimelineStage[];
   limit?: number;
   since?: Date;
   until?: Date;

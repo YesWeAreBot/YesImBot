@@ -1,0 +1,142 @@
+import { Context } from "koishi";
+import { describe, it, expect, beforeEach } from "vitest";
+
+import { HookService } from "../src/services/hook/service";
+import { HookType, HookPhase } from "../src/services/hook/types";
+
+describe("Hook Integration", () => {
+  let ctx: Context;
+  let hookService: HookService;
+
+  beforeEach(() => {
+    ctx = new Context();
+    ctx.on = () => {};
+    hookService = new HookService(ctx);
+  });
+
+  describe("executeBefore", () => {
+    it("should return original params when no hooks registered", async () => {
+      const params = { foo: "bar" };
+      const result = await hookService.executeBefore(HookType.Tool, params, "trace-1");
+
+      expect(result.params).toEqual(params);
+      expect(result.skipped).toBe(false);
+    });
+
+    it("should modify params when hook returns modified result", async () => {
+      const params = { value: 10 };
+
+      hookService.register(ctx, {
+        type: HookType.Tool,
+        phase: HookPhase.Before,
+        handler: async (ctx) => ({
+          modified: true,
+          params: { value: (ctx.params as { value: number }).value * 2 },
+        }),
+      });
+
+      const result = await hookService.executeBefore(HookType.Tool, params, "trace-1");
+
+      expect(result.params).toEqual({ value: 20 });
+      expect(result.skipped).toBe(false);
+    });
+
+    it("should skip execution when hook returns skip result", async () => {
+      const params = { value: 10 };
+
+      hookService.register(ctx, {
+        type: HookType.Tool,
+        phase: HookPhase.Before,
+        handler: async () => ({
+          skip: true,
+          result: { skipped: true },
+        }),
+      });
+
+      const result = await hookService.executeBefore(HookType.Tool, params, "trace-1");
+
+      expect(result.skipped).toBe(true);
+      expect(result.result).toEqual({ skipped: true });
+    });
+  });
+
+  describe("executeAfter", () => {
+    it("should execute after hooks with result context", async () => {
+      let capturedResult: unknown;
+
+      hookService.register(ctx, {
+        type: HookType.Tool,
+        phase: HookPhase.After,
+        handler: async (ctx) => {
+          capturedResult = ctx.result;
+        },
+      });
+
+      await hookService.executeAfter(
+        HookType.Tool,
+        { input: "test" },
+        { output: "result" },
+        "trace-1",
+      );
+
+      expect(capturedResult).toEqual({ output: "result" });
+    });
+  });
+
+  describe("Tool hooks", () => {
+    it("should intercept tool execution with before hook", async () => {
+      const toolParams = { toolName: "search", query: "test" };
+
+      hookService.register(ctx, {
+        type: HookType.Tool,
+        phase: HookPhase.Before,
+        handler: async (ctx) => ({
+          modified: true,
+          params: { ...(ctx.params as typeof toolParams), query: "modified query" },
+        }),
+      });
+
+      const result = await hookService.executeBefore(HookType.Tool, toolParams, "trace-1");
+
+      expect(result.params).toEqual({ toolName: "search", query: "modified query" });
+    });
+  });
+
+  describe("Message hooks", () => {
+    it("should intercept message send with before hook", async () => {
+      const messageParams = { content: "Hello", session: {} };
+
+      hookService.register(ctx, {
+        type: HookType.Message,
+        phase: HookPhase.Before,
+        handler: async (ctx) => ({
+          modified: true,
+          params: { ...(ctx.params as typeof messageParams), content: "Modified: Hello" },
+        }),
+      });
+
+      const result = await hookService.executeBefore(HookType.Message, messageParams, "trace-1");
+
+      expect(result.params.content).toBe("Modified: Hello");
+    });
+  });
+
+  describe("Agent hooks", () => {
+    it("should intercept agent cycle with before hook", async () => {
+      const agentParams = { view: {}, traits: [], skills: [] };
+
+      hookService.register(ctx, {
+        type: HookType.Agent,
+        phase: HookPhase.Before,
+        handler: async (ctx) => ({
+          modified: true,
+          params: { ...(ctx.params as typeof agentParams), injected: true },
+        }),
+      });
+
+      const result = await hookService.executeBefore(HookType.Agent, agentParams, "trace-1");
+
+      expect((result.params as typeof agentParams & { injected: boolean }).injected).toBe(true);
+    });
+  });
+});

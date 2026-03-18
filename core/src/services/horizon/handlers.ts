@@ -4,6 +4,7 @@ import type { LoopMessage } from "../agent/trimmer";
 import type {
   AgentActionRecord,
   AgentResponseRecord,
+  HeartbeatRecord,
   ImageConfig,
   MessageRecord,
   SummaryRecord,
@@ -19,7 +20,7 @@ export interface BuildContextOptions {
   getShortId?: (channelKey: string, msgId: string) => number | undefined;
   getImageCache?: (
     id: string,
-  ) => { base64: string; mediaType: string; status: "ok" | "failed" } | undefined;
+  ) => Promise<{ base64: string; mediaType: string; status: "ok" | "failed" } | undefined>;
   parseElements?: (
     text: string,
   ) => Array<{ type: string; attrs: Record<string, unknown>; toString: () => string }>;
@@ -29,7 +30,7 @@ export interface BuildContextOptions {
 
 abstract class TimelineHandler<T extends TimelineEntry> {
   abstract canHandle(entry: TimelineEntry): entry is T;
-  abstract handle(entry: T, options: BuildContextOptions): LoopMessage[];
+  abstract handle(entry: T, options: BuildContextOptions): Promise<LoopMessage[]>;
 }
 
 class MessageHandler extends TimelineHandler<MessageRecord> {
@@ -37,7 +38,7 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
     return entry.type === TimelineEventType.Message;
   }
 
-  handle(entry: MessageRecord, options: BuildContextOptions): LoopMessage[] {
+  async handle(entry: MessageRecord, options: BuildContextOptions): Promise<LoopMessage[]> {
     const {
       shortIdAssigner,
       getShortId,
@@ -88,7 +89,7 @@ class MessageHandler extends TimelineHandler<MessageRecord> {
           // Check if this image should be embedded (lifecycle + FIFO logic)
           if (!shouldEmbedImage(id)) continue;
 
-          const cache = getImageCache(id);
+          const cache = await getImageCache(id);
           if (!cache || cache.status === "failed") continue;
 
           // Increment lifecycle counter
@@ -114,7 +115,7 @@ class AgentResponseHandler extends TimelineHandler<AgentResponseRecord> {
     return entry.type === TimelineEventType.AgentResponse;
   }
 
-  handle(entry: AgentResponseRecord, _options: BuildContextOptions): LoopMessage[] {
+  async handle(entry: AgentResponseRecord, _options: BuildContextOptions): Promise<LoopMessage[]> {
     const { data } = entry;
 
     // Successful responses emit assistant message with rawText
@@ -144,7 +145,7 @@ class AgentActionHandler extends TimelineHandler<AgentActionRecord> {
     return entry.type === TimelineEventType.AgentAction;
   }
 
-  handle(entry: AgentActionRecord, _options: BuildContextOptions): LoopMessage[] {
+  async handle(entry: AgentActionRecord, _options: BuildContextOptions): Promise<LoopMessage[]> {
     const { data } = entry;
     const lines: string[] = [];
 
@@ -181,11 +182,22 @@ class SummaryHandler extends TimelineHandler<SummaryRecord> {
     return entry.type === TimelineEventType.Summary;
   }
 
-  handle(entry: SummaryRecord, _options: BuildContextOptions): LoopMessage[] {
+  async handle(entry: SummaryRecord, _options: BuildContextOptions): Promise<LoopMessage[]> {
     // Summary renders separately in formatHorizonText, not in history
     return [];
   }
 }
 
-export { AgentActionHandler, AgentResponseHandler, MessageHandler, SummaryHandler };
+class HeartbeatHandler extends TimelineHandler<HeartbeatRecord> {
+  canHandle(entry: TimelineEntry): entry is HeartbeatRecord {
+    return entry.type === TimelineEventType.Heartbeat;
+  }
+
+  async handle(_entry: HeartbeatRecord, _options: BuildContextOptions): Promise<LoopMessage[]> {
+    // Heartbeats are context markers, not conversation messages
+    return [];
+  }
+}
+
+export { AgentActionHandler, AgentResponseHandler, HeartbeatHandler, MessageHandler, SummaryHandler };
 export type { TimelineHandler };

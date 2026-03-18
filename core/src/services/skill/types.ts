@@ -67,4 +67,5 @@ export interface SkillEffect {
     point: InjectionPoint;
   } | null;
   toolFilter: { include: string[]; exclude: string[] };
+  activeSkills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
 }

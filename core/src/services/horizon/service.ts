@@ -42,6 +42,10 @@ export interface HorizonServiceConfig {
   entityCacheTtl?: number;
   maxActiveEntities?: number;
   summaryModel?: string;
+  cleanupIntervalMs?: number;
+  compressionThreshold?: number;
+  inactivityTriggerMs?: number;
+  retainRecentEntries?: number;
 }
 
 export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
@@ -64,6 +68,9 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
   summaryModel: Schema.string().description(
     "Model ID for summary generation (e.g., 'openai:gpt-4o-mini')",
   ),
+  cleanupIntervalMs: Schema.number()
+    .default(3_600_000)
+    .description("Interval in ms for periodic cleanup (default: 1 hour)"),
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
@@ -79,13 +86,18 @@ export class HorizonService extends Service<HorizonServiceConfig> {
   private botRoleCache = new Map<string, { role: Role | null; fetchedAt: number }>();
 
   private environments: EnvironmentManager;
+  private cleanupTimer?: ReturnType<typeof setInterval>;
 
   constructor(ctx: Context, config: HorizonServiceConfig) {
     super(ctx, "yesimbot.horizon", false);
     this.config = config;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
-    this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel);
+    this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel, {
+      compressionThreshold: config.compressionThreshold,
+      inactivityTriggerMs: config.inactivityTriggerMs,
+      retainRecentEntries: config.retainRecentEntries,
+    });
     this.loadShortIdMaps();
     this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
     this.ctx.command("yesimbot.history", "上下文指令集", { authority: 3 });
@@ -125,12 +137,38 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     );
 
     this.listener.start();
+    this.cleanupTimer = setInterval(
+      () => this.runCleanup(),
+      this.config.cleanupIntervalMs ?? 3_600_000,
+    );
     this.logger.info("HorizonService started");
   }
 
   protected async stop(): Promise<void> {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     this.botRoleCache.clear();
     this.logger.info("HorizonService stopped");
+  }
+
+  private async runCleanup(): Promise<void> {
+    try {
+      // Remove all entries in Deleted stage across all channels
+      const deletedResult = await this.ctx.database.remove("yesimbot.timeline", {
+        stage: TimelineStage.Deleted,
+      } as any);
+      const deletedCount = typeof deletedResult === "number" ? deletedResult : 0;
+
+      // Clean up expired environment caches
+      const envRemoved = this.environments.cleanup();
+
+      if (deletedCount || envRemoved) {
+        this.logger.info(
+          `cleanup: removed ${deletedCount} deleted timeline entries, ${envRemoved} expired environments`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn("cleanup failed:", e);
+    }
   }
 
   private classifyRole(roles: string[]): Role | null {
@@ -312,11 +350,11 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return lower === "owner" ? "[Owner] " : "[Admin] ";
   }
 
-  formatHorizonText(
+  async formatHorizonText(
     view: HorizonView,
     percept?: Percept,
     imageConfig?: ImageConfig,
-  ): LoopMessage[] {
+  ): Promise<LoopMessage[]> {
     const channelKey = view.environment
       ? `${view.environment.platform}:${view.environment.channelId}`
       : undefined;
@@ -391,7 +429,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
 
     // Build all history messages using handler pipeline (no trigger mechanism)
     const history = view.history ?? [];
-    const historyLoopMessages = this.events.buildLoopMessages(history, options);
+    const historyLoopMessages = await this.events.buildLoopMessages(history, options);
 
     // Append each message directly - handlers already return proper format
     messages.push(...historyLoopMessages);
