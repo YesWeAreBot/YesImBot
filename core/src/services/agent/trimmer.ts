@@ -1,6 +1,4 @@
-import type { UserContent } from "ai";
-
-import type { AgentActionObservation, MessageObservation, Observation } from "../horizon/types";
+import type { FilePart, ImagePart, TextPart, UserContent } from "ai";
 
 export interface TrimConfig {
   charBudget: number;
@@ -10,102 +8,10 @@ export interface TrimConfig {
   initialContextCharBudget?: number;
 }
 
-export interface ObservationTrimConfig {
-  charBudget: number;
-  /** Number of most-recent observations to protect from trimming */
-  keepLastCount: number;
-}
-
 export interface LoopMessage {
   role: "user" | "assistant";
   content: string | UserContent;
   _trimState?: "none" | "soft" | "hard";
-}
-
-function estimateObservationChars(obs: Observation): number {
-  if (obs.type === "message") {
-    return typeof obs.content === "string"
-      ? obs.content.length + 60 // +60 for XML tag overhead
-      : 60; // multimodal — text parts summed separately when needed
-  }
-  if (obs.type === "agent.action") {
-    let chars = 40; // tag overhead
-    for (const a of obs.data.actions) {
-      chars += a.name.length + JSON.stringify(a.params ?? {}).length;
-    }
-    for (const r of obs.data.toolResults) {
-      chars += r.name.length + (r.result != null ? String(r.result).slice(0, 200).length : 0);
-    }
-    return chars;
-  }
-  // agent.response — error text or empty
-  if (obs.type === "agent.response") {
-    return obs.data.error ? obs.data.error.length + 40 : 0;
-  }
-  return 0;
-}
-
-export function trimObservations(
-  observations: Observation[],
-  config: ObservationTrimConfig,
-  trimState?: Set<Observation>,
-): { observations: Observation[]; trimState: Set<Observation> } {
-  const state = trimState ?? new Set<Observation>();
-  const total = observations.reduce((sum, o) => sum + estimateObservationChars(o), 0);
-
-  if (total <= config.charBudget) {
-    return { observations: [...observations], trimState: state };
-  }
-
-  // Protected: last N observations
-  const protectedStart = Math.max(0, observations.length - config.keepLastCount);
-
-  // Layer 1: Image strip — remove image parts from multimodal messages
-  // (Placeholder for Phase 38 — currently all content is string)
-  // When content becomes UserContent, filter out ImagePart entries here
-
-  // Layer 2: softTrim — remove oldest non-protected observations entirely
-  let currentTotal = total;
-
-  for (let i = 0; i < protectedStart; i++) {
-    if (state.has(observations[i])) continue; // already trimmed
-    if (currentTotal <= config.charBudget) break;
-    const cost = estimateObservationChars(observations[i]);
-    currentTotal -= cost;
-    state.add(observations[i]);
-  }
-
-  // Build result: keep only non-trimmed observations
-  let result = observations.filter((o) => !state.has(o));
-
-  // Layer 3: hardClear — if still over budget after removing all eligible,
-  // replace oldest remaining non-protected observations with placeholder
-  // This is a safety net — in practice softTrim should suffice
-  if (result.reduce((s, o) => s + estimateObservationChars(o), 0) > config.charBudget) {
-    const hardProtectedStart = Math.max(0, result.length - config.keepLastCount);
-    for (let i = 0; i < hardProtectedStart; i++) {
-      if (result[i].type === "message") {
-        result[i] = {
-          ...result[i],
-          content: "[message trimmed]",
-        } as MessageObservation;
-      } else if (result[i].type === "agent.action") {
-        const d = result[i] as AgentActionObservation;
-        result[i] = {
-          ...d,
-          data: {
-            ...d.data,
-            toolResults: d.data.toolResults.map((r) => ({
-              ...r,
-              result: undefined,
-            })),
-          },
-        };
-      }
-    }
-  }
-
-  return { observations: result, trimState: state };
 }
 
 function softTrim(text: string, head: number, tail: number): string {
@@ -138,7 +44,7 @@ function hardClearToolResult(content: string): string {
   return "[tool results cleared]";
 }
 
-function totalChars(messages: LoopMessage[]): number {
+export function totalChars(messages: LoopMessage[]): number {
   let sum = 0;
   for (const m of messages) {
     if (typeof m.content === "string") {
@@ -151,6 +57,50 @@ function totalChars(messages: LoopMessage[]): number {
     }
   }
   return sum;
+}
+
+/**
+ * Identify conversation round boundaries.
+ *
+ * Round semantics: A round consists of one or more user messages followed by
+ * zero or more assistant messages, until the next user message or end of array.
+ *
+ * Examples:
+ * - [user, assistant, user, assistant] → 2 rounds
+ * - [user, user, assistant] → 1 round (consecutive user messages in same round)
+ * - [user, assistant, assistant, user] → 2 rounds (multiple assistant responses)
+ * - [user, user, user] → 1 round (all user messages)
+ *
+ * @param messages - Array of messages to analyze
+ * @param startIdx - Index to start analyzing from (default 0)
+ * @returns Array of round boundaries: [[startIdx, endIdx], ...]
+ */
+function identifyRoundBoundaries(messages: LoopMessage[], startIdx: number = 0): number[][] {
+  if (startIdx >= messages.length) return [];
+
+  const rounds: number[][] = [];
+  let roundStart = startIdx;
+  let inRound = false;
+
+  for (let i = startIdx; i < messages.length; i++) {
+    const current = messages[i];
+    const isLastMessage = i === messages.length - 1;
+    const next = !isLastMessage ? messages[i + 1] : null;
+
+    // Start a round when we see a user message
+    if (current.role === "user" && !inRound) {
+      roundStart = i;
+      inRound = true;
+    }
+
+    // End round when: (1) last message, OR (2) current is assistant and next is user
+    if (inRound && (isLastMessage || (current.role === "assistant" && next?.role === "user"))) {
+      rounds.push([roundStart, i]);
+      inRound = false;
+    }
+  }
+
+  return rounds;
 }
 
 export function trimMessages(messages: LoopMessage[], config: TrimConfig): void {
@@ -175,19 +125,27 @@ export function trimMessages(messages: LoopMessage[], config: TrimConfig): void 
     if (totalChars(messages) <= config.charBudget) return;
   }
 
-  // Identify rounds: index 0 protected, rounds are (assistant, user) pairs from index 1
-  // round 1 = [1,2], round 2 = [3,4], etc.
-  const totalRounds = Math.floor((messages.length - 1) / 2);
-  const protectedRounds = Math.min(config.keepLastRounds, totalRounds);
-  const eligibleEnd = 1 + (totalRounds - protectedRounds) * 2;
+  // Identify conversation rounds
+  // Start from index 0 to include all conversation messages in round detection
+  const rounds = identifyRoundBoundaries(messages, 0);
+  if (rounds.length === 0) return;
 
-  // Collect eligible indices: user messages first (tool results), then assistant
+  // Protect last N rounds
+  const protectedRounds = Math.min(config.keepLastRounds, rounds.length);
+  const eligibleRounds = rounds.slice(0, rounds.length - protectedRounds);
+
+  // Collect eligible message indices from eligible rounds
+  // Priority: user messages first (tool results), then assistant
   const userIndices: number[] = [];
   const assistantIndices: number[] = [];
-  for (let i = 1; i < eligibleEnd; i++) {
-    if (messages[i].role === "user") userIndices.push(i);
-    else assistantIndices.push(i);
+
+  for (const [start, end] of eligibleRounds) {
+    for (let i = start; i <= end; i++) {
+      if (messages[i].role === "user") userIndices.push(i);
+      else assistantIndices.push(i);
+    }
   }
+
   const eligible = [...userIndices, ...assistantIndices];
 
   // First pass: softTrim

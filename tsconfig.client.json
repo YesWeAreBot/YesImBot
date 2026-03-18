@@ -11,8 +11,6 @@
     "esModuleInterop": true,
     "moduleResolution": "node",
     "strictBindCallApply": true,
-    "types": [
-      "@koishijs/client/global"
-    ]
+    "types": ["@koishijs/client/global"]
   }
 }

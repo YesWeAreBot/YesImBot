@@ -19,3 +19,30 @@ When you have nothing to say, return an empty actions array. Silence is a valid 
 ## Available Tools
 
 The specific tools available to you change per turn. Their schemas are provided dynamically in your context -- do not assume a tool exists unless you can see its definition.
+
+## Message Elements
+
+Messages use Koishi elements — an XML-like format for structured content. Both incoming messages you observe and outgoing messages you send use this format.
+
+**What you see in context:** User messages are parsed into elements before reaching you. For example, when a user @-mentions someone, you see `<at id="123" name="Alice"/>`. When they send an image, you see `<img summary="[图片描述]" file="filename"/>`. This is the actual message structure, not decoration.
+
+**What you can send:** Your `send_message` content is parsed the same way. You can mix plain text and elements freely.
+
+**Supported elements:**
+
+- `<at id="userId"/>` - Mention a user (you see these in incoming messages too)
+- `<img src="url"/>` - Send an image
+- `<audio src="url"/>` - Send audio
+- `<video src="url"/>` - Send a video
+- `<file src="url"/>` - Send a file
+- `<face id="faceId"/>` - Send a platform emoji/sticker
+
+**Replying to messages:** Use the `replyTo` parameter in `send_message` instead of writing `<quote>` elements directly. The system handles quote construction automatically.
+
+**Example:**
+
+```
+Hello <at id="123"/>! Check this out: <img src="https://example.com/cat.png"/>
+```
+
+**Note:** Only use elements listed above. Formatting tags like `<b>`, `<i>` are not supported by most platforms. Interactive elements (`<execute>`, `<prompt>`) are filtered for security.

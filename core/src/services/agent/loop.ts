@@ -19,13 +19,7 @@ import type { TraitAnalyzer } from "../trait/service";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
 import { buildToolSchemaForPrompt } from "./tools";
-import {
-  trimMessages,
-  trimObservations,
-  type LoopMessage,
-  type ObservationTrimConfig,
-  type TrimConfig,
-} from "./trimmer";
+import { trimMessages, totalChars, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentAction {
   name: string;
@@ -41,7 +35,8 @@ interface AgentResponse {
 interface ToolResultEntry {
   id: number;
   name: string;
-  status: string;
+  success: boolean;
+  status?: string;
   result?: unknown;
   error?: string;
 }
@@ -180,16 +175,12 @@ export class ThinkActLoop {
         initialContextCharBudget: this.config.initialContextCharBudget ?? 20000,
       };
 
-      // Trim history observations before rendering
-      const obsTrimConfig: ObservationTrimConfig = {
-        charBudget: trimConfig.charBudget,
-        // protect last N rounds worth of observations (each round ~= 1 message + 1 agent action)
-        keepLastCount: (trimConfig.keepLastRounds ?? 2) * 2 + 1,
+      const imageConfig = {
+        imageMode: (this.config.imageMode ?? "native") as "native" | "off",
+        maxImagesInContext: this.config.maxImagesInContext ?? 3,
+        imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
-      const trimResult = trimObservations(view.history ?? [], obsTrimConfig);
-      view = { ...view, history: trimResult.observations };
-
-      const userContent = horizon.formatHorizonText(view, percept);
+      const multiTurnMessages = horizon.formatHorizonText(view, percept, imageConfig);
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
@@ -197,13 +188,23 @@ export class ThinkActLoop {
         );
       }
 
+      const totalUserBytes = multiTurnMessages.reduce((sum, m) => {
+        if (typeof m.content === "string") return sum + Buffer.byteLength(m.content, "utf8");
+        return (
+          sum +
+          m.content.reduce(
+            (s, p) => s + (p.type === "text" ? Buffer.byteLength(p.text, "utf8") : 0),
+            0,
+          )
+        );
+      }, 0);
       this.logger.debug(
-        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${Buffer.byteLength(userContent, "utf8")}`,
+        `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${totalUserBytes} messages=${multiTurnMessages.length}`,
       );
 
       this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
 
-      const messages: LoopMessage[] = [{ role: "user", content: userContent }];
+      const messages: LoopMessage[] = multiTurnMessages;
 
       const maxRounds = this.config.maxRounds ?? 3;
       const maxResultLen = this.config.maxToolResultLength ?? 4000;
@@ -216,6 +217,22 @@ export class ThinkActLoop {
         this.logger.info(`[${percept.traceId}] Round ${round}/${maxRounds}`);
 
         trimMessages(messages, trimConfig);
+
+        // Trigger async summary on budget overflow (fire-and-forget)
+        const currentChars = totalChars(messages);
+        if (currentChars > trimConfig.charBudget) {
+          const compressor = horizon.compressor;
+          if (compressor && view.history && view.history.length > 0) {
+            this.logger.debug(
+              `Triggering summary compression (${currentChars} > ${trimConfig.charBudget} chars)`,
+            );
+            compressor
+              .compress({ platform: percept.platform, channelId: percept.channelId }, view.history)
+              .catch((err) => {
+                this.logger.warn("Summary compression failed (degraded silently):", err);
+              });
+          }
+        }
 
         const callParams: CallParams = {
           system: systemParam,
@@ -323,7 +340,6 @@ export class ThinkActLoop {
           channelId: percept.channelId,
           timestamp: new Date(),
           data: {
-            round,
             rawText,
           },
         });
@@ -334,8 +350,6 @@ export class ThinkActLoop {
           channelId: percept.channelId,
           timestamp: new Date(),
           data: {
-            round,
-            triggerMsgId: (percept.metadata?.messageId as string) ?? undefined,
             actions: response.actions,
             toolResults,
           },
@@ -404,7 +418,6 @@ export class ThinkActLoop {
                 channelId: percept.channelId,
                 timestamp: new Date(),
                 data: {
-                  round: round + 1,
                   rawText: wrapResult.text,
                 },
               });
@@ -415,8 +428,6 @@ export class ThinkActLoop {
                 channelId: percept.channelId,
                 timestamp: new Date(),
                 data: {
-                  round: round + 1,
-                  triggerMsgId: (percept.metadata?.messageId as string) ?? undefined,
                   actions: wrapParsed.data.actions,
                   toolResults: wrapToolResults,
                 },
@@ -532,6 +543,7 @@ export class ThinkActLoop {
         toolResults.push({
           id: idx,
           name: action.name,
+          success: false,
           status: "failed",
           error: e instanceof Error ? e.message : String(e),
         });
@@ -583,11 +595,12 @@ function toToolResultEntry(
       id: idx,
       name,
       status: v.status,
+      success: v.success,
       ...(resultVal !== undefined && { result: resultVal }),
       ...(v.error && { error: v.error }),
     };
   }
-  return { id: idx, name, status: "failed", error: String(result.reason) };
+  return { id: idx, name, success: false, status: "failed", error: String(result.reason) };
 }
 
 function formatToolResults(results: ToolResultEntry[]): string {

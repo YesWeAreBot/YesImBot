@@ -2,7 +2,7 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "ignorePatterns": [],
   "experimentalSortImports": {
-    "order": "asc",
+    "order": "asc"
   },
   "experimentalSortPackageJson": {
     "sortScripts": true

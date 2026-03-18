@@ -10,11 +10,13 @@ declare module "koishi" {
 }
 
 export class FormatterService extends Service {
+  static inject = ["yesimbot.image-cache"];
+
   private handlers = new Map<string, ElementHandler>();
 
   constructor(ctx: Context) {
     super(ctx, "yesimbot.formatter", true);
-    registerBuiltinHandlers(this.register.bind(this));
+    registerBuiltinHandlers(this.register.bind(this), ctx);
   }
 
   register(type: string, handler: ElementHandler): void {

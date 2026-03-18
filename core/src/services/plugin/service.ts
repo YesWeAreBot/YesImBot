@@ -26,8 +26,108 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
     this.config = config;
-    this.registerPlugin(new CorePlugin(ctx));
-    this.registerPlugin(new OnebotPlugin(ctx));
+    this.ctx.plugin(CorePlugin);
+    this.ctx.plugin(OnebotPlugin);
+    const command = this.ctx.command("yesimbot.plugin", "插件指令集", { authority: 3 });
+    command.subcommand(".list", "列出已注册的插件").action(() => {
+      const plugins = this.listPlugins();
+      if (plugins.length === 0) return "当前没有注册的插件。";
+      return `已注册的插件：\n${plugins.map((name) => `- ${name}`).join("\n")}`;
+    });
+
+    const toolCmd = this.ctx.command("yesimbot.tool", "工具指令集", { authority: 3 });
+
+    toolCmd
+      .subcommand(".list", "列出可用的工具")
+      .option("hidden", "--hidden 是否包含隐藏工具", { fallback: false })
+      .action(({ session, options }) => {
+        if (!session) return "无法获取会话信息。";
+        if (!session.platform) return "无法获取平台信息。";
+        if (!session.channelId) return "无法获取频道信息。";
+        const tools = this.getTools({
+          platform: session.platform,
+          session: session,
+          channelId: session.channelId,
+          bot: session.bot,
+          includeHidden: options?.hidden ?? false,
+        });
+        if (tools.length === 0) return "当前没有可用的工具。";
+        return `可用的工具：\n${tools
+          .map((tool) => `- ${tool.function.name}: ${tool.function.description}`)
+          .join("\n")}`;
+      });
+
+    toolCmd.subcommand(".info <name>", "查看工具详情").action((_, name) => {
+      if (!name) return "未指定工具名称";
+      const fn = this.getDefinition(name);
+      if (!fn) return `未找到工具：${name}`;
+      return [
+        `工具名称：${fn.name}`,
+        `类型：${fn.type}`,
+        `描述：${fn.description}`,
+        `参数：\n${JSON.stringify(schemaToJSONSchema(fn.parameters), null, 2)}`,
+      ].join("\n");
+    });
+
+    toolCmd
+      .subcommand(".call <name:string> [...params:string]", "调用工具")
+      .usage(
+        [
+          "调用指定的工具并传递参数",
+          '参数格式为 "key=value"，多个参数用空格分隔。',
+          '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
+        ].join("\n"),
+      )
+      .example(["yesimbot.tool.call search_web keyword=koishi"].join("\n"))
+      .action(async ({ session }, name, ...params) => {
+        if (!name) return "错误：未指定要调用的工具名称";
+        if (!session) return "无法获取会话信息。";
+        if (!session.platform) return "无法获取平台信息。";
+        if (!session.channelId) return "无法获取频道信息。";
+        const toolCtx = {
+          platform: session.platform,
+          session: session,
+          channelId: session.channelId,
+          bot: session.bot,
+        };
+
+        const parsedParams: Record<string, unknown> = {};
+        try {
+          const paramString = params?.join(" ") || "";
+          const regex = /(\w+)=("([^"]*)"|'([^']*)'|(\S+))/g;
+          let match;
+          while ((match = regex.exec(paramString)) !== null) {
+            const key = match[1];
+            const value = match[3] ?? match[4] ?? match[5];
+            parsedParams[key] = value;
+          }
+
+          if (Object.keys(parsedParams).length === 0 && params?.length > 0) {
+            for (const param of params) {
+              const parts = param.split("=", 2);
+              if (parts.length === 2) {
+                parsedParams[parts[0]] = parts[1];
+              }
+            }
+          }
+        } catch (error) {
+          return `参数解析失败：${(error as Error).message}\n请检查您的参数格式是否正确（key=value）。`;
+        }
+
+        const result = await this.invoke(name, parsedParams, toolCtx);
+
+        if (result.success) {
+          return [
+            `工具调用成功：${name}`,
+            result.content ? `返回值：\n${JSON.stringify(result.content, null, 2)}` : "无返回值",
+          ].join("\n");
+        } else {
+          return [
+            `工具调用失败：${name}`,
+            result.error ? `错误信息：\n${result.error}` : "无错误信息",
+          ].join("\n");
+        }
+      });
   }
 
   public registerPlugin(plugin: YesImPlugin): void {

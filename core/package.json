@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-yesimbot",
-  "version": "4.0.0-beta.1",
+  "version": "4.0.0-beta.2",
   "files": [
     "dist",
     "resources"
@@ -23,18 +23,20 @@
     "./package.json": "./package.json"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "build": "tsc --noEmit && pkgroll --sourcemap --clean-dist",
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
+    "pub": "yarn npm publish --access public",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@yesimbot/shared-model": "workspace:*",
+    "@yesimbot/shared-model": "workspace:^",
     "ai": "^6.0.0",
     "gray-matter": "^4.0.3",
     "jsonrepair": "^3.13.2",
@@ -43,6 +45,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/json-schema": "^7.0.15",
     "@types/mustache": "^4.2.6",
     "koishi": "^4.18.3",
     "vitest": "^4.0.18"

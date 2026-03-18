@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Context, Schema, Service, type Session } from "koishi";
-import Mustache from "mustache";
+import { Context, h, Schema, Service, type Session } from "koishi";
 
+import type { LoopMessage } from "../agent/trimmer";
 import { type ChannelKey, type Percept } from "../shared/types";
+import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
 import { EventManager } from "./manager";
@@ -13,29 +14,14 @@ import type {
   Entity,
   EntityRecord,
   HorizonView,
-  Observation,
+  ImageConfig,
   Role,
   SelfInfo,
+  SummaryRecord,
   TimelineEntry,
   ViewOptions,
 } from "./types";
-import { TimelineEventType } from "./types";
-
-interface HistoryItemData {
-  is_message: boolean;
-  is_action: boolean;
-  is_error: boolean;
-  // message fields
-  id?: number;
-  time?: string; // "MM月DD日 HH:mm"
-  senderLine?: string; // "SenderName(senderId)"
-  replyLine?: string; // "[回复: N]" or undefined
-  content?: string;
-  // action fields
-  actionContent?: string;
-  // error fields
-  errorContent?: string;
-}
+import { TimelineEventType, TimelineStage } from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -53,9 +39,9 @@ export interface HorizonServiceConfig {
   aggregationWindow?: number;
   historyLimit?: number;
   archiveThresholdMs?: number;
-  botName?: string;
   entityCacheTtl?: number;
   maxActiveEntities?: number;
+  summaryModel?: string;
 }
 
 export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.object({
@@ -75,16 +61,18 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
   botName: Schema.string(),
   entityCacheTtl: Schema.number().default(3600000),
   maxActiveEntities: Schema.number().default(15),
+  summaryModel: Schema.string().description(
+    "Model ID for summary generation (e.g., 'openai:gpt-4o-mini')",
+  ),
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
-  static inject = ["database", "yesimbot.prompt", "yesimbot.formatter"];
+  static inject = ["database", "yesimbot.prompt", "yesimbot.formatter", "yesimbot.image-cache"];
 
   public events: EventManager;
   public listener: EventListener;
+  public compressor: SummaryCompressor;
 
-  private horizonViewTpl?: string;
-  private historyItemTpl?: string;
   private shortIdCounters = new Map<string, number>(); // channelKey -> next counter
   private shortIdMaps = new Map<string, Map<string, number>>(); // channelKey -> (nativeMsgId -> shortId)
   private shortIdReverse = new Map<string, Map<number, string>>(); // channelKey -> (shortId -> nativeMsgId)
@@ -97,8 +85,10 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     this.config = config;
     this.events = new EventManager(ctx);
     this.listener = new EventListener(ctx, this.events, this.config);
+    this.compressor = new SummaryCompressor(ctx, this.events, config.summaryModel);
     this.loadShortIdMaps();
     this.environments = new EnvironmentManager(ctx, config.entityCacheTtl);
+    this.ctx.command("yesimbot.history", "上下文指令集", { authority: 3 });
   }
 
   protected async start(): Promise<void> {
@@ -175,17 +165,19 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         TimelineEventType.Message,
         TimelineEventType.AgentResponse,
         TimelineEventType.AgentAction,
+        TimelineEventType.Summary,
       ],
       limit: this.config.historyLimit ?? 30,
       orderBy: "desc",
     });
-    const history = this.events.toObservations(entries.reverse());
+    const activeEntries = entries.filter((e) => e.stage !== TimelineStage.Archived);
+    const history = activeEntries.reverse();
     const environment = await this.environments.getOrCreate(key, options?.session);
     const entities = await this.getEntities(key, options?.session);
     const botRole = await this.getBotRole(key, options?.session);
     const self: SelfInfo = {
       id: options?.selfId ?? "",
-      name: this.config.botName || options?.selfName || options?.selfId || "",
+      name: options?.selfName || options?.selfId || "",
       role: botRole ?? undefined,
     };
     return { self, environment: environment ?? undefined, entities, history };
@@ -320,196 +312,90 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     return lower === "owner" ? "[Owner] " : "[Admin] ";
   }
 
-  formatObservation(
-    obs: Observation,
-    selfId?: string,
-    channelKey?: string,
-  ): HistoryItemData | null {
-    // Escape dynamic values for XML attributes
-    const esc = (v: string) =>
-      v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-    if (obs.type === "message") {
-      // formatObservation requires channelKey — no fallback path
-      if (!channelKey) return null;
-
-      const shortId = this.assignShortId(channelKey, obs.messageId);
-      const isBot = selfId && obs.sender.id === selfId;
-      const senderName = isBot
-        ? "[Bot]"
-        : (() => {
-            const badge = this.getRoleBadge(obs.sender.attributes);
-            return `${badge}${obs.sender.name}`;
-          })();
-      const senderId = isBot ? "bot" : obs.sender.id;
-
-      // Time format: MM月DD日 HH:mm
-      const d = obs.timestamp;
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      const time = `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`;
-
-      // Inline sender format: SenderName(senderId)
-      const senderLine = `${senderName}(${senderId})`;
-
-      // Reply line: [回复: N] if replyTo shortId exists
-      let replyLine: string | undefined;
-      if (obs.replyTo) {
-        const replyShortId = this.getShortId(channelKey, obs.replyTo);
-        if (replyShortId !== undefined) {
-          replyLine = `[回复: ${replyShortId}]`;
-        }
-      }
-
-      return {
-        is_message: true,
-        is_action: false,
-        is_error: false,
-        id: shortId,
-        time,
-        senderLine,
-        replyLine,
-        content: obs.content,
-      };
-    }
-
-    if (obs.type === "agent.action") {
-      const d = obs.data;
-      const lines = d.actions.map((a) => {
-        const r = d.toolResults.find((t) => t.name === a.name);
-        if (a.name === "send_message") {
-          const ok = r?.status === "ok" || r?.status === "fulfilled" || (r != null && !r.error);
-          return ok ? "send_message -> sent" : `send_message -> failed: ${r?.error ?? "unknown"}`;
-        }
-        const status = r ? r.status + (r.error ? ": " + r.error : "") : "no result";
-        const preview = r?.result != null ? String(r.result).slice(0, 200) : "";
-        return `${a.name}(${JSON.stringify(a.params ?? {})}) -> ${status}${preview ? ": " + preview : ""}`;
-      });
-      if (lines.length === 0) {
-        lines.push(`(No actions)`);
-      }
-      return {
-        is_message: false,
-        is_action: true,
-        is_error: false,
-        actionContent: lines.join("; "),
-      };
-    }
-
-    if (obs.type === "agent.response") {
-      if (obs.data.error) {
-        return {
-          is_message: false,
-          is_action: false,
-          is_error: true,
-          errorContent: esc(obs.data.error),
-        };
-      }
-      // Successful LLM response — actions rendered via AgentActionObservation
-      return null;
-    }
-
-    return null;
-  }
-
-  formatHorizonText(view: HorizonView, percept?: Percept): string {
-    this.horizonViewTpl ??= this.ctx["yesimbot.prompt"].loadPartial("horizon-view");
-    let environment = "";
-    if (view.environment) {
-      const env = view.environment;
-      const platform = env.platform || "";
-      const channelId = env.channelId || "";
-      const typeLabel = env.type === "private" ? "Private" : "Group";
-      environment = `Platform: ${platform}, Channel: ${channelId} (${typeLabel})`;
-    }
-
-    let activeMembers = "";
-    if (view.entities?.length || view.self.id) {
-      const lines: string[] = [];
-
-      // Render bot self entity first with self="true"
-      if (view.self.id) {
-        const selfParts = [`id="${view.self.id}"`, `name="${view.self.name}"`];
-        if (view.self.role) selfParts.push(`role="${view.self.role}"`);
-        selfParts.push(`self="true"`);
-        lines.push(`<member ${selfParts.join(" ")} />`);
-      }
-
-      // Render other members from entities
-      for (const e of view.entities ?? []) {
-        const userId = e.userId ?? e.id;
-        const username = e.username ?? e.name;
-        const nickname = e.nickname;
-        const displayName =
-          nickname && nickname !== username ? `${nickname} (${username})` : (nickname ?? username);
-        const parts = [`id="${userId}"`, `name="${displayName}"`];
-        const role = this.classifyRole(
-          Array.isArray(e.attributes?.roles) ? (e.attributes.roles as string[]) : [],
-        );
-        if (role) parts.push(`role="${role}"`);
-        lines.push(`<member ${parts.join(" ")} />`);
-      }
-
-      activeMembers = lines.join("\n");
-    }
-
-    const historyItems: HistoryItemData[] = [];
-    const triggerItems: HistoryItemData[] = [];
+  formatHorizonText(
+    view: HorizonView,
+    percept?: Percept,
+    imageConfig?: ImageConfig,
+  ): LoopMessage[] {
     const channelKey = view.environment
       ? `${view.environment.platform}:${view.environment.channelId}`
       : undefined;
-    for (const obs of view.history ?? []) {
-      const item = this.formatObservation(obs, view.self.id, channelKey);
-      if (!item) continue; // skip null (successful agent.response)
-      if (obs.type === "message" && obs.stage === "new") {
-        triggerItems.push(item);
-      } else {
-        historyItems.push(item);
-      }
+
+    // Build preamble (environment + members)
+    let environment = "";
+    if (view.environment) {
+      const env = view.environment;
+      const typeLabel = env.type === "private" ? "Private" : "Group";
+      environment = `Platform: ${env.platform || ""}, Channel: ${env.channelId || ""} (${typeLabel})`;
     }
 
-    const fmt = new Intl.DateTimeFormat("zh-CN", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      weekday: "long",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
+    const memberLines: string[] = [];
+    if (view.self.id) {
+      const line = h("member", {
+        id: view.self.id,
+        name: view.self.name,
+        role: view.self.role,
+        self: true,
+      });
+      memberLines.push(line.toString());
+    }
+    for (const e of view.entities ?? []) {
+      const userId = e.userId ?? e.id;
+      const username = e.username ?? e.name;
+      const nickname = e.nickname;
+      const displayName =
+        nickname && nickname !== username ? `${nickname} (${username})` : (nickname ?? username);
+      const role = this.classifyRole(
+        Array.isArray(e.attributes?.roles) ? (e.attributes.roles as string[]) : [],
+      );
+      const line = h("member", {
+        id: userId,
+        name: displayName,
+        role,
+      });
+      memberLines.push(line.toString());
+    }
 
-    const scope = {
-      // Snippet variables — nested objects for dot-path access
-      date: { now: fmt.format(new Date()) },
-      bot: {
-        name: view.self.name || "{{bot.name}}",
-        id: view.self.id || "{{bot.id}}",
-      },
-      sender: {
-        name: (percept?.metadata?.senderName as string) || "{{sender.name}}",
-        id: (percept?.metadata?.senderId as string) || "{{sender.id}}",
-      },
-      channel: {
-        name: view.environment?.name || "{{channel.name}}",
-        platform: view.environment?.platform || "{{channel.platform}}",
-      },
-      // Template data
-      environment,
-      activeMembers,
-      hasHistory: historyItems.length > 0,
-      history: historyItems,
-      hasTrigger: triggerItems.length > 0,
-      trigger: triggerItems,
+    const preambleParts: string[] = [];
+    if (environment) preambleParts.push(`<environment>${environment}</environment>`);
+    if (memberLines.length) preambleParts.push(`<members>\n${memberLines.join("\n")}\n</members>`);
+
+    // Add latest Summary if exists
+    const latestSummary = (view.history ?? [])
+      .filter((e) => e.type === TimelineEventType.Summary)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0] as
+      | SummaryRecord
+      | undefined;
+
+    if (latestSummary) {
+      preambleParts.push(`<summary>${latestSummary.data.content}</summary>`);
+    }
+
+    const preamble = preambleParts.join("\n");
+
+    // Create BuildContextOptions for handlers
+    const options = {
+      selfId: view.self.id,
+      channelKey,
+      imageConfig,
+      shortIdAssigner: (ck: string, msgId: string) => this.assignShortId(ck, msgId),
+      getShortId: (ck: string, msgId: string) => this.getShortId(ck, msgId),
+      getImageCache: (id: string) => this.ctx["yesimbot.image-cache"].get(id),
+      parseElements: (text: string) => h.parse(text),
     };
 
-    this.historyItemTpl ??= this.ctx["yesimbot.prompt"].loadPartial("history-item");
-    const rendered = Mustache.render(this.horizonViewTpl, scope, {
-      "history-item": this.historyItemTpl,
-    }).trim();
-    const unresolved = rendered.match(/\{\{[^}]+\}\}/g);
-    if (unresolved) {
-      this.logger.debug(`Unresolved template variables: ${unresolved.join(", ")}`);
-    }
-    return rendered;
+    const messages: LoopMessage[] = [];
+
+    // Add preamble as first user message
+    if (preamble) messages.push({ role: "user", content: preamble });
+
+    // Build all history messages using handler pipeline (no trigger mechanism)
+    const history = view.history ?? [];
+    const historyLoopMessages = this.events.buildLoopMessages(history, options);
+
+    // Append each message directly - handlers already return proper format
+    messages.push(...historyLoopMessages);
+
+    return messages;
   }
 }

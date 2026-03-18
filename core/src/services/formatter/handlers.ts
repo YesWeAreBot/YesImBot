@@ -1,5 +1,5 @@
 import { h } from "koishi";
-import type { Element, Session } from "koishi";
+import type { Context, Element, Session } from "koishi";
 
 export type ElementHandler = (attrs: Record<string, unknown>, children: Element[]) => string;
 
@@ -8,50 +8,50 @@ const UNVERIFIED_THRESHOLD = 200;
 
 export function registerBuiltinHandlers(
   register: (type: string, handler: ElementHandler) => void,
+  ctx: Context,
 ): void {
-  // at: preserve tag with id and name
   register("at", (attrs) => {
-    const parts: string[] = [];
-    if (attrs.id != null) parts.push(`id="${attrs.id}"`);
-    if (attrs.name != null) parts.push(`name="${h.escape(String(attrs.name), true)}"`);
-    return `<at${parts.length ? " " + parts.join(" ") : ""}/>`;
+    if (attrs.name != null) attrs.name = h.escape(String(attrs.name), true);
+    return h("at", attrs).toString();
   });
 
-  // face: preserve tag with all platform attributes
   register("face", (attrs) => {
-    const parts = Object.entries(attrs).map(([k, v]) => `${k}="${h.escape(String(v), true)}"`);
-    return `<face${parts.length ? " " + parts.join(" ") : ""}/>`;
+    return h("face", attrs).toString();
   });
 
-  // img: basic placeholder (Phase 38 will override for multimodal)
   register("img", (attrs) => {
-    const src = attrs.src ?? "";
-    return `<image src="${h.escape(String(src), true)}"/>`;
+    const src = attrs.src as string | undefined;
+    const pureAttrs: Record<string, unknown> = {
+      summary: attrs.summary,
+      file: attrs.file,
+      "sub-type": attrs["sub-type"],
+      "file-size": attrs["file-size"],
+    };
+    if (src) {
+      const cache = ctx["yesimbot.image-cache"];
+      if (cache) {
+        const id = cache.urlToId(src);
+        cache.download(src).catch(() => {});
+        pureAttrs["id"] = id;
+      }
+    }
+    return h("img", pureAttrs).toString();
   });
 
-  // audio: preserve semantic metadata
   register("audio", (attrs) => {
-    const title = attrs.title ? ` title="${h.escape(String(attrs.title), true)}"` : "";
-    const duration = attrs.duration != null ? ` duration="${attrs.duration}"` : "";
-    return `<audio${title}${duration}/>`;
+    return h("audio", attrs).toString();
   });
 
-  // video: preserve semantic metadata
   register("video", (attrs) => {
-    const title = attrs.title ? ` title="${h.escape(String(attrs.title), true)}"` : "";
-    return `<video${title}/>`;
+    return h("video", attrs).toString();
   });
 
-  // file: preserve semantic metadata
   register("file", (attrs) => {
-    const title = attrs.title ? ` title="${h.escape(String(attrs.title), true)}"` : "";
-    return `<file${title}/>`;
+    return h("file", attrs).toString();
   });
 
-  // message/forward: placeholder for forward, skip inline
-  register("message", (attrs) => {
-    if (attrs.forward) return `<forward id="${attrs.id ?? ""}"/>`;
-    return "";
+  register("forward", (attrs) => {
+    return h("forward", attrs).toString();
   });
 
   // quote: handled separately via formatQuotePrefix, skip inline

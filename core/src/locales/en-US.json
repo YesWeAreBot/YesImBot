@@ -1,99 +1,122 @@
 {
   "_config": {
-    "model": "Primary chat model",
-    "fallbackChain": "Fallback model chain (tried in order)",
-    "errorReportChannel": "Error report channel (platform:channelId)",
-    "allowedChannels": "Channels allowed to respond in",
-    "botName": "Bot display name (overrides platform name)",
-    "keywords": "Trigger keywords (regex patterns)",
-    "maxRounds": "Max tool call rounds",
-    "streamMode": "Enable streaming output",
-    "globalTimeout": "Global timeout (ms)",
-    "maxToolResultLength": "Max tool result length (chars)",
-    "concurrency": "Model concurrent request limit",
-    "willingness": {
-      "$desc": "Willingness system config",
-      "$inner": [
-        {
-          "$inner": {
-            "maxWillingness": "Max willingness value",
-            "mentionBoost": "Probability boost on @mention (0-1)",
-            "decay": {
-              "$desc": "Decay settings",
-              "halfLife": "Willingness half-life (seconds)",
-              "elasticThreshold": "Elastic decay threshold (ratio of max)"
-            },
-            "gain": {
-              "$desc": "Gain settings",
-              "baseGain": "Base gain per message",
-              "keywordMultiplier": "Gain multiplier on keyword match",
-              "keywords": "Keywords that boost gain (regex)"
-            },
-            "sigmoid": {
-              "$desc": "Sigmoid gain curve settings",
-              "midpoint": "Willingness ratio where multiplier = 1",
-              "steepness": "Sigmoid curve steepness"
-            },
-            "fatigue": {
-              "$desc": "Fatigue penalty settings",
-              "windowMs": "Sliding window duration (ms)",
-              "threshold": "Replies before fatigue penalty",
-              "penaltyBase": "Exponential penalty base per excess reply"
-            },
-            "deferred": {
-              "$desc": "Deferred LLM judgment settings",
-              "threshold": "Probability threshold for deferred judgment",
-              "minDelayMs": "Minimum delay (ms)",
-              "maxDelayMs": "Maximum delay (ms)",
-              "model": "Model for deferred judgment",
-              "fallbackChain": "Deferred judgment fallback chain"
-            },
-            "dm": {
-              "$desc": "Direct message settings",
-              "directBoost": "DM probability boost (0-1)",
-              "aggregationMinMs": "Adaptive aggregation min wait (ms)",
-              "aggregationMaxMs": "Adaptive aggregation max wait (ms)",
-              "aggregationCapMs": "Absolute max wait from first DM (ms)"
-            },
-            "rateLimit": {
-              "dm": {
-                "$desc": "DM rate limit",
-                "capacity": "Token bucket capacity",
-                "refillRate": "Tokens refilled per second"
-              },
-              "group": {
-                "$desc": "Group rate limit",
-                "capacity": "Token bucket capacity",
-                "refillRate": "Tokens refilled per second"
-              }
-            }
-          }
+    "$inner": [
+      {
+        "$desc": "Basic",
+        "$inner": {
+          "model": "Primary chat model",
+          "fallbackChain": "Fallback model chain (tried in order)",
+          "errorReportChannel": "Error report channel (platform:channelId)",
+          "allowedChannels": "Channels allowed to respond in",
+          "botName": "Bot display name (overrides platform name)",
+          "keywords": "Trigger keywords (regex patterns)"
         }
-      ]
-    },
-    "aggregationWindow": "Group message aggregation window (ms)",
-    "templates": "Custom prompt templates",
-    "timeout": "Injection render timeout (ms)",
-    "resourcesDir": "Custom templates directory",
-    "rolePath": "Role files directory",
-    "skillPaths": "Skill file directories",
-    "confidenceThreshold": "Skill match confidence threshold",
-    "stickyDefaultTimeout": "Skill sticky default timeout (rounds)",
-    "enableThoughts": "Enable chain-of-thought output",
-    "charBudget": "Working memory trim character budget",
-    "keepLastRounds": "Recent rounds kept untrimmed",
-    "softTrimHead": "Soft trim head chars preserved",
-    "softTrimTail": "Soft trim tail chars preserved",
-    "initialContextCharBudget": "Initial context block char budget",
-    "historyLimit": "Timeline history message limit",
-    "archiveThresholdMs": "Timeline archive threshold (ms)",
-    "entityCacheTtl": "Entity cache TTL (ms)",
-    "maxActiveEntities": "Max entities shown to LLM",
-    "defaultTimeout": "Tool execution default timeout (ms)",
-    "searchProvider": "Search service provider",
-    "searchEndpoint": "Search API endpoint",
-    "searchApiKey": "Search API key",
-    "searchDefaultLimit": "Search default result limit",
-    "debugLevel": "Debug log level: 0=off, 1=basic, 2=detailed, 3=full"
+      },
+      {
+        "$desc": "Model",
+        "$inner": {
+          "maxRounds": "Max tool call rounds",
+          "streamMode": "Enable streaming output",
+          "globalTimeout": "Global timeout (ms)",
+          "maxToolResultLength": "Max tool result length (chars)",
+          "concurrency": "Model concurrent request limit"
+        }
+      },
+      {
+        "$desc": "Willingness",
+        "$inner": {
+          "willingness": {
+            "$desc": "Willingness system config",
+            "$inner": [
+              {
+                "$inner": {
+                  "maxWillingness": "Max willingness value",
+                  "mentionBoost": "Probability boost on @mention (0-1)",
+                  "decay": {
+                    "$desc": "Decay settings",
+                    "halfLife": "Willingness half-life (seconds)",
+                    "elasticThreshold": "Elastic decay threshold (ratio of max)"
+                  },
+                  "gain": {
+                    "$desc": "Gain settings",
+                    "baseGain": "Base gain per message",
+                    "keywordMultiplier": "Gain multiplier on keyword match",
+                    "keywords": "Keywords that boost gain (regex)"
+                  },
+                  "sigmoid": {
+                    "$desc": "Sigmoid gain curve settings",
+                    "midpoint": "Willingness ratio where multiplier = 1",
+                    "steepness": "Sigmoid curve steepness"
+                  },
+                  "fatigue": {
+                    "$desc": "Fatigue penalty settings",
+                    "windowMs": "Sliding window duration (ms)",
+                    "threshold": "Replies before fatigue penalty",
+                    "penaltyBase": "Exponential penalty base per excess reply"
+                  },
+                  "deferred": {
+                    "$desc": "Deferred LLM judgment settings",
+                    "threshold": "Probability threshold for deferred judgment",
+                    "minDelayMs": "Minimum delay (ms)",
+                    "maxDelayMs": "Maximum delay (ms)",
+                    "model": "Model for deferred judgment",
+                    "fallbackChain": "Deferred judgment fallback chain"
+                  },
+                  "dm": {
+                    "$desc": "Direct message settings",
+                    "directBoost": "DM probability boost (0-1)",
+                    "aggregationMinMs": "Adaptive aggregation min wait (ms)",
+                    "aggregationMaxMs": "Adaptive aggregation max wait (ms)",
+                    "aggregationCapMs": "Absolute max wait from first DM (ms)"
+                  },
+                  "rateLimit": {
+                    "dm": {
+                      "$desc": "DM rate limit",
+                      "capacity": "Token bucket capacity",
+                      "refillRate": "Tokens refilled per second"
+                    },
+                    "group": {
+                      "$desc": "Group rate limit",
+                      "capacity": "Token bucket capacity",
+                      "refillRate": "Tokens refilled per second"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "aggregationWindow": "Group message aggregation window (ms)"
+        }
+      },
+      {
+        "$desc": "Prompts",
+        "$inner": {
+          "templates": "Custom prompt templates",
+          "renderTimeout": "Injection render timeout (ms)",
+          "resourcesDir": "Custom templates directory",
+          "rolePath": "Role files directory",
+          "skillPaths": "Skill file directories",
+          "confidenceThreshold": "Skill match confidence threshold",
+          "stickyDefaultTimeout": "Skill sticky default timeout (rounds)"
+        }
+      },
+      {
+        "$desc": "Advanced",
+        "$inner": {
+          "enableThoughts": "Enable chain-of-thought output",
+          "charBudget": "Working memory trim character budget",
+          "keepLastRounds": "Recent rounds kept untrimmed",
+          "softTrimHead": "Soft trim head chars preserved",
+          "softTrimTail": "Soft trim tail chars preserved",
+          "initialContextCharBudget": "Initial context block char budget",
+          "historyLimit": "Timeline history message limit",
+          "archiveThresholdMs": "Timeline archive threshold (ms)",
+          "entityCacheTtl": "Entity cache TTL (ms)",
+          "maxActiveEntities": "Max entities shown to LLM",
+          "defaultTimeout": "Tool execution default timeout (ms)",
+          "debugLevel": "Debug log level: 0=off, 1=basic, 2=detailed, 3=full"
+        }
+      }
+    ]
   }
 }

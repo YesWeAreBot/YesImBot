@@ -1,6 +1,5 @@
 {
   "_config": {
-    "preset": "Preset template (selecting will overwrite all fields)",
     "name": "Name",
     "personality": "Core personality",
     "tone": "Tone & style",

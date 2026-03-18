@@ -8,6 +8,7 @@ import { WillingnessSchema } from "./services/agent/willingness";
 import { FormatterService } from "./services/formatter";
 import type { HorizonServiceConfig } from "./services/horizon";
 import { HorizonService } from "./services/horizon";
+import { ImageCacheService } from "./services/image-cache/service";
 import type { ModelServiceConfig } from "./services/model";
 import { ModelService } from "./services/model";
 import type { PluginServiceConfig } from "./services/plugin";
@@ -37,6 +38,7 @@ export const Config: Schema<Config> = Schema.intersect([
   // ── 基础 ──
   Schema.object({
     model: Schema.dynamic("registry.chatModels"),
+    summaryModel: Schema.dynamic("registry.chatModels"),
     fallbackChain: Schema.array(Schema.dynamic("registry.chatModels")).default([]),
     errorReportChannel: Schema.string(),
     allowedChannels: Schema.array(
@@ -48,9 +50,8 @@ export const Config: Schema<Config> = Schema.intersect([
     )
       .default([])
       .role("table"),
-    botName: Schema.string(),
     keywords: Schema.array(Schema.string()).default([]),
-  }).description({ "zh-CN": "基础", "en-US": "Basic" } as never),
+  }),
 
   // ── 模型 ──
   Schema.object({
@@ -59,28 +60,27 @@ export const Config: Schema<Config> = Schema.intersect([
     globalTimeout: Schema.number().default(120000),
     maxToolResultLength: Schema.number().default(4000),
     concurrency: Schema.number().default(5),
-  }).description({ "zh-CN": "模型", "en-US": "Model" } as never),
+  }),
 
   // ── 意愿值 ──
   Schema.object({
     willingness: WillingnessSchema,
     aggregationWindow: Schema.number().default(1500),
-  }).description({ "zh-CN": "意愿值", "en-US": "Willingness" } as never),
+  }),
 
   // ── 提示词 ──
   Schema.object({
     templates: Schema.dict(Schema.string()),
     timeout: Schema.number().default(5000),
-    resourcesDir: Schema.string(),
     rolePath: Schema.path({ filters: ["directory"], allowCreate: true }).default(
       "data/yesimbot/roles",
     ),
-    skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true })).default(
-      [],
-    ),
+    skillPaths: Schema.array(Schema.path({ filters: ["directory"], allowCreate: true }))
+      .default(["node_modules/koishi-plugin-yesimbot/resources/skills"])
+      .role("table"),
     confidenceThreshold: Schema.number().default(0.3),
     stickyDefaultTimeout: Schema.number().default(3),
-  }).description({ "zh-CN": "提示词", "en-US": "Prompt" } as never),
+  }),
 
   // ── 高级 ──
   Schema.object({
@@ -95,17 +95,16 @@ export const Config: Schema<Config> = Schema.intersect([
     entityCacheTtl: Schema.number().default(3600000),
     maxActiveEntities: Schema.number().default(15),
     defaultTimeout: Schema.number().default(30000),
-    searchProvider: Schema.string().default("tavily"),
-    searchEndpoint: Schema.string().role("link"),
-    searchApiKey: Schema.string().role("secret"),
-    searchDefaultLimit: Schema.number().default(5),
     debugLevel: Schema.union([
       Schema.const(0),
       Schema.const(1),
       Schema.const(2),
       Schema.const(3),
     ]).default(2),
-  }).description({ "zh-CN": "高级", "en-US": "Advanced" } as never),
+    imageMode: Schema.union([Schema.const("native"), Schema.const("off")]).default("native"),
+    maxImagesInContext: Schema.number().default(3),
+    imageLifecycleCount: Schema.number().default(3),
+  }),
 ]).i18n({
   "zh-CN": zhCN._config,
   "en-US": enUS._config,
@@ -113,6 +112,8 @@ export const Config: Schema<Config> = Schema.intersect([
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger("yesimbot");
+  const command = ctx.command("yesimbot", "Yes! I'm Bot! 指令集", { authority: 3 });
+  ctx.plugin(ImageCacheService);
   ctx.plugin(FormatterService);
   ctx.plugin(ModelService, { concurrency: config.concurrency });
   ctx.plugin(HorizonService, {
@@ -121,9 +122,9 @@ export function apply(ctx: Context, config: Config) {
     aggregationWindow: config.aggregationWindow,
     historyLimit: config.historyLimit,
     archiveThresholdMs: config.archiveThresholdMs,
-    botName: config.botName,
     entityCacheTtl: config.entityCacheTtl,
     maxActiveEntities: config.maxActiveEntities,
+    summaryModel: config.summaryModel,
   });
   ctx.plugin(PromptService, { templates: config.templates });
   ctx.plugin(RoleService, { rolePath: config.rolePath });
@@ -146,51 +147,28 @@ export function apply(ctx: Context, config: Config) {
     willingness: config.willingness,
     errorReportChannel: config.errorReportChannel,
     debugLevel: config.debugLevel,
+    imageMode: config.imageMode,
+    maxImagesInContext: config.maxImagesInContext,
+    imageLifecycleCount: config.imageLifecycleCount,
   });
 
   ctx.on("ready", () => {
     logger.info("YesImBot core plugin initialized");
-    waitForServiceReady(ctx)
-      .then(() => {
-        logger.info("All services are ready");
-      })
-      .catch((err) => {
-        logger.error("Error while waiting for services to be ready:", err);
-      });
   });
 
   ctx.on("dispose", () => {
     logger.info("YesImBot core plugin disposed");
   });
-}
 
-async function waitForServiceReady(ctx: Context, timeout = 10000): Promise<void> {
-  const services = [
-    "yesimbot.agent",
-    "yesimbot.formatter",
-    "yesimbot.horizon",
-    "yesimbot.model",
-    "yesimbot.plugin",
-    "yesimbot.prompt",
-    "yesimbot.role",
-    "yesimbot.skill",
-    "yesimbot.trait",
-  ];
-  const resolvedServices = new Set<string>();
-  const startTime = Date.now();
+  ctx.on("yesimbot/set-model", (provider, modelId) => {
+    logger.info(`Model updated: ${provider} ${modelId}`);
+    config.model = `${provider}:${modelId}`;
+    ctx.scope.update(config, true);
+  });
 
-  while (resolvedServices.size < services.length) {
-    for (const service of services) {
-      if (!resolvedServices.has(service) && ctx.get(service)) {
-        resolvedServices.add(service);
-      }
-    }
-    if (Date.now() - startTime > timeout) {
-      const unresolvedServices = services.filter((s) => !resolvedServices.has(s));
-      throw new Error(
-        `Timeout while waiting for services to be ready: ${unresolvedServices.join(", ")}`,
-      );
-    }
-    await sleep(100);
-  }
+  command.subcommand(".model.current", "显示当前会话使用的模型").action(() => {
+    const currentModel = config.model;
+    if (!currentModel) return "当前会话未设置模型";
+    return `当前会话使用的模型: ${currentModel}`;
+  });
 }

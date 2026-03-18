@@ -1,6 +1,7 @@
 import type { Context, Logger } from "koishi";
 
-import type { HorizonView } from "../../horizon/types";
+import type { HorizonView, MessageRecord } from "../../horizon/types";
+import { TimelineEventType } from "../../horizon/types";
 import type { ChannelKey, TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
 import type { TraitDetector } from "../types";
@@ -25,12 +26,11 @@ export class SceneTrait implements TraitDetector {
   private botName?: string;
   private logger!: Logger;
 
-  start(ctx: unknown, analyzer: unknown): void {
-    const context = ctx as Context;
+  start(ctx: Context, analyzer: unknown): void {
     this.analyzer = analyzer as TraitAnalyzer;
-    this.logger = context.logger("trait:scene");
+    this.logger = ctx.logger("trait:scene");
 
-    context.on("horizon/message", (event) => {
+    ctx.on("horizon/message", (event) => {
       const key = channelKey(event);
       const state = this.analyzer.getState<SceneState>(this.name, key) ?? {
         messagesSinceBotResponse: 0,
@@ -68,7 +68,7 @@ export class SceneTrait implements TraitDetector {
       dimension: "scene",
       value: view.environment?.type === "private" ? "private-chat" : "group-chat",
       confidence: 1.0,
-      ...(triggerMsg && { metadata: { triggerContent: triggerMsg.content } }),
+      ...(triggerMsg && { metadata: { triggerContent: triggerMsg.data.content } }),
     });
 
     // Attention dimension
@@ -79,8 +79,12 @@ export class SceneTrait implements TraitDetector {
     if (this.botName && view.history) {
       const name = this.botName.toLowerCase();
       const recent = view.history.slice(-5);
-      for (const obs of recent) {
-        if (obs.type === "message" && obs.content.toLowerCase().includes(name)) {
+      for (const entry of recent) {
+        if (
+          entry.type === TimelineEventType.Message &&
+          typeof entry.data.content === "string" &&
+          entry.data.content.toLowerCase().includes(name)
+        ) {
           mentioned = true;
           break;
         }
@@ -119,7 +123,9 @@ export class SceneTrait implements TraitDetector {
 
     // Forward-present signal — enables get_forward_msg tool when forwarded messages in context
     const newMsgs = msgs.filter((o) => o.stage === "new");
-    const hasForward = newMsgs.some((m) => m.content.includes("<forward"));
+    const hasForward = newMsgs.some(
+      (m) => typeof m.data.content === "string" && m.data.content.includes("<forward"),
+    );
     if (hasForward) {
       signals.push({
         dimension: "has-forward",

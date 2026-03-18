@@ -3,7 +3,7 @@ import { Context, h, Schema } from "koishi";
 import type { FormatterService } from "../../../formatter/service";
 import type { HorizonService } from "../../../horizon/service";
 import { requireSession, requirePlatform, requireBotRole } from "../../activators";
-import { Action, Metadata, withInnerThoughts } from "../../decorators";
+import { Action, Metadata, Tool, withInnerThoughts } from "../../decorators";
 import { YesImPlugin } from "../../plugin";
 import { ToolExecutionContext, ToolResult } from "../../types";
 import { Failed, Success } from "../../utils";
@@ -19,12 +19,10 @@ declare module "koishi" {
 
 @Metadata({ name: "onebot", description: "Onebot built-in tools", builtin: true })
 export class OnebotPlugin extends YesImPlugin {
+  static inject = ["yesimbot.plugin", "yesimbot.horizon", "yesimbot.formatter"];
+
   private pokeCooldowns = new Map<string, number>();
   private readonly POKE_COOLDOWN_MS = 60_000;
-
-  constructor(ctx: Context) {
-    super(ctx);
-  }
 
   private resolveNativeMsgId(ctx: ToolExecutionContext, shortIdStr: string): string | null {
     const shortId = Number(shortIdStr);
@@ -198,7 +196,7 @@ export class OnebotPlugin extends YesImPlugin {
     }
   }
 
-  @Action({
+  @Tool({
     name: "get_forward_msg",
     description:
       "Read the contents of a forwarded message bundle. Returns a plain text summary of the messages. " +

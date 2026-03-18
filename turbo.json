@@ -20,6 +20,10 @@
     "lint:fix": {
       "outputs": []
     },
+    "pub": {
+      "dependsOn": ["build"],
+      "outputs": ["dist/**", "lib/**"]
+    },
     "test": {
       "outputs": []
     },

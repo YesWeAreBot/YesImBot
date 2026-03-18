@@ -1,266 +1,379 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-import Mustache from "mustache";
+import { Context } from "koishi";
 import { describe, expect, it } from "vitest";
 
-const TEMPLATE_PATH = resolve(__dirname, "../resources/templates/partials/horizon-view.mustache");
+import type { LoopMessage } from "../src/services/agent/trimmer";
+import {
+  MessageHandler,
+  AgentResponseHandler,
+  AgentActionHandler,
+  type BuildContextOptions,
+  type MessageRecord,
+  type AgentResponseRecord,
+  type AgentActionRecord,
+} from "../src/services/horizon/handlers";
+import { EventManager } from "../src/services/horizon/manager";
+import { TimelineEventType, TimelineStage, TimelinePriority } from "../src/services/horizon/types";
 
-const HISTORY_ITEM_TEMPLATE_PATH = resolve(
-  __dirname,
-  "../resources/templates/partials/history-item.mustache",
-);
-
-function loadTemplate(): string {
-  return readFileSync(TEMPLATE_PATH, "utf-8");
-}
-
-function loadHistoryItemTemplate(): string {
-  return readFileSync(HISTORY_ITEM_TEMPLATE_PATH, "utf-8");
+/**
+ * Helper to create a MessageRecord for testing.
+ */
+function createMessageRecord(overrides: Partial<MessageRecord> = {}): MessageRecord {
+  return {
+    id: "msg-1",
+    timestamp: new Date("2026-03-03T13:32:00Z"),
+    platform: "test",
+    channelId: "test-channel",
+    type: TimelineEventType.Message,
+    priority: TimelinePriority.Normal,
+    stage: TimelineStage.Active,
+    data: {
+      messageId: "native-msg-1",
+      senderId: "user-123",
+      senderName: "Alice",
+      content: "Hello world",
+    },
+    ...overrides,
+  } as MessageRecord;
 }
 
 /**
- * Builds the FIXED scope matching formatHorizonText's new implementation.
- * Includes nested date, bot, sender, channel objects for dot-path access.
+ * Helper to create an AgentResponseRecord for testing.
  */
-function buildFixedScope(overrides?: {
-  botName?: string;
-  botId?: string;
-  senderName?: string;
-  senderId?: string;
-  channelName?: string;
-  channelPlatform?: string;
-}) {
-  const fmt = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
+function createAgentResponseRecord(
+  overrides: Partial<AgentResponseRecord> = {},
+): AgentResponseRecord {
   return {
-    date: { now: fmt.format(new Date()) },
-    bot: {
-      name: overrides?.botName || "{{bot.name}}",
-      id: overrides?.botId || "{{bot.id}}",
+    id: "resp-1",
+    timestamp: new Date("2026-03-03T13:32:00Z"),
+    platform: "test",
+    channelId: "test-channel",
+    type: TimelineEventType.AgentResponse,
+    priority: TimelinePriority.Normal,
+    stage: TimelineStage.Active,
+    data: {
+      rawText: "This is a response",
     },
-    sender: {
-      name: overrides?.senderName || "{{sender.name}}",
-      id: overrides?.senderId || "{{sender.id}}",
-    },
-    channel: {
-      name: overrides?.channelName || "{{channel.name}}",
-      platform: overrides?.channelPlatform || "{{channel.platform}}",
-    },
-    environment: "",
-    activeMembers: "",
-    hasHistory: false,
-    history: [],
-    hasTrigger: false,
-    trigger: [],
-  };
+    ...overrides,
+  } as AgentResponseRecord;
 }
 
-describe("formatHorizonText snippet rendering", () => {
-  const template = loadTemplate();
+/**
+ * Helper to create an AgentActionRecord for testing.
+ */
+function createAgentActionRecord(overrides: Partial<AgentActionRecord> = {}): AgentActionRecord {
+  return {
+    id: "action-1",
+    timestamp: new Date("2026-03-03T13:32:00Z"),
+    platform: "test",
+    channelId: "test-channel",
+    type: TimelineEventType.AgentAction,
+    priority: TimelinePriority.Normal,
+    stage: TimelineStage.Active,
+    data: {
+      actions: [],
+      toolResults: [],
+    },
+    ...overrides,
+  } as AgentActionRecord;
+}
 
-  it("{{date.now}} renders non-empty", () => {
-    const scope = buildFixedScope();
-    const rendered = Mustache.render(template, scope).trim();
+describe("MessageHandler", () => {
+  const handler = new MessageHandler();
+  const baseOptions: BuildContextOptions = {
+    selfId: "bot-1",
+    channelKey: "test:channel",
+  };
 
-    // date.now should resolve to an actual date string (zh-CN format)
-    expect(rendered).not.toContain("现在是 。");
-    expect(rendered).toMatch(/现在是 .+。/);
+  it("renders <msg> tag with id, time, sender, content", () => {
+    const record = createMessageRecord();
+    const result = handler.handle(record, baseOptions);
+
+    expect(result).toHaveLength(1);
+    const msg = result[0] as LoopMessage;
+    expect(msg.role).toBe("user");
+    expect(typeof msg.content).toBe("string");
+    expect(msg.content).toMatch(/<msg id="0" time="\d{2}月\d{2}日 \d{2}:\d{2}">/);
+    expect(msg.content).toContain("Alice(user-123)");
+    expect(msg.content).toContain("Hello world");
+    expect(msg.content).toContain("</msg>");
   });
 
-  it("{{bot.name}} resolves via scope when present in template", () => {
-    const snippetTemplate = "Bot: {{bot.name}}, ID: {{bot.id}}";
-    const scope = buildFixedScope({ botName: "TestBot", botId: "bot-1" });
-    const rendered = Mustache.render(snippetTemplate, scope);
-
-    expect(rendered).not.toBe("Bot: , ID: ");
-    expect(rendered).toContain("TestBot");
-    expect(rendered).toContain("bot-1");
-  });
-
-  it("missing sender variables preserve tag text", () => {
-    const snippetTemplate = "From: {{sender.name}}";
-
-    // Scope with fallback value (the fix pattern — no percept available)
-    const scopeWithFallback = buildFixedScope();
-    const rendered = Mustache.render(snippetTemplate, scopeWithFallback);
-
-    // The fallback preserves the tag text literally
-    expect(rendered).toContain("{{sender.name}}");
-  });
-
-  it("sender variables resolve when percept provides them", () => {
-    const snippetTemplate = "From: {{sender.name}} ({{sender.id}})";
-    const scope = buildFixedScope({ senderName: "Alice", senderId: "user-42" });
-    const rendered = Mustache.render(snippetTemplate, scope);
-
-    expect(rendered).toBe("From: Alice (user-42)");
-  });
-
-  it("channel variables resolve from environment", () => {
-    const snippetTemplate = "Channel: {{channel.name}} on {{channel.platform}}";
-    const scope = buildFixedScope({
-      channelName: "general",
-      channelPlatform: "discord",
+  it("includes [回复: N] when replyTo provided and getShortId returns value", () => {
+    const record = createMessageRecord({
+      data: {
+        messageId: "msg-2",
+        senderId: "user-456",
+        senderName: "Bob",
+        content: "I agree",
+        replyTo: "msg-1",
+      },
     });
-    const rendered = Mustache.render(snippetTemplate, scope);
 
-    expect(rendered).toBe("Channel: general on discord");
+    const options: BuildContextOptions = {
+      ...baseOptions,
+      getShortId: (channelKey, msgId) => {
+        if (channelKey === "test:channel" && msgId === "msg-1") return 1;
+        return undefined;
+      },
+    };
+
+    const result = handler.handle(record, options);
+    expect(result[0].content).toContain("[回复: 1]");
+    expect(result[0].content).toContain("I agree");
   });
 
-  it("full template renders with all snippet variables populated", () => {
-    const scope = buildFixedScope({ botName: "Athena", botId: "bot-1" });
-    const rendered = Mustache.render(template, scope).trim();
+  it("returns user role LoopMessage", () => {
+    const record = createMessageRecord();
+    const result = handler.handle(record, baseOptions);
 
-    // date.now should be present (non-empty after "现在是")
-    expect(rendered).toMatch(/现在是 \d{4}年/);
-    // Should not contain empty "现在是 。"
-    expect(rendered).not.toContain("现在是 。");
+    expect(result[0].role).toBe("user");
+  });
+
+  it("assigns short ID using shortIdAssigner", () => {
+    let lastAssignedId = 0;
+    const record = createMessageRecord({
+      id: "msg-10",
+      data: {
+        messageId: "native-msg-10",
+        senderId: "user-999",
+        senderName: "Charlie",
+        content: "Test",
+      },
+    });
+
+    const options: BuildContextOptions = {
+      ...baseOptions,
+      shortIdAssigner: (_channelKey, _msgId) => {
+        lastAssignedId = (lastAssignedId % 10) + 1; // Cycle 1-10
+        return lastAssignedId;
+      },
+    };
+
+    const result = handler.handle(record, options);
+    expect(result[0].content).toContain('<msg id="1"');
   });
 });
 
-describe("history-item partial rendering", () => {
-  const historyItemTpl = loadHistoryItemTemplate();
-  const horizonViewTpl = loadTemplate();
+describe("AgentResponseHandler", () => {
+  const handler = new AgentResponseHandler();
 
-  it("renders message observation with inline sender format", () => {
-    const messageItem = {
-      is_message: true,
-      is_action: false,
-      is_error: false,
-      id: 1,
-      time: "28:13:32",
-      senderLine: "Alice(user-123)",
-      replyLine: undefined,
-      content: "Hello world",
-    };
+  it("returns empty array for successful response with no rawText", () => {
+    const record = createAgentResponseRecord({
+      data: { rawText: "" },
+    });
+    const result = handler.handle(record, {});
 
-    const rendered = Mustache.render(historyItemTpl, messageItem);
-
-    expect(rendered).toContain('<msg id="1" time="28:13:32">');
-    expect(rendered).toContain("Alice(user-123)");
-    expect(rendered).toContain("Hello world");
-    expect(rendered).not.toContain("[回复:");
+    expect(result).toEqual([]);
   });
 
-  it("renders message with reply inline before content", () => {
-    const messageItem = {
-      is_message: true,
-      is_action: false,
-      is_error: false,
-      id: 2,
-      time: "28:13:33",
-      senderLine: "Bob(user-456)",
-      replyLine: "[回复: 1]",
-      content: "I agree",
-    };
+  it("returns assistant message for successful response with rawText", () => {
+    const record = createAgentResponseRecord({
+      data: { rawText: "This is the response text" },
+    });
+    const result = handler.handle(record, {});
 
-    const rendered = Mustache.render(historyItemTpl, messageItem);
-
-    expect(rendered).toContain('<msg id="2" time="28:13:33">');
-    expect(rendered).toContain("Bob(user-456)");
-    expect(rendered).toContain("[回复: 1]");
-    expect(rendered).toContain("I agree");
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("assistant");
+    expect(result[0].content).toBe("This is the response text");
   });
 
-  it("renders action observation with <action> tag (not <bot-action>)", () => {
-    const actionItem = {
-      is_message: false,
-      is_action: true,
-      is_error: false,
-      actionContent: "send_message -> sent",
-    };
+  it("returns <error> tag for error response", () => {
+    const record = createAgentResponseRecord({
+      data: {
+        rawText: "",
+        error: "API rate limit exceeded",
+      },
+    });
+    const result = handler.handle(record, {});
 
-    const rendered = Mustache.render(historyItemTpl, actionItem);
-
-    expect(rendered).toContain("<action>send_message -> sent</action>");
-    expect(rendered).not.toContain("<bot-action>");
-    expect(rendered).not.toContain("round=");
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toContain("<error>");
+    expect(result[0].content).toContain("API rate limit exceeded");
+    expect(result[0].content).toContain("</error>");
   });
 
-  it("renders error observation with <error> tag (not <bot-error>)", () => {
-    const errorItem = {
-      is_message: false,
-      is_action: false,
-      is_error: true,
-      errorContent: "API rate limit exceeded",
-    };
+  it("escapes XML special chars in error content", () => {
+    const record = createAgentResponseRecord({
+      data: {
+        rawText: "",
+        error: 'Error: "unexpected" & <tag> in response',
+      },
+    });
+    const result = handler.handle(record, {});
 
-    const rendered = Mustache.render(historyItemTpl, errorItem);
+    expect(result[0].content).toContain("&quot;");
+    expect(result[0].content).toContain("&amp;");
+    expect(result[0].content).toContain("&lt;");
+    expect(result[0].content).toContain("&gt;");
+    expect(result[0].content).not.toContain('"');
+    expect(result[0].content).not.toContain('&"'); // Check & is escaped (not followed by quot)
+    expect(result[0].content).not.toContain("<tag>");
+  });
+});
 
-    expect(rendered).toContain("<error>API rate limit exceeded</error>");
-    expect(rendered).not.toContain("<bot-error>");
-    expect(rendered).not.toContain("round=");
+describe("AgentActionHandler", () => {
+  const handler = new AgentActionHandler();
+
+  it("renders <action> tag with action summaries", () => {
+    const record = createAgentActionRecord({
+      data: {
+        actions: [
+          { name: "search_web", params: { query: "test" } },
+          { name: "get_weather", params: { city: "Tokyo" } },
+        ],
+        toolResults: [],
+      },
+    });
+    const result = handler.handle(record, {});
+
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toContain("<action>");
+    expect(result[0].content).toContain('search_web({"query":"test"})');
+    expect(result[0].content).toContain('get_weather({"city":"Tokyo"})');
+    expect(result[0].content).toContain("</action>");
   });
 
-  it("renders history items through partial in horizon-view template", () => {
-    const historyItem = {
-      is_message: true,
-      is_action: false,
-      is_error: false,
-      id: 3,
-      time: "28:13:34",
-      senderLine: "Charlie(user-789)",
-      replyLine: undefined,
-      content: "Test message",
-    };
+  it("handles send_message specially (shows sent/failed)", () => {
+    const record = createAgentActionRecord({
+      data: {
+        actions: [],
+        toolResults: [
+          { name: "send_message", status: "ok", result: "Message sent" },
+          { name: "send_message", status: "fulfilled", result: undefined },
+          { name: "send_message", status: "failed", error: "Network error" },
+        ],
+      },
+    });
+    const result = handler.handle(record, {});
 
-    const scope = buildFixedScope();
-    scope.hasHistory = true;
-    (scope.history as unknown[]) = [historyItem];
-
-    const partials = {
-      "history-item": historyItemTpl,
-    };
-
-    const rendered = Mustache.render(horizonViewTpl, scope, partials);
-
-    // History section should contain rendered message
-    expect(rendered).toContain('<msg id="3" time="28:13:34">');
-    expect(rendered).toContain("Charlie(user-789)");
-    expect(rendered).toContain("Test message");
-    // Should not contain raw object toString
-    expect(rendered).not.toContain("[object Object]");
+    expect(result[0].content).toContain("send_message -> sent");
+    expect(result[0].content).toContain("send_message -> failed");
   });
 
-  it("renders trigger items through partial (not {{{.}}})", () => {
-    const triggerItem = {
-      is_message: true,
-      is_action: false,
-      is_error: false,
-      id: 4,
-      time: "28:13:35",
-      senderLine: "David(user-999)",
-      replyLine: undefined,
-      content: "New message",
+  it("shows tool results with preview", () => {
+    const record = createAgentActionRecord({
+      data: {
+        actions: [],
+        toolResults: [
+          { name: "get_weather", status: "ok", result: "Sunny, 25°C" },
+          { name: "search_web", status: "error", error: "API timeout" },
+        ],
+      },
+    });
+    const result = handler.handle(record, {});
+
+    expect(result[0].content).toContain("get_weather -> ok: Sunny, 25°C");
+    // Error status uses error message, not status string
+    expect(result[0].content).toContain("search_web -> API timeout");
+  });
+
+  it("shows (No actions) when empty", () => {
+    const record = createAgentActionRecord({
+      data: {
+        actions: [],
+        toolResults: [],
+      },
+    });
+    const result = handler.handle(record, {});
+
+    expect(result).toEqual([]);
+  });
+
+  it("truncates long result previews to 100 chars", () => {
+    const longResult = "x".repeat(200);
+    const record = createAgentActionRecord({
+      data: {
+        actions: [],
+        toolResults: [{ name: "search_web", status: "ok", result: longResult }],
+      },
+    });
+    const result = handler.handle(record, {});
+
+    // Should truncate to ~100 chars plus label
+    expect(result[0].content).toMatch(/search_web -> ok: x{100}/);
+  });
+});
+
+describe("buildLoopMessages integration", () => {
+  // Mock Context for EventManager - tests only use buildLoopMessages which is a pure function
+  const mockContext = {
+    logger: () => ({ info: () => {} }),
+  } as unknown as Context;
+
+  const eventManager = new EventManager(mockContext);
+
+  it("processes mixed entry types correctly", () => {
+    const messageRecord = createMessageRecord({
+      id: "msg-1",
+      data: {
+        messageId: "native-msg-1",
+        senderId: "user-123",
+        senderName: "Alice",
+        content: "Hello",
+      },
+    });
+
+    const responseRecord = createAgentResponseRecord({
+      id: "resp-1",
+      data: { rawText: "Hi there!" },
+    });
+
+    const actionRecord = createAgentActionRecord({
+      id: "action-1",
+      data: {
+        actions: [{ name: "test_action", params: {} }],
+        toolResults: [],
+      },
+    });
+
+    const entries = [messageRecord, responseRecord, actionRecord];
+    const options: BuildContextOptions = {
+      selfId: "bot-1",
+      channelKey: "test:channel",
     };
 
-    const scope = buildFixedScope();
-    scope.hasTrigger = true;
-    (scope.trigger as unknown[]) = [triggerItem];
+    const result = eventManager.buildLoopMessages(entries, options);
 
-    const partials = {
-      "history-item": historyItemTpl,
+    // Should have user message (Alice), assistant message (response), user action
+    expect(result.length).toBeGreaterThanOrEqual(2);
+
+    // First message should be Alice's user message
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toContain("Alice(user-123)");
+
+    // Should have assistant response
+    const assistantMsg = result.find((m: LoopMessage) => m.role === "assistant");
+    expect(assistantMsg).toBeDefined();
+    expect(assistantMsg?.content).toBe("Hi there!");
+
+    // Should have action block
+    const actionMsg = result.find(
+      (m: LoopMessage) => typeof m.content === "string" && m.content.includes("<action>"),
+    );
+    expect(actionMsg).toBeDefined();
+  });
+
+  it("dispatches handlers by entry type correctly", () => {
+    const messageRecord = createMessageRecord();
+    const errorRecord = createAgentResponseRecord({
+      data: { rawText: "", error: "Test error" },
+    });
+
+    const entries = [messageRecord, errorRecord];
+    const options: BuildContextOptions = {
+      selfId: "bot-1",
+      channelKey: "test:channel",
     };
 
-    const rendered = Mustache.render(horizonViewTpl, scope, partials);
+    const result = eventManager.buildLoopMessages(entries, options);
 
-    // Trigger section should contain rendered message
-    expect(rendered).toContain("<trigger>");
-    expect(rendered).toContain('<msg id="4" time="28:13:35">');
-    expect(rendered).toContain("David(user-999)");
-    expect(rendered).toContain("New message");
-    // Should not contain raw object toString
-    expect(rendered).not.toContain("[object Object]");
-    // Should not contain raw {{{.}}} interpolation
-    expect(rendered).not.toMatch(/\{\{\{\.?\}\}\}/);
+    // Both should be user messages (message + error)
+    expect(result).toHaveLength(2);
+    expect(result[0].role).toBe("user");
+    expect(result[0].content).toContain("<msg");
+    expect(result[1].role).toBe("user");
+    expect(result[1].content).toContain("<error>");
   });
 });

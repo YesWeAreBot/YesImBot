@@ -38,7 +38,8 @@ export enum FunctionType {
 }
 
 export interface ToolResult<T = unknown> {
-  status: "success" | "failed";
+  success: boolean;
+  status?: "success" | "failed" | string;
   content?: T;
   error?: string;
 }

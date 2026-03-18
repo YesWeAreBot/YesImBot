@@ -1,3 +1,4 @@
+import type { UserContent } from "ai";
 import type { Session } from "koishi";
 
 import { TriggerType, type ChannelKey } from "../shared/types";
@@ -35,6 +36,7 @@ export enum TimelineEventType {
   Message = "message",
   AgentResponse = "agent.response",
   AgentAction = "agent.action",
+  Summary = "summary",
 }
 
 export enum TimelinePriority {
@@ -73,13 +75,8 @@ export interface MessageEventData {
 export type MessageRecord = BaseTimelineEntry<TimelineEventType.Message, MessageEventData>;
 
 export interface AgentResponseData {
-  round: number;
   rawText: string;
   error?: string;
-  // Backward compat — old rows still have these fields
-  assistantText?: string;
-  actions?: Array<{ name: string; params?: Record<string, unknown> }>;
-  toolResults?: Array<{ name: string; status: string; result?: unknown; error?: string }>;
 }
 
 export type AgentResponseRecord = BaseTimelineEntry<
@@ -88,15 +85,27 @@ export type AgentResponseRecord = BaseTimelineEntry<
 >;
 
 export interface AgentActionData {
-  round: number;
-  triggerMsgId?: string;
   actions: Array<{ name: string; params?: Record<string, unknown> }>;
-  toolResults: Array<{ name: string; status: string; result?: unknown; error?: string }>;
+  toolResults: Array<{
+    name: string;
+    success: boolean;
+    status?: string;
+    result?: unknown;
+    error?: string;
+  }>;
 }
 
 export type AgentActionRecord = BaseTimelineEntry<TimelineEventType.AgentAction, AgentActionData>;
 
-export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord;
+export interface SummaryData {
+  content: string;
+  coveredUntil: Date;
+  previousSummaryId?: string;
+}
+
+export type SummaryRecord = BaseTimelineEntry<TimelineEventType.Summary, SummaryData>;
+
+export type TimelineEntry = MessageRecord | AgentResponseRecord | AgentActionRecord | SummaryRecord;
 
 // ---- Entity ----
 
@@ -138,14 +147,22 @@ export interface SelfInfo {
   role?: Role;
 }
 
-// ---- Observation ----
+// ---- Image Config ----
+
+export interface ImageConfig {
+  imageMode: "native" | "off";
+  maxImagesInContext: number;
+  imageLifecycleCount: number;
+}
+
+// ---- Observation (TEMPORARY - will be removed in Plan 02) ----
 
 export interface MessageObservation {
   type: "message";
   timestamp: Date;
   sender: Entity;
   messageId: string;
-  content: string;
+  content: string | UserContent;
   stage?: string;
   replyTo?: string;
 }
@@ -178,7 +195,7 @@ export interface HorizonView {
   self: SelfInfo;
   environment?: Environment;
   entities?: Entity[];
-  history?: Observation[];
+  history?: TimelineEntry[];
 }
 
 // ---- Query ----

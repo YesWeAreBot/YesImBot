@@ -1,9 +1,9 @@
 import type { ToolResult } from "./types";
 
 export function Success<T>(result?: T): ToolResult<T> {
-  return { status: "success", content: result };
+  return { success: true, status: "success", content: result };
 }
 
 export function Failed(message: string): ToolResult {
-  return { status: "failed", error: message };
+  return { success: false, status: "failed", error: message };
 }

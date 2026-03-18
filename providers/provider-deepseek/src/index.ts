@@ -1,19 +1,15 @@
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createDeepSeek, DeepSeekProvider as Provider } from "@ai-sdk/deepseek";
 import {
   AbstractProvider,
   type BaseProviderConfig,
   createProviderSchema,
   Modality,
 } from "@yesimbot/shared-model";
-import type { Context } from "koishi";
 
 import enUS from "./locales/en-US.json";
 import zhCN from "./locales/zh-CN.json";
 
-class DeepSeekProvider extends AbstractProvider<
-  ReturnType<typeof createDeepSeek>,
-  BaseProviderConfig
-> {
+class DeepSeekProvider extends AbstractProvider<Provider, BaseProviderConfig> {
   static reusable = true;
   static inject = ["yesimbot.model"];
   readonly providerType = "deepseek";
@@ -36,7 +32,7 @@ namespace DeepSeekProvider {
         id: "deepseek-chat",
         tool_call: true,
         reasoning: false,
-        modalities: [Modality.Text, Modality.Image],
+        modalities: [Modality.Text],
       },
       {
         id: "deepseek-reasoner",

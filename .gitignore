@@ -174,5 +174,9 @@ yarn-error.log
 # Add here any additional files/directories you want to ignore in your project
 yarn.lock
 .claude/
-docs/
+.planning/
+docs/*
+!docs/ARCHITECTURE.md
+!docs/CHANGE_GUIDE.md
+!docs/ENVIRONMENT.md
 references/

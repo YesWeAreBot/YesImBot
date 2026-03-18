@@ -1,6 +1,15 @@
 import { Context, Random, Logger, Query } from "koishi";
 
+import type { LoopMessage } from "../agent/trimmer";
 import { ChannelKey } from "../shared/types";
+import {
+  MessageHandler,
+  AgentResponseHandler,
+  AgentActionHandler,
+  SummaryHandler,
+  BuildContextOptions,
+  type TimelineHandler,
+} from "./handlers";
 import type {
   AgentActionData,
   AgentActionRecord,
@@ -10,6 +19,7 @@ import type {
   MessageEventData,
   MessageRecord,
   Observation,
+  SummaryData,
   TimelineEntry,
 } from "./types";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "./types";
@@ -19,6 +29,12 @@ const TIMELINE_TABLE = "yesimbot.timeline";
 
 export class EventManager {
   private logger: Logger;
+  private handlers: TimelineHandler<TimelineEntry>[] = [
+    new MessageHandler(),
+    new AgentResponseHandler(),
+    new AgentActionHandler(),
+    new SummaryHandler(),
+  ];
 
   constructor(private ctx: Context) {
     this.logger = ctx.logger("horizon");
@@ -104,34 +120,83 @@ export class EventManager {
     return this.record(entry) as Promise<AgentActionRecord>;
   }
 
-  toObservations(entries: TimelineEntry[], _selfId?: string): Observation[] {
-    const result: Observation[] = [];
-    for (const entry of entries) {
-      if (entry.type === TimelineEventType.Message) {
-        result.push({
-          type: "message" as const,
-          timestamp: entry.timestamp,
-          sender: { id: entry.data.senderId, type: "user", name: entry.data.senderName },
-          messageId: entry.data.messageId,
-          content: entry.data.content,
-          stage: entry.stage,
-          ...(entry.data.replyTo !== undefined && { replyTo: entry.data.replyTo }),
-        });
-      } else if (entry.type === TimelineEventType.AgentAction) {
-        result.push({
-          type: "agent.action" as const,
-          timestamp: entry.timestamp,
-          data: entry.data,
-        });
-      } else if (entry.type === TimelineEventType.AgentResponse) {
-        result.push({
-          type: "agent.response" as const,
-          timestamp: entry.timestamp,
-          data: entry.data,
-        });
+  async recordSummary(params: {
+    platform: string;
+    channelId: string;
+    timestamp: Date;
+    data: SummaryData;
+  }): Promise<void> {
+    await this.record({
+      id: Random.id(),
+      type: TimelineEventType.Summary,
+      priority: TimelinePriority.Core,
+      stage: TimelineStage.Active,
+      platform: params.platform,
+      channelId: params.channelId,
+      timestamp: params.timestamp,
+      data: params.data,
+    });
+  }
+
+  buildLoopMessages(entries: TimelineEntry[], options: BuildContextOptions): LoopMessage[] {
+    const { imageConfig, parseElements, getImageCache } = options;
+
+    // Image lifecycle tracking
+    const lifecycleTracker = new Map<string, number>();
+    const selectedImages = new Set<string>();
+
+    // Pass 1: Collect all image candidates if native mode enabled
+    if (imageConfig?.imageMode === "native" && parseElements && getImageCache) {
+      const candidates: Array<{ id: string; index: number }> = [];
+
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry.type !== "message") continue;
+
+        const elements = parseElements(entry.data.content);
+        const imgElements = elements.filter((el) => el.type === "img");
+
+        for (const el of imgElements) {
+          const id = el.attrs.id as string | undefined;
+          const status = el.attrs.status as string | undefined;
+          if (!id || status === "failed") continue;
+
+          const cache = getImageCache(id);
+          if (!cache || cache.status === "failed") continue;
+
+          const count = lifecycleTracker.get(id) ?? 0;
+          if (count >= imageConfig.imageLifecycleCount) continue;
+
+          candidates.push({ id, index: i });
+        }
+      }
+
+      // FIFO: Keep last N images
+      const keepFrom = Math.max(0, candidates.length - imageConfig.maxImagesInContext);
+      for (let i = keepFrom; i < candidates.length; i++) {
+        selectedImages.add(candidates[i].id);
       }
     }
-    return result;
+
+    // Pass 2: Build messages with image embedding decisions
+    const enhancedOptions: BuildContextOptions = {
+      ...options,
+      shouldEmbedImage: (id: string) => selectedImages.has(id),
+      incrementLifecycle: (id: string) => {
+        lifecycleTracker.set(id, (lifecycleTracker.get(id) ?? 0) + 1);
+      },
+    };
+
+    const messages: LoopMessage[] = [];
+    for (const entry of entries) {
+      for (const handler of this.handlers) {
+        if (handler.canHandle(entry)) {
+          messages.push(...handler.handle(entry, enhancedOptions));
+          break;
+        }
+      }
+    }
+    return messages;
   }
 
   async markAsActive(key: ChannelKey, before?: Date): Promise<void> {
