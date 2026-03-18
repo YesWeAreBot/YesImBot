@@ -4,7 +4,18 @@ import { ThinkActLoop } from "../src/services/agent/loop";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import {
+  getMarkedEvents,
+  getMessageCount,
+  getParticipants,
+  getRecentTurns,
+} from "../src/services/runtime/scenario-timeline";
 import type { Percept } from "../src/services/shared/types";
+import {
+  createAgentActionRecord,
+  createMessageRecord,
+  createSummaryRecord,
+} from "./fixtures/timeline-entries";
 
 describe("Full context access contract", () => {
   it("allows agent hook and tool handler to directly consume view/traits/skills/percept metadata", async () => {
@@ -13,6 +24,7 @@ describe("Full context access contract", () => {
       baseDir: "/tmp",
       logger: vi.fn(() => agentLogger),
       on: vi.fn(),
+      emit: vi.fn(),
     } as unknown as Record<string, unknown>;
 
     const hookService = new HookService(rootCtx as never);
@@ -26,6 +38,8 @@ describe("Full context access contract", () => {
           traits: Array<{ dimension: string }>;
           skills: Array<{ name: string }>;
           percept: Percept;
+          metadata?: Record<string, unknown>;
+          skillState?: { active: string[] };
         }
       | undefined;
     let capturedToolCtx: ToolExecutionContext | undefined;
@@ -40,16 +54,15 @@ describe("Full context access contract", () => {
           traits: Array<{ dimension: string; value: string; confidence: number }>;
           skills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
           percept: Percept;
+          metadata?: Record<string, unknown>;
+          skillState?: { active: string[] };
         };
 
         return {
           modified: true,
           params: {
             ...params,
-            traits: [
-              ...params.traits,
-              { dimension: "hook-injected", value: "yes", confidence: 1 },
-            ],
+            traits: [...params.traits, { dimension: "hook-injected", value: "yes", confidence: 1 }],
             skills: [
               ...params.skills,
               {
@@ -58,13 +71,63 @@ describe("Full context access contract", () => {
                 metadata: { injectedBy: "agent-hook" },
               },
             ],
+            metadata: {
+              ...(params.metadata ?? {}),
+              route: "agent-start",
+            },
+            skillState: {
+              active: ["answering", "hook-context-check"],
+            },
           },
         };
       },
     });
 
+    const history = [
+      createSummaryRecord({
+        index: 1,
+        minutesOffset: 1,
+        data: {
+          content: "summary boundary",
+          coveredUntil: new Date("2026-03-05T10:01:00Z"),
+        },
+      }),
+      createMessageRecord({
+        index: 2,
+        minutesOffset: 2,
+        data: {
+          messageId: "m-user-1",
+          senderId: "user-123",
+          senderName: "Alice",
+          content: "hello timeline",
+        },
+      }),
+      createAgentActionRecord({
+        index: 1,
+        minutesOffset: 3,
+        data: {
+          actions: [{ name: "inspect_context", params: { input: "ok" } }],
+          toolResults: [
+            { name: "inspect_context", success: false, error: "timeout" },
+            { name: "send_message", success: true, status: "ok", result: { content: "done" } },
+          ],
+        },
+      }),
+    ];
+
     const horizonService = {
-      buildView: vi.fn(async () => ({ self: { id: "bot-1", name: "Athena" }, entities: [] })),
+      buildView: vi.fn(async () => ({
+        self: { id: "bot-1", name: "Athena" },
+        environment: {
+          type: "guild",
+          id: "c-1",
+          name: "Test Channel",
+          platform: "discord",
+          channelId: "c-1",
+        },
+        entities: [{ id: "user-123", type: "user", name: "Alice", userId: "user-123" }],
+        history,
+      })),
       formatHorizonText: vi.fn(async () => [{ role: "user", content: "hello" }]),
       events: {
         recordAgentResponse: vi.fn(async () => undefined),
@@ -97,13 +160,19 @@ describe("Full context access contract", () => {
             metadata: { origin: "test-skill" },
           },
         ],
-        promptInjections: [],
-        styleOverride: undefined,
-        toolFilter: undefined,
+        promptFragments: [],
+        styleFragment: null,
+        toolFilter: { include: [], exclude: [] },
       })),
     };
 
     const promptService = {
+      emitPromptBlocks: vi.fn(async () => ({
+        sections: [],
+        stableBlock: "",
+        dynamicBlock: "",
+        stableSignature: "sig",
+      })),
       inject: vi.fn(() => () => undefined),
       render: vi.fn(async () => [
         { name: "soul", content: "soul" },
@@ -144,11 +213,14 @@ describe("Full context access contract", () => {
     rootCtx["yesimbot.skill"] = skillService;
     rootCtx["yesimbot.hook"] = hookService;
 
-    const loop = new ThinkActLoop(rootCtx as never, {
-      model: "mock:model",
-      maxRounds: 1,
-      debugLevel: 0,
-    } as never);
+    const loop = new ThinkActLoop(
+      rootCtx as never,
+      {
+        model: "mock:model",
+        maxRounds: 1,
+        debugLevel: 0,
+      } as never,
+    );
 
     const percept: Percept = {
       id: "p-1",
@@ -173,20 +245,57 @@ describe("Full context access contract", () => {
     expect(hookParams).toBeDefined();
     expect(hookParams?.view.self.id).toBe("bot-1");
     expect(hookParams?.traits[0].dimension).toBe("scene");
-    expect(hookParams?.skills[0].name).toBe("answering");
+    expect(hookParams?.skills ?? []).toEqual([]);
     expect(hookParams?.percept.traceId).toBe("trace-ctx-1");
     expect(hookParams?.percept.metadata).toEqual({ requestId: "req-123", custom: { lane: "a" } });
+    expect(hookParams?.metadata).toEqual(
+      expect.objectContaining({
+        channelKey: "discord:c-1",
+        traceId: "trace-ctx-1",
+      }),
+    );
+    expect(hookParams?.skillState).toMatchObject({ active: [] });
 
     expect(capturedToolCtx).toBeDefined();
-    expect(capturedToolCtx?.view?.self.id).toBe("bot-1");
+    expect(capturedToolCtx?.scenario?.raw.self.id).toBe("bot-1");
     expect(capturedToolCtx?.traits?.[0].dimension).toBe("scene");
     expect(capturedToolCtx?.traits?.map((t) => t.dimension)).toContain("hook-injected");
-    expect(capturedToolCtx?.skills?.[0].name).toBe("answering");
-    expect(capturedToolCtx?.skills?.map((s) => s.name)).toContain("hook-context-check");
+    expect(capturedToolCtx?.skills ?? []).toEqual([]);
     expect(capturedToolCtx?.percept?.traceId).toBe("trace-ctx-1");
     expect(capturedToolCtx?.percept?.metadata).toEqual({
       requestId: "req-123",
       custom: { lane: "a" },
     });
+    expect(capturedToolCtx?.roundContext?.snapshot.metadata).toEqual(
+      expect.objectContaining({
+        channelKey: "discord:c-1",
+        traceId: "trace-ctx-1",
+        route: "agent-start",
+      }),
+    );
+    expect(capturedToolCtx?.roundContext?.skillState).toMatchObject({ active: [] });
+    expect(capturedToolCtx?.scenario).toBe(capturedToolCtx?.roundContext?.snapshot.scenario);
+    expect(capturedToolCtx?.capabilities).toBe(
+      capturedToolCtx?.roundContext?.snapshot.capabilities,
+    );
+
+    const scenarioTimeline = capturedToolCtx?.roundContext?.snapshot.scenario.raw.scenarioTimeline;
+    expect(scenarioTimeline).toBeDefined();
+    const messageCount = getMessageCount(scenarioTimeline!);
+    const participants = getParticipants(scenarioTimeline!);
+    const markedEvents = getMarkedEvents(scenarioTimeline!);
+    const recentTurns = getRecentTurns(scenarioTimeline!, 1);
+    expect(messageCount).toBe(1);
+    expect(participants.map((participant) => participant.id)).toContain("user-123");
+    expect(markedEvents.some((event) => event.type === "error")).toBe(true);
+    expect(recentTurns).toHaveLength(1);
+    expect(capturedToolCtx?.roundContext?.snapshot.scenario.derived.recentMetrics).toEqual(
+      expect.objectContaining({
+        messageCount: 1,
+      }),
+    );
+    expect((horizonService.formatHorizonText as ReturnType<typeof vi.fn>).mock.calls[0]?.[3]).toBe(
+      scenarioTimeline,
+    );
   });
 });

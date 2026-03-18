@@ -1,12 +1,12 @@
 import { generateText, stepCountIs } from "ai";
 import type { Context } from "koishi";
 
-import type { ModelService } from "../model/service";
 import type { HorizonService } from "../horizon/service";
 import { TimelineEventType, type SummaryRecord, type TimelineEntry } from "../horizon/types";
-import type { ChannelKey } from "../shared/types";
-import { MemoryType, MemoryScope, type MemoryAgentConfig } from "./types";
+import type { ModelService } from "../model/service";
+import { ChannelKey } from "../runtime";
 import { createMemoryTools } from "./tools";
+import { type MemoryAgentConfig } from "./types";
 
 const MEMORY_AGENT_SYSTEM_PROMPT = `You are a memory management agent. Your job is to analyze conversation history and maintain structured memories about users, events, channels, and your own experiences.
 
@@ -69,7 +69,9 @@ export async function runMemoryExtraction(
     });
 
     if (recentEntries.length === 0) {
-      logger.debug(`No recent entries for ${platform}:${channelKey.channelId}, skipping extraction`);
+      logger.debug(
+        `No recent entries for ${platform}:${channelKey.channelId}, skipping extraction`,
+      );
       return;
     }
 
@@ -124,20 +126,14 @@ export async function runMemoryExtraction(
     });
 
     // 9. Log results
-    const toolCallCount = result.steps.reduce(
-      (count, step) => count + step.toolCalls.length,
-      0,
-    );
+    const toolCallCount = result.steps.reduce((count, step) => count + step.toolCalls.length, 0);
 
     logger.info(
       `Memory extraction complete for ${platform}:${channelKey.channelId}: ` +
         `steps=${result.steps.length}, toolCalls=${toolCallCount}`,
     );
   } catch (err) {
-    logger.warn(
-      `Memory extraction error for ${platform}:${channelKey.channelId}:`,
-      err,
-    );
+    logger.warn(`Memory extraction error for ${platform}:${channelKey.channelId}:`, err);
   }
 }
 
@@ -172,9 +168,8 @@ function buildUserPrompt(
   // Add recent conversation
   parts.push("## Recent Conversation");
   for (const entry of entries) {
-    const ts = entry.timestamp instanceof Date
-      ? entry.timestamp.toISOString()
-      : String(entry.timestamp);
+    const ts =
+      entry.timestamp instanceof Date ? entry.timestamp.toISOString() : String(entry.timestamp);
     const data = entry.data;
 
     if (entry.type === TimelineEventType.Message) {

@@ -1,27 +1,41 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
-import type { SystemModelMessage } from "ai";
-import type { ModelMessage } from "ai";
+import type { ModelMessage, SystemModelMessage } from "ai";
 import { Context, Random } from "koishi";
 
 import type { HookService } from "../hook/service";
 import { HookType } from "../hook/types";
 import type { HorizonService } from "../horizon/service";
-import { TimelineStage } from "../horizon/types";
+import { TimelineStage, type HorizonView } from "../horizon/types";
 import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext, ToolResult } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
-import type { Section } from "../prompt/types";
-import type { Percept } from "../shared/types";
+import type { PromptFragment } from "../prompt/types";
+import {
+  bindCommittedRoundContext,
+  buildScenarioFromView,
+  commitRoundContext,
+} from "../runtime/adapters";
+import type {
+  AgentEndSummary,
+  AgentFinalOutcomeStatus,
+  AgentIncident,
+  Percept,
+  RoundContext,
+  Scenario,
+} from "../runtime/contracts";
+import { buildAgentRoundContext, inheritPersistentRoster } from "../shared/context-factory";
+import type { ActiveSkill } from "../shared/types";
+import { SkillEffectApplier } from "../skill/applier";
+import { LoadedSkillSet } from "../skill/loaded-skill-set";
 import type { SkillRegistry } from "../skill/service";
-import type { SkillEffect } from "../skill/types";
-import type { TraitAnalyzer } from "../trait/service";
+import type { LoadResult, SkillDefinition } from "../skill/types";
 import { JsonParser, type ParseResult } from "./json-parser";
 import type { AgentCoreConfig } from "./service";
-import { buildToolSchemaForPrompt } from "./tools";
-import { trimMessages, totalChars, type LoopMessage, type TrimConfig } from "./trimmer";
+import { buildToolPromptFragments } from "./tools";
+import { trimMessages, type LoopMessage, type TrimConfig } from "./trimmer";
 
 interface AgentAction {
   name: string;
@@ -41,6 +55,37 @@ interface ToolResultEntry {
   status?: string;
   result?: unknown;
   error?: string;
+}
+
+interface AgentStartMutableParams {
+  view: HorizonView | undefined;
+  /** @deprecated Prefer hook-driven loadSkill() and getLoadedSkills(). */
+  traits: NonNullable<ToolExecutionContext["traits"]>;
+  /** @deprecated Prefer hook-driven loadSkill() and getLoadedSkills(). */
+  skills: NonNullable<ToolExecutionContext["skills"]>;
+  loadSkill(skillName: string): Promise<LoadResult>;
+  getLoadedSkills(): SkillDefinition[];
+  percept: Percept;
+  roundContext: RoundContext;
+  scenario: RoundContext["scenario"];
+  capabilities: RoundContext["capabilities"];
+  metadata: RoundContext["metadata"];
+  skillState: RoundContext["skillState"];
+}
+
+interface AgentEndParams {
+  roundContext: RoundContext;
+  scenario: RoundContext["scenario"];
+  capabilities: RoundContext["capabilities"];
+  lifecycle: "end";
+  endSummary: AgentEndSummary;
+}
+
+interface SettlementCounters {
+  total: number;
+  succeeded: number;
+  failed: number;
+  names: Set<string>;
 }
 
 export class ThinkActLoop {
@@ -66,126 +111,268 @@ export class ThinkActLoop {
     const pluginService = this.ctx["yesimbot.plugin"] as PluginService;
     const promptService = this.ctx["yesimbot.prompt"] as PromptService;
     const modelService = this.ctx["yesimbot.model"] as ModelService;
+    const resolvers =
+      typeof pluginService.getCapabilityResolvers === "function"
+        ? pluginService.getCapabilityResolvers(percept.platform)
+        : [];
 
-    let view = await horizonService.buildView(
-      { platform: percept.platform, channelId: percept.channelId },
-      {
-        session: toolCtx.session,
-        selfId: toolCtx.bot?.selfId,
-        selfName: toolCtx.bot?.user?.name,
-      },
-    );
-
-    // Trait-Skill pipeline: analyze context, resolve active skills
-    const trait = this.ctx["yesimbot.trait"] as TraitAnalyzer;
-    const skill = this.ctx["yesimbot.skill"] as SkillRegistry;
-    const signals = await trait.analyze(
-      { platform: percept.platform, channelId: percept.channelId },
-      view,
-    );
-    const effects: SkillEffect = skill.resolve(signals, {
+    const built = await buildAgentRoundContext(this.ctx, {
       platform: percept.platform,
       channelId: percept.channelId,
-    });
-
-    const toolCtxWithPercept = {
-      ...toolCtx,
+      session: toolCtx.session,
+      bot: toolCtx.bot,
       percept,
-      botRole: view.self?.role,
-      entities: view.entities,
-      view,
-      traits: signals,
-      skills: effects.activeSkills,
-    };
+      toolCtx,
+      resolvers,
+    });
+    let runtimeToolCtx: ToolExecutionContext = built.toolCtx;
+    let roundContext: RoundContext = built.roundContext;
+    const incidents: AgentIncident[] = [];
+    const actionCounters = createSettlementCounters();
+    const toolCounters = createSettlementCounters();
+    let producedVisibleOutput = false;
+    let finalStatus: AgentFinalOutcomeStatus = "silent";
 
-    // Agent before hook - allows hooks to inject context or modify behavior
-    const hookService = this.ctx["yesimbot.hook"];
-    if (hookService) {
-      const beforeResult = await hookService.executeBefore(
-        HookType.Agent,
-        { view, traits: signals, skills: effects.activeSkills, percept },
-        percept.traceId,
-      );
-      if (!beforeResult.skipped && beforeResult.params) {
-        const modifiedParams = beforeResult.params as {
-          view?: typeof view;
-          traits?: typeof signals;
-          skills?: typeof effects.activeSkills;
+    const runtimeToolCtxWithView = runtimeToolCtx as ToolExecutionContext & { view?: HorizonView };
+    let view = runtimeToolCtxWithView.view;
+    if (!view) {
+      try {
+        view = await horizonService.buildView(
+          { platform: percept.platform, channelId: percept.channelId },
+          {
+            session: runtimeToolCtx.session,
+            selfId: runtimeToolCtx.bot?.selfId,
+            selfName: runtimeToolCtx.bot?.user?.name,
+          },
+        );
+      } catch (err) {
+        view = {
+          self: {
+            id: runtimeToolCtx.bot?.selfId ?? "unknown-bot",
+            name: runtimeToolCtx.bot?.user?.name ?? "assistant",
+          },
+          environment: {
+            type: "unknown",
+            id: percept.channelId,
+            name: percept.channelId,
+            platform: percept.platform,
+            channelId: percept.channelId,
+          },
+          entities: [],
+          history: [],
         };
-        if (modifiedParams.view) view = modifiedParams.view;
-        if (modifiedParams.traits) Object.assign(signals, modifiedParams.traits);
-        if (modifiedParams.skills) Object.assign(effects.activeSkills, modifiedParams.skills);
+        this.logger.warn(
+          `[${percept.traceId}] failed to build horizon view (degraded): ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
+    const skillCatalog = this.ctx["yesimbot.skill"] as SkillRegistry | undefined;
+    const hasSkillCatalogGet = Boolean(skillCatalog && typeof skillCatalog.get === "function");
+    let loadedSkills =
+      hasSkillCatalogGet && roundContext.skillState.persistentRoster
+        ? inheritPersistentRoster(
+            roundContext.skillState.persistentRoster,
+            skillCatalog as SkillRegistry,
+          )
+        : new LoadedSkillSet();
+    const applier = new SkillEffectApplier();
+    let signals = runtimeToolCtx.traits ?? [];
+
+    const loadSkill = async (skillName: string): Promise<LoadResult> => {
+      if (!hasSkillCatalogGet) {
+        const reason = "skill catalog unavailable";
+        loadedSkills.recordLoadAttempt(skillName, "not_found", reason);
+        return { status: "not_found", reason };
+      }
+
+      const definition = (skillCatalog as SkillRegistry).get(skillName);
+      if (!definition) {
+        const reason = `skill "${skillName}" not found in catalog`;
+        loadedSkills.recordLoadAttempt(skillName, "not_found", reason);
+        return { status: "not_found", reason };
+      }
+
+      return loadedSkills.load(definition);
+    };
+
+    const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
+    if (hookService) {
+      const legacySkillsBeforeHook = toActiveSkills(loadedSkills.getLoaded());
+      const startParams: AgentStartMutableParams = {
+        view,
+        traits: signals,
+        skills: legacySkillsBeforeHook,
+        loadSkill,
+        getLoadedSkills: () => loadedSkills.getLoaded(),
+        percept,
+        roundContext,
+        scenario: roundContext.snapshot.scenario,
+        capabilities: roundContext.snapshot.capabilities,
+        metadata: roundContext.snapshot.metadata,
+        skillState: roundContext.skillState,
+      };
+      const beforeResult =
+        typeof hookService.executeAgentStart === "function"
+          ? await hookService.executeAgentStart(startParams, percept.traceId)
+          : await hookService.executeBefore(HookType.Agent, startParams, percept.traceId);
+      if (beforeResult.skipped) {
+        finalStatus = "skipped";
+        incidents.push({
+          phase: "start",
+          category: "hook-skip",
+          summary: "agent start requested skip",
+          recovered: true,
+          detail:
+            beforeResult.result === undefined
+              ? undefined
+              : stringifyIncidentDetail(beforeResult.result),
+        });
+        const endSummary: AgentEndSummary = {
+          finalOutcome: {
+            status: "skipped",
+            producedVisibleOutput: false,
+            actions: settlementCountersToSummary(actionCounters),
+            toolCalls: settlementCountersToSummary(toolCounters),
+          },
+          incidents,
+        };
+        const endParams: AgentEndParams = {
+          roundContext,
+          scenario: roundContext.snapshot.scenario,
+          capabilities: roundContext.snapshot.capabilities,
+          lifecycle: "end",
+          endSummary,
+        };
+        if (typeof hookService.executeAgentEnd === "function") {
+          await hookService.executeAgentEnd(endParams, percept.traceId);
+        } else {
+          await hookService.executeAfter(HookType.Agent, endParams, endSummary, percept.traceId);
+        }
+        return { totalTokens, totalToolCalls };
+      }
+      if (!beforeResult.skipped && beforeResult.params && typeof beforeResult.params === "object") {
+        const modifiedParams = beforeResult.params;
+
+        const updatedView = modifiedParams.view;
+        const updatedTraits = modifiedParams.traits;
+        const updatedSkills = modifiedParams.skills;
+
+        if (updatedView) view = updatedView;
+        if (updatedTraits) signals = updatedTraits;
+        if (updatedSkills && !isSameActiveSkillList(updatedSkills, legacySkillsBeforeHook)) {
+          this.logger.warn(
+            `[${percept.traceId}] agent start hook attempted legacy skills mutation; ignored in canonical loadSkill() path`,
+          );
+        }
+
+        const updatedScenario = modifiedParams.scenario as Scenario | undefined;
+        const updatedCapabilities = modifiedParams.capabilities as RoundContext["capabilities"];
+        const updatedMetadata = modifiedParams.metadata as Record<string, unknown>;
+        const updatedSkillState = modifiedParams.skillState as RoundContext["skillState"];
+        const shouldRebuildScenarioFromView = updatedView && !updatedScenario;
+        const nextScenario = shouldRebuildScenarioFromView
+          ? buildScenarioFromView({
+              view,
+              stimulusSource: roundContext.snapshot.scenario.raw.stimulusSource,
+            })
+          : updatedScenario;
+
+        if (nextScenario || updatedCapabilities || updatedMetadata || updatedSkillState) {
+          roundContext = commitRoundContext(roundContext, {
+            scenario: nextScenario,
+            capabilities: updatedCapabilities,
+            metadata: updatedMetadata,
+            skillState: updatedSkillState,
+          });
+        }
+      }
+    }
+
+    const appliedEffects = applier.apply(loadedSkills);
+    roundContext = commitRoundContext(roundContext, {
+      skillState: {
+        active: loadedSkills.getLoadedNames(),
+        loadHistory: loadedSkills.getLoadHistory(),
+        persistentRoster: loadedSkills.getLoadedNames(),
+      },
+    });
+
+    const toolCtxWithPercept = bindCommittedRoundContext(
+      {
+        ...runtimeToolCtx,
+        percept,
+        traits: signals,
+        skills: toActiveSkills(loadedSkills.getLoaded()),
+      },
+      roundContext,
+    ) as ToolExecutionContext;
+
     const disposers: Array<() => void> = [];
 
-    // Apply prompt injections from active skills
-    for (const inj of effects.promptInjections) {
-      disposers.push(
-        promptService.inject(this.ctx, inj.point, {
-          name: `__skill_${inj.skillName}_${percept.id}`,
-          renderFn: () => inj.content,
-        }),
+    if (appliedEffects.promptFragments.length > 0 || appliedEffects.styleFragment) {
+      const allFragments = [
+        ...appliedEffects.promptFragments,
+        ...(appliedEffects.styleFragment ? [appliedEffects.styleFragment] : []),
+      ];
+      registerPromptFragmentSource(
+        promptService,
+        disposers,
+        `__skill_effects_${percept.id}`,
+        () => allFragments,
       );
     }
 
-    // Apply style override from highest-specificity skill
-    if (effects.styleOverride) {
-      disposers.push(
-        promptService.inject(this.ctx, effects.styleOverride.point, {
-          name: `__skill_style_${percept.id}`,
-          ...(effects.styleOverride.point === "soul" ? { after: "__role_soul" } : {}),
-          renderFn: () => effects.styleOverride!.content,
-        }),
-      );
-    }
-
-    // Inject tool schema into instructions point (with skill tool filter)
-    const toolSchema = buildToolSchemaForPrompt(
+    const toolPromptFragments = buildToolPromptFragments(
       pluginService,
       toolCtxWithPercept,
-      effects.toolFilter,
+      appliedEffects.toolVisibility,
     );
-    disposers.push(
-      promptService.inject(this.ctx, "instructions", {
-        name: `__loop_tool_schema_${percept.id}`,
-        after: "__role_tools",
-        renderFn: () => toolSchema,
-      }),
+    registerPromptFragmentSource(
+      promptService,
+      disposers,
+      `__loop_tool_fragments_${percept.id}`,
+      () => toolPromptFragments,
     );
 
     try {
-      const sections: Section[] = await promptService.render("system", { view, percept });
-      const stableContent = sections
-        .filter((s) => s.name === "soul" || s.name === "instructions")
-        .map((s) => s.content)
-        .join("\n\n");
-      const dynamicContent = sections
-        .filter((s) => s.name === "extra")
-        .map((s) => s.content)
-        .join("\n\n");
-      const systemPromptString = stableContent + "\n\n" + dynamicContent;
-
       const providerType = modelService.getProvider(
         (this.config.model ?? "").split(":")[0],
       )?.providerType;
+      const promptScope = {
+        percept,
+        roundContext,
+        scenario: roundContext.snapshot.scenario,
+        capabilities: roundContext.snapshot.capabilities,
+      };
+      const emitted = await promptService.emitPromptBlocks("system", promptScope, {
+        providerType,
+      });
+      const sections = emitted.sections;
+      const stableContent = emitted.stableBlock;
+      const dynamicContent = emitted.dynamicBlock;
+      const stableSignature = emitted.stableSignature;
+      const systemPromptString = [stableContent, dynamicContent].filter(Boolean).join("\n\n");
 
       let systemParam: string | SystemModelMessage[];
       if (providerType === "anthropic") {
-        systemParam = [
-          {
+        const anthropicBlocks: SystemModelMessage[] = [];
+        if (stableContent) {
+          anthropicBlocks.push({
             role: "system" as const,
             content: stableContent,
             providerOptions: {
               anthropic: { cacheControl: { type: "ephemeral" } },
             },
-          },
-          {
+          });
+        }
+        if (dynamicContent) {
+          anthropicBlocks.push({
             role: "system" as const,
             content: dynamicContent,
-          },
-        ];
+          });
+        }
+        systemParam = anthropicBlocks.length > 0 ? anthropicBlocks : "";
       } else {
         systemParam = systemPromptString;
       }
@@ -205,7 +392,9 @@ export class ThinkActLoop {
           const action = actions[actionId]!;
           if (action.name !== "send_message") continue;
 
-          const sendResult = toolResults.find((t) => t.id === actionId && t.name === "send_message");
+          const sendResult = toolResults.find(
+            (t) => t.id === actionId && t.name === "send_message",
+          );
           if (!isSuccessfulSendResult(sendResult)) continue;
 
           if (heartbeatRun) {
@@ -253,13 +442,24 @@ export class ThinkActLoop {
         maxImagesInContext: this.config.maxImagesInContext ?? 3,
         imageLifecycleCount: this.config.imageLifecycleCount ?? 3,
       };
-      const multiTurnMessages = await horizonService.formatHorizonText(view, percept, imageConfig);
+      const scenarioTimeline = roundContext.snapshot.scenario.raw.scenarioTimeline;
+      const multiTurnMessages = await horizonService.formatHorizonText(
+        view,
+        percept,
+        imageConfig,
+        scenarioTimeline,
+      );
 
       if ((this.config.debugLevel ?? 0) >= 3) {
         this.logger.debug(
-          `[${percept.traceId}] system_stable_bytes=${Buffer.byteLength(stableContent, "utf8")} system_dynamic_bytes=${Buffer.byteLength(dynamicContent, "utf8")} provider=${providerType ?? "unknown"}`,
+          `[${percept.traceId}] system_stable_bytes=${Buffer.byteLength(stableContent, "utf8")} system_dynamic_bytes=${Buffer.byteLength(dynamicContent, "utf8")} provider=${providerType ?? "unknown"} stableSignature=${stableSignature}`,
         );
       }
+
+      const sectionNames = sections.map((section) => section.name).join("|");
+      this.logger.debug(
+        `[${percept.traceId}] emitPromptBlocks sections=${sectionNames} stableSignature=${stableSignature}`,
+      );
 
       const totalUserBytes = multiTurnMessages.reduce((sum, m) => {
         if (typeof m.content === "string") return sum + Buffer.byteLength(m.content, "utf8");
@@ -275,7 +475,9 @@ export class ThinkActLoop {
         `[loop] [${percept.traceId}] system_bytes=${Buffer.byteLength(systemPromptString, "utf8")} user_bytes=${totalUserBytes} messages=${multiTurnMessages.length}`,
       );
 
-      this.logger.info(`[${percept.traceId}] tools=${toolSchema ? "injected" : "none"}`);
+      this.logger.info(
+        `[${percept.traceId}] tools=${toolPromptFragments.length > 0 ? "fragments" : "none"}`,
+      );
 
       const messages: LoopMessage[] = multiTurnMessages;
 
@@ -385,6 +587,15 @@ export class ThinkActLoop {
         );
 
         totalToolCalls += toolResults.length;
+        const roundSettlement = collectRoundSettlement(
+          response.actions,
+          toolResults,
+          pluginService,
+        );
+        mergeSettlementCounters(actionCounters, roundSettlement.actions);
+        mergeSettlementCounters(toolCounters, roundSettlement.toolCalls);
+        producedVisibleOutput ||= roundSettlement.producedVisibleOutput;
+        incidents.push(...roundSettlement.incidents);
 
         for (const r of toolResults) {
           this.logger.debug(
@@ -450,6 +661,15 @@ export class ThinkActLoop {
                 maxResultLen,
                 percept,
               );
+              const wrapSettlement = collectRoundSettlement(
+                wrapParsed.data.actions,
+                wrapToolResults,
+                pluginService,
+              );
+              mergeSettlementCounters(actionCounters, wrapSettlement.actions);
+              mergeSettlementCounters(toolCounters, wrapSettlement.toolCalls);
+              producedVisibleOutput ||= wrapSettlement.producedVisibleOutput;
+              incidents.push(...wrapSettlement.incidents);
               await horizonService.events.recordAgentResponse({
                 platform: percept.platform,
                 channelId: percept.channelId,
@@ -506,10 +726,52 @@ export class ThinkActLoop {
         archiveMs,
       );
 
+      finalStatus = deriveFinalStatus({
+        current: finalStatus,
+        producedVisibleOutput,
+        incidents,
+      });
       this.logger.info(`[${percept.traceId}] Loop complete: ${round} rounds`);
       return { totalTokens, totalToolCalls };
+    } catch (err) {
+      finalStatus = "failed";
+      incidents.push({
+        phase: "think-act",
+        category: "runtime-error",
+        summary: err instanceof Error ? err.message : String(err),
+        recovered: false,
+      });
+      throw err;
     } finally {
       for (const d of disposers) d();
+      const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
+      if (hookService) {
+        const endSummary: AgentEndSummary = {
+          finalOutcome: {
+            status: deriveFinalStatus({
+              current: finalStatus,
+              producedVisibleOutput,
+              incidents,
+            }),
+            producedVisibleOutput,
+            actions: settlementCountersToSummary(actionCounters),
+            toolCalls: settlementCountersToSummary(toolCounters),
+          },
+          incidents,
+        };
+        const endParams: AgentEndParams = {
+          roundContext,
+          scenario: roundContext.snapshot.scenario,
+          capabilities: roundContext.snapshot.capabilities,
+          lifecycle: "end",
+          endSummary,
+        };
+        if (typeof hookService.executeAgentEnd === "function") {
+          await hookService.executeAgentEnd(endParams, percept.traceId);
+        } else {
+          await hookService.executeAfter(HookType.Agent, endParams, endSummary, percept.traceId);
+        }
+      }
     }
   }
 
@@ -565,14 +827,26 @@ export class ThinkActLoop {
             params = beforeResult.params;
           }
 
-          const result = await pluginService.invoke(action.name, params, toolCtx);
+          try {
+            const result = await pluginService.invoke(action.name, params, toolCtx);
 
-          // After hook
-          if (hookService) {
-            await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
+            // After hook
+            if (hookService) {
+              await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
+            }
+
+            return result;
+          } catch (error) {
+            if (hookService) {
+              await hookService.executeError(
+                HookType.Tool,
+                params,
+                error instanceof Error ? error : new Error(String(error)),
+                percept.traceId,
+              );
+            }
+            throw error;
           }
-
-          return result;
         }),
       );
       for (let i = 0; i < toolActions.length; i++) {
@@ -625,6 +899,37 @@ export class ThinkActLoop {
       this.logger.info(`LLM repair failed: ${e instanceof Error ? e.message : String(e)}`);
     }
     return { data: null, error: "LLM repair failed", logs: [] };
+  }
+}
+
+function toActiveSkills(skills: SkillDefinition[]): ActiveSkill[] {
+  return skills.map((skill) => ({
+    name: skill.name,
+    effects: [
+      ...(skill.effects.prompt ? ["prompt"] : []),
+      ...(skill.effects.style ? ["style"] : []),
+      ...(skill.effects.tools ? ["tools"] : []),
+    ],
+    metadata: skill.description ? { description: skill.description } : undefined,
+  }));
+}
+
+function isSameActiveSkillList(next: ActiveSkill[], previous: ActiveSkill[]): boolean {
+  if (next.length !== previous.length) return false;
+  for (let i = 0; i < next.length; i++) {
+    if (next[i]?.name !== previous[i]?.name) return false;
+  }
+  return true;
+}
+
+function registerPromptFragmentSource(
+  promptService: PromptService,
+  disposers: Array<() => void>,
+  name: string,
+  provider: (scope: Record<string, unknown>) => PromptFragment[] | Promise<PromptFragment[]>,
+): void {
+  if (typeof promptService.registerFragmentSource === "function") {
+    disposers.push(promptService.registerFragmentSource(name, provider));
   }
 }
 
@@ -689,4 +994,116 @@ function resolveProactiveChargeChannelKey(action: AgentAction, fallbackChannelKe
   }
 
   return `${sendTarget.platform}:${sendTarget.channelId}`;
+}
+
+function createSettlementCounters(): SettlementCounters {
+  return {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    names: new Set<string>(),
+  };
+}
+
+function mergeSettlementCounters(target: SettlementCounters, source: SettlementCounters): void {
+  target.total += source.total;
+  target.succeeded += source.succeeded;
+  target.failed += source.failed;
+  for (const name of source.names) {
+    target.names.add(name);
+  }
+}
+
+function settlementCountersToSummary(counters: SettlementCounters) {
+  return {
+    total: counters.total,
+    succeeded: counters.succeeded,
+    failed: counters.failed,
+    names: Array.from(counters.names),
+  };
+}
+
+function deriveFinalStatus(input: {
+  current: AgentFinalOutcomeStatus;
+  producedVisibleOutput: boolean;
+  incidents: AgentIncident[];
+}): AgentFinalOutcomeStatus {
+  if (input.current === "failed" || input.current === "skipped") {
+    return input.current;
+  }
+  if (input.incidents.some((incident) => !incident.recovered)) {
+    return "failed";
+  }
+  if (input.incidents.length > 0) {
+    return "degraded";
+  }
+  return input.producedVisibleOutput ? "success" : "silent";
+}
+
+function stringifyIncidentDetail(input: unknown): string {
+  if (typeof input === "string") return input;
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return String(input);
+  }
+}
+
+function collectRoundSettlement(
+  actions: AgentResponse["actions"],
+  toolResults: ToolResultEntry[],
+  pluginService: PluginService,
+): {
+  actions: SettlementCounters;
+  toolCalls: SettlementCounters;
+  producedVisibleOutput: boolean;
+  incidents: AgentIncident[];
+} {
+  const actionCounters = createSettlementCounters();
+  const toolCounters = createSettlementCounters();
+  const incidents: AgentIncident[] = [];
+
+  for (const action of actions) {
+    const def = pluginService.getDefinition(action.name);
+    const target = def?.type === FunctionType.Action ? actionCounters : toolCounters;
+    target.names.add(action.name);
+  }
+
+  let producedVisibleOutput = false;
+  for (const result of toolResults) {
+    const def = pluginService.getDefinition(result.name);
+    const isAction = def?.type === FunctionType.Action;
+    const target = isAction ? actionCounters : toolCounters;
+
+    target.total += 1;
+    target.names.add(result.name);
+
+    const success = !result.error && result.status !== "failed";
+    if (success) {
+      target.succeeded += 1;
+    } else {
+      target.failed += 1;
+    }
+
+    if (isAction && result.name === "send_message" && success) {
+      producedVisibleOutput = true;
+    }
+
+    if (!isAction && !success) {
+      incidents.push({
+        phase: "tool",
+        category: "tool-error",
+        summary: `${result.name} failed`,
+        recovered: true,
+        detail: result.error,
+      });
+    }
+  }
+
+  return {
+    actions: actionCounters,
+    toolCalls: toolCounters,
+    producedVisibleOutput,
+    incidents,
+  };
 }

@@ -1,29 +1,14 @@
 import type { Bot, Schema, Session } from "koishi";
 
+import type {
+  Capabilities,
+  CapabilityState,
+  Percept,
+  RoundContext,
+  Scenario,
+} from "../runtime/contracts";
+import type { ActiveSkill } from "../shared/types";
 import type { YesImPlugin } from "./plugin";
-
-// ---- Shared Types ----
-
-export type TriggerType =
-  | "mention"
-  | "reply"
-  | "keyword"
-  | "random"
-  | "direct"
-  | "timer"
-  | "internal";
-
-export type ChannelKey = { platform: string; channelId: string };
-
-export interface Percept {
-  id: string;
-  traceId: string;
-  type: TriggerType;
-  platform: string;
-  channelId: string;
-  timestamp: Date;
-  metadata?: Record<string, unknown>;
-}
 
 export interface TraitSignal {
   dimension: string;
@@ -50,18 +35,15 @@ export interface ToolExecutionContext {
   session?: Session;
   bot?: Bot;
   percept?: Percept;
-  view?: import("../horizon/types").HorizonView;
+
+  /** Canonical runtime contract (Phase 54+). Prefer `roundContext` over legacy fields. */
+  roundContext?: RoundContext;
+  /** Canonical runtime contract (Phase 54+). Prefer `scenario` over `view`. */
+  scenario?: Scenario;
+  /** Canonical runtime contract (Phase 54+). */
+  capabilities?: Capabilities;
   traits?: TraitSignal[];
-  skills?: import("../shared/types").ActiveSkill[];
-  [key: string]: unknown;
-}
-
-export type ActivatorFn = (ctx: ToolExecutionContext) => boolean;
-
-export interface Activator {
-  check: ActivatorFn;
-  reason?: string;
-  onFail?: "remove" | "hint";
+  skills?: ActiveSkill[];
 }
 
 export interface FunctionDefinition {
@@ -70,9 +52,21 @@ export interface FunctionDefinition {
   type: FunctionType;
   parameters: Schema;
   handler: (params: Record<string, unknown>, ctx: ToolExecutionContext) => Promise<ToolResult>;
-  activators?: Activator[];
+  /** Capability keys required for this tool. All keys must be available. */
+  requiredCapabilities?: string[];
+  /** Strategy used when required capabilities are unavailable. Defaults to "remove". */
+  onCapabilityMissing?: "remove" | "hint";
   /** Hidden tools are excluded from getTools() unless explicitly included via skill toolFilter */
   hidden?: boolean;
+}
+
+export interface CapabilityResolver {
+  readonly platform?: string;
+  readonly resolver: (params: {
+    session?: Pick<Session, "isDirect" | "quote" | "guildId">;
+    scenario?: Scenario;
+    bot?: Pick<Bot, "selfId">;
+  }) => Record<string, CapabilityState>;
 }
 
 export interface PluginMetadata {
@@ -84,6 +78,8 @@ export interface PluginMetadata {
 export interface IPluginService {
   registerPlugin(plugin: YesImPlugin): void;
   unregisterPlugin(name: string): void;
+  registerCapabilityResolver(resolver: CapabilityResolver): void;
+  getCapabilityResolvers(platform?: string): CapabilityResolver["resolver"][];
   getDefinition(name: string): FunctionDefinition | undefined;
   getTools(
     execCtx?: ToolExecutionContext,

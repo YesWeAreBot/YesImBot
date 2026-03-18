@@ -2,7 +2,6 @@ import { Schema } from "koishi";
 
 import {
   FunctionType,
-  type Activator,
   type FunctionDefinition,
   type PluginMetadata,
   type ToolExecutionContext,
@@ -13,7 +12,8 @@ interface DecoratorOpts {
   name: string;
   description: string;
   parameters: Schema;
-  activators?: Activator[];
+  requiredCapabilities?: string[];
+  onCapabilityMissing?: "remove" | "hint";
   hidden?: boolean;
 }
 

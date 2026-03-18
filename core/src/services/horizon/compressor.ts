@@ -1,7 +1,7 @@
 import { Context, Logger } from "koishi";
 
 import type { ModelService } from "../model/service";
-import { ChannelKey } from "../shared/types";
+import { ChannelKey } from "../runtime/contracts";
 import { EventManager } from "./manager";
 import { TimelineEntry, SummaryRecord, TimelineEventType, TimelineStage } from "./types";
 
@@ -121,7 +121,9 @@ export class SummaryCompressor {
       entriesToCompress = entries.slice(0, splitIndex);
 
       if (entriesToCompress.length === 0) {
-        this.logger.debug(`All entries within retain window (${entries.length} <= ${retainCount}), skipping`);
+        this.logger.debug(
+          `All entries within retain window (${entries.length} <= ${retainCount}), skipping`,
+        );
         return;
       }
     }

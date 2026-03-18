@@ -11,8 +11,8 @@ vi.mock("../src/services/memory-agent/tools", () => ({
 
 import { generateText, stepCountIs } from "ai";
 
-import { runMemoryExtraction } from "../src/services/memory-agent/agent";
 import { TimelineEventType } from "../src/services/horizon/types";
+import { runMemoryExtraction } from "../src/services/memory-agent/agent";
 import { createMemoryTools } from "../src/services/memory-agent/tools";
 import type { MemoryAgentConfig } from "../src/services/memory-agent/types";
 

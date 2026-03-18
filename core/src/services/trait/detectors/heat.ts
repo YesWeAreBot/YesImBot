@@ -1,7 +1,7 @@
 import type { Context, Logger } from "koishi";
 
-import type { HorizonView } from "../../horizon/types";
-import type { ChannelKey, TraitSignal } from "../../shared/types";
+import type { ChannelKey, Scenario } from "../../runtime/contracts";
+import type { TraitSignal } from "../../shared/types";
 import type { TraitAnalyzer } from "../service";
 import type { TraitDetector } from "../types";
 
@@ -39,7 +39,7 @@ export class HeatTrait implements TraitDetector {
     });
   }
 
-  detect(key: ChannelKey, _view: HorizonView): TraitSignal[] {
+  detect(key: ChannelKey, _scenario: Scenario): TraitSignal[] {
     const ck = channelKey(key);
     const state = this.analyzer.getState<HeatState>(this.name, ck);
 

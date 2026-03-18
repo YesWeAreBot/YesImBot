@@ -49,9 +49,9 @@ vi.mock("koishi", () => {
   };
 });
 
-import { CorePlugin } from "../src/services/plugin/builtin/core";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
+import { CorePlugin } from "../src/services/plugin/builtin/core";
 import type { ToolExecutionContext } from "../src/services/plugin/types";
 
 function createMessageRuntimeHarness() {
@@ -158,10 +158,7 @@ describe("Message Hook Coverage", () => {
 
     expect(result.success).toBe(true);
     expect(botSendMessage).toHaveBeenCalledTimes(1);
-    expect(botSendMessage).toHaveBeenCalledWith(
-      "cross-c-1",
-      expect.any(Array),
-    );
+    expect(botSendMessage).toHaveBeenCalledWith("cross-c-1", expect.any(Array));
     expect(JSON.stringify(botSendMessage.mock.calls[0]?.[1])).toContain("HOOKED CROSS CHANNEL");
   });
 

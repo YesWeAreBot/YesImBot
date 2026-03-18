@@ -23,7 +23,7 @@ const builtinSkillsDir = join(__dirname, "../", "resources/skills");
 @Metadata({ name: "search", description: "Web search tool" })
 export default class SearchPlugin extends YesImPlugin {
   static name = "search";
-  static inject = ["yesimbot.plugin", "yesimbot.skill"];
+  static inject = ["yesimbot.plugin", "yesimbot.skill", "yesimbot.hook"];
   static Config: Schema<SearchPluginConfig> = Schema.object({
     provider: Schema.string().default("tavily"),
     apiKey: Schema.string().required(),

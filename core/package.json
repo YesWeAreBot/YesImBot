@@ -48,7 +48,7 @@
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
   "dependencies": {
     "@yesimbot/shared-model": "workspace:^",

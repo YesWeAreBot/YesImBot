@@ -252,6 +252,18 @@ describe("AgentActionHandler", () => {
     expect(result[0].content).toContain("send_message -> failed");
   });
 
+  it("treats send_message with success=false as failed even without explicit error", async () => {
+    const record = createAgentActionRecord({
+      data: {
+        actions: [],
+        toolResults: [{ name: "send_message", success: false, status: "timeout" }],
+      },
+    });
+    const result = await handler.handle(record, {});
+
+    expect(result[0].content).toContain("send_message -> failed");
+  });
+
   it("shows tool results with preview", async () => {
     const record = createAgentActionRecord({
       data: {

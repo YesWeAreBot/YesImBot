@@ -4,14 +4,15 @@ This guide describes concrete edit paths for common changes.
 
 ## Quick Reference
 
-| Change Type                    | Primary Paths                                                                      | Notes                                         |
-| ------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------- |
-| Add/modify agent behavior      | `core/src/services/agent/`, `core/src/services/trait/`, `core/src/services/skill/` | Keep Trait/Skill responsibilities separate    |
-| Add model provider capability  | `providers/provider-*/`, `packages/shared-model/`                                  | Reuse `AbstractProvider`                      |
-| Add/modify tool or action      | `core/src/services/plugin/`, `plugins/*`                                           | Preserve Tool vs Action loop semantics        |
-| Change prompt composition      | `core/src/services/prompt/`, `core/src/services/role/`, `core/resources/roles/`    | Keep 4 injection points stable                |
-| Change horizon data formatting | `core/src/services/horizon/`                                                       | Do not embed decisions in Horizon             |
-| Change willingness algorithm   | `core/src/services/agent/willingness.ts`, `core/src/services/agent/service.ts`     | Validate deferred judge + rate limit behavior |
+| Change Type                     | Primary Paths                                                                      | Notes                                                                                                |
+| ------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Add/modify agent behavior       | `core/src/services/agent/`, `core/src/services/trait/`, `core/src/services/skill/` | Keep Trait/Skill responsibilities separate                                                           |
+| Change runtime context contract | `core/src/services/runtime/`, `core/src/services/shared/context-factory.ts`        | Prefer `Percept -> Scenario -> Capabilities -> RoundContext`                                         |
+| Add model provider capability   | `providers/provider-*/`, `packages/shared-model/`                                  | Reuse `AbstractProvider`                                                                             |
+| Add/modify tool or action       | `core/src/services/plugin/`, `plugins/*`                                           | Preserve Tool vs Action loop semantics                                                               |
+| Change prompt composition       | `core/src/services/prompt/`, `core/src/services/role/`, `core/resources/roles/`    | Use canonical `identity/policy/memory/situation`; legacy injection points are deprecated compat only |
+| Change horizon data formatting  | `core/src/services/horizon/`                                                       | Do not embed decisions in Horizon                                                                    |
+| Change willingness algorithm    | `core/src/services/agent/willingness.ts`, `core/src/services/agent/service.ts`     | Validate deferred judge + rate limit behavior                                                        |
 
 ## Common Change Patterns
 
@@ -31,12 +32,16 @@ This guide describes concrete edit paths for common changes.
 4. Ensure return payload is parse-friendly and bounded.
 5. Verify skill integration if the tool should be conditionally available.
 
+Runtime context note (Phase 54+): prefer `ToolExecutionContext.roundContext` / `ToolExecutionContext.scenario` / `ToolExecutionContext.capabilities`. `ToolExecutionContext.view` (`HorizonView`) is a legacy compatibility field and should be treated as Horizon-internal / adapter-only.
+
 ## 3) Prompt and Role Changes
 
 1. Edit role resources in `core/resources/roles/`.
-2. Adjust renderer/injection behavior in `core/src/services/prompt/` only if needed.
-3. Verify ordering assumptions (`__role_soul`, `__role_tools`, skill injections).
-4. Test with at least one tool-calling and one no-tool conversation.
+2. Treat `RoleService` as a fragment content source; do not use it to own prompt order.
+3. Adjust canonical fragment/layout behavior in `core/src/services/prompt/` when needed.
+4. Provider adapters should consume canonical rendered sections and only adapt emit/cache metadata.
+5. Prefer `roundContext` / `scenario` / `capabilities`; `view.*` scope is legacy compat only.
+6. Test with at least one tool-calling and one no-tool conversation.
 
 ## 4) Provider Changes
 

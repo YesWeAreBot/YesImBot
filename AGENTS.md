@@ -1,131 +1,186 @@
-# Athena Development Context
+# Athena Agent Guide
 
-## Project Overview
+## Project Snapshot
 
-Athena (YesImBot v4) is a Koishi 4.x plugin monorepo that turns generic LLMs into chat agents with personality, memory, and tool-using behavior.
+Athena (YesImBot v4) is a Yarn 4 + Turbo monorepo for Koishi 4.x plugins that turn generic LLMs into social chat agents with memory, personality, and tool use.
 
-- Continuity: layered context and memory handling
-- Relationality: channel-aware social context and entity state
-- Agency: willingness gating, tool actions, and multi-round think-act loop
+- `core/`: main runtime plugin and services
+- `packages/shared-model/`: shared provider/model interfaces and schema helpers
+- `providers/*`: model provider adapters
+- `plugins/*`: optional extensions such as persona, search, memory, and MCP
+- `test/`: integration and e2e-style Vitest coverage
+  Primary planning context lives in `.planning/PROJECT.md`.
 
-Primary project context lives in `.planning/PROJECT.md`.
+## External Agent Rules
 
-## How to Use This Documentation
+No Cursor rules were found in `.cursor/rules/` or `.cursorrules`.
+No Copilot rules were found in `.github/copilot-instructions.md`.
+If those files appear later, treat them as additive repository policy.
 
-When working on Athena, follow this decision tree:
+## First Reads By Task Type
 
-### Starting a Task
+- New feature: read `docs/CHANGE_GUIDE.md` and the target service under `core/src/services/`
+- Refactor: read `docs/ARCHITECTURE.md` before changing dependencies or boundaries
+- Bug fix: inspect the target service and its matching tests in `core/tests/`
+- Provider work: inspect `packages/shared-model/` first, then the target `providers/*` package
+- Prompt/role work: inspect `core/src/services/prompt/`, `core/src/services/role/`, and `core/resources/roles/`
 
-- New feature: check `docs/CHANGE_GUIDE.md` and this file first.
-- Refactor: check `docs/ARCHITECTURE.md` for dependency boundaries.
-- Bug fix: inspect the target service under `core/src/services/` and related tests in `core/tests/`.
-
-### Understanding Change Impact
+## Core Runtime Flow
 
 ```text
-Message event -> Willingness decision -> Agent loop -> Tool execution -> Response
-     |                 |                    |              |
-  Horizon         Rule + LLM          Trait + Skill    Native tool call
+Koishi message event
+  -> Horizon listener/event manager
+  -> Agent willingness + token bucket check
+  -> DM/group aggregation window
+  -> HorizonView build
+  -> Trait analyze + Skill resolve
+  -> Prompt render/injection
+  -> ModelService call with fallback
+  -> Tool or Action execution
+  -> Reply or silent finish
 ```
 
-Steps:
+Keep these boundaries intact:
 
-1. Read the target service in `core/src/services/<name>/`.
-2. Trace callers with `rg "<ServiceName|methodName>" core plugins providers`.
-3. Verify dependencies in `static inject = [...]`.
-4. Confirm config schema in plugin/provider `Config` definitions.
-5. Validate runtime flow in `docs/ARCHITECTURE.md`.
+- Horizon is a context/data layer, not a decision layer
+- Trait analyzes signals; Skill turns signals into behavior effects
+- Tool calls continue the think-act loop; Action calls end the current round
+- Provider-specific behavior belongs in provider packages, not shared abstractions
 
-## Quick Component Summary
+## Important Repository Rules
 
-- `core/`: main runtime plugin
-  - `services/agent/`: willingness gating, DM/group aggregation, think-act loop
-  - `services/horizon/`: timeline/event/entity/environment context layer
-  - `services/model/`: provider registry, concurrency queue, fallback calls
-  - `services/prompt/`: prompt injection and section rendering
-  - `services/role/`: SOUL/AGENTS/TOOLS role file loading
-  - `services/trait/`: context signals (scene/heat)
-  - `services/skill/`: skill loading, condition matching, effect merging
-  - `services/plugin/`: tool/action registration and schema conversion
-- `packages/shared-model/`: shared provider/model interfaces and schema factory
-- `providers/provider-*`: model provider integrations (Anthropic/OpenAI/Google/DeepSeek)
-- `plugins/`: optional extension plugins (`persona`, `search-service`, `memory-keeper`, `mcp-client`)
+- Services must use the Koishi `Service` subclass pattern
+- Wire cross-service dependencies with `static inject = [...]`
+- Do not use `ctx.provide()` for service creation
+- Reuse a logger from context, usually `ctx.logger("...")`
+- Preserve per-channel isolation using `platform + channelId`
+- Do not commit `.planning/` changes from the main repository; `.planning/` is a separate git repo
+- Reference `references/YesImBot-v3/` when migrating older behavior patterns
 
-## Key Runtime Flows
+## Workspace Commands
 
-- Message ingestion: Koishi middleware event -> Horizon event -> Agent willingness/aggregation
-- Willingness decision: decay + gain + fatigue + sigmoid -> optional deferred LLM judgment -> token bucket limit
-- Agent loop: Horizon view -> Trait analyze -> Skill resolve -> Prompt render/inject -> model call -> tool/action execution
-- Tool semantics: `Tool` continues the loop; `Action` executes and ends current round
-- Anthropic cache path: split stable and dynamic system blocks with ephemeral cache control
+Run commands from the repository root unless a package-local command is clearer.
 
-## Context Files
+### Install
 
-Load these files as needed for focused work:
+- `yarn`
 
-- `docs/ARCHITECTURE.md`: module boundaries and end-to-end flow
-- `docs/CHANGE_GUIDE.md`: concrete implementation playbook for common changes
-- `docs/ENVIRONMENT.md`: configuration and secrets checklist
-- `.planning/PROJECT.md`: roadmap, milestone goals, and scope
-- `.planning/ROADMAP.md`: current phase ordering and execution targets
-- `core/resources/roles/AGENTS.md`: runtime role prompt instructions
+### Build
 
-## GSD Planning Docs Repository Rules
+- Full workspace build: `yarn build`
+- Build one package via Turbo: `yarn turbo run build --filter=koishi-plugin-yesimbot`
+- Package-local build: `yarn workspace koishi-plugin-yesimbot build`
 
-- GSD project planning documents are stored under `.planning/`.
-- `.planning/` is excluded from the main Athena repository and is managed as a separate repository.
-- Do not commit `.planning/` changes from the main repository.
-- To submit planning document changes, switch into `.planning/` first, then commit and push there.
-- Recommended workflow:
-  - `cd .planning`
-  - `git status`
-  - `git add <files>`
-  - `git commit -m "<message>"`
+### Lint and Format
 
-## Implementation Strategy
+- Lint all workspaces: `yarn lint`
+- Lint and auto-fix where supported: `yarn lint:fix`
+- Format all workspaces: `yarn fmt`
+- Check formatting without writing: `yarn fmt:check`
+- Package-local lint: `yarn workspace koishi-plugin-yesimbot lint`
 
-1. Start with types in `packages/shared-model` or target service types.
-2. Implement with Koishi `Service` subclass pattern.
-3. Wire dependencies via `static inject`.
-4. Add prompt/skill/plugin integration only through existing service APIs.
-5. Add or update tests in `core/tests`.
-6. Run `yarn typecheck` before broader validation.
+### Typecheck
 
-## Testing Conventions
+- Full workspace typecheck: `yarn typecheck`
+- Package-local typecheck: `yarn workspace koishi-plugin-yesimbot typecheck`
 
-- Test framework: Vitest (`describe/it/expect`)
-- Location: `core/tests/*.test.ts`
-- Existing focus areas: JSON parser, willingness/token bucket, horizon formatting
-- Commands:
-  - `yarn test`
-  - `yarn test -p core`
-  - `yarn typecheck`
+### Test
 
-## Development Notes
+- Full workspace tests: `yarn test`
+- Core unit tests only: `yarn turbo run test --filter=koishi-plugin-yesimbot`
+- E2E/integration package only: `yarn turbo run test --filter=@yesimbot/test`
+- Package-local core tests: `yarn workspace koishi-plugin-yesimbot test`
+- Package-local e2e tests: `yarn workspace @yesimbot/test test`
 
-- Horizon is a data/context layer, not a decision layer.
-- Keep Trait (analysis) and Skill (behavior effect) responsibilities separate.
-- Preserve per-channel isolation with `ChannelKey = platform + channelId`.
-- Prefer explicit required fields over weak optional chaining.
-- Provider abstraction is shared; Anthropic prompt cache behavior is provider-specific.
+### Single-Test Commands
 
-## Build and Test Commands
+Use Vitest file and test-name filters directly.
 
-```bash
-yarn build
-yarn typecheck
-yarn test
-yarn test -p core
-yarn lint
-```
+- Single core test file from root: `yarn workspace koishi-plugin-yesimbot test tests/json-parser.test.ts`
+- Single core test by name: `yarn workspace koishi-plugin-yesimbot test tests/json-parser.test.ts -t "should parse valid JSON"`
+- Single e2e test file from root: `yarn workspace @yesimbot/test test e2e/message-flow.test.ts`
+- From inside `core/`: `yarn test tests/json-parser.test.ts`
+- From inside `core/` by name: `yarn test tests/json-parser.test.ts -t "should parse valid JSON"`
+  Notes:
+- `core/vitest.config.ts` includes `tests/**/*.test.ts` and loads `core/tests/setup.ts`
+- `test/vitest.config.ts` runs in Node with Vitest globals enabled
+- Prefer targeted tests while iterating, then finish with `yarn typecheck` and the relevant package suite
 
-## Remember
+## Code Style
 
-- Use Service subclass pattern; do not use `ctx.provide()`.
-- Reuse logger instance (`const logger = ctx.logger("...")`).
-- Keep tool/action distinction intact.
-- Validate dependency graph when touching service startup/injection.
-- Reference `references/YesImBot-v3/` for feature migration patterns.
+The repo is TypeScript-first, strict, and formatted with `oxfmt`.
+
+### Formatting
+
+- Use 2-space indentation
+- Use LF line endings and keep a final trailing newline
+- Use double quotes, semicolons, and trailing commas
+- Let `oxfmt` handle whitespace and wrapping instead of manual alignment
+- Keep files ASCII unless the file already contains localized text or Unicode is required
+
+### Imports
+
+- Group imports as: Node built-ins, third-party packages, then local modules
+- Separate import groups with a blank line
+- Prefer `import type` for type-only imports
+- Prefer relative imports inside a package; use workspace aliases only where already established
+
+### Types
+
+- `strict` TypeScript is enabled; satisfy types instead of weakening them
+- Do not introduce `any`; `@typescript-eslint/no-explicit-any` is an error
+- Prefer `unknown` for caught errors and narrow with guards such as `instanceof Error`
+- Prefer explicit interfaces and named types for service contracts, config, and payloads
+- Start changes with shared types in `packages/shared-model/` when behavior crosses package boundaries
+
+### Naming
+
+- Use `PascalCase` for classes, schemas, and exported service types
+- Use `camelCase` for functions, methods, variables, and config fields
+- Use `SCREAMING_SNAKE_CASE` only for true module-level constants
+- Keep filenames aligned with local patterns such as `service.ts`, `types.ts`, and `index.ts`
+
+### Service and Plugin Patterns
+
+- Declare Koishi module augmentation near the top when extending `Context`, `Events`, or `Tables`
+- Register services through `ctx.plugin(...)` in `core/src/index.ts` or the relevant package entry
+- Expose minimal public APIs from services; keep helpers private where possible
+- Put configuration schemas next to the config interface
+- Keep plugin/tool parameter schemas strict and descriptive
+
+### Error Handling and Logging
+
+- Wrap async service edges in `try/catch` when failures should degrade gracefully
+- Catch as `err: unknown`
+- Log with the service logger instead of `console.*`
+- Prefer actionable log messages with trace IDs, channel keys, or model names when relevant
+- For recoverable failures, warn or log and continue; for fatal initialization failures, throw
+- Bound external/model/tool output sizes before feeding them back into the loop
+
+### Testing Conventions
+
+- Test framework is Vitest using `describe`, `it`, `expect`, `vi`, and lifecycle hooks
+- Core tests live in `core/tests/*.test.ts`
+- Integration tests live in `test/e2e/*.test.ts`
+- Follow existing naming style: behavior-focused `*.test.ts` files with explicit test titles
+- Add or update tests alongside behavior changes, especially for willingness, hooks, horizon formatting, and parser logic
+
+## Change Guidance By Area
+
+- Agent behavior: inspect `core/src/services/agent/`, `core/src/services/trait/`, and `core/src/services/skill/`
+- Horizon formatting/compression: inspect `core/src/services/horizon/`
+- Tool or action changes: inspect `core/src/services/plugin/` and relevant `plugins/*`
+- Prompt composition: inspect `core/src/services/prompt/`, `core/src/services/role/`, and `core/resources/roles/`
+- Provider capability: inspect `providers/*` and `packages/shared-model/src/providers/`
+
+## Pre-Merge Checklist For Agents
+
+- Trace callers before changing service contracts
+- Verify `static inject` dependencies after moving logic across services
+- Run targeted tests for touched code
+- Run `yarn workspace koishi-plugin-yesimbot typecheck` or `yarn typecheck` for broader changes
+- Run `yarn lint` or `yarn fmt` if you changed style-sensitive files
+- For cross-package changes, finish with `yarn build`
 
 ## Reference Documentation and Resources
 
@@ -133,3 +188,5 @@ yarn lint
 - [Letta Source Code](references/letta)
 - [OpenClaw docs](references/openclaw/docs)
 - [Plast Mem](references/plast-mem) an experimental llm memory layer for cyber waifu.
+
+When using the write tool, make sure to only write small blocks and avoid large chunks, as there is currently a bug in the write tool that can lead to timeouts.

@@ -1,7 +1,7 @@
 import type { UserContent } from "ai";
 import type { Session } from "koishi";
 
-import { TriggerType, type ChannelKey } from "../shared/types";
+import type { ChannelKey, Scenario, TriggerType } from "../runtime/contracts";
 
 export type AllowedChannel = { platform: string; type: "private" | "guild"; id: string };
 
@@ -206,11 +206,25 @@ export interface ViewOptions {
 
 export interface HorizonView {
   self: SelfInfo;
-  environment?: Environment;
-  entities?: Entity[];
-  history?: TimelineEntry[];
-  traits?: import("../shared/types").TraitSignal[];
-  skills?: import("../shared/types").ActiveSkill[];
+  environment: Environment;
+  entities: Entity[];
+  history: TimelineEntry[];
+}
+
+/**
+ * Horizon data remains an internal read model and feeds public runtime `Scenario`
+ * through adapter boundaries.
+ */
+export const HORIZON_SCENARIO_BOUNDARY = "internal-scenario-adapter" as const;
+
+export interface HorizonScenarioAdapterSource {
+  view: HorizonView;
+  stimulusSource: Scenario["raw"]["stimulusSource"];
+}
+
+export interface HorizonScenarioProjection {
+  raw: Scenario["raw"];
+  derived: Scenario["derived"];
 }
 
 // ---- Query ----

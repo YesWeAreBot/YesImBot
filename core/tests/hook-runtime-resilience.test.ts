@@ -46,7 +46,10 @@ vi.mock("koishi", () => {
     Context: class {},
     Service: class {
       logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), level: 0 };
-      constructor(..._args: unknown[]) {}
+      ctx: Record<string, unknown>;
+      constructor(ctx?: unknown, ..._args: unknown[]) {
+        this.ctx = (ctx ?? {}) as Record<string, unknown>;
+      }
     },
     Random: {
       id: () => `msg-${Math.random().toString(36).slice(2, 10)}`,
@@ -57,6 +60,7 @@ vi.mock("koishi", () => {
 });
 
 import { ThinkActLoop } from "../src/services/agent/loop";
+import { AgentCore } from "../src/services/agent/service";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { CorePlugin } from "../src/services/plugin/builtin/core";
@@ -72,12 +76,18 @@ function createLoopHarness(actionPayload: string) {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
     on: vi.fn(),
+    emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
   const hookService = new HookService(rootCtx as never);
   const hookWarnSpy = vi.fn();
-  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+  (
+    hookService as unknown as {
+      logger: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+    }
+  ).logger = {
     warn: hookWarnSpy,
+    debug: vi.fn(),
   };
 
   const horizonEvents = {
@@ -107,13 +117,19 @@ function createLoopHarness(actionPayload: string) {
   const skillService = {
     resolve: vi.fn(() => ({
       activeSkills: [{ name: "answering", effects: ["concise"] }],
-      promptInjections: [],
-      styleOverride: undefined,
-      toolFilter: undefined,
+      promptFragments: [],
+      styleFragment: null,
+      toolFilter: { include: [], exclude: [] },
     })),
   };
 
   const promptService = {
+    emitPromptBlocks: vi.fn(async () => ({
+      sections: [],
+      stableBlock: "",
+      dynamicBlock: "",
+      stableSignature: "sig",
+    })),
     inject: vi.fn(() => () => undefined),
     render: vi.fn(async () => [
       { name: "soul", content: "soul" },
@@ -154,11 +170,14 @@ function createLoopHarness(actionPayload: string) {
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.hook"] = hookService;
 
-  const loop = new ThinkActLoop(rootCtx as never, {
-    model: "mock:model",
-    maxRounds: 2,
-    debugLevel: 0,
-  } as never);
+  const loop = new ThinkActLoop(
+    rootCtx as never,
+    {
+      model: "mock:model",
+      maxRounds: 2,
+      debugLevel: 0,
+    } as never,
+  );
 
   const percept: Percept = {
     id: "p-1",
@@ -189,6 +208,7 @@ function createMessageHarness() {
   const rootCtx = {
     logger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() })),
     on: vi.fn(),
+    emit: vi.fn(),
     bots: [],
     "yesimbot.plugin": pluginRegistry,
     "yesimbot.horizon": {
@@ -198,8 +218,13 @@ function createMessageHarness() {
 
   const hookService = new HookService(rootCtx as never);
   const hookWarnSpy = vi.fn();
-  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+  (
+    hookService as unknown as {
+      logger: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+    }
+  ).logger = {
     warn: hookWarnSpy,
+    debug: vi.fn(),
   };
   rootCtx["yesimbot.hook"] = hookService;
 
@@ -259,7 +284,9 @@ describe("Hook runtime resilience (timeout)", () => {
     expect(runResult.totalToolCalls).toBe(1);
     expect(afterCompleted).toBe(false);
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction.mock.calls as unknown[][]
+    )[0]?.[0] as {
       data?: { toolResults?: Array<{ status?: string }> };
     };
     expect(actionEventPayload.data?.toolResults?.[0]?.status).toBe("ok");
@@ -298,7 +325,8 @@ describe("Hook runtime resilience (timeout)", () => {
     expect(result.success).toBe(true);
     expect(hookCompleted).toBe(false);
     expect(sessionSend).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("original message");
+    const firstSend = (sessionSend.mock.calls as unknown[][])[0]?.[0];
+    expect(JSON.stringify(firstSend)).toContain("original message");
   });
 });
 
@@ -398,7 +426,8 @@ describe("Hook runtime resilience (error isolation)", () => {
 
     expect(result.success).toBe(true);
     expect(sessionSend).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("message still delivered");
+    const firstSend = (sessionSend.mock.calls as unknown[][])[0]?.[0];
+    expect(JSON.stringify(firstSend)).toContain("message still delivered");
     expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -419,10 +448,202 @@ describe("Hook runtime resilience (error isolation)", () => {
 
     expect(runResult.totalToolCalls).toBe(1);
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction.mock.calls as unknown[][]
+    )[0]?.[0] as {
       data?: { toolResults?: Array<{ status?: string }> };
     };
     expect(actionEventPayload.data?.toolResults?.[0]?.status).toBe("ok");
     expect(harness.hookWarnSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Hook runtime resilience (error hooks)", () => {
+  it("fires tool error hook when tool invocation throws", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    const errorHookSpy = vi.fn();
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Tool,
+      phase: HookPhase.Error,
+      handler: async (ctx) => {
+        errorHookSpy(ctx.error);
+      },
+    });
+
+    harness.pluginInvoke.mockImplementationOnce(async () => {
+      throw new Error("tool failure");
+    });
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(errorHookSpy).toHaveBeenCalledTimes(1);
+    expect(errorHookSpy.mock.calls[0]?.[0]).toEqual(expect.any(Error));
+  });
+
+  it("fires message error hook when session.send throws", async () => {
+    const harness: MessageHarness = createMessageHarness();
+    const sessionSend = vi.fn(async () => {
+      throw new Error("send failed");
+    });
+
+    const errorHookSpy = vi.fn();
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Error,
+      handler: async (ctx) => {
+        errorHookSpy(ctx.error);
+      },
+    });
+
+    const result = await harness.plugin.sendMessage(
+      { content: "hello" },
+      {
+        platform: "discord",
+        channelId: "c-1",
+        session: { send: sessionSend } as never,
+        percept: { traceId: "trace-message-error-hook" } as never,
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(errorHookSpy).toHaveBeenCalledTimes(1);
+    expect(errorHookSpy.mock.calls[0]?.[0]).toEqual(expect.any(Error));
+  });
+});
+
+describe("Hook runtime resilience (agent snapshot)", () => {
+  it("shares agent before-hook committed view between prompt rendering and tool context", async () => {
+    const harness: LoopHarness = createLoopHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"athena"}}]}',
+    );
+
+    harness.hookService.register(harness.rootCtx as never, {
+      type: HookType.Agent,
+      phase: HookPhase.Before,
+      handler: async (ctx) => {
+        const params = ctx.params as { view: Record<string, unknown> };
+        return {
+          modified: true,
+          params: {
+            ...params,
+            scenario: {
+              ...((ctx.params as { scenario: Record<string, unknown> }).scenario ?? {}),
+              derived: {
+                ...((ctx.params as { scenario: { derived?: Record<string, unknown> } }).scenario
+                  ?.derived ?? {}),
+                testMarker: "from-hook",
+              },
+            },
+          },
+        };
+      },
+    });
+
+    await harness.loop.run(harness.percept, harness.toolCtx);
+
+    const promptArgs = (
+      harness.rootCtx["yesimbot.prompt"] as {
+        emitPromptBlocks: ReturnType<typeof vi.fn>;
+      }
+    ).emitPromptBlocks.mock.calls[0]?.[1] as unknown as {
+      scenario?: { derived?: Record<string, unknown> };
+    };
+    const toolCtxArg = (harness.pluginInvoke.mock.calls as unknown[][])[0]?.[2] as {
+      scenario?: { derived?: Record<string, unknown> };
+    };
+
+    expect(promptArgs?.scenario?.derived?.testMarker).toBe("from-hook");
+    expect(toolCtxArg?.scenario?.derived?.testMarker).toBe("from-hook");
+  });
+});
+
+describe("Hook runtime resilience (fail-safe boundary)", () => {
+  it("runs fail-safe error transport after lifecycle closure and outside message hooks", async () => {
+    const order: string[] = [];
+    const messageHookSpy = vi.fn();
+    const sendSpy = vi.fn(async () => {
+      order.push("report-error");
+    });
+
+    const ctx = {
+      logger: vi.fn(() => ({
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
+        level: 0,
+      })),
+      command: vi.fn(),
+      on: vi.fn(),
+      setInterval: vi.fn(),
+      emit: vi.fn(),
+      bots: [{ platform: "discord", sendMessage: sendSpy }],
+    } as unknown as Record<string, unknown>;
+
+    const hookService = new HookService(ctx as never);
+    hookService.register(ctx as never, {
+      type: HookType.Message,
+      phase: HookPhase.Before,
+      handler: async () => {
+        messageHookSpy();
+        return { modified: false };
+      },
+    });
+    ctx["yesimbot.hook"] = hookService;
+
+    const agent = new AgentCore(
+      ctx as never,
+      {
+        debugLevel: 0,
+        errorReportChannel: "discord:ops-channel",
+      } as never,
+    );
+
+    (
+      agent as unknown as {
+        loop: { run: (percept: unknown, toolCtx: unknown) => Promise<unknown> };
+      }
+    ).loop = {
+      run: async () => {
+        order.push("agent-end");
+        throw new Error("runtime failed after lifecycle close");
+      },
+    };
+    (
+      agent as unknown as { willingness: { recordBotReply: ReturnType<typeof vi.fn> } }
+    ).willingness = {
+      recordBotReply: vi.fn(),
+    };
+
+    await (
+      agent as unknown as {
+        runLoop: (
+          channelKey: string,
+          built: { percept: Percept; toolCtx: ToolExecutionContext },
+        ) => Promise<void>;
+      }
+    ).runLoop("discord:c-1", {
+      percept: {
+        id: "p-failsafe",
+        traceId: "trace-failsafe",
+        type: "direct",
+        platform: "discord",
+        channelId: "c-1",
+        timestamp: new Date("2026-03-12T00:00:00Z"),
+        metadata: {},
+      },
+      toolCtx: {
+        platform: "discord",
+        channelId: "c-1",
+      } as ToolExecutionContext,
+    });
+
+    expect(order).toEqual(["agent-end", "report-error"]);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(messageHookSpy).not.toHaveBeenCalled();
   });
 });

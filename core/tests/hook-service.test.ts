@@ -60,7 +60,8 @@ describe("HookService", () => {
   beforeEach(() => {
     ctx = {
       on: vi.fn(),
-      logger: vi.fn(() => ({ warn: vi.fn() })),
+      emit: vi.fn(),
+      logger: vi.fn(() => ({ warn: vi.fn(), debug: vi.fn() })),
     } as unknown as Context;
     hookService = new HookService(ctx);
   });

@@ -11,12 +11,13 @@ describe("Hook timeout override", () => {
   beforeEach(() => {
     ctx = {
       on: vi.fn(),
-      logger: vi.fn(() => ({ warn: vi.fn() })),
+      emit: vi.fn(),
+      logger: vi.fn(() => ({ warn: vi.fn(), debug: vi.fn() })),
     } as unknown as Context;
     hookService = new HookService(ctx);
   });
 
-  it("uses default timeout (5000ms) when neither call nor hook timeout is provided", async () => {
+  it("uses default timeout (3000ms) when neither call nor hook timeout is provided", async () => {
     const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const handler = vi.fn().mockResolvedValue({ modified: false });
 
@@ -30,7 +31,7 @@ describe("Hook timeout override", () => {
 
     expect(handler).toHaveBeenCalled();
     expect(result.params.input).toBe("default");
-    expect(timeoutSpy.mock.calls.some((call) => call[1] === 5000)).toBe(true);
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 3000)).toBe(true);
     timeoutSpy.mockRestore();
   });
 
@@ -64,7 +65,12 @@ describe("Hook timeout override", () => {
       timeout: 5000,
     });
 
-    const result = await hookService.executeBefore(HookType.Tool, { input: "call-level" }, "t-1", 120);
+    const result = await hookService.executeBefore(
+      HookType.Tool,
+      { input: "call-level" },
+      "t-1",
+      120,
+    );
 
     expect(result.params.input).toBe("call-level");
     expect(timeoutSpy.mock.calls.some((call) => call[1] === 120)).toBe(true);
@@ -167,7 +173,7 @@ describe("Hook timeout override", () => {
 
     expect(timeoutSpy.mock.calls.some((call) => call[1] === 120)).toBe(true);
     expect(timeoutSpy.mock.calls.some((call) => call[1] === 900)).toBe(true);
-    expect(timeoutSpy.mock.calls.some((call) => call[1] === 5000)).toBe(true);
+    expect(timeoutSpy.mock.calls.some((call) => call[1] === 1000)).toBe(true);
     timeoutSpy.mockRestore();
   });
 });

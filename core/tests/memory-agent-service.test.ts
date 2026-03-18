@@ -27,12 +27,14 @@ vi.mock("../src/services/memory-agent/recall-plugin", () => ({
   MemoryRecallPlugin: class MemoryRecallPlugin {},
 }));
 
-import { MemoryAgentService } from "../src/services/memory-agent/service";
 import { runMemoryExtraction } from "../src/services/memory-agent/agent";
+import { MemoryAgentService } from "../src/services/memory-agent/service";
+import { MemoryScope, MemoryType } from "../src/services/memory-agent/types";
 
 function createMockContext() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const intervals: Array<() => Promise<void> | void> = [];
+  const fragmentSources = new Map<string, (scope: Record<string, unknown>) => unknown>();
 
   const queryChain = {
     where: vi.fn().mockReturnThis(),
@@ -64,10 +66,16 @@ function createMockContext() {
     plugin: vi.fn(),
     "yesimbot.prompt": {
       inject: vi.fn(),
+      registerFragmentSource: vi.fn(
+        (name: string, provider: (scope: Record<string, unknown>) => unknown) => {
+          fragmentSources.set(name, provider);
+          return vi.fn();
+        },
+      ),
     },
   };
 
-  return { ctx, handlers, intervals };
+  return { ctx, handlers, intervals, fragmentSources };
 }
 
 function createConfig() {
@@ -101,42 +109,29 @@ describe("MemoryAgentService", () => {
     vi.restoreAllMocks();
   });
 
-  it("schedules periodic checks and runs extraction for active channels", async () => {
-    const { ctx, intervals } = createMockContext();
+  it("registers memory table, prompt source, and recall plugin on start", async () => {
+    const { ctx } = createMockContext();
     const service = new MemoryAgentService(ctx as never, createConfig());
 
-    const channels = [
-      { platform: "discord", channelId: "c1" },
-      { platform: "discord", channelId: "c2" },
-    ];
-    const getActiveChannelsSpy = vi
-      .spyOn(service as never, "getActiveChannels")
-      .mockResolvedValue(channels);
-    const maybeRunAgentSpy = vi
-      .spyOn(service as never, "maybeRunAgent")
-      .mockResolvedValue(undefined);
+    await (service as unknown as { start: () => Promise<void> }).start();
 
-    await (service as never).start();
-    expect(ctx.setInterval).toHaveBeenCalledTimes(1);
-    expect(ctx.setInterval).toHaveBeenCalledWith(expect.any(Function), 12345);
-
-    await intervals[0]();
-
-    expect(getActiveChannelsSpy).toHaveBeenCalledTimes(1);
-    expect(maybeRunAgentSpy).toHaveBeenCalledTimes(2);
-    expect(maybeRunAgentSpy).toHaveBeenNthCalledWith(1, channels[0]);
-    expect(maybeRunAgentSpy).toHaveBeenNthCalledWith(2, channels[1]);
+    expect((ctx.model as { extend: ReturnType<typeof vi.fn> }).extend).toHaveBeenCalledTimes(1);
+    expect(ctx.plugin as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+    expect(
+      (ctx["yesimbot.prompt"] as { registerFragmentSource: ReturnType<typeof vi.fn> })
+        .registerFragmentSource,
+    ).toHaveBeenCalled();
   });
 
   it("reacts to athena:timeline.compressed by triggering channel extraction", async () => {
     const { ctx, handlers } = createMockContext();
     const service = new MemoryAgentService(ctx as never, createConfig());
 
-    const maybeRunAgentSpy = vi
-      .spyOn(service as never, "maybeRunAgent")
-      .mockResolvedValue(undefined);
+    const maybeRunAgentSpy = vi.fn().mockResolvedValue(undefined);
+    (service as unknown as { maybeRunAgent: ReturnType<typeof vi.fn> }).maybeRunAgent =
+      maybeRunAgentSpy;
 
-    await (service as never).start();
+    await (service as unknown as { start: () => Promise<void> }).start();
 
     const handler = handlers.get("athena:timeline.compressed");
     expect(handler).toBeTypeOf("function");
@@ -169,5 +164,62 @@ describe("MemoryAgentService", () => {
 
     await service.maybeRunAgent(channelKey);
     expect(runMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("registers canonical memory.core fragment source instead of extra injection", async () => {
+    const { ctx, fragmentSources } = createMockContext();
+    const service = new MemoryAgentService(ctx as never, createConfig());
+
+    (
+      service as unknown as {
+        getCoreMemories: ReturnType<typeof vi.fn>;
+      }
+    ).getCoreMemories = vi.fn().mockResolvedValue([
+      {
+        id: "m1",
+        type: MemoryType.Profile,
+        scope: MemoryScope.Channel,
+        scopeId: "discord:test-channel",
+        platform: "discord",
+        content: "User prefers concise replies",
+        importance: 80,
+        isCore: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    await (service as unknown as { start: () => Promise<void> }).start();
+
+    const promptService = ctx["yesimbot.prompt"] as {
+      inject: ReturnType<typeof vi.fn>;
+      registerFragmentSource: ReturnType<typeof vi.fn>;
+    };
+
+    expect(promptService.inject).not.toHaveBeenCalled();
+    expect(promptService.registerFragmentSource).toHaveBeenCalled();
+
+    const provider = fragmentSources.get("memory.core");
+    expect(provider).toBeTypeOf("function");
+
+    const fragments = (await provider?.({
+      scenario: {
+        raw: {
+          environment: {
+            platform: "discord",
+            channelId: "test-channel",
+          },
+        },
+      },
+    })) as Array<{ id: string; section: string; stability: string; content: string }>;
+
+    expect(fragments).toHaveLength(1);
+    expect(fragments[0]).toMatchObject({
+      id: "memory.core",
+      section: "memory",
+      stability: "stable",
+    });
+    expect(fragments[0].content).toContain("<core_memories>");
+    expect(fragments[0].content).toContain("User prefers concise replies");
   });
 });

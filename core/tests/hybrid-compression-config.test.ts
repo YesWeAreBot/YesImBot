@@ -54,8 +54,8 @@ vi.mock("koishi", () => {
 import { Context } from "koishi";
 
 import { apply, type Config } from "../src/index";
-import { HorizonService } from "../src/services/horizon/service";
 import { SummaryCompressor } from "../src/services/horizon/compressor";
+import { HorizonService } from "../src/services/horizon/service";
 import { MemoryAgentService } from "../src/services/memory-agent";
 
 vi.mock("../src/services/horizon/compressor", () => {
@@ -238,15 +238,10 @@ describe("Hybrid compression trigger config wiring", () => {
       retainRecentEntries: 18,
     });
 
-    expect(SummaryCompressor).toHaveBeenCalledWith(
-      ctx,
-      expect.anything(),
-      "openai:gpt-4o-mini",
-      {
-        compressionThreshold: 300,
-        inactivityTriggerMs: 4_000_000,
-        retainRecentEntries: 18,
-      },
-    );
+    expect(SummaryCompressor).toHaveBeenCalledWith(ctx, expect.anything(), "openai:gpt-4o-mini", {
+      compressionThreshold: 300,
+      inactivityTriggerMs: 4_000_000,
+      retainRecentEntries: 18,
+    });
   });
 });

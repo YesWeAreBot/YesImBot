@@ -89,10 +89,10 @@ describe("AgentCore heartbeat integration", () => {
       const { ctx, handlers } = createMockContext();
       const service = new AgentCore(ctx as never, {});
 
-      const enqueueSpy = vi
-        .spyOn(service as never, "enqueue")
-        .mockImplementation(() => undefined);
+      //@ts-ignore
+      const enqueueSpy = vi.spyOn(service as never, "enqueue").mockImplementation(() => undefined);
 
+      //@ts-ignore
       await (service as never).start();
 
       expect(ctx.on).toHaveBeenCalledWith("athena:heartbeat", expect.any(Function));

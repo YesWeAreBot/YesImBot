@@ -4,10 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("AGENTS.md context format docs", () => {
   it("documents timeline, tool-call format, and dynamic variables", () => {
-    const content = readFileSync(
-      new URL("../resources/roles/AGENTS.md", import.meta.url),
-      "utf8",
-    );
+    const content = readFileSync(new URL("../resources/roles/AGENTS.md", import.meta.url), "utf8");
 
     expect(content).toContain("## Context Format");
     expect(content).toContain("<msg");

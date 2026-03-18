@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
   "dependencies": {
     "koishi-plugin-yesimbot": "workspace:^"

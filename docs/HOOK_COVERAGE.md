@@ -52,12 +52,19 @@ Coverage evidence:
 
 - Entry point: `ThinkActLoop.run`
 - Source: `core/src/services/agent/loop.ts`
-- Hook call: `executeBefore(HookType.Agent, ...)`
+- Hook calls:
+  - `executeAgentStart(...)` / `executeBefore(HookType.Agent, ...)` (`lifecycle=start`)
+  - `executeAgentEnd(...)` / `executeAfter(HookType.Agent, ...)` (`lifecycle=end`)
+- End settlement payload:
+  - canonical `roundContext` snapshot used by runtime consumers
+  - `endSummary.finalOutcome` for settled status and action/tool counts
+  - `endSummary.incidents` for recovered/non-recovered diagnostics
 
 Coverage evidence:
 
 - `core/tests/hook-runtime-interception.test.ts` (context mutation propagation)
 - `core/tests/hook-runtime-resilience.test.ts` (runtime continuation when hooks fail)
+- `core/tests/agent-lifecycle-end.test.ts` (exactly-once end boundary across success/silent/skip/failure/recovered-error)
 
 ## intentionally unhooked Path (Fail-Safe Boundary)
 
@@ -66,6 +73,7 @@ Coverage evidence:
 - Path: direct `bot.sendMessage(channelId, summary).catch(() => {})`
 - Source: `core/src/services/agent/service.ts` (`reportError`)
 - Coverage: intentionally unhooked
+- Ordering rule: run only after started-round lifecycle closure has settled (`agent end` first, fail-safe transport second)
 
 Rationale:
 
@@ -86,6 +94,7 @@ Evidence:
 
 - `core/tests/hook-timeout.test.ts`
 - `core/tests/hook-runtime-resilience.test.ts`
+- `core/tests/agent-lifecycle-end.test.ts`
 
 ### Error isolation contract
 

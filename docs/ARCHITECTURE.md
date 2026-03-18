@@ -17,7 +17,7 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 
 - Ingests and stores timeline events (`yesimbot.timeline`)
 - Maintains entity and environment context (`yesimbot.entity`)
-- Builds `HorizonView` for downstream reasoning
+- Builds `HorizonView` as an internal read model (adapter source for `Scenario`)
 - Formats historical context into model-ready messages
 
 ### 2. Decision and Loop Layer (`agent`)
@@ -39,8 +39,8 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 
 - `trait`: analyzes scene/heat signals
 - `skill`: selects and merges skill effects
-- `role`: loads fixed role files (`SOUL.md`, `AGENTS.md`, `TOOLS.md`)
-- `prompt`: renders and injects prompt sections (`soul`, `instructions`, `memory`, `extra`)
+- `role`: content source provider for role/persona fragments (`SOUL.md`, `AGENTS.md`, `TOOLS.md`)
+- `prompt`: canonical `Fragment -> Section -> Layout` renderer (`identity -> policy -> memory -> situation`)
 
 ### 5. Tool Layer (`plugin`)
 
@@ -55,13 +55,26 @@ Koishi message event
   -> Horizon listener/event manager
   -> Agent willingness + token bucket check
   -> DM/group aggregation window
-  -> HorizonView build
+  -> HorizonView build (internal)
+  -> Scenario + Capabilities + RoundContext assembly (public runtime contracts)
   -> Trait analyze + Skill resolve
-  -> Prompt render/injection
+  -> Prompt canonical layout render (scope includes roundContext/scenario/capabilities; view.* is legacy compat)
+  -> Provider emit adaptation (e.g., Anthropic cache split from fragment stability/cacheable metadata)
   -> ModelService call (with fallback)
-  -> Tool/Action execution
+  -> Tool/Action execution (reads from RoundContext/Scenario)
   -> Reply or silent finish
 ```
+
+## Public Runtime Contracts (Phase 54+)
+
+Athena's public runtime boundary is centered on:
+
+- `Percept` — wake semantics only (why the round started)
+- `Scenario` — layered runtime context (`raw` world projection + `derived` interpretation)
+- `Capabilities` — structured execution affordances (core/extended)
+- `RoundContext` — the committed snapshot carried through wake-to-response
+
+`HorizonView` remains a Horizon-internal read model and should be treated as an adapter source for building `Scenario`, not the default public contract for downstream integrations.
 
 ## Dependency Rules
 
@@ -77,3 +90,5 @@ core/services/* ---> yesimbot.model | shared-model pkg |
 - Cross-service access should go through declared `inject` dependencies.
 - Keep Horizon focused on data retrieval and formatting, not participation decisions.
 - Keep provider-specific behaviors in provider packages, not shared abstraction.
+- RoleService provides content sources only; prompt ordering is owned by canonical layout.
+- Provider adapters consume canonical rendered fragment trees and must not reorder sections.

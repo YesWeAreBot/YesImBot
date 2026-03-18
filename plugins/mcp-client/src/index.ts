@@ -59,7 +59,7 @@ function parseKeyValueString(input: string): Record<string, string> {
 @Metadata({ name: "mcp-client", description: "MCP protocol client" })
 export default class McpClientPlugin extends YesImPlugin {
   static name = "mcp-client";
-  static inject = ["yesimbot.plugin"];
+  static inject = ["yesimbot.plugin", "yesimbot.hook"];
   static Config: Schema<McpClientConfig> = Schema.object({
     mcpServers: Schema.dict(
       Schema.intersect([

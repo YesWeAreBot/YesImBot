@@ -1,14 +1,10 @@
 import { Context, Service } from "koishi";
 
-import type { ModelService } from "../model/service";
-import type { HorizonView } from "../horizon/types";
-import type { ChannelKey } from "../shared/types";
-import type { HorizonService } from "../horizon/service";
-import { TimelineEventType, TimelineStage } from "../horizon/types";
-import type { MemoryAgentConfig, MemoryRecord } from "./types";
-import { MemoryType, MemoryScope } from "./types";
+import type { ChannelKey, Scenario } from "../runtime/contracts";
 import { runMemoryExtraction } from "./agent";
 import { MemoryRecallPlugin } from "./recall-plugin";
+import type { MemoryAgentConfig, MemoryRecord } from "./types";
+import { MemoryScope } from "./types";
 
 declare module "koishi" {
   interface Context {
@@ -29,7 +25,13 @@ const DEFAULT_CONFIG: MemoryAgentConfig = {
 };
 
 export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
-  static inject = ["database", "yesimbot.model", "yesimbot.horizon", "yesimbot.prompt"];
+  static inject = [
+    "database",
+    "yesimbot.model",
+    "yesimbot.horizon",
+    "yesimbot.prompt",
+    "yesimbot.hook",
+  ];
 
   private extractionInProgress = new Map<string, Promise<void>>();
   private agentConfig: MemoryAgentConfig;
@@ -43,41 +45,51 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
 
   protected async start(): Promise<void> {
     // Declare database model
-    this.ctx.model.extend("yesimbot.memory", {
-      id: "string(64)",
-      type: "string(32)",
-      scope: "string(16)",
-      scopeId: "string(255)",
-      platform: "string(64)",
-      content: "text",
-      importance: "unsigned",
-      isCore: { type: "boolean", initial: false },
-      createdAt: "timestamp",
-      updatedAt: "timestamp",
-    }, { primary: "id", autoInc: false });
-
-    // Listen for compression events to trigger memory extraction
-    this.ctx.on(
-      "athena:timeline.compressed",
-      (channelKey) => this.onTimelineCompressed(channelKey),
+    this.ctx.model.extend(
+      "yesimbot.memory",
+      {
+        id: "string(64)",
+        type: "string(32)",
+        scope: "string(16)",
+        scopeId: "string(255)",
+        platform: "string(64)",
+        content: "text",
+        importance: "unsigned",
+        isCore: { type: "boolean", initial: false },
+        createdAt: "timestamp",
+        updatedAt: "timestamp",
+      },
+      { primary: "id", autoInc: false },
     );
 
-    // Inject core memories into prompt "extra" section
+    // Listen for compression events to trigger memory extraction
+    this.ctx.on("athena:timeline.compressed", (channelKey) =>
+      this.onTimelineCompressed(channelKey),
+    );
+
+    // Register core memories as canonical prompt fragment source
     const promptService = this.ctx["yesimbot.prompt"];
-    promptService.inject(this.ctx, "extra", {
-      name: "__core_memories",
-      renderFn: async (scope) => {
-        const view = scope.view as HorizonView | undefined;
-        if (!view?.environment) return "";
-        const key: ChannelKey = {
-          platform: view.environment.platform,
-          channelId: view.environment.channelId,
-        };
-        const memories = await this.getCoreMemories(key, view.environment.platform);
-        if (memories.length === 0) return "";
-        const lines = memories.map((m) => `- [${m.type}] ${m.content}`);
-        return `<core_memories>\n${lines.join("\n")}\n</core_memories>`;
-      },
+    promptService.registerFragmentSource("memory.core", async (scope) => {
+      const scenario = scope.scenario as Scenario | undefined;
+      if (!scenario?.raw.environment) return [];
+      const key: ChannelKey = {
+        platform: scenario.raw.environment.platform,
+        channelId: scenario.raw.environment.channelId,
+      };
+      const memories = await this.getCoreMemories(key, scenario.raw.environment.platform);
+      if (memories.length === 0) return [];
+      const lines = memories.map((m) => `- [${m.type}] ${m.content}`);
+      return [
+        {
+          id: "memory.core",
+          content: `<core_memories>\n${lines.join("\n")}\n</core_memories>`,
+          section: "memory",
+          source: "memory",
+          stability: "stable",
+          priority: 500,
+          cacheable: true,
+        },
+      ];
     });
 
     // Register recall tool plugin
@@ -89,9 +101,10 @@ export class MemoryAgentService extends Service<MemoryAgentServiceConfig> {
   /**
    * Triggered after summary compression completes for a channel.
    */
-  private async onTimelineCompressed(
-    channelKey: { platform: string; channelId: string },
-  ): Promise<void> {
+  private async onTimelineCompressed(channelKey: {
+    platform: string;
+    channelId: string;
+  }): Promise<void> {
     this.logger.info(
       `Timeline compressed for ${channelKey.platform}:${channelKey.channelId}, triggering memory extraction`,
     );

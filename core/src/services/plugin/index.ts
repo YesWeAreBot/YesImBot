@@ -1,4 +1,3 @@
-export * from "./activators";
 export * from "./decorators";
 export * from "./plugin";
 export * from "./schema";

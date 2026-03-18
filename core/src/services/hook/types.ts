@@ -1,3 +1,7 @@
+import type { ToolExecutionContext } from "../plugin/types";
+import type { AgentEndSummary, Capabilities, RoundContext, Scenario } from "../runtime/contracts";
+import type { LoadResult, SkillDefinition } from "../skill/types";
+
 export enum HookType {
   Tool = "tool",
   Message = "message",
@@ -10,13 +14,56 @@ export enum HookPhase {
   Error = "error",
 }
 
-export interface HookContext<T = unknown> {
-  type: HookType;
-  phase: HookPhase;
-  params: T;
-  result?: unknown;
-  error?: Error;
-  traceId?: string;
+export interface HookExecutionContext extends ToolExecutionContext {
+  hookType: HookType;
+  hookPhase: HookPhase;
+}
+
+export type AgentLifecycleBoundary = "start" | "end";
+
+interface AgentLifecycleHookExecutionContextBase extends HookExecutionContext {
+  hookType: HookType.Agent;
+  roundContext: RoundContext;
+  scenario: Scenario;
+  capabilities: Capabilities;
+  lifecycle: AgentLifecycleBoundary;
+}
+
+export interface AgentStartHookExecutionContext extends AgentLifecycleHookExecutionContextBase {
+  hookPhase: HookPhase.Before;
+  lifecycle: "start";
+  loadSkill(skillName: string): Promise<LoadResult>;
+  getLoadedSkills(): SkillDefinition[];
+}
+
+export interface AgentEndHookExecutionContext extends AgentLifecycleHookExecutionContextBase {
+  hookPhase: HookPhase.After;
+  lifecycle: "end";
+  endSummary: AgentEndSummary;
+}
+
+export type AgentLifecycleHookExecutionContext =
+  | AgentStartHookExecutionContext
+  | AgentEndHookExecutionContext;
+
+export interface HookTimeoutsConfig {
+  tool?: number;
+  message?: number;
+  agent?: number;
+}
+
+export const DEFAULT_HOOK_TIMEOUTS: Required<HookTimeoutsConfig> = {
+  tool: 3000,
+  message: 1000,
+  agent: 5000,
+};
+
+export type HookOutcome = "success" | "skipped";
+export type HookFailureReason = "timeout" | "error";
+
+export interface HookServiceConfig {
+  hookTimeouts?: HookTimeoutsConfig;
+  logLevel?: number;
 }
 
 export type BeforeHookResult<T> =
@@ -24,7 +71,14 @@ export type BeforeHookResult<T> =
   | { skip: true; result: unknown }
   | { modified: false };
 
-export type HookHandler<T = unknown> = (ctx: HookContext<T>) => Promise<BeforeHookResult<T> | void>;
+export type HookHandler<T = unknown> = (ctx: {
+  type: HookType;
+  phase: HookPhase;
+  params: Readonly<T>;
+  result?: unknown;
+  error?: Error;
+  traceId?: string;
+}) => Promise<BeforeHookResult<T> | void>;
 
 export interface HookDefinition<T = unknown> {
   id?: string;

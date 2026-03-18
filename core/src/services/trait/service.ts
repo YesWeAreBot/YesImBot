@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from "koishi";
 
-import type { HorizonView } from "../horizon/types";
-import type { ChannelKey, TraitSignal } from "../shared/types";
+import type { ChannelKey, Scenario } from "../runtime/contracts";
+import type { TraitSignal } from "../shared/types";
 import { HeatTrait } from "./detectors/heat";
 import { SceneTrait } from "./detectors/scene";
 import type { TraitDetector } from "./types";
@@ -16,6 +16,11 @@ export interface TraitAnalyzerConfig {}
 
 export const TraitAnalyzerConfigSchema: Schema<TraitAnalyzerConfig> = Schema.object({});
 
+/**
+ * Optional analyzer. Not required by the agent main loop.
+ * Hook authors may call `trait.analyze()` explicitly when they need
+ * trait signals to decide skill loading.
+ */
 export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
   static inject = ["yesimbot.horizon"];
 
@@ -46,9 +51,9 @@ export class TraitAnalyzer extends Service<TraitAnalyzerConfig> {
     this.stateStore.set(`${detectorName}:${channelKey}`, state);
   }
 
-  async analyze(key: ChannelKey, view: HorizonView): Promise<TraitSignal[]> {
+  async analyze(key: ChannelKey, scenario: Scenario): Promise<TraitSignal[]> {
     const results = await Promise.allSettled(
-      this.detectors.map((d) => Promise.resolve(d.detect(key, view))),
+      this.detectors.map((d) => Promise.resolve(d.detect(key, scenario))),
     );
     const signals: TraitSignal[] = [];
     for (const result of results) {

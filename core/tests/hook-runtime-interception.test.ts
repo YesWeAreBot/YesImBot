@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ThinkActLoop } from "../src/services/agent/loop";
+import { Hook } from "../src/services/hook/decorators";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
+import { YesImPlugin } from "../src/services/plugin/plugin";
 import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
 import type { Percept } from "../src/services/shared/types";
 
@@ -10,15 +12,26 @@ type RuntimeHarness = ReturnType<typeof createRuntimeHarness>;
 
 function createRuntimeHarness(actionPayload: string) {
   const agentLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), level: 0 };
+  const lifecycleHandlers = new Map<string, Array<() => void>>();
   const rootCtx = {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
-    on: vi.fn(),
+    on: vi.fn((event: string, handler: () => void) => {
+      const handlers = lifecycleHandlers.get(event) ?? [];
+      handlers.push(handler);
+      lifecycleHandlers.set(event, handlers);
+    }),
+    emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
   const hookService = new HookService(rootCtx as never);
-  (hookService as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger = {
+  (
+    hookService as unknown as {
+      logger: { warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> };
+    }
+  ).logger = {
     warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   const horizonEvents = {
@@ -54,13 +67,19 @@ function createRuntimeHarness(actionPayload: string) {
   const skillService = {
     resolve: vi.fn(() => ({
       activeSkills: [{ name: "answering", effects: ["concise"] }],
-      promptInjections: [],
-      styleOverride: undefined,
-      toolFilter: undefined,
+      promptFragments: [],
+      styleFragment: null,
+      toolFilter: { include: [], exclude: [] },
     })),
   };
 
   const promptService = {
+    emitPromptBlocks: vi.fn(async () => ({
+      sections: [],
+      stableBlock: "",
+      dynamicBlock: "",
+      stableSignature: "sig",
+    })),
     inject: vi.fn(() => () => undefined),
     render: vi.fn(async () => [
       { name: "soul", content: "soul" },
@@ -105,6 +124,8 @@ function createRuntimeHarness(actionPayload: string) {
     getDefinition: vi.fn(() => ({ type: FunctionType.Tool })),
     invoke: pluginInvoke,
     getTools: vi.fn(() => []),
+    registerPlugin: vi.fn(),
+    unregisterPlugin: vi.fn(),
   };
 
   rootCtx["yesimbot.horizon"] = horizonService;
@@ -115,11 +136,14 @@ function createRuntimeHarness(actionPayload: string) {
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.hook"] = hookService;
 
-  const loop = new ThinkActLoop(rootCtx as never, {
-    model: "mock:model",
-    maxRounds: 2,
-    debugLevel: 0,
-  } as never);
+  const loop = new ThinkActLoop(
+    rootCtx as never,
+    {
+      model: "mock:model",
+      maxRounds: 2,
+      debugLevel: 0,
+    } as never,
+  );
 
   const percept: Percept = {
     id: "p-1",
@@ -145,7 +169,14 @@ function createRuntimeHarness(actionPayload: string) {
     percept,
     toolCtx,
     pluginInvoke,
+    pluginRegistry: pluginService,
+    triggerLifecycle: (event: string) => {
+      for (const callback of lifecycleHandlers.get(event) ?? []) {
+        callback();
+      }
+    },
     horizonEvents,
+    promptRender: promptService.emitPromptBlocks,
   };
 }
 
@@ -174,6 +205,41 @@ describe("Hook runtime interception", () => {
               { dimension: "hook-injected", value: "active", confidence: 1 },
             ],
             skills: [...params.skills, { name: "hooked-skill", effects: ["runtime-tuned"] }],
+            scenario: {
+              ...((ctx.params as { scenario: { derived: { attention?: Record<string, unknown> } } })
+                .scenario ?? {}),
+              derived: {
+                ...(ctx.params as { scenario: { derived: Record<string, unknown> } }).scenario
+                  .derived,
+                attention: { lane: "hooked" },
+              },
+            },
+            capabilities: {
+              ...(
+                ctx.params as {
+                  capabilities: { extended: { directMessage: { status: string } } };
+                }
+              ).capabilities,
+              extended: {
+                ...(
+                  ctx.params as {
+                    capabilities: { extended: Record<string, unknown> };
+                  }
+                ).capabilities.extended,
+                directMessage: { status: "available" },
+              },
+            },
+            metadata: {
+              ...(
+                ctx.params as {
+                  metadata?: Record<string, unknown>;
+                }
+              ).metadata,
+              hookRevision: "start-1",
+            },
+            skillState: {
+              active: ["hooked-skill"],
+            },
           },
         };
       },
@@ -186,7 +252,24 @@ describe("Hook runtime interception", () => {
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
     const invokeCtx = harness.pluginInvoke.mock.calls[0]?.[2] as ToolExecutionContext;
     expect(invokeCtx.traits?.map((t) => t.dimension)).toContain("hook-injected");
-    expect(invokeCtx.skills?.map((s) => s.name)).toContain("hooked-skill");
+    expect(invokeCtx.skills ?? []).toEqual([]);
+    expect(invokeCtx.scenario?.derived.attention).toEqual({ lane: "hooked" });
+    expect(invokeCtx.capabilities?.extended.directMessage).toEqual({ status: "available" });
+    expect(invokeCtx.roundContext?.snapshot.metadata).toMatchObject({ hookRevision: "start-1" });
+    expect(invokeCtx.roundContext?.skillState).toMatchObject({ active: [] });
+    expect(invokeCtx.roundContext?.snapshot.scenario).toBe(invokeCtx.scenario);
+    expect(harness.promptRender).toHaveBeenCalledWith(
+      "system",
+      expect.objectContaining({
+        scenario: expect.objectContaining({
+          derived: expect.objectContaining({ attention: { lane: "hooked" } }),
+        }),
+        capabilities: expect.objectContaining({
+          extended: expect.objectContaining({ directMessage: { status: "available" } }),
+        }),
+      }),
+      expect.objectContaining({ providerType: undefined }),
+    );
 
     const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ result?: Record<string, unknown> }> };
@@ -229,7 +312,9 @@ describe("Hook runtime interception", () => {
     const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ result?: Record<string, unknown> }> };
     };
-    expect((actionEventPayload.data?.toolResults?.[0]?.result?.params as Record<string, unknown>) ?? {}).toEqual({
+    expect(
+      (actionEventPayload.data?.toolResults?.[0]?.result?.params as Record<string, unknown>) ?? {},
+    ).toEqual({
       query: "ATHENA",
       intercepted: true,
     });
@@ -270,5 +355,51 @@ describe("Hook runtime interception", () => {
       status: "hook-skipped",
       result: "blocked by hook",
     });
+  });
+
+  it("does not globally skip rounds when no Agent before-hook is registered", async () => {
+    const harness: RuntimeHarness = createRuntimeHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"baseline"}}]}',
+    );
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(1);
+    expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers Agent before-hook decorators from plugin startup and applies skip", async () => {
+    const harness: RuntimeHarness = createRuntimeHarness(
+      '{"actions":[{"name":"search_tool","params":{"query":"ignored"}}]}',
+    );
+
+    class StartupAgentSkipPlugin extends YesImPlugin {
+      @Hook({ type: HookType.Agent, phase: HookPhase.Before })
+      async skipBeforeAgent() {
+        return {
+          skip: true,
+          result: {
+            success: true,
+            status: "startup-skip",
+            content: "skipped by decorator registration",
+          },
+        };
+      }
+    }
+
+    const plugin = new StartupAgentSkipPlugin(harness.rootCtx as never);
+    harness.triggerLifecycle("ready");
+
+    expect(harness.pluginRegistry.registerPlugin).toHaveBeenCalledWith(plugin);
+    expect(harness.hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(1);
+
+    const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
+
+    expect(runResult.totalToolCalls).toBe(0);
+    expect(harness.pluginInvoke).not.toHaveBeenCalled();
+
+    harness.triggerLifecycle("dispose");
+    expect(harness.hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(0);
+    expect(harness.pluginRegistry.unregisterPlugin).toHaveBeenCalled();
   });
 });

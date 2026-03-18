@@ -36,7 +36,12 @@ vi.mock("koishi", () => {
     Service: class {
       ctx: unknown;
       config: unknown;
-      logger: { info: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+      logger: {
+        info: ReturnType<typeof vi.fn>;
+        debug: ReturnType<typeof vi.fn>;
+        warn: ReturnType<typeof vi.fn>;
+        error: ReturnType<typeof vi.fn>;
+      };
       constructor(ctx: unknown, _name: string, _immediate?: boolean) {
         this.ctx = ctx;
         this.logger = {
@@ -50,6 +55,8 @@ vi.mock("koishi", () => {
     Random: { id: () => `mock-${Date.now()}` },
   };
 });
+
+import { Context } from "koishi";
 
 import { ArousalService, type ArousalConfig } from "../src/services/arousal";
 import { evaluateChannels, type ChannelSummary } from "../src/services/arousal/scheduler";
@@ -83,9 +90,7 @@ function createMockContext(overrides: Record<string, unknown> = {}) {
     })),
     "yesimbot.model": {
       call: vi.fn().mockResolvedValue({
-        text: JSON.stringify([
-          { channelKey: "discord:channel-1", reason: "Active discussion" },
-        ]),
+        text: JSON.stringify([{ channelKey: "discord:channel-1", reason: "Active discussion" }]),
       }),
     },
     "yesimbot.horizon": {
@@ -121,9 +126,9 @@ describe("ArousalService", () => {
 
   describe("timer setup", () => {
     it("starts global heartbeat timer at configured interval when enabled", () => {
-      const ctx = createMockContext();
+      const ctx = createMockContext() as unknown as Context;
       const config = createDefaultConfig();
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       expect(ctx.setInterval).toHaveBeenCalledWith(
@@ -133,19 +138,19 @@ describe("ArousalService", () => {
     });
 
     it("does not start timer when disabled", () => {
-      const ctx = createMockContext();
+      const ctx = createMockContext() as unknown as Context;
       const config = createDefaultConfig();
       config.enabled = false;
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       expect(ctx.setInterval).not.toHaveBeenCalled();
     });
 
     it("stops cleanly by clearing timer", () => {
-      const ctx = createMockContext();
+      const ctx = createMockContext() as unknown as Context;
       const config = createDefaultConfig();
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
       service.stop();
 
@@ -183,10 +188,10 @@ describe("ArousalService", () => {
             ]),
           }),
         },
-      });
+      }) as unknown as Context;
 
       const config = createDefaultConfig();
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       await service.globalHeartbeat();
@@ -225,11 +230,11 @@ describe("ArousalService", () => {
             ]),
           }),
         },
-      });
+      }) as unknown as Context;
 
       const config = createDefaultConfig();
       config.dailyMessageLimit = 2;
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       // Simulate already reaching daily limit
@@ -275,11 +280,11 @@ describe("ArousalService", () => {
             ]),
           }),
         },
-      });
+      }) as unknown as Context;
 
       const config = createDefaultConfig();
       config.excludeChannels = ["discord:excluded-channel"];
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       await service.globalHeartbeat();
@@ -319,10 +324,10 @@ describe("ArousalService", () => {
             ]),
           }),
         },
-      });
+      }) as unknown as Context;
 
       const config = createDefaultConfig();
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       await service.globalHeartbeat();
@@ -368,10 +373,10 @@ describe("ArousalService", () => {
             ]),
           }),
         },
-      });
+      }) as unknown as Context;
       const config = createDefaultConfig();
       config.dailyMessageLimit = 1;
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       // Eligibility to run heartbeat should not burn quota by itself.
@@ -390,20 +395,20 @@ describe("ArousalService", () => {
     });
 
     it("checkRateLimit returns true when under daily limit", () => {
-      const ctx = createMockContext();
+      const ctx = createMockContext() as unknown as Context;
       const config = createDefaultConfig();
       config.dailyMessageLimit = 3;
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       expect(service.checkRateLimit("discord:channel-1")).toBe(true);
     });
 
     it("checkRateLimit returns false when daily limit exceeded", () => {
-      const ctx = createMockContext();
+      const ctx = createMockContext() as unknown as Context;
       const config = createDefaultConfig();
       config.dailyMessageLimit = 2;
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       service.recordProactiveMessage("discord:channel-1");
@@ -413,10 +418,10 @@ describe("ArousalService", () => {
     });
 
     it("resets daily count after 24 hours", () => {
-      const ctx = createMockContext();
+      const ctx = createMockContext() as unknown as Context;
       const config = createDefaultConfig();
       config.dailyMessageLimit = 1;
-      const service = new ArousalService(ctx as any, config);
+      const service = new ArousalService(ctx, config);
       service.start();
 
       service.recordProactiveMessage("discord:channel-1");
@@ -434,12 +439,8 @@ describe("evaluateChannels", () => {
   it("returns empty array when no channels have recent activity", async () => {
     const mockModelService = {
       call: vi.fn().mockResolvedValue({ text: "[]" }),
-    };
-    const result = await evaluateChannels(
-      mockModelService as any,
-      createDefaultConfig(),
-      [],
-    );
+    } as unknown as { call: (...args: unknown[]) => Promise<{ text: string }> };
+    const result = await evaluateChannels(mockModelService, createDefaultConfig(), []);
     expect(result).toEqual([]);
     // Should not call model when there are no channels
     expect(mockModelService.call).not.toHaveBeenCalled();
@@ -453,20 +454,26 @@ describe("evaluateChannels", () => {
           { channelKey: "discord:exclude", reason: "Active" },
         ]),
       }),
-    };
+    } as unknown as { call: (...args: unknown[]) => Promise<{ text: string }> };
     const config = createDefaultConfig();
     config.excludeChannels = ["discord:exclude"];
 
     const summaries: ChannelSummary[] = [
-      { channelKey: "discord:keep", lastMessageTime: new Date(), lastContent: "test", messageCount: 5 },
-      { channelKey: "discord:exclude", lastMessageTime: new Date(), lastContent: "test", messageCount: 5 },
+      {
+        channelKey: "discord:keep",
+        lastMessageTime: new Date(),
+        lastContent: "test",
+        messageCount: 5,
+      },
+      {
+        channelKey: "discord:exclude",
+        lastMessageTime: new Date(),
+        lastContent: "test",
+        messageCount: 5,
+      },
     ];
 
-    const result = await evaluateChannels(
-      mockModelService as any,
-      config,
-      summaries,
-    );
+    const result = await evaluateChannels(mockModelService, config, summaries);
     expect(result.every((r) => r.platform !== "discord" || r.channelId !== "exclude")).toBe(true);
   });
 
@@ -475,14 +482,15 @@ describe("evaluateChannels", () => {
       call: vi.fn().mockRejectedValue(new Error("Model error")),
     };
     const summaries: ChannelSummary[] = [
-      { channelKey: "discord:chan1", lastMessageTime: new Date(), lastContent: "test", messageCount: 5 },
+      {
+        channelKey: "discord:chan1",
+        lastMessageTime: new Date(),
+        lastContent: "test",
+        messageCount: 5,
+      },
     ];
 
-    const result = await evaluateChannels(
-      mockModelService as any,
-      createDefaultConfig(),
-      summaries,
-    );
+    const result = await evaluateChannels(mockModelService, createDefaultConfig(), summaries);
     expect(result).toEqual([]);
   });
 });

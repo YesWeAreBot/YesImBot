@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Context, Session } from "koishi";
 
 import { JsonDB } from "../../utils";
-import type { ChannelKey } from "../shared/types";
+import { ChannelKey } from "../runtime/contracts";
 import type { Environment } from "./types";
 
 export class EnvironmentManager {

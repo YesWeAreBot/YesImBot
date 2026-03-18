@@ -26,7 +26,7 @@
     "fmt": "oxfmt",
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"

@@ -5,7 +5,8 @@ import type { HorizonMessageEvent } from "../horizon/types";
 import type { ModelService } from "../model/service";
 import { ToolExecutionContext } from "../plugin/types";
 import type { RoleService } from "../role/service";
-import type { Percept } from "../shared/types";
+import { Percept } from "../runtime/contracts";
+import { buildMinimalContext } from "../shared/context-factory";
 import { JsonParser } from "./json-parser";
 import { ThinkActLoop } from "./loop";
 import { TokenBucket, WillingnessConfig, WillingnessEngine } from "./willingness";
@@ -107,6 +108,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
     "yesimbot.trait",
     "yesimbot.skill",
     "yesimbot.role",
+    "yesimbot.hook",
+    "yesimbot.arousal",
   ];
 
   private queues = new Map<string, Promise<void>>();
@@ -239,10 +242,10 @@ export class AgentCore extends Service<AgentCoreConfig> {
             triggeredBy: data.triggeredBy,
           },
         },
-        toolCtx: {
+        toolCtx: buildMinimalContext({
           platform: data.platform,
           channelId: data.channelId,
-        },
+        }),
       };
 
       this.enqueue(channelKey, built);
@@ -373,12 +376,15 @@ export class AgentCore extends Service<AgentCoreConfig> {
         timestamp: event.timestamp,
         metadata: {
           messageId: event.payload.messageId,
-          content: event.payload.content,
           senderId: event.payload.senderId,
-          senderName: event.payload.senderName,
         },
       },
-      toolCtx: { platform: event.platform, channelId: event.channelId, session, bot: session?.bot },
+      toolCtx: buildMinimalContext({
+        platform: event.platform,
+        channelId: event.channelId,
+        session,
+        bot: session?.bot,
+      }),
     };
   }
 
@@ -386,17 +392,11 @@ export class AgentCore extends Service<AgentCoreConfig> {
     const first = backlog[0];
     if (backlog.length === 1) return first;
 
-    const combinedContent = backlog
-      .map((p) => (p.percept.metadata?.content as string) ?? "")
-      .filter(Boolean)
-      .join("\n");
-
     return {
       percept: {
         ...first.percept,
         metadata: {
           ...first.percept.metadata,
-          content: combinedContent,
           isBacklogDrain: true,
           backlogCount: backlog.length,
         },
@@ -435,6 +435,8 @@ export class AgentCore extends Service<AgentCoreConfig> {
     } catch (err: unknown) {
       this.logger.error(`runLoop error: ${err}`);
       this.logger.error(err);
+      // Keep the fail-safe error transport strictly after ThinkActLoop settles.
+      // ThinkActLoop closes the started-round lifecycle (agent end) before bubbling errors.
       await this.reportError(err, built.percept).catch(() => {});
     }
   }

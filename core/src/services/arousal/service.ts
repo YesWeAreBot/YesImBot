@@ -103,11 +103,12 @@ export class ArousalService extends Service<ArousalConfig> {
         if (!existing) {
           const content =
             entry.type === TimelineEventType.Message
-              ? (entry.data as { content?: string }).content ?? ""
+              ? ((entry.data as { content?: string }).content ?? "")
               : `[${entry.type}]`;
           channelMap.set(channelKey, {
             channelKey,
-            lastMessageTime: entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp),
+            lastMessageTime:
+              entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp),
             lastContent: content,
             messageCount: 1,
           });
@@ -125,14 +126,14 @@ export class ArousalService extends Service<ArousalConfig> {
 
       // Evaluate channels with small model
       const modelService = this.ctx["yesimbot.model"] as unknown as {
-        call: (model: string, params: unknown, fallback?: string[]) => Promise<{ text: string } | undefined>;
+        call: (
+          model: string,
+          params: unknown,
+          fallback?: string[],
+        ) => Promise<{ text: string } | undefined>;
       };
 
-      const selected = await evaluateChannels(
-        modelService,
-        this.config,
-        activeChannels,
-      );
+      const selected = await evaluateChannels(modelService, this.config, activeChannels);
 
       let emitted = 0;
 
@@ -141,17 +142,13 @@ export class ArousalService extends Service<ArousalConfig> {
 
         // Check rate limit (daily ceiling)
         if (!this.checkRateLimit(channelKey)) {
-          this.logger.debug(
-            `Rate limit exceeded for ${channelKey}, skipping heartbeat`,
-          );
+          this.logger.debug(`Rate limit exceeded for ${channelKey}, skipping heartbeat`);
           continue;
         }
 
         // Check TokenBucket rate limiter
         if (this.rateLimiter && !this.rateLimiter.consume(channelKey)) {
-          this.logger.debug(
-            `Token bucket depleted for ${channelKey}, skipping heartbeat`,
-          );
+          this.logger.debug(`Token bucket depleted for ${channelKey}, skipping heartbeat`);
           continue;
         }
 

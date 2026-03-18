@@ -2,7 +2,6 @@ import { Element, h, Schema, sleep } from "koishi";
 
 import type { HookService } from "../../hook/service";
 import { HookType } from "../../hook/types";
-import { requireSession } from "../activators";
 import { Action, Metadata, withInnerThoughts } from "../decorators";
 import { YesImPlugin } from "../plugin";
 import { ToolExecutionContext, ToolResult } from "../types";
@@ -70,15 +69,16 @@ export class CorePlugin extends YesImPlugin {
           "The reply is sent to the current channel automatically. Cannot use with target.",
       ),
     }),
-    activators: [requireSession()],
+    requiredCapabilities: ["platform.session"],
+    onCapabilityMissing: "remove",
   })
   async sendMessage(
     params: Record<string, unknown>,
     ctx: ToolExecutionContext,
   ): Promise<ToolResult> {
+    const hookService = this.ctx["yesimbot.hook"];
+    let content = String(params["content"] ?? "");
     try {
-      const hookService = this.ctx["yesimbot.hook"];
-      let content = String(params["content"] ?? "");
       const target = params["target"] as { platform: string; channelId: string } | undefined;
       const replyToStr = params["replyTo"] as string | undefined;
 
@@ -145,6 +145,14 @@ export class CorePlugin extends YesImPlugin {
       }
       return Success(`Sent ${effectiveParts.length} message(s)`);
     } catch (e) {
+      if (hookService) {
+        await hookService.executeError(
+          HookType.Message,
+          { content, session: ctx.session },
+          e instanceof Error ? e : new Error(String(e)),
+          ctx.percept?.traceId,
+        );
+      }
       return Failed(e instanceof Error ? e.message : String(e));
     }
   }

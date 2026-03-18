@@ -22,7 +22,7 @@ const builtinSkillsDir = path.join(__dirname, "../", "resources/skills");
 })
 export default class MemoryKeeper extends YesImPlugin {
   static name = "memory-keeper";
-  static inject = ["yesimbot.plugin", "yesimbot.skill"];
+  static inject = ["yesimbot.plugin", "yesimbot.skill", "yesimbot.hook"];
   static Config: Schema<MemoryKeeperConfig> = Schema.object({
     memoryDir: Schema.string().description("存储记忆的目录").default("./data/memories"),
   });

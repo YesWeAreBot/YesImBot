@@ -1,10 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import matter from "gray-matter";
 
-import { INJECTION_POINTS, type InjectionPoint } from "../prompt/types";
+import type { PromptSectionName } from "../prompt/types";
 import type {
   ConditionNode,
   LifecycleStrategy,
@@ -13,13 +12,27 @@ import type {
   ToolFilter,
 } from "./types";
 
-function validateInjectionPoint(val: unknown, skillName: string): InjectionPoint | undefined {
-  if (val == null) return undefined;
-  if (typeof val === "string" && (INJECTION_POINTS as readonly string[]).includes(val)) {
-    return val as InjectionPoint;
+function normalizePromptSection(metaSection: unknown, skillName: string): PromptSectionName {
+  if (typeof metaSection === "string") {
+    if ((["identity", "policy", "memory", "situation"] as const).includes(metaSection as never)) {
+      return metaSection as PromptSectionName;
+    }
+    console.warn("Invalid prompt section '%s' in skill %s, using default", metaSection, skillName);
   }
-  console.warn("Invalid injection_point '%s' in skill %s, using default", val, skillName);
-  return undefined;
+
+  return "situation";
+}
+
+function normalizeStyleSection(metaSection: unknown, skillName: string): "identity" | "policy" {
+  if (metaSection === "identity" || metaSection === "policy") {
+    return metaSection;
+  }
+
+  if (typeof metaSection === "string") {
+    console.warn("Invalid style section '%s' in skill %s, using default", metaSection, skillName);
+  }
+
+  return "identity";
 }
 
 export function loadSkillsFromDir(dir: string): SkillDefinition[] {
@@ -36,6 +49,23 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
       const { meta, content } = parseFrontmatter(raw);
 
       const rawEffects = meta.effects as Record<string, unknown> | undefined;
+      const promptMeta = (meta.prompt_fragment ?? {}) as Record<string, unknown>;
+      const styleMeta = (meta.style_fragment ?? {}) as Record<string, unknown>;
+      const skillName = (meta.name as string) ?? entry.name;
+
+      if (meta.injection_point != null) {
+        console.warn(
+          "Skill %s has deprecated injection_point field; use prompt_fragment.section instead",
+          skillName,
+        );
+      }
+      if (meta.style_injection_point != null) {
+        console.warn(
+          "Skill %s has deprecated style_injection_point field; use style_fragment.section instead",
+          skillName,
+        );
+      }
+
       const effects: SkillDefinition["effects"] = {
         prompt: content || undefined,
         style: rawEffects?.style as StyleEffect | undefined,
@@ -43,13 +73,23 @@ export function loadSkillsFromDir(dir: string): SkillDefinition[] {
       };
 
       const def: SkillDefinition = {
-        name: (meta.name as string) ?? entry.name,
+        name: skillName,
         description: meta.description as string | undefined,
         conditions: meta.conditions as ConditionNode | undefined,
         lifecycle: (meta.lifecycle as LifecycleStrategy) ?? "per-turn",
         stickyTimeout: meta.stickyTimeout as number | undefined,
-        injectionPoint: validateInjectionPoint(meta.injection_point, entry.name),
-        styleInjectionPoint: validateInjectionPoint(meta.style_injection_point, entry.name),
+        promptFragment: {
+          section: normalizePromptSection(promptMeta.section, skillName),
+          stability: (promptMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
+          priority: (promptMeta.priority as number | undefined) ?? 400,
+          cacheable: (promptMeta.cacheable as boolean | undefined) ?? false,
+        },
+        styleFragment: {
+          section: normalizeStyleSection(styleMeta.section, skillName),
+          stability: (styleMeta.stability as "stable" | "dynamic" | undefined) ?? "dynamic",
+          priority: (styleMeta.priority as number | undefined) ?? 650,
+          cacheable: (styleMeta.cacheable as boolean | undefined) ?? false,
+        },
         effects,
         source: "file",
       };

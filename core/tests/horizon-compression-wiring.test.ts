@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Context } from "koishi";
-import { HorizonService } from "../src/services/horizon/service";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
 import { SummaryCompressor } from "../src/services/horizon/compressor";
+import { HorizonService } from "../src/services/horizon/service";
 
 // Mock SummaryCompressor to verify constructor parameters
 vi.mock("../src/services/horizon/compressor", () => {
@@ -13,12 +14,12 @@ vi.mock("../src/services/horizon/compressor", () => {
 });
 
 describe("HorizonService - Compression Trigger Wiring", () => {
-  let mockCtx: any;
-  let MockedCompressor: any;
+  let mockCtx: Record<string, unknown>;
+  let MockedCompressor: typeof SummaryCompressor;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    MockedCompressor = SummaryCompressor as any;
+    MockedCompressor = SummaryCompressor;
 
     mockCtx = {
       logger: vi.fn(() => ({
@@ -40,7 +41,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
       "yesimbot.formatter": {},
       "yesimbot.image-cache": {},
     };
-  });
+  }) as unknown as Context;
 
   it("should pass compressionThreshold to SummaryCompressor", () => {
     const config = {
@@ -51,7 +52,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
       summaryModel: "openai:gpt-4o-mini",
     };
 
-    new HorizonService(mockCtx as Context, config);
+    new HorizonService(mockCtx as unknown as Context, config);
 
     expect(MockedCompressor).toHaveBeenCalledWith(
       mockCtx,
@@ -72,7 +73,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
       summaryModel: "openai:gpt-4o",
     };
 
-    new HorizonService(mockCtx as Context, config);
+    new HorizonService(mockCtx as unknown as Context, config);
 
     expect(MockedCompressor).toHaveBeenCalledWith(
       mockCtx,
@@ -93,7 +94,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
       summaryModel: "openai:gpt-4o-mini",
     };
 
-    new HorizonService(mockCtx as Context, config);
+    new HorizonService(mockCtx as unknown as Context, config);
 
     expect(MockedCompressor).toHaveBeenCalledWith(
       mockCtx,
@@ -114,17 +115,12 @@ describe("HorizonService - Compression Trigger Wiring", () => {
       summaryModel: "openai:gpt-4o",
     };
 
-    new HorizonService(mockCtx as Context, config);
+    new HorizonService(mockCtx as unknown as Context, config);
 
-    expect(MockedCompressor).toHaveBeenCalledWith(
-      mockCtx,
-      expect.anything(),
-      "openai:gpt-4o",
-      {
-        compressionThreshold: 150,
-        inactivityTriggerMs: 5400000,
-        retainRecentEntries: 25,
-      },
-    );
+    expect(MockedCompressor).toHaveBeenCalledWith(mockCtx, expect.anything(), "openai:gpt-4o", {
+      compressionThreshold: 150,
+      inactivityTriggerMs: 5400000,
+      retainRecentEntries: 25,
+    });
   });
 });

@@ -4,7 +4,8 @@ import path from "node:path";
 import { Context, h, Schema, Service, type Session } from "koishi";
 
 import type { LoopMessage } from "../agent/trimmer";
-import { type ChannelKey, type Percept } from "../shared/types";
+import type { ChannelKey, Percept, ScenarioTimeline } from "../runtime/contracts";
+import { buildScenarioTimeline } from "../runtime/scenario-timeline";
 import { SummaryCompressor } from "./compressor";
 import { EnvironmentManager } from "./environment";
 import { EventListener } from "./listener";
@@ -17,11 +18,11 @@ import type {
   ImageConfig,
   Role,
   SelfInfo,
-  SummaryRecord,
   TimelineEntry,
   ViewOptions,
 } from "./types";
 import { TimelineEventType, TimelineStage } from "./types";
+import { validateAndFixHorizonView } from "./validation";
 
 declare module "koishi" {
   interface Context {
@@ -74,7 +75,13 @@ export const HorizonServiceConfigSchema: Schema<HorizonServiceConfig> = Schema.o
 });
 
 export class HorizonService extends Service<HorizonServiceConfig> {
-  static inject = ["database", "yesimbot.prompt", "yesimbot.formatter", "yesimbot.image-cache"];
+  static inject = [
+    "database",
+    "yesimbot.prompt",
+    "yesimbot.formatter",
+    "yesimbot.image-cache",
+    "yesimbot.model",
+  ];
 
   public events: EventManager;
   public listener: EventListener;
@@ -155,7 +162,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       // Remove all entries in Deleted stage across all channels
       const deletedResult = await this.ctx.database.remove("yesimbot.timeline", {
         stage: TimelineStage.Deleted,
-      } as any);
+      });
       const deletedCount = typeof deletedResult === "number" ? deletedResult : 0;
 
       // Clean up expired environment caches
@@ -218,7 +225,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       name: options?.selfName || options?.selfId || "",
       role: botRole ?? undefined,
     };
-    return { self, environment: environment ?? undefined, entities, history };
+    const view = { self, environment: environment ?? undefined, entities, history };
+    return validateAndFixHorizonView(view as Partial<HorizonView>, this.logger);
   }
 
   async getEntities(key: ChannelKey, session?: Session): Promise<Entity[]> {
@@ -267,7 +275,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
         ]),
       );
     } catch (e) {
-      this.ctx.logger.warn("Failed to load shortIdMaps");
+      this.logger?.warn?.("Failed to load shortIdMaps");
       this.shortIdCounters = new Map();
       this.shortIdMaps = new Map();
     }
@@ -289,7 +297,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       }
       writeFileSync(filePath, data);
     } catch (e) {
-      this.ctx.logger.error("Failed to save shortIdMaps: %s", e);
+      this.logger?.error?.("Failed to save shortIdMaps: %s", e);
     }
   }
 
@@ -354,10 +362,10 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     view: HorizonView,
     percept?: Percept,
     imageConfig?: ImageConfig,
+    scenarioTimeline?: ScenarioTimeline,
   ): Promise<LoopMessage[]> {
-    const channelKey = view.environment
-      ? `${view.environment.platform}:${view.environment.channelId}`
-      : undefined;
+    const channelKey = `${view.environment.platform}:${view.environment.channelId}`;
+    const timeline = scenarioTimeline ?? buildScenarioTimeline(view.history);
 
     // Build preamble (environment + members)
     let environment = "";
@@ -377,7 +385,7 @@ export class HorizonService extends Service<HorizonServiceConfig> {
       });
       memberLines.push(line.toString());
     }
-    for (const e of view.entities ?? []) {
+    for (const e of view.entities) {
       const userId = e.userId ?? e.id;
       const username = e.username ?? e.name;
       const nickname = e.nickname;
@@ -399,14 +407,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     if (memberLines.length) preambleParts.push(`<members>\n${memberLines.join("\n")}\n</members>`);
 
     // Add latest Summary if exists
-    const latestSummary = (view.history ?? [])
-      .filter((e) => e.type === TimelineEventType.Summary)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0] as
-      | SummaryRecord
-      | undefined;
-
-    if (latestSummary) {
-      preambleParts.push(`<summary>${latestSummary.data.content}</summary>`);
+    if (timeline.latestSummary) {
+      preambleParts.push(`<summary>${timeline.latestSummary.content}</summary>`);
     }
 
     const preamble = preambleParts.join("\n");
@@ -427,9 +429,8 @@ export class HorizonService extends Service<HorizonServiceConfig> {
     // Add preamble as first user message
     if (preamble) messages.push({ role: "user", content: preamble });
 
-    // Build all history messages using handler pipeline (no trigger mechanism)
-    const history = view.history ?? [];
-    const historyLoopMessages = await this.events.buildLoopMessages(history, options);
+    // Build transcript messages via canonical scenario timeline adapter.
+    const historyLoopMessages = await this.events.buildLoopMessages(timeline, options);
 
     // Append each message directly - handlers already return proper format
     messages.push(...historyLoopMessages);

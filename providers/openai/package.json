@@ -39,7 +39,7 @@
     "fmt": "oxfmt",
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.0",

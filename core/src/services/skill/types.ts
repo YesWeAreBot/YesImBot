@@ -1,4 +1,4 @@
-import type { InjectionPoint } from "../prompt/types";
+import type { FragmentStability, PromptFragment, PromptSectionName } from "../prompt/types";
 import type { TraitSignal } from "../shared/types";
 
 // ---- Condition Nodes ----
@@ -47,25 +47,73 @@ export interface SkillDefinition {
   activate?: (signals: TraitSignal[]) => boolean;
   lifecycle: LifecycleStrategy;
   stickyTimeout?: number;
-  injectionPoint?: InjectionPoint;
-  styleInjectionPoint?: InjectionPoint;
+  promptFragment?: SkillFragmentMetadata;
+  styleFragment?: SkillStyleFragmentMetadata;
   effects: SkillEffects;
   source: "file" | "plugin";
+}
+
+export interface SkillFragmentMetadata {
+  section: PromptSectionName;
+  stability?: FragmentStability;
+  priority?: number;
+  cacheable?: boolean;
+}
+
+export interface SkillStyleFragmentMetadata {
+  section?: Extract<PromptSectionName, "identity" | "policy">;
+  stability?: FragmentStability;
+  priority?: number;
+  cacheable?: boolean;
+}
+
+export interface SkillPromptFragment {
+  skillName: string;
+  content: string;
+  section: PromptSectionName;
+  source: "skill";
+  stability: FragmentStability;
+  priority: number;
+  cacheable: boolean;
 }
 
 // ---- Merged Result ----
 
 export interface SkillEffect {
-  promptInjections: Array<{
-    skillName: string;
-    point: InjectionPoint;
-    content: string;
-  }>;
-  styleOverride: {
-    content: string;
-    specificity: number;
-    point: InjectionPoint;
-  } | null;
+  promptFragments: SkillPromptFragment[];
+  styleFragment: (SkillPromptFragment & { specificity: number }) | null;
   toolFilter: { include: string[]; exclude: string[] };
   activeSkills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
+}
+
+export type LoadResultStatus =
+  | "loaded"
+  | "already_loaded"
+  | "not_found"
+  | "invalid_definition"
+  | "rejected_by_policy"
+  | "loaded_but_inactive_effects";
+
+export interface LoadResult {
+  status: LoadResultStatus;
+  skill?: SkillDefinition;
+  reason?: string;
+}
+
+export interface LoadAttempt {
+  name: string;
+  status: LoadResultStatus | "unloaded";
+  timestamp: number;
+  caller?: string;
+  reason?: string;
+}
+
+export interface AppliedSkillEffects {
+  promptFragments: PromptFragment[];
+  styleFragment: PromptFragment | null;
+  toolVisibility: { include: string[]; exclude: string[] };
+  metadata: {
+    loadedSkills: string[];
+    loadHistory: LoadAttempt[];
+  };
 }

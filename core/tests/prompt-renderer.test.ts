@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { HandlebarsRenderer } from "../src/services/prompt/renderer";
+
 import { HelperRegistry, registerBuiltinHelpers } from "../src/services/prompt/helpers";
+import { HandlebarsRenderer } from "../src/services/prompt/renderer";
 
 describe("HandlebarsRenderer", () => {
   let renderer: HandlebarsRenderer;
@@ -20,18 +21,14 @@ describe("HandlebarsRenderer", () => {
       const result = renderer.render("Content: {{xml}}", {
         xml: "<timeline><msg>hello</msg></timeline>",
       });
-      expect(result).toBe(
-        "Content: <timeline><msg>hello</msg></timeline>",
-      );
+      expect(result).toBe("Content: <timeline><msg>hello</msg></timeline>");
     });
 
     it("should render triple-stash {{{var}}} for unescaped content", () => {
       const result = renderer.render("Content: {{{xml}}}", {
         xml: "<timeline><msg>hello</msg></timeline>",
       });
-      expect(result).toBe(
-        "Content: <timeline><msg>hello</msg></timeline>",
-      );
+      expect(result).toBe("Content: <timeline><msg>hello</msg></timeline>");
     });
 
     it("should iterate arrays with {{#each}} block helper", () => {
@@ -161,14 +158,14 @@ describe("Built-in Helpers", () => {
 
   describe("join", () => {
     it("should join array with separator", () => {
-      const result = renderer.render("{{join items \", \"}}", {
+      const result = renderer.render('{{join items ", "}}', {
         items: ["a", "b", "c"],
       });
       expect(result).toBe("a, b, c");
     });
 
     it("should handle empty array", () => {
-      const result = renderer.render("{{join items \", \"}}", {
+      const result = renderer.render('{{join items ", "}}', {
         items: [],
       });
       expect(result).toBe("");
@@ -177,12 +174,12 @@ describe("Built-in Helpers", () => {
 
   describe("eq", () => {
     it("should render block when values are equal", () => {
-      const template = "{{#eq status \"active\"}}Active{{/eq}}";
+      const template = '{{#eq status "active"}}Active{{/eq}}';
       expect(renderer.render(template, { status: "active" })).toBe("Active");
     });
 
     it("should not render block when values are not equal", () => {
-      const template = "{{#eq status \"active\"}}Active{{/eq}}";
+      const template = '{{#eq status "active"}}Active{{/eq}}';
       expect(renderer.render(template, { status: "inactive" })).toBe("");
     });
   });

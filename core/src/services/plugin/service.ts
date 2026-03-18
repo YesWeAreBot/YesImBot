@@ -1,9 +1,12 @@
 import { Context, Schema, Service } from "koishi";
 
+import { getCapabilityByKey } from "../runtime/contracts";
+import { buildMinimalContext } from "../shared/context-factory";
 import { CorePlugin, OnebotPlugin } from "./builtin";
 import { YesImPlugin } from "./plugin";
 import { schemaToJSONSchema } from "./schema";
 import {
+  CapabilityResolver,
   FunctionDefinition,
   FunctionType,
   IPluginService,
@@ -20,8 +23,31 @@ export const PluginServiceConfigSchema: Schema<PluginServiceConfig> = Schema.obj
   defaultTimeout: Schema.number().default(30000),
 });
 
+export class CapabilityUnavailableError extends Error {
+  public readonly toolName: string;
+  public readonly requiredCapabilities: string[];
+  public readonly unsatisfied: Array<{ key: string; reason: string }>;
+
+  constructor(
+    toolName: string,
+    requiredCapabilities: string[],
+    unsatisfied: Array<{ key: string; reason: string }>,
+  ) {
+    super(
+      `Tool "${toolName}" requires capabilities: ${requiredCapabilities.join(", ")}. ` +
+        `Unavailable: ${unsatisfied.map((item) => `${item.key} (${item.reason})`).join("; ")}`,
+    );
+    this.name = "CapabilityUnavailableError";
+    this.toolName = toolName;
+    this.requiredCapabilities = requiredCapabilities;
+    this.unsatisfied = unsatisfied;
+  }
+}
+
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
+  static inject = ["yesimbot.hook"];
   private plugins: Map<string, YesImPlugin> = new Map();
+  private capabilityResolvers: CapabilityResolver[] = [];
 
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
@@ -44,13 +70,13 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
         if (!session) return "无法获取会话信息。";
         if (!session.platform) return "无法获取平台信息。";
         if (!session.channelId) return "无法获取频道信息。";
-        const tools = this.getTools({
+        const execCtx = buildMinimalContext({
           platform: session.platform,
-          session: session,
           channelId: session.channelId,
+          session: session,
           bot: session.bot,
-          includeHidden: options?.hidden ?? false,
         });
+        const tools = this.getTools(execCtx, options?.hidden ?? false);
         if (tools.length === 0) return "当前没有可用的工具。";
         return `可用的工具：\n${tools
           .map((tool) => `- ${tool.function.name}: ${tool.function.description}`)
@@ -84,12 +110,12 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
         if (!session) return "无法获取会话信息。";
         if (!session.platform) return "无法获取平台信息。";
         if (!session.channelId) return "无法获取频道信息。";
-        const toolCtx = {
+        const toolCtx = buildMinimalContext({
           platform: session.platform,
-          session: session,
           channelId: session.channelId,
+          session: session,
           bot: session.bot,
-        };
+        });
 
         const parsedParams: Record<string, unknown> = {};
         try {
@@ -140,6 +166,20 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     this.plugins.delete(name);
   }
 
+  public registerCapabilityResolver(resolver: CapabilityResolver): void {
+    this.capabilityResolvers.push(resolver);
+    const logger = this.ctx.logger("yesimbot.plugin");
+    logger.info(
+      `Registered capability resolver${resolver.platform ? ` for platform: ${resolver.platform}` : " (all platforms)"}`,
+    );
+  }
+
+  public getCapabilityResolvers(platform?: string): CapabilityResolver["resolver"][] {
+    return this.capabilityResolvers
+      .filter((resolver) => !resolver.platform || resolver.platform === platform)
+      .map((resolver) => resolver.resolver);
+  }
+
   private findFunction(name: string): FunctionDefinition | undefined {
     for (const plugin of this.plugins.values()) {
       const fn = plugin.getFunctions().get(name);
@@ -156,10 +196,32 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     const fn = this.findFunction(name);
     if (!fn) return Failed(`Function not found: ${name}`);
 
+    if (fn.requiredCapabilities?.length && context?.capabilities) {
+      const unsatisfied: Array<{ key: string; reason: string }> = [];
+
+      for (const key of fn.requiredCapabilities) {
+        const capability = getCapabilityByKey(context.capabilities, key);
+        if (!capability || capability.status !== "available") {
+          unsatisfied.push({
+            key,
+            reason:
+              capability?.status === "unavailable"
+                ? (capability.reason ?? "unknown")
+                : "capability-not-found",
+          });
+        }
+      }
+
+      if (unsatisfied.length > 0) {
+        const error = new CapabilityUnavailableError(name, fn.requiredCapabilities, unsatisfied);
+        return Failed(error.message);
+      }
+    }
+
     const timeout = this.config?.defaultTimeout ?? 30000;
     try {
       return await Promise.race([
-        fn.handler(params, context ?? { platform: "", channelId: "" }),
+        fn.handler(params, context ?? buildMinimalContext({ platform: "", channelId: "" })),
         new Promise<ToolResult>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout")), timeout),
         ),
@@ -185,23 +247,6 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
         if (fn.hidden && !includeHidden) continue;
-        if (execCtx && fn.activators?.length) {
-          const failed = fn.activators.find((a) => !a.check(execCtx));
-          if (failed) {
-            if (failed.onFail === "hint") {
-              result.push({
-                type: "function" as const,
-                functionType: fn.type,
-                function: {
-                  name: fn.name,
-                  description: `${fn.description} (unavailable: ${failed.reason ?? "prerequisite not met"})`,
-                  parameters: schemaToJSONSchema(fn.parameters),
-                },
-              });
-            }
-            continue;
-          }
-        }
         result.push({
           type: "function" as const,
           functionType: fn.type,
