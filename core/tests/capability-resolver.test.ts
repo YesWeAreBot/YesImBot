@@ -69,4 +69,27 @@ describe("capability resolver framework", () => {
     expect(capabilities.extended["social.essence"]?.status).toBe("available");
     expect(capabilities.extended["social.essence"]?.source).toBe("resolver:2");
   });
+
+  it("keeps deny-first behavior when resolvers disagree on same key", () => {
+    const capabilities = buildCapabilitiesFromRuntime({
+      session: { isDirect: false, quote: undefined, guildId: "g1" } as never,
+      bot: { selfId: "bot-1" },
+      resolvers: [
+        () => ({
+          "member.moderate": { status: "available", source: "resolver:allow" },
+        }),
+        () => ({
+          "member.moderate": {
+            status: "unavailable",
+            reason: "deny-first",
+            source: "resolver:deny",
+          },
+        }),
+      ],
+    } as never);
+
+    expect(capabilities.extended["member.moderate"]?.status).toBe("unavailable");
+    expect(capabilities.extended["member.moderate"]?.source).toBe("resolver:deny");
+    expect(capabilities.extended["member.moderate"]).toMatchObject({ reason: "deny-first" });
+  });
 });

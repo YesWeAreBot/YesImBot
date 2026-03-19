@@ -11,7 +11,6 @@ import {
   YesImPlugin,
 } from "@yesimbot/plugin-sdk/tools";
 import { Context, Schema } from "koishi";
-import { loadSkillsFromDir } from "koishi-plugin-yesimbot/services/skill";
 
 import { TavilyBackend } from "./backends/tavily";
 import enUS from "./locales/en-US.json";
@@ -20,7 +19,11 @@ import type { SearchBackend, SearchPluginConfig } from "./types";
 
 const builtinSkillsDir = join(__dirname, "../", "resources/skills");
 
-@Metadata({ name: "search", description: "Web search tool" })
+@Metadata({
+  name: "search",
+  description: "Web search tool",
+  skillPacks: [builtinSkillsDir],
+})
 export default class SearchPlugin extends YesImPlugin {
   static name = "search";
   static inject = ["yesimbot.plugin", "yesimbot.skill", "yesimbot.hook"];
@@ -36,13 +39,10 @@ export default class SearchPlugin extends YesImPlugin {
   });
   private config: SearchPluginConfig;
 
-  private disposeSkills: (() => void)[] = [];
-
   constructor(ctx: Context, config: SearchPluginConfig) {
     super(ctx);
     this.config = config;
     this.ctx.on("ready", async () => this.start());
-    this.ctx.on("dispose", async () => this.dispose());
   }
 
   private async start(): Promise<void> {
@@ -76,13 +76,6 @@ export default class SearchPlugin extends YesImPlugin {
         return Success(formatted);
       },
     });
-
-    const skills = loadSkillsFromDir(builtinSkillsDir);
-    this.disposeSkills = skills.map((s) => this.ctx["yesimbot.skill"].register(s));
-  }
-
-  private async dispose(): Promise<void> {
-    this.disposeSkills.forEach((d) => d());
   }
 
   @Tool({

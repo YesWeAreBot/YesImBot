@@ -85,6 +85,7 @@ export interface PluginMetadata {
   name: string;
   description: string;
   builtin?: boolean;
+  skillPacks?: string[];
 }
 
 export interface IPluginService {

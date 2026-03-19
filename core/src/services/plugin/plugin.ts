@@ -16,6 +16,8 @@ export abstract class YesImPlugin {
   tools: Map<string, FunctionDefinition> = new Map();
   actions: Map<string, FunctionDefinition> = new Map();
   private hooksRegistered = false;
+  private skillPackDisposers: Array<() => void> = [];
+  private skillPacksMounted = false;
 
   constructor(ctx: Context) {
     this.ctx = ctx;
@@ -63,11 +65,28 @@ export abstract class YesImPlugin {
         hookService.registerFromDecorators(ctx, this);
         this.hooksRegistered = true;
       }
+
+      const skillRegistry = ctx["yesimbot.skill"] as
+        | { registerDir?: (dir: string, source: "plugin" | "file") => Array<() => void> }
+        | undefined;
+      if (skillRegistry?.registerDir && !this.skillPacksMounted) {
+        for (const dir of this.metadata.skillPacks ?? []) {
+          const disposers = skillRegistry.registerDir(dir, "plugin");
+          this.skillPackDisposers.push(...disposers);
+        }
+        this.skillPacksMounted = true;
+      }
+
       ctx["yesimbot.plugin"].registerPlugin(this);
     });
 
     ctx.on("dispose", async () => {
       this.hooksRegistered = false;
+      for (const dispose of this.skillPackDisposers) {
+        dispose();
+      }
+      this.skillPackDisposers = [];
+      this.skillPacksMounted = false;
       ctx["yesimbot.plugin"].unregisterPlugin(this.metadata.name);
     });
   }

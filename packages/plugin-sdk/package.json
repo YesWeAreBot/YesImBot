@@ -24,6 +24,11 @@
       "import": "./dist/hooks/index.mjs",
       "require": "./dist/hooks/index.cjs"
     },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "import": "./dist/skills/index.mjs",
+      "require": "./dist/skills/index.cjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

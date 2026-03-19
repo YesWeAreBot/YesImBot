@@ -49,6 +49,20 @@ export class SkillRegistry extends Service<SkillRegistryConfig> {
     return dispose;
   }
 
+  registerDir(dir: string, source: "plugin" | "file"): Array<() => void> {
+    if (!existsSync(dir)) {
+      return [];
+    }
+
+    const loaded = loadSkillsFromDir(dir);
+    return loaded.map((def) =>
+      this.register({
+        ...def,
+        source,
+      }),
+    );
+  }
+
   async reload(): Promise<void> {
     for (const [k, v] of this.skills) {
       if (v.source === "file") this.skills.delete(k);

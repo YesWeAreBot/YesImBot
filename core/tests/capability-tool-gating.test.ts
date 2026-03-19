@@ -27,12 +27,54 @@ function createPluginServiceMock(definitions: Record<string, Record<string, unkn
 
   return {
     getTools: vi.fn(() => entries),
+    getToolsAll: vi.fn(() => entries),
     getDefinition: vi.fn((name: string) => definitions[name]),
+  };
+}
+
+function createPluginServiceWithHidden(
+  visibleDefinitions: Record<string, Record<string, unknown>>,
+  hiddenDefinitions: Record<string, Record<string, unknown>>,
+) {
+  const visible = Object.entries(visibleDefinitions).map(([name, definition]) => ({
+    type: "function" as const,
+    functionType: (definition.type as FunctionType | undefined) ?? FunctionType.Tool,
+    function: {
+      name,
+      description: String(definition.description ?? name),
+      parameters: {},
+    },
+  }));
+  const hidden = Object.entries(hiddenDefinitions).map(([name, definition]) => ({
+    type: "function" as const,
+    functionType: (definition.type as FunctionType | undefined) ?? FunctionType.Tool,
+    function: {
+      name,
+      description: String(definition.description ?? name),
+      parameters: {},
+    },
+  }));
+
+  return {
+    getTools: vi.fn((_: ToolExecutionContext, includeHidden?: boolean) =>
+      includeHidden ? visible.concat(hidden) : visible,
+    ),
+    getDefinition: vi.fn((name: string) => visibleDefinitions[name] ?? hiddenDefinitions[name]),
   };
 }
 
 function buildToolSchemaForPrompt(pluginService: never, toolCtx: ToolExecutionContext): string {
   const fragments = buildToolPromptFragments(pluginService, toolCtx);
+  const availableFragment = fragments.find((f) => f.id === "tooling.available");
+  return availableFragment?.content ?? "";
+}
+
+function buildToolSchemaForPromptWithAllowed(
+  pluginService: never,
+  toolCtx: ToolExecutionContext,
+  allowedTools: string[],
+): string {
+  const fragments = buildToolPromptFragments(pluginService, toolCtx, allowedTools);
   const availableFragment = fragments.find((f) => f.id === "tooling.available");
   return availableFragment?.content ?? "";
 }
@@ -194,5 +236,69 @@ describe("capability tool gating", () => {
   it("wires platform capability resolvers in loop", () => {
     expect(loopSource).toContain("getCapabilityResolvers(percept.platform)");
     expect(loopSource).toContain("resolvers,");
+  });
+
+  it("unlocks hidden tools additively only when allowedTools requests them", () => {
+    const pluginService = createPluginServiceWithHidden(
+      {
+        public_tool: {
+          name: "public_tool",
+          type: FunctionType.Tool,
+        },
+      },
+      {
+        search: {
+          name: "search",
+          type: FunctionType.Tool,
+          hidden: true,
+        },
+      },
+    );
+
+    const baseAvailability = buildToolSchemaForPrompt(
+      pluginService as never,
+      createToolCtx({ core: {}, extended: {} }),
+    );
+    expect(baseAvailability).toContain("public_tool (tool)");
+    expect(baseAvailability).not.toContain("search (tool)");
+
+    const allowedAvailability = buildToolSchemaForPromptWithAllowed(
+      pluginService as never,
+      createToolCtx({ core: {}, extended: {} }),
+      ["search"],
+    );
+    expect(allowedAvailability).toContain("search (tool)");
+    expect(pluginService.getTools).toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it("keeps capability gating on allowed hidden tools with onCapabilityMissing hint", () => {
+    const pluginService = createPluginServiceWithHidden(
+      {
+        public_tool: {
+          name: "public_tool",
+          type: FunctionType.Tool,
+        },
+      },
+      {
+        search: {
+          name: "search",
+          type: FunctionType.Tool,
+          hidden: true,
+          requiredCapabilities: ["message.read_history"],
+          onCapabilityMissing: "hint",
+        },
+      },
+    );
+
+    const availability = buildToolSchemaForPromptWithAllowed(
+      pluginService as never,
+      createToolCtx({ core: {}, extended: {} }),
+      ["search"],
+    );
+
+    expect(availability).toContain(
+      "search: [unavailable — capabilities missing: message.read_history]",
+    );
+    expect(availability).not.toContain("search (tool)");
   });
 });
