@@ -18,8 +18,7 @@ function createToolCtx(): ToolExecutionContext {
 describe("tool wording clarity (PROMPT-03)", () => {
   it("static protocol fragment uses 'tools' and 'actions' terminology without listing specific tools", () => {
     const mockPluginService = {
-      getTools: () => [],
-      getDefinition: () => undefined,
+      getRoundAvailability: () => ({ visible: [], unavailable: [] }),
     } as unknown as PluginService;
 
     const fragments = buildToolPromptFragments(mockPluginService, createToolCtx());
@@ -34,13 +33,16 @@ describe("tool wording clarity (PROMPT-03)", () => {
 
   it("dynamic availability fragment explicitly states 'this round' or 'current round'", () => {
     const mockPluginService = {
-      getTools: () => [
-        {
-          function: { name: "send_message", description: "Send a message", parameters: {} },
-          functionType: FunctionType.Action,
-        },
-      ],
-      getDefinition: () => ({ type: FunctionType.Action }),
+      getRoundAvailability: () => ({
+        visible: [
+          {
+            function: { name: "send_message", description: "Send a message", parameters: {} },
+            functionType: FunctionType.Action,
+            type: "function" as const,
+          },
+        ],
+        unavailable: [],
+      }),
     } as unknown as PluginService;
 
     const fragments = buildToolPromptFragments(mockPluginService, createToolCtx());
@@ -52,8 +54,7 @@ describe("tool wording clarity (PROMPT-03)", () => {
 
   it("when no tools available, explicitly says so rather than omitting", () => {
     const mockPluginService = {
-      getTools: () => [],
-      getDefinition: () => undefined,
+      getRoundAvailability: () => ({ visible: [], unavailable: [] }),
     } as unknown as PluginService;
 
     const fragments = buildToolPromptFragments(mockPluginService, createToolCtx());

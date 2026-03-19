@@ -2,6 +2,7 @@ import { Context, Schema, Service } from "koishi";
 
 import { getCapabilityByKey } from "../../runtime/contracts";
 import { buildMinimalContext } from "../../shared/context-factory";
+import { HookType } from "../hook/types";
 import { CorePlugin, OnebotPlugin } from "./builtin";
 import { YesImPlugin } from "./plugin";
 import { schemaToJSONSchema } from "./schema";
@@ -10,6 +11,13 @@ import {
   FunctionDefinition,
   FunctionType,
   IPluginService,
+  PluginMountRecord,
+  RoundActionCall,
+  RoundActionExecutionResult,
+  RoundActionResultEntry,
+  RoundAvailability,
+  RoundFunctionEntry,
+  RoundUnavailableEntry,
   ToolExecutionContext,
   ToolResult,
 } from "./types";
@@ -45,6 +53,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   static inject = ["yesimbot.hook"];
   private plugins: Map<string, YesImPlugin> = new Map();
   private capabilityResolvers: CapabilityResolver[] = [];
+  private mountRecords: Map<string, PluginMountRecord> = new Map();
 
   constructor(ctx: Context, config: PluginServiceConfig) {
     super(ctx, "yesimbot.plugin", true);
@@ -164,6 +173,71 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     this.plugins.delete(name);
   }
 
+  public async mountPlugin(plugin: YesImPlugin): Promise<void> {
+    const name = plugin.metadata.name;
+    const existingRecord = this.mountRecords.get(name);
+    if (existingRecord?.state === "mounted") {
+      return;
+    }
+    if (existingRecord?.state === "mounting") {
+      throw new Error(`Plugin is currently mounting: ${name}`);
+    }
+
+    const record: PluginMountRecord = {
+      name,
+      plugin,
+      state: "mounting",
+      mountedAt: new Date(),
+      disposers: [],
+    };
+    this.mountRecords.set(name, record);
+
+    try {
+      const hookService = this.ctx["yesimbot.hook"];
+      const hookDisposers = hookService?.registerFromDecorators(this.ctx, plugin) ?? [];
+      record.disposers.push(...hookDisposers);
+
+      const skillRegistry = this.ctx["yesimbot.skill"];
+      if (skillRegistry?.registerDir) {
+        for (const dir of plugin.metadata.skillPacks ?? []) {
+          const skillDisposers = skillRegistry.registerDir(dir, "plugin");
+          record.disposers.push(...skillDisposers);
+        }
+      }
+
+      this.registerPlugin(plugin);
+      record.state = "mounted";
+      record.mountedAt = new Date();
+      this.mountRecords.set(name, record);
+    } catch (error) {
+      for (const dispose of [...record.disposers].reverse()) {
+        try {
+          dispose();
+        } catch {
+          // best-effort rollback
+        }
+      }
+      this.mountRecords.delete(name);
+      this.unregisterPlugin(name);
+      throw error;
+    }
+  }
+
+  public unmountPlugin(name: string): void {
+    const record = this.mountRecords.get(name);
+    if (record) {
+      for (const dispose of [...record.disposers].reverse()) {
+        try {
+          dispose();
+        } catch {
+          // best-effort unmount
+        }
+      }
+      this.mountRecords.delete(name);
+    }
+    this.unregisterPlugin(name);
+  }
+
   public registerCapabilityResolver(resolver: CapabilityResolver): void {
     this.capabilityResolvers.push(resolver);
     this.logger.info(
@@ -235,12 +309,8 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   getTools(
     execCtx?: ToolExecutionContext,
     includeHidden = false,
-  ): Array<{
-    type: "function";
-    functionType: FunctionType;
-    function: { name: string; description: string; parameters: Record<string, unknown> };
-  }> {
-    const result = [];
+  ): RoundFunctionEntry[] {
+    const result: RoundFunctionEntry[] = [];
     for (const plugin of this.plugins.values()) {
       for (const fn of plugin.getFunctions().values()) {
         if (fn.hidden && !includeHidden) continue;
@@ -258,7 +328,220 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return result;
   }
 
+  getRoundAvailability(execCtx?: ToolExecutionContext, allowedTools?: string[]): RoundAvailability {
+    const visibleEntries = this.getTools(execCtx);
+    const requestedTools = new Set(allowedTools ?? []);
+    const requestedHiddenEntries = requestedTools.size
+      ? this.getTools(execCtx, true).filter(
+          (entry) =>
+            requestedTools.has(entry.function.name) &&
+            !visibleEntries.some((visible) => visible.function.name === entry.function.name),
+        )
+      : [];
+    const candidates = visibleEntries.concat(requestedHiddenEntries);
+
+    const visible: RoundFunctionEntry[] = [];
+    const unavailable: RoundUnavailableEntry[] = [];
+
+    for (const entry of candidates) {
+      const definition = this.getDefinition(entry.function.name);
+      if (!definition?.requiredCapabilities?.length) {
+        visible.push(entry);
+        continue;
+      }
+
+      const missing = definition.requiredCapabilities.filter((key) => {
+        const state = getCapabilityByKey(execCtx?.capabilities, key);
+        if (!state) {
+          this.logger.warn(
+            `[capability-gate] Unknown capability key "${key}" required by tool "${entry.function.name}"`,
+          );
+          return true;
+        }
+        return state.status !== "available";
+      });
+
+      if (missing.length === 0) {
+        visible.push(entry);
+        continue;
+      }
+
+      const strategy = definition.onCapabilityMissing ?? "remove";
+      if (strategy === "hint") {
+        unavailable.push({
+          name: entry.function.name,
+          functionType: entry.functionType,
+          reason: "capability-missing",
+          detail: `capabilities missing: ${missing.join(", ")}`,
+          missingCapabilities: missing,
+        });
+      }
+    }
+
+    if (requestedTools.size) {
+      const availableNames = new Set(visible.map((entry) => entry.function.name));
+      for (const name of requestedTools) {
+        if (!availableNames.has(name)) {
+          const exists = candidates.some((entry) => entry.function.name === name);
+          if (!exists) {
+            unavailable.push({
+              name,
+              reason: "tool-not-installed",
+              detail: "tool not installed",
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      visible,
+      unavailable,
+    };
+  }
+
+  async executeRoundActions(
+    actions: RoundActionCall[],
+    execCtx: ToolExecutionContext,
+    traceId: string,
+    maxResultLength: number,
+  ): Promise<RoundActionExecutionResult> {
+    const toolResults: RoundActionResultEntry[] = [];
+    let hasToolCalls = false;
+    let hasActionCalls = false;
+
+    const hookService = this.ctx["yesimbot.hook"] as
+      | {
+          executeBefore: (
+            hookType: unknown,
+            params: Record<string, unknown>,
+            traceId: string,
+          ) => Promise<{ skipped: boolean; params: Record<string, unknown>; result?: unknown }>;
+          executeAfter: (
+            hookType: unknown,
+            params: Record<string, unknown>,
+            result: unknown,
+            traceId: string,
+          ) => Promise<void>;
+          executeError: (
+            hookType: unknown,
+            params: Record<string, unknown>,
+            error: Error,
+            traceId: string,
+          ) => Promise<void>;
+        }
+      | undefined;
+
+    const toolActions: Array<{ idx: number; action: RoundActionCall }> = [];
+    const actionActions: Array<{ idx: number; action: RoundActionCall }> = [];
+
+    for (let i = 0; i < actions.length; i++) {
+      const action = actions[i]!;
+      const def = this.getDefinition(action.name);
+      if (def?.type === FunctionType.Action) {
+        hasActionCalls = true;
+        actionActions.push({ idx: i, action });
+      } else {
+        hasToolCalls = true;
+        toolActions.push({ idx: i, action });
+      }
+    }
+
+    if (toolActions.length > 0) {
+      const settled = await Promise.allSettled(
+        toolActions.map(async ({ action }) => {
+          let params = action.params ?? {};
+
+          if (hookService) {
+            const beforeResult = await hookService.executeBefore(HookType.Tool, params, traceId);
+            if (beforeResult.skipped) {
+              return beforeResult.result as ToolResult;
+            }
+            params = beforeResult.params;
+          }
+
+          try {
+            const result = await this.invoke(action.name, params, execCtx);
+            if (hookService) {
+              await hookService.executeAfter(HookType.Tool, params, result, traceId);
+            }
+            return result;
+          } catch (error) {
+            if (hookService) {
+              await hookService.executeError(
+                HookType.Tool,
+                params,
+                error instanceof Error ? error : new Error(String(error)),
+                traceId,
+              );
+            }
+            throw error;
+          }
+        }),
+      );
+
+      for (let i = 0; i < toolActions.length; i++) {
+        const { idx, action } = toolActions[i]!;
+        const result = settled[i]!;
+        toolResults.push(toRoundActionResultEntry(idx, action.name, result, maxResultLength));
+      }
+    }
+
+    for (const { idx, action } of actionActions) {
+      try {
+        const result = await this.invoke(action.name, action.params ?? {}, execCtx);
+        toolResults.push(
+          toRoundActionResultEntry(idx, action.name, { status: "fulfilled", value: result }, maxResultLength),
+        );
+      } catch (error) {
+        toolResults.push({
+          id: idx,
+          name: action.name,
+          success: false,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    toolResults.sort((a, b) => a.id - b.id);
+    return { toolResults, hasToolCalls, hasActionCalls };
+  }
+
   listPlugins(): string[] {
     return [...this.plugins.keys()];
   }
+}
+
+function toRoundActionResultEntry(
+  idx: number,
+  name: string,
+  result: PromiseSettledResult<ToolResult>,
+  maxLen: number,
+): RoundActionResultEntry {
+  if (result.status === "fulfilled") {
+    const value = result.value;
+    let resultValue = value.ok ? value.data : undefined;
+    if (resultValue !== undefined) {
+      const text = typeof resultValue === "string" ? resultValue : JSON.stringify(resultValue);
+      if (text.length > maxLen) {
+        resultValue = `${text.slice(0, maxLen)}...(truncated)`;
+      }
+    }
+    return {
+      id: idx,
+      name,
+      status: value.ok ? "ok" : "failed",
+      success: value.ok,
+      ...(resultValue !== undefined && { result: resultValue }),
+      ...(!value.ok && value.error && { error: value.error }),
+    };
+  }
+  return {
+    id: idx,
+    name,
+    success: false,
+    status: "failed",
+    error: String(result.reason),
+  };
 }

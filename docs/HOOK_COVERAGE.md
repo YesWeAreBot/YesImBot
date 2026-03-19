@@ -24,11 +24,17 @@ Athena hooks are interception points for user-facing runtime flows. The system d
 
 ### 1. Tool Path (`HookType.Tool`)
 
-- Entry point: `ThinkActLoop.executeActions`
-- Source: `core/src/services/agent/loop.ts`
+- Entry point: `PluginService.executeRoundActions` (coordination facade called by `ThinkActLoop`)
+- Source: `core/src/services/plugin/service.ts`
 - Hook calls:
   - `executeBefore(HookType.Tool, ...)`
   - `executeAfter(HookType.Tool, ...)`
+
+Ownership boundary:
+
+- `yesimbot.plugin` is the coordination facade + tool runtime owner for round execution orchestration.
+- `yesimbot.hook` remains the hook runtime owner and executes before/after/error semantics.
+- `yesimbot.skill` remains the skill runtime owner; skill registration/lifecycle are not absorbed into hook runtime.
 
 Coverage evidence:
 

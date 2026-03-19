@@ -29,6 +29,108 @@ function createSkillDefinition(name: string): SkillDefinition {
 }
 
 describe("agent loop skill loading", () => {
+  it("delegates round action execution to PluginService facade", async () => {
+    const executeRoundActions = vi.fn().mockResolvedValue({
+      toolResults: [
+        {
+          id: 0,
+          name: "send_message",
+          success: true,
+          status: "ok",
+          result: "sent",
+        },
+      ],
+      hasToolCalls: false,
+      hasActionCalls: true,
+    });
+    const ctx = {
+      baseDir: "/tmp",
+      logger: vi.fn(() => ({
+        level: 2,
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      })),
+      "yesimbot.horizon": {
+        buildView: vi.fn().mockResolvedValue({
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "c1",
+            name: "General",
+            platform: "discord",
+            channelId: "c1",
+          },
+          entities: [],
+          history: [],
+        }),
+        formatHorizonText: vi.fn().mockResolvedValue([]),
+        events: {
+          recordAgentResponse: vi.fn(),
+          recordAgentAction: vi.fn(),
+          recordMessage: vi.fn(),
+          markAsActive: vi.fn(),
+          archiveStale: vi.fn(),
+        },
+        compressor: undefined,
+        config: { archiveThresholdMs: 86400000 },
+      },
+      "yesimbot.plugin": {
+        getTools: vi.fn(() => []),
+        getDefinition: vi.fn(() => ({ type: "action" })),
+        invoke: vi.fn(),
+        executeRoundActions,
+      },
+      "yesimbot.prompt": {
+        emitPromptBlocks: vi.fn().mockResolvedValue({
+          sections: [],
+          stableBlock: "",
+          dynamicBlock: "",
+          stableSignature: "sig",
+        }),
+        registerFragmentSource: vi.fn(() => () => undefined),
+        inject: vi.fn(() => () => undefined),
+      },
+      "yesimbot.model": {
+        getProvider: vi.fn(() => ({ providerType: "openai" })),
+        call: vi.fn().mockResolvedValue({
+          text: JSON.stringify({
+            actions: [{ name: "send_message", params: { content: "hello" } }],
+          }),
+          usage: {},
+        }),
+      },
+      "yesimbot.trait": undefined,
+      "yesimbot.skill": {
+        get: vi.fn(),
+        resolve: vi.fn().mockReturnValue({
+          activeSkills: [],
+          promptFragments: [],
+          styleFragment: null,
+          toolFilter: { include: [], exclude: [] },
+        }),
+      },
+      "yesimbot.arousal": undefined,
+    } as unknown as ConstructorParameters<typeof ThinkActLoop>[0];
+
+    const loop = new ThinkActLoop(ctx, { model: "openai:gpt", fallbackChain: [], maxRounds: 1 });
+    await loop.run(createPercept(), {
+      platform: "discord",
+      channelId: "c1",
+      session: { isDirect: false, quote: undefined },
+      bot: { selfId: "bot-1", user: { name: "Athena" } },
+    } as never);
+
+    expect(executeRoundActions).toHaveBeenCalledTimes(1);
+    expect(executeRoundActions).toHaveBeenCalledWith(
+      [{ name: "send_message", params: { content: "hello" } }],
+      expect.objectContaining({ platform: "discord", channelId: "c1" }),
+      "trace-1",
+      expect.any(Number),
+    );
+  });
+
   it("main loop runs without mandatory TraitAnalyzer stage", async () => {
     const traitAnalyze = vi.fn();
     const ctx = {
@@ -68,6 +170,11 @@ describe("agent loop skill loading", () => {
         getTools: vi.fn(() => []),
         getDefinition: vi.fn(),
         invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
       },
       "yesimbot.prompt": {
         emitPromptBlocks: vi.fn().mockResolvedValue({
@@ -148,7 +255,16 @@ describe("agent loop skill loading", () => {
         compressor: undefined,
         config: { archiveThresholdMs: 86400000 },
       },
-      "yesimbot.plugin": { getTools: vi.fn(() => []), getDefinition: vi.fn(), invoke: vi.fn() },
+      "yesimbot.plugin": {
+        getTools: vi.fn(() => []),
+        getDefinition: vi.fn(),
+        invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
+      },
       "yesimbot.prompt": {
         emitPromptBlocks: vi.fn().mockResolvedValue({
           sections: [],
@@ -228,7 +344,16 @@ describe("agent loop skill loading", () => {
         compressor: undefined,
         config: { archiveThresholdMs: 86400000 },
       },
-      "yesimbot.plugin": { getTools: vi.fn(() => []), getDefinition: vi.fn(), invoke: vi.fn() },
+      "yesimbot.plugin": {
+        getTools: vi.fn(() => []),
+        getDefinition: vi.fn(),
+        invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
+      },
       "yesimbot.prompt": {
         emitPromptBlocks: vi.fn().mockResolvedValue({
           sections: [],

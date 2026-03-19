@@ -1,4 +1,3 @@
-import { getCapabilityByKey } from "../../runtime/contracts";
 import type { PluginService } from "../plugin/service";
 import { FunctionType, ToolExecutionContext } from "../plugin/types";
 import type { PromptFragment } from "../prompt/types";
@@ -19,51 +18,11 @@ function buildToolAvailability(
   toolCtx: ToolExecutionContext,
   allowedTools?: string[],
 ): string {
-  let entries = pluginService.getTools(toolCtx);
-  if (allowedTools?.length) {
-    // Fetch hidden tools that are explicitly included by skill
-    const all = pluginService.getTools(toolCtx, true);
-    const hidden = all.filter(
-      (e) =>
-        !entries.some((v) => v.function.name === e.function.name) &&
-        allowedTools.includes(e.function.name),
-    );
-    entries = entries.concat(hidden);
-  }
-
-  const visibleEntries: typeof entries = [];
-  const unavailableHints: string[] = [];
-
-  for (const entry of entries) {
-    const definition = pluginService.getDefinition(entry.function.name);
-    if (!definition?.requiredCapabilities?.length) {
-      visibleEntries.push(entry);
-      continue;
-    }
-
-    const missing = definition.requiredCapabilities.filter((key) => {
-      const state = getCapabilityByKey(toolCtx.capabilities, key);
-      if (!state) {
-        console.warn(
-          `[capability-gate] Unknown capability key "${key}" required by tool "${entry.function.name}"`,
-        );
-        return true;
-      }
-      return state.status !== "available";
-    });
-
-    if (missing.length === 0) {
-      visibleEntries.push(entry);
-      continue;
-    }
-
-    const strategy = definition.onCapabilityMissing ?? "remove";
-    if (strategy === "hint") {
-      unavailableHints.push(
-        `- ${entry.function.name}: [unavailable — capabilities missing: ${missing.join(", ")}]`,
-      );
-    }
-  }
+  const decision = pluginService.getRoundAvailability(toolCtx, allowedTools);
+  const visibleEntries = decision.visible;
+  const unavailableHints = decision.unavailable.map(
+    (entry) => `- ${entry.name}: [unavailable — ${entry.detail}]`,
+  );
 
   const lines = visibleEntries.map((entry) => {
     const label = entry.functionType === FunctionType.Tool ? "tool" : "action";
@@ -72,15 +31,6 @@ function buildToolAvailability(
   });
   lines.push(...unavailableHints);
 
-  // Warn about skill-requested tools that don't exist
-  if (allowedTools?.length) {
-    const available = new Set(visibleEntries.map((e) => e.function.name));
-    for (const name of allowedTools) {
-      if (!available.has(name)) {
-        lines.push(`- ${name}: [unavailable — tool not installed]`);
-      }
-    }
-  }
   return lines.join("\n");
 }
 

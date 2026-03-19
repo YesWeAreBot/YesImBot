@@ -178,6 +178,27 @@ describe("Full context access contract", () => {
         capturedHandlerCtx = ctx as ToolExecutionContext;
         return { success: true, status: "ok", content: "done" };
       }),
+      executeRoundActions: vi.fn(async (actions: Array<{ name: string; params?: Record<string, unknown> }>, ctx) => {
+        const toolResults = await Promise.all(
+          actions.map(async (action, index) => {
+            const result = await pluginService.invoke(action.name, action.params ?? {}, ctx);
+
+            return {
+              id: index + 1,
+              name: action.name,
+              success: result.success,
+              status: result.status,
+              result: result.content,
+            };
+          }),
+        );
+
+        return {
+          toolResults,
+          hasToolCalls: toolResults.length > 0,
+          hasActionCalls: false,
+        };
+      }),
       getTools: vi.fn(() => []),
     };
 

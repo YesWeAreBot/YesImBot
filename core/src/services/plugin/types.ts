@@ -88,19 +88,79 @@ export interface PluginMetadata {
   skillPacks?: string[];
 }
 
+export type PluginMountState = "mounting" | "mounted";
+
+export interface PluginMountRecord {
+  name: string;
+  plugin: YesImPlugin;
+  state: PluginMountState;
+  mountedAt: Date;
+  disposers: Array<() => void>;
+}
+
+export interface RoundFunctionEntry {
+  type: "function";
+  functionType: FunctionType;
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface RoundActionCall {
+  name: string;
+  params?: Record<string, unknown>;
+}
+
+export interface RoundActionResultEntry {
+  id: number;
+  name: string;
+  success: boolean;
+  status?: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface RoundActionExecutionResult {
+  toolResults: RoundActionResultEntry[];
+  hasToolCalls: boolean;
+  hasActionCalls: boolean;
+}
+
+export type RoundUnavailableReason = "capability-missing" | "tool-not-installed";
+
+export interface RoundUnavailableEntry {
+  name: string;
+  reason: RoundUnavailableReason;
+  detail: string;
+  functionType?: FunctionType;
+  missingCapabilities?: string[];
+}
+
+export interface RoundAvailability {
+  visible: RoundFunctionEntry[];
+  unavailable: RoundUnavailableEntry[];
+}
+
 export interface IPluginService {
+  mountPlugin(plugin: YesImPlugin): Promise<void>;
+  unmountPlugin(name: string): void;
   registerPlugin(plugin: YesImPlugin): void;
   unregisterPlugin(name: string): void;
   registerCapabilityResolver(resolver: CapabilityResolver): void;
   getCapabilityResolvers(platform?: string): CapabilityResolver["resolver"][];
   getDefinition(name: string): FunctionDefinition | undefined;
+  getRoundAvailability(execCtx?: ToolExecutionContext, allowedTools?: string[]): RoundAvailability;
+  executeRoundActions(
+    actions: RoundActionCall[],
+    execCtx: ToolExecutionContext,
+    traceId: string,
+    maxResultLength: number,
+  ): Promise<RoundActionExecutionResult>;
   getTools(
     execCtx?: ToolExecutionContext,
     includeHidden?: boolean,
-  ): Array<{
-    type: "function";
-    functionType: FunctionType;
-    function: { name: string; description: string; parameters: Record<string, unknown> };
-  }>;
+  ): RoundFunctionEntry[];
   listPlugins(): string[];
 }

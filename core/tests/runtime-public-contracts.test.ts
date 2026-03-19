@@ -23,6 +23,18 @@ import type {
 } from "../src/services/prompt";
 
 describe("runtime public contracts", () => {
+  it("keeps stable runtime service naming boundary story", () => {
+    const runtimeSurface = {
+      "yesimbot.plugin": "coordination facade + tool runtime owner",
+      "yesimbot.hook": "hook runtime owner",
+      "yesimbot.skill": "skill runtime owner",
+    } as const;
+
+    expect(runtimeSurface["yesimbot.plugin"]).toContain("coordination facade");
+    expect(runtimeSurface["yesimbot.hook"]).toContain("hook runtime owner");
+    expect(runtimeSurface["yesimbot.skill"]).toContain("skill runtime owner");
+  });
+
   it("prompt fragment-first contracts are publicly exported", () => {
     const layout: PromptLayout = PROMPT_SECTION_LAYOUT;
     const sectionName: PromptSectionName = "memory";
@@ -44,7 +56,7 @@ describe("runtime public contracts", () => {
 
   it("source precedence stays explicit", () => {
     expect(PROMPT_FRAGMENT_SOURCE_PRECEDENCE).toEqual([
-      "role",
+      "persona",
       "memory",
       "scenario",
       "capability",
@@ -222,6 +234,11 @@ describe("runtime public contracts", () => {
         getTools: vi.fn(() => []),
         getDefinition: vi.fn(),
         invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
       },
       "yesimbot.prompt": {
         render: vi.fn(),
@@ -270,7 +287,32 @@ describe("runtime public contracts", () => {
             channelId: "c1",
           },
           entities: [],
-          timeline: [],
+          timeline: {
+            turns: [],
+            activeSegment: { mode: "after-latest-summary" },
+            markedEvents: [],
+            heartbeatEvents: [],
+            semantics: {
+              summaryPosition: "background",
+              heartbeatRendering: "visible",
+              agentResponseVisibility: "internal-draft",
+              visibleOutputSource: "send_message-success",
+              defaultQueryWindow: "active-segment",
+            },
+          },
+          scenarioTimeline: {
+            turns: [],
+            activeSegment: { mode: "after-latest-summary" },
+            markedEvents: [],
+            heartbeatEvents: [],
+            semantics: {
+              summaryPosition: "background",
+              heartbeatRendering: "visible",
+              agentResponseVisibility: "internal-draft",
+              visibleOutputSource: "send_message-success",
+              defaultQueryWindow: "active-segment",
+            },
+          },
           stimulusSource: { type: "message", messageId: "m1", senderId: "u1" },
         },
         derived: {

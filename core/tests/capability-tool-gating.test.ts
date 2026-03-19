@@ -4,7 +4,14 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildToolPromptFragments } from "../src/services/agent/tools";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import { PluginService } from "../src/services/plugin/service";
+import {
+  FunctionType,
+  type RoundFunctionEntry,
+  type RoundUnavailableEntry,
+  type ToolExecutionContext,
+} from "../src/services/plugin/types";
+import { getCapabilityByKey } from "../src/runtime/contracts";
 
 function createToolCtx(capabilities?: ToolExecutionContext["capabilities"]): ToolExecutionContext {
   return {
@@ -26,17 +33,109 @@ function createPluginServiceMock(definitions: Record<string, Record<string, unkn
   }));
 
   return {
-    getTools: vi.fn(() => entries),
-    getToolsAll: vi.fn(() => entries),
-    getDefinition: vi.fn((name: string) => definitions[name]),
+    getRoundAvailability: vi.fn((ctx: ToolExecutionContext, allowedTools?: string[]) => {
+      const requested = new Set(allowedTools ?? []);
+      const visible: RoundFunctionEntry[] = [];
+      const unavailable: RoundUnavailableEntry[] = [];
+
+      for (const entry of entries) {
+        const definition = definitions[entry.function.name];
+        const isHidden = Boolean(definition?.hidden);
+        if (isHidden && !requested.has(entry.function.name)) {
+          continue;
+        }
+
+        const requiredCapabilities = (definition?.requiredCapabilities as string[] | undefined) ?? [];
+        if (requiredCapabilities.length === 0) {
+          visible.push(entry);
+          continue;
+        }
+
+        const missing = requiredCapabilities.filter((key) => {
+          const state = getCapabilityByKey(ctx.capabilities, key);
+          return !state || state.status !== "available";
+        });
+        if (missing.length === 0) {
+          visible.push(entry);
+          continue;
+        }
+
+        const onMissing = definition?.onCapabilityMissing;
+        if (onMissing === "hint") {
+          unavailable.push({
+            name: entry.function.name,
+            reason: "capability-missing",
+            detail: `capabilities missing: ${missing.join(", ")}`,
+          });
+        }
+      }
+
+      if (requested.size) {
+        const known = new Set(entries.map((entry) => entry.function.name));
+        for (const name of requested) {
+          if (!known.has(name)) {
+            unavailable.push({
+              name,
+              reason: "tool-not-installed",
+              detail: "tool not installed",
+            });
+          }
+        }
+      }
+
+      return { visible, unavailable };
+    }),
   };
+}
+
+function createPluginServiceHarnessWithUnknownLogger() {
+  const service = {
+    logger: {
+      warn: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      level: 2,
+    },
+    plugins: new Map(),
+    capabilityResolvers: [],
+    mountRecords: new Map(),
+    registerPlugin: PluginService.prototype.registerPlugin,
+    getDefinition: PluginService.prototype.getDefinition,
+    getTools: PluginService.prototype.getTools,
+    getRoundAvailability: PluginService.prototype.getRoundAvailability,
+    findFunction: (PluginService.prototype as unknown as { findFunction: unknown }).findFunction,
+  } as unknown as PluginService;
+
+  service.registerPlugin({
+    metadata: {
+      name: "unknown-capability-fixture",
+      description: "fixture",
+    },
+    getFunctions: () =>
+      new Map([
+        [
+          "typo_tool",
+          {
+            name: "typo_tool",
+            description: "typo",
+            type: FunctionType.Tool,
+            requiredCapabilities: ["typo.key"],
+            onCapabilityMissing: "hint",
+            parameters: {},
+            handler: vi.fn(),
+          },
+        ],
+      ]),
+  } as never);
+
+  return service;
 }
 
 function createPluginServiceWithHidden(
   visibleDefinitions: Record<string, Record<string, unknown>>,
   hiddenDefinitions: Record<string, Record<string, unknown>>,
 ) {
-  const visible = Object.entries(visibleDefinitions).map(([name, definition]) => ({
+  const visibleEntries = Object.entries(visibleDefinitions).map(([name, definition]) => ({
     type: "function" as const,
     functionType: (definition.type as FunctionType | undefined) ?? FunctionType.Tool,
     function: {
@@ -45,7 +144,7 @@ function createPluginServiceWithHidden(
       parameters: {},
     },
   }));
-  const hidden = Object.entries(hiddenDefinitions).map(([name, definition]) => ({
+  const hiddenEntries = Object.entries(hiddenDefinitions).map(([name, definition]) => ({
     type: "function" as const,
     functionType: (definition.type as FunctionType | undefined) ?? FunctionType.Tool,
     function: {
@@ -56,10 +155,30 @@ function createPluginServiceWithHidden(
   }));
 
   return {
-    getTools: vi.fn((_: ToolExecutionContext, includeHidden?: boolean) =>
-      includeHidden ? visible.concat(hidden) : visible,
-    ),
-    getDefinition: vi.fn((name: string) => visibleDefinitions[name] ?? hiddenDefinitions[name]),
+    getRoundAvailability: vi.fn((_: ToolExecutionContext, allowedTools?: string[]) => {
+      const visible: RoundFunctionEntry[] = [...visibleEntries];
+      const unavailable: RoundUnavailableEntry[] = [];
+      const allowed = new Set(allowedTools ?? []);
+
+      for (const entry of hiddenEntries) {
+        if (!allowed.has(entry.function.name)) {
+          continue;
+        }
+        const definition = hiddenDefinitions[entry.function.name] ?? {};
+        const required = (definition.requiredCapabilities as string[] | undefined) ?? [];
+        if (required.length > 0) {
+          unavailable.push({
+            name: entry.function.name,
+            reason: "capability-missing",
+            detail: `capabilities missing: ${required.join(", ")}`,
+          });
+          continue;
+        }
+        visible.push(entry);
+      }
+
+      return { visible, unavailable };
+    }),
   };
 }
 
@@ -157,26 +276,24 @@ describe("capability tool gating", () => {
     );
   });
 
-  it("fails closed for unknown capability keys and logs warning", () => {
-    const pluginService = createPluginServiceMock({
-      typo_tool: {
-        name: "typo_tool",
-        type: FunctionType.Tool,
-        requiredCapabilities: ["typo.key"],
-      },
-    });
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  it("fails closed for unknown capability keys and logs warning via PluginService logger", () => {
+    const pluginService = createPluginServiceHarnessWithUnknownLogger();
 
-    const availability = buildToolSchemaForPrompt(
-      pluginService as never,
-      createToolCtx({ core: {}, extended: {} }),
+    const decision = pluginService.getRoundAvailability(createToolCtx({ core: {}, extended: {} }));
+
+    expect(decision.visible.map((entry) => entry.function.name)).not.toContain("typo_tool");
+    expect(decision.unavailable).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "typo_tool",
+          reason: "capability-missing",
+          detail: "capabilities missing: typo.key",
+        }),
+      ]),
     );
-
-    expect(availability).not.toContain("typo_tool (tool)");
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(pluginService.logger.warn).toHaveBeenCalledWith(
       '[capability-gate] Unknown capability key "typo.key" required by tool "typo_tool"',
     );
-    warnSpy.mockRestore();
   });
 
   it("requires all capabilities for multi-capability tools", () => {
@@ -268,7 +385,7 @@ describe("capability tool gating", () => {
       ["search"],
     );
     expect(allowedAvailability).toContain("search (tool)");
-    expect(pluginService.getTools).toHaveBeenCalledWith(expect.anything(), true);
+    expect(pluginService.getRoundAvailability).toHaveBeenCalledWith(expect.anything(), ["search"]);
   });
 
   it("keeps capability gating on allowed hidden tools with onCapabilityMissing hint", () => {

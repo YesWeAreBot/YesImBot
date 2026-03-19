@@ -44,9 +44,11 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 
 ### 5. Tool Layer (`plugin`)
 
+- `yesimbot.plugin` (`PluginService`) is the coordination facade and tool runtime owner
 - Registers tools/actions through decorators and plugin API
 - Converts Koishi schema <-> JSON schema for tool definitions
-- Enforces Tool vs Action execution semantics in agent loop
+- Coordinates round action execution through facade methods while preserving semantics (tools parallel, actions sequential)
+- Delegates hook runtime semantics to `yesimbot.hook` and skill runtime ownership to `yesimbot.skill`
 
 ## Runtime Flow
 

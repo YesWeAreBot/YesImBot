@@ -27,9 +27,9 @@ import type { CallParams, ModelService } from "../model/service";
 import type { PluginService } from "../plugin/service";
 import {
   FunctionType,
+  RoundActionResultEntry,
   RuntimeToolExecutionContext,
   ToolExecutionContext,
-  ToolResult,
 } from "../plugin/types";
 import type { PromptService } from "../prompt/service";
 import type { PromptFragment } from "../prompt/types";
@@ -52,14 +52,7 @@ interface AgentResponse {
   request_heartbeat?: boolean;
 }
 
-interface ToolResultEntry {
-  id: number;
-  name: string;
-  success: boolean;
-  status?: string;
-  result?: unknown;
-  error?: string;
-}
+type ToolResultEntry = RoundActionResultEntry;
 
 interface AgentStartMutableParams {
   view: HorizonView | undefined;
@@ -532,12 +525,11 @@ export class ThinkActLoop {
         });
 
         // Execute actions
-        const { toolResults, hasToolCalls, hasActionCalls } = await this.executeActions(
+        const { toolResults, hasToolCalls } = await pluginService.executeRoundActions(
           response.actions,
-          pluginService,
           runtimeToolCtx,
+          percept.traceId,
           maxResultLen,
-          percept,
         );
 
         totalToolCalls += toolResults.length;
@@ -613,12 +605,11 @@ export class ThinkActLoop {
             });
             const wrapParsed = parser.parse(wrapResult.text);
             if (wrapParsed.data?.actions) {
-              const { toolResults: wrapToolResults } = await this.executeActions(
+              const { toolResults: wrapToolResults } = await pluginService.executeRoundActions(
                 wrapParsed.data.actions,
-                pluginService,
                 runtimeToolCtx,
+                percept.traceId,
                 maxResultLen,
-                percept,
               );
               const wrapSettlement = collectRoundSettlement(
                 wrapParsed.data.actions,
@@ -722,110 +713,6 @@ export class ThinkActLoop {
         }
       }
     }
-  }
-
-  private async executeActions(
-    actions: AgentResponse["actions"],
-    pluginService: PluginService,
-    toolCtx: ToolExecutionContext,
-    maxResultLen: number,
-    percept: Percept,
-  ): Promise<{
-    toolResults: ToolResultEntry[];
-    hasToolCalls: boolean;
-    hasActionCalls: boolean;
-  }> {
-    const toolResults: ToolResultEntry[] = [];
-    let hasToolCalls = false;
-    let hasActionCalls = false;
-
-    const hookService = this.ctx["yesimbot.hook"];
-
-    // Partition by type
-    const toolActions: Array<{ idx: number; action: AgentAction }> = [];
-    const actionActions: Array<{ idx: number; action: AgentAction }> = [];
-
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i];
-      const def = pluginService.getDefinition(action.name);
-      if (def?.type === FunctionType.Action) {
-        hasActionCalls = true;
-        actionActions.push({ idx: i, action });
-      } else {
-        hasToolCalls = true;
-        toolActions.push({ idx: i, action });
-      }
-    }
-
-    // Execute Tool-type in parallel
-    if (toolActions.length) {
-      const results = await Promise.allSettled(
-        toolActions.map(async ({ action }) => {
-          let params = action.params ?? {};
-
-          // Before hook
-          if (hookService) {
-            const beforeResult = await hookService.executeBefore(
-              HookType.Tool,
-              params,
-              percept.traceId,
-            );
-            if (beforeResult.skipped) {
-              return beforeResult.result as ToolResult;
-            }
-            params = beforeResult.params;
-          }
-
-          try {
-            const result = await pluginService.invoke(action.name, params, toolCtx);
-
-            // After hook
-            if (hookService) {
-              await hookService.executeAfter(HookType.Tool, params, result, percept.traceId);
-            }
-
-            return result;
-          } catch (error) {
-            if (hookService) {
-              await hookService.executeError(
-                HookType.Tool,
-                params,
-                error instanceof Error ? error : new Error(String(error)),
-                percept.traceId,
-              );
-            }
-            throw error;
-          }
-        }),
-      );
-      for (let i = 0; i < toolActions.length; i++) {
-        const { idx, action } = toolActions[i];
-        const r = results[i];
-        toolResults.push(toToolResultEntry(idx, action.name, r, maxResultLen));
-      }
-    }
-
-    // Execute Action-type sequentially
-    for (const { idx, action } of actionActions) {
-      try {
-        const result = await pluginService.invoke(action.name, action.params ?? {}, toolCtx);
-        toolResults.push(
-          toToolResultEntry(idx, action.name, { status: "fulfilled", value: result }, maxResultLen),
-        );
-      } catch (e) {
-        toolResults.push({
-          id: idx,
-          name: action.name,
-          success: false,
-          status: "failed",
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-    }
-
-    // Sort by original index
-    toolResults.sort((a, b) => a.id - b.id);
-    return { toolResults, hasToolCalls, hasActionCalls };
   }
 
   private async attemptLlmRepair(
@@ -977,31 +864,6 @@ function registerPromptFragmentSource(
   if (typeof promptService.registerFragmentSource === "function") {
     disposers.push(promptService.registerFragmentSource(name, provider));
   }
-}
-
-function toToolResultEntry(
-  idx: number,
-  name: string,
-  result: PromiseSettledResult<ToolResult>,
-  maxLen: number,
-): ToolResultEntry {
-  if (result.status === "fulfilled") {
-    const v = result.value;
-    let resultVal = v.ok ? v.data : undefined;
-    if (resultVal !== undefined) {
-      const str = typeof resultVal === "string" ? resultVal : JSON.stringify(resultVal);
-      if (str.length > maxLen) resultVal = str.slice(0, maxLen) + "...(truncated)";
-    }
-    return {
-      id: idx,
-      name,
-      status: v.ok ? "ok" : "failed",
-      success: v.ok,
-      ...(resultVal !== undefined && { result: resultVal }),
-      ...(!v.ok && v.error && { error: v.error }),
-    };
-  }
-  return { id: idx, name, success: false, status: "failed", error: String(result.reason) };
 }
 
 function formatToolResults(results: ToolResultEntry[]): string {
