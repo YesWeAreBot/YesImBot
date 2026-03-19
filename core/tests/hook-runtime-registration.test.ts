@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { apply } from "../src/index";
 import { AgentCore } from "../src/services/agent";
 import { HookService } from "../src/services/hook/service";
-import { PluginService } from "../src/services/plugin";
+import { PluginService } from "../src/services/plugin/service";
 
 function createConfig(): Record<string, unknown> {
   return {

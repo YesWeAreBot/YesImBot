@@ -1,3 +1,5 @@
-export * from "./tools/index";
-export * from "./hooks/index";
-export * from "./skills/index";
+// Aggregate convenience surface only.
+// Primary authoring entrypoints are @yesimbot/plugin-sdk/tools|hooks|skills.
+export * from "./tools";
+export * from "./hooks";
+export * from "./skills";

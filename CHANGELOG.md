@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Boundary**: Hard-removed `koishi-plugin-yesimbot/services/*` package exports; plugin authoring now uses `@yesimbot/plugin-sdk/tools`, `@yesimbot/plugin-sdk/hooks`, and `@yesimbot/plugin-sdk/skills`
+- **Runtime**: Narrowed `core/src/services/plugin` barrel to runtime-facing exports and removed authoring decorator re-exports
+
 ## [4.0.0-beta.5] - 2026-03-17
 
 ### Added

@@ -18,8 +18,9 @@ describe("plugin sdk context contracts", () => {
     expect(source).toContain(
       "export interface RuntimeToolExecutionContext extends ToolExecutionContext",
     );
-    expect(source).toContain("traits?: TraitSignal[];");
     expect(source).toContain("skills?: ActiveSkill[];");
     expect(source).toContain("view?: HorizonView;");
+    expect(source).not.toContain("traits?:");
+    expect(source).not.toContain("TraitSignal");
   });
 });

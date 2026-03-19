@@ -1,15 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi-plugin-yesimbot/services/skill", () => ({
-  SkillRegistry: class {},
-  loadSkillsFromDir: vi.fn(),
-}));
-
-vi.mock("koishi-plugin-yesimbot/services/plugin", () => ({
-  CAPABILITY_KEYS: { MESSAGE_SEND: "message.send" },
-  getCapabilityByKey: vi.fn(),
-}));
-
 describe("plugin-sdk skills registration helpers", () => {
   it("registerSkill forwards to yesimbot.skill.register with service guard", async () => {
     const { registerSkill } = await import("../src/skills/index");

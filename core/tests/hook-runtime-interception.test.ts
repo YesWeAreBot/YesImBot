@@ -6,7 +6,11 @@ import { Hook } from "../src/services/hook/decorators";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
 import { YesImPlugin } from "../src/services/plugin/plugin";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import {
+  FunctionType,
+  type RuntimeToolExecutionContext,
+  type ToolExecutionContext,
+} from "../src/services/plugin/types";
 
 type RuntimeHarness = ReturnType<typeof createRuntimeHarness>;
 
@@ -54,16 +58,6 @@ function createRuntimeHarness(actionPayload: string) {
     compressor: undefined,
   };
 
-  const traitService = {
-    analyze: vi.fn(async () => [
-      {
-        dimension: "scene",
-        value: "group-chat",
-        confidence: 0.95,
-      },
-    ]),
-  };
-
   const skillService = {
     resolve: vi.fn(() => ({
       activeSkills: [{ name: "answering", effects: ["concise"] }],
@@ -104,35 +98,94 @@ function createRuntimeHarness(actionPayload: string) {
   };
 
   const pluginInvoke = vi.fn(
-    async (_name: string, params: Record<string, unknown>, ctx: ToolExecutionContext) => {
+    async (_name: string, params: Record<string, unknown>, ctx: RuntimeToolExecutionContext) => {
       return {
         success: true,
         status: "ok",
         content: {
           params,
-          contextSnapshot: {
-            traitDimensions: (ctx.traits ?? []).map((t) => t.dimension),
-            skillNames: (ctx.skills ?? []).map((s) => s.name),
-            perceptTraceId: ctx.percept?.traceId,
-          },
+            contextSnapshot: {
+              attention: ctx.scenario?.derived.attention,
+              skillNames: (ctx.skills ?? []).map((s) => s.name),
+              perceptTraceId: ctx.percept?.traceId,
+            },
         },
       };
     },
   );
 
+  const pluginMountDisposers = new Map<string, Array<() => void>>();
+
   const pluginService = {
     getDefinition: vi.fn(() => ({ type: FunctionType.Tool })),
     invoke: pluginInvoke,
+    executeRoundActions: vi.fn(
+      async (
+        actions: Array<{ name: string; params?: Record<string, unknown> }>,
+        ctx: RuntimeToolExecutionContext,
+        traceId: string,
+      ) => {
+        const toolResults = await Promise.all(
+          actions.map(async (action, index) => {
+            let params = action.params ?? {};
+            const beforeResult = await hookService.executeBefore(HookType.Tool, params, traceId);
+
+            if (beforeResult.skipped) {
+              const skippedResult = beforeResult.result as {
+                success: boolean;
+                status: string;
+                content?: unknown;
+                error?: string;
+              };
+              return {
+                id: index,
+                name: action.name,
+                status: skippedResult.status,
+                result: skippedResult.content,
+                error: skippedResult.error,
+                success: skippedResult.success,
+              };
+            }
+
+            params = beforeResult.params;
+            const result = await pluginInvoke(action.name, params, ctx);
+            await hookService.executeAfter(HookType.Tool, params, result, traceId);
+            return {
+              id: index,
+              name: action.name,
+              status: result.status,
+              result: result.content,
+              success: result.success,
+            };
+          }),
+        );
+
+        return {
+          toolResults,
+          hasToolCalls: toolResults.length > 0,
+          hasActionCalls: false,
+        };
+      },
+    ),
     getTools: vi.fn(() => []),
-    registerPlugin: vi.fn(),
+    mountPlugin: vi.fn(async (plugin: YesImPlugin) => {
+      const disposers = hookService.registerFromDecorators(rootCtx as never, plugin);
+      pluginMountDisposers.set(plugin.metadata.name, disposers);
+    }),
     unregisterPlugin: vi.fn(),
+    unmountPlugin: vi.fn((name: string) => {
+      const disposers = pluginMountDisposers.get(name) ?? [];
+      for (const dispose of [...disposers].reverse()) {
+        dispose();
+      }
+      pluginMountDisposers.delete(name);
+    }),
   };
 
   rootCtx["yesimbot.horizon"] = horizonService;
   rootCtx["yesimbot.plugin"] = pluginService;
   rootCtx["yesimbot.prompt"] = promptService;
   rootCtx["yesimbot.model"] = modelService;
-  rootCtx["yesimbot.trait"] = traitService;
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.hook"] = hookService;
 
@@ -170,9 +223,9 @@ function createRuntimeHarness(actionPayload: string) {
     toolCtx,
     pluginInvoke,
     pluginRegistry: pluginService,
-    triggerLifecycle: (event: string) => {
+    triggerLifecycle: async (event: string) => {
       for (const callback of lifecycleHandlers.get(event) ?? []) {
-        callback();
+        await callback();
       }
     },
     horizonEvents,
@@ -193,48 +246,32 @@ describe("Hook runtime interception", () => {
       handler: async (ctx) => {
         capturedAgentTraceId = ctx.traceId;
         const params = ctx.params as {
-          traits: Array<{ dimension: string; value: string; confidence: number }>;
           skills: Array<{ name: string; effects: string[] }>;
+          scenario: { derived: Record<string, unknown> };
+          capabilities: { extended: Record<string, unknown> };
+          metadata?: Record<string, unknown>;
         };
         return {
           modified: true,
           params: {
             ...params,
-            traits: [
-              ...params.traits,
-              { dimension: "hook-injected", value: "active", confidence: 1 },
-            ],
             skills: [...params.skills, { name: "hooked-skill", effects: ["runtime-tuned"] }],
             scenario: {
-              ...((ctx.params as { scenario: { derived: { attention?: Record<string, unknown> } } })
-                .scenario ?? {}),
+              ...params.scenario,
               derived: {
-                ...(ctx.params as { scenario: { derived: Record<string, unknown> } }).scenario
-                  .derived,
+                ...params.scenario.derived,
                 attention: { lane: "hooked" },
               },
             },
             capabilities: {
-              ...(
-                ctx.params as {
-                  capabilities: { extended: { directMessage: { status: string } } };
-                }
-              ).capabilities,
+              ...params.capabilities,
               extended: {
-                ...(
-                  ctx.params as {
-                    capabilities: { extended: Record<string, unknown> };
-                  }
-                ).capabilities.extended,
+                ...params.capabilities.extended,
                 directMessage: { status: "available" },
               },
             },
             metadata: {
-              ...(
-                ctx.params as {
-                  metadata?: Record<string, unknown>;
-                }
-              ).metadata,
+              ...params.metadata,
               hookRevision: "start-1",
             },
             skillState: {
@@ -250,8 +287,7 @@ describe("Hook runtime interception", () => {
     expect(runResult.totalToolCalls).toBe(1);
     expect(capturedAgentTraceId).toBe("trace-runtime-1");
     expect(harness.pluginInvoke).toHaveBeenCalledTimes(1);
-    const invokeCtx = harness.pluginInvoke.mock.calls[0]?.[2] as ToolExecutionContext;
-    expect(invokeCtx.traits?.map((t) => t.dimension)).toContain("hook-injected");
+    const invokeCtx = harness.pluginInvoke.mock.calls[0]![2] as RuntimeToolExecutionContext;
     expect(invokeCtx.skills ?? []).toEqual([]);
     expect(invokeCtx.scenario?.derived.attention).toEqual({ lane: "hooked" });
     expect(invokeCtx.capabilities?.extended.directMessage).toEqual({ status: "available" });
@@ -271,16 +307,18 @@ describe("Hook runtime interception", () => {
       expect.objectContaining({ providerType: undefined }),
     );
 
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ result?: Record<string, unknown> }> };
     };
     expect(
       (
         actionEventPayload.data?.toolResults?.[0]?.result?.contextSnapshot as {
-          traitDimensions?: string[];
+          attention?: Record<string, unknown>;
         }
-      )?.traitDimensions,
-    ).toContain("hook-injected");
+      )?.attention,
+    ).toEqual({ lane: "hooked" });
   });
 
   it("uses Tool before-hook modified params in pluginService.invoke runtime call", async () => {
@@ -309,7 +347,9 @@ describe("Hook runtime interception", () => {
       intercepted: true,
     });
 
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ result?: Record<string, unknown> }> };
     };
     expect(
@@ -348,7 +388,9 @@ describe("Hook runtime interception", () => {
 
     expect(runResult.totalToolCalls).toBe(1);
     expect(harness.pluginInvoke).not.toHaveBeenCalled();
-    const actionEventPayload = harness.horizonEvents.recordAgentAction.mock.calls[0]?.[0] as {
+    const actionEventPayload = (
+      harness.horizonEvents.recordAgentAction as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0] as {
       data?: { toolResults?: Array<{ status?: string; result?: string }> };
     };
     expect(actionEventPayload.data?.toolResults?.[0]).toMatchObject({
@@ -388,9 +430,9 @@ describe("Hook runtime interception", () => {
     }
 
     const plugin = new StartupAgentSkipPlugin(harness.rootCtx as never);
-    harness.triggerLifecycle("ready");
+    await harness.triggerLifecycle("ready");
 
-    expect(harness.pluginRegistry.registerPlugin).toHaveBeenCalledWith(plugin);
+    expect(harness.pluginRegistry.mountPlugin).toHaveBeenCalledWith(plugin);
     expect(harness.hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(1);
 
     const runResult = await harness.loop.run(harness.percept, harness.toolCtx);
@@ -398,8 +440,8 @@ describe("Hook runtime interception", () => {
     expect(runResult.totalToolCalls).toBe(0);
     expect(harness.pluginInvoke).not.toHaveBeenCalled();
 
-    harness.triggerLifecycle("dispose");
+    await harness.triggerLifecycle("dispose");
     expect(harness.hookService.getHooks(HookType.Agent, HookPhase.Before)).toHaveLength(0);
-    expect(harness.pluginRegistry.unregisterPlugin).toHaveBeenCalled();
+    expect(harness.pluginRegistry.unmountPlugin).toHaveBeenCalled();
   });
 });

@@ -86,22 +86,52 @@ function createBaseConfig(overrides: Partial<Config> = {}): Config {
     maxToolResultLength: 4000,
     concurrency: 1,
     willingness: {
-      defaultWillingness: 0.1,
-      decayRate: 0.05,
-      maxWillingness: 1,
-      minWillingness: 0,
-      mentionWeight: 1,
-      keywordWeight: 0.5,
-      directMessageWeight: 1,
-      fatigueFactor: 0.9,
-      decisionThreshold: 0.4,
-      llmDecisionThreshold: 0.7,
-      tokenBucketCapacity: 5,
-      tokenBucketRefillRate: 1,
+      maxWillingness: 100,
+      mentionBoost: 0.8,
+      decay: {
+        halfLife: 300,
+        elasticThreshold: 0.7,
+      },
+      gain: {
+        baseGain: 15,
+        keywordMultiplier: 1.5,
+        keywords: [],
+      },
+      sigmoid: {
+        midpoint: 0.5,
+        steepness: 10,
+      },
+      fatigue: {
+        windowMs: 120000,
+        threshold: 3,
+        penaltyBase: 0.5,
+      },
+      deferred: {
+        threshold: 0.3,
+        minDelayMs: 3000,
+        maxDelayMs: 15000,
+        fallbackChain: [],
+      },
+      dm: {
+        directBoost: 0.95,
+        aggregationMinMs: 3000,
+        aggregationMaxMs: 8000,
+        aggregationCapMs: 15000,
+      },
+      rateLimit: {
+        dm: {
+          capacity: 5,
+          refillRate: 0.5,
+        },
+        group: {
+          capacity: 10,
+          refillRate: 1,
+        },
+      },
     },
     aggregationWindow: 1500,
     templates: {},
-    timeout: 5000,
+    renderTimeout: 5000,
     rolePath: "data/yesimbot/roles",
     skillPaths: [],
     confidenceThreshold: 0.3,
@@ -210,6 +240,7 @@ describe("Hybrid compression trigger config wiring", () => {
         summaryModel: "openai:gpt-4o",
         maxAgentSteps: 30,
       },
+      debugLevel: 0,
     });
   });
 
@@ -230,7 +261,7 @@ describe("Hybrid compression trigger config wiring", () => {
       "yesimbot.image-cache": {},
     };
 
-    new HorizonService(ctx as Context, {
+    new HorizonService(ctx as unknown as Context, {
       allowedChannels: [],
       summaryModel: "openai:gpt-4o-mini",
       compressionThreshold: 300,

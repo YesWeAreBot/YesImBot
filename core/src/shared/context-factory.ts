@@ -17,7 +17,7 @@ import type { RuntimeToolExecutionContext, ToolExecutionContext } from "../servi
 import type { SkillRegistry } from "../services/skill/service";
 import { AgentSessionStore, projectSkillState } from "../services/skill/session-store";
 import type { SkillDefinition } from "../services/skill/types";
-import type { ActiveSkill, TraitSignal } from "./types";
+import type { ActiveSkill } from "./types";
 
 export interface AgentRoundContextResult {
   toolCtx: RuntimeToolExecutionContext;
@@ -109,7 +109,6 @@ export async function buildAgentContext(
     );
   }
 
-  const traits: TraitSignal[] = []; // Internal legacy compatibility — always empty in no-Trait path
   const skills = projectActiveSkills(sessionState?.loadedSkills, skillCatalog);
   const normalizedView = normalizeViewForScenario(view, {
     platform: params.platform,
@@ -134,7 +133,6 @@ export async function buildAgentContext(
     bot: params.bot,
     percept: params.percept,
     view: normalizedView,
-    traits,
     skills,
     scenario,
   };
@@ -169,7 +167,6 @@ async function resolveAgentToolContext(
   const inboundToolCtx = params.toolCtx;
   const hasInboundRuntimeFields =
     inboundToolCtx?.scenario !== undefined &&
-    inboundToolCtx?.traits !== undefined &&
     inboundToolCtx?.skills !== undefined;
   const builtToolCtx = hasInboundRuntimeFields ? undefined : await buildAgentContext(ctx, params);
 
@@ -179,7 +176,6 @@ async function resolveAgentToolContext(
     session: params.session ?? inboundToolCtx?.session ?? builtToolCtx?.session,
     bot: params.bot ?? inboundToolCtx?.bot ?? builtToolCtx?.bot,
     percept: params.percept,
-    traits: inboundToolCtx?.traits ?? builtToolCtx?.traits,
     skills: inboundToolCtx?.skills ?? builtToolCtx?.skills,
     view: inboundToolCtx?.view ?? builtToolCtx?.view,
     roundContext: inboundToolCtx?.roundContext,

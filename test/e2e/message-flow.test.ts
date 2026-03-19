@@ -95,7 +95,7 @@ describe("Message Flow E2E", () => {
   });
 
   it("should propagate session metadata through middleware chain", async () => {
-    const sessionData: Array<{ userId: string; channelId?: string }> = [];
+    const sessionData: Array<{ userId?: string; channelId?: string }> = [];
 
     app.middleware((session, next) => {
       sessionData.push({

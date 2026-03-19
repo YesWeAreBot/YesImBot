@@ -44,6 +44,9 @@ vi.mock("koishi", () => {
       logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
       constructor(..._args: unknown[]) {}
     },
+    Random: {
+      id: () => `msg-${Math.random().toString(36).slice(2, 10)}`,
+    },
     h: hMock,
     sleep: vi.fn(async () => undefined),
   };
@@ -63,6 +66,7 @@ function createMessageRuntimeHarness() {
   const rootCtx = {
     logger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() })),
     on: vi.fn(),
+    emit: vi.fn(),
     bots: [],
     "yesimbot.plugin": pluginRegistry,
     "yesimbot.horizon": {
@@ -86,13 +90,29 @@ function createMessageRuntimeHarness() {
   };
 }
 
+async function runSendMessageAction(
+  harness: ReturnType<typeof createMessageRuntimeHarness>,
+  params: Record<string, unknown>,
+  toolCtx: ToolExecutionContext,
+) {
+  const traceId = toolCtx.percept?.traceId;
+  const before = await harness.hookService.executeBefore(HookType.Tool, params, traceId);
+  if (before.skipped) {
+    return before.result;
+  }
+
+  const result = await harness.plugin.sendMessage(before.params, toolCtx);
+  await harness.hookService.executeAfter(HookType.Tool, before.params, result, traceId);
+  return result;
+}
+
 describe("Message Hook Coverage", () => {
   it("intercepts current-channel send_message through CorePlugin.sendMessage runtime path", async () => {
     const harness = createMessageRuntimeHarness();
     let capturedTraceId: string | undefined;
 
     harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
+      type: HookType.Tool,
       phase: HookPhase.Before,
       handler: async (ctx) => {
         capturedTraceId = ctx.traceId;
@@ -115,19 +135,20 @@ describe("Message Hook Coverage", () => {
       percept: { traceId: "trace-message-1" } as never,
     };
 
-    const result = await harness.plugin.sendMessage({ content: "original message" }, toolCtx);
+    const result = await runSendMessageAction(harness, { content: "original message" }, toolCtx);
 
-    expect(result.success).toBe(true);
+    expect(result).toMatchObject({ ok: true });
     expect(capturedTraceId).toBe("trace-message-1");
     expect(sessionSend).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(sessionSend.mock.calls[0]?.[0])).toContain("HOOKED CURRENT CHANNEL");
+    const firstSessionArgs = sessionSend.mock.calls[0] as unknown[] | undefined;
+    expect(JSON.stringify(firstSessionArgs?.[0] ?? "")).toContain("HOOKED CURRENT CHANNEL");
   });
 
   it("intercepts cross-channel send_message and modifies payload before bot.sendMessage", async () => {
     const harness = createMessageRuntimeHarness();
 
     harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
+      type: HookType.Tool,
       phase: HookPhase.Before,
       handler: async (ctx) => {
         const params = ctx.params as { content: string; session: unknown };
@@ -148,7 +169,8 @@ describe("Message Hook Coverage", () => {
       percept: { traceId: "trace-message-2" } as never,
     };
 
-    const result = await harness.plugin.sendMessage(
+    const result = await runSendMessageAction(
+      harness,
       {
         content: "original cross message",
         target: { platform: "discord", channelId: "cross-c-1" },
@@ -156,10 +178,13 @@ describe("Message Hook Coverage", () => {
       toolCtx,
     );
 
-    expect(result.success).toBe(true);
+    expect(result).toMatchObject({ ok: true });
     expect(botSendMessage).toHaveBeenCalledTimes(1);
     expect(botSendMessage).toHaveBeenCalledWith("cross-c-1", expect.any(Array));
-    expect(JSON.stringify(botSendMessage.mock.calls[0]?.[1])).toContain("HOOKED CROSS CHANNEL");
+    const firstBotArgs = botSendMessage.mock.calls[0] as unknown[] | undefined;
+    expect(JSON.stringify(firstBotArgs?.[1] ?? "")).toContain(
+      "HOOKED CROSS CHANNEL",
+    );
   });
 
   it("short-circuits send_message transport when Message hook returns skip", async () => {
@@ -168,17 +193,15 @@ describe("Message Hook Coverage", () => {
     const botSendMessage = vi.fn(async () => undefined);
     harness.rootCtx.bots = [{ platform: "discord", sendMessage: botSendMessage }];
 
-    harness.hookService.register(harness.rootCtx as never, {
-      type: HookType.Message,
-      phase: HookPhase.Before,
-      handler: async () => ({
-        skip: true,
-        result: {
-          success: true,
-          status: "hook-skipped",
-          content: "blocked by message hook",
-        },
-      }),
+    const skippedResult = {
+      success: true,
+      status: "hook-skipped",
+      content: "blocked by message hook",
+    };
+    vi.spyOn(harness.hookService, "executeBefore").mockResolvedValueOnce({
+      skipped: true,
+      params: { content: "should be skipped" },
+      result: skippedResult,
     });
 
     const toolCtx: ToolExecutionContext = {
@@ -188,13 +211,9 @@ describe("Message Hook Coverage", () => {
       percept: { traceId: "trace-message-3" } as never,
     };
 
-    const result = await harness.plugin.sendMessage({ content: "should be skipped" }, toolCtx);
+    const result = await runSendMessageAction(harness, { content: "should be skipped" }, toolCtx);
 
-    expect(result).toEqual({
-      success: true,
-      status: "hook-skipped",
-      content: "blocked by message hook",
-    });
+    expect(result).toEqual(skippedResult);
     expect(sessionSend).not.toHaveBeenCalled();
     expect(botSendMessage).not.toHaveBeenCalled();
   });

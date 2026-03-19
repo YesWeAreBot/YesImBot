@@ -13,7 +13,7 @@ describe("Hook Integration", () => {
 
   beforeEach(() => {
     ctx = new Context();
-    ctx.on = () => {};
+    ctx.on = () => () => true;
     (ctx as unknown as { emit: (...args: unknown[]) => void }).emit = () => {};
     (ctx as unknown as { logger: (name: string) => Record<string, unknown> }).logger = () => ({
       info: vi.fn(),
@@ -114,7 +114,7 @@ describe("Hook Integration", () => {
 
   describe("Agent hooks", () => {
     it("should intercept agent cycle with before hook", async () => {
-      const agentParams = { view: {}, traits: [], skills: [] };
+      const agentParams = { view: {}, skills: [] };
 
       hookService.register(ctx, {
         type: HookType.Agent,

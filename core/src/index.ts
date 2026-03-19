@@ -17,15 +17,14 @@ import type { MemoryAgentServiceConfig } from "./services/memory-agent";
 import { MemoryAgentService } from "./services/memory-agent";
 import type { ModelServiceConfig } from "./services/model";
 import { ModelService } from "./services/model";
-import type { PluginServiceConfig } from "./services/plugin";
-import { PluginService } from "./services/plugin";
+import type { PluginServiceConfig } from "./services/plugin/service";
+import { PluginService } from "./services/plugin/service";
 import type { PromptServiceConfig } from "./services/prompt";
 import { PromptService } from "./services/prompt";
 import type { PersonaServiceConfig } from "./services/role";
 import { PersonaService } from "./services/role";
 import type { SkillRegistryConfig } from "./services/skill";
 import { AgentSessionStore, SkillRegistry } from "./services/skill";
-import type { TraitAnalyzerConfig } from "./services/trait";
 
 export const name = "yesimbot";
 export const inject = ["database"];
@@ -92,7 +91,6 @@ export type Config = AgentCoreConfig &
   PromptServiceConfig &
   PersonaServiceConfig &
   SkillRegistryConfig &
-  TraitAnalyzerConfig &
   MemoryAgentServiceConfig &
   HookServiceConfig & { arousal: ArousalConfig };
 
@@ -265,8 +263,6 @@ export function apply(ctx: Context, config: Config) {
   });
   // Session-backed cross-round skill state must exist before runtime consumers.
   ctx.plugin(AgentSessionStore);
-  // Internal legacy compatibility — not required by agent main loop
-  // ctx.plugin(TraitAnalyzer, { debugLevel: config.debugLevel });
   ctx.plugin(SkillRegistry, {
     skillPaths: config.skillPaths,
     confidenceThreshold: config.confidenceThreshold,

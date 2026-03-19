@@ -1,21 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { Capabilities, CapabilityResolver } from "../src/skills/index";
 
-vi.mock("koishi-plugin-yesimbot/services/skill", () => ({
-  SkillRegistry: class {},
-  loadSkillsFromDir: vi.fn(),
-}));
-
-vi.mock("koishi-plugin-yesimbot/services/plugin", () => ({
-  CAPABILITY_KEYS: {
-    MESSAGE_SEND: "message.send",
-  },
-  getCapabilityByKey: vi.fn(),
-}));
-
 describe("plugin-sdk capabilities exports", () => {
-  it("uses the SDK skills barrel import path", () => {
+  it("uses the SDK skills subpath for capability contracts", () => {
     const importPath = "../src/skills/index";
     expect(importPath).toBe("../src/skills/index");
   });

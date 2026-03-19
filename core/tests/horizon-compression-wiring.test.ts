@@ -5,11 +5,18 @@ import { SummaryCompressor } from "../src/services/horizon/compressor";
 import { HorizonService } from "../src/services/horizon/service";
 
 // Mock SummaryCompressor to verify constructor parameters
+const summaryCompressorCtor = vi.fn();
 vi.mock("../src/services/horizon/compressor", () => {
+  class SummaryCompressorMock {
+    maybeCompress = vi.fn();
+
+    constructor(...args: unknown[]) {
+      summaryCompressorCtor(...args);
+    }
+  }
+
   return {
-    SummaryCompressor: vi.fn().mockImplementation(() => ({
-      maybeCompress: vi.fn(),
-    })),
+    SummaryCompressor: SummaryCompressorMock,
   };
 });
 
@@ -54,7 +61,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
 
     new HorizonService(mockCtx as unknown as Context, config);
 
-    expect(MockedCompressor).toHaveBeenCalledWith(
+    expect(summaryCompressorCtor).toHaveBeenCalledWith(
       mockCtx,
       expect.anything(), // EventManager
       "openai:gpt-4o-mini",
@@ -75,7 +82,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
 
     new HorizonService(mockCtx as unknown as Context, config);
 
-    expect(MockedCompressor).toHaveBeenCalledWith(
+    expect(summaryCompressorCtor).toHaveBeenCalledWith(
       mockCtx,
       expect.anything(),
       "openai:gpt-4o",
@@ -96,7 +103,7 @@ describe("HorizonService - Compression Trigger Wiring", () => {
 
     new HorizonService(mockCtx as unknown as Context, config);
 
-    expect(MockedCompressor).toHaveBeenCalledWith(
+    expect(summaryCompressorCtor).toHaveBeenCalledWith(
       mockCtx,
       expect.anything(),
       "openai:gpt-4o-mini",
@@ -117,10 +124,15 @@ describe("HorizonService - Compression Trigger Wiring", () => {
 
     new HorizonService(mockCtx as unknown as Context, config);
 
-    expect(MockedCompressor).toHaveBeenCalledWith(mockCtx, expect.anything(), "openai:gpt-4o", {
+    expect(summaryCompressorCtor).toHaveBeenCalledWith(
+      mockCtx,
+      expect.anything(),
+      "openai:gpt-4o",
+      {
       compressionThreshold: 150,
       inactivityTriggerMs: 5400000,
       retainRecentEntries: 25,
-    });
+      },
+    );
   });
 });

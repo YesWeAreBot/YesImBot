@@ -6,13 +6,22 @@ This guide describes concrete edit paths for common changes.
 
 | Change Type                     | Primary Paths                                                                      | Notes                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Add/modify agent behavior       | `core/src/services/agent/`, `core/src/services/trait/`, `core/src/services/skill/` | Keep Trait/Skill responsibilities separate                                                           |
+| Add/modify agent behavior       | `core/src/services/agent/`, `core/src/services/skill/`                              | Keep skill/runtime responsibilities separate                                                         |
 | Change runtime context contract | `core/src/runtime/`, `core/src/shared/context-factory.ts`                          | Prefer `Percept -> Scenario -> Capabilities -> RoundContext`                                         |
 | Add model provider capability   | `providers/provider-*/`, `packages/shared-model/`                                  | Reuse `AbstractProvider`                                                                             |
 | Add/modify tool or action       | `core/src/services/plugin/`, `plugins/*`                                           | Preserve Tool vs Action loop semantics                                                               |
 | Change prompt composition       | `core/src/services/prompt/`, `core/src/services/role/`, `core/resources/roles/`    | Use canonical `identity/policy/memory/situation`; legacy injection points are deprecated compat only |
 | Change horizon data formatting  | `core/src/services/horizon/`                                                       | Do not embed decisions in Horizon                                                                    |
 | Change willingness algorithm    | `core/src/services/agent/willingness.ts`, `core/src/services/agent/service.ts`     | Validate deferred judge + rate limit behavior                                                        |
+
+## Plugin Authoring Boundary (Phase 74)
+
+- Plugin authors should import extension APIs from SDK subpaths only:
+  - `@yesimbot/plugin-sdk/tools`
+  - `@yesimbot/plugin-sdk/hooks`
+  - `@yesimbot/plugin-sdk/skills`
+- Do not author plugins against `koishi-plugin-yesimbot/services/*` paths; that export path has been hard-removed.
+- Core package paths are runtime implementation boundaries, not plugin authoring entrypoints.
 
 ## Common Change Patterns
 

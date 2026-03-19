@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
+import { HookType } from "../src/services/hook/types";
 import { CorePlugin } from "../src/services/plugin/builtin/core";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import {
+  FunctionType,
+  type RoundActionCall,
+  type RoundActionExecutionResult,
+  type ToolExecutionContext,
+} from "../src/services/plugin/types";
 
 type MockModelResponse = {
   text?: string;
@@ -23,6 +29,7 @@ function createHarness(options?: {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
     on: vi.fn(),
+    emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
   const horizonEventMocks = {
@@ -71,6 +78,97 @@ function createHarness(options?: {
           return corePlugin.sendMessage(params as never, invokeCtx);
         }
         return { success: true, status: "ok", content: "sent" };
+      },
+    ),
+    executeRoundActions: vi.fn(
+      async (
+        actions: RoundActionCall[],
+        execCtx: ToolExecutionContext,
+      ): Promise<RoundActionExecutionResult> => {
+        const toolResults = await Promise.all(
+          actions.map(async (action, index) => {
+            const params = action.params ?? {};
+            const hookService = rootCtx["yesimbot.hook"] as
+              | {
+                  executeBefore: (
+                    hookType: HookType,
+                    input: Record<string, unknown>,
+                    traceId: string,
+                  ) => Promise<{ skipped: boolean; params: Record<string, unknown>; result?: unknown }>;
+                  executeAfter: (
+                    hookType: HookType,
+                    input: Record<string, unknown>,
+                    result: unknown,
+                    traceId: string,
+                  ) => Promise<void>;
+                }
+              | undefined;
+            let nextParams = params;
+            if (hookService) {
+              const before = await hookService.executeBefore(HookType.Tool, nextParams, "test-trace");
+              if (before.skipped) {
+                return {
+                  id: index,
+                  name: action.name,
+                  success: false,
+                  status: "failed",
+                  error: "hook skipped",
+                };
+              }
+              nextParams = before.params;
+            }
+            const result = await pluginService.invoke(action.name, nextParams, execCtx);
+            if (hookService) {
+              await hookService.executeAfter(HookType.Tool, nextParams, result, "test-trace");
+            }
+            const success =
+              typeof result === "object" &&
+              result !== null &&
+              "ok" in result &&
+              typeof (result as { ok?: unknown }).ok === "boolean"
+                ? (result as { ok: boolean }).ok
+                : !!(result as { success?: unknown }).success;
+            const status =
+              typeof result === "object" &&
+              result !== null &&
+              "status" in result &&
+              typeof (result as { status?: unknown }).status === "string"
+                ? (result as { status: string }).status
+                : success
+                  ? "ok"
+                  : "failed";
+            const payload =
+              typeof result === "object" && result !== null && "ok" in result
+                ? ((result as { ok: boolean; data?: unknown; error?: string }).ok
+                    ? (result as { data?: unknown }).data
+                    : undefined)
+                : (result as { content?: unknown }).content;
+            const error =
+              typeof result === "object" && result !== null && "ok" in result
+                ? ((result as { ok: boolean; error?: string }).ok
+                    ? undefined
+                    : (result as { error?: string }).error ?? "invoke failed")
+                : success
+                  ? undefined
+                  : "invoke failed";
+            return {
+              id: index,
+              name: action.name,
+              success,
+              status,
+              ...(success ? { result: payload } : { error }),
+            };
+          }),
+        );
+        return {
+          toolResults,
+          hasToolCalls: toolResults.some(
+            (entry) => pluginService.getDefinition(entry.name)?.type !== FunctionType.Action,
+          ),
+          hasActionCalls: toolResults.some(
+            (entry) => pluginService.getDefinition(entry.name)?.type === FunctionType.Action,
+          ),
+        };
       },
     ),
     getTools: vi.fn(() => []),

@@ -1,16 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi-plugin-yesimbot/services/hook/decorators", () => ({
-  Hook: vi.fn(() => () => undefined),
-}));
-
-vi.mock("koishi-plugin-yesimbot/services/hook/types", () => ({
-  HookPhase: { Before: "before", After: "after", Error: "error" },
-  HookType: { Tool: "tool", Agent: "agent" },
-}));
-
 describe("plugin-sdk hook registration", () => {
-  it("keeps decorator-first class authoring as the primary path", async () => {
+  it("keeps decorator-first class authoring as the primary hooks path", async () => {
     const { Hook, HookPhase, HookType } = await import("../src/hooks/index");
 
     class DecoratorFirstExample {

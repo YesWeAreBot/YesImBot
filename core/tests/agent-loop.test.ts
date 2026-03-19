@@ -101,7 +101,6 @@ describe("agent loop skill loading", () => {
           usage: {},
         }),
       },
-      "yesimbot.trait": undefined,
       "yesimbot.skill": {
         get: vi.fn(),
         resolve: vi.fn().mockReturnValue({
@@ -131,8 +130,7 @@ describe("agent loop skill loading", () => {
     );
   });
 
-  it("main loop runs without mandatory TraitAnalyzer stage", async () => {
-    const traitAnalyze = vi.fn();
+  it("main loop runs without any trait-stage dependency", async () => {
     const ctx = {
       baseDir: "/tmp",
       logger: vi.fn(() => ({
@@ -190,7 +188,6 @@ describe("agent loop skill loading", () => {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
       },
-      "yesimbot.trait": undefined,
       "yesimbot.skill": {
         get: vi.fn(),
         resolve: vi.fn().mockReturnValue({
@@ -212,7 +209,6 @@ describe("agent loop skill loading", () => {
         bot: { selfId: "bot-1", user: { name: "Athena" } },
       } as never),
     ).resolves.toEqual({ totalTokens: 0, totalToolCalls: 0 });
-    expect(traitAnalyze).not.toHaveBeenCalled();
   });
 
   it("main loop projects session-loaded skills into committed round skill state", async () => {
@@ -279,7 +275,6 @@ describe("agent loop skill loading", () => {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
       },
-      "yesimbot.trait": { analyze: vi.fn().mockResolvedValue([]) },
       "yesimbot.skill": {
         all: vi.fn(() => [skill]),
         get: vi.fn((name: string) => (name === "test-skill" ? skill : undefined)),
@@ -368,7 +363,6 @@ describe("agent loop skill loading", () => {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
       },
-      "yesimbot.trait": { analyze: vi.fn().mockResolvedValue([]) },
       "yesimbot.skill": {
         all: vi.fn(() => [skill]),
         get: vi.fn((name: string) => (name === "fragment-skill" ? skill : undefined)),

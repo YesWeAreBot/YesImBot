@@ -11,13 +11,6 @@ import type { ActiveSkill } from "../../shared/types";
 import type { HorizonView } from "../horizon/types";
 import type { YesImPlugin } from "./plugin";
 
-export interface TraitSignal {
-  dimension: string;
-  value: string;
-  confidence: number;
-  metadata?: Record<string, unknown>;
-}
-
 export enum FunctionType {
   Tool = "tool",
   Action = "action",
@@ -53,7 +46,6 @@ export interface ToolExecutionContext {
 }
 
 export interface RuntimeToolExecutionContext extends ToolExecutionContext {
-  traits?: TraitSignal[];
   skills?: ActiveSkill[];
   view?: HorizonView;
 }

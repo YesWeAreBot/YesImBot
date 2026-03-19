@@ -184,6 +184,11 @@ describe("round context runtime", () => {
         }),
         getDefinition: vi.fn(),
         invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
       },
       "yesimbot.prompt": {
         render: vi.fn(),
@@ -194,9 +199,6 @@ describe("round context runtime", () => {
       "yesimbot.model": {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
-      },
-      "yesimbot.trait": {
-        analyze: vi.fn().mockResolvedValue([]),
       },
       "yesimbot.skill": {
         resolve: vi.fn().mockReturnValue({
@@ -267,7 +269,6 @@ describe("round context runtime", () => {
           entities: [],
           history: [],
         },
-        traits: [],
         skills: [],
       },
       roundContext,
@@ -278,7 +279,6 @@ describe("round context runtime", () => {
         skipped: false,
         params: {
           view: toolCtx.view,
-          traits: toolCtx.traits,
           skills: toolCtx.skills,
           percept,
           scenario: commitRoundContext(roundContext, {
@@ -384,6 +384,11 @@ describe("round context runtime", () => {
         getTools: vi.fn(() => []),
         getDefinition: vi.fn(),
         invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
       },
       "yesimbot.prompt": {
         render: vi.fn(),
@@ -403,9 +408,6 @@ describe("round context runtime", () => {
       "yesimbot.model": {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
-      },
-      "yesimbot.trait": {
-        analyze: vi.fn().mockResolvedValue([{ dimension: "scene", value: "group" }]),
       },
       "yesimbot.skill": {
         resolve: skillResolve,
@@ -447,7 +449,6 @@ describe("round context runtime", () => {
     expect(capturedStartParams[0]).toEqual(
       expect.objectContaining({
         view: expect.any(Object),
-        traits: expect.any(Array),
         skills: expect.any(Array),
         percept,
         roundContext: expect.any(Object),
@@ -511,6 +512,11 @@ describe("round context runtime", () => {
         getTools: vi.fn(() => []),
         getDefinition: vi.fn(),
         invoke: vi.fn(),
+        executeRoundActions: vi.fn().mockResolvedValue({
+          toolResults: [],
+          hasToolCalls: false,
+          hasActionCalls: false,
+        }),
       },
       "yesimbot.prompt": {
         render: vi.fn(),
@@ -539,9 +545,6 @@ describe("round context runtime", () => {
       "yesimbot.model": {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
-      },
-      "yesimbot.trait": {
-        analyze: vi.fn().mockResolvedValue([]),
       },
       "yesimbot.skill": {
         resolve: vi.fn().mockReturnValue({

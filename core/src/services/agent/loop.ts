@@ -56,7 +56,6 @@ type ToolResultEntry = RoundActionResultEntry;
 
 interface AgentStartMutableParams {
   view: HorizonView | undefined;
-  traits: NonNullable<RuntimeToolExecutionContext["traits"]>;
   skills: NonNullable<RuntimeToolExecutionContext["skills"]>;
   percept: Percept;
   roundContext: RoundContext;
@@ -161,13 +160,11 @@ export class ThinkActLoop {
 
     const skillCatalog = this.ctx["yesimbot.skill"] as SkillRegistry | undefined;
     const sessionStore = this.ctx["yesimbot.session"] as AgentSessionStore | undefined;
-    let signals = runtimeToolCtx.traits ?? [];
 
     const hookService = this.ctx["yesimbot.hook"] as HookService | undefined;
     if (hookService) {
       const startParams: AgentStartMutableParams = {
         view,
-        traits: signals,
         skills: runtimeToolCtx.skills ?? [],
         percept,
         roundContext,
@@ -226,11 +223,9 @@ export class ThinkActLoop {
         }
 
         const updatedView = modifiedParams.view;
-        const updatedTraits = modifiedParams.traits;
         const updatedSkills = modifiedParams.skills;
 
         if (updatedView) view = updatedView;
-        if (updatedTraits) signals = updatedTraits;
         if (updatedSkills && !isSameActiveSkillList(updatedSkills, runtimeToolCtx.skills ?? [])) {
           this.logger.warn(
             `[${percept.traceId}] agent start hook attempted legacy skills mutation; ignored`,
@@ -283,7 +278,6 @@ export class ThinkActLoop {
         {
           ...runtimeToolCtx,
           percept,
-          traits: signals,
           skills: toActiveSkills(currentLoadedSkills),
         },
         roundContext,

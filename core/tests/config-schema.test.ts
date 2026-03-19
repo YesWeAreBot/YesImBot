@@ -68,7 +68,7 @@ vi.mock("../src/services/model", () => ({
   ModelService: class {},
 }));
 
-vi.mock("../src/services/plugin", () => ({
+vi.mock("../src/services/plugin/service", () => ({
   PluginService: class {},
 }));
 
@@ -83,10 +83,6 @@ vi.mock("../src/services/role", () => ({
 vi.mock("../src/services/skill", () => ({
   AgentSessionStore: class {},
   SkillRegistry: class {},
-}));
-
-vi.mock("../src/services/trait", () => ({
-  TraitAnalyzer: class {},
 }));
 
 import { Config } from "../src/index";

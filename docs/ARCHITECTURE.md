@@ -35,9 +35,8 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 - Provider plugins implement `AbstractProvider` and register model configs
 - Anthropic provider includes prompt-cache-specific behavior
 
-### 4. Behavior Layer (`trait` + `skill` + `role` + `prompt`)
+### 4. Behavior Layer (`skill` + `role` + `prompt`)
 
-- `trait`: analyzes scene/heat signals
 - `skill`: selects and merges skill effects
 - `role`: content source provider for role/persona fragments (`SOUL.md`, `AGENTS.md`, `TOOLS.md`)
 - `prompt`: canonical `Fragment -> Section -> Layout` renderer (`identity -> policy -> memory -> situation`)
@@ -50,6 +49,14 @@ Athena is a Yarn/Turbo monorepo centered on a Koishi plugin runtime.
 - Coordinates round action execution through facade methods while preserving semantics (tools parallel, actions sequential)
 - Delegates hook runtime semantics to `yesimbot.hook` and skill runtime ownership to `yesimbot.skill`
 
+Plugin authoring does **not** import from core runtime internals. Authoring entrypoints are:
+
+- `@yesimbot/plugin-sdk/tools`
+- `@yesimbot/plugin-sdk/hooks`
+- `@yesimbot/plugin-sdk/skills`
+
+`koishi-plugin-yesimbot` is runtime-only and should be treated as runtime service implementation, not as a plugin authoring package surface. The core package no longer publishes `./services/*` as a public import surface.
+
 ## Runtime Flow
 
 ```text
@@ -59,7 +66,7 @@ Koishi message event
   -> DM/group aggregation window
   -> HorizonView build (internal)
   -> Scenario + Capabilities + RoundContext assembly (public runtime contracts)
-  -> Trait analyze + Skill resolve
+  -> Skill resolve
   -> Prompt canonical layout render (scope includes roundContext/scenario/capabilities; view.* is legacy compat)
   -> Provider emit adaptation (e.g., Anthropic cache split from fragment stability/cacheable metadata)
   -> ModelService call (with fallback)
@@ -85,7 +92,7 @@ providers/* ----\
 plugins/* -------\                  +------------------+
 core/services/* ---> yesimbot.model | shared-model pkg |
           |                          +------------------+
-          +-> horizon/prompt/trait/skill/plugin services
+          +-> horizon/prompt/skill/plugin services
 ```
 
 - Services must use `Service` subclass pattern.

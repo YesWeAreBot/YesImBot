@@ -61,7 +61,12 @@ import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
 import { HookService } from "../src/services/hook/service";
 import { HookPhase, HookType } from "../src/services/hook/types";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import {
+  FunctionType,
+  type RoundActionCall,
+  type RoundActionExecutionResult,
+  type ToolExecutionContext,
+} from "../src/services/plugin/types";
 
 type EndHookParams = {
   lifecycle: "end";
@@ -122,10 +127,6 @@ function createHarness(options?: {
     events: horizonEvents,
     config: {},
     compressor: undefined,
-  };
-
-  const traitService = {
-    analyze: vi.fn(async () => [{ dimension: "scene", value: "group-chat", confidence: 0.9 }]),
   };
 
   const skillService = {
@@ -190,6 +191,68 @@ function createHarness(options?: {
       return { type: FunctionType.Tool };
     }),
     invoke: pluginInvoke,
+    executeRoundActions: vi.fn(
+      async (
+        actions: RoundActionCall[],
+        execCtx: ToolExecutionContext,
+      ): Promise<RoundActionExecutionResult> => {
+        const toolResults = [] as RoundActionExecutionResult["toolResults"];
+        for (let index = 0; index < actions.length; index++) {
+          const action = actions[index]!;
+          let params = action.params ?? {};
+          try {
+            const before = await hookService.executeBefore(HookType.Tool, params, "test-trace");
+            if (before.skipped) {
+              const skippedResult = before.result as
+                | { success?: boolean; status?: string; content?: unknown; error?: string }
+                | undefined;
+              toolResults.push({
+                id: index,
+                name: action.name,
+                success: skippedResult?.success ?? false,
+                status: skippedResult?.status ?? "failed",
+                ...(skippedResult?.success
+                  ? { result: skippedResult.content }
+                  : { error: skippedResult?.error ?? "hook skipped" }),
+              });
+              continue;
+            }
+            params = before.params;
+            const result = await pluginInvoke(action.name, params, execCtx);
+            await hookService.executeAfter(HookType.Tool, params, result, "test-trace");
+            toolResults.push({
+              id: index,
+              name: action.name,
+              success: result.success,
+              status: result.status,
+              ...(result.success ? { result: result.content } : { error: "invoke failed" }),
+            });
+          } catch (error) {
+            await hookService.executeError(
+              HookType.Tool,
+              params,
+              error instanceof Error ? error : new Error(String(error)),
+              "test-trace",
+            );
+            toolResults.push({
+              id: index,
+              name: action.name,
+              success: false,
+              status: "failed",
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        const hasActionCalls = actions.some(
+          (action) => pluginService.getDefinition(action.name)?.type === FunctionType.Action,
+        );
+        return {
+          toolResults,
+          hasToolCalls: toolResults.length > 0,
+          hasActionCalls,
+        };
+      },
+    ),
     getTools: vi.fn(() => []),
   };
 
@@ -197,7 +260,6 @@ function createHarness(options?: {
   rootCtx["yesimbot.plugin"] = pluginService;
   rootCtx["yesimbot.prompt"] = promptService;
   rootCtx["yesimbot.model"] = modelService;
-  rootCtx["yesimbot.trait"] = traitService;
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.hook"] = hookService;
 

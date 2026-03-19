@@ -30,11 +30,6 @@
       "require": "./dist/index.cjs",
       "import": "./dist/index.mjs"
     },
-    "./services/*": {
-      "types": "./dist/services/*/index.d.ts",
-      "require": "./dist/services/*/index.cjs",
-      "import": "./dist/services/*/index.mjs"
-    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

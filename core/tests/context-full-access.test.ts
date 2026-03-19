@@ -22,7 +22,7 @@ import {
 } from "./fixtures/timeline-entries";
 
 describe("Full context access contract", () => {
-  it("allows agent hook and tool handler to directly consume view/traits/skills/percept metadata", async () => {
+  it("allows agent hook and tool handler to directly consume modern runtime context fields", async () => {
     const agentLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), level: 0 };
     const rootCtx = {
       baseDir: "/tmp",
@@ -39,9 +39,9 @@ describe("Full context access contract", () => {
     let hookParams:
       | {
           view: { self: { id: string } };
-          traits: Array<{ dimension: string }>;
           skills: Array<{ name: string }>;
           percept: Percept;
+          scenario?: { derived?: Record<string, unknown> };
           metadata?: Record<string, unknown>;
           skillState?: { active: string[] };
         }
@@ -56,9 +56,9 @@ describe("Full context access contract", () => {
         hookParams = ctx.params as typeof hookParams;
         const params = ctx.params as {
           view: { self: { id: string } };
-          traits: Array<{ dimension: string; value: string; confidence: number }>;
           skills: Array<{ name: string; effects: string[]; metadata?: Record<string, unknown> }>;
           percept: Percept;
+          scenario?: { derived?: Record<string, unknown> };
           metadata?: Record<string, unknown>;
           skillState?: { active: string[] };
         };
@@ -67,7 +67,13 @@ describe("Full context access contract", () => {
           modified: true,
           params: {
             ...params,
-            traits: [...params.traits, { dimension: "hook-injected", value: "yes", confidence: 1 }],
+            scenario: {
+              ...params.scenario,
+              derived: {
+                ...(params.scenario?.derived ?? {}),
+                attention: { lane: "hooked" },
+              },
+            },
             metadata: {
               ...(params.metadata ?? {}),
               route: "agent-start",
@@ -184,7 +190,7 @@ describe("Full context access contract", () => {
             const result = await pluginService.invoke(action.name, action.params ?? {}, ctx);
 
             return {
-              id: index + 1,
+              id: index,
               name: action.name,
               success: result.success,
               status: result.status,
@@ -240,7 +246,6 @@ describe("Full context access contract", () => {
     expect(result.totalToolCalls).toBe(1);
     expect(hookParams).toBeDefined();
     expect(hookParams?.view.self.id).toBe("bot-1");
-    expect(hookParams?.traits).toEqual([]);
     expect(hookParams?.skills ?? []).toEqual([]);
     expect(hookParams?.percept.traceId).toBe("trace-ctx-1");
     expect(hookParams?.percept.metadata).toEqual({ requestId: "req-123", custom: { lane: "a" } });
@@ -254,7 +259,7 @@ describe("Full context access contract", () => {
 
     expect(capturedRuntimeCtx).toBeDefined();
     expect(capturedRuntimeCtx?.scenario?.raw.self.id).toBe("bot-1");
-    expect(capturedRuntimeCtx?.traits?.map((t) => t.dimension)).toEqual(["hook-injected"]);
+    expect(capturedRuntimeCtx?.scenario?.derived.attention).toEqual({ lane: "hooked" });
     expect(capturedRuntimeCtx?.skills ?? []).toEqual([]);
     expect(capturedRuntimeCtx?.percept?.traceId).toBe("trace-ctx-1");
     expect(capturedRuntimeCtx?.percept?.metadata).toEqual({

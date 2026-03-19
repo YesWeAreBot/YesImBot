@@ -32,7 +32,6 @@ describe("service debug level propagation regression", () => {
     expectPluginConfigHasDebugLevel(source, "SkillRegistry");
     expectPluginConfigHasDebugLevel(source, "AgentCore");
     expectPluginConfigHasDebugLevel(source, "MemoryAgentService");
-    expectPluginConfigHasDebugLevel(source, "TraitAnalyzer");
     expectPluginConfigHasDebugLevel(source, "ArousalService");
   });
 
@@ -77,10 +76,6 @@ describe("service debug level propagation regression", () => {
       },
       {
         path: "../src/services/role/service.ts",
-        pattern: /this\.logger\.level = config\.debugLevel \?\? 2/,
-      },
-      {
-        path: "../src/services/trait/service.ts",
         pattern: /this\.logger\.level = config\.debugLevel \?\? 2/,
       },
       {

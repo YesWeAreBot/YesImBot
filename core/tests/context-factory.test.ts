@@ -44,9 +44,8 @@ describe("context factory", () => {
       expect(ctx.bot).toBe(bot);
     });
 
-    it("does not include traits/skills/percept", () => {
+    it("does not include runtime-only fields like skills/view/percept", () => {
       const ctx = buildMinimalContext({ platform: "onebot", channelId: "100" });
-      expect(Object.prototype.hasOwnProperty.call(ctx, "traits")).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(ctx, "skills")).toBe(false);
       expect(ctx.percept).toBeUndefined();
     });
@@ -128,7 +127,6 @@ describe("context factory", () => {
 
       expect(result.view).toEqual(view);
       expect(result.scenario?.raw.environment).toEqual(view.environment);
-      expect(result.traits).toEqual([]);
       expect(result.skills).toEqual([]);
       expect(result.percept).toEqual(percept);
     });
@@ -146,13 +144,12 @@ describe("context factory", () => {
 
       expect(result.view?.environment.channelId).toBe("100");
       expect(result.scenario).toBeTruthy();
-      expect(result.traits).toEqual([]);
       expect(result.skills).toEqual([]);
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(traceId));
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("view"));
     });
 
-    it("does not depend on trait analysis when building agent context", async () => {
+    it("does not require legacy trait analyzers when building agent context", async () => {
       const ctx = buildContext({});
 
       const result = await buildAgentContext(ctx, {
@@ -161,8 +158,8 @@ describe("context factory", () => {
         percept,
       });
 
-      expect(result.traits).toEqual([]);
-      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("traits"));
+      expect(result.scenario).toBeTruthy();
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining("trait"));
     });
 
     it("projects active skills from session state", async () => {
@@ -236,9 +233,6 @@ describe("context factory", () => {
         source: "plugin",
         allowedTools: ["search"],
       });
-      const trait = {
-        analyze: vi.fn().mockResolvedValue([{ dimension: "scene", value: "chat", confidence: 1 }]),
-      };
       const skill = {
         get: vi.fn((name: string) =>
           name === "search"
@@ -257,12 +251,11 @@ describe("context factory", () => {
       const ctx = {
         logger: () => logger,
         "yesimbot.horizon": horizon,
-        "yesimbot.trait": trait,
         "yesimbot.skill": skill,
         "yesimbot.session": sessionStore,
       } as unknown as Context;
 
-      return { ctx, horizon, trait, skill };
+      return { ctx, horizon, skill };
     };
 
     it("creates and binds a committed round baseline when no inbound roundContext exists", async () => {
@@ -297,7 +290,7 @@ describe("context factory", () => {
     });
 
     it("calibrates and rebinds an inbound roundContext exactly once", async () => {
-      const { ctx, horizon, trait, skill } = buildServices();
+      const { ctx, horizon, skill } = buildServices();
       const inboundRoundContext = createRoundContext({
         percept,
         scenario: {
@@ -343,7 +336,6 @@ describe("context factory", () => {
           platform: "discord",
           channelId: "c1",
           percept,
-          traits: [],
           skills: [{ name: "search", effects: ["tools"] }],
           roundContext: inboundRoundContext,
         },
@@ -358,7 +350,6 @@ describe("context factory", () => {
       });
       expect(result.roundContext.skillState.persistentRoster).toEqual(["search"]);
       expect(horizon.buildView).toHaveBeenCalledTimes(1);
-      expect(trait.analyze).toHaveBeenCalledTimes(0);
       expect(skill.get).toHaveBeenCalledWith("search");
     });
 
@@ -399,7 +390,6 @@ describe("context factory", () => {
           platform: "discord",
           channelId: "c1",
           percept,
-          traits: [],
           skills: [{ name: "search", effects: ["tools"] }],
           roundContext: inboundRoundContext,
         },

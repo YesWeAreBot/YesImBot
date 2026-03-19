@@ -1,29 +1,42 @@
-import { describe, expect, it, vi } from "vitest";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
 
 import type { FunctionDefinition, ToolExecutionContext, ToolResult } from "../src/tools/index";
 
-vi.mock("koishi-plugin-yesimbot/services/plugin", () => ({
-  Action: Symbol("Action"),
-  defineAction: vi.fn(),
-  defineTool: vi.fn(),
-  Failed: vi.fn(),
-  FunctionType: { Tool: "tool", Action: "action" },
-  jsonSchemaToSchema: vi.fn(),
-  Metadata: Symbol("Metadata"),
-  schemaToJSONSchema: vi.fn(),
-  Success: vi.fn(),
-  Tool: Symbol("Tool"),
-  withInnerThoughts: vi.fn(),
-  YesImPlugin: class {},
-}));
-
 describe("plugin-sdk tools exports", () => {
-  it("uses the SDK tools barrel import path", () => {
+  it("keeps tools subpath as primary authoring entrypoint", () => {
     const importPath = "../src/tools/index";
     expect(importPath).toBe("../src/tools/index");
   });
 
-  it("exports all required tool authoring symbols", async () => {
+  it("documents canonical authoring import specifiers", () => {
+    const canonicalAuthoringImports = [
+      "@yesimbot/plugin-sdk/tools",
+      "@yesimbot/plugin-sdk/hooks",
+      "@yesimbot/plugin-sdk/skills",
+    ];
+
+    expect(canonicalAuthoringImports).toEqual([
+      "@yesimbot/plugin-sdk/tools",
+      "@yesimbot/plugin-sdk/hooks",
+      "@yesimbot/plugin-sdk/skills",
+    ]);
+  });
+
+  it("keeps root barrel as aggregate convenience over subpaths", async () => {
+    const root = await import("../src/index");
+    const tools = await import("../src/tools/index");
+    const hooks = await import("../src/hooks/index");
+    const skills = await import("../src/skills/index");
+
+    expect(root.Tool).toBe(tools.Tool);
+    expect(root.Hook).toBe(hooks.Hook);
+    expect(root.SkillRegistry).toBe(skills.SkillRegistry);
+  });
+
+  it("exports self-contained tool authoring symbols from tools surface", async () => {
     const tools = await import("../src/tools/index");
 
     expect(tools.Tool).toBeDefined();
@@ -40,10 +53,25 @@ describe("plugin-sdk tools exports", () => {
     expect(tools.jsonSchemaToSchema).toBeDefined();
   });
 
-  it("keeps type exports available for tool authoring", () => {
+  it("keeps type exports available for tools subpath consumers", () => {
     expectType<FunctionDefinition>();
     expectType<ToolExecutionContext>();
     expectType<ToolResult>();
+  });
+
+  it("removes deprecated core module shim declarations", () => {
+    expect(
+      existsSync(join(process.cwd(), "src/tools/core-plugin-modules.d.ts")),
+      "tools shim should be removed",
+    ).toBe(false);
+    expect(
+      existsSync(join(process.cwd(), "src/hooks/core-hook-modules.d.ts")),
+      "hooks shim should be removed",
+    ).toBe(false);
+    expect(
+      existsSync(join(process.cwd(), "src/skills/core-skill-modules.d.ts")),
+      "skills shim should be removed",
+    ).toBe(false);
   });
 });
 

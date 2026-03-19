@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import pkg from "../package.json";
+import * as pluginRuntime from "../src/services/plugin";
 
 import {
   bindCommittedRoundContext,
@@ -33,6 +35,29 @@ describe("runtime public contracts", () => {
     expect(runtimeSurface["yesimbot.plugin"]).toContain("coordination facade");
     expect(runtimeSurface["yesimbot.hook"]).toContain("hook runtime owner");
     expect(runtimeSurface["yesimbot.skill"]).toContain("skill runtime owner");
+  });
+
+  it("keeps plugin authoring imports on sdk subpaths", () => {
+    const authoringImports = {
+      tools: "@yesimbot/plugin-sdk/tools",
+      hooks: "@yesimbot/plugin-sdk/hooks",
+      skills: "@yesimbot/plugin-sdk/skills",
+    } as const;
+
+    expect(authoringImports.tools).toBe("@yesimbot/plugin-sdk/tools");
+    expect(authoringImports.hooks).toBe("@yesimbot/plugin-sdk/hooks");
+    expect(authoringImports.skills).toBe("@yesimbot/plugin-sdk/skills");
+    expect(authoringImports).not.toHaveProperty("services");
+  });
+
+  it("keeps core package exports runtime-only with no services wildcard", () => {
+    expect(pkg.exports).not.toHaveProperty("./services/*");
+  });
+
+  it("keeps plugin runtime barrel free from authoring decorators", () => {
+    expect(pluginRuntime).not.toHaveProperty("Tool");
+    expect(pluginRuntime).not.toHaveProperty("Action");
+    expect(pluginRuntime).not.toHaveProperty("YesImPlugin");
   });
 
   it("prompt fragment-first contracts are publicly exported", () => {
@@ -250,9 +275,6 @@ describe("runtime public contracts", () => {
         getProvider: vi.fn(() => ({ providerType: "openai" })),
         call: vi.fn().mockResolvedValue({ text: JSON.stringify({ actions: [] }), usage: {} }),
       },
-      "yesimbot.trait": {
-        analyze: vi.fn().mockResolvedValue([]),
-      },
       "yesimbot.skill": {
         resolve: vi.fn().mockReturnValue({
           activeSkills: [],
@@ -332,7 +354,6 @@ describe("runtime public contracts", () => {
       {
         platform: "discord",
         channelId: "c1",
-        traits: [],
         skills: [],
       },
       roundContext,

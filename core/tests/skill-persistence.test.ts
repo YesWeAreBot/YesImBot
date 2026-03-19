@@ -1,60 +1,82 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { commitRoundContext, createRoundContext } from "../src/services/runtime/adapters";
-import { inheritPersistentRoster } from "../src/services/shared/context-factory";
-import type { SkillRegistry } from "../src/services/skill/service";
-import type { SkillDefinition } from "../src/services/skill/types";
+import { commitRoundContext, createRoundContext } from "../src/runtime/adapters";
+import { DEFAULT_SCENARIO_TIMELINE_SEMANTICS } from "../src/runtime/contracts";
+import { buildAgentRoundContext } from "../src/shared/context-factory";
+import { projectSkillState, type AgentSessionState } from "../src/services/skill/session-store";
+import type { LoadAttempt } from "../src/services/skill/types";
 
-function createSkill(name: string): SkillDefinition {
+function createScenarioTimeline() {
   return {
-    name,
-    lifecycle: "per-turn",
-    source: "plugin",
-    effects: {},
+    turns: [],
+    activeSegment: { mode: "after-latest-summary" as const },
+    markedEvents: [],
+    heartbeatEvents: [],
+    semantics: DEFAULT_SCENARIO_TIMELINE_SEMANTICS,
   };
 }
 
 describe("skill persistence", () => {
-  it("inherits persistent roster and records missing skills in load history", () => {
-    const foo = createSkill("foo");
-    const bar = createSkill("bar");
-    const byName = new Map<string, SkillDefinition>([
-      [foo.name, foo],
-      [bar.name, bar],
-    ]);
-    const catalog = {
-      get(name: string) {
-        return byName.get(name);
+  it("projects persistent roster from session state", () => {
+    const loadHistory: LoadAttempt[] = [
+      { name: "foo", status: "loaded", timestamp: 1 },
+      { name: "missing", status: "not_found", timestamp: 2 },
+    ];
+    const state: AgentSessionState = {
+      loadedSkills: ["foo", "bar"],
+      loadHistory,
+    };
+
+    expect(projectSkillState(state)).toEqual({
+      active: ["foo", "bar"],
+      loadHistory,
+      persistentRoster: ["foo", "bar"],
+    });
+  });
+
+  it("hydrates round context with persisted skill state", async () => {
+    const sessionState: AgentSessionState = {
+      loadedSkills: ["search"],
+      loadHistory: [{ name: "search", status: "loaded", timestamp: 10 }],
+    };
+    const ctx = {
+      logger: vi.fn(() => ({ warn: vi.fn() })),
+      "yesimbot.session": {
+        getState: vi.fn(() => sessionState),
       },
-    } as unknown as SkillRegistry;
+      "yesimbot.skill": {
+        get: vi.fn(() => undefined),
+      },
+      "yesimbot.horizon": {
+        buildView: vi.fn().mockResolvedValue({
+          self: { id: "bot", name: "Athena" },
+          environment: {
+            type: "group",
+            id: "c1",
+            name: "General",
+            platform: "discord",
+            channelId: "c1",
+          },
+          entities: [],
+          history: [],
+        }),
+      },
+    } as never;
 
-    const inherited = inheritPersistentRoster(["foo", "bar", "missing"], catalog);
+    const built = await buildAgentRoundContext(ctx, {
+      platform: "discord",
+      channelId: "c1",
+      percept: {
+        id: "wake-1",
+        traceId: "trace-1",
+        type: "mention",
+        platform: "discord",
+        channelId: "c1",
+        timestamp: new Date("2026-03-10T00:00:00Z"),
+      },
+    });
 
-    expect(inherited.size).toBe(2);
-    expect(inherited.getLoadedNames()).toEqual(["foo", "bar"]);
-    expect(inherited.getLoadHistory()).toEqual([
-      expect.objectContaining({ name: "foo", status: "loaded" }),
-      expect.objectContaining({ name: "bar", status: "loaded" }),
-      expect.objectContaining({ name: "missing", status: "not_found" }),
-    ]);
-  });
-
-  it("returns empty loaded set when previous roster is empty", () => {
-    const catalog = { get: () => undefined } as unknown as SkillRegistry;
-
-    const inherited = inheritPersistentRoster([], catalog);
-
-    expect(inherited.size).toBe(0);
-    expect(inherited.getLoadHistory()).toEqual([]);
-  });
-
-  it("returns empty loaded set when previous roster is undefined", () => {
-    const catalog = { get: () => undefined } as unknown as SkillRegistry;
-
-    const inherited = inheritPersistentRoster(undefined, catalog);
-
-    expect(inherited.size).toBe(0);
-    expect(inherited.getLoadHistory()).toEqual([]);
+    expect(built.roundContext.skillState).toEqual(projectSkillState(sessionState));
   });
 
   it("commitRoundContext preserves loadHistory and persistentRoster", () => {
@@ -78,32 +100,8 @@ describe("skill persistence", () => {
             channelId: "c1",
           },
           entities: [],
-          timeline: {
-            turns: [],
-            activeSegment: { mode: "after-latest-summary" },
-            markedEvents: [],
-            heartbeatEvents: [],
-            semantics: {
-              summaryPosition: "background",
-              heartbeatRendering: "query-only",
-              agentResponseVisibility: "internal-draft",
-              visibleOutputSource: "send_message-success",
-              defaultQueryWindow: "active-segment",
-            },
-          },
-          scenarioTimeline: {
-            turns: [],
-            activeSegment: { mode: "after-latest-summary" },
-            markedEvents: [],
-            heartbeatEvents: [],
-            semantics: {
-              summaryPosition: "background",
-              heartbeatRendering: "query-only",
-              agentResponseVisibility: "internal-draft",
-              visibleOutputSource: "send_message-success",
-              defaultQueryWindow: "active-segment",
-            },
-          },
+          timeline: createScenarioTimeline(),
+          scenarioTimeline: createScenarioTimeline(),
           stimulusSource: { type: "message" },
         },
         derived: {

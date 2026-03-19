@@ -304,6 +304,14 @@ function createMockPluginService(toolMode: "default" | "none"): PluginService {
   ];
 
   return {
+    getRoundAvailability: (_ctx: ToolExecutionContext, includeTools?: string[]) => {
+      const requested = new Set(includeTools ?? []);
+      const requestedHidden = hidden.filter((entry) => requested.has(entry.function.name));
+      return {
+        visible: visible.concat(requestedHidden),
+        unavailable: [],
+      };
+    },
     getTools: (_ctx: ToolExecutionContext, includeHidden?: boolean) =>
       includeHidden ? visible.concat(hidden) : visible,
     getDefinition: (name: string) => {

@@ -1,5 +1,3 @@
-export * from "./decorators";
-export * from "./plugin";
 export {
   CAPABILITY_KEYS,
   getCapabilityByKey,

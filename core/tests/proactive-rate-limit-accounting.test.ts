@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Percept } from "../src/runtime/contracts";
 import { ThinkActLoop } from "../src/services/agent/loop";
-import { FunctionType, type ToolExecutionContext } from "../src/services/plugin/types";
+import { HookType } from "../src/services/hook/types";
+import {
+  FunctionType,
+  type RoundActionCall,
+  type RoundActionExecutionResult,
+  type ToolExecutionContext,
+} from "../src/services/plugin/types";
 
 function createHarness(options: {
   responses: string[];
@@ -16,6 +22,7 @@ function createHarness(options: {
     baseDir: "/tmp",
     logger: vi.fn(() => agentLogger),
     on: vi.fn(),
+    emit: vi.fn(),
   } as unknown as Record<string, unknown>;
 
   const horizonEvents = {
@@ -36,10 +43,6 @@ function createHarness(options: {
     events: horizonEvents,
     config: {},
     compressor: undefined,
-  };
-
-  const traitService = {
-    analyze: vi.fn(async () => [{ dimension: "scene", value: "group-chat", confidence: 0.95 }]),
   };
 
   const skillService = {
@@ -87,12 +90,75 @@ function createHarness(options: {
       name === "send_message" ? { type: FunctionType.Action } : { type: FunctionType.Tool },
     ),
     invoke: vi.fn(
-      async (name: string) =>
+      async (
+        name: string,
+        _params: Record<string, unknown>,
+        _ctx: ToolExecutionContext,
+      ) =>
         invokeImpl?.(name) ?? {
           success: true,
           status: "ok",
           content: name === "send_message" ? "sent" : "tool-ok",
         },
+    ),
+    executeRoundActions: vi.fn(
+      async (
+        actions: RoundActionCall[],
+        execCtx: ToolExecutionContext,
+      ): Promise<RoundActionExecutionResult> => {
+        const toolResults = await Promise.all(
+          actions.map(async (action, index) => {
+            const params = action.params ?? {};
+            const hookService = rootCtx["yesimbot.hook"] as
+              | {
+                  executeBefore: (
+                    hookType: HookType,
+                    input: Record<string, unknown>,
+                    traceId: string,
+                  ) => Promise<{ skipped: boolean; params: Record<string, unknown>; result?: unknown }>;
+                  executeAfter: (
+                    hookType: HookType,
+                    input: Record<string, unknown>,
+                    result: unknown,
+                    traceId: string,
+                  ) => Promise<void>;
+                }
+              | undefined;
+            let nextParams = params;
+            if (hookService) {
+              const before = await hookService.executeBefore(HookType.Tool, nextParams, "test-trace");
+              if (before.skipped) {
+                return {
+                  id: index,
+                  name: action.name,
+                  success: false,
+                  status: "failed",
+                  error: "hook skipped",
+                };
+              }
+              nextParams = before.params;
+            }
+            const result = await pluginService.invoke(action.name, nextParams, execCtx);
+            if (hookService) {
+              await hookService.executeAfter(HookType.Tool, nextParams, result, "test-trace");
+            }
+            return {
+              id: index,
+              name: action.name,
+              success: result.success,
+              status: result.status,
+              ...(result.success ? { result: result.content } : { error: "invoke failed" }),
+            };
+          }),
+        );
+        return {
+          toolResults,
+          hasToolCalls: toolResults.length > 0,
+          hasActionCalls: actions.some(
+            (action) => pluginService.getDefinition(action.name)?.type === FunctionType.Action,
+          ),
+        };
+      },
     ),
     getTools: vi.fn(() => []),
   };
@@ -105,7 +171,6 @@ function createHarness(options: {
   rootCtx["yesimbot.plugin"] = pluginService;
   rootCtx["yesimbot.prompt"] = promptService;
   rootCtx["yesimbot.model"] = modelService;
-  rootCtx["yesimbot.trait"] = traitService;
   rootCtx["yesimbot.skill"] = skillService;
   rootCtx["yesimbot.arousal"] = arousalService;
 
