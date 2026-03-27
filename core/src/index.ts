@@ -10,15 +10,21 @@ export const name = "yesimbot";
 export const inject = [];
 export const Config = Schema.object({
   model: Schema.dynamic("registry.chatModels"),
+  judgeModel: Schema.dynamic("registry.chatModels"),
+  judgeEnabled: Schema.boolean().default(false),
+  judgeTimeoutMs: Schema.number().default(10000),
   basePath: Schema.path({ filters: ["directory"], allowCreate: true }).default(
     "data/yesimbot/agents",
   ),
   instructions: Schema.string(),
-  maxSteps: Schema.number().default(5),
+  maxSteps: Schema.number().default(20),
+  baseTimeoutMs: Schema.number().default(60000).description("Base response timeout in ms"),
+  perStepTimeoutMs: Schema.number().default(30000).description("Additional timeout per step in ms"),
+  chunkTimeoutMs: Schema.number().default(10000).description("Chunk streaming timeout in ms"),
   logLevel: Schema.union([0, 1, 2, 3]).default(2),
 });
 export async function apply(ctx: Context, config: Config) {
   ctx.plugin(ModelService, config);
-  ctx.plugin(AgentSessionService, config);
   ctx.plugin(PluginService, config);
+  ctx.plugin(AgentSessionService, config);
 }

@@ -22,6 +22,7 @@ export interface WillingnessResult {
   reason:
     | "direct_message"
     | "at_self"
+    | "llm_judge"
     | "keyword_match"
     | "reply_without_at"
     | "no_trigger"

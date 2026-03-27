@@ -23,9 +23,18 @@ declare module "koishi" {
 
 export interface AgentSessionServiceConfig {
   model: string;
+  judgeModel?: string;
+  judgeEnabled?: boolean;
+  judgeTimeoutMs?: number;
   basePath: string;
   instructions?: string;
   maxSteps?: number;
+  /** Base response timeout in ms. Default 60000. */
+  baseTimeoutMs?: number;
+  /** Additional timeout per step in ms. Default 30000. */
+  perStepTimeoutMs?: number;
+  /** Chunk timeout in ms. Default 10000. */
+  chunkTimeoutMs?: number;
   logLevel?: number;
 }
 
@@ -168,11 +177,15 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       platform: platform,
       channelId: channelId,
       modelId: this.config.model,
+      judgeModel: this.config.judgeModel,
+      judgeEnabled: this.config.judgeEnabled,
+      judgeTimeoutMs: this.config.judgeTimeoutMs,
       basePath: channelDir,
       instructions,
       maxSteps: this.config.maxSteps,
-      responseTimeoutMs: 60000,
-      chunkTimeoutMs: 10000,
+      baseTimeoutMs: this.config.baseTimeoutMs,
+      perStepTimeoutMs: this.config.perStepTimeoutMs,
+      chunkTimeoutMs: this.config.chunkTimeoutMs,
     });
 
     this.agents.set(channelKey, agent);

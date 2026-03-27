@@ -1,12 +1,8 @@
+import { join } from "node:path";
+
 import type { ModelMessage } from "@ai-sdk/provider-utils";
+import type { OnFinishEvent, OnStepFinishEvent, PrepareStepResult, ToolSet } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
-import type {
-  LanguageModel,
-  OnFinishEvent,
-  OnStepFinishEvent,
-  PrepareStepResult,
-  ToolSet,
-} from "ai";
 import { Bot, Context } from "koishi";
 
 import {
@@ -17,16 +13,25 @@ import {
   type AgentTextPart,
   type AgentToolCallPart,
   type AgentToolMessage,
+  type AgentToolResultPart,
   type AgentUsage,
   type ChannelMessageDetails,
   type SessionEntry,
   type SessionManager,
 } from "../session-manager";
-import type { ChannelEvent, ChannelKey, ResponseEndReason, ResponseEndRecord } from "../types";
+import type { ChannelEvent, ResponseEndReason, ResponseEndRecord } from "../types";
 import { judgeWillingness } from "../willingness";
+import {
+  HIGH_RISK_ACTIONS,
+  collectPathCandidates,
+  inferActionType,
+  isHighRiskAction,
+  logSecurityEvent,
+  validateWorkspacePath,
+  wrapToolsWithWorkspaceGuard,
+} from "../workspace-guard";
 import { extractMessages } from "./output";
-import type { ChannelAgentOptions } from "./types";
-import type { ResponseState } from "./types";
+import type { ChannelAgentOptions, ResponseState } from "./types";
 
 // ============================================================================
 // ChannelAgent
@@ -44,14 +49,19 @@ import type { ResponseState } from "./types";
 export class ChannelAgent {
   readonly bot: Bot;
   readonly sessionManager: SessionManager;
+  readonly maxSteps: number;
+  readonly baseTimeoutMs: number;
+  readonly perStepTimeoutMs: number;
+  readonly chunkTimeoutMs: number;
 
-  private agent: ToolLoopAgent;
   private options: ChannelAgentOptions;
   private responseState: ResponseState = "idle";
   private abortController: AbortController | null = null;
   private responseQueue: Array<() => void> = [];
   private responseStartTime = 0;
   private stepsCompleted = 0;
+  private responseToolSnapshot: ToolSet = {};
+  private responseActiveTools: string[] = [];
 
   constructor(
     private ctx: Context,
@@ -60,22 +70,26 @@ export class ChannelAgent {
     this.options = options;
     this.bot = options.bot;
     this.sessionManager = options.sessionManager;
-    this.agent = this.createAgent();
+    this.maxSteps = options.maxSteps ?? 20;
+    this.baseTimeoutMs = options.baseTimeoutMs ?? options.responseTimeoutMs ?? 60000;
+    this.perStepTimeoutMs = options.perStepTimeoutMs ?? 30000;
+    this.chunkTimeoutMs = options.chunkTimeoutMs ?? 10000;
   }
 
   // =========================================================================
   // Agent Construction
   // =========================================================================
 
-  private createAgent(): ToolLoopAgent {
+  private createAgent(): ToolLoopAgent<never, ToolSet> {
     const model = this.ctx["yesimbot.model"].resolve(this.options.modelId);
-    return new ToolLoopAgent({
+    const cumulativeTimeoutMs = this.baseTimeoutMs + this.maxSteps * this.perStepTimeoutMs;
+    return new ToolLoopAgent<never, ToolSet>({
       model,
-      tools: this.options.tools ?? ({} as ToolSet),
-      stopWhen: stepCountIs(this.options.maxSteps ?? 20),
+      tools: {},
+      stopWhen: stepCountIs(this.maxSteps),
       timeout: {
-        totalMs: this.options.responseTimeoutMs ?? 60000,
-        chunkMs: this.options.chunkTimeoutMs ?? 10000,
+        totalMs: cumulativeTimeoutMs,
+        chunkMs: this.chunkTimeoutMs,
       },
       prepareStep: this.handlePrepareStep.bind(this),
       onStepFinish: this.handleStepFinish.bind(this),
@@ -111,13 +125,16 @@ export class ChannelAgent {
 
     // 2. Willingness check
     const selfId = event.bot?.selfId ?? "";
-    const willingness = judgeWillingness({
+    const willingness = await judgeWillingness(this.ctx, {
       isDirect: event.isDirect,
       atSelf: event.atSelf,
       isReplyToBot: event.isReplyToBot,
       content: event.content,
       selfId,
       senderId: event.userId,
+      judgeEnabled: this.options.judgeEnabled,
+      judgeModel: this.options.judgeModel,
+      judgeTimeoutMs: this.options.judgeTimeoutMs,
     });
 
     if (!willingness.shouldRespond) {
@@ -174,7 +191,7 @@ export class ChannelAgent {
     return false;
   }
 
-  private evaluateAccumulatedMessages(): void {
+  private async evaluateAccumulatedMessages(): Promise<void> {
     const entries = this.sessionManager.getEntries();
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
@@ -188,13 +205,16 @@ export class ChannelAgent {
       }
 
       const selfId = this.options.bot?.selfId ?? "";
-      const willingness = judgeWillingness({
+      const willingness = await judgeWillingness(this.ctx, {
         isDirect: details.isDirect,
         atSelf: details.atSelf,
         isReplyToBot: details.isReplyToBot,
         content: typeof entry.content === "string" ? entry.content : "",
         selfId,
         senderId: details.userId,
+        judgeEnabled: this.options.judgeEnabled,
+        judgeModel: this.options.judgeModel,
+        judgeTimeoutMs: this.options.judgeTimeoutMs,
       });
 
       if (willingness.shouldRespond) {
@@ -210,9 +230,10 @@ export class ChannelAgent {
     this.responseStartTime = Date.now();
     this.stepsCompleted = 0;
 
-    const timeoutMs = this.options.responseTimeoutMs ?? 60000;
+    const timeoutMs = this.baseTimeoutMs + this.maxSteps * this.perStepTimeoutMs;
     let endReason: ResponseEndReason = "normal";
     let errorMessage: string | undefined;
+    let responseEndPersisted = false;
     let timedOut = false;
 
     const watchdog = setTimeout(() => {
@@ -235,8 +256,24 @@ export class ChannelAgent {
         sessionEntries: [...this.sessionManager.getEntries()],
       });
 
+      const rawTools = this.ctx["yesimbot.plugin"]?.getToolSet() ?? {};
+      const workspaceRoot = join(this.options.basePath, "workspace");
+      const channelKey = this.sessionManager.getChannelKey();
+      const sessionId = this.sessionManager.getSessionId();
+
+      this.responseToolSnapshot = wrapToolsWithWorkspaceGuard(rawTools, {
+        workspaceRoot,
+        channelKey,
+        sessionId,
+        logger: this.ctx.logger,
+      });
+      this.responseActiveTools = Object.keys(this.responseToolSnapshot);
+
+      const agent = this.createAgent();
+      Object.assign(agent.tools, this.responseToolSnapshot);
+
       // Run agent
-      await this.agent.generate({
+      await agent.generate({
         messages,
         abortSignal: this.abortController.signal,
       });
@@ -246,17 +283,33 @@ export class ChannelAgent {
       } else {
         endReason = "error";
         errorMessage = err instanceof Error ? err.message : String(err);
+
+        this.ctx.logger.error(
+          `Response failed for ${this.options.platform}:${this.options.channelId}: ${errorMessage}`,
+        );
+
+        const record: ResponseEndRecord = {
+          endReason,
+          durationMs: Date.now() - this.responseStartTime,
+          stepsCompleted: this.stepsCompleted,
+          error: errorMessage,
+        };
+        this.sessionManager.appendCustomEntry<ResponseEndRecord>("response_end", record);
+        responseEndPersisted = true;
+        this.responseState = "ended";
       }
     } finally {
       clearTimeout(watchdog);
 
-      const record: ResponseEndRecord = {
-        endReason,
-        durationMs: Date.now() - this.responseStartTime,
-        stepsCompleted: this.stepsCompleted,
-        error: errorMessage,
-      };
-      this.sessionManager.appendCustomEntry<ResponseEndRecord>("response_end", record);
+      if (!responseEndPersisted) {
+        const record: ResponseEndRecord = {
+          endReason,
+          durationMs: Date.now() - this.responseStartTime,
+          stepsCompleted: this.stepsCompleted,
+          error: errorMessage,
+        };
+        this.sessionManager.appendCustomEntry<ResponseEndRecord>("response_end", record);
+      }
 
       this.responseState = "ended";
       this.abortController = null;
@@ -268,7 +321,7 @@ export class ChannelAgent {
       if (next) {
         next();
       } else if (this.hasAccumulatedMessagesSinceResponse()) {
-        this.evaluateAccumulatedMessages();
+        this.evaluateAccumulatedMessages().catch(() => {});
       }
     }
   }
@@ -297,10 +350,15 @@ export class ChannelAgent {
 
       const keepCount = Math.max(10, Math.floor(rest.length / 2));
       const trimmed = rest.slice(-keepCount);
-      return { messages: [system, ...trimmed] };
+      return {
+        activeTools: this.responseActiveTools,
+        messages: [system, ...trimmed],
+      };
     }
 
-    return {};
+    return {
+      activeTools: this.responseActiveTools,
+    };
   }
 
   /**
@@ -308,6 +366,62 @@ export class ChannelAgent {
    */
   private handleStepFinish(stepResult: OnStepFinishEvent): void {
     this.stepsCompleted++;
+
+    const workspaceRoot = join(this.options.basePath, "workspace");
+    const blockedToolResultParts: AgentToolResultPart[] = [];
+    const blockedToolCallIds = new Set<string>();
+    const channelKey = this.sessionManager.getChannelKey();
+    const sessionId = this.sessionManager.getSessionId();
+
+    for (const toolCall of stepResult.toolCalls) {
+      const actionType = inferActionType(toolCall.toolName);
+      const highRisk = isHighRiskAction(actionType);
+      const inputPaths = collectPathCandidates(toolCall.input);
+
+      if (highRisk && inputPaths.length === 0) {
+        logSecurityEvent(this.ctx.logger, {
+          channel: channelKey,
+          sessionId,
+          actionType,
+          allowed: true,
+          reason: "high_risk_action_without_path",
+        });
+      }
+
+      for (const candidatePath of inputPaths) {
+        const allowed = validateWorkspacePath(candidatePath, workspaceRoot);
+
+        logSecurityEvent(this.ctx.logger, {
+          channel: channelKey,
+          sessionId,
+          actionType,
+          allowed,
+          path: candidatePath,
+          reason: allowed ? "workspace_boundary_allow" : "workspace_boundary_deny",
+        });
+
+        if (!allowed) {
+          blockedToolCallIds.add(toolCall.toolCallId);
+          blockedToolResultParts.push({
+            type: "tool-result",
+            toolCallId: toolCall.toolCallId,
+            toolName: toolCall.toolName,
+            result: "Access denied: file path outside workspace boundary",
+            isError: true,
+          });
+          break;
+        }
+      }
+    }
+
+    if (blockedToolResultParts.length > 0) {
+      const blockedMessage: AgentToolMessage = {
+        role: "tool",
+        content: blockedToolResultParts,
+        timestamp: Date.now(),
+      };
+      this.sessionManager.appendMessage(blockedMessage);
+    }
 
     const responseMessages = stepResult.response?.messages;
     if (responseMessages) {
@@ -321,19 +435,25 @@ export class ChannelAgent {
           });
           this.sessionManager.appendMessage(agentMsg);
         } else if (msg.role === "tool") {
+          const toolParts = Array.isArray(msg.content)
+            ? (msg.content as Array<Record<string, unknown>>).filter(
+                (p) => p.type === "tool-result" && !blockedToolCallIds.has(p.toolCallId as string),
+              )
+            : [];
+
+          if (toolParts.length === 0) {
+            continue;
+          }
+
           const agentMsg: AgentToolMessage = {
             role: "tool",
-            content: Array.isArray(msg.content)
-              ? (msg.content as Array<Record<string, unknown>>)
-                  .filter((p) => p.type === "tool-result")
-                  .map((p) => ({
-                    type: "tool-result" as const,
-                    toolCallId: p.toolCallId as string,
-                    toolName: p.toolName as string,
-                    result: p.output,
-                    isError: p.isError as boolean | undefined,
-                  }))
-              : [],
+            content: toolParts.map((p) => ({
+              type: "tool-result" as const,
+              toolCallId: p.toolCallId as string,
+              toolName: p.toolName as string,
+              result: p.output,
+              isError: p.isError as boolean | undefined,
+            })),
             timestamp: Date.now(),
           };
           this.sessionManager.appendMessage(agentMsg);
