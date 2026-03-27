@@ -1,5 +1,5 @@
 {
-  "name": "@yesimbot/koishi-plugin-mcp-client",
+  "name": "koishi-plugin-yesimbot-mcp-client",
   "version": "0.1.0-beta.1",
   "files": [
     "dist"
@@ -33,13 +33,11 @@
   },
   "devDependencies": {
     "@yesimbot/plugin-sdk": "workspace:^",
-    "koishi": "^4.18.10",
-    "koishi-plugin-yesimbot": "workspace:^"
+    "koishi": "^4.18.10"
   },
   "peerDependencies": {
     "@yesimbot/plugin-sdk": "workspace:^",
-    "koishi": "^4.18.10",
-    "koishi-plugin-yesimbot": "workspace:^"
+    "koishi": "^4.18.10"
   },
   "koishi": {
     "description": {

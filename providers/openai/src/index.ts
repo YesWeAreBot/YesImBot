@@ -1,44 +1,50 @@
-import { createOpenAI, OpenAIProvider as Provider } from "@ai-sdk/openai";
-import {
-  AbstractProvider,
-  type BaseProviderConfig,
-  createProviderSchema,
-  Modality,
-} from "@yesimbot/shared-model";
+import { createOpenAI } from "@ai-sdk/openai";
+import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import { Context, Schema } from "koishi";
 
-import enUS from "./locales/en-US.json";
-import zhCN from "./locales/zh-CN.json";
+export const name = "yesimbot-provider-openai";
+export const reusable = true;
+export const inject = ["yesimbot.model"];
 
-class OpenAIProvider extends AbstractProvider<Provider, BaseProviderConfig> {
-  static reusable = true;
-  static inject = ["yesimbot.model"];
-  readonly providerType = "openai";
-
-  protected createClient(config: BaseProviderConfig) {
-    return createOpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseURL,
-    });
-  }
+export interface Config {
+  id: string;
+  apiKey: string;
+  baseURL?: string;
+  models: ModelEntry[];
 }
 
-namespace OpenAIProvider {
-  export type Config = BaseProviderConfig;
-  export const Config = createProviderSchema({
-    defaultId: "openai",
-    defaultBaseURL: "https://api.openai.com/v1",
-    defaultModels: [
-      {
-        id: "gpt-5.2-chat-latest",
-        tool_call: true,
-        reasoning: false,
-        modalities: [Modality.Text, Modality.Image],
-      },
-    ],
-  }).i18n({
-    "zh-CN": zhCN._config,
-    "en-US": enUS._config,
+export const Config = Schema.object({
+  id: Schema.string().default("openai").description("提供商标识"),
+  apiKey: Schema.string().role("secret").required().description("API Key"),
+  baseURL: Schema.string().description("API Base URL"),
+  models: Schema.array(
+    Schema.object({
+      id: Schema.string().required().description("模型 ID"),
+      toolCall: Schema.boolean().default(true).description("支持工具调用"),
+      reasoning: Schema.boolean().default(false).description("支持推理"),
+    }),
+  )
+    .role("table")
+    .default([
+      { id: "gpt-4o", toolCall: true, reasoning: false },
+      { id: "o3-mini", toolCall: true, reasoning: true },
+    ])
+    .description("可用模型列表"),
+});
+
+export function apply(ctx: Context, config: Config) {
+  const client = createOpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
   });
-}
 
-export default OpenAIProvider;
+  const provider: ModelProvider = {
+    id: config.id,
+    chat: (modelId) => client.chat(modelId),
+    embedding: (modelId) => client.embedding(modelId),
+    models: () => config.models,
+  };
+
+  ctx["yesimbot.model"].register(provider);
+  ctx.on("dispose", () => ctx["yesimbot.model"].unregister(config.id));
+}

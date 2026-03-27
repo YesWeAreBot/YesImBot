@@ -2,191 +2,149 @@
 
 ## Project Snapshot
 
-Athena (YesImBot v4) is a Yarn 4 + Turbo monorepo for Koishi 4.x plugins that turn generic LLMs into social chat agents with memory, personality, and tool use.
-
-- `core/`: main runtime plugin and services
-- `packages/shared-model/`: shared provider/model interfaces and schema helpers
-- `providers/*`: model provider adapters
-- `plugins/*`: optional extensions such as persona, search, memory, and MCP
-- `test/`: integration and e2e-style Vitest coverage
-  Primary planning context lives in `.planning/PROJECT.md`.
-
-## External Agent Rules
-
-No Cursor rules were found in `.cursor/rules/` or `.cursorrules`.
-No Copilot rules were found in `.github/copilot-instructions.md`.
-If those files appear later, treat them as additive repository policy.
-
-## First Reads By Task Type
-
-- New feature: read `docs/CHANGE_GUIDE.md` and the target service under `core/src/services/`
-- Refactor: read `docs/ARCHITECTURE.md` before changing dependencies or boundaries
-- Bug fix: inspect the target service and its matching tests in `core/tests/`
-- Provider work: inspect `packages/shared-model/` first, then the target `providers/*` package
-- Prompt/role work: inspect `core/src/services/prompt/`, `core/src/services/role/`, and `core/resources/roles/`
-
-## Core Runtime Flow
-
-```text
-Koishi message event
-  -> Horizon listener/event manager
-  -> Agent willingness + token bucket check
-  -> DM/group aggregation window
-  -> HorizonView build
-  -> Trait analyze + Skill resolve
-  -> Prompt render/injection
-  -> ModelService call with fallback
-  -> Tool or Action execution
-  -> Reply or silent finish
-```
-
-Keep these boundaries intact:
-
-- Horizon is a context/data layer, not a decision layer
-- Trait analyzes signals; Skill turns signals into behavior effects
-- Tool calls continue the think-act loop; Action calls end the current round
-- Provider-specific behavior belongs in provider packages, not shared abstractions
-
-## Important Repository Rules
-
-- Services must use the Koishi `Service` subclass pattern
-- Wire cross-service dependencies with `static inject = [...]`
-- Do not use `ctx.provide()` for service creation
-- Reuse a logger from context, usually `ctx.logger("...")`
-- Preserve per-channel isolation using `platform + channelId`
-- **`.planning/` is an independent documentation repository** — it is a separate git submodule/repo and must be committed separately after tasks complete. After completing any task that modifies `.planning/`, switch to the `.planning/` directory and commit changes there.
-- Reference `references/YesImBot-v3/` when migrating older behavior patterns
+- Athena is a Yarn 4 + Turbo TypeScript monorepo for Koishi-based LLM agents.
+- This root guide covers only the active mainline workspaces: `core/`, `packages/shared-model/`, `packages/plugin-sdk/`, `providers/*`, and `plugins/*`.
+- Main package roles: `core/` is the primary runtime, `packages/shared-model/` holds shared contracts, `packages/plugin-sdk/` defines extension APIs, `providers/*` implement model providers, and `plugins/*` add optional integrations.
+- Root workspace aliases come from `tsconfig.json`: `koishi-plugin-yesimbot` -> `core/src`, `@yesimbot/*` -> `packages/*/src`.
+- Checked for repo-specific editor rules: no `.cursor/rules/`, no `.cursorrules`, and no `.github/copilot-instructions.md` were found at review time.
 
 ## Workspace Commands
 
-Run commands from the repository root unless a package-local command is clearer.
+### Root Commands
 
-### Install
-
-- `yarn`
-
-### Build
-
-- Full workspace build: `yarn build`
-- Build one package via Turbo: `yarn turbo run build --filter=koishi-plugin-yesimbot`
-- Package-local build: `yarn workspace koishi-plugin-yesimbot build`
-
-### Lint and Format
-
+- Build all workspaces: `yarn build`
+- Typecheck all workspaces: `yarn typecheck`
 - Lint all workspaces: `yarn lint`
-- Lint and auto-fix where supported: `yarn lint:fix`
+- Lint with fixes where supported: `yarn lint:fix`
 - Format all workspaces: `yarn fmt`
-- Check formatting without writing: `yarn fmt:check`
-- Package-local lint: `yarn workspace koishi-plugin-yesimbot lint`
+- Check formatting only: `yarn fmt:check`
+- Run package tests wired into Turbo: `yarn test`
+- Clean build outputs: `yarn clean`
 
-### Typecheck
+### Preferred Targeted Commands
 
-- Full workspace typecheck: `yarn typecheck`
-- Package-local typecheck: `yarn workspace koishi-plugin-yesimbot typecheck`
+- Build one package: `yarn turbo run build --filter=<package-name>`
+- Typecheck one package: `yarn turbo run typecheck --filter=<package-name>`
+- Lint one package: `yarn turbo run lint --filter=<package-name>`
+- Test one package: `yarn turbo run test --filter=<package-name>`
+- Use `yarn workspace <package-name> <script>` when you know the exact workspace name.
+- The old README example `yarn test -p core` is stale; prefer Turbo filters or `yarn workspace` commands.
 
-### Test
+### Important Workspace Names
 
-- Full workspace tests: `yarn test`
-- Core unit tests only: `yarn turbo run test --filter=koishi-plugin-yesimbot`
-- E2E/integration package only: `yarn turbo run test --filter=@yesimbot/test`
-- Package-local core tests: `yarn workspace koishi-plugin-yesimbot test`
-- Package-local e2e tests: `yarn workspace @yesimbot/test test`
+- Core: `koishi-plugin-yesimbot`
+- Shared model: `@yesimbot/shared-model`
+- Plugin SDK: `@yesimbot/plugin-sdk`
+- Plugins: `@yesimbot/koishi-plugin-search-service`, `@yesimbot/koishi-plugin-mcp-client`
+- Providers: `@yesimbot/koishi-plugin-provider-openai`, `@yesimbot/koishi-plugin-provider-anthropic`, `@yesimbot/koishi-plugin-provider-google`, `@yesimbot/koishi-plugin-provider-deepseek`
 
-### Single-Test Commands
+### Package-Local Commands
 
-Use Vitest file and test-name filters directly.
+- `yarn workspace koishi-plugin-yesimbot build|typecheck|lint|test|fmt`
+- `yarn workspace @yesimbot/plugin-sdk build|typecheck|lint|test|fmt`
+- `yarn workspace @yesimbot/shared-model build|typecheck|lint|fmt`
+- `providers/*` and `plugins/*` generally expose `build`, `typecheck`, `lint`, and `fmt`, but usually no package-level `test` script.
 
-- Single core test file from root: `yarn workspace koishi-plugin-yesimbot test tests/json-parser.test.ts`
-- Single core test by name: `yarn workspace koishi-plugin-yesimbot test tests/json-parser.test.ts -t "should parse valid JSON"`
-- Single e2e test file from root: `yarn workspace @yesimbot/test test e2e/message-flow.test.ts`
-- From inside `core/`: `yarn test tests/json-parser.test.ts`
-- From inside `core/` by name: `yarn test tests/json-parser.test.ts -t "should parse valid JSON"`
-  Notes:
-- `core/vitest.config.ts` includes `tests/**/*.test.ts` and loads `core/tests/setup.ts`
-- `test/vitest.config.ts` runs in Node with Vitest globals enabled
-- Prefer targeted tests while iterating, then finish with `yarn typecheck` and the relevant package suite
+### Testing Guidance
+
+- Active package test suites currently live in `core/tests/**/*.test.ts` and `packages/plugin-sdk/tests/**/*.test.ts`.
+- `packages/shared-model/`, `providers/*`, and `plugins/*` currently do not define package-level test scripts.
+- Run one core test file: `yarn workspace koishi-plugin-yesimbot test tests/session/session-restore.test.ts`
+- Run one plugin-sdk test file: `yarn workspace @yesimbot/plugin-sdk test tests/exports.test.ts`
+- From inside `core/`: `yarn test tests/session/session-restore.test.ts`
+- From inside `packages/plugin-sdk/`: `yarn test tests/exports.test.ts`
+- Run one exact core case: `yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/channel-agent-step-finish.test.ts -t "normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads"`
+- Run one exact plugin-sdk case: `yarn workspace @yesimbot/plugin-sdk exec vitest run tests/hooks-registration.test.ts -t "forwards registerHook"`
+- Use `yarn workspace <pkg> exec vitest run <file> -t "<case name>"` when you need exact case-level targeting.
+- While iterating, run the narrowest relevant test first, then broaden to package-level verification only as needed.
 
 ## Code Style
 
-The repo is TypeScript-first, strict, and formatted with `oxfmt`.
+### File Editing
+
+- When updating or creating long files, write them in smaller chunks instead of one large write.
+- Prefer segmented writes for large content because the write tool can time out on oversized payloads.
 
 ### Formatting
 
-- Use 2-space indentation
-- Use LF line endings and keep a final trailing newline
-- Use double quotes, semicolons, and trailing commas
-- Let `oxfmt` handle whitespace and wrapping instead of manual alignment
-- Keep files ASCII unless the file already contains localized text or Unicode is required
+- TypeScript is strict and formatted with `oxfmt`.
+- Use 2-space indentation, LF line endings, double quotes, semicolons, trailing commas, and a final newline.
+- `oxfmt` uses `printWidth: 100`; do not hand-wrap for visual alignment.
+- Keep files ASCII unless the file already contains localized text or Unicode is required.
+- Prefer formatter-driven cleanup over manual import reordering or spacing edits.
 
 ### Imports
 
-- Group imports as: Node built-ins, third-party packages, then local modules
-- Separate import groups with a blank line
-- Prefer `import type` for type-only imports
-- Prefer relative imports inside a package; use workspace aliases only where already established
+- Prefer `import type` for type-only imports.
+- Prefer `node:` specifiers for Node built-ins in new code.
+- Use workspace aliases for cross-package imports; otherwise prefer relative imports inside a package.
+- Keep imports readable as built-ins, third-party modules, then local modules.
+- Let `oxfmt` own final import ordering.
 
 ### Types
 
-- `strict` TypeScript is enabled; satisfy types instead of weakening them
-- Do not introduce `any`; `@typescript-eslint/no-explicit-any` is an error
-- Prefer `unknown` for caught errors and narrow with guards such as `instanceof Error`
-- Prefer explicit interfaces and named types for service contracts, config, and payloads
-- Start changes with shared types in `packages/shared-model/` when behavior crosses package boundaries
+- `strict: true` is enabled in `tsconfig.base.json`; satisfy types instead of weakening them.
+- Do not introduce `any`; `.oxlintrc.json` makes `@typescript-eslint/no-explicit-any` an error.
+- Prefer `unknown` in `catch` blocks and narrow before reading `.message` or other properties.
+- Put cross-package contracts in `packages/shared-model/src/` before duplicating shapes across packages.
+- Use explicit annotations when they improve contracts; avoid noisy annotations that only restate inference.
 
 ### Naming
 
-- Use `PascalCase` for classes, schemas, and exported service types
-- Use `camelCase` for functions, methods, variables, and config fields
-- Use `SCREAMING_SNAKE_CASE` only for true module-level constants
-- Keep filenames aligned with local patterns such as `service.ts`, `types.ts`, and `index.ts`
+- Use `PascalCase` for classes, schemas, exported types, and error classes.
+- Use `camelCase` for functions, methods, variables, and config fields.
+- Use `SCREAMING_SNAKE_CASE` only for true constants.
+- Keep filenames aligned with existing patterns such as `index.ts`, `service.ts`, `types.ts`, `config.ts`, and `command.ts`.
+- Match Koishi service ids, logger names, and exported symbols consistently.
 
-### Service and Plugin Patterns
+## Structural Conventions
 
-- Declare Koishi module augmentation near the top when extending `Context`, `Events`, or `Tables`
-- Register services through `ctx.plugin(...)` in `core/src/index.ts` or the relevant package entry
-- Expose minimal public APIs from services; keep helpers private where possible
-- Put configuration schemas next to the config interface
-- Keep plugin/tool parameter schemas strict and descriptive
+- In service-oriented code, organize new behavior under `src/services/<service-name>`.
+- Keep service directory names concise; prefer a single word when it remains clear.
+- Every top-level `services/` directory must contain a `service.ts` file.
+- Do not create bucket directories inside `src/services/` such as `shared`, `runtime`, `utils`, `helpers`, `common`, or `lib`.
+- Those names are acceptable elsewhere when local to `src/` or inside a specific service module.
+- Prefer one primary service module per top-level service directory; keep helpers, types, config, and commands beside it.
+- Declare Koishi module augmentation near the top when extending `Context`, `Events`, or `Tables`.
+- Service constructors should call `super(ctx, "<service-name>", false)`, assign `this.config`, assign `this.logger = ctx.logger("<service-name>")`, and set `this.logger.level = config.debugLevel ?? 2`.
+- Register services from package entrypoints with `ctx.plugin(...)`.
 
-### Error Handling and Logging
+## Dependency And Interface Rules
 
-- Wrap async service edges in `try/catch` when failures should degrade gracefully
-- Catch as `err: unknown`
-- Log with the service logger instead of `console.*`
-- Prefer actionable log messages with trace IDs, channel keys, or model names when relevant
-- For recoverable failures, warn or log and continue; for fatal initialization failures, throw
-- Bound external/model/tool output sizes before feeding them back into the loop
+- Prefer long-lived objects holding their own stable dependencies over passing behavior downward as callback parameters.
+- Do not introduce parameterized interfaces whose only job is tunneling runtime capabilities through constructors.
+- Avoid passing method references or function adapters such as `sendMessage`, `resolveModel`, or similar shims into objects like `ChannelAgent` when the object can hold `ctx`, `bot`, or concrete services directly.
+- Framework-required middleware, hook handlers, and callback APIs are acceptable exceptions.
 
-### Testing Conventions
+## Error Handling And Logging
 
-- Test framework is Vitest using `describe`, `it`, `expect`, `vi`, and lifecycle hooks
-- Core tests live in `core/tests/*.test.ts`
-- Integration tests live in `test/e2e/*.test.ts`
-- Follow existing naming style: behavior-focused `*.test.ts` files with explicit test titles
-- Add or update tests alongside behavior changes, especially for willingness, hooks, horizon formatting, and parser logic
+- Prefer structured, service-aware errors for cross-boundary failures; `core/src/errors/base.ts` is the reference pattern.
+- Include service name, operation name, and trace id when an error escapes its local scope.
+- Preserve causes when wrapping errors.
+- Use service-named loggers via `ctx.logger("service-name")`.
+- Narrow unknown errors before reading properties; otherwise log `String(error)`.
+- Use explicit timeouts for slow or external boundaries such as hooks, tools, and model calls.
 
-## Change Guidance By Area
+## Testing And Change Expectations
 
-- Agent behavior: inspect `core/src/services/agent/`, `core/src/services/trait/`, and `core/src/services/skill/`
-- Horizon formatting/compression: inspect `core/src/services/horizon/`
-- Tool or action changes: inspect `core/src/services/plugin/` and relevant `plugins/*`
-- Prompt composition: inspect `core/src/services/prompt/`, `core/src/services/role/`, and `core/resources/roles/`
-- Provider capability: inspect `providers/*` and `packages/shared-model/src/providers/`
+- Add or update tests when changing service boundaries, runtime contracts, hooks, prompts, model routing, or plugin registration.
+- If you touch `core/src/services/`, consider whether related structure or debug-level tests need updates.
+- Finish exported contract changes with package-level `typecheck` and `build`.
 
-## Pre-Merge Checklist For Agents
+## Git And Workspace Hygiene
 
-- Trace callers before changing service contracts
-- Verify `static inject` dependencies after moving logic across services
-- Run targeted tests for touched code
-- Run `yarn workspace koishi-plugin-yesimbot typecheck` or `yarn typecheck` for broader changes
-- Run `yarn lint` or `yarn fmt` if you changed style-sensitive files
-- For cross-package changes, finish with `yarn build`
+- Prefer branch isolation by default; do not create a git worktree unless the user explicitly asks for one.
+- Never revert user changes you did not make unless explicitly requested.
+- Avoid destructive git commands such as `git reset --hard` or `git checkout --` unless explicitly requested.
+- Do not amend commits unless the user explicitly asks for it.
 
-## Reference Documentation and Resources
+## Reference Documentation And Resources
 
-- [Koishi](references/koishi-docs/zh-CN)
-- [Letta Source Code](references/letta)
-- [OpenClaw docs](references/openclaw/docs)
-- [Plast Mem](references/plast-mem) an experimental llm memory layer for cyber waifu.
-
-When using the write tool, make sure to only write small blocks and avoid large chunks, as there is currently a bug in the write tool that can lead to timeouts.
+- `node_modules/ai/docs` for local AI SDK reference docs.
+- `references/koishi-docs/zh-CN` for Koishi plugin lifecycle, services, middleware, and session APIs.
+- `references/koishi-docs/zh-CN/guide/plugin/service.md` for Koishi service structure and lifecycle.
+- `references/pi-mono/packages/coding-agent` for session persistence and coding-agent runtime patterns.
+- `references/pi-mono/packages/coding-agent/docs` for session and settings behavior.
+- `references/pi-mono/packages/ai` for model abstraction and tool-call primitives.
+- `references/letta`, `references/openclaw/docs`, and `references/plast-mem` for agent orchestration and memory design references.
+- `references/vercel-chat/skills/chat/SKILL.md` and `references/vercel-chat/apps/docs/content/docs/concurrency.mdx` for best practices to build chat-bot via ai-sdk.

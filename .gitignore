@@ -172,8 +172,9 @@ yarn-error.log
 # End of https://www.toptal.com/developers/gitignore/api/node,yarn,turbo,vuejs
 
 # Add here any additional files/directories you want to ignore in your project
-yarn.lock
 .claude/
 .opencode/
-.planning/
+.worktrees/
+docs/superpowers
 references/
+yarn.lock

@@ -1,5 +1,2 @@
-// Aggregate convenience surface only.
-// Primary authoring entrypoints are @yesimbot/plugin-sdk/tools|hooks|skills.
-export * from "./tools";
-export * from "./hooks";
-export * from "./skills";
+export { Metadata, YesImPlugin, type IPluginService } from "./plugin";
+export type { PluginMetadata } from "./plugin";

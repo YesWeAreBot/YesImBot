@@ -2,15 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import {
-  Failed,
-  FunctionDefinition,
-  FunctionType,
-  Metadata,
-  YesImPlugin,
-  jsonSchemaToSchema,
-  Success,
-} from "@yesimbot/plugin-sdk/tools";
+import { Metadata, YesImPlugin } from "@yesimbot/plugin-sdk";
 import { Context, Schema } from "koishi";
 
 interface McpServer {
@@ -59,7 +51,7 @@ function parseKeyValueString(input: string): Record<string, string> {
 @Metadata({ name: "mcp-client", description: "MCP protocol client" })
 export default class McpClientPlugin extends YesImPlugin {
   static name = "mcp-client";
-  static inject = ["yesimbot.plugin", "yesimbot.hook"];
+  static inject = ["yesimbot.plugin"];
   static Config: Schema<McpClientConfig> = Schema.object({
     mcpServers: Schema.dict(
       Schema.intersect([
@@ -124,33 +116,23 @@ export default class McpClientPlugin extends YesImPlugin {
       this.ctx.logger.info(`MCP 服务器 ${name} 提供的工具: ${tools.map((t) => t.name).join(", ")}`);
       for (const tool of tools) {
         this.ctx.logger.info(`注册工具 ${tool.name} to ${name}_${tool.name}`);
-        const functionDef: FunctionDefinition = {
+        this.registerTool({
           name: `${name}_${tool.name}`,
           description: tool.description || "no description provided",
-          parameters: jsonSchemaToSchema(tool.inputSchema),
-          type: FunctionType.Tool,
-          hidden: false,
-          handler: async (params, ctx) => {
+          inputSchema: tool.inputSchema,
+          execute: async (params) => {
             try {
               const result = await client.callTool({
                 name: tool.name,
-                arguments: structuredClone(params),
+                arguments: structuredClone(params as Record<string, unknown>),
               });
-              if (result.isError) {
-                return Failed("MCP tool returned an error", {
-                  server: name,
-                  tool: tool.name,
-                  content: result.content,
-                });
-              }
-              return Success(result.content);
+              return result;
             } catch (error) {
               this.ctx.logger.error(`调用工具 ${tool.name} 失败: ${(error as Error).message}`);
-              return Failed(`调用工具失败: ${(error as Error).message}`);
+              throw error;
             }
           },
-        };
-        this.registerTool(functionDef);
+        });
       }
     }
 

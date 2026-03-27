@@ -1,121 +1,48 @@
-import { createAnthropic, AnthropicProvider as Provider } from "@ai-sdk/anthropic";
-import {
-  AbstractProvider,
-  type BaseProviderConfig,
-  createProviderSchema,
-  Modality,
-} from "@yesimbot/shared-model";
-import { Schema } from "koishi";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import { Context, Schema } from "koishi";
 
-import enUS from "./locales/en-US.json";
-import zhCN from "./locales/zh-CN.json";
+export const name = "yesimbot-provider-anthropic";
+export const reusable = true;
+export const inject = ["yesimbot.model"];
 
-interface AnthropicConfig extends BaseProviderConfig {
-  projectId: string;
-  sessionId: string;
+export interface Config {
+  id: string;
+  apiKey: string;
+  baseURL?: string;
+  models: ModelEntry[];
 }
 
-function buildUserId(projectId: string, currentSessionId: string): string {
-  return `user_${projectId}_account__session_${currentSessionId}`;
-}
-
-function isJsonContentType(headers: Headers): boolean {
-  const ct = headers.get("content-type") || "";
-  return ct.includes("application/json");
-}
-
-function parseBody(body: BodyInit | null | undefined): string | null {
-  if (!body) return null;
-  if (typeof body === "string") return body;
-  if (body instanceof Uint8Array) return new TextDecoder().decode(body);
-  return null;
-}
-
-class AnthropicProvider extends AbstractProvider<Provider, AnthropicConfig> {
-  static reusable = true;
-  static inject = ["yesimbot.model"];
-  readonly providerType = "anthropic";
-
-  protected createClient(config: AnthropicConfig) {
-    const logger = this.ctx.logger("provider-anthropic");
-    return createAnthropic({
-      apiKey: config.apiKey,
-      baseURL: config.baseURL,
-      fetch: async (url: string | URL | Request, init?: RequestInit) => {
-        const headers = new Headers(init?.headers);
-        const method = (init?.method || "GET").toUpperCase();
-
-        if (method !== "POST" || !isJsonContentType(headers)) {
-          return fetch(url, init);
-        }
-
-        const rawBody = parseBody(init?.body);
-        if (!rawBody) return fetch(url, init);
-
-        let payload: Record<string, unknown>;
-        try {
-          payload = JSON.parse(rawBody);
-        } catch (e) {
-          logger.warn("Failed to parse request body as JSON", e);
-          return fetch(url, init);
-        }
-
-        if (payload && typeof payload === "object") {
-          if (!payload.metadata || typeof payload.metadata !== "object") {
-            payload.metadata = {};
-          }
-          const meta = payload.metadata as Record<string, unknown>;
-          if (meta.user_id == null) {
-            meta.user_id = buildUserId(config.projectId, config.sessionId);
-            logger.info("Injected user_id", { user_id: meta.user_id });
-          }
-        }
-
-        headers.delete("content-length");
-
-        return fetch(url, {
-          ...init,
-          headers,
-          body: JSON.stringify(payload),
-        });
-      },
-    });
-  }
-}
-
-namespace AnthropicProvider {
-  export type Config = AnthropicConfig;
-  export const Config = createProviderSchema({
-    defaultId: "anthropic",
-    defaultBaseURL: "https://api.anthropic.com",
-    defaultModels: [
-      {
-        id: "claude-sonnet-4-6",
-        tool_call: true,
-        reasoning: false,
-        modalities: [Modality.Text, Modality.Image],
-      },
-      {
-        id: "claude-opus-4-6",
-        tool_call: true,
-        reasoning: false,
-        modalities: [Modality.Text, Modality.Image],
-      },
-      {
-        id: "claude-haiku-4-5-20251001",
-        tool_call: true,
-        reasoning: false,
-        modalities: [Modality.Text, Modality.Image],
-      },
-    ],
-    extra: Schema.object({
-      projectId: Schema.string().default("unknown"),
-      sessionId: Schema.string().default("unknown"),
+export const Config = Schema.object({
+  id: Schema.string().default("anthropic").description("提供商标识"),
+  apiKey: Schema.string().role("secret").required().description("API Key"),
+  baseURL: Schema.string().description("API Base URL"),
+  models: Schema.array(
+    Schema.object({
+      id: Schema.string().required().description("模型 ID"),
+      toolCall: Schema.boolean().default(true).description("支持工具调用"),
+      reasoning: Schema.boolean().default(false).description("支持推理"),
     }),
-  }).i18n({
-    "zh-CN": zhCN._config,
-    "en-US": enUS._config,
-  });
-}
+  )
+    .default([
+      { id: "claude-3-5-sonnet", toolCall: true, reasoning: false },
+      { id: "claude-3-opus", toolCall: true, reasoning: true },
+    ])
+    .description("可用模型列表"),
+});
 
-export default AnthropicProvider;
+export function apply(ctx: Context, config: Config) {
+  const client = createAnthropic({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
+  });
+
+  const provider: ModelProvider = {
+    id: config.id,
+    chat: (modelId) => client.chat(modelId),
+    models: () => config.models,
+  };
+
+  ctx["yesimbot.model"].register(provider);
+  ctx.on("dispose", () => ctx["yesimbot.model"].unregister(config.id));
+}

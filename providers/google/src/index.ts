@@ -1,68 +1,49 @@
-import { createGoogleGenerativeAI, GoogleGenerativeAIProvider as Provider } from "@ai-sdk/google";
-import {
-  AbstractProvider,
-  type BaseProviderConfig,
-  createProviderSchema,
-  Modality,
-} from "@yesimbot/shared-model";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import { Context, Schema } from "koishi";
 
-import enUS from "./locales/en-US.json";
-import zhCN from "./locales/zh-CN.json";
+export const name = "yesimbot-provider-google";
+export const reusable = true;
+export const inject = ["yesimbot.model"];
 
-class GoogleProvider extends AbstractProvider<Provider, BaseProviderConfig> {
-  static reusable = true;
-  static inject = ["yesimbot.model"];
-  readonly providerType = "google";
-
-  protected createClient(config: BaseProviderConfig) {
-    return createGoogleGenerativeAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseURL,
-    });
-  }
+export interface Config {
+  id: string;
+  apiKey: string;
+  baseURL?: string;
+  models: ModelEntry[];
 }
 
-namespace GoogleProvider {
-  export type Config = BaseProviderConfig;
-  export const Config = createProviderSchema({
-    defaultId: "google",
-    defaultBaseURL: "https://generativelanguage.googleapis.com/v1beta",
-    defaultModels: [
-      {
-        id: "gemini-3.1-pro-preview",
-        tool_call: true,
-        reasoning: true,
-        modalities: [Modality.Text, Modality.Image],
-      },
-      {
-        id: "gemini-3-pro-preview",
-        tool_call: true,
-        reasoning: true,
-        modalities: [Modality.Text, Modality.Image],
-      },
-      {
-        id: "gemini-3-flash-preview",
-        tool_call: true,
-        reasoning: true,
-        modalities: [Modality.Text, Modality.Image],
-      },
-      {
-        id: "gemini-2.5-pro",
-        tool_call: true,
-        reasoning: true,
-        modalities: [Modality.Text, Modality.Image],
-      },
-      {
-        id: "gemini-2.5-flash",
-        tool_call: true,
-        reasoning: true,
-        modalities: [Modality.Text, Modality.Image],
-      },
-    ],
-  }).i18n({
-    "zh-CN": zhCN._config,
-    "en-US": enUS._config,
+export const Config = Schema.object({
+  id: Schema.string().default("google").description("提供商标识"),
+  apiKey: Schema.string().role("secret").required().description("API Key"),
+  baseURL: Schema.string().description("API Base URL"),
+  models: Schema.array(
+    Schema.object({
+      id: Schema.string().required().description("模型 ID"),
+      toolCall: Schema.boolean().default(true).description("支持工具调用"),
+      reasoning: Schema.boolean().default(false).description("支持推理"),
+    }),
+  )
+    .default([
+      { id: "gemini-1.5-flash", toolCall: true, reasoning: false },
+      { id: "gemini-1.5-pro", toolCall: true, reasoning: true },
+    ])
+    .description("可用模型列表"),
+});
+
+export function apply(ctx: Context, config: Config) {
+  const client = createGoogleGenerativeAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
   });
-}
 
-export default GoogleProvider;
+  const provider: ModelProvider = {
+    id: config.id,
+    chat: (modelId) => client.chat(modelId),
+    embedding: (modelId) => client.embedding(modelId),
+    models: () => config.models,
+  };
+
+  ctx["yesimbot.model"].register(provider);
+  ctx.on("dispose", () => ctx["yesimbot.model"].unregister(config.id));
+}

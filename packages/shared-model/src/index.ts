@@ -1,5 +1,11 @@
-export * from "./types/model";
-export * from "./types/errors";
-export * from "./utils/model-id";
-export * from "./providers/abstract-provider";
-export * from "./providers/schema-factory";
+import type {} from "koishi";
+
+import { ModelRegistry } from "./types";
+
+declare module "koishi" {
+  interface Context {
+    "yesimbot.model": ModelRegistry;
+  }
+}
+
+export * from "./types";

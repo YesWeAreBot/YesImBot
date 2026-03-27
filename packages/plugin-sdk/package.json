@@ -19,16 +19,6 @@
       "import": "./dist/tools/index.mjs",
       "require": "./dist/tools/index.cjs"
     },
-    "./hooks": {
-      "types": "./dist/hooks/index.d.ts",
-      "import": "./dist/hooks/index.mjs",
-      "require": "./dist/hooks/index.cjs"
-    },
-    "./skills": {
-      "types": "./dist/skills/index.d.ts",
-      "import": "./dist/skills/index.mjs",
-      "require": "./dist/skills/index.cjs"
-    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -40,16 +30,16 @@
     "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
+  "dependencies": {
+    "@ai-sdk/provider-utils": "^4.0.21"
+  },
   "devDependencies": {
-    "koishi": "^4.18.3",
-    "koishi-plugin-yesimbot": "workspace:^",
-    "vitest": "^4.0.18"
+    "koishi": "^4.18.3"
   },
   "peerDependencies": {
     "koishi": "^4.18.3",
-    "koishi-plugin-yesimbot": "workspace:^"
+    "zod": "^3.25.76 || ^4.1.8"
   }
 }

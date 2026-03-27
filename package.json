@@ -13,8 +13,7 @@
     "core",
     "packages/*",
     "plugins/*",
-    "providers/*",
-    "test"
+    "providers/*"
   ],
   "scripts": {
     "build": "turbo run build",
@@ -47,7 +46,7 @@
       "oxlint --fix",
       "oxfmt --write"
     ],
-    "*.{json,yml,yaml,md}": [
+    "*.json": [
       "oxfmt --write"
     ]
   },

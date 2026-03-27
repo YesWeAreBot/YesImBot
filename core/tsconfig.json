@@ -8,6 +8,9 @@
   "references": [
     {
       "path": "../packages/shared-model"
+    },
+    {
+      "path": "../packages/plugin-sdk"
     }
   ]
 }
