@@ -21,6 +21,13 @@ export const Config = Schema.object({
   baseTimeoutMs: Schema.number().default(60000).description("Base response timeout in ms"),
   perStepTimeoutMs: Schema.number().default(30000).description("Additional timeout per step in ms"),
   chunkTimeoutMs: Schema.number().default(10000).description("Chunk streaming timeout in ms"),
+  sendMessageDirectly: Schema.boolean().default(false),
+  enableWorkspace: Schema.boolean().default(true),
+  enableSandbox: Schema.boolean().default(false),
+  enableFilesystem: Schema.boolean().default(true),
+  externalPath: Schema.array(Schema.path({ allowCreate: true }))
+    .role("table")
+    .default([]),
   logLevel: Schema.union([0, 1, 2, 3]).default(2),
 });
 export async function apply(ctx: Context, config: Config) {

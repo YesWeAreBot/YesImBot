@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", () => {
   class ToolLoopAgent {
+    readonly tools: Record<string, unknown> = {};
+
     constructor(_options: unknown) {}
 
     async generate(_input: unknown): Promise<void> {}

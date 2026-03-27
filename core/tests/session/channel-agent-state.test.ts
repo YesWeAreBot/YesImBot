@@ -15,9 +15,11 @@ const toolLoopAgentCtorMock = vi.fn();
 vi.mock("ai", () => {
   class ToolLoopAgent {
     readonly options: Record<string, unknown>;
+    readonly tools: Record<string, unknown>;
 
     constructor(options: Record<string, unknown>) {
       this.options = options;
+      this.tools = (options.tools as Record<string, unknown>) ?? {};
       toolLoopAgentCtorMock(options);
     }
 
@@ -83,6 +85,7 @@ function createAgent() {
     modelId: "test:model",
     basePath: "/tmp/athena-test",
     instructions: "test instructions",
+    enableWorkspace: false,
   });
 
   return { agent, sessionManager, bot };
@@ -144,7 +147,9 @@ describe("ChannelAgent state machine", () => {
       await Promise.resolve();
       const secondReceive = agent.receive(createEvent({ messageId: "msg-queue-2" }));
 
-      expect(generateMock).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
 
       releaseFirst();
       await firstReceive;

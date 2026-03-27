@@ -46,6 +46,7 @@
     "typecheck": "tsc --noEmit && echo 'Type check passed!'"
   },
   "dependencies": {
+    "@ai-sdk/provider-utils": "^4.0.0",
     "@yesimbot/plugin-sdk": "workspace:^",
     "@yesimbot/shared-model": "workspace:^",
     "ai": "^6.0.0"

@@ -41,3 +41,6 @@ export type { ChannelEvent, ChannelKey, WillingnessResult } from "./types";
 // Willingness
 export { judgeWillingness } from "./willingness";
 export { buildJudgePrompt, callLLMJudge, type JudgeResult } from "./llm-judge";
+
+// Workspace
+export { LocalFilesystem, LocalSandbox, Workspace } from "./workspace";

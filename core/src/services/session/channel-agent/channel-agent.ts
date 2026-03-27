@@ -13,7 +13,6 @@ import {
   type AgentTextPart,
   type AgentToolCallPart,
   type AgentToolMessage,
-  type AgentToolResultPart,
   type AgentUsage,
   type ChannelMessageDetails,
   type SessionEntry,
@@ -21,15 +20,7 @@ import {
 } from "../session-manager";
 import type { ChannelEvent, ResponseEndReason, ResponseEndRecord } from "../types";
 import { judgeWillingness } from "../willingness";
-import {
-  HIGH_RISK_ACTIONS,
-  collectPathCandidates,
-  inferActionType,
-  isHighRiskAction,
-  logSecurityEvent,
-  validateWorkspacePath,
-  wrapToolsWithWorkspaceGuard,
-} from "../workspace-guard";
+import { LocalFilesystem, LocalSandbox, Workspace } from "../workspace";
 import { extractMessages } from "./output";
 import type { ChannelAgentOptions, ResponseState } from "./types";
 
@@ -256,17 +247,13 @@ export class ChannelAgent {
         sessionEntries: [...this.sessionManager.getEntries()],
       });
 
-      const rawTools = this.ctx["yesimbot.plugin"]?.getToolSet() ?? {};
-      const workspaceRoot = join(this.options.basePath, "workspace");
-      const channelKey = this.sessionManager.getChannelKey();
-      const sessionId = this.sessionManager.getSessionId();
+      const pluginTools = this.ctx["yesimbot.plugin"]?.getToolSet() ?? {};
+      const workspaceTools = await this.buildWorkspaceTools();
 
-      this.responseToolSnapshot = wrapToolsWithWorkspaceGuard(rawTools, {
-        workspaceRoot,
-        channelKey,
-        sessionId,
-        logger: this.ctx.logger,
-      });
+      this.responseToolSnapshot = {
+        ...pluginTools,
+        ...workspaceTools,
+      };
       this.responseActiveTools = Object.keys(this.responseToolSnapshot);
 
       const agent = this.createAgent();
@@ -367,62 +354,6 @@ export class ChannelAgent {
   private handleStepFinish(stepResult: OnStepFinishEvent): void {
     this.stepsCompleted++;
 
-    const workspaceRoot = join(this.options.basePath, "workspace");
-    const blockedToolResultParts: AgentToolResultPart[] = [];
-    const blockedToolCallIds = new Set<string>();
-    const channelKey = this.sessionManager.getChannelKey();
-    const sessionId = this.sessionManager.getSessionId();
-
-    for (const toolCall of stepResult.toolCalls) {
-      const actionType = inferActionType(toolCall.toolName);
-      const highRisk = isHighRiskAction(actionType);
-      const inputPaths = collectPathCandidates(toolCall.input);
-
-      if (highRisk && inputPaths.length === 0) {
-        logSecurityEvent(this.ctx.logger, {
-          channel: channelKey,
-          sessionId,
-          actionType,
-          allowed: true,
-          reason: "high_risk_action_without_path",
-        });
-      }
-
-      for (const candidatePath of inputPaths) {
-        const allowed = validateWorkspacePath(candidatePath, workspaceRoot);
-
-        logSecurityEvent(this.ctx.logger, {
-          channel: channelKey,
-          sessionId,
-          actionType,
-          allowed,
-          path: candidatePath,
-          reason: allowed ? "workspace_boundary_allow" : "workspace_boundary_deny",
-        });
-
-        if (!allowed) {
-          blockedToolCallIds.add(toolCall.toolCallId);
-          blockedToolResultParts.push({
-            type: "tool-result",
-            toolCallId: toolCall.toolCallId,
-            toolName: toolCall.toolName,
-            result: "Access denied: file path outside workspace boundary",
-            isError: true,
-          });
-          break;
-        }
-      }
-    }
-
-    if (blockedToolResultParts.length > 0) {
-      const blockedMessage: AgentToolMessage = {
-        role: "tool",
-        content: blockedToolResultParts,
-        timestamp: Date.now(),
-      };
-      this.sessionManager.appendMessage(blockedMessage);
-    }
-
     const responseMessages = stepResult.response?.messages;
     if (responseMessages) {
       for (const msg of responseMessages) {
@@ -437,7 +368,7 @@ export class ChannelAgent {
         } else if (msg.role === "tool") {
           const toolParts = Array.isArray(msg.content)
             ? (msg.content as Array<Record<string, unknown>>).filter(
-                (p) => p.type === "tool-result" && !blockedToolCallIds.has(p.toolCallId as string),
+                (p) => p.type === "tool-result",
               )
             : [];
 
@@ -463,14 +394,23 @@ export class ChannelAgent {
 
     // Send only <message>-tagged content to channel
     if (stepResult.text) {
-      const outbound = extractMessages(stepResult.text);
-      for (const segment of outbound) {
-        this.bot.sendMessage(this.options.channelId, segment).catch((err) => {
+      if (this.options.sendMessageDirectly) {
+        this.bot.sendMessage(this.options.channelId, stepResult.text).catch((err) => {
           this.ctx.logger.error(
             `Failed to send message to channel ${this.options.channelId}:`,
             err,
           );
         });
+      } else {
+        const outbound = extractMessages(stepResult.text);
+        for (const segment of outbound) {
+          this.bot.sendMessage(this.options.channelId, segment).catch((err) => {
+            this.ctx.logger.error(
+              `Failed to send message to channel ${this.options.channelId}:`,
+              err,
+            );
+          });
+        }
       }
     }
   }
@@ -480,6 +420,39 @@ export class ChannelAgent {
    */
   private handleFinish(_event: OnFinishEvent): void {
     // TODO: Check if auto-compaction is needed based on totalUsage
+  }
+
+  private async buildWorkspaceTools(): Promise<ToolSet> {
+    const enableWorkspace = this.options.enableWorkspace ?? true;
+    if (!enableWorkspace) {
+      return {};
+    }
+
+    const workspaceRoot = join(this.options.basePath, "workspace");
+    const externalPath = this.options.externalPath;
+    const enableFilesystem = this.options.enableFilesystem ?? true;
+    const enableSandbox = this.options.enableSandbox ?? false;
+
+    const filesystem = enableFilesystem
+      ? new LocalFilesystem({
+          basePath: workspaceRoot,
+          externalPath,
+        })
+      : undefined;
+
+    const sandbox = enableSandbox
+      ? new LocalSandbox({
+          workingDirectory: workspaceRoot,
+          env: process.env,
+        })
+      : undefined;
+
+    const workspace = new Workspace({
+      filesystem,
+      sandbox,
+    });
+    await workspace.init();
+    return workspace.getAgentTools() as ToolSet;
   }
 }
 

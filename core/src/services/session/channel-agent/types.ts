@@ -29,6 +29,11 @@ export interface ChannelAgentOptions {
   chunkTimeoutMs?: number;
   /** Fraction of context window to trigger compaction (0-1). */
   compactionThreshold?: number;
+  sendMessageDirectly?: boolean;
+  enableWorkspace?: boolean;
+  enableSandbox?: boolean;
+  enableFilesystem?: boolean;
+  externalPath?: string | string[];
 }
 
 export type ResponseState = "idle" | "responding" | "aborting" | "ended";

@@ -35,6 +35,11 @@ export interface AgentSessionServiceConfig {
   perStepTimeoutMs?: number;
   /** Chunk timeout in ms. Default 10000. */
   chunkTimeoutMs?: number;
+  sendMessageDirectly?: boolean;
+  enableWorkspace?: boolean;
+  enableSandbox?: boolean;
+  enableFilesystem?: boolean;
+  externalPath?: string | string[];
   logLevel?: number;
 }
 
@@ -54,7 +59,7 @@ export interface AgentSessionServiceConfig {
  * 3. ChannelAgent.receive() → persist, willingness check, maybe respond
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
-  static inject = ["yesimbot.model"];
+  static inject = ["yesimbot.model", "yesimbot.plugin"];
 
   private agents: Map<ChannelKey, ChannelAgent> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
@@ -186,6 +191,11 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       baseTimeoutMs: this.config.baseTimeoutMs,
       perStepTimeoutMs: this.config.perStepTimeoutMs,
       chunkTimeoutMs: this.config.chunkTimeoutMs,
+      sendMessageDirectly: this.config.sendMessageDirectly,
+      enableWorkspace: this.config.enableWorkspace,
+      enableSandbox: this.config.enableSandbox,
+      enableFilesystem: this.config.enableFilesystem,
+      externalPath: this.config.externalPath,
     });
 
     this.agents.set(channelKey, agent);
