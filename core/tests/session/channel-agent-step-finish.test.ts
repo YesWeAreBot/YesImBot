@@ -25,6 +25,16 @@ describe("ChannelAgent handleStepFinish", () => {
     });
   });
 
+  it("drops placeholder zero usage records", () => {
+    const persisted = createAgentAssistantMessage({
+      content: [{ type: "text", text: "final answer" }],
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheRead: 0, cacheWrite: 0 },
+      finishReason: "stop",
+    });
+
+    expect(persisted.usage).toBeUndefined();
+  });
+
   describe("output extraction", () => {
     it("extracts message-tagged content only", () => {
       const text = "thinking...\n<message>Hello world</message>\nmore thinking";

@@ -66,6 +66,40 @@ function createContextMock(baseDir: string): Context {
   } as unknown as Context;
 }
 
+function createCommandContextMock(baseDir: string): {
+  commands: Map<
+    string,
+    (argv: { session?: ChannelEvent; options?: Record<string, unknown> }) => unknown
+  >;
+  ctx: Context;
+} {
+  const commands = new Map<
+    string,
+    (argv: { session?: ChannelEvent; options?: Record<string, unknown> }) => unknown
+  >();
+
+  const ctx = {
+    ...createContextMock(baseDir),
+    middleware: vi.fn(),
+    command: vi.fn((name: string) => {
+      const builder = {
+        option: vi.fn(() => builder),
+        action: vi.fn((handler) => {
+          commands.set(name, handler);
+          return builder;
+        }),
+      };
+      return builder;
+    }),
+  } as unknown as Context;
+
+  return { commands, ctx };
+}
+
+async function startService(service: AgentSessionService): Promise<void> {
+  return (service as unknown as { start(): Promise<void> }).start();
+}
+
 function createBotMock(selfId = "bot-self"): Bot {
   return {
     selfId,
@@ -193,6 +227,76 @@ describe("AgentSessionService", () => {
 
       expect(routeSpy).toHaveBeenCalledWith("discord", "origin-channel", bot);
       expect(agentReceive).toHaveBeenCalledWith(event);
+    });
+  });
+
+  describe("manual compaction command", () => {
+    it("reports when there is nothing eligible to compact", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-compact-command-"));
+      tempDirs.push(tempDir);
+      const { commands, ctx } = createCommandContextMock(tempDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+      const runCompaction = vi.fn().mockResolvedValue({
+        compacted: false,
+        reason: "nothing-to-compact",
+      });
+
+      (service as unknown as { agents: Map<string, ChannelAgent> }).agents.set(
+        "discord:channel-1",
+        {
+          runCompaction,
+        } as unknown as ChannelAgent,
+      );
+
+      await startService(service);
+      const action = commands.get("agent.compact");
+
+      expect(action).toBeDefined();
+      await expect(
+        action?.({
+          options: {
+            platform: "discord",
+            channel: "channel-1",
+          },
+        }),
+      ).resolves.toBe("No compaction needed for discord:channel-1: nothing eligible to compact.");
+    });
+
+    it("uses configured contextWindow when --context is omitted", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-compact-context-"));
+      tempDirs.push(tempDir);
+      const { commands, ctx } = createCommandContextMock(tempDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+        contextWindow: 4096,
+      });
+      const runCompaction = vi.fn().mockResolvedValue({
+        compacted: true,
+      });
+
+      (service as unknown as { agents: Map<string, ChannelAgent> }).agents.set(
+        "discord:channel-1",
+        {
+          runCompaction,
+        } as unknown as ChannelAgent,
+      );
+
+      await startService(service);
+      const action = commands.get("agent.compact");
+
+      expect(action).toBeDefined();
+      await action?.({
+        options: {
+          platform: "discord",
+          channel: "channel-1",
+        },
+      });
+
+      expect(runCompaction).toHaveBeenCalledWith(4096);
     });
   });
 });

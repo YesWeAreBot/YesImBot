@@ -1,10 +1,18 @@
 import { join } from "node:path";
 
 import type { ModelMessage } from "@ai-sdk/provider-utils";
-import type { OnFinishEvent, OnStepFinishEvent, PrepareStepResult, ToolSet } from "ai";
+import type {
+  LanguageModel,
+  OnFinishEvent,
+  OnStepFinishEvent,
+  PrepareStepResult,
+  ToolSet,
+} from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { Bot, Context } from "koishi";
 
+import { compact, prepareCompaction, shouldCompact, type CompactionSettings } from "../compaction";
+import { estimateContextTokens } from "../compaction/estimate";
 import {
   buildSessionContext,
   convertAgentMessagesToModelMessages,
@@ -22,7 +30,7 @@ import type { ChannelEvent, ResponseEndReason, ResponseEndRecord } from "../type
 import { judgeWillingness } from "../willingness";
 import { LocalFilesystem, LocalSandbox, Workspace } from "../workspace";
 import { extractMessages } from "./output";
-import type { ChannelAgentOptions, ResponseState } from "./types";
+import type { ChannelAgentOptions, CompactionRunResult, ResponseState } from "./types";
 
 // ============================================================================
 // ChannelAgent
@@ -44,8 +52,10 @@ export class ChannelAgent {
   readonly baseTimeoutMs: number;
   readonly perStepTimeoutMs: number;
   readonly chunkTimeoutMs: number;
+  readonly contextWindow: number;
 
   private options: ChannelAgentOptions;
+  private readonly compactionSettings: CompactionSettings;
   private responseState: ResponseState = "idle";
   private abortController: AbortController | null = null;
   private responseQueue: Array<() => void> = [];
@@ -62,9 +72,15 @@ export class ChannelAgent {
     this.bot = options.bot;
     this.sessionManager = options.sessionManager;
     this.maxSteps = options.maxSteps ?? 20;
-    this.baseTimeoutMs = options.baseTimeoutMs ?? options.responseTimeoutMs ?? 60000;
+    this.baseTimeoutMs = options.baseTimeoutMs ?? 60000;
     this.perStepTimeoutMs = options.perStepTimeoutMs ?? 30000;
     this.chunkTimeoutMs = options.chunkTimeoutMs ?? 10000;
+    this.compactionSettings = {
+      enabled: options.compactionEnabled ?? true,
+      reserveTokens: options.compactionReserveTokens ?? 16384,
+      keepRecentTokens: options.compactionKeepRecentTokens ?? 20000,
+    };
+    this.contextWindow = options.contextWindow ?? 128000;
   }
 
   // =========================================================================
@@ -260,10 +276,18 @@ export class ChannelAgent {
       Object.assign(agent.tools, this.responseToolSnapshot);
 
       // Run agent
-      await agent.generate({
-        messages,
-        abortSignal: this.abortController.signal,
-      });
+      if (this.options.streaming) {
+        const result = await agent.stream({
+          messages,
+          abortSignal: this.abortController.signal,
+        });
+        await result.consumeStream();
+      } else {
+        await agent.generate({
+          messages,
+          abortSignal: this.abortController.signal,
+        });
+      }
     } catch (err: unknown) {
       if (this.abortController?.signal.aborted) {
         endReason = timedOut ? "timeout" : "abort";
@@ -415,11 +439,63 @@ export class ChannelAgent {
     }
   }
 
-  /**
-   * Called when the entire agent run finishes. Check for auto-compaction.
-   */
-  private handleFinish(_event: OnFinishEvent): void {
-    // TODO: Check if auto-compaction is needed based on totalUsage
+  private handleFinish(event: OnFinishEvent): void {
+    const totalUsage = event.totalUsage ?? event.usage;
+    const contextTokens =
+      getReliableInputTokens(totalUsage) ??
+      estimateContextTokens(
+        buildSessionContext([...this.sessionManager.getEntries()]).agentMessages,
+      );
+
+    if (!shouldCompact(contextTokens, this.contextWindow, this.compactionSettings)) {
+      return;
+    }
+
+    this.runCompaction(contextTokens).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.ctx.logger.error(
+        `Compaction failed for ${this.options.platform}:${this.options.channelId}: ${msg}`,
+      );
+    });
+  }
+
+  public async runCompaction(contextTokens: number): Promise<CompactionRunResult> {
+    const entries = [...this.sessionManager.getEntries()];
+    if (entries.length === 0) {
+      return { compacted: false, reason: "empty-session" };
+    }
+
+    if (entries[entries.length - 1]?.type === "compaction") {
+      return { compacted: false, reason: "already-compacted" };
+    }
+
+    const preparation = prepareCompaction(entries, this.compactionSettings, contextTokens);
+    if (!preparation) {
+      return { compacted: false, reason: "nothing-to-compact" };
+    }
+
+    const compactionModelId = this.options.compactionModel ?? this.options.modelId;
+    const model: LanguageModel = this.ctx["yesimbot.model"].resolve(compactionModelId);
+    const result = await compact(preparation, model);
+
+    this.sessionManager.appendCompaction(
+      result.summary,
+      result.firstKeptEntryId,
+      result.tokensBefore,
+    );
+
+    this.ctx.logger.info(
+      `Compaction complete for ${this.options.platform}:${this.options.channelId}: ` +
+        `tokensBefore=${result.tokensBefore}, contextTokens=${contextTokens}, ` +
+        `summaryLength=${result.summary.length}, firstKeptEntryId=${result.firstKeptEntryId}`,
+    );
+
+    return {
+      compacted: true,
+      firstKeptEntryId: result.firstKeptEntryId,
+      summaryLength: result.summary.length,
+      tokensBefore: result.tokensBefore,
+    };
   }
 
   private async buildWorkspaceTools(): Promise<ToolSet> {
@@ -468,17 +544,58 @@ function formatChannelMessage(event: ChannelEvent): string {
 function createAgentUsage(usage?: {
   inputTokens?: number;
   outputTokens?: number;
+  totalTokens?: number;
   cacheRead?: number;
   cacheWrite?: number;
 }): AgentUsage | undefined {
-  if (!usage) return undefined;
+  if (!usage || !hasNonZeroUsageValue(usage)) return undefined;
+
+  const usageRecord = usage;
+  const inputTokens = usageRecord.inputTokens ?? 0;
+  const outputTokens = usageRecord.outputTokens ?? 0;
   return {
-    inputTokens: usage.inputTokens ?? 0,
-    outputTokens: usage.outputTokens ?? 0,
-    totalTokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
-    cacheRead: usage.cacheRead ?? 0,
-    cacheWrite: usage.cacheWrite ?? 0,
+    inputTokens,
+    outputTokens,
+    totalTokens: usageRecord.totalTokens ?? inputTokens + outputTokens,
+    cacheRead: usageRecord.cacheRead ?? 0,
+    cacheWrite: usageRecord.cacheWrite ?? 0,
   };
+}
+
+function getReliableInputTokens(usage?: {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}): number | undefined {
+  if (typeof usage?.inputTokens !== "number") {
+    return undefined;
+  }
+
+  if (!Number.isFinite(usage.inputTokens) || usage.inputTokens <= 0) {
+    return undefined;
+  }
+
+  return usage.inputTokens;
+}
+
+function hasNonZeroUsageValue(usage?: {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}): boolean {
+  if (!usage) {
+    return false;
+  }
+
+  return [
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.totalTokens,
+    usage.cacheRead,
+    usage.cacheWrite,
+  ].some((value) => typeof value === "number" && Number.isFinite(value) && value !== 0);
 }
 
 /** Normalize AI SDK AssistantContent into AgentAssistantMessage content parts. */
@@ -515,6 +632,7 @@ export function createAgentAssistantMessage(input: {
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
+    totalTokens?: number;
     cacheRead?: number;
     cacheWrite?: number;
   };
@@ -524,6 +642,7 @@ export function createAgentAssistantMessage(input: {
   const usage = createAgentUsage({
     inputTokens: input.usage?.inputTokens,
     outputTokens: input.usage?.outputTokens,
+    totalTokens: input.usage?.totalTokens,
     cacheRead: typeof usageRecord?.cacheRead === "number" ? usageRecord.cacheRead : 0,
     cacheWrite: typeof usageRecord?.cacheWrite === "number" ? usageRecord.cacheWrite : 0,
   });

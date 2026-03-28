@@ -35,6 +35,19 @@ export type { ChannelAgentOptions, ResponseState } from "./channel-agent";
 // Service
 export { AgentSessionService, type AgentSessionServiceConfig } from "./service";
 
+// Settings
+export {
+  deepMergeSettings,
+  readSettingsFile,
+  SettingsManager,
+  stripUseGlobal,
+} from "./settings-manager";
+export type {
+  AthenaSessionSettings,
+  AthenaWorkspaceSettings,
+  SettingsManagerOptions,
+} from "./settings-manager";
+
 // Types
 export type { ChannelEvent, ChannelKey, WillingnessResult } from "./types";
 

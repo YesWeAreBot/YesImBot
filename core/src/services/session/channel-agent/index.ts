@@ -4,4 +4,9 @@ export {
   createAgentAssistantMessage,
   normalizeAssistantContent,
 } from "./channel-agent";
-export type { ChannelAgentOptions, ResponseState } from "./types";
+export type {
+  ChannelAgentOptions,
+  CompactionRunResult,
+  CompactionSkipReason,
+  ResponseState,
+} from "./types";

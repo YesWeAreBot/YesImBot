@@ -10,6 +10,13 @@ type GenerateInput = {
 };
 
 const generateMock = vi.fn<(input: GenerateInput) => Promise<void>>();
+const streamMock =
+  vi.fn<
+    (
+      input: GenerateInput,
+      options: Record<string, unknown>,
+    ) => Promise<{ consumeStream(): Promise<void> }>
+  >();
 const toolLoopAgentCtorMock = vi.fn();
 
 vi.mock("ai", () => {
@@ -25,6 +32,10 @@ vi.mock("ai", () => {
 
     async generate(input: GenerateInput): Promise<void> {
       return generateMock(input);
+    }
+
+    async stream(input: GenerateInput): Promise<{ consumeStream(): Promise<void> }> {
+      return streamMock(input, this.options);
     }
   }
 
@@ -94,6 +105,7 @@ function createAgent() {
 describe("ChannelAgent state machine", () => {
   beforeEach(() => {
     generateMock.mockReset();
+    streamMock.mockReset();
     toolLoopAgentCtorMock.mockClear();
   });
 
@@ -107,6 +119,53 @@ describe("ChannelAgent state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
+    });
+
+    it("consumes streaming results before completing response", async () => {
+      const { bot, sessionManager } = createAgent();
+
+      streamMock.mockImplementationOnce(async (_input, options) => ({
+        consumeStream: async () => {
+          const onStepFinish = options.onStepFinish as
+            | ((stepResult: Record<string, unknown>) => void | Promise<void>)
+            | undefined;
+          await onStepFinish?.({
+            text: "<message>streamed hello</message>",
+            model: { provider: "test", modelId: "test:model" },
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: "stop",
+            response: {
+              messages: [{ role: "assistant", content: "<message>streamed hello</message>" }],
+            },
+          });
+        },
+      }));
+
+      const streamingAgent = new ChannelAgent(createContextMock() as never, {
+        bot: bot as never,
+        sessionManager,
+        platform: "discord",
+        channelId: "channel-1",
+        modelId: "test:model",
+        basePath: "/tmp/athena-test",
+        instructions: "test instructions",
+        enableWorkspace: false,
+        streaming: true,
+      });
+
+      await streamingAgent.receive(createEvent({ messageId: "msg-streaming" }));
+
+      await vi.waitFor(() => {
+        expect(bot.sendMessage).toHaveBeenCalledWith("channel-1", "streamed hello");
+        expect(streamMock).toHaveBeenCalledTimes(1);
+        expect(streamingAgent.getResponseState()).toBe("idle");
+      });
+
+      expect(
+        sessionManager
+          .getEntries()
+          .some((entry) => entry.type === "message" && entry.message.role === "assistant"),
+      ).toBe(true);
     });
 
     it.todo("transitions idle -> responding -> aborting -> ended on abort");

@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { Bot, Context, Service, Session } from "koishi";
 
 import { ChannelAgent } from "./channel-agent";
 import { SessionManager } from "./session-manager";
+import { SettingsManager, type AthenaSessionSettings } from "./settings-manager";
 import type { ChannelEvent, ChannelKey } from "./types";
 
 // ============================================================================
@@ -23,11 +24,17 @@ declare module "koishi" {
 
 export interface AgentSessionServiceConfig {
   model: string;
+  compactionModel?: string;
+  compactionEnabled?: boolean;
+  compactionReserveTokens?: number;
+  compactionKeepRecentTokens?: number;
+  contextWindow?: number;
   judgeModel?: string;
   judgeEnabled?: boolean;
   judgeTimeoutMs?: number;
   basePath: string;
   instructions?: string;
+  streaming?: boolean;
   maxSteps?: number;
   /** Base response timeout in ms. Default 60000. */
   baseTimeoutMs?: number;
@@ -61,6 +68,14 @@ export interface AgentSessionServiceConfig {
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
+  private static readonly DEFAULT_INSTRUCTIONS =
+    "你是一个群聊参与者。像真人一样自然地参与对话，不要使用助手腔调。用 <message>内容</message> 标签包裹你要发送的消息。";
+
+  private static readonly DEFAULT_AGENTS_MARKDOWN = `# Workspace Instructions
+
+Add workspace-specific operating rules here.
+`;
+
   private agents: Map<ChannelKey, ChannelAgent> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
@@ -78,8 +93,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // =========================================================================
 
   protected async start(): Promise<void> {
-    // Register message listener
-    this.ctx.on("message", (session: Session) => {
+    this.ctx.middleware(async (session, next) => {
       const event = koishiSessionToChannelEvent(session);
       if (event) {
         this.receive(event).catch((err) => {
@@ -89,7 +103,90 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
           );
         });
       }
+      return next();
     });
+
+    this.ctx.command("agent.list", "List active agents").action(() => {
+      const channels = this.getActiveChannels();
+      if (channels.length === 0) {
+        return "No active agents.";
+      }
+      return `Active agents:\n${channels.map((ch) => `- ${ch}`).join("\n")}`;
+    });
+
+    this.ctx
+      .command("agent.clear", "Clear agent session for a channel")
+      .option("platform", "-p --platform <platform:string> Platform of the channel")
+      .option("channel", "-c --channel <channel:string> Channel ID")
+      .action(async ({ session, options }) => {
+        let platform = options?.platform;
+        let channelId = options?.channel;
+        if (!platform && !channelId) {
+          if (session) {
+            platform = session.platform;
+            channelId = session.channelId;
+          } else {
+            return "Please specify a channel with --platform and --channel, or run this command in a channel.";
+          }
+        } else if (!platform || !channelId) {
+          return "Both --platform and --channel must be specified.";
+        }
+
+        const channelKey: ChannelKey = `${platform}:${channelId}`;
+        const agent = this.agents.get(channelKey);
+        if (!agent) {
+          return `No active agent for ${channelKey}.`;
+        }
+        agent.abort();
+        this.agents.delete(channelKey);
+        return `Cleared agent session for ${channelKey}.`;
+      });
+
+    this.ctx
+      .command("agent.compact")
+      .option("platform", "-p --platform <platform:string> Platform of the channel")
+      .option("channel", "-c --channel <channel:string> Channel ID")
+      .option("context", "--context <tokens:number> ")
+      .action(async ({ session, options }) => {
+        let platform = options?.platform;
+        let channelId = options?.channel;
+        if (!platform && !channelId) {
+          if (session) {
+            platform = session.platform;
+            channelId = session.channelId;
+          } else {
+            return "Please specify a channel with --platform and --channel, or run this command in a channel.";
+          }
+        } else if (!platform || !channelId) {
+          return "Both --platform and --channel must be specified.";
+        }
+
+        const channelKey: ChannelKey = `${platform}:${channelId}`;
+        const agent = this.agents.get(channelKey);
+        if (!agent) {
+          return `No active agent for ${channelKey}.`;
+        }
+        try {
+          const contextTokens = options?.context ?? this.config.contextWindow ?? 16384;
+          const result = await agent.runCompaction(contextTokens);
+          if (!result.compacted) {
+            if (result.reason === "empty-session") {
+              return `No compaction needed for ${channelKey}: session is empty.`;
+            }
+
+            if (result.reason === "already-compacted") {
+              return `No compaction needed for ${channelKey}: latest entry is already a compaction.`;
+            }
+
+            return `No compaction needed for ${channelKey}: nothing eligible to compact.`;
+          }
+
+          return `Compaction completed for ${channelKey}.`;
+        } catch (err) {
+          this.logger.error(`Error running compaction for ${channelKey}:`, err);
+          return `Failed to run compaction for ${channelKey}.`;
+        }
+      });
 
     this.logger.info("AgentSessionService started");
   }
@@ -162,6 +259,15 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     const channelDir = join(this.ctx.baseDir, this.config.basePath, `${platform}-${channelId}`);
     const sessionDir = join(channelDir, "session");
 
+    this.ensureGlobalScaffold();
+    this.ensureWorkspaceScaffold(channelDir);
+
+    const settingsManager = new SettingsManager({
+      globalSettingsPath: this.getGlobalSettingsPath(),
+      workspaceSettingsPath: this.getWorkspaceSettingsPath(channelDir),
+    });
+    const resolved = settingsManager.resolveSettings();
+
     // Try to recover existing session
     let sessionManager = SessionManager.continueRecent(channelKey, sessionDir);
     if (!sessionManager) {
@@ -173,7 +279,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       );
     }
 
-    const instructions = this.buildInstructions(channelDir);
+    const instructions = async () => await this.buildInstructions(channelDir);
 
     // Create channel agent
     const agent = new ChannelAgent(this.ctx, {
@@ -181,31 +287,148 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       sessionManager,
       platform: platform,
       channelId: channelId,
-      modelId: this.config.model,
-      judgeModel: this.config.judgeModel,
-      judgeEnabled: this.config.judgeEnabled,
-      judgeTimeoutMs: this.config.judgeTimeoutMs,
+      modelId: resolved.model ?? this.config.model,
+      compactionModel: resolved.compaction?.model ?? this.config.compactionModel,
+      compactionEnabled: resolved.compaction?.enabled ?? this.config.compactionEnabled,
+      compactionReserveTokens:
+        resolved.compaction?.reserveTokens ?? this.config.compactionReserveTokens,
+      compactionKeepRecentTokens:
+        resolved.compaction?.keepRecentTokens ?? this.config.compactionKeepRecentTokens,
+      contextWindow: resolved.compaction?.contextWindow ?? this.config.contextWindow,
+      judgeModel: resolved.judge?.model ?? this.config.judgeModel,
+      judgeEnabled: resolved.judge?.enabled ?? this.config.judgeEnabled,
+      judgeTimeoutMs: resolved.judge?.timeoutMs ?? this.config.judgeTimeoutMs,
       basePath: channelDir,
       instructions,
-      maxSteps: this.config.maxSteps,
-      baseTimeoutMs: this.config.baseTimeoutMs,
-      perStepTimeoutMs: this.config.perStepTimeoutMs,
-      chunkTimeoutMs: this.config.chunkTimeoutMs,
-      sendMessageDirectly: this.config.sendMessageDirectly,
-      enableWorkspace: this.config.enableWorkspace,
-      enableSandbox: this.config.enableSandbox,
-      enableFilesystem: this.config.enableFilesystem,
-      externalPath: this.config.externalPath,
+      streaming: resolved.response?.streaming ?? this.config.streaming,
+      maxSteps: resolved.response?.maxSteps ?? this.config.maxSteps,
+      baseTimeoutMs: resolved.response?.baseTimeoutMs ?? this.config.baseTimeoutMs,
+      perStepTimeoutMs: resolved.response?.perStepTimeoutMs ?? this.config.perStepTimeoutMs,
+      chunkTimeoutMs: resolved.response?.chunkTimeoutMs ?? this.config.chunkTimeoutMs,
+      sendMessageDirectly:
+        resolved.response?.sendMessageDirectly ?? this.config.sendMessageDirectly,
+      enableWorkspace: resolved.workspace?.enableWorkspace ?? this.config.enableWorkspace,
+      enableSandbox: resolved.workspace?.enableSandbox ?? this.config.enableSandbox,
+      enableFilesystem: resolved.workspace?.enableFilesystem ?? this.config.enableFilesystem,
+      externalPath: resolved.workspace?.externalPath ?? this.config.externalPath,
     });
 
     this.agents.set(channelKey, agent);
     return agent;
   }
 
+  private getGlobalRoot(): string {
+    return join(this.ctx.baseDir, this.config.basePath);
+  }
+
+  private getGlobalSettingsPath(): string {
+    return join(this.getGlobalRoot(), "settings.json");
+  }
+
+  private getWorkspaceSettingsPath(channelDir: string): string {
+    return join(channelDir, "settings.json");
+  }
+
+  private writeJsonIfMissing(filePath: string, value: unknown): void {
+    if (existsSync(filePath)) {
+      return;
+    }
+
+    writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  }
+
+  private writeTextIfMissing(filePath: string, content: string): void {
+    if (existsSync(filePath)) {
+      return;
+    }
+
+    writeFileSync(filePath, content, "utf8");
+  }
+
+  private copyTextFileIfMissing(sourcePath: string, targetPath: string): void {
+    if (existsSync(targetPath) || !existsSync(sourcePath)) {
+      return;
+    }
+
+    copyFileSync(sourcePath, targetPath);
+  }
+
+  private buildDefaultGlobalSettings(): AthenaSessionSettings {
+    return {
+      model: this.config.model,
+      judge: {
+        model: this.config.judgeModel,
+        enabled: this.config.judgeEnabled,
+        timeoutMs: this.config.judgeTimeoutMs,
+      },
+      compaction: {
+        model: this.config.compactionModel,
+        enabled: this.config.compactionEnabled,
+        reserveTokens: this.config.compactionReserveTokens,
+        keepRecentTokens: this.config.compactionKeepRecentTokens,
+        contextWindow: this.config.contextWindow,
+      },
+      response: {
+        streaming: this.config.streaming,
+        maxSteps: this.config.maxSteps,
+        baseTimeoutMs: this.config.baseTimeoutMs,
+        perStepTimeoutMs: this.config.perStepTimeoutMs,
+        chunkTimeoutMs: this.config.chunkTimeoutMs,
+        sendMessageDirectly: this.config.sendMessageDirectly,
+      },
+      workspace: {
+        enableWorkspace: this.config.enableWorkspace,
+        enableSandbox: this.config.enableSandbox,
+        enableFilesystem: this.config.enableFilesystem,
+        externalPath: Array.isArray(this.config.externalPath)
+          ? this.config.externalPath
+          : this.config.externalPath
+            ? [this.config.externalPath]
+            : undefined,
+      },
+      prompts: {
+        builtInInstructions: this.config.instructions ?? AgentSessionService.DEFAULT_INSTRUCTIONS,
+      },
+    };
+  }
+
+  private ensureGlobalScaffold(): void {
+    const globalRoot = this.getGlobalRoot();
+    mkdirSync(globalRoot, { recursive: true });
+
+    this.writeJsonIfMissing(this.getGlobalSettingsPath(), this.buildDefaultGlobalSettings());
+    this.writeTextIfMissing(
+      join(globalRoot, "SOUL.md"),
+      `${AgentSessionService.DEFAULT_INSTRUCTIONS}\n`,
+    );
+    this.writeTextIfMissing(
+      join(globalRoot, "AGENTS.md"),
+      AgentSessionService.DEFAULT_AGENTS_MARKDOWN,
+    );
+  }
+
+  private ensureWorkspaceScaffold(channelDir: string): void {
+    const workspaceDir = join(channelDir, "workspace");
+    mkdirSync(workspaceDir, { recursive: true });
+
+    this.writeJsonIfMissing(this.getWorkspaceSettingsPath(channelDir), { useGlobal: true });
+
+    const globalRoot = this.getGlobalRoot();
+    this.copyTextFileIfMissing(join(globalRoot, "SOUL.md"), join(workspaceDir, "SOUL.md"));
+    this.copyTextFileIfMissing(join(globalRoot, "AGENTS.md"), join(workspaceDir, "AGENTS.md"));
+  }
+
   private buildInstructions(channelDir: string): string {
+    const settingsManager = new SettingsManager({
+      globalSettingsPath: this.getGlobalSettingsPath(),
+      workspaceSettingsPath: this.getWorkspaceSettingsPath(channelDir),
+    });
+    const resolved = settingsManager.resolveSettings();
+
     const builtIn =
+      resolved.prompts?.builtInInstructions ??
       this.config.instructions ??
-      "你是一个群聊参与者。像真人一样自然地参与对话，不要使用助手腔调。用 <message>内容</message> 标签包裹你要发送的消息。";
+      AgentSessionService.DEFAULT_INSTRUCTIONS;
 
     const workspaceDir = join(channelDir, "workspace");
 
@@ -227,7 +450,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
           extras.push(content);
         }
       } catch {
-        this.ctx.logger.warn(`Failed to read instructions from ${filePath}`);
+        this.logger.warn(`Failed to read instructions from ${filePath}`);
       }
     }
 
