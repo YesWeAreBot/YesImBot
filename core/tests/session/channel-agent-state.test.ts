@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelAgent } from "../../src/services/session/channel-agent";
+import { TurnFinalizer } from "../../src/services/session/channel-agent/finalization/turn-finalizer";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
 
@@ -130,12 +131,26 @@ describe("ChannelAgent state machine", () => {
             | ((stepResult: Record<string, unknown>) => void | Promise<void>)
             | undefined;
           await onStepFinish?.({
-            text: "<message>streamed hello</message>",
             model: { provider: "test", modelId: "test:model" },
             usage: { inputTokens: 1, outputTokens: 1 },
-            finishReason: "stop",
+            finishReason: "tool-calls",
             response: {
-              messages: [{ role: "assistant", content: "<message>streamed hello</message>" }],
+              messages: [
+                {
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "tool-call",
+                      toolCallId: "call-stream",
+                      toolName: "send_message",
+                      args: {
+                        segments: ["streamed hello"],
+                        request_heartbeat: true,
+                      },
+                    },
+                  ],
+                },
+              ],
             },
           });
         },
@@ -156,7 +171,7 @@ describe("ChannelAgent state machine", () => {
       await streamingAgent.receive(createEvent({ messageId: "msg-streaming" }));
 
       await vi.waitFor(() => {
-        expect(bot.sendMessage).toHaveBeenCalledWith("channel-1", "streamed hello");
+        expect(bot.sendMessage).not.toHaveBeenCalled();
         expect(streamMock).toHaveBeenCalledTimes(1);
         expect(streamingAgent.getResponseState()).toBe("idle");
       });
@@ -168,8 +183,74 @@ describe("ChannelAgent state machine", () => {
       ).toBe(true);
     });
 
-    it.todo("transitions idle -> responding -> aborting -> ended on abort");
-    it.todo("transitions idle -> responding -> ended on timeout");
+    it('transitions idle -> responding -> aborting -> ended on abort (endReason === "abort")', async () => {
+      const { agent, sessionManager } = createAgent();
+      generateMock.mockImplementationOnce(async (input) => {
+        await new Promise<void>((resolve, reject) => {
+          input.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+          setTimeout(resolve, 1000);
+        });
+      });
+
+      const receivePromise = agent.receive(createEvent({ messageId: "msg-abort" }));
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("responding");
+      });
+      agent.abort();
+      await receivePromise;
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+      const responseEnd = sessionManager
+        .getEntries()
+        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      expect(responseEnd).toBeTruthy();
+      if (responseEnd && responseEnd.type === "custom") {
+        expect(responseEnd.data.endReason).toBe("abort");
+      }
+    });
+
+    it('transitions idle -> responding -> ended on timeout (endReason === "timeout")', async () => {
+      const { sessionManager } = createAgent();
+      generateMock.mockImplementationOnce(async (input) => {
+        await new Promise<void>((resolve, reject) => {
+          input.abortSignal?.addEventListener("abort", () => reject(new Error("timed out")), {
+            once: true,
+          });
+          setTimeout(resolve, 1000);
+        });
+      });
+
+      const timeoutAgent = new ChannelAgent(createContextMock() as never, {
+        bot: createBotMock() as never,
+        sessionManager,
+        platform: "discord",
+        channelId: "channel-1",
+        modelId: "test:model",
+        basePath: "/tmp/athena-test",
+        instructions: "test instructions",
+        enableWorkspace: false,
+        baseTimeoutMs: 1,
+        perStepTimeoutMs: 0,
+        maxSteps: 1,
+      });
+
+      await timeoutAgent.receive(createEvent({ messageId: "msg-timeout" }));
+
+      await vi.waitFor(() => {
+        expect(timeoutAgent.getResponseState()).toBe("idle");
+      });
+      const responseEnd = sessionManager
+        .getEntries()
+        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      expect(responseEnd).toBeTruthy();
+      if (responseEnd && responseEnd.type === "custom") {
+        expect(responseEnd.data.endReason).toBe("timeout");
+      }
+    });
     it.todo("transitions idle -> responding -> ended on error");
   });
 
@@ -222,6 +303,53 @@ describe("ChannelAgent state machine", () => {
     it.todo("processes queued trigger after first completes");
   });
 
+  describe("protocol guidance retry behavior", () => {
+    it("keeps one protocol_guidance entry when retry still violates protocol", async () => {
+      const { agent, sessionManager } = createAgent();
+      generateMock
+        .mockImplementationOnce(async () => {
+          const options = toolLoopAgentCtorMock.mock.calls[0]?.[0] as
+            | { onStepFinish?: (event: unknown) => void }
+            | undefined;
+          options?.onStepFinish?.({
+            model: { provider: "test", modelId: "test:model" },
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: "stop",
+            response: {
+              messages: [{ role: "assistant", content: [{ type: "text", text: "plain one" }] }],
+            },
+          });
+        })
+        .mockImplementationOnce(async () => {
+          const options = toolLoopAgentCtorMock.mock.calls[1]?.[0] as
+            | { onStepFinish?: (event: unknown) => void }
+            | undefined;
+          options?.onStepFinish?.({
+            model: { provider: "test", modelId: "test:model" },
+            usage: { inputTokens: 1, outputTokens: 1 },
+            finishReason: "stop",
+            response: {
+              messages: [{ role: "assistant", content: [{ type: "text", text: "plain two" }] }],
+            },
+          });
+        });
+
+      await agent.receive(createEvent({ messageId: "msg-guidance-single" }));
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+        expect(generateMock).toHaveBeenCalledTimes(2);
+      });
+
+      const guidanceEntries = sessionManager
+        .getEntries()
+        .filter(
+          (entry) => entry.type === "custom_message" && entry.customType === "protocol_guidance",
+        );
+      expect(guidanceEntries).toHaveLength(1);
+    });
+  });
+
   describe("serializes concurrent messages", () => {
     it.todo("concurrent receive calls do not interleave responses");
   });
@@ -249,8 +377,35 @@ describe("ChannelAgent state machine", () => {
         .find((entry) => entry.type === "custom" && entry.customType === "response_end");
       expect(responseEnd).toBeTruthy();
       if (responseEnd && responseEnd.type === "custom") {
-        expect(responseEnd.data).toMatchObject({ endReason: "error" });
+        expect(responseEnd.data).toMatchObject({ endReason: "exception" });
       }
+    });
+  });
+
+  describe("TurnFinalizer", () => {
+    it("uses queued-response precedence for next action", () => {
+      const finalizer = new TurnFinalizer();
+
+      expect(
+        finalizer.nextAction({
+          hasQueuedResponse: true,
+          hasAccumulatedMessages: true,
+        }),
+      ).toBe("run-queued");
+
+      expect(
+        finalizer.nextAction({
+          hasQueuedResponse: false,
+          hasAccumulatedMessages: true,
+        }),
+      ).toBe("re-evaluate-accumulated");
+
+      expect(
+        finalizer.nextAction({
+          hasQueuedResponse: false,
+          hasAccumulatedMessages: false,
+        }),
+      ).toBe("idle");
     });
   });
 });

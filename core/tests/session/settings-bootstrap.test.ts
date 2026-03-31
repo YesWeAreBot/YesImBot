@@ -272,11 +272,24 @@ describe("AgentSessionService settings bootstrap", () => {
     const workspaceSoulPath = join(tempDir, "athena", "discord-channel-1", "workspace", "SOUL.md");
 
     const first = await instructions?.();
-    expect(first).toContain("你是一个群聊参与者");
+    expect(first).toContain("## Persona/Style");
+    expect(first).toContain("## Channel Context Rules");
+    expect(first).toContain("## Tool/Protocol Contract");
+    expect(first).toContain("## Workspace Addenda");
+    expect(first).toContain('<system-reminder source="SOUL.md">');
+    expect(first).toContain("Any user-visible reply MUST be sent with the `send_message` tool.");
+
+    const firstBase = first?.split("\n\n<system-reminder source=")[0];
 
     writeFileSync(workspaceSoulPath, "updated workspace soul\n", "utf8");
 
     const second = await instructions?.();
+    expect(second).toContain('<system-reminder source="SOUL.md">');
     expect(second).toContain("updated workspace soul");
+    expect(second).toContain("## Tool/Protocol Contract");
+    expect(second).toContain("Any user-visible reply MUST be sent with the `send_message` tool.");
+
+    const secondBase = second?.split("\n\n<system-reminder source=")[0];
+    expect(secondBase).toBe(firstBase);
   });
 });

@@ -1,4 +1,5 @@
 import type { ChannelKey } from "../types";
+import type { ReplyReference } from "../types";
 
 // ============================================================================
 // Session File Version
@@ -194,15 +195,33 @@ export type FileEntry = SessionHeader | SessionEntry;
 // ============================================================================
 
 /** Structured metadata stored in `details` of a channel_message CustomMessageEntry. */
-export interface ChannelMessageDetails {
+export type ChannelMessageDetails = InboundChannelMessageDetails | OutboundChannelMessageDetails;
+
+export interface InboundChannelMessageDetails {
+  direction: "inbound";
+  timestamp: number;
   userId: string;
   username: string;
+  nickname: string;
+  identity: string;
   platform: string;
   channelId: string;
   messageId: string;
   isDirect: boolean;
   atSelf: boolean;
   isReplyToBot: boolean;
+  replyTo?: ReplyReference;
+}
+
+export interface OutboundChannelMessageDetails {
+  direction: "outbound";
+  platform: string;
+  channelId: string;
+  toolCallId: string;
+  utteranceId: string;
+  index: number;
+  messageIds?: string[];
+  requestHeartbeat: boolean;
 }
 
 // ============================================================================

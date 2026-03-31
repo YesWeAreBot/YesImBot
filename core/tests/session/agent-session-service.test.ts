@@ -157,6 +157,58 @@ describe("AgentSessionService", () => {
       expect(bot.sendMessage).not.toHaveBeenCalled();
     });
 
+    it("persists structured inbound channel_message header with reply summary", async () => {
+      const ctx = createContextMock("/");
+      const bot = createBotMock();
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const agent = new ChannelAgent(ctx, {
+        bot,
+        sessionManager,
+        platform: "discord",
+        channelId: "channel-1",
+        modelId: "test:model",
+        basePath: "/tmp/athena-test",
+        instructions: "test instructions",
+      });
+
+      await agent.receive(
+        createEvent({
+          bot,
+          nickname: "Alice-Display",
+          identity: "title:moderator",
+          replyTo: {
+            username: "yesimbot",
+            nickname: "Athena",
+            summary: "quoted summary",
+          },
+        }),
+      );
+
+      const persisted = sessionManager
+        .getEntries()
+        .find((entry) => entry.type === "custom_message" && entry.customType === "channel_message");
+
+      expect(persisted).toBeTruthy();
+      if (!persisted || persisted.type !== "custom_message") {
+        return;
+      }
+
+      expect(typeof persisted.content).toBe("string");
+      expect(persisted.content).toContain("[timestamp]");
+      expect(persisted.content).toContain("[platform/channel]");
+      expect(persisted.content).toContain("[sender]");
+      expect(persisted.content).toContain("[context]");
+      expect(persisted.content).toContain("[reply]");
+
+      expect(persisted.details).toMatchObject({
+        nickname: "Alice-Display",
+        identity: "title:moderator",
+        replyTo: {
+          summary: "quoted summary",
+        },
+      });
+    });
+
     it("ignores self messages", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-self-"));
       tempDirs.push(tempDir);

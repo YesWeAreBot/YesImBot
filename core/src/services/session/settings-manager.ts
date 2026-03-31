@@ -20,7 +20,6 @@ export interface AthenaSessionSettings extends Record<string, unknown> {
     baseTimeoutMs?: number;
     perStepTimeoutMs?: number;
     chunkTimeoutMs?: number;
-    sendMessageDirectly?: boolean;
   };
   workspace?: {
     enableWorkspace?: boolean;

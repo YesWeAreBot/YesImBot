@@ -75,4 +75,37 @@ describe("SessionManager", () => {
   describe("workspace config", () => {
     it.todo("uses global config when workspace config absent per D-08");
   });
+
+  describe("channel message records", () => {
+    it("persists inbound and outbound channel messages as custom_message entries", () => {
+      const manager = SessionManager.inMemory("discord:12345");
+      manager.appendCustomMessageEntry("channel_message", "[alice]: hello", false, {
+        direction: "inbound",
+        userId: "user-1",
+        username: "alice",
+        platform: "discord",
+        channelId: "12345",
+        messageId: "msg-1",
+        isDirect: true,
+        atSelf: false,
+        isReplyToBot: false,
+      });
+      manager.appendCustomMessageEntry("channel_message", "[assistant]: hi", false, {
+        direction: "outbound",
+        platform: "discord",
+        channelId: "12345",
+        toolCallId: "call-1",
+        utteranceId: "utt-1",
+        index: 0,
+        messageIds: ["m1"],
+        requestHeartbeat: false,
+      });
+
+      const entries = manager.getEntries();
+
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({ type: "custom_message", customType: "channel_message" });
+      expect(entries[1]).toMatchObject({ type: "custom_message", customType: "channel_message" });
+    });
+  });
 });

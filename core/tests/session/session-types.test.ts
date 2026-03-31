@@ -6,6 +6,8 @@ import type {
   AgentMessage,
   AgentToolMessage,
   AgentUserMessage,
+  InboundChannelMessageDetails,
+  OutboundChannelMessageDetails,
   SessionContext,
 } from "../../src/services/session/session-manager";
 
@@ -40,5 +42,32 @@ describe("session message types", () => {
     };
 
     expect(ctx.agentMessages).toHaveLength(4);
+  });
+
+  it("supports inbound and outbound channel message details", () => {
+    const inbound: InboundChannelMessageDetails = {
+      direction: "inbound",
+      userId: "user-1",
+      username: "alice",
+      platform: "discord",
+      channelId: "123",
+      messageId: "msg-1",
+      isDirect: true,
+      atSelf: false,
+      isReplyToBot: false,
+    };
+    const outbound: OutboundChannelMessageDetails = {
+      direction: "outbound",
+      platform: "discord",
+      channelId: "123",
+      toolCallId: "call-1",
+      utteranceId: "utt-1",
+      index: 0,
+      messageIds: ["m-1"],
+      requestHeartbeat: false,
+    };
+
+    expect(inbound.username).toBe("alice");
+    expect(outbound.toolCallId).toBe("call-1");
   });
 });

@@ -33,7 +33,6 @@ export interface ChannelAgentOptions {
   compactionKeepRecentTokens?: number;
   /** Context window size in tokens. Default 128000. */
   contextWindow?: number;
-  sendMessageDirectly?: boolean;
   enableWorkspace?: boolean;
   enableSandbox?: boolean;
   enableFilesystem?: boolean;

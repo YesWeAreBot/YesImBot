@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { Bot, Context, Service, Session } from "koishi";
 
 import { ChannelAgent } from "./channel-agent";
+import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
+import { compileSystemPrompt, type SystemReminderInput } from "./prompt/system-prompt";
 import { SessionManager } from "./session-manager";
 import { SettingsManager, type AthenaSessionSettings } from "./settings-manager";
 import type { ChannelEvent, ChannelKey } from "./types";
@@ -42,7 +44,6 @@ export interface AgentSessionServiceConfig {
   perStepTimeoutMs?: number;
   /** Chunk timeout in ms. Default 10000. */
   chunkTimeoutMs?: number;
-  sendMessageDirectly?: boolean;
   enableWorkspace?: boolean;
   enableSandbox?: boolean;
   enableFilesystem?: boolean;
@@ -69,7 +70,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
   private static readonly DEFAULT_INSTRUCTIONS =
-    "你是一个群聊参与者。像真人一样自然地参与对话，不要使用助手腔调。用 <message>内容</message> 标签包裹你要发送的消息。";
+    "你是一个群聊参与者。像真人一样自然地参与对话，不要使用助手腔调。所有要发送到聊天中的可见内容都必须通过 send_message 工具发送；普通 assistant 文本不会直接发给用户。默认在发送后结束当前轮次，只有在确实需要继续下一步时才设置 request_heartbeat。";
 
   private static readonly DEFAULT_AGENTS_MARKDOWN = `# Workspace Instructions
 
@@ -305,8 +306,6 @@ Add workspace-specific operating rules here.
       baseTimeoutMs: resolved.response?.baseTimeoutMs ?? this.config.baseTimeoutMs,
       perStepTimeoutMs: resolved.response?.perStepTimeoutMs ?? this.config.perStepTimeoutMs,
       chunkTimeoutMs: resolved.response?.chunkTimeoutMs ?? this.config.chunkTimeoutMs,
-      sendMessageDirectly:
-        resolved.response?.sendMessageDirectly ?? this.config.sendMessageDirectly,
       enableWorkspace: resolved.workspace?.enableWorkspace ?? this.config.enableWorkspace,
       enableSandbox: resolved.workspace?.enableSandbox ?? this.config.enableSandbox,
       enableFilesystem: resolved.workspace?.enableFilesystem ?? this.config.enableFilesystem,
@@ -374,7 +373,6 @@ Add workspace-specific operating rules here.
         baseTimeoutMs: this.config.baseTimeoutMs,
         perStepTimeoutMs: this.config.perStepTimeoutMs,
         chunkTimeoutMs: this.config.chunkTimeoutMs,
-        sendMessageDirectly: this.config.sendMessageDirectly,
       },
       workspace: {
         enableWorkspace: this.config.enableWorkspace,
@@ -436,9 +434,9 @@ Add workspace-specific operating rules here.
       mkdirSync(workspaceDir, { recursive: true });
     }
 
-    const extras: string[] = [];
+    const reminders: SystemReminderInput[] = [];
 
-    for (const filename of ["SOUL.md", "AGENTS.md"]) {
+    for (const filename of ["SOUL.md", "AGENTS.md", "PERSONA.md"] as const) {
       const filePath = join(workspaceDir, filename);
       if (!existsSync(filePath)) {
         continue;
@@ -447,18 +445,20 @@ Add workspace-specific operating rules here.
       try {
         const content = readFileSync(filePath, "utf8").trim();
         if (content) {
-          extras.push(content);
+          reminders.push({
+            source: filename,
+            content,
+          });
         }
       } catch {
         this.logger.warn(`Failed to read instructions from ${filePath}`);
       }
     }
 
-    if (extras.length === 0) {
-      return builtIn;
-    }
-
-    return `${builtIn}\n\n${extras.join("\n\n")}`;
+    return compileSystemPrompt({
+      personaStyle: builtIn,
+      reminders,
+    });
   }
 
   /** Get an existing agent (without creating). */
@@ -491,11 +491,42 @@ function koishiSessionToChannelEvent(session: Session): ChannelEvent | null {
     session.stripped.atSelf ||
     (session.elements?.find((el) => el.type === "at" && el.attrs.id === selfId) ? true : false);
 
+  const nickname =
+    session.author?.nick ??
+    session.author?.user?.nick ??
+    session.author?.user?.name ??
+    session.username ??
+    session.userId;
+  const identity = resolveSenderIdentity({
+    isDirect: session.isDirect ?? false,
+    title: session.author?.title,
+    roles: session.author?.roles?.map((role) => role.name ?? "").filter(Boolean),
+    isBot: session.author?.user?.isBot ?? false,
+  });
+
+  const replyTo = session.quote
+    ? {
+        messageId: session.quote.id ?? session.quote.messageId,
+        userId: session.quote.user?.id ?? session.quote.user?.userId,
+        username: session.quote.user?.name ?? session.quote.user?.username ?? "unknown-user",
+        nickname:
+          session.quote.member?.nick ??
+          session.quote.user?.nick ??
+          session.quote.user?.nickname ??
+          session.quote.user?.name ??
+          "unknown-user",
+        summary: summarizeReplyContent(session.quote?.content ?? ""),
+      }
+    : undefined;
+
   return {
     platform: session.platform,
     channelId: session.channelId,
     userId: session.userId,
     username: session.username ?? session.userId,
+    nickname,
+    identity,
+    replyTo,
     content,
     isDirect: session.isDirect ?? false,
     atSelf,
