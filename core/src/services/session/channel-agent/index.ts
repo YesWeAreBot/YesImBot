@@ -1,9 +1,9 @@
 export {
   buildGenerateInputForTest,
-  ChannelAgent,
   createAgentAssistantMessage,
   normalizeAssistantContent,
-} from "./channel-agent";
+} from "./response-step-processor";
+export { ChannelAgent } from "./channel-agent";
 export { createSendMessageTool, isSendMessageResult } from "./send-message-tool";
 export { TurnFinalizer } from "./finalization/turn-finalizer";
 export type { SendMessageResult, SendMessageSegmentResult } from "./send-message-tool";

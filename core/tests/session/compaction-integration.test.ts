@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildGenerateInputForTest, ChannelAgent } from "../../src/services/session/channel-agent";
+import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
+import { createTestSettingsManager } from "./test-settings-manager";
 
 type GenerateInput = {
   messages: unknown[];
@@ -146,17 +148,18 @@ function createAgent(
   const agent = new ChannelAgent(ctx as never, {
     bot: bot as never,
     sessionManager,
+    settingsManager: createTestSettingsManager({
+      compaction: {
+        contextWindow: overrides.contextWindow ?? 100000,
+        reserveTokens: overrides.compactionReserveTokens ?? 16384,
+        keepRecentTokens: overrides.compactionKeepRecentTokens ?? 20000,
+        enabled: overrides.compactionEnabled,
+        model: overrides.compactionModel,
+      },
+    } satisfies AthenaSessionSettings),
     platform: "discord",
     channelId: "channel-1",
-    modelId: "test:model",
     basePath: "/tmp/athena-test",
-    instructions: "test instructions",
-    enableWorkspace: false,
-    contextWindow: overrides.contextWindow ?? 100000,
-    compactionReserveTokens: overrides.compactionReserveTokens ?? 16384,
-    compactionKeepRecentTokens: overrides.compactionKeepRecentTokens ?? 20000,
-    compactionEnabled: overrides.compactionEnabled,
-    compactionModel: overrides.compactionModel,
   });
 
   return { agent, sessionManager, ctx };

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,13 +6,22 @@ import type { LanguageModel } from "ai";
 import type { Bot, Context, Logger } from "koishi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+type GenerateInput = {
+  messages: unknown[];
+  abortSignal?: AbortSignal;
+};
+
+const generateMock = vi.fn<(input: GenerateInput) => Promise<void>>();
+
 vi.mock("ai", () => {
   class ToolLoopAgent {
     readonly tools: Record<string, unknown> = {};
 
     constructor(_options: unknown) {}
 
-    async generate(_input: unknown): Promise<void> {}
+    async generate(input: GenerateInput): Promise<void> {
+      return generateMock(input);
+    }
   }
 
   return {
@@ -45,6 +54,7 @@ import { ChannelAgent } from "../../src/services/session/channel-agent";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
+import { createTestSettingsManager } from "./test-settings-manager";
 
 function createLoggerMock(): Logger {
   return {
@@ -132,8 +142,21 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0, tempDirs.length)) {
     rmSync(dir, { recursive: true, force: true });
   }
+  generateMock.mockReset();
   vi.restoreAllMocks();
 });
+
+function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void {
+  const globalRoot = join(baseDir, "sessions");
+  const channelDir = join(globalRoot, `discord-${channelId}`);
+  const workspaceDir = join(channelDir, "workspace");
+
+  rmSync(globalRoot, { recursive: true, force: true });
+  mkdirSync(globalRoot, { recursive: true });
+  writeFileSync(join(globalRoot, "settings.json"), JSON.stringify({ model: "test:model" }, null, 2));
+  mkdirSync(workspaceDir, { recursive: true });
+  writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: true }, null, 2));
+}
 
 describe("AgentSessionService", () => {
   describe("event ingress", () => {
@@ -144,11 +167,10 @@ describe("AgentSessionService", () => {
       const agent = new ChannelAgent(ctx, {
         bot,
         sessionManager,
+        settingsManager: createTestSettingsManager(),
         platform: "discord",
         channelId: "channel-1",
-        modelId: "test:model",
         basePath: "/tmp/athena-test",
-        instructions: "test instructions",
       });
 
       await agent.receive(createEvent({ bot }));
@@ -164,11 +186,10 @@ describe("AgentSessionService", () => {
       const agent = new ChannelAgent(ctx, {
         bot,
         sessionManager,
+        settingsManager: createTestSettingsManager(),
         platform: "discord",
         channelId: "channel-1",
-        modelId: "test:model",
         basePath: "/tmp/athena-test",
-        instructions: "test instructions",
       });
 
       await agent.receive(
@@ -250,6 +271,47 @@ describe("AgentSessionService", () => {
       await service.receive(event);
 
       expect(agentReceive).toHaveBeenCalledTimes(1);
+    });
+
+    it("same-channel burst keeps one active turn plus one merged follow-up", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-single-turn-"));
+      tempDirs.push(tempDir);
+      const service = new AgentSessionService(createContextMock(tempDir), {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      let releaseFirst!: () => void;
+      const firstTurn = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      generateMock.mockImplementationOnce(async () => {
+        await firstTurn;
+      });
+      generateMock.mockResolvedValueOnce();
+
+      const first = service.receive(
+        createEvent({ isDirect: true, messageId: "msg-burst-1", timestamp: 1000 }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
+
+      const second = service.receive(
+        createEvent({ isDirect: true, messageId: "msg-burst-2", timestamp: 1001 }),
+      );
+      const third = service.receive(
+        createEvent({ isDirect: true, messageId: "msg-burst-3", timestamp: 1002 }),
+      );
+
+      releaseFirst();
+      await Promise.all([first, second, third]);
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+      });
     });
   });
 
@@ -349,6 +411,30 @@ describe("AgentSessionService", () => {
       });
 
       expect(runCompaction).toHaveBeenCalledWith(4096);
+    });
+
+    it("bootstraps an existing workspace channel before the first user message", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-pre-message-compact-"));
+      tempDirs.push(tempDir);
+      createExistingWorkspace(tempDir);
+
+      const { commands, ctx } = createCommandContextMock(tempDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      await startService(service);
+      const action = commands.get("agent.compact");
+
+      await expect(
+        action?.({
+          options: {
+            platform: "discord",
+            channel: "channel-1",
+          },
+        }),
+      ).resolves.toBe("No compaction needed for discord:channel-1: session is empty.");
     });
   });
 });

@@ -1,5 +1,6 @@
 import type { SessionManager } from "../../session-manager";
 import type { ResponseEndReason, ResponseEndRecord } from "../../types";
+import type { TurnOutcomeSelection } from "../types";
 
 export class TurnFinalizer {
   resolveEndReason(input: {
@@ -37,16 +38,26 @@ export class TurnFinalizer {
     sessionManager.appendCustomEntry<ResponseEndRecord>("response_end", record);
   }
 
-  nextAction(input: {
-    hasQueuedResponse: boolean;
-    hasAccumulatedMessages: boolean;
-  }): "run-queued" | "re-evaluate-accumulated" | "idle" {
-    if (input.hasQueuedResponse) {
-      return "run-queued";
+  selectOutcome(input: {
+    endReason: ResponseEndReason;
+    hasPendingFollowUp: boolean;
+    thrownError?: string;
+  }): TurnOutcomeSelection {
+    if (
+      input.endReason === "timeout" ||
+      input.endReason === "protocol_error" ||
+      input.endReason === "exception"
+    ) {
+      return {
+        nextOutcome: "blocked",
+        blockedReason: input.thrownError ?? input.endReason,
+      };
     }
-    if (input.hasAccumulatedMessages) {
-      return "re-evaluate-accumulated";
+
+    if (input.hasPendingFollowUp) {
+      return { nextOutcome: "follow_up" };
     }
-    return "idle";
+
+    return { nextOutcome: "idle" };
   }
 }

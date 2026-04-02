@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChannelAgent } from "../../src/services/session/channel-agent";
 import { TurnFinalizer } from "../../src/services/session/channel-agent/finalization/turn-finalizer";
 import { SessionManager } from "../../src/services/session/session-manager";
+import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
+import { createTestSettingsManager } from "./test-settings-manager";
 
 type GenerateInput = {
   messages: unknown[];
@@ -85,6 +87,16 @@ function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
   };
 }
 
+function createBurstEvents(messageIds: string[]): ChannelEvent[] {
+  return messageIds.map((messageId, index) =>
+    createEvent({
+      isDirect: true,
+      messageId,
+      timestamp: 1000 + index,
+    }),
+  );
+}
+
 function createAgent() {
   const ctx = createContextMock();
   const bot = createBotMock();
@@ -92,12 +104,10 @@ function createAgent() {
   const agent = new ChannelAgent(ctx as never, {
     bot: bot as never,
     sessionManager,
+    settingsManager: createTestSettingsManager(),
     platform: "discord",
     channelId: "channel-1",
-    modelId: "test:model",
     basePath: "/tmp/athena-test",
-    instructions: "test instructions",
-    enableWorkspace: false,
   });
 
   return { agent, sessionManager, bot };
@@ -159,13 +169,14 @@ describe("ChannelAgent state machine", () => {
       const streamingAgent = new ChannelAgent(createContextMock() as never, {
         bot: bot as never,
         sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            streaming: true,
+          },
+        }),
         platform: "discord",
         channelId: "channel-1",
-        modelId: "test:model",
         basePath: "/tmp/athena-test",
-        instructions: "test instructions",
-        enableWorkspace: false,
-        streaming: true,
       });
 
       await streamingAgent.receive(createEvent({ messageId: "msg-streaming" }));
@@ -208,8 +219,13 @@ describe("ChannelAgent state machine", () => {
         .getEntries()
         .find((entry) => entry.type === "custom" && entry.customType === "response_end");
       expect(responseEnd).toBeTruthy();
-      if (responseEnd && responseEnd.type === "custom") {
-        expect(responseEnd.data.endReason).toBe("abort");
+      const responseEndData = responseEnd?.type === "custom" ? responseEnd.data : undefined;
+      if (
+        typeof responseEndData === "object" &&
+        responseEndData !== null &&
+        "endReason" in responseEndData
+      ) {
+        expect(responseEndData.endReason).toBe("abort");
       }
     });
 
@@ -227,15 +243,16 @@ describe("ChannelAgent state machine", () => {
       const timeoutAgent = new ChannelAgent(createContextMock() as never, {
         bot: createBotMock() as never,
         sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            baseTimeoutMs: 1,
+            perStepTimeoutMs: 0,
+            maxSteps: 1,
+          },
+        } satisfies AthenaSessionSettings),
         platform: "discord",
         channelId: "channel-1",
-        modelId: "test:model",
         basePath: "/tmp/athena-test",
-        instructions: "test instructions",
-        enableWorkspace: false,
-        baseTimeoutMs: 1,
-        perStepTimeoutMs: 0,
-        maxSteps: 1,
       });
 
       await timeoutAgent.receive(createEvent({ messageId: "msg-timeout" }));
@@ -247,8 +264,13 @@ describe("ChannelAgent state machine", () => {
         .getEntries()
         .find((entry) => entry.type === "custom" && entry.customType === "response_end");
       expect(responseEnd).toBeTruthy();
-      if (responseEnd && responseEnd.type === "custom") {
-        expect(responseEnd.data.endReason).toBe("timeout");
+      const responseEndData = responseEnd?.type === "custom" ? responseEnd.data : undefined;
+      if (
+        typeof responseEndData === "object" &&
+        responseEndData !== null &&
+        "endReason" in responseEndData
+      ) {
+        expect(responseEndData.endReason).toBe("timeout");
       }
     });
     it.todo("transitions idle -> responding -> ended on error");
@@ -301,6 +323,54 @@ describe("ChannelAgent state machine", () => {
     });
 
     it.todo("processes queued trigger after first completes");
+
+    it("merges burst input into one follow-up turn", async () => {
+      const { agent, sessionManager } = createAgent();
+      let releaseFirst!: () => void;
+      const firstTurn = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      generateMock.mockImplementationOnce(async () => {
+        await firstTurn;
+      });
+      generateMock.mockResolvedValueOnce();
+
+      const [firstEvent, secondEvent, thirdEvent] = createBurstEvents([
+        "msg-burst-1",
+        "msg-burst-2",
+        "msg-burst-3",
+      ]);
+
+      const first = agent.receive(firstEvent);
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("responding");
+      });
+
+      const second = agent.receive(secondEvent);
+      const third = agent.receive(thirdEvent);
+
+      releaseFirst();
+      await Promise.all([first, second, third]);
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+      });
+
+      const responseEndRecords = sessionManager
+        .getEntries()
+        .filter((entry) => entry.type === "custom" && entry.customType === "response_end");
+
+      expect(responseEndRecords).toHaveLength(2);
+      if (responseEndRecords[0]?.type === "custom") {
+        expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
+      }
+      if (responseEndRecords[1]?.type === "custom") {
+        expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
+      }
+    });
   });
 
   describe("protocol guidance retry behavior", () => {
@@ -383,29 +453,44 @@ describe("ChannelAgent state machine", () => {
   });
 
   describe("TurnFinalizer", () => {
-    it("uses queued-response precedence for next action", () => {
+    it("selects one deterministic post-turn outcome", () => {
       const finalizer = new TurnFinalizer();
 
       expect(
-        finalizer.nextAction({
-          hasQueuedResponse: true,
-          hasAccumulatedMessages: true,
+        finalizer.selectOutcome({
+          endReason: "normal",
+          hasPendingFollowUp: true,
         }),
-      ).toBe("run-queued");
+      ).toEqual({ nextOutcome: "follow_up" });
 
       expect(
-        finalizer.nextAction({
-          hasQueuedResponse: false,
-          hasAccumulatedMessages: true,
+        finalizer.selectOutcome({
+          endReason: "exception",
+          hasPendingFollowUp: true,
+          thrownError: "transport failed",
         }),
-      ).toBe("re-evaluate-accumulated");
+      ).toEqual({
+        nextOutcome: "blocked",
+        blockedReason: "transport failed",
+      });
 
       expect(
-        finalizer.nextAction({
-          hasQueuedResponse: false,
-          hasAccumulatedMessages: false,
+        finalizer.selectOutcome({
+          endReason: "normal",
+          hasPendingFollowUp: false,
         }),
-      ).toBe("idle");
+      ).toEqual({ nextOutcome: "idle" });
+    });
+
+    it("keeps heartbeat continuation on the same deterministic path", () => {
+      const finalizer = new TurnFinalizer();
+
+      expect(
+        finalizer.selectOutcome({
+          endReason: "heartbeat_continuation",
+          hasPendingFollowUp: false,
+        }),
+      ).toEqual({ nextOutcome: "idle" });
     });
   });
 });

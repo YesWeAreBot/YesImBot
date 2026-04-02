@@ -117,7 +117,46 @@ describe("SettingsManager", () => {
     }
   });
 
-  it("useGlobal false disables inheritance", async () => {
+  it("supports configurable prompt resource filenames via prompts.attachedInstructionFiles", async () => {
+    const paths = createTestPaths("athena-settings-prompt-files-");
+    try {
+      writeFileSync(
+        paths.globalSettingsPath,
+        JSON.stringify({
+          prompts: {
+            attachedInstructionFiles: ["SOUL.md", "AGENTS.md"],
+          },
+        }),
+        "utf8",
+      );
+
+      writeFileSync(
+        paths.workspaceSettingsPath,
+        JSON.stringify({
+          prompts: {
+            attachedInstructionFiles: ["PERSONA.md"],
+          },
+        }),
+        "utf8",
+      );
+
+      const manager = new SettingsManager({
+        globalSettingsPath: paths.globalSettingsPath,
+        workspaceSettingsPath: paths.workspaceSettingsPath,
+      });
+
+      expect(manager.resolveSettings()).toEqual({
+        prompts: {
+          attachedInstructionFiles: ["PERSONA.md"],
+        },
+      });
+      expect(manager.getPromptResourceFilenames(["DEFAULT.md"])).toEqual(["PERSONA.md"]);
+    } finally {
+      await rm(paths.rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores deprecated useGlobal and still layers workspace over global", async () => {
     const paths = createTestPaths("athena-settings-use-global-false-");
     try {
       writeFileSync(
@@ -145,7 +184,19 @@ describe("SettingsManager", () => {
 
       expect(manager.resolveSettings()).toEqual({
         model: "workspace-model",
+        judge: {
+          enabled: true,
+        },
       });
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "deprecated-key",
+            path: "useGlobal",
+            scope: "workspace",
+          }),
+        ]),
+      );
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
     }
@@ -185,6 +236,51 @@ describe("SettingsManager", () => {
       });
 
       expect(manager.resolveSettings()).toEqual({});
+      expect(manager.getReloadMetadata().issues).toHaveLength(2);
+    } finally {
+      await rm(paths.rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("records conflicts when manual overrides differ from Koishi defaults", async () => {
+    const paths = createTestPaths("athena-settings-conflicts-");
+    try {
+      writeFileSync(
+        paths.globalSettingsPath,
+        JSON.stringify({ model: "global-model", response: { maxSteps: 9 } }),
+        "utf8",
+      );
+      writeFileSync(
+        paths.workspaceSettingsPath,
+        JSON.stringify({ response: { maxSteps: 5 } }),
+        "utf8",
+      );
+
+      const manager = new SettingsManager({
+        globalSettingsPath: paths.globalSettingsPath,
+        workspaceSettingsPath: paths.workspaceSettingsPath,
+        defaults: {
+          model: "fallback-model",
+          response: { maxSteps: 3 },
+        },
+      });
+
+      expect(manager.getReloadMetadata().conflicts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            scope: "global",
+            path: "model",
+          }),
+          expect.objectContaining({
+            scope: "global",
+            path: "response.maxSteps",
+          }),
+          expect.objectContaining({
+            scope: "workspace",
+            path: "response.maxSteps",
+          }),
+        ]),
+      );
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
     }

@@ -28,6 +28,21 @@ export interface ChannelEvent {
 
 export type ChannelKey = `${string}:${string}`;
 
+export type ChannelTurnOutcome = "idle" | "follow_up" | "blocked";
+
+export type ChannelBootstrapStatus =
+  | "ready"
+  | "restored"
+  | "created"
+  | "missing_workspace"
+  | "failed";
+
+export interface ChannelBootstrapResult {
+  channelKey: ChannelKey;
+  status: ChannelBootstrapStatus;
+  error?: string;
+}
+
 export interface WillingnessResult {
   shouldRespond: boolean;
   reason:
@@ -51,7 +66,9 @@ export type ResponseEndReason =
 
 export interface ResponseEndRecord {
   endReason: ResponseEndReason;
+  nextOutcome: ChannelTurnOutcome;
   durationMs: number;
   stepsCompleted: number;
   error?: string;
+  blockedReason?: string;
 }

@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type { ChannelKey } from "../types";
+import type { ChannelBootstrapStatus, ChannelKey } from "../types";
 import type {
   AgentMessage,
   AgentToolMessage,
@@ -243,6 +243,28 @@ export class SessionManager {
     const mgr = new SessionManager(channelKey, sessionDir, true);
     mgr.loadSessionFile(mostRecent);
     return mgr;
+  }
+
+  static restoreOrCreateRecent(
+    channelKey: ChannelKey,
+    sessionDir: string,
+    modelId?: string,
+  ): {
+    sessionManager: SessionManager;
+    status: Extract<ChannelBootstrapStatus, "restored" | "created">;
+  } {
+    const restored = SessionManager.continueRecent(channelKey, sessionDir);
+    if (restored) {
+      return {
+        sessionManager: restored,
+        status: "restored",
+      };
+    }
+
+    return {
+      sessionManager: SessionManager.create(channelKey, sessionDir, modelId),
+      status: "created",
+    };
   }
 
   /** Create an in-memory session (no file persistence). For testing. */

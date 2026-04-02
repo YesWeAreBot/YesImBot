@@ -34,9 +34,14 @@ export type { ChannelAgentOptions, ResponseState } from "./channel-agent";
 
 // Service
 export { AgentSessionService, type AgentSessionServiceConfig } from "./service";
+export type {
+  ChannelSettingsReloadResult,
+  ReloadAllChannelSettingsResult,
+} from "./service";
 
 // Settings
 export {
+  ATHENA_SESSION_SETTINGS_JSON_SCHEMA,
   deepMergeSettings,
   readSettingsFile,
   SettingsManager,
@@ -45,6 +50,10 @@ export {
 export type {
   AthenaSessionSettings,
   AthenaWorkspaceSettings,
+  SettingsConflict,
+   SettingsFileSnapshot,
+  SettingsIssue,
+  SettingsReloadMetadata,
   SettingsManagerOptions,
 } from "./settings-manager";
 

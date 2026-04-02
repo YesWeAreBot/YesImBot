@@ -1,42 +1,49 @@
 import type { Bot } from "koishi";
 
-import { SessionManager } from "../session-manager";
+import type { SessionManager } from "../session-manager";
+import type { ChannelTurnOutcome } from "../types";
+
+export interface ChannelAgentSettingsManager {
+  reload(): import("../settings-manager").SettingsReloadMetadata;
+  getReloadMetadata(): import("../settings-manager").SettingsReloadMetadata;
+  getModel(): string | undefined;
+  getJudgeSettings(): {
+    model?: string;
+    enabled?: boolean;
+    timeoutMs?: number;
+  } | undefined;
+  getCompactionSettings(): {
+    model?: string;
+    enabled?: boolean;
+    reserveTokens?: number;
+    keepRecentTokens?: number;
+    contextWindow?: number;
+  } | undefined;
+  getResponseSettings(): {
+    streaming?: boolean;
+    maxSteps?: number;
+    baseTimeoutMs?: number;
+    perStepTimeoutMs?: number;
+    chunkTimeoutMs?: number;
+  } | undefined;
+  getWorkspaceSettings(): {
+    enableWorkspace?: boolean;
+    enableSandbox?: boolean;
+    enableFilesystem?: boolean;
+    externalPath?: string[];
+  } | undefined;
+  getBuiltInInstructions(fallback?: string): string | undefined;
+  getPromptResourceFilenames(fallback?: string[]): string[] | undefined;
+}
 
 export interface ChannelAgentOptions {
-  bot: Bot;
+  bot?: Bot;
   sessionManager: SessionManager;
+  settingsManager: ChannelAgentSettingsManager;
   platform: string;
   channelId: string;
-  modelId: string;
-  judgeModel?: string;
-  judgeEnabled?: boolean;
-  judgeTimeoutMs?: number;
   basePath: string;
-  instructions: string | (() => string | Promise<string>);
-  streaming?: boolean;
-  /** Maximum tool-call steps per response. Default 20. Per D-07. */
-  maxSteps?: number;
   aggregationWindowMs?: number;
-  /** Base response timeout in ms for cumulative timeout. Default 60000. Per D-05. */
-  baseTimeoutMs?: number;
-  /** Additional timeout in ms per allowed step. Default 30000. Per D-05. */
-  perStepTimeoutMs?: number;
-  /** Chunk timeout in ms for model streaming. Per D-01. */
-  chunkTimeoutMs?: number;
-  /** Model ID for compaction summarization. Falls back to main modelId if unset. Per D-05. */
-  compactionModel?: string;
-  /** Enable auto-compaction after responses. Default true. */
-  compactionEnabled?: boolean;
-  /** Tokens reserved for model output during compaction. Default 16384. Per D-03. */
-  compactionReserveTokens?: number;
-  /** Tokens of recent context to keep after compaction. Default 20000. Per D-02. */
-  compactionKeepRecentTokens?: number;
-  /** Context window size in tokens. Default 128000. */
-  contextWindow?: number;
-  enableWorkspace?: boolean;
-  enableSandbox?: boolean;
-  enableFilesystem?: boolean;
-  externalPath?: string | string[];
 }
 
 export type CompactionSkipReason = "empty-session" | "already-compacted" | "nothing-to-compact";
@@ -49,4 +56,31 @@ export interface CompactionRunResult {
   tokensBefore?: number;
 }
 
-export type ResponseState = "idle" | "responding" | "aborting" | "ended";
+export interface MergedFollowUpOpportunity {
+  pending: boolean;
+  firstObservedAt: number;
+  latestObservedAt: number;
+}
+
+export interface TurnOutcomeSelection {
+  nextOutcome: ChannelTurnOutcome;
+  blockedReason?: string;
+}
+
+export interface ChannelAgentTurnSettingsSnapshot {
+  modelId: string;
+  streaming: boolean;
+  maxSteps: number;
+  baseTimeoutMs: number;
+  perStepTimeoutMs: number;
+  chunkTimeoutMs: number;
+  contextWindow: number;
+  compactionSettings: {
+    enabled: boolean;
+    reserveTokens: number;
+    keepRecentTokens: number;
+    model?: string;
+  };
+}
+
+export type ResponseState = "idle" | "responding" | "finalizing" | "aborting" | "ended";

@@ -1,14 +1,93 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { Bot, Context, Service, Session } from "koishi";
 
 import { ChannelAgent } from "./channel-agent";
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
-import { compileSystemPrompt, type SystemReminderInput } from "./prompt/system-prompt";
+import {
+  ensureGlobalScaffold,
+  hasExistingWorkspace,
+  ensureWorkspaceScaffold,
+} from "./scaffold";
 import { SessionManager } from "./session-manager";
-import { SettingsManager, type AthenaSessionSettings } from "./settings-manager";
-import type { ChannelEvent, ChannelKey } from "./types";
+import {
+  SettingsManager,
+  type AthenaSessionSettings,
+  type SettingsConflict,
+  type SettingsIssue,
+  type SettingsReloadMetadata,
+} from "./settings-manager";
+import type {
+  ChannelBootstrapResult,
+  ChannelBootstrapStatus,
+  ChannelEvent,
+  ChannelKey,
+} from "./types";
+
+interface BootstrappedChannelRuntime {
+  channelKey: ChannelKey;
+  channelDir: string;
+  sessionManager: SessionManager;
+  settingsManager: SettingsManager;
+  status: Extract<ChannelBootstrapStatus, "restored" | "created">;
+}
+
+export interface ChannelSettingsReloadResult {
+  channelKey: ChannelKey;
+  status: "reloaded" | "missing_workspace" | "failed";
+  summary: string;
+  metadata?: SettingsReloadMetadata;
+  error?: string;
+}
+
+export interface ReloadAllChannelSettingsResult {
+  count: number;
+  results: ChannelSettingsReloadResult[];
+  summary: string;
+}
+
+function normalizeExternalPath(value?: string | string[]): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+function buildDefaultSettings(config: AgentSessionServiceConfig): AthenaSessionSettings {
+  return {
+    model: config.model,
+    judge: {
+      model: config.judgeModel,
+      enabled: config.judgeEnabled,
+      timeoutMs: config.judgeTimeoutMs,
+    },
+    compaction: {
+      model: config.compactionModel,
+      enabled: config.compactionEnabled,
+      reserveTokens: config.compactionReserveTokens,
+      keepRecentTokens: config.compactionKeepRecentTokens,
+      contextWindow: config.contextWindow,
+    },
+    response: {
+      streaming: config.streaming,
+      maxSteps: config.maxSteps,
+      baseTimeoutMs: config.baseTimeoutMs,
+      perStepTimeoutMs: config.perStepTimeoutMs,
+      chunkTimeoutMs: config.chunkTimeoutMs,
+    },
+    workspace: {
+      enableWorkspace: config.enableWorkspace,
+      enableSandbox: config.enableSandbox,
+      enableFilesystem: config.enableFilesystem,
+      externalPath: normalizeExternalPath(config.externalPath),
+    },
+    prompts: {
+      builtInInstructions: config.instructions,
+      attachedInstructionFiles: config.attachedInstructionFiles,
+    },
+  };
+}
 
 // ============================================================================
 // Module Augmentation
@@ -36,6 +115,7 @@ export interface AgentSessionServiceConfig {
   judgeTimeoutMs?: number;
   basePath: string;
   instructions?: string;
+  attachedInstructionFiles?: string[];
   streaming?: boolean;
   maxSteps?: number;
   /** Base response timeout in ms. Default 60000. */
@@ -68,14 +148,6 @@ export interface AgentSessionServiceConfig {
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
-
-  private static readonly DEFAULT_INSTRUCTIONS =
-    "你是一个群聊参与者。像真人一样自然地参与对话，不要使用助手腔调。所有要发送到聊天中的可见内容都必须通过 send_message 工具发送；普通 assistant 文本不会直接发给用户。默认在发送后结束当前轮次，只有在确实需要继续下一步时才设置 request_heartbeat。";
-
-  private static readonly DEFAULT_AGENTS_MARKDOWN = `# Workspace Instructions
-
-Add workspace-specific operating rules here.
-`;
 
   private agents: Map<ChannelKey, ChannelAgent> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
@@ -162,8 +234,29 @@ Add workspace-specific operating rules here.
           return "Both --platform and --channel must be specified.";
         }
 
-        const channelKey: ChannelKey = `${platform}:${channelId}`;
-        const agent = this.agents.get(channelKey);
+        if (typeof platform !== "string" || typeof channelId !== "string") {
+          return "Both --platform and --channel must be specified.";
+        }
+
+        const resolvedPlatform = platform;
+        const resolvedChannelId = channelId;
+
+        const channelKey: ChannelKey = `${resolvedPlatform}:${resolvedChannelId}`;
+        let agent = this.agents.get(channelKey);
+        if (!agent) {
+          const bootstrap = await this.bootstrapChannelForManagement(
+            resolvedPlatform,
+            resolvedChannelId,
+            session?.bot,
+          );
+          if (bootstrap.status === "missing_workspace") {
+            return `No active agent for ${channelKey}.`;
+          }
+          if (bootstrap.status === "failed") {
+            return `Failed to bootstrap ${channelKey}.`;
+          }
+          agent = this.agents.get(channelKey);
+        }
         if (!agent) {
           return `No active agent for ${channelKey}.`;
         }
@@ -187,6 +280,38 @@ Add workspace-specific operating rules here.
           this.logger.error(`Error running compaction for ${channelKey}:`, err);
           return `Failed to run compaction for ${channelKey}.`;
         }
+      });
+
+    this.ctx
+      .command("agent.reload", "Reload channel settings from override files")
+      .option("platform", "-p --platform <platform:string> Platform of the channel")
+      .option("channel", "-c --channel <channel:string> Channel ID")
+      .option("all", "--all Reload settings for all active agents")
+      .action(async ({ session, options }) => {
+        if (options?.all) {
+          const result = await this.reloadAllChannelSettings();
+          return result.summary;
+        }
+
+        let platform = options?.platform;
+        let channelId = options?.channel;
+        if (!platform && !channelId) {
+          if (session) {
+            platform = session.platform;
+            channelId = session.channelId;
+          } else {
+            return "Please specify a channel with --platform and --channel, or run this command in a channel.";
+          }
+        } else if (!platform || !channelId) {
+          return "Both --platform and --channel must be specified.";
+        }
+
+        if (typeof platform !== "string" || typeof channelId !== "string") {
+          return "Both --platform and --channel must be specified.";
+        }
+
+        const result = await this.reloadChannelSettings(platform, channelId, session?.bot);
+        return result.summary;
       });
 
     this.logger.info("AgentSessionService started");
@@ -255,65 +380,118 @@ Add workspace-specific operating rules here.
   getOrCreateAgent(platform: string, channelId: string, bot?: Bot): ChannelAgent {
     const channelKey: ChannelKey = `${platform}:${channelId}`;
     const existing = this.agents.get(channelKey);
-    if (existing) return existing;
-
-    const channelDir = join(this.ctx.baseDir, this.config.basePath, `${platform}-${channelId}`);
-    const sessionDir = join(channelDir, "session");
-
-    this.ensureGlobalScaffold();
-    this.ensureWorkspaceScaffold(channelDir);
-
-    const settingsManager = new SettingsManager({
-      globalSettingsPath: this.getGlobalSettingsPath(),
-      workspaceSettingsPath: this.getWorkspaceSettingsPath(channelDir),
-    });
-    const resolved = settingsManager.resolveSettings();
-
-    // Try to recover existing session
-    let sessionManager = SessionManager.continueRecent(channelKey, sessionDir);
-    if (!sessionManager) {
-      sessionManager = SessionManager.create(channelKey, sessionDir, this.config.model);
-      this.logger.debug(`Created new session for ${channelKey}`);
-    } else {
-      this.logger.debug(
-        `Recovered session for ${channelKey} (${sessionManager.getEntryCount()} entries)`,
-      );
+    if (existing) {
+      existing.bindBot(bot);
+      return existing;
     }
 
-    const instructions = async () => await this.buildInstructions(channelDir);
-
-    // Create channel agent
-    const agent = new ChannelAgent(this.ctx, {
-      bot: bot!,
-      sessionManager,
-      platform: platform,
-      channelId: channelId,
-      modelId: resolved.model ?? this.config.model,
-      compactionModel: resolved.compaction?.model ?? this.config.compactionModel,
-      compactionEnabled: resolved.compaction?.enabled ?? this.config.compactionEnabled,
-      compactionReserveTokens:
-        resolved.compaction?.reserveTokens ?? this.config.compactionReserveTokens,
-      compactionKeepRecentTokens:
-        resolved.compaction?.keepRecentTokens ?? this.config.compactionKeepRecentTokens,
-      contextWindow: resolved.compaction?.contextWindow ?? this.config.contextWindow,
-      judgeModel: resolved.judge?.model ?? this.config.judgeModel,
-      judgeEnabled: resolved.judge?.enabled ?? this.config.judgeEnabled,
-      judgeTimeoutMs: resolved.judge?.timeoutMs ?? this.config.judgeTimeoutMs,
-      basePath: channelDir,
-      instructions,
-      streaming: resolved.response?.streaming ?? this.config.streaming,
-      maxSteps: resolved.response?.maxSteps ?? this.config.maxSteps,
-      baseTimeoutMs: resolved.response?.baseTimeoutMs ?? this.config.baseTimeoutMs,
-      perStepTimeoutMs: resolved.response?.perStepTimeoutMs ?? this.config.perStepTimeoutMs,
-      chunkTimeoutMs: resolved.response?.chunkTimeoutMs ?? this.config.chunkTimeoutMs,
-      enableWorkspace: resolved.workspace?.enableWorkspace ?? this.config.enableWorkspace,
-      enableSandbox: resolved.workspace?.enableSandbox ?? this.config.enableSandbox,
-      enableFilesystem: resolved.workspace?.enableFilesystem ?? this.config.enableFilesystem,
-      externalPath: resolved.workspace?.externalPath ?? this.config.externalPath,
-    });
+    const runtime = this.bootstrapChannelRuntime(platform, channelId);
+    const agent = this.createChannelAgent(runtime, bot);
 
     this.agents.set(channelKey, agent);
     return agent;
+  }
+
+  async bootstrapChannelForManagement(
+    platform: string,
+    channelId: string,
+    bot?: Bot,
+  ): Promise<ChannelBootstrapResult> {
+    const channelKey: ChannelKey = `${platform}:${channelId}`;
+    const existing = this.agents.get(channelKey);
+    if (existing) {
+      existing.bindBot(bot);
+      return {
+        channelKey,
+        status: "ready",
+      };
+    }
+
+    const channelDir = this.getChannelDir(platform, channelId);
+    if (!hasExistingWorkspace(channelDir)) {
+      return {
+        channelKey,
+        status: "missing_workspace",
+      };
+    }
+
+    try {
+      const runtime = this.bootstrapChannelRuntime(platform, channelId);
+      const agent = this.createChannelAgent(runtime, bot);
+
+      this.agents.set(channelKey, agent);
+      return {
+        channelKey,
+        status: runtime.status,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to bootstrap channel ${channelKey} for management:`, error);
+      return {
+        channelKey,
+        status: "failed",
+        error: message,
+      };
+    }
+  }
+
+  private bootstrapChannelRuntime(platform: string, channelId: string): BootstrappedChannelRuntime {
+    const channelKey: ChannelKey = `${platform}:${channelId}`;
+
+    const globalRoot = this.getGlobalRoot();
+    const globalSettingsPath = this.getGlobalSettingsPath();
+    const channelDir = this.getChannelDir(platform, channelId);
+    const sessionDir = join(channelDir, "session");
+    const workspaceSettingsPath = this.getWorkspaceSettingsPath(channelDir);
+
+    ensureGlobalScaffold(globalRoot);
+    ensureWorkspaceScaffold(channelDir, globalRoot);
+
+    const settingsManager = new SettingsManager({
+      globalSettingsPath,
+      workspaceSettingsPath,
+      defaults: buildDefaultSettings(this.config),
+    });
+    this.logReloadMetadata(channelKey, settingsManager.getReloadMetadata());
+
+    const { sessionManager, status } = SessionManager.restoreOrCreateRecent(
+      channelKey,
+      sessionDir,
+      this.config.model,
+    );
+    if (status === "restored") {
+      this.logger.debug(
+        `Recovered session for ${channelKey} (${sessionManager.getEntryCount()} entries)`,
+      );
+    } else {
+      this.logger.debug(`Created new session for ${channelKey}`);
+    }
+
+    return {
+      channelKey,
+      channelDir,
+      sessionManager,
+      settingsManager,
+      status,
+    };
+  }
+
+  private createChannelAgent(runtime: BootstrappedChannelRuntime, bot?: Bot): ChannelAgent {
+    const { channelDir, channelKey, sessionManager, settingsManager } = runtime;
+    const [platform, channelId] = channelKey.split(":") as [string, string];
+
+    return new ChannelAgent(this.ctx, {
+      bot,
+      sessionManager,
+      settingsManager,
+      platform,
+      channelId,
+      basePath: channelDir,
+    });
+  }
+
+  private getChannelDir(platform: string, channelId: string): string {
+    return join(this.ctx.baseDir, this.config.basePath, `${platform}-${channelId}`);
   }
 
   private getGlobalRoot(): string {
@@ -328,137 +506,161 @@ Add workspace-specific operating rules here.
     return join(channelDir, "settings.json");
   }
 
-  private writeJsonIfMissing(filePath: string, value: unknown): void {
-    if (existsSync(filePath)) {
-      return;
+  async reloadChannelSettings(
+    platform: string,
+    channelId: string,
+    bot?: Bot,
+  ): Promise<ChannelSettingsReloadResult> {
+    const channelKey: ChannelKey = `${platform}:${channelId}`;
+
+    let agent = this.agents.get(channelKey);
+    if (!agent) {
+      const bootstrap = await this.bootstrapChannelForManagement(platform, channelId, bot);
+      if (bootstrap.status === "missing_workspace") {
+        return {
+          channelKey,
+          status: "missing_workspace",
+          summary: `No workspace found for ${channelKey}.`,
+        };
+      }
+
+      if (bootstrap.status === "failed") {
+        return {
+          channelKey,
+          status: "failed",
+          error: bootstrap.error,
+          summary: `Failed to bootstrap ${channelKey} for settings reload${bootstrap.error ? `: ${bootstrap.error}` : "."}`,
+        };
+      }
+
+      agent = this.agents.get(channelKey);
     }
 
-    writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  }
-
-  private writeTextIfMissing(filePath: string, content: string): void {
-    if (existsSync(filePath)) {
-      return;
+    if (!agent) {
+      return {
+        channelKey,
+        status: "failed",
+        summary: `Failed to load agent for ${channelKey}.`,
+      };
     }
 
-    writeFileSync(filePath, content, "utf8");
+    try {
+      const metadata = agent.getSettingsManager().reload();
+      this.logReloadMetadata(channelKey, metadata);
+      return {
+        channelKey,
+        status: "reloaded",
+        metadata,
+        summary: this.formatReloadSummary(channelKey, metadata),
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to reload settings for ${channelKey}:`, error);
+      return {
+        channelKey,
+        status: "failed",
+        error: message,
+        summary: `Failed to reload settings for ${channelKey}: ${message}`,
+      };
+    }
   }
 
-  private copyTextFileIfMissing(sourcePath: string, targetPath: string): void {
-    if (existsSync(targetPath) || !existsSync(sourcePath)) {
-      return;
+  async reloadAllChannelSettings(): Promise<ReloadAllChannelSettingsResult> {
+    const channelKeys = this.getActiveChannels();
+    if (channelKeys.length === 0) {
+      return {
+        count: 0,
+        results: [],
+        summary: "No active agents.",
+      };
     }
 
-    copyFileSync(sourcePath, targetPath);
-  }
+    const results = await Promise.all(
+      channelKeys.map(async (channelKey) => {
+        const [platform, channelId] = channelKey.split(":") as [string, string];
+        return this.reloadChannelSettings(platform, channelId);
+      }),
+    );
 
-  private buildDefaultGlobalSettings(): AthenaSessionSettings {
     return {
-      model: this.config.model,
-      judge: {
-        model: this.config.judgeModel,
-        enabled: this.config.judgeEnabled,
-        timeoutMs: this.config.judgeTimeoutMs,
-      },
-      compaction: {
-        model: this.config.compactionModel,
-        enabled: this.config.compactionEnabled,
-        reserveTokens: this.config.compactionReserveTokens,
-        keepRecentTokens: this.config.compactionKeepRecentTokens,
-        contextWindow: this.config.contextWindow,
-      },
-      response: {
-        streaming: this.config.streaming,
-        maxSteps: this.config.maxSteps,
-        baseTimeoutMs: this.config.baseTimeoutMs,
-        perStepTimeoutMs: this.config.perStepTimeoutMs,
-        chunkTimeoutMs: this.config.chunkTimeoutMs,
-      },
-      workspace: {
-        enableWorkspace: this.config.enableWorkspace,
-        enableSandbox: this.config.enableSandbox,
-        enableFilesystem: this.config.enableFilesystem,
-        externalPath: Array.isArray(this.config.externalPath)
-          ? this.config.externalPath
-          : this.config.externalPath
-            ? [this.config.externalPath]
-            : undefined,
-      },
-      prompts: {
-        builtInInstructions: this.config.instructions ?? AgentSessionService.DEFAULT_INSTRUCTIONS,
-      },
+      count: results.length,
+      results,
+      summary: `Reloaded settings for ${results.length} active agent(s):\n${results
+        .map((result) => `- ${result.summary}`)
+        .join("\n")}`,
     };
   }
 
-  private ensureGlobalScaffold(): void {
-    const globalRoot = this.getGlobalRoot();
-    mkdirSync(globalRoot, { recursive: true });
-
-    this.writeJsonIfMissing(this.getGlobalSettingsPath(), this.buildDefaultGlobalSettings());
-    this.writeTextIfMissing(
-      join(globalRoot, "SOUL.md"),
-      `${AgentSessionService.DEFAULT_INSTRUCTIONS}\n`,
-    );
-    this.writeTextIfMissing(
-      join(globalRoot, "AGENTS.md"),
-      AgentSessionService.DEFAULT_AGENTS_MARKDOWN,
-    );
-  }
-
-  private ensureWorkspaceScaffold(channelDir: string): void {
-    const workspaceDir = join(channelDir, "workspace");
-    mkdirSync(workspaceDir, { recursive: true });
-
-    this.writeJsonIfMissing(this.getWorkspaceSettingsPath(channelDir), { useGlobal: true });
-
-    const globalRoot = this.getGlobalRoot();
-    this.copyTextFileIfMissing(join(globalRoot, "SOUL.md"), join(workspaceDir, "SOUL.md"));
-    this.copyTextFileIfMissing(join(globalRoot, "AGENTS.md"), join(workspaceDir, "AGENTS.md"));
-  }
-
-  private buildInstructions(channelDir: string): string {
-    const settingsManager = new SettingsManager({
-      globalSettingsPath: this.getGlobalSettingsPath(),
-      workspaceSettingsPath: this.getWorkspaceSettingsPath(channelDir),
-    });
-    const resolved = settingsManager.resolveSettings();
-
-    const builtIn =
-      resolved.prompts?.builtInInstructions ??
-      this.config.instructions ??
-      AgentSessionService.DEFAULT_INSTRUCTIONS;
-
-    const workspaceDir = join(channelDir, "workspace");
-
-    if (!existsSync(workspaceDir)) {
-      mkdirSync(workspaceDir, { recursive: true });
-    }
-
-    const reminders: SystemReminderInput[] = [];
-
-    for (const filename of ["SOUL.md", "AGENTS.md", "PERSONA.md"] as const) {
-      const filePath = join(workspaceDir, filename);
-      if (!existsSync(filePath)) {
-        continue;
-      }
-
-      try {
-        const content = readFileSync(filePath, "utf8").trim();
-        if (content) {
-          reminders.push({
-            source: filename,
-            content,
-          });
+  private formatReloadSummary(channelKey: ChannelKey, metadata: SettingsReloadMetadata): string {
+    const precedence = metadata.precedence
+      .map((value) => {
+        if (value === "koishi-config") {
+          return "Koishi Config";
         }
-      } catch {
-        this.logger.warn(`Failed to read instructions from ${filePath}`);
-      }
+
+        return value;
+      })
+      .join(" > ");
+
+    const workspaceSource = this.describeSettingsSource(
+      "workspace",
+      metadata.sources.workspace.exists,
+      metadata.sources.workspace.valid,
+    );
+    const globalSource = this.describeSettingsSource(
+      "global",
+      metadata.sources.global.exists,
+      metadata.sources.global.valid,
+    );
+    const issueSummary =
+      metadata.issues.length > 0 ? `; issues=${metadata.issues.length}` : "";
+    const conflictSummary =
+      metadata.conflicts.length > 0 ? `; overrides=${metadata.conflicts.length}` : "";
+
+    return `${channelKey}: precedence ${precedence}; ${workspaceSource}; ${globalSource}${issueSummary}${conflictSummary}`;
+  }
+
+  private describeSettingsSource(label: string, exists: boolean, valid: boolean): string {
+    if (!exists) {
+      return `${label} settings missing`;
     }
 
-    return compileSystemPrompt({
-      personaStyle: builtIn,
-      reminders,
-    });
+    if (!valid) {
+      return `${label} settings invalid`;
+    }
+
+    return `${label} settings loaded`;
+  }
+
+  private logReloadMetadata(channelKey: ChannelKey, metadata: SettingsReloadMetadata): void {
+    if (metadata.conflicts.length > 0) {
+      this.logger.warn(this.formatConflictWarning(channelKey, metadata.conflicts));
+    }
+
+    if (metadata.issues.length > 0) {
+      this.logger.warn(this.formatIssueWarning(channelKey, metadata.issues));
+    }
+  }
+
+  private formatConflictWarning(channelKey: ChannelKey, conflicts: SettingsConflict[]): string {
+    const grouped = conflicts.reduce<Record<string, string[]>>((acc, conflict) => {
+      const label = `${conflict.scope}:${conflict.filePath}`;
+      acc[label] ??= [];
+      acc[label].push(conflict.path);
+      return acc;
+    }, {});
+
+    const details = Object.entries(grouped)
+      .map(([scope, paths]) => `${scope}=[${paths.join(", ")}]`)
+      .join("; ");
+    return `Manual settings overrides differ from Koishi Config for ${channelKey}: ${details}`;
+  }
+
+  private formatIssueWarning(channelKey: ChannelKey, issues: SettingsIssue[]): string {
+    const details = issues
+      .map((issue) => `${issue.scope}:${issue.path} (${issue.code}, ${issue.filePath})`)
+      .join(", ");
+    return `Ignored invalid/deprecated settings for ${channelKey}: ${details}`;
   }
 
   /** Get an existing agent (without creating). */

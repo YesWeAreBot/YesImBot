@@ -1,52 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Metadata, YesImPlugin } from "@yesimbot/plugin-sdk";
 import { Context, Schema } from "koishi";
 
-interface McpServer {
-  type: "stdio" | "http" | "sse";
-}
-
-interface McpStdioServer extends McpServer {
-  type: "stdio";
-  command: string;
-  args?: string[];
-  env?: Record<string, string> | string;
-}
-
-interface McpHttpServer extends McpServer {
-  type: "http";
-  url: string;
-  headers?: Record<string, string> | string;
-}
-
-interface McpSseServer extends McpServer {
-  type: "sse";
-  url: string;
-  headers?: Record<string, string> | string;
-}
-
-type Server = McpStdioServer | McpHttpServer | McpSseServer;
-
-type McpClientTransport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport;
-
-interface McpClientConfig {
-  mcpServers: Record<string, Server>;
-}
-
-function parseKeyValueString(input: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const lines = input.split("\n");
-  for (const line of lines) {
-    const [key, ...rest] = line.split(/[:=]/);
-    if (key && rest.length > 0) {
-      result[key.trim()] = rest.join(":").trim();
-    }
-  }
-  return result;
-}
+import { connectMcpServer } from "./adapters/transports";
+import type { McpClientConfig, McpClientTransport, McpServer } from "./types";
 
 @Metadata({ name: "mcp-client", description: "MCP protocol client" })
 export default class McpClientPlugin extends YesImPlugin {
@@ -104,7 +61,9 @@ export default class McpClientPlugin extends YesImPlugin {
     this.ctx.logger.info("初始化 MCP 客户端...");
     for (const [name, server] of Object.entries(this.config.mcpServers)) {
       try {
-        await this.connectToMcpServer(name, server);
+        const { client, transport } = await connectMcpServer(this.ctx, name, server);
+        this.transports.set(name, transport);
+        this.clients.set(name, client);
         this.ctx.logger.success(`成功连接到 MCP 服务器 ${name}`);
       } catch (error) {
         this.ctx.logger.error(`连接到 MCP 服务器 ${name} 失败: ${(error as Error).message}`);
@@ -157,77 +116,5 @@ export default class McpClientPlugin extends YesImPlugin {
       }
     }
     this.ctx.logger.success("MCP 客户端已清理");
-  }
-
-  private async connectToMcpServer(name: string, server: Server): Promise<void> {
-    this.ctx.logger.info(`连接到 MCP 服务器 ${name}...`);
-    switch (server.type) {
-      case "stdio":
-        await this.connectToStdioServer(name, server);
-        break;
-      case "http":
-        await this.connectToHttpServer(name, server);
-        break;
-      case "sse":
-        await this.connectToSseServer(name, server);
-        break;
-    }
-  }
-
-  private async connectToStdioServer(name: string, server: McpStdioServer): Promise<void> {
-    this.ctx.logger.info(
-      `连接到 STDIO 服务器 ${name}，命令: ${server.command} ${server.args?.join(" ")}`,
-    );
-    const env = typeof server.env === "string" ? parseKeyValueString(server.env) : server.env;
-    this.ctx.logger.debug(`环境变量: ${JSON.stringify(env)}`);
-    const transport = new StdioClientTransport({
-      command: server.command,
-      args: server.args,
-      env,
-    });
-    const client = new Client({ name: name, version: "1.0.0" });
-    await client.connect(transport);
-    this.transports.set(name, transport);
-    this.clients.set(name, client);
-  }
-
-  private async connectToHttpServer(name: string, server: McpHttpServer): Promise<void> {
-    this.ctx.logger.info(`连接到 HTTP 服务器 ${name}，URL: ${server.url}`);
-
-    const headers =
-      typeof server.headers === "string"
-        ? parseKeyValueString(server.headers)
-        : server.headers || {};
-    this.ctx.logger.debug(`HTTP 请求头: ${JSON.stringify(headers)}`);
-
-    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
-      requestInit: {
-        headers,
-      },
-    });
-    const client = new Client({ name: name, version: "1.0.0" });
-    await client.connect(transport);
-    this.transports.set(name, transport);
-    this.clients.set(name, client);
-  }
-
-  private async connectToSseServer(name: string, server: McpSseServer): Promise<void> {
-    this.ctx.logger.info(`连接到 SSE 服务器 ${name}，URL: ${server.url}`);
-
-    const headers =
-      typeof server.headers === "string"
-        ? parseKeyValueString(server.headers)
-        : server.headers || {};
-    this.ctx.logger.debug(`HTTP 请求头: ${JSON.stringify(headers)}`);
-
-    const transport = new SSEClientTransport(new URL(server.url), {
-      requestInit: {
-        headers,
-      },
-    });
-    const client = new Client({ name: name, version: "1.0.0" });
-    await client.connect(transport);
-    this.transports.set(name, transport);
-    this.clients.set(name, client);
   }
 }

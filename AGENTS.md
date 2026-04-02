@@ -23,12 +23,14 @@
 
 ### Preferred Targeted Commands
 
+- Prefer running targeted work from the repository root with Turbo filters.
 - Build one package: `yarn turbo run build --filter=<package-name>`
 - Typecheck one package: `yarn turbo run typecheck --filter=<package-name>`
 - Lint one package: `yarn turbo run lint --filter=<package-name>`
 - Test one package: `yarn turbo run test --filter=<package-name>`
-- Use `yarn workspace <package-name> <script>` when you know the exact workspace name.
-- The old README example `yarn test -p core` is stale; prefer Turbo filters or `yarn workspace` commands.
+- Use `yarn workspace <package-name> <script>` only as a secondary fallback when a
+  root-level Turbo command is not practical.
+- The old README example `yarn test -p core` is stale; prefer Turbo filters from the root.
 
 ### Important Workspace Names
 
@@ -41,24 +43,24 @@
 ### Package-Local Commands
 
 - `yarn workspace koishi-plugin-yesimbot build|typecheck|lint|test|fmt`
-- `yarn workspace @yesimbot/plugin-sdk build|typecheck|lint|test|fmt`
+- `yarn workspace @yesimbot/plugin-sdk build|typecheck|lint|fmt`
 - `yarn workspace @yesimbot/shared-model build|typecheck|lint|fmt`
 - `providers/*` and `plugins/*` generally expose `build`, `typecheck`, `lint`, and `fmt`, but usually no package-level `test` script.
 
 ### Testing Guidance
 
-- Active package test suites currently live in `core/tests/**/*.test.ts` and `packages/plugin-sdk/tests/**/*.test.ts`.
-- `packages/shared-model/`, `providers/*`, and `plugins/*` currently do not define package-level test scripts.
-- Run one core test file: `yarn workspace koishi-plugin-yesimbot test tests/session/session-restore.test.ts`
-- Run one plugin-sdk test file: `yarn workspace @yesimbot/plugin-sdk test tests/exports.test.ts`
+- Active package test suites currently live in `core/tests/**/*.test.ts`.
+- `packages/plugin-sdk/`, `packages/shared-model/`, `providers/*`, and `plugins/*` currently do not define package-level test scripts.
+- Run one core test file from the root: `yarn turbo run test --filter=koishi-plugin-yesimbot -- tests/session/session-restore.test.ts`
 - From inside `core/`: `yarn test tests/session/session-restore.test.ts`
-- From inside `packages/plugin-sdk/`: `yarn test tests/exports.test.ts`
 - Run one exact core case: `yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/channel-agent-step-finish.test.ts -t "normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads"`
-- Run one exact plugin-sdk case: `yarn workspace @yesimbot/plugin-sdk exec vitest run tests/hooks-registration.test.ts -t "forwards registerHook"`
+- For `packages/plugin-sdk/`, use `yarn turbo run typecheck --filter=@yesimbot/plugin-sdk` and `yarn turbo run build --filter=@yesimbot/plugin-sdk` until a real test surface is added.
 - Use `yarn workspace <pkg> exec vitest run <file> -t "<case name>"` when you need exact case-level targeting.
 - While iterating, run the narrowest relevant test first, then broaden to package-level verification only as needed.
 
 ## Code Style
+
+- Unless the user explicitly requests otherwise, prefer communicating in Chinese.
 
 ### File Editing
 
@@ -87,6 +89,7 @@
 - Do not introduce `any`; `.oxlintrc.json` makes `@typescript-eslint/no-explicit-any` an error.
 - Prefer `unknown` in `catch` blocks and narrow before reading `.message` or other properties.
 - Put cross-package contracts in `packages/shared-model/src/` before duplicating shapes across packages.
+- Do not use local interface-assertion shims such as `ctx as Context & { ... }` to patch missing types at the call site; fix the source type through shared contracts, exported types, or module augmentation instead.
 - Use explicit annotations when they improve contracts; avoid noisy annotations that only restate inference.
 
 ### Naming

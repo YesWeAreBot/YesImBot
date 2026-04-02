@@ -9,6 +9,7 @@ import {
 } from "../../src/services/session/channel-agent";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
+import { createTestSettingsManager } from "./test-settings-manager";
 
 type GenerateInput = {
   messages: unknown[];
@@ -84,6 +85,16 @@ function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
     elements: [],
     ...overrides,
   };
+}
+
+function createBurstEvents(messageIds: string[]): ChannelEvent[] {
+  return messageIds.map((messageId, index) =>
+    createEvent({
+      isDirect: true,
+      messageId,
+      timestamp: 2000 + index,
+    }),
+  );
 }
 
 function createSendResult(overrides: Partial<SendMessageResult> = {}): SendMessageResult {
@@ -171,12 +182,10 @@ describe("ChannelAgent protocol", () => {
     const agent = new ChannelAgent(context as never, {
       bot: bot as never,
       sessionManager,
+      settingsManager: createTestSettingsManager(),
       platform: "discord",
       channelId: "channel-1",
-      modelId: "test:model",
       basePath: "/tmp/athena-test",
-      instructions: "test instructions",
-      enableWorkspace: false,
     });
 
     generateMock
@@ -249,12 +258,10 @@ describe("ChannelAgent protocol", () => {
     const agent = new ChannelAgent(context as never, {
       bot: bot as never,
       sessionManager,
+      settingsManager: createTestSettingsManager(),
       platform: "discord",
       channelId: "channel-1",
-      modelId: "test:model",
       basePath: "/tmp/athena-test",
-      instructions: "test instructions",
-      enableWorkspace: false,
     });
 
     generateMock.mockImplementationOnce(async () => {
@@ -287,6 +294,10 @@ describe("ChannelAgent protocol", () => {
     });
 
     await agent.receive(createEvent({ messageId: "msg-stop-after-send" }));
+
+    await vi.waitFor(() => {
+      expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
+    });
 
     const stopWhen = getStopWhen();
     const stopConditions = (Array.isArray(stopWhen) ? stopWhen : [stopWhen]).filter(
@@ -328,12 +339,10 @@ describe("ChannelAgent protocol", () => {
     const agent = new ChannelAgent(context as never, {
       bot: bot as never,
       sessionManager,
+      settingsManager: createTestSettingsManager(),
       platform: "discord",
       channelId: "channel-1",
-      modelId: "test:model",
       basePath: "/tmp/athena-test",
-      instructions: "test instructions",
-      enableWorkspace: false,
     });
 
     generateMock.mockImplementationOnce(async () => {
@@ -391,12 +400,10 @@ describe("ChannelAgent protocol", () => {
     const agent = new ChannelAgent(context as never, {
       bot: bot as never,
       sessionManager,
+      settingsManager: createTestSettingsManager(),
       platform: "discord",
       channelId: "channel-1",
-      modelId: "test:model",
       basePath: "/tmp/athena-test",
-      instructions: "test instructions",
-      enableWorkspace: false,
     });
 
     generateMock.mockResolvedValueOnce();
@@ -424,12 +431,10 @@ describe("ChannelAgent protocol", () => {
     const agent = new ChannelAgent(context as never, {
       bot: bot as never,
       sessionManager,
+      settingsManager: createTestSettingsManager(),
       platform: "discord",
       channelId: "channel-1",
-      modelId: "test:model",
       basePath: "/tmp/athena-test",
-      instructions: "test instructions",
-      enableWorkspace: false,
     });
 
     generateMock.mockImplementationOnce(async () => {
@@ -518,12 +523,10 @@ describe("ChannelAgent protocol", () => {
     const agent = new ChannelAgent(context as never, {
       bot: bot as never,
       sessionManager,
+      settingsManager: createTestSettingsManager(),
       platform: "discord",
       channelId: "channel-1",
-      modelId: "test:model",
       basePath: "/tmp/athena-test",
-      instructions: "test instructions",
-      enableWorkspace: false,
     });
 
     generateMock.mockImplementationOnce(async () => {
@@ -614,5 +617,63 @@ describe("ChannelAgent protocol", () => {
     expect(
       existsSync("/home/workspace/Athena/core/src/services/session/channel-agent/output.ts"),
     ).toBe(false);
+  });
+
+  it("runs at most one follow-up after a burst arrives during an active turn", async () => {
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const context = createContextMock();
+    const bot = createBotMock();
+    const agent = new ChannelAgent(context as never, {
+      bot: bot as never,
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-test",
+    });
+
+    let releaseFirst!: () => void;
+    const firstTurn = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    generateMock.mockImplementationOnce(async () => {
+      await firstTurn;
+    });
+    generateMock.mockResolvedValueOnce();
+
+    const [firstEvent, secondEvent, thirdEvent] = createBurstEvents([
+      "msg-protocol-burst-1",
+      "msg-protocol-burst-2",
+      "msg-protocol-burst-3",
+    ]);
+
+    const first = agent.receive(firstEvent);
+
+    await vi.waitFor(() => {
+      expect(generateMock).toHaveBeenCalledTimes(1);
+    });
+
+    const second = agent.receive(secondEvent);
+    const third = agent.receive(thirdEvent);
+
+    releaseFirst();
+    await Promise.all([first, second, third]);
+
+    await vi.waitFor(() => {
+      expect(generateMock).toHaveBeenCalledTimes(2);
+    });
+
+    const responseEndRecords = sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "custom" && entry.customType === "response_end");
+
+    expect(responseEndRecords).toHaveLength(2);
+    if (responseEndRecords[0]?.type === "custom") {
+      expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
+    }
+    if (responseEndRecords[1]?.type === "custom") {
+      expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
+    }
   });
 });

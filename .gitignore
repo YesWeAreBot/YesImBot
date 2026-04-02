@@ -174,8 +174,12 @@ yarn-error.log
 # Add here any additional files/directories you want to ignore in your project
 .claude/
 .opencode/
-.specify/
 .worktrees/
-docs/superpowers
 references/
 yarn.lock
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
