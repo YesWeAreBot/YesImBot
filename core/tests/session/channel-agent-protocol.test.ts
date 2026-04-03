@@ -3,10 +3,11 @@ import { existsSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  ChannelAgent,
+  buildGenerateInputForTest,
+  ChannelRuntime,
   createSendMessageTool,
   type SendMessageResult,
-} from "../../src/services/session/channel-agent";
+} from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
 import { createTestSettingsManager } from "./test-settings-manager";
@@ -122,7 +123,7 @@ function getStopWhen(): StopWhen {
   return options!.stopWhen!;
 }
 
-describe("ChannelAgent protocol", () => {
+describe("ChannelRuntime protocol", () => {
   beforeEach(() => {
     generateMock.mockReset();
     toolLoopAgentCtorMock.mockClear();
@@ -179,7 +180,7 @@ describe("ChannelAgent protocol", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),
@@ -237,6 +238,11 @@ describe("ChannelAgent protocol", () => {
       .getEntries()
       .find((entry) => entry.type === "custom_message" && entry.customType === "protocol_guidance");
     expect(guidance).toBeTruthy();
+    expect(
+      sessionManager
+        .getEntries()
+        .filter((entry) => entry.type === "message" && entry.message.role === "assistant"),
+    ).toHaveLength(0);
     const responseEnd = sessionManager
       .getEntries()
       .find((entry) => entry.type === "custom" && entry.customType === "response_end");
@@ -249,13 +255,49 @@ describe("ChannelAgent protocol", () => {
         .getEntries()
         .some((entry) => entry.type === "custom" && entry.customType === "protocol_violation"),
     ).toBe(false);
+
+    const draftEntries = sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "custom" && entry.customType === "protocol_assistant_draft");
+    expect(draftEntries).toHaveLength(2);
+    expect(draftEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({ text: "visible text" }),
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ text: "still plain" }),
+        }),
+      ]),
+    );
+
+    const rebuilt = buildGenerateInputForTest({
+      instructions: "next run",
+      sessionEntries: [...sessionManager.getEntries()],
+    });
+    expect(
+      rebuilt.messages.some(
+        (msg) =>
+          msg.role === "user" &&
+          typeof msg.content === "string" &&
+          msg.content.includes("Visible IM replies must be sent with the send_message tool"),
+      ),
+    ).toBe(false);
+    expect(
+      rebuilt.messages.some(
+        (msg) =>
+          msg.role === "assistant" &&
+          typeof msg.content === "string" &&
+          (msg.content.includes("visible text") || msg.content.includes("still plain")),
+      ),
+    ).toBe(false);
   });
 
   it("response_end normal after successful send_message without heartbeat", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),
@@ -336,7 +378,7 @@ describe("ChannelAgent protocol", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),
@@ -397,7 +439,7 @@ describe("ChannelAgent protocol", () => {
       },
     });
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),
@@ -428,7 +470,7 @@ describe("ChannelAgent protocol", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),
@@ -520,7 +562,7 @@ describe("ChannelAgent protocol", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),
@@ -615,7 +657,7 @@ describe("ChannelAgent protocol", () => {
 
   it("removes legacy text output helper module", () => {
     expect(
-      existsSync("/home/workspace/Athena/core/src/services/session/channel-agent/output.ts"),
+      existsSync("/home/workspace/Athena/core/src/services/session/runtime/output.ts"),
     ).toBe(false);
   });
 
@@ -623,7 +665,7 @@ describe("ChannelAgent protocol", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
-    const agent = new ChannelAgent(context as never, {
+    const agent = new ChannelRuntime(context as never, {
       bot: bot as never,
       sessionManager,
       settingsManager: createTestSettingsManager(),

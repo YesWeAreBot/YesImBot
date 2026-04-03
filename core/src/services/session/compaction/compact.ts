@@ -19,6 +19,14 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
     return entry.message;
   }
   if (entry.type === "custom_message") {
+    if (
+      entry.customType === "protocol_guidance" ||
+      entry.customType.startsWith("protocol_") ||
+      entry.customType.startsWith("control_")
+    ) {
+      return undefined;
+    }
+
     return {
       role: "custom",
       customType: entry.customType,

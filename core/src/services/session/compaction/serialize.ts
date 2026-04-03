@@ -10,6 +10,14 @@ import type {
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 
+function shouldExcludeCustomMessageFromSummary(customType: string): boolean {
+  return (
+    customType === "protocol_guidance" ||
+    customType.startsWith("protocol_") ||
+    customType.startsWith("control_")
+  );
+}
+
 function truncateForSummary(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   const truncatedChars = text.length - maxChars;
@@ -105,6 +113,10 @@ export function serializeConversation(messages: AgentMessage[]): string {
       }
 
       case "custom": {
+        if (shouldExcludeCustomMessageFromSummary(msg.customType)) {
+          break;
+        }
+
         // channel_message custom entries: format as [Channel message] username: content
         if (msg.customType === "channel_message") {
           const text =

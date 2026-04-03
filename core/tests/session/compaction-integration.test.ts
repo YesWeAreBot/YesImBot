@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildGenerateInputForTest, ChannelAgent } from "../../src/services/session/channel-agent";
+import { buildGenerateInputForTest, ChannelRuntime } from "../../src/services/session/runtime";
 import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
@@ -145,7 +145,7 @@ function createAgent(
     userId: "user-1",
   });
 
-  const agent = new ChannelAgent(ctx as never, {
+  const agent = new ChannelRuntime(ctx as never, {
     bot: bot as never,
     sessionManager,
     settingsManager: createTestSettingsManager({
@@ -165,7 +165,7 @@ function createAgent(
   return { agent, sessionManager, ctx };
 }
 
-describe("ChannelAgent compaction integration", () => {
+describe("ChannelRuntime compaction integration", () => {
   beforeEach(() => {
     generateMock.mockReset();
     toolLoopAgentCtorMock.mockClear();

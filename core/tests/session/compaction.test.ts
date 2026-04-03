@@ -84,6 +84,45 @@ function channelMessageEntry(id: string, content: string): SessionEntry {
   };
 }
 
+function protocolGuidanceEntry(id: string, content: string): SessionEntry {
+  return {
+    type: "custom_message",
+    id,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    customType: "protocol_guidance",
+    content,
+    display: false,
+  };
+}
+
+function controlStateEntry(id: string, content: string): SessionEntry {
+  return {
+    type: "custom_message",
+    id,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    customType: "control_state",
+    content,
+    display: false,
+  };
+}
+
+function protocolDraftEntry(id: string, text: string): SessionEntry {
+  return {
+    type: "custom",
+    id,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    customType: "protocol_assistant_draft",
+    data: {
+      text,
+      provider: "test",
+      model: "test-model",
+    },
+  };
+}
+
 describe("compaction estimate", () => {
   it("estimates user string message tokens", () => {
     expect(estimateTokens(user("hello world"))).toBe(3);
@@ -250,6 +289,36 @@ describe("conversation serialization", () => {
     expect(text).toContain("[... 200 more characters truncated]");
     expect(text).toContain("[Channel message] alice: hello");
   });
+
+  it("does not serialize protocol/control custom messages", () => {
+    const text = serializeConversation([
+      {
+        role: "custom",
+        customType: "protocol_guidance",
+        content: "Visible IM replies must be sent with send_message",
+        display: false,
+        timestamp: Date.now(),
+      },
+      {
+        role: "custom",
+        customType: "control_state",
+        content: "internal",
+        display: false,
+        timestamp: Date.now(),
+      },
+      {
+        role: "custom",
+        customType: "channel_message",
+        content: "alice: hello",
+        display: false,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    expect(text).toContain("[Channel message] alice: hello");
+    expect(text).not.toContain("[protocol_guidance]");
+    expect(text).not.toContain("[control_state]");
+  });
 });
 
 describe("prepareCompaction", () => {
@@ -341,5 +410,74 @@ describe("prepareCompaction", () => {
     });
 
     expect(preparation).toBeUndefined();
+  });
+
+  it("excludes protocol_guidance from compaction input", () => {
+    const entries: SessionEntry[] = [
+      messageEntry("u1", user("hello")),
+      protocolGuidanceEntry("p1", "Visible IM replies must be sent with the send_message tool"),
+      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
+      messageEntry("u2", user("x".repeat(400))),
+      messageEntry("a2", assistant([{ type: "text", text: "newest" }])),
+    ];
+
+    const preparation = prepareCompaction(entries, {
+      ...DEFAULT_COMPACTION_SETTINGS,
+      keepRecentTokens: 30,
+    });
+
+    expect(preparation).toBeDefined();
+    expect(preparation?.messagesToSummarize).toEqual([
+      expect.objectContaining({ role: "user", content: "hello" }),
+      expect.objectContaining({ role: "assistant" }),
+    ]);
+    expect(
+      preparation?.messagesToSummarize.some(
+        (message) => message.role === "custom" && message.customType === "protocol_guidance",
+      ),
+    ).toBe(false);
+  });
+
+  it("excludes control_state from compaction input", () => {
+    const entries: SessionEntry[] = [
+      messageEntry("u1", user("hello")),
+      controlStateEntry("c1", "internal"),
+      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
+      messageEntry("u2", user("x".repeat(400))),
+      messageEntry("a2", assistant([{ type: "text", text: "newest" }])),
+    ];
+
+    const preparation = prepareCompaction(entries, {
+      ...DEFAULT_COMPACTION_SETTINGS,
+      keepRecentTokens: 30,
+    });
+
+    expect(preparation).toBeDefined();
+    expect(
+      preparation?.messagesToSummarize.some(
+        (message) => message.role === "custom" && message.customType === "control_state",
+      ),
+    ).toBe(false);
+  });
+
+  it("excludes protocol assistant drafts from compaction input", () => {
+    const entries: SessionEntry[] = [
+      messageEntry("u1", user("hello")),
+      protocolDraftEntry("d1", "undelivered plain text"),
+      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
+      messageEntry("u2", user("x".repeat(400))),
+      messageEntry("a2", assistant([{ type: "text", text: "newest" }])),
+    ];
+
+    const preparation = prepareCompaction(entries, {
+      ...DEFAULT_COMPACTION_SETTINGS,
+      keepRecentTokens: 30,
+    });
+
+    expect(preparation).toBeDefined();
+    expect(preparation?.messagesToSummarize).toEqual([
+      expect.objectContaining({ role: "user", content: "hello" }),
+      expect.objectContaining({ role: "assistant" }),
+    ]);
   });
 });

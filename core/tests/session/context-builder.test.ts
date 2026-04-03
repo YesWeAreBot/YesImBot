@@ -7,7 +7,7 @@ import {
 } from "../../src/services/session/session-manager";
 
 describe("buildSessionContext", () => {
-  it("keeps custom messages as AgentMessage until model conversion", () => {
+  it("projects inbound channel_message to user role", () => {
     const entries: SessionEntry[] = [
       {
         type: "custom_message",
@@ -17,6 +17,17 @@ describe("buildSessionContext", () => {
         customType: "channel_message",
         content: "[alice]: hi",
         display: false,
+        details: {
+          direction: "inbound",
+          userId: "alice",
+          username: "alice",
+          platform: "discord",
+          channelId: "channel-1",
+          messageId: "msg-1",
+          isDirect: true,
+          atSelf: false,
+          isReplyToBot: false,
+        },
       },
     ];
 
@@ -25,5 +36,59 @@ describe("buildSessionContext", () => {
 
     const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
     expect(modelMessages[0]).toMatchObject({ role: "user" });
+  });
+
+  it("projects outbound channel_message to assistant role", () => {
+    const entries: SessionEntry[] = [
+      {
+        type: "custom_message",
+        id: "bbbb2222",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        customType: "channel_message",
+        content: "[assistant]: hi there",
+        display: false,
+        details: {
+          direction: "outbound",
+          platform: "discord",
+          channelId: "channel-1",
+          toolCallId: "call-1",
+          utteranceId: "utt-1",
+          index: 0,
+          requestHeartbeat: false,
+        },
+      },
+    ];
+
+    const ctx = buildSessionContext(entries);
+    const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
+    expect(modelMessages[0]).toMatchObject({ role: "assistant", content: "[assistant]: hi there" });
+  });
+
+  it("excludes protocol_guidance and other control custom_message from model context", () => {
+    const entries: SessionEntry[] = [
+      {
+        type: "custom_message",
+        id: "cccc3333",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        customType: "protocol_guidance",
+        content: "Visible IM replies must be sent with the send_message tool",
+        display: false,
+      },
+      {
+        type: "custom_message",
+        id: "dddd4444",
+        parentId: "cccc3333",
+        timestamp: new Date().toISOString(),
+        customType: "control_state",
+        content: "internal",
+        display: false,
+      },
+    ];
+
+    const ctx = buildSessionContext(entries);
+    const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
+    expect(modelMessages).toHaveLength(0);
   });
 });

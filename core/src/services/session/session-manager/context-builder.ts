@@ -102,6 +102,41 @@ function customMessageToUserMessage(entry: CustomMessageEntry): UserModelMessage
   return { role: "user", content: text };
 }
 
+function customMessageToAssistantMessage(entry: CustomMessageEntry): AssistantModelMessage {
+  const text = contentPartsToString(entry.content);
+  return { role: "assistant", content: text };
+}
+
+function readCustomDirection(details: unknown): "inbound" | "outbound" | null {
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+
+  const direction = (details as { direction?: unknown }).direction;
+  if (direction === "inbound" || direction === "outbound") {
+    return direction;
+  }
+
+  return null;
+}
+
+function customMessageToModelMessage(entry: CustomMessageEntry): ModelMessage | undefined {
+  if (entry.customType === "channel_message") {
+    const direction = readCustomDirection(entry.details);
+    if (direction === "outbound") {
+      return customMessageToAssistantMessage(entry);
+    }
+
+    return customMessageToUserMessage(entry);
+  }
+
+  if (entry.customType === "protocol_guidance") {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 // ============================================================================
 // buildSessionContext
 // ============================================================================
@@ -203,7 +238,7 @@ export function convertAgentMessagesToModelMessages(
     .map((message) => {
       switch (message.role) {
         case "custom":
-          return customMessageToUserMessage({
+          return customMessageToModelMessage({
             type: "custom_message",
             id: "",
             parentId: null,
