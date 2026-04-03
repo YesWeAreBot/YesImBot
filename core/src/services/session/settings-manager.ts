@@ -26,6 +26,7 @@ export interface AthenaSessionSettings extends Record<string, unknown> {
     enableSandbox?: boolean;
     enableFilesystem?: boolean;
     externalPath?: string[];
+    skills?: string[];
   };
   prompts?: {
     builtInInstructions?: string;
@@ -91,6 +92,10 @@ export const ATHENA_SESSION_SETTINGS_JSON_SCHEMA: JsonSchemaDefinition = {
         enableSandbox: { type: "boolean" },
         enableFilesystem: { type: "boolean" },
         externalPath: {
+          type: "array",
+          items: { type: "string" },
+        },
+        skills: {
           type: "array",
           items: { type: "string" },
         },
@@ -221,6 +226,7 @@ const SESSION_SETTINGS_RULES: SettingsRuleMap = {
       enableSandbox: { kind: "boolean" },
       enableFilesystem: { kind: "boolean" },
       externalPath: { kind: "string-array" },
+      skills: { kind: "string-array" },
     },
   },
   prompts: {

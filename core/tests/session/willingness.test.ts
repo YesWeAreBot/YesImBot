@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as llmJudge from "../../src/services/session/llm-judge";
 import {
+  DefaultWillingnessJudge,
+  createDefaultWillingnessJudge,
+  evaluateRuntimeWillingnessHeuristic,
   judgeWillingness,
   type WillingnessJudgeParams,
 } from "../../src/services/session/willingness";
@@ -31,6 +34,38 @@ describe("Willingness judge", () => {
   } as unknown as Context;
 
   describe("rule-based judge", () => {
+    it("exposes replaceable willingness judge abstraction", async () => {
+      const judge = createDefaultWillingnessJudge(ctx);
+      await expect(judge.judge(makeParams())).resolves.toEqual({
+        shouldRespond: false,
+        reason: "no_trigger",
+      });
+    });
+
+    it("runtime heuristic resolves direct/at/reply/self boundaries", () => {
+      expect(
+        evaluateRuntimeWillingnessHeuristic(
+          makeParams({ senderId: "bot1", selfId: "bot1", isDirect: true }),
+        ),
+      ).toEqual({
+        shouldRespond: false,
+        reason: "self_message",
+      });
+      expect(evaluateRuntimeWillingnessHeuristic(makeParams({ isDirect: true }))).toEqual({
+        shouldRespond: true,
+        reason: "direct_message",
+      });
+      expect(evaluateRuntimeWillingnessHeuristic(makeParams({ atSelf: true }))).toEqual({
+        shouldRespond: true,
+        reason: "at_self",
+      });
+      expect(evaluateRuntimeWillingnessHeuristic(makeParams({ isReplyToBot: true }))).toEqual({
+        shouldRespond: false,
+        reason: "reply_without_at",
+      });
+      expect(evaluateRuntimeWillingnessHeuristic(makeParams())).toBeNull();
+    });
+
     it("triggers on direct message", async () => {
       const callSpy = vi.spyOn(llmJudge, "callLLMJudge");
 
@@ -92,6 +127,28 @@ describe("Willingness judge", () => {
       });
 
       callSpy.mockRestore();
+    });
+
+    it("allows overriding llm judge implementation", async () => {
+      const judge = new DefaultWillingnessJudge({
+        ctx,
+        llmJudge: vi.fn().mockResolvedValue({ decision: true }),
+      });
+
+      await expect(
+        judge.judge(makeParams({ judgeEnabled: true, content: "gray-zone" })),
+      ).resolves.toEqual({
+        shouldRespond: true,
+        reason: "llm_judge",
+      });
+    });
+
+    it("deferred judge no longer handles runtime heuristic branches", async () => {
+      const judge = new DefaultWillingnessJudge({ ctx });
+      await expect(judge.judge(makeParams({ isDirect: true }))).resolves.toEqual({
+        shouldRespond: false,
+        reason: "no_trigger",
+      });
     });
   });
 

@@ -2,8 +2,9 @@ import type { Bot } from "koishi";
 
 import type { SessionManager } from "../session-manager";
 import type { ChannelTurnOutcome } from "../types";
+import type { WillingnessJudge } from "../willingness";
 
-export interface ChannelAgentSettingsManager {
+export interface ChannelRuntimeSettingsManager {
   reload(): import("../settings-manager").SettingsReloadMetadata;
   getReloadMetadata(): import("../settings-manager").SettingsReloadMetadata;
   getModel(): string | undefined;
@@ -31,15 +32,17 @@ export interface ChannelAgentSettingsManager {
     enableSandbox?: boolean;
     enableFilesystem?: boolean;
     externalPath?: string[];
+    skills?: string[];
   } | undefined;
   getBuiltInInstructions(fallback?: string): string | undefined;
   getPromptResourceFilenames(fallback?: string[]): string[] | undefined;
 }
 
-export interface ChannelAgentOptions {
+export interface ChannelRuntimeOptions {
   bot?: Bot;
   sessionManager: SessionManager;
-  settingsManager: ChannelAgentSettingsManager;
+  settingsManager: ChannelRuntimeSettingsManager;
+  willingnessJudge?: WillingnessJudge;
   platform: string;
   channelId: string;
   basePath: string;
@@ -67,7 +70,7 @@ export interface TurnOutcomeSelection {
   blockedReason?: string;
 }
 
-export interface ChannelAgentTurnSettingsSnapshot {
+export interface ChannelRuntimeTurnSettingsSnapshot {
   modelId: string;
   streaming: boolean;
   maxSteps: number;

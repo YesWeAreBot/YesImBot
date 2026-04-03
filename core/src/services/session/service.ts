@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { Bot, Context, Service, Session } from "koishi";
 
-import { ChannelAgent } from "./channel-agent";
+import { ChannelRuntime } from "./runtime";
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
 import {
   ensureGlobalScaffold,
@@ -136,20 +136,20 @@ export interface AgentSessionServiceConfig {
 // ============================================================================
 
 /**
- * Koishi service that manages per-channel AI agents.
+ * Koishi service that manages per-channel AI runtimes.
  *
- * Each channel (platform:channelId) gets its own ChannelAgent with
+ * Each channel (platform:channelId) gets its own ChannelRuntime with
  * an isolated SessionManager for JSONL persistence.
  *
  * Message flow:
  * 1. Koishi message event → koishiSessionToChannelEvent()
- * 2. AgentSessionService.receive() → route to ChannelAgent
- * 3. ChannelAgent.receive() → persist, willingness check, maybe respond
+ * 2. AgentSessionService.receive() → route to ChannelRuntime
+ * 3. ChannelRuntime.receive() → persist, willingness check, maybe respond
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
-  private agents: Map<ChannelKey, ChannelAgent> = new Map();
+  private agents: Map<ChannelKey, ChannelRuntime> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
   private readonly dedupeTtlMs = 120000;
@@ -377,7 +377,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // =========================================================================
 
   /** Get an existing agent or create a new one for the channel. */
-  getOrCreateAgent(platform: string, channelId: string, bot?: Bot): ChannelAgent {
+  getOrCreateAgent(platform: string, channelId: string, bot?: Bot): ChannelRuntime {
     const channelKey: ChannelKey = `${platform}:${channelId}`;
     const existing = this.agents.get(channelKey);
     if (existing) {
@@ -386,7 +386,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     }
 
     const runtime = this.bootstrapChannelRuntime(platform, channelId);
-    const agent = this.createChannelAgent(runtime, bot);
+    const agent = this.createChannelRuntime(runtime, bot);
 
     this.agents.set(channelKey, agent);
     return agent;
@@ -417,7 +417,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
     try {
       const runtime = this.bootstrapChannelRuntime(platform, channelId);
-      const agent = this.createChannelAgent(runtime, bot);
+      const agent = this.createChannelRuntime(runtime, bot);
 
       this.agents.set(channelKey, agent);
       return {
@@ -476,11 +476,11 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     };
   }
 
-  private createChannelAgent(runtime: BootstrappedChannelRuntime, bot?: Bot): ChannelAgent {
+  private createChannelRuntime(runtime: BootstrappedChannelRuntime, bot?: Bot): ChannelRuntime {
     const { channelDir, channelKey, sessionManager, settingsManager } = runtime;
     const [platform, channelId] = channelKey.split(":") as [string, string];
 
-    return new ChannelAgent(this.ctx, {
+    return new ChannelRuntime(this.ctx, {
       bot,
       sessionManager,
       settingsManager,
@@ -664,7 +664,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   /** Get an existing agent (without creating). */
-  getAgent(channelKey: ChannelKey): ChannelAgent | undefined {
+  getAgent(channelKey: ChannelKey): ChannelRuntime | undefined {
     return this.agents.get(channelKey);
   }
 

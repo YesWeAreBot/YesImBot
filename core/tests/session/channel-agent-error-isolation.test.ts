@@ -26,11 +26,11 @@ vi.mock("ai", () => {
 
 import {
   buildGenerateInputForTest,
-  ChannelAgent,
+  ChannelRuntime,
   createAgentAssistantMessage,
   normalizeAssistantContent,
-} from "../../src/services/session/channel-agent";
-import { TurnFinalizer } from "../../src/services/session/channel-agent/finalization/turn-finalizer";
+} from "../../src/services/session/runtime";
+import { TurnFinalizer } from "../../src/services/session/runtime/finalization/turn-finalizer";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent, ResponseEndRecord } from "../../src/services/session/types";
 import { createTestSettingsManager } from "./test-settings-manager";
@@ -79,7 +79,7 @@ function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
   };
 }
 
-describe("ChannelAgent plugin safety helpers", () => {
+describe("ChannelRuntime plugin safety helpers", () => {
   beforeEach(() => {
     generateMock.mockReset();
   });
@@ -200,7 +200,7 @@ describe("ChannelAgent plugin safety helpers", () => {
 
   it("logs response failures with the channel identifier", async () => {
     const { ctx, logger } = createContextMock();
-    const agent = new ChannelAgent(ctx as never, {
+    const agent = new ChannelRuntime(ctx as never, {
       bot: createBotMock() as never,
       sessionManager: SessionManager.inMemory("discord:channel-1"),
       settingsManager: createTestSettingsManager(),

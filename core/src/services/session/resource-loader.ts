@@ -1,10 +1,266 @@
+import { jsonSchema } from "@ai-sdk/provider-utils";
+import type { ToolSet } from "ai";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import type { Logger } from "koishi";
 
-import type { ChannelAgentOptions } from "./channel-agent";
+import type { ChannelRuntimeOptions } from "./runtime";
 import { DEFAULT_SESSION_INSTRUCTIONS } from "./scaffold";
+import type { LocalFilesystem } from "./workspace";
+import {
+  createWorkspaceBoundaryError,
+  normalizeWorkspacePath,
+  withinBasePath,
+} from "./workspace/helpers";
+
+interface SkillInput {
+  name: string;
+}
+
+interface SkillReadInput {
+  name: string;
+  path: string;
+}
+
+interface SkillSearchInput {
+  query: string;
+  name?: string;
+  topK?: number;
+}
+
+interface SkillRecord {
+  name: string;
+  rootPath: string;
+  skillFile: string;
+}
+
+async function readSkillFile(skillPath: string): Promise<string> {
+  return readFile(skillPath, "utf8");
+}
+
+function resolveSkillPath(options: {
+  path: string;
+  channelDir: string;
+  filesystem?: LocalFilesystem;
+}): string {
+  if (options.filesystem) {
+    return options.filesystem.resolvePath(options.path);
+  }
+
+  const workspaceRoot = resolve(options.channelDir, "workspace");
+  const candidates = isAbsolute(options.path)
+    ? [resolve(options.path), resolve(workspaceRoot, normalizeWorkspacePath(options.path))]
+    : [resolve(workspaceRoot, normalizeWorkspacePath(options.path))];
+
+  for (const candidatePath of candidates) {
+    if (withinBasePath(candidatePath, workspaceRoot)) {
+      return candidatePath;
+    }
+  }
+
+  throw createWorkspaceBoundaryError(options.path);
+}
+
+async function collectSkills(options: {
+  skills?: string[];
+  channelDir: string;
+  filesystem?: LocalFilesystem;
+}): Promise<SkillRecord[]> {
+  if (!options.skills || options.skills.length === 0) {
+    return [];
+  }
+
+  const skillRoots = options.skills.map((skillPath) =>
+    resolveSkillPath({
+      path: skillPath,
+      channelDir: options.channelDir,
+      filesystem: options.filesystem,
+    }),
+  );
+  const records: SkillRecord[] = [];
+
+  for (const rootPath of skillRoots) {
+    const currentStat = await stat(rootPath);
+    if (currentStat.isFile() && basename(rootPath) === "SKILL.md") {
+      records.push({
+        name: basename(dirname(rootPath)),
+        rootPath: dirname(rootPath),
+        skillFile: rootPath,
+      });
+      continue;
+    }
+
+    const directSkillFile = join(rootPath, "SKILL.md");
+    try {
+      const directSkillStat = await stat(directSkillFile);
+      if (directSkillStat.isFile()) {
+        records.push({
+          name: basename(rootPath),
+          rootPath,
+          skillFile: directSkillFile,
+        });
+        continue;
+      }
+    } catch {}
+
+    const children = await readdir(rootPath, { withFileTypes: true });
+    for (const child of children) {
+      if (!child.isDirectory()) {
+        continue;
+      }
+
+      const skillRoot = join(rootPath, child.name);
+      const skillFile = join(skillRoot, "SKILL.md");
+      try {
+        const skillFileStat = await stat(skillFile);
+        if (skillFileStat.isFile()) {
+          records.push({
+            name: child.name,
+            rootPath: skillRoot,
+            skillFile,
+          });
+        }
+      } catch {}
+    }
+  }
+
+  return records;
+}
+
+async function resolveSkill(options: {
+  skills?: string[];
+  channelDir: string;
+  filesystem?: LocalFilesystem;
+  name: string;
+}): Promise<SkillRecord> {
+  const skills = await collectSkills({
+    skills: options.skills,
+    channelDir: options.channelDir,
+    filesystem: options.filesystem,
+  });
+  const skill = skills.find((item) => item.name === options.name || item.rootPath === resolve(options.name));
+  if (!skill) {
+    throw new Error(`Skill not found: ${options.name}`);
+  }
+  return skill;
+}
+
+function buildSessionSkillTools(
+  options: {
+    settingsManager: ChannelRuntimeOptions["settingsManager"];
+    channelDir: string;
+    filesystem?: LocalFilesystem;
+  },
+): ToolSet {
+  const configuredSkills = options.settingsManager.getWorkspaceSettings()?.skills;
+  if (!configuredSkills || configuredSkills.length === 0) {
+    return {};
+  }
+
+  return {
+    skill: {
+      description: "Load a skill by name.",
+      inputSchema: jsonSchema<SkillInput>({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+        },
+        required: ["name"],
+      }),
+      execute: async (input) => {
+        const skill = await resolveSkill({
+          skills: configuredSkills,
+          channelDir: options.channelDir,
+          filesystem: options.filesystem,
+          name: input.name,
+        });
+        return {
+          name: skill.name,
+          content: await readSkillFile(skill.skillFile),
+        };
+      },
+    },
+    skill_read: {
+      description: "Read a file under a skill directory.",
+      inputSchema: jsonSchema<SkillReadInput>({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          path: { type: "string" },
+        },
+        required: ["name", "path"],
+      }),
+      execute: async (input) => {
+        const skill = await resolveSkill({
+          skills: configuredSkills,
+          channelDir: options.channelDir,
+          filesystem: options.filesystem,
+          name: input.name,
+        });
+        const relativePath = normalizeWorkspacePath(input.path);
+        const targetPath = resolve(skill.rootPath, relativePath);
+        if (!withinBasePath(targetPath, skill.rootPath)) {
+          throw createWorkspaceBoundaryError(input.path);
+        }
+
+        return {
+          name: skill.name,
+          path: input.path,
+          content: await readSkillFile(targetPath),
+        };
+      },
+    },
+    skill_search: {
+      description: "Search text across loaded skills.",
+      inputSchema: jsonSchema<SkillSearchInput>({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          query: { type: "string" },
+          name: { type: "string" },
+          topK: { type: "number" },
+        },
+        required: ["query"],
+      }),
+      execute: async (input) => ({
+        matches: await (async () => {
+          const skillRecords = await collectSkills({
+            skills: configuredSkills,
+            channelDir: options.channelDir,
+            filesystem: options.filesystem,
+          });
+          const filteredSkills = input.name
+            ? skillRecords.filter((skill) => skill.name === input.name)
+            : skillRecords;
+          const topK = input.topK ?? 5;
+          const normalizedQuery = input.query.toLowerCase();
+          const matches: Array<{ name: string; path: string; content: string }> = [];
+
+          for (const skill of filteredSkills) {
+            const content = await readSkillFile(skill.skillFile);
+            if (content.toLowerCase().includes(normalizedQuery)) {
+              matches.push({
+                name: skill.name,
+                path: skill.skillFile,
+                content,
+              });
+            }
+
+            if (matches.length >= topK) {
+              break;
+            }
+          }
+
+          return matches;
+        })(),
+      }),
+    },
+  };
+}
 
 export const DEFAULT_SESSION_PROMPT_RESOURCE_FILES = ["SOUL.md", "AGENTS.md", "PERSONA.md"];
 
@@ -26,13 +282,14 @@ export interface SessionResourceLoader {
   getPromptResources(): { resources: SessionPromptResource[] };
   getSystemPrompt(): string | undefined;
   getAppendSystemPrompt(): string[];
+  getSkillTools(filesystem?: LocalFilesystem): ToolSet;
   buildSystemPrompt(): string;
   reload(): void;
 }
 
 export interface DefaultSessionResourceLoaderOptions {
   channelDir: string;
-  settingsManager: ChannelAgentOptions["settingsManager"];
+  settingsManager: ChannelRuntimeOptions["settingsManager"];
   logger: Logger;
   promptResourceFilenames?: string[];
   promptResourceTransform?: (resource: SessionPromptResource) => SessionPromptResource | null;
@@ -44,7 +301,7 @@ export interface DefaultSessionResourceLoaderOptions {
 
 export interface BuildSessionSystemPromptOptions {
   channelDir: string;
-  settingsManager: ChannelAgentOptions["settingsManager"];
+  settingsManager: ChannelRuntimeOptions["settingsManager"];
   logger: Logger;
   builtInInstructionsOverride?: (base: string) => string;
   promptResourceFilenames?: string[];
@@ -166,7 +423,7 @@ export function buildSessionSystemPrompt(options: BuildSessionSystemPromptOption
 
 export class DefaultSessionResourceLoader implements SessionResourceLoader {
   private channelDir: string;
-  private settingsManager: ChannelAgentOptions["settingsManager"];
+  private settingsManager: ChannelRuntimeOptions["settingsManager"];
   private logger: Logger;
   private promptResourceFilenames?: string[];
   private promptResourceTransform?: (
@@ -203,6 +460,14 @@ export class DefaultSessionResourceLoader implements SessionResourceLoader {
 
   getAppendSystemPrompt(): string[] {
     return this.appendSystemPrompt;
+  }
+
+  getSkillTools(filesystem?: LocalFilesystem): ToolSet {
+    return buildSessionSkillTools({
+      settingsManager: this.settingsManager,
+      channelDir: this.channelDir,
+      filesystem,
+    });
   }
 
   buildSystemPrompt(): string {

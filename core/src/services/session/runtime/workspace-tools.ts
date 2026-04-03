@@ -1,18 +1,22 @@
 import { join } from "node:path";
 
 import type { ToolSet } from "ai";
+import type { Logger } from "koishi";
 
+import { DefaultSessionResourceLoader } from "../resource-loader";
 import { LocalFilesystem, LocalSandbox, Workspace } from "../workspace";
 import { createSendMessageTool } from "./send-message-tool";
-import type { ChannelAgentOptions } from "./types";
+import type { ChannelRuntimeOptions } from "./types";
 
 type WorkspaceToolOptions = Pick<
-  ChannelAgentOptions,
+  ChannelRuntimeOptions,
   "basePath" | "settingsManager"
->;
+> & {
+  logger: Logger;
+};
 
 export async function buildResponseToolSet(options: {
-  bot: NonNullable<ChannelAgentOptions["bot"]>;
+  bot: NonNullable<ChannelRuntimeOptions["bot"]>;
   channelId: string;
   pluginTools: ToolSet;
   workspace: WorkspaceToolOptions;
@@ -63,10 +67,17 @@ async function buildWorkspaceToolSet(options: WorkspaceToolOptions): Promise<Too
       })
     : undefined;
 
-  const workspace = new Workspace({
-    filesystem,
-    sandbox,
-  });
+  const workspace = new Workspace({ filesystem, sandbox });
   await workspace.init();
-  return workspace.getAgentTools() as ToolSet;
+
+  const resourceLoader = new DefaultSessionResourceLoader({
+    channelDir: options.basePath,
+    settingsManager: options.settingsManager,
+    logger: options.logger,
+  });
+
+  return {
+    ...(resourceLoader.getSkillTools(filesystem) as ToolSet),
+    ...(workspace.getAgentTools() as ToolSet),
+  };
 }

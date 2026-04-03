@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createAgentAssistantMessage,
   createSendMessageTool,
-} from "../../src/services/session/channel-agent";
+} from "../../src/services/session/runtime";
 
-describe("ChannelAgent handleStepFinish", () => {
+describe("ChannelRuntime handleStepFinish", () => {
   it("normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads", () => {
     const persisted = createAgentAssistantMessage({
       content: [

@@ -12,30 +12,32 @@ import {
   type SessionManager,
 } from "../session-manager";
 import type { ChannelEvent, ResponseEndRecord } from "../types";
-import { judgeWillingness } from "../willingness";
-import { DefaultSessionResourceLoader } from "../resource-loader";
+import {
+  createDefaultWillingnessJudge,
+  evaluateRuntimeWillingnessHeuristic,
+  type WillingnessJudge,
+} from "../willingness";
 import { TurnFinalizer } from "./finalization/turn-finalizer";
 import {
-  buildGenerateInputForTest,
   getReliableInputTokens,
   hasCompletedSendMessageWithoutHeartbeat,
   ResponseStepProcessor,
 } from "./response-step-processor";
+import { executeRuntimeTurn } from "./turn-execution";
 import type {
-  ChannelAgentTurnSettingsSnapshot,
-  ChannelAgentOptions,
+  ChannelRuntimeTurnSettingsSnapshot,
+  ChannelRuntimeOptions,
   CompactionRunResult,
   MergedFollowUpOpportunity,
   ResponseState,
 } from "./types";
-import { buildResponseToolSet } from "./workspace-tools";
 
 // ============================================================================
-// ChannelAgent
+// ChannelRuntime
 // ============================================================================
 
 /**
- * Per-channel agent wrapping AI SDK ToolLoopAgent + SessionManager.
+ * Per-channel runtime wrapping AI SDK ToolLoopAgent + SessionManager.
  *
  * Responsibilities:
  * - Receive incoming messages, persist them, check willingness
@@ -43,11 +45,11 @@ import { buildResponseToolSet } from "./workspace-tools";
  * - Persist AI response steps to SessionManager
  * - Manage concurrency (prevent parallel generate() calls per channel)
  */
-export class ChannelAgent {
+export class ChannelRuntime {
   bot: Bot | undefined;
   readonly sessionManager: SessionManager;
 
-  private options: ChannelAgentOptions;
+  private options: ChannelRuntimeOptions;
   private responseState: ResponseState = "idle";
   private abortController: AbortController | null = null;
   private pendingFollowUp: MergedFollowUpOpportunity | null = null;
@@ -55,17 +57,19 @@ export class ChannelAgent {
   private stepsCompleted = 0;
   private responseToolSnapshot: ToolSet = {};
   private responseActiveTools: string[] = [];
-  private currentTurnSettings: ChannelAgentTurnSettingsSnapshot | null = null;
+  private currentTurnSettings: ChannelRuntimeTurnSettingsSnapshot | null = null;
   private readonly turnFinalizer = new TurnFinalizer();
   private readonly responseStepProcessor: ResponseStepProcessor;
+  private readonly willingnessJudge: WillingnessJudge;
 
   constructor(
     private ctx: Context,
-    options: ChannelAgentOptions,
+    options: ChannelRuntimeOptions,
   ) {
     this.options = options;
     this.bot = options.bot;
     this.sessionManager = options.sessionManager;
+    this.willingnessJudge = options.willingnessJudge ?? createDefaultWillingnessJudge(this.ctx);
     this.responseStepProcessor = new ResponseStepProcessor({
       sessionManager: this.sessionManager,
       platform: options.platform,
@@ -83,7 +87,7 @@ export class ChannelAgent {
     return modelId;
   }
 
-  private createTurnSettingsSnapshot(): ChannelAgentTurnSettingsSnapshot {
+  private createTurnSettingsSnapshot(): ChannelRuntimeTurnSettingsSnapshot {
     const responseSettings = this.options.settingsManager.getResponseSettings();
     const compactionSettings = this.options.settingsManager.getCompactionSettings();
 
@@ -104,7 +108,7 @@ export class ChannelAgent {
     };
   }
 
-  private getActiveTurnSettings(): ChannelAgentTurnSettingsSnapshot {
+  private getActiveTurnSettings(): ChannelRuntimeTurnSettingsSnapshot {
     return this.currentTurnSettings ?? this.createTurnSettingsSnapshot();
   }
 
@@ -112,7 +116,9 @@ export class ChannelAgent {
   // Agent Construction
   // =========================================================================
 
-  private createAgent(turnSettings: ChannelAgentTurnSettingsSnapshot): ToolLoopAgent<never, ToolSet> {
+  private createAgent(
+    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+  ): ToolLoopAgent<never, ToolSet> {
     const model = this.ctx["yesimbot.model"].resolve(turnSettings.modelId);
     const cumulativeTimeoutMs =
       turnSettings.baseTimeoutMs + turnSettings.maxSteps * turnSettings.perStepTimeoutMs;
@@ -169,17 +175,26 @@ export class ChannelAgent {
     // 2. Willingness check
     const selfId = event.bot?.selfId ?? this.bot?.selfId ?? "";
     const judgeSettings = this.options.settingsManager.getJudgeSettings();
-    const willingness = await judgeWillingness(this.ctx, {
+    const heuristic = evaluateRuntimeWillingnessHeuristic({
       isDirect: event.isDirect,
       atSelf: event.atSelf,
       isReplyToBot: event.isReplyToBot,
-      content: event.content,
       selfId,
       senderId: event.userId,
-      judgeEnabled: judgeSettings?.enabled,
-      judgeModel: judgeSettings?.model,
-      judgeTimeoutMs: judgeSettings?.timeoutMs,
     });
+    const willingness =
+      heuristic ??
+      (await this.willingnessJudge.judge({
+        isDirect: event.isDirect,
+        atSelf: event.atSelf,
+        isReplyToBot: event.isReplyToBot,
+        content: event.content,
+        selfId,
+        senderId: event.userId,
+        judgeEnabled: judgeSettings?.enabled,
+        judgeModel: judgeSettings?.model,
+        judgeTimeoutMs: judgeSettings?.timeoutMs,
+      }));
 
     if (!willingness.shouldRespond) {
       return;
@@ -213,7 +228,7 @@ export class ChannelAgent {
     return this.responseState;
   }
 
-  getSettingsManager(): ChannelAgentOptions["settingsManager"] {
+  getSettingsManager(): ChannelRuntimeOptions["settingsManager"] {
     return this.options.settingsManager;
   }
 
@@ -278,52 +293,25 @@ export class ChannelAgent {
     }, timeoutMs);
 
     try {
-      const resourceLoader = new DefaultSessionResourceLoader({
-        channelDir: this.options.basePath,
-        settingsManager: this.options.settingsManager,
-        logger: this.ctx.logger("session"),
-      });
-      resourceLoader.reload();
-      const instructions = resourceLoader.buildSystemPrompt();
-
-      const { messages } = buildGenerateInputForTest({
-        instructions,
-        sessionEntries: [...this.sessionManager.getEntries()],
-      });
-
       if (!this.bot) {
         throw new Error(`Channel bot unavailable for ${this.options.platform}:${this.options.channelId}`);
       }
-      const bot = this.bot;
 
-      const pluginTools = this.ctx["yesimbot.plugin"]?.getToolSet() ?? {};
-      this.responseToolSnapshot = await buildResponseToolSet({
-        bot,
+      const executionResult = await executeRuntimeTurn({
+        ctx: this.ctx,
+        logger: this.ctx.logger("session"),
+        bot: this.bot,
+        sessionManager: this.sessionManager,
+        settingsManager: this.options.settingsManager,
         channelId: this.options.channelId,
-        pluginTools,
-        workspace: {
-          basePath: this.options.basePath,
-          settingsManager: this.options.settingsManager,
-        },
+        basePath: this.options.basePath,
+        turnSettings,
+        protocolRetry,
+        abortSignal: this.abortController.signal,
+        createAgent: this.createAgent.bind(this),
       });
-      this.responseActiveTools = Object.keys(this.responseToolSnapshot);
-
-      const agent = this.createAgent(turnSettings);
-      Object.assign(agent.tools, this.responseToolSnapshot);
-
-      // Run agent
-      if (turnSettings.streaming) {
-        const result = await agent.stream({
-          messages,
-          abortSignal: this.abortController.signal,
-        });
-        await result.consumeStream();
-      } else {
-        await agent.generate({
-          messages,
-          abortSignal: this.abortController.signal,
-        });
-      }
+      this.responseToolSnapshot = executionResult.responseToolSnapshot;
+      this.responseActiveTools = executionResult.responseActiveTools;
     } catch (err: unknown) {
       if (!this.abortController?.signal.aborted) {
         this.responseStepProcessor.setThrownError(err instanceof Error ? err.message : String(err));

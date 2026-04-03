@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ChannelAgent } from "../../src/services/session/channel-agent";
-import { TurnFinalizer } from "../../src/services/session/channel-agent/finalization/turn-finalizer";
+import { ChannelRuntime } from "../../src/services/session/runtime";
+import { TurnFinalizer } from "../../src/services/session/runtime/finalization/turn-finalizer";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
@@ -101,7 +101,7 @@ function createAgent() {
   const ctx = createContextMock();
   const bot = createBotMock();
   const sessionManager = SessionManager.inMemory("discord:channel-1");
-  const agent = new ChannelAgent(ctx as never, {
+  const agent = new ChannelRuntime(ctx as never, {
     bot: bot as never,
     sessionManager,
     settingsManager: createTestSettingsManager(),
@@ -113,7 +113,7 @@ function createAgent() {
   return { agent, sessionManager, bot };
 }
 
-describe("ChannelAgent state machine", () => {
+describe("ChannelRuntime state machine", () => {
   beforeEach(() => {
     generateMock.mockReset();
     streamMock.mockReset();
@@ -166,7 +166,7 @@ describe("ChannelAgent state machine", () => {
         },
       }));
 
-      const streamingAgent = new ChannelAgent(createContextMock() as never, {
+      const streamingAgent = new ChannelRuntime(createContextMock() as never, {
         bot: bot as never,
         sessionManager,
         settingsManager: createTestSettingsManager({
@@ -240,7 +240,7 @@ describe("ChannelAgent state machine", () => {
         });
       });
 
-      const timeoutAgent = new ChannelAgent(createContextMock() as never, {
+      const timeoutAgent = new ChannelRuntime(createContextMock() as never, {
         bot: createBotMock() as never,
         sessionManager,
         settingsManager: createTestSettingsManager({

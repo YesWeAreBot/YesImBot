@@ -25,7 +25,6 @@ export interface LocalSandboxOptions {
 export interface WorkspaceOptions {
   filesystem?: LocalFilesystem;
   sandbox?: LocalSandbox;
-  skills?: string[];
 }
 
 export interface ReadFileInput {
@@ -75,27 +74,6 @@ export interface GrepInput {
 export interface ExecuteCommandInput {
   command: string;
   timeoutMs?: number;
-}
-
-export interface SkillInput {
-  name: string;
-}
-
-export interface SkillReadInput {
-  name: string;
-  path: string;
-}
-
-export interface SkillSearchInput {
-  query: string;
-  name?: string;
-  topK?: number;
-}
-
-export interface SkillRecord {
-  name: string;
-  rootPath: string;
-  skillFile: string;
 }
 
 export type WorkspaceToolSet = Record<string, AiTool>;

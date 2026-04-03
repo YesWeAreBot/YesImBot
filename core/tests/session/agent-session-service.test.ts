@@ -50,10 +50,11 @@ vi.mock("koishi", () => {
   };
 });
 
-import { ChannelAgent } from "../../src/services/session/channel-agent";
+import { ChannelRuntime } from "../../src/services/session/runtime";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
+import type { WillingnessJudge } from "../../src/services/session/willingness";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createLoggerMock(): Logger {
@@ -164,7 +165,7 @@ describe("AgentSessionService", () => {
       const ctx = createContextMock("/");
       const bot = createBotMock();
       const sessionManager = SessionManager.inMemory("discord:channel-1");
-      const agent = new ChannelAgent(ctx, {
+      const agent = new ChannelRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -179,11 +180,61 @@ describe("AgentSessionService", () => {
       expect(bot.sendMessage).not.toHaveBeenCalled();
     });
 
+    it("uses runtime heuristic first and skips deferred judge for direct messages", async () => {
+      const ctx = createContextMock("/");
+      const bot = createBotMock();
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const deferredJudge: WillingnessJudge = {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      };
+      const agent = new ChannelRuntime(ctx, {
+        bot,
+        sessionManager,
+        settingsManager: createTestSettingsManager(),
+        willingnessJudge: deferredJudge,
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      generateMock.mockResolvedValueOnce();
+      await agent.receive(createEvent({ bot, isDirect: true, atSelf: false, isReplyToBot: false }));
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
+      expect(deferredJudge.judge).not.toHaveBeenCalled();
+    });
+
+    it("falls back to deferred judge for gray-zone messages", async () => {
+      const ctx = createContextMock("/");
+      const bot = createBotMock();
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const deferredJudge: WillingnessJudge = {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      };
+      const agent = new ChannelRuntime(ctx, {
+        bot,
+        sessionManager,
+        settingsManager: createTestSettingsManager(),
+        willingnessJudge: deferredJudge,
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      await agent.receive(createEvent({ bot, isDirect: false, atSelf: false, isReplyToBot: false }));
+
+      expect(deferredJudge.judge).toHaveBeenCalledTimes(1);
+      expect(sessionManager.getEntryCount()).toBeGreaterThan(0);
+      expect(generateMock).not.toHaveBeenCalled();
+    });
+
     it("persists structured inbound channel_message header with reply summary", async () => {
       const ctx = createContextMock("/");
       const bot = createBotMock();
       const sessionManager = SessionManager.inMemory("discord:channel-1");
-      const agent = new ChannelAgent(ctx, {
+      const agent = new ChannelRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -264,7 +315,7 @@ describe("AgentSessionService", () => {
       const agentReceive = vi.fn().mockResolvedValue(undefined);
       vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
         receive: agentReceive,
-      } as unknown as ChannelAgent);
+      } as unknown as ChannelRuntime);
 
       const event = createEvent({ messageId: "dup-msg-1" });
       await service.receive(event);
@@ -328,7 +379,7 @@ describe("AgentSessionService", () => {
       const agentReceive = vi.fn().mockResolvedValue(undefined);
       const routeSpy = vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
         receive: agentReceive,
-      } as unknown as ChannelAgent);
+      } as unknown as ChannelRuntime);
 
       const event = createEvent({
         bot,
@@ -358,11 +409,11 @@ describe("AgentSessionService", () => {
         reason: "nothing-to-compact",
       });
 
-      (service as unknown as { agents: Map<string, ChannelAgent> }).agents.set(
+      (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.set(
         "discord:channel-1",
         {
           runCompaction,
-        } as unknown as ChannelAgent,
+        } as unknown as ChannelRuntime,
       );
 
       await startService(service);
@@ -392,11 +443,11 @@ describe("AgentSessionService", () => {
         compacted: true,
       });
 
-      (service as unknown as { agents: Map<string, ChannelAgent> }).agents.set(
+      (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.set(
         "discord:channel-1",
         {
           runCompaction,
-        } as unknown as ChannelAgent,
+        } as unknown as ChannelRuntime,
       );
 
       await startService(service);

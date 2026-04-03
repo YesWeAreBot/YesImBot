@@ -49,11 +49,9 @@ export interface WillingnessResult {
     | "direct_message"
     | "at_self"
     | "llm_judge"
-    | "keyword_match"
     | "reply_without_at"
     | "no_trigger"
-    | "self_message"
-    | "duplicate";
+    | "self_message";
 }
 
 export type ResponseEndReason =

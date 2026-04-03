@@ -3,12 +3,12 @@ export {
   createAgentAssistantMessage,
   normalizeAssistantContent,
 } from "./response-step-processor";
-export { ChannelAgent } from "./channel-agent";
+export { ChannelRuntime } from "./channel-runtime";
 export { createSendMessageTool, isSendMessageResult } from "./send-message-tool";
 export { TurnFinalizer } from "./finalization/turn-finalizer";
 export type { SendMessageResult, SendMessageSegmentResult } from "./send-message-tool";
 export type {
-  ChannelAgentOptions,
+  ChannelRuntimeOptions,
   CompactionRunResult,
   CompactionSkipReason,
   ResponseState,

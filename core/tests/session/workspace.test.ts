@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { buildResponseToolSet } from "../../src/services/session/runtime/workspace-tools";
 import { LocalFilesystem, LocalSandbox, Workspace } from "../../src/services/session/workspace";
 
 function createToolOptions() {
@@ -90,7 +91,7 @@ describe("workspace", () => {
     }
   });
 
-  it("exposes skill tools only when skills are configured", async () => {
+  it("does not expose skill tools even when skills are configured", async () => {
     const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-skills-"));
     try {
       const skillsRoot = join(basePath, "skills");
@@ -103,10 +104,63 @@ describe("workspace", () => {
 
       const workspace = new Workspace({
         filesystem: new LocalFilesystem({ basePath }),
-        skills: ["/skills"],
       });
 
       const tools = workspace.getAgentTools();
+      expect(tools).not.toHaveProperty("skill");
+      expect(tools).not.toHaveProperty("skill_read");
+      expect(tools).not.toHaveProperty("skill_search");
+    } finally {
+      await rm(basePath, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps skill tools available from runtime tool assembly", async () => {
+    const basePath = mkdtempSync(join(tmpdir(), "athena-runtime-skills-"));
+    try {
+      const workspaceDir = join(basePath, "workspace");
+      const skillsRoot = join(workspaceDir, "skills");
+      const skillRoot = join(skillsRoot, "code-review");
+      const skillFile = join(skillRoot, "SKILL.md");
+      const referenceFile = join(skillRoot, "references", "guide.md");
+      mkdirSync(join(skillRoot, "references"), { recursive: true });
+      writeFileSync(skillFile, "# Code Review\nAlways review carefully.", { encoding: "utf8" });
+      writeFileSync(referenceFile, "Use references for checks.", { encoding: "utf8" });
+
+      const tools = await buildResponseToolSet({
+        bot: {
+          selfId: "bot-self",
+          sendMessage: async () => undefined,
+        } as never,
+        channelId: "channel-1",
+        pluginTools: {},
+        workspace: {
+          basePath,
+          settingsManager: {
+            reload: () => ({}) as never,
+            getReloadMetadata: () => ({}) as never,
+            getModel: () => undefined,
+            getJudgeSettings: () => undefined,
+            getCompactionSettings: () => undefined,
+            getResponseSettings: () => undefined,
+            getWorkspaceSettings: () => ({
+              enableWorkspace: true,
+              enableFilesystem: true,
+              skills: ["/skills"],
+            }),
+            getBuiltInInstructions: () => undefined,
+            getPromptResourceFilenames: () => undefined,
+          },
+          logger: {
+            level: 2,
+            debug: () => undefined,
+            info: () => undefined,
+            warn: () => undefined,
+            error: () => undefined,
+          } as never,
+        },
+      });
+
       expect(tools).toHaveProperty("skill");
       expect(tools).toHaveProperty("skill_read");
       expect(tools).toHaveProperty("skill_search");

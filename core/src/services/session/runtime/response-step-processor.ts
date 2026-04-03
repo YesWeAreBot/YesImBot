@@ -17,7 +17,7 @@ import {
 import type { ChannelEvent } from "../types";
 import { isSendMessageResult, type SendMessageResult } from "./send-message-tool";
 
-const PROTOCOL_GUIDANCE_TEXT =
+export const PROTOCOL_GUIDANCE_TEXT =
   "[Protocol Guidance]\n" +
   "Visible IM replies must be sent with the send_message tool. " +
   "Your previous assistant text was not delivered to the user. " +
@@ -119,15 +119,26 @@ export class ResponseStepProcessor {
       finishReason: stepResult.finishReason,
     });
 
-    if (isDuplicateAssistantToolCallMessage(agentMsg, this.seenAssistantToolCallIds)) {
-      return;
+    const assistantText = extractAssistantText(agentMsg.content);
+    const hasUndeliveredVisibleText =
+      assistantText.trim().length > 0 && !hasSendMessageToolCall(agentMsg.content);
+    const persistableAgentMsg = hasUndeliveredVisibleText
+      ? stripUndeliveredAssistantText(agentMsg)
+      : agentMsg;
+
+    if (persistableAgentMsg && !isDuplicateAssistantToolCallMessage(persistableAgentMsg, this.seenAssistantToolCallIds)) {
+      this.sessionManager.appendMessage(persistableAgentMsg);
+      rememberAssistantToolCallIds(persistableAgentMsg, this.seenAssistantToolCallIds);
     }
 
-    this.sessionManager.appendMessage(agentMsg);
-    rememberAssistantToolCallIds(agentMsg, this.seenAssistantToolCallIds);
+    if (hasUndeliveredVisibleText) {
+      this.sessionManager.appendCustomEntry("protocol_assistant_draft", {
+        text: assistantText,
+        provider: agentMsg.provider,
+        model: agentMsg.model,
+        finishReason: agentMsg.finishReason,
+      });
 
-    const assistantText = extractAssistantText(agentMsg.content);
-    if (assistantText.trim().length > 0 && !hasSendMessageToolCall(agentMsg.content)) {
       if (this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE) {
         this.protocolRetryCount++;
         this._pendingProtocolRetry = true;
@@ -320,6 +331,26 @@ function hasSendMessageToolCall(content: AgentAssistantMessage["content"]): bool
   }
 
   return content.some((part) => part.type === "tool-call" && part.toolName === "send_message");
+}
+
+function stripUndeliveredAssistantText(
+  message: AgentAssistantMessage,
+): AgentAssistantMessage | undefined {
+  if (!Array.isArray(message.content)) {
+    return undefined;
+  }
+
+  const content = message.content.filter(
+    (part): part is AgentToolCallPart | AgentAssistantThinkingPart => part.type !== "text",
+  );
+  if (content.length === 0) {
+    return undefined;
+  }
+
+  return {
+    ...message,
+    content,
+  };
 }
 
 function getAssistantToolCallIds(content: AgentAssistantMessage["content"]): string[] {

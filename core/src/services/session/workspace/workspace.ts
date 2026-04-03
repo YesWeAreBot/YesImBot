@@ -2,7 +2,6 @@ import { jsonSchema } from "@ai-sdk/provider-utils";
 
 import { LocalFilesystem } from "./filesystem";
 import { LocalSandbox } from "./sandbox";
-import { WorkspaceSkills } from "./skills";
 import type {
   DeleteInput,
   EditFileInput,
@@ -14,9 +13,6 @@ import type {
   MkdirInput,
   PathTypeEntry,
   ReadFileInput,
-  SkillInput,
-  SkillReadInput,
-  SkillSearchInput,
   WorkspaceOptions,
   WorkspaceToolSet,
   WriteFileInput,
@@ -25,14 +21,10 @@ import type {
 export class Workspace {
   readonly filesystem?: LocalFilesystem;
   readonly sandbox?: LocalSandbox;
-  readonly skills?: string[];
-  private readonly workspaceSkills: WorkspaceSkills;
 
   constructor(options: WorkspaceOptions) {
     this.filesystem = options.filesystem;
     this.sandbox = options.sandbox;
-    this.skills = options.skills;
-    this.workspaceSkills = new WorkspaceSkills(this.skills, this.filesystem);
   }
 
   async init(): Promise<void> {
@@ -48,7 +40,6 @@ export class Workspace {
     const tools: WorkspaceToolSet = {};
     this.registerFilesystemTools(tools);
     this.registerSandboxTools(tools);
-    this.registerSkillTools(tools);
     return tools;
   }
 
@@ -197,54 +188,6 @@ export class Workspace {
     };
   }
 
-  private registerSkillTools(tools: WorkspaceToolSet): void {
-    if (!this.workspaceSkills.isEnabled()) {
-      return;
-    }
-
-    tools.skill = {
-      description: "Load a skill by name.",
-      inputSchema: jsonSchema<SkillInput>({
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-        },
-        required: ["name"],
-      }),
-      execute: this.executeSkill.bind(this),
-    };
-
-    tools.skill_read = {
-      description: "Read a file under a skill directory.",
-      inputSchema: jsonSchema<SkillReadInput>({
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          path: { type: "string" },
-        },
-        required: ["name", "path"],
-      }),
-      execute: this.executeSkillRead.bind(this),
-    };
-
-    tools.skill_search = {
-      description: "Search text across loaded skills.",
-      inputSchema: jsonSchema<SkillSearchInput>({
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          query: { type: "string" },
-          name: { type: "string" },
-          topK: { type: "number" },
-        },
-        required: ["query"],
-      }),
-      execute: this.executeSkillSearch.bind(this),
-    };
-  }
-
   private requireFilesystem(): LocalFilesystem {
     if (!this.filesystem) {
       throw new Error("Workspace filesystem is not configured");
@@ -352,28 +295,5 @@ export class Workspace {
   }> {
     const sandbox = this.requireSandbox();
     return sandbox.executeCommand(input);
-  }
-
-  private async executeSkill(input: SkillInput): Promise<{ name: string; content: string }> {
-    return this.workspaceSkills.loadSkill(input.name);
-  }
-
-  private async executeSkillRead(input: SkillReadInput): Promise<{
-    name: string;
-    path: string;
-    content: string;
-  }> {
-    return this.workspaceSkills.readSkill(input.name, input.path);
-  }
-
-  private async executeSkillSearch(input: SkillSearchInput): Promise<{
-    matches: Array<{ name: string; path: string; content: string }>;
-  }> {
-    return {
-      matches: await this.workspaceSkills.searchSkillContent(input.query, {
-        name: input.name,
-        topK: input.topK,
-      }),
-    };
   }
 }
