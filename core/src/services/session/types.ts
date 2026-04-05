@@ -1,12 +1,24 @@
 import type { Bot } from "koishi";
 
-export interface ReplyReference {
-  messageId?: string;
-  userId?: string;
-  username: string;
-  nickname: string;
-  summary: string;
-}
+export type {
+  AssistantMessageRecord,
+  CanonicalChannelEventInput,
+  CanonicalChannelInput,
+  CanonicalChannelMessageInput,
+  ChannelEventRecord,
+  ChannelMessageRecord,
+  StateChangeRecord,
+  SystemNoticeRecord,
+  TimelineRecord,
+  TimelineRecordMaterialization,
+  TimelineRecordStage,
+  TimelineRecordVisibility,
+  ToolMessageRecord,
+} from "./contracts";
+
+import type { CanonicalReplyReference } from "./contracts";
+
+export type ReplyReference = CanonicalReplyReference;
 
 export interface ChannelEvent {
   platform: string;

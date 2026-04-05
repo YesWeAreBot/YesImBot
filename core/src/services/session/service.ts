@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { Bot, Context, Service, Session } from "koishi";
 
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
+import type { CanonicalChannelInput, CanonicalChannelMessageInput } from "./contracts";
 import { ChannelRuntime } from "./runtime";
 import { ensureGlobalScaffold, hasExistingWorkspace, ensureWorkspaceScaffold } from "./scaffold";
 import { SessionManager } from "./session-manager";
@@ -140,7 +141,7 @@ export interface AgentSessionServiceConfig {
  * an isolated SessionManager for JSONL persistence.
  *
  * Message flow:
- * 1. Koishi message event → koishiSessionToChannelEvent()
+ * 1. Koishi message event → koishiSessionToCanonicalInput()
  * 2. AgentSessionService.receive() → route to ChannelRuntime
  * 3. ChannelRuntime.receive() → persist, willingness check, maybe respond
  */
@@ -165,11 +166,11 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
   protected async start(): Promise<void> {
     this.ctx.middleware(async (session, next) => {
-      const event = koishiSessionToChannelEvent(session);
-      if (event) {
-        this.receive(event).catch((err) => {
+      const input = koishiSessionToCanonicalInput(session);
+      if (input) {
+        this.receive(input, session.bot).catch((err) => {
           this.logger.error(
-            `Error handling message for ${event.platform}:${event.channelId}:`,
+            `Error handling message for ${input.platform}:${input.channelId}:`,
             err,
           );
         });
@@ -330,21 +331,24 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // Message Routing
   // =========================================================================
 
-  /** Process an incoming channel event. */
-  async receive(event: ChannelEvent): Promise<void> {
-    // Ignore self-messages
-    const selfId = event.bot?.selfId ?? "";
-    if (selfId && event.userId === selfId) {
-      return;
+  /** Process an incoming canonical or compatibility channel input. */
+  async receive(input: CanonicalChannelInput | ChannelEvent, bot?: Bot): Promise<void> {
+    const canonicalInput = normalizeIncomingChannelInput(input);
+
+    if (canonicalInput.kind === "channel_message") {
+      const selfId = bot?.selfId ?? ("bot" in input ? input.bot?.selfId : undefined) ?? "";
+      if (selfId && canonicalInput.sender.userId === selfId) {
+        return;
+      }
+
+      if (this.isDuplicate(canonicalInput.messageId)) {
+        this.logger.debug(`Duplicate message ${canonicalInput.messageId} dropped`);
+        return;
+      }
     }
 
-    if (this.isDuplicate(event.messageId)) {
-      this.logger.debug(`Duplicate message ${event.messageId} dropped`);
-      return;
-    }
-
-    const agent = this.getOrCreateAgent(event.platform, event.channelId, event.bot);
-    await agent.receive(event);
+    const agent = this.getOrCreateAgent(canonicalInput.platform, canonicalInput.channelId, bot);
+    await agent.receive(canonicalInput);
   }
 
   private isDuplicate(messageId: string): boolean {
@@ -673,14 +677,14 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 }
 
 // ============================================================================
-// Koishi Session → ChannelEvent mapping
+// Koishi Session → canonical input mapping
 // ============================================================================
 
 /**
- * Convert a Koishi session object to our ChannelEvent type.
+ * Convert a Koishi session object to canonical channel input.
  * Returns null if the session lacks required fields.
  */
-function koishiSessionToChannelEvent(session: Session): ChannelEvent | null {
+export function koishiSessionToCanonicalInput(session: Session): CanonicalChannelInput | null {
   if (!session.platform || !session.channelId || !session.userId) {
     return null;
   }
@@ -720,20 +724,46 @@ function koishiSessionToChannelEvent(session: Session): ChannelEvent | null {
     : undefined;
 
   return {
+    kind: "channel_message",
     platform: session.platform,
     channelId: session.channelId,
-    userId: session.userId,
-    username: session.username ?? session.userId,
-    nickname,
-    identity,
-    replyTo,
+    messageId: session.messageId ?? "",
+    timestamp: session.timestamp ?? Date.now(),
     content,
+    sender: {
+      userId: session.userId,
+      username: session.username ?? session.userId,
+      nickname,
+      identity,
+    },
     isDirect: session.isDirect ?? false,
     atSelf,
     isReplyToBot: (session.quote && session.quote.user?.isBot) || false,
-    messageId: session.messageId ?? "",
-    timestamp: session.timestamp ?? Date.now(),
-    elements: session.elements ?? [],
-    bot: session.bot,
+    replyTo,
+  } satisfies CanonicalChannelMessageInput;
+}
+
+function normalizeIncomingChannelInput(input: CanonicalChannelInput | ChannelEvent): CanonicalChannelInput {
+  if ("kind" in input) {
+    return input;
+  }
+
+  return {
+    kind: "channel_message",
+    platform: input.platform,
+    channelId: input.channelId,
+    messageId: input.messageId,
+    timestamp: input.timestamp,
+    content: input.content,
+    sender: {
+      userId: input.userId,
+      username: input.username,
+      nickname: input.nickname,
+      identity: input.identity,
+    },
+    isDirect: input.isDirect,
+    atSelf: input.atSelf,
+    isReplyToBot: input.isReplyToBot,
+    replyTo: input.replyTo,
   };
 }

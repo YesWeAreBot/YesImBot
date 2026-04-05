@@ -1,7 +1,9 @@
-import type { ModelMessage } from "@ai-sdk/provider-utils";
+import type { AssistantModelMessage, ModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
+import type { JSONValue } from "ai";
 import type { OnStepFinishEvent } from "ai";
 import type { Logger } from "koishi";
 
+import { AgentSession } from "../agent-session";
 import {
   buildSessionContext,
   convertAgentMessagesToModelMessages,
@@ -9,10 +11,8 @@ import {
   type AgentAssistantThinkingPart,
   type AgentTextPart,
   type AgentToolCallPart,
-  type AgentToolMessage,
   type AgentUsage,
   type SessionEntry,
-  type SessionManager,
 } from "../session-manager";
 import { isSendMessageResult } from "./send-message-tool";
 
@@ -25,14 +25,14 @@ export const PROTOCOL_GUIDANCE_TEXT =
 const MAX_PROTOCOL_RETRIES_PER_RESPONSE = 1;
 
 interface ResponseStepProcessorOptions {
-  sessionManager: SessionManager;
+  session: AgentSession;
   platform: string;
   channelId: string;
   logger: Logger;
 }
 
 export class ResponseStepProcessor {
-  private readonly sessionManager: SessionManager;
+  private readonly session: AgentSession;
   private readonly platform: string;
   private readonly channelId: string;
   private readonly logger: Logger;
@@ -47,7 +47,7 @@ export class ResponseStepProcessor {
   private _thrownError: string | undefined;
 
   constructor(options: ResponseStepProcessorOptions) {
-    this.sessionManager = options.sessionManager;
+    this.session = options.session;
     this.platform = options.platform;
     this.channelId = options.channelId;
     this.logger = options.logger;
@@ -140,7 +140,14 @@ export class ResponseStepProcessor {
       persistableAgentMsg &&
       !isDuplicateAssistantToolCallMessage(persistableAgentMsg, this.seenAssistantToolCallIds)
     ) {
-      this.sessionManager.appendMessage(persistableAgentMsg);
+      this.session.appendAssistantMessage({
+        id: `${Date.now()}-assistant-${this.seenAssistantToolCallIds.size}`,
+        timestamp: persistableAgentMsg.timestamp,
+        stage: "runtime",
+        visibility: "model",
+        materialization: "default",
+        message: assistantMessageToModelMessage(persistableAgentMsg),
+      });
       rememberAssistantToolCallIds(persistableAgentMsg, this.seenAssistantToolCallIds);
     }
 
@@ -148,21 +155,34 @@ export class ResponseStepProcessor {
       this.logger.debug(
         `[step:${this.platform}:${this.channelId}] undelivered assistant text detected protocolRetry=${this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE}`,
       );
-      this.sessionManager.appendCustomEntry("protocol_assistant_draft", {
-        text: assistantText,
-        provider: agentMsg.provider,
-        model: agentMsg.model,
-        finishReason: agentMsg.finishReason,
+      this.session.appendStateChange({
+        id: `${Date.now()}-protocol-draft`,
+        timestamp: Date.now(),
+        stage: "runtime",
+        visibility: "internal",
+        materialization: "internal",
+        stateType: "protocol_assistant_draft",
+        data: {
+          text: assistantText,
+          provider: agentMsg.provider,
+          model: agentMsg.model,
+          finishReason: agentMsg.finishReason,
+        },
       });
 
       if (this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE) {
         this.protocolRetryCount++;
         this._pendingProtocolRetry = true;
-        this.sessionManager.appendCustomMessageEntry(
-          "protocol_guidance",
-          PROTOCOL_GUIDANCE_TEXT,
-          false,
-        );
+        this.session.appendSystemNotice({
+          id: `${Date.now()}-protocol-guidance`,
+          timestamp: Date.now(),
+          stage: "runtime",
+          visibility: "hidden",
+          materialization: "hidden",
+          subType: "protocol_guidance",
+          materializationKey: "hidden",
+          notice: PROTOCOL_GUIDANCE_TEXT,
+        });
       } else {
         this._protocolError = true;
       }
@@ -189,18 +209,14 @@ export class ResponseStepProcessor {
       `[step:${this.platform}:${this.channelId}] tool results=${freshToolParts.length}`,
     );
 
-    const agentMsg: AgentToolMessage = {
-      role: "tool",
-      content: freshToolParts.map((part) => ({
-        type: "tool-result" as const,
-        toolCallId: part.toolCallId as string,
-        toolName: part.toolName as string,
-        result: unwrapToolResult(part.output),
-        isError: part.isError as boolean | undefined,
-      })),
+    this.session.appendToolMessage({
+      id: `${Date.now()}-tool-${this.seenToolResultCallIds.size}`,
       timestamp: Date.now(),
-    };
-    this.sessionManager.appendMessage(agentMsg);
+      stage: "runtime",
+      visibility: "model",
+      materialization: "default",
+      message: toolPartsToModelMessage(freshToolParts),
+    });
 
     for (const part of freshToolParts) {
       this.seenToolResultCallIds.add(String(part.toolCallId));
@@ -262,6 +278,49 @@ function createAgentUsage(usage?: {
     totalTokens: usageRecord.totalTokens ?? inputTokens + outputTokens,
     cacheRead: usageRecord.cacheRead ?? 0,
     cacheWrite: usageRecord.cacheWrite ?? 0,
+  };
+}
+
+function assistantMessageToModelMessage(message: AgentAssistantMessage): AssistantModelMessage {
+  if (typeof message.content === "string") {
+    return {
+      role: "assistant",
+      content: message.content,
+    };
+  }
+
+  return {
+    role: "assistant",
+    content: message.content.map((part) => {
+      switch (part.type) {
+        case "text":
+          return { type: "text" as const, text: part.text };
+        case "thinking":
+          return { type: "reasoning" as const, text: part.text, signature: part.signature };
+        case "tool-call":
+          return {
+            type: "tool-call" as const,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            input: part.args,
+          };
+      }
+    }),
+  } satisfies AssistantModelMessage;
+}
+
+function toolPartsToModelMessage(
+  parts: Array<Record<string, unknown>>,
+): ToolModelMessage {
+  return {
+    role: "tool",
+    content: parts.map((part) => ({
+      type: "tool-result" as const,
+      toolCallId: part.toolCallId as string,
+      toolName: part.toolName as string,
+      output: { type: "json" as const, value: unwrapToolResult(part.output) as JSONValue },
+      isError: part.isError as boolean | undefined,
+    })),
   };
 }
 
@@ -480,12 +539,47 @@ export function createAgentAssistantMessage(input: {
   };
 }
 
+export function buildRuntimeModelMessages(
+  session: AgentSession,
+  instructions: string,
+  options: {
+    followUpReview?: string;
+    protocolRetry?: boolean;
+  } = {},
+): ModelMessage[] {
+  const modelMessages = [...session.getModelMessages()];
+
+  if (options.followUpReview) {
+    modelMessages.push({
+      role: "user",
+      content: options.followUpReview,
+    });
+  }
+
+  if (options.protocolRetry) {
+    modelMessages.push({
+      role: "user",
+      content: PROTOCOL_GUIDANCE_TEXT,
+    });
+  }
+
+  return [{ role: "system", content: instructions }, ...modelMessages];
+}
+
 export function buildGenerateInputForTest(input: {
   instructions: string;
-  sessionEntries: SessionEntry[];
+  session?: AgentSession;
+  sessionEntries?: SessionEntry[];
 }): { messages: ModelMessage[] } {
-  const sessionContext = buildSessionContext(input.sessionEntries);
+  if (input.session) {
+    return {
+      messages: buildRuntimeModelMessages(input.session, input.instructions),
+    };
+  }
+
+  const sessionContext = buildSessionContext(input.sessionEntries ?? []);
   const modelMessages = convertAgentMessagesToModelMessages(sessionContext.agentMessages);
+
   return {
     messages: [{ role: "system", content: input.instructions }, ...modelMessages],
   };

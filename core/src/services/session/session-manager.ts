@@ -21,6 +21,16 @@ import type {
 } from "@ai-sdk/provider-utils";
 import { JSONValue } from "ai";
 
+import type {
+  AssistantMessageRecord,
+  ChannelEventRecord,
+  ChannelMessageRecord,
+  StateChangeRecord,
+  SystemNoticeRecord,
+  TimelineRecord,
+  ToolMessageRecord,
+} from "./contracts";
+import { materializeTimeline } from "./materialize";
 import type { ChannelBootstrapStatus, ChannelKey, ReplyReference } from "./types";
 
 // ============================================================================
@@ -199,11 +209,17 @@ export interface ModelChangeEntry extends SessionEntryBase {
   modelId: string;
 }
 
+export interface TimelineEntry extends SessionEntryBase {
+  type: "timeline";
+  record: TimelineRecord;
+}
+
 // ============================================================================
 // Union Types
 // ============================================================================
 
 export type SessionEntry =
+  | TimelineEntry
   | SessionMessageEntry
   | CustomMessageEntry
   | CustomEntry
@@ -342,6 +358,14 @@ function serializeFileEntry(entry: FileEntry): string {
         parentId: entry.parentId,
         timestamp: entry.timestamp,
       });
+    case "timeline":
+      return JSON.stringify({
+        type: entry.type,
+        record: entry.record,
+        id: entry.id,
+        parentId: entry.parentId,
+        timestamp: entry.timestamp,
+      });
     case "custom_message":
       return JSON.stringify({
         type: entry.type,
@@ -382,6 +406,159 @@ function serializeFileEntry(entry: FileEntry): string {
       });
     default:
       return JSON.stringify(entry);
+  }
+}
+
+function channelKeyToParts(channelKey: ChannelKey): { platform: string; channelId: string } {
+  const [platform, channelId] = channelKey.split(":", 2);
+  return {
+    platform,
+    channelId,
+  };
+}
+
+function contentPartsToString(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
+function legacyMessageToTimelineRecord(
+  message: AgentMessage,
+  channelKey: ChannelKey,
+  id: string,
+): TimelineRecord {
+  const { platform, channelId } = channelKeyToParts(channelKey);
+
+  switch (message.role) {
+    case "assistant":
+      return {
+        id,
+        kind: "assistant_message",
+        timestamp: message.timestamp,
+        stage: "runtime",
+        visibility: "model",
+        materialization: "default",
+        message: assistantToModelMessage(message),
+      } satisfies AssistantMessageRecord;
+    case "tool":
+      return {
+        id,
+        kind: "tool_message",
+        timestamp: message.timestamp,
+        stage: "runtime",
+        visibility: "model",
+        materialization: "default",
+        message: toolToModelMessage(message),
+      } satisfies ToolMessageRecord;
+    case "user":
+      return {
+        id,
+        kind: "channel_message",
+        timestamp: message.timestamp,
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform,
+          channelId,
+          messageId: id,
+          timestamp: message.timestamp,
+          content: contentPartsToString(message.content),
+          sender: {
+            userId: "user",
+            username: "user",
+          },
+          isDirect: false,
+          atSelf: false,
+          isReplyToBot: false,
+        },
+      } satisfies ChannelMessageRecord;
+    case "custom":
+      return legacyCustomMessageToTimelineRecord(message.customType, message.content, message.details, id);
+  }
+}
+
+function legacyCustomMessageToTimelineRecord<T>(
+  customType: string,
+  content: string | ContentPart[],
+  details: T | undefined,
+  id: string,
+): TimelineRecord {
+  switch (customType) {
+    case "channel_message": {
+      const messageDetails = details as ChannelMessageDetails | undefined;
+      return {
+        id,
+        kind: "channel_message",
+        timestamp: messageDetails?.timestamp ?? Date.now(),
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform: messageDetails?.platform ?? "unknown",
+          channelId: messageDetails?.channelId ?? "unknown",
+          messageId: messageDetails?.messageId ?? id,
+          timestamp: messageDetails?.timestamp ?? Date.now(),
+          content: contentPartsToString(content),
+          sender: {
+            userId: messageDetails?.userId ?? "unknown",
+            username: messageDetails?.username ?? "unknown",
+            nickname: messageDetails?.nickname,
+            identity: messageDetails?.identity,
+          },
+          isDirect: messageDetails?.isDirect ?? false,
+          atSelf: messageDetails?.atSelf ?? false,
+          isReplyToBot: messageDetails?.isReplyToBot ?? false,
+          replyTo: messageDetails?.replyTo,
+        },
+      } satisfies ChannelMessageRecord;
+    }
+  }
+
+  return {
+    id,
+    kind: "system_notice",
+    timestamp: Date.now(),
+    stage: "runtime",
+    visibility: "hidden",
+    materialization: "hidden",
+    subType: customType,
+    materializationKey: "hidden",
+    notice: contentPartsToString(content),
+    data: details as JSONValue | undefined,
+  } as TimelineRecord;
+}
+
+function legacyStateToTimelineRecord<T>(customType: string, data: T | undefined, id: string): TimelineRecord {
+  return {
+    id,
+    kind: "state_change",
+    timestamp: Date.now(),
+    stage: "runtime",
+    visibility: "internal",
+    materialization: "internal",
+    stateType: customType,
+    data: data as JSONValue | undefined,
+  } as TimelineRecord;
+}
+
+function entryToTimelineRecord(entry: SessionEntry): TimelineRecord | null {
+  switch (entry.type) {
+    case "timeline":
+      return entry.record;
+    case "message":
+      return legacyMessageToTimelineRecord(entry.message, "unknown:unknown", entry.id);
+    case "custom_message":
+      return legacyCustomMessageToTimelineRecord(entry.customType, entry.content, entry.details, entry.id);
+    case "custom":
+      return legacyStateToTimelineRecord(entry.customType, entry.data, entry.id);
+    default:
+      return null;
   }
 }
 
@@ -641,6 +818,16 @@ export class SessionManager {
     return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
   }
 
+  getTimeline(): TimelineRecord[] {
+    return this.getEntries()
+      .map((entry) => entryToTimelineRecord(entry))
+      .filter((entry): entry is TimelineRecord => entry !== null);
+  }
+
+  getModelMessages(): ModelMessage[] {
+    return materializeTimeline(this.getTimeline());
+  }
+
   getEntry(id: string): SessionEntry | undefined {
     return this.byId.get(id);
   }
@@ -659,15 +846,9 @@ export class SessionManager {
 
   /** Append a user/custom/assistant/tool message. */
   appendMessage(message: AgentMessage): string {
-    const entry: SessionMessageEntry = {
-      type: "message",
-      id: generateId(this.byId),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-      message,
-    };
-    this.appendEntry(entry);
-    return entry.id;
+    const id = generateId(this.byId);
+    const record = legacyMessageToTimelineRecord(message, this.channelKey, id);
+    return this.appendTimelineRecord(record);
   }
 
   /** Append a custom message that participates in LLM context. */
@@ -677,32 +858,29 @@ export class SessionManager {
     display: boolean,
     details?: T,
   ): string {
-    const entry: CustomMessageEntry<T> = {
-      type: "custom_message",
-      customType,
-      content,
-      display,
-      details,
-      id: generateId(this.byId),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-    };
-    this.appendEntry(entry);
-    return entry.id;
+    void display;
+    const id = generateId(this.byId);
+    const record = legacyCustomMessageToTimelineRecord(customType, content, details, id);
+    return this.appendTimelineRecord(record);
   }
 
   /** Append extension state (not in LLM context). */
   appendCustomEntry<T = unknown>(customType: string, data?: T): string {
-    const entry: CustomEntry<T> = {
-      type: "custom",
-      customType,
-      data,
-      id: generateId(this.byId),
+    const id = generateId(this.byId);
+    const record = legacyStateToTimelineRecord(customType, data, id);
+    return this.appendTimelineRecord(record);
+  }
+
+  appendTimelineRecord(record: TimelineRecord): string {
+    const entry: TimelineEntry = {
+      type: "timeline",
+      id: record.id,
       parentId: this.leafId,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(record.timestamp).toISOString(),
+      record,
     };
     this.appendEntry(entry);
-    return entry.id;
+    return record.id;
   }
 
   /** Append a compaction summary. */
@@ -839,37 +1017,54 @@ function agentMessageToModelMessage(msg: Exclude<AgentMessage, { role: "custom" 
 }
 
 // ============================================================================
-// CustomMessageEntry → UserModelMessage
-// ============================================================================
-
-function contentPartsToString(content: string | ContentPart[]): string {
-  if (typeof content === "string") return content;
-  return content
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("");
-}
-
-function customMessageToUserMessage(entry: CustomMessageEntry): UserModelMessage {
-  const text = contentPartsToString(entry.content);
-  return { role: "user", content: text };
-}
-
-function customMessageToModelMessage(entry: CustomMessageEntry): ModelMessage | undefined {
-  if (entry.customType === "channel_message") {
-    return customMessageToUserMessage(entry);
-  }
-
-  if (entry.customType === "protocol_guidance") {
-    return undefined;
-  }
-
-  return undefined;
-}
-
-// ============================================================================
 // buildSessionContext
 // ============================================================================
+
+function modelMessagesToAgentMessages(messages: readonly ModelMessage[]): AgentMessage[] {
+  return messages.flatMap((message): AgentMessage[] => {
+    switch (message.role) {
+      case "user":
+        return [
+          {
+            role: "user",
+            content:
+              typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+            timestamp: Date.now(),
+          },
+        ];
+      case "assistant":
+        return [
+          {
+            role: "assistant",
+            content:
+              typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+            timestamp: Date.now(),
+            provider: "derived",
+            model: "materialized-timeline",
+          },
+        ];
+      case "tool":
+        return [
+          {
+            role: "tool",
+            timestamp: Date.now(),
+            content: message.content
+              .filter((part) => part.type === "tool-result")
+              .map((part) => ({
+                type: "tool-result" as const,
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+                result: (part as { output?: { value?: JSONValue } }).output?.value ?? null,
+                isError:
+                  "isError" in part && typeof part.isError === "boolean" ? part.isError : undefined,
+              })) as AgentToolResultPart[],
+          },
+        ];
+      case "system":
+        return [];
+    }
+  });
+}
 
 /**
  * Build the LLM context from session entries.
@@ -917,47 +1112,22 @@ export function buildSessionContext(entries: readonly SessionEntry[]): SessionCo
 
   // Determine which entries to process
   const startIndex = compaction ? firstKeptIndex : 0;
-  let entryCount = 0;
-
-  for (let i = startIndex; i < entries.length; i++) {
-    const entry = entries[i];
-    entryCount++;
-
-    switch (entry.type) {
-      case "message": {
-        agentMessages.push(entry.message);
-        // Track model from assistant messages
-        if (entry.message.role === "assistant") {
-          model = { provider: entry.message.provider, modelId: entry.message.model };
-        }
-        break;
-      }
-      case "custom_message": {
-        agentMessages.push({
-          role: "custom",
-          customType: entry.customType,
-          content: entry.content,
-          details: entry.details,
-          display: entry.display,
-          timestamp: Date.parse(entry.timestamp),
-        });
-        break;
-      }
-      case "model_change": {
+  const slicedEntries = entries.slice(startIndex);
+  const timeline = slicedEntries
+    .map((entry) => {
+      if (entry.type === "model_change") {
         model = { provider: entry.provider, modelId: entry.modelId };
-        break;
       }
-      case "compaction": {
-        // Already handled above; skip
-        break;
-      }
-      case "custom": {
-        // Not in LLM context
-        break;
-      }
-    }
-  }
+      return entryToTimelineRecord(entry);
+    })
+    .filter((entry): entry is TimelineRecord => entry !== null);
 
+  agentMessages = [
+    ...agentMessages,
+    ...modelMessagesToAgentMessages(materializeTimeline(timeline)),
+  ];
+
+  const entryCount = slicedEntries.length;
   return { agentMessages, model, entryCount };
 }
 
@@ -968,16 +1138,7 @@ export function convertAgentMessagesToModelMessages(
     .map((message) => {
       switch (message.role) {
         case "custom":
-          return customMessageToModelMessage({
-            type: "custom_message",
-            id: "",
-            parentId: null,
-            timestamp: String(message.timestamp),
-            customType: message.customType,
-            content: message.content,
-            details: message.details,
-            display: message.display,
-          });
+          return undefined;
         case "user":
         case "assistant":
         case "tool":

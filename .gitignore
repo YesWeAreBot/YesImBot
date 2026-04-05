@@ -168,6 +168,7 @@ yarn-error.log
 # End of https://www.toptal.com/developers/gitignore/api/node,yarn,vuejs
 
 # Add here any additional files/directories you want to ignore in your project
+.agents/
 .claude/
 .opencode/
 .worktrees/

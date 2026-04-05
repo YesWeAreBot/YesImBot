@@ -5,13 +5,15 @@ import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "a
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { Bot, Context, Logger } from "koishi";
 
-import { renderInboundChannelMessage } from "../channel-message";
+import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
 import { DefaultSessionResourceLoader } from "../resource-loader";
 import type { SessionManager } from "../session-manager";
-import { buildSessionContext, type ChannelMessageDetails } from "../session-manager";
+import { buildSessionContext } from "../session-manager";
 import type {
+  CanonicalChannelInput,
+  CanonicalChannelMessageInput,
   ChannelEvent,
   FollowUpReviewRecord,
   ResponseEndReason,
@@ -23,7 +25,7 @@ import {
   type WillingnessJudge,
 } from "../willingness";
 import {
-  buildGenerateInputForTest,
+  buildRuntimeModelMessages,
   getReliableInputTokens,
   hasCompletedSendMessageWithoutHeartbeat,
   PROTOCOL_GUIDANCE_TEXT,
@@ -57,6 +59,7 @@ import { buildResponseToolSet } from "./workspace-tools";
 export class ChannelRuntime {
   bot: Bot | undefined;
   readonly sessionManager: SessionManager;
+  readonly session: AgentSession;
 
   private options: ChannelRuntimeOptions;
   private responseState: ResponseState = "idle";
@@ -83,11 +86,12 @@ export class ChannelRuntime {
     this.options = options;
     this.bot = options.bot;
     this.sessionManager = options.sessionManager;
+    this.session = new AgentSession(this.sessionManager);
     this.logger = this.ctx.logger("session");
     this.logger.level = 3;
     this.willingnessJudge = options.willingnessJudge ?? createDefaultWillingnessJudge(this.ctx);
     this.responseStepProcessor = new ResponseStepProcessor({
-      sessionManager: this.sessionManager,
+      session: this.session,
       platform: options.platform,
       channelId: options.channelId,
       logger: this.logger,
@@ -144,6 +148,16 @@ export class ChannelRuntime {
 
   private getActiveTurnSettings(): ChannelRuntimeTurnSettingsSnapshot {
     return this.currentTurnSettings ?? this.createTurnSettingsSnapshot();
+  }
+
+  private appendAssistantMessage(
+    record: Parameters<AgentSession["appendAssistantMessage"]>[0],
+  ): string {
+    return this.session.appendAssistantMessage(record);
+  }
+
+  private appendToolMessage(record: Parameters<AgentSession["appendToolMessage"]>[0]): string {
+    return this.session.appendToolMessage(record);
   }
 
   // =========================================================================
@@ -212,46 +226,37 @@ export class ChannelRuntime {
   // =========================================================================
 
   /**
-   * Process an incoming channel event.
+   * Process an incoming channel message input.
    *
-   * 1. Persist the message as CustomMessageEntry (immediately, never lost)
+   * 1. Persist the canonical message to the timeline immediately
    * 2. Run willingness check
    * 3. If should respond, schedule a response
    */
-  async receive(event: ChannelEvent): Promise<void> {
-    this.bindBot(event.bot);
+  async receive(input: CanonicalChannelInput | ChannelEvent): Promise<void> {
+    const event = normalizeChannelRuntimeInput(input);
 
     this.logger.debug(
-      `[input:${this.getChannelKey()}] user=${event.userId} direct=${event.isDirect} atSelf=${event.atSelf} replyToBot=${event.isReplyToBot} messageId=${event.messageId}`,
+      `[input:${this.getChannelKey()}] user=${event.sender.userId} direct=${event.isDirect} atSelf=${event.atSelf} replyToBot=${event.isReplyToBot} messageId=${event.messageId}`,
     );
 
-    // 1. Persist to JSONL immediately
-    const content = renderInboundChannelMessage(event);
-    const details: ChannelMessageDetails = {
+    this.session.appendChannelMessage({
+      id: event.messageId || createRuntimeRecordId(),
       timestamp: event.timestamp,
-      userId: event.userId,
-      username: event.username,
-      nickname: event.nickname ?? event.username,
-      identity: event.identity ?? (event.isDirect ? "direct-user" : "member"),
-      platform: event.platform,
-      channelId: event.channelId,
-      messageId: event.messageId,
-      isDirect: event.isDirect,
-      atSelf: event.atSelf,
-      isReplyToBot: event.isReplyToBot,
-      replyTo: event.replyTo,
-    };
-    this.sessionManager.appendCustomMessageEntry("channel_message", content, false, details);
+      stage: "ingress",
+      visibility: "model",
+      materialization: "default",
+      message: event,
+    });
 
     // 2. Willingness check
-    const selfId = event.bot?.selfId ?? this.bot?.selfId ?? "";
+    const selfId = this.bot?.selfId ?? "";
     const judgeSettings = this.options.settingsManager.getJudgeSettings();
     const heuristic = evaluateRuntimeWillingnessHeuristic({
       isDirect: event.isDirect,
       atSelf: event.atSelf,
       isReplyToBot: event.isReplyToBot,
       selfId,
-      senderId: event.userId,
+      senderId: event.sender.userId,
     });
     const willingness =
       heuristic ??
@@ -261,7 +266,7 @@ export class ChannelRuntime {
         isReplyToBot: event.isReplyToBot,
         content: event.content,
         selfId,
-        senderId: event.userId,
+        senderId: event.sender.userId,
         judgeEnabled: judgeSettings?.enabled,
         judgeModel: judgeSettings?.model,
         judgeTimeoutMs: judgeSettings?.timeoutMs,
@@ -359,27 +364,10 @@ export class ChannelRuntime {
   }
 
   private buildRuntimeMessages(instructions: string, protocolRetry: boolean): ModelMessage[] {
-    const { messages: baseMessages } = buildGenerateInputForTest({
-      instructions,
-      sessionEntries: [...this.sessionManager.getEntries()],
+    return buildRuntimeModelMessages(this.session, instructions, {
+      followUpReview: this.currentTurnFollowUpReview?.content,
+      protocolRetry,
     });
-    const messages = [...baseMessages];
-
-    if (this.currentTurnFollowUpReview) {
-      messages.push({
-        role: "user",
-        content: this.currentTurnFollowUpReview.content,
-      });
-    }
-
-    if (protocolRetry) {
-      messages.push({
-        role: "user",
-        content: PROTOCOL_GUIDANCE_TEXT,
-      });
-    }
-
-    return messages;
   }
 
   private createFollowUpReviewRecord(
@@ -791,4 +779,39 @@ async function abortable<T>(signal: AbortSignal, operation: () => PromiseLike<T>
       },
     );
   });
+}
+
+function normalizeChannelRuntimeInput(
+  input: CanonicalChannelInput | ChannelEvent,
+): CanonicalChannelMessageInput {
+  if ("kind" in input) {
+    if (input.kind !== "channel_message") {
+      throw new Error(`Unsupported canonical input kind for runtime receive: ${input.kind}`);
+    }
+
+    return input;
+  }
+
+  return {
+    kind: "channel_message",
+    platform: input.platform,
+    channelId: input.channelId,
+    messageId: input.messageId,
+    timestamp: input.timestamp,
+    content: input.content,
+    sender: {
+      userId: input.userId,
+      username: input.username,
+      nickname: input.nickname,
+      identity: input.identity,
+    },
+    isDirect: input.isDirect,
+    atSelf: input.atSelf,
+    isReplyToBot: input.isReplyToBot,
+    replyTo: input.replyTo,
+  };
+}
+
+function createRuntimeRecordId(): string {
+  return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }

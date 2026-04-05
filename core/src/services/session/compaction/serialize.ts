@@ -2,9 +2,14 @@
 // Serialization Helpers
 // ============================================================================
 
-import { TextPart } from "@ai-sdk/provider-utils";
+import type { ModelMessage, TextPart } from "@ai-sdk/provider-utils";
 
 import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
+import type { TimelineRecord } from "../contracts";
+import {
+  materializeTimeline,
+  type MaterializeTimelineOptions,
+} from "../materialize";
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 
@@ -134,4 +139,56 @@ export function serializeConversation(messages: AgentMessage[]): string {
   }
 
   return parts.join("\n\n");
+}
+
+export function serializeTimelineForCompaction(
+  records: readonly TimelineRecord[],
+  options: MaterializeTimelineOptions = {},
+): string {
+  // Compaction reads canonical visibility/materialization policy at materialize time,
+  // including SystemNotice subType strategy overrides provided through options.
+  return serializeModelMessages(materializeTimeline([...records], options));
+}
+
+function serializeModelMessages(messages: readonly ModelMessage[]): string {
+  const parts: string[] = [];
+
+  for (const message of messages) {
+    switch (message.role) {
+      case "system":
+        parts.push(`[System]: ${stringifyModelMessageContent(message.content)}`);
+        break;
+      case "user":
+        parts.push(`[User]: ${stringifyModelMessageContent(message.content)}`);
+        break;
+      case "assistant":
+        parts.push(`[Assistant]: ${stringifyModelMessageContent(message.content)}`);
+        break;
+      case "tool":
+        parts.push(`[Tool]: ${stringifyModelMessageContent(message.content)}`);
+        break;
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+function stringifyModelMessageContent(content: ModelMessage["content"]): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  return content
+    .map((part) => {
+      if (typeof part === "string") {
+        return part;
+      }
+
+      if (part.type === "text") {
+        return part.text;
+      }
+
+      return JSON.stringify(part);
+    })
+    .join("\n");
 }

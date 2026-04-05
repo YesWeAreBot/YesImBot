@@ -1,4 +1,4 @@
-import type { ChannelEvent } from "./types";
+import type { CanonicalChannelMessageInput } from "./contracts";
 
 export function summarizeReplyContent(content: string, maxChars = 80): string {
   const normalized = content.replace(/\s+/g, " ").trim();
@@ -35,27 +35,11 @@ export function resolveSenderIdentity(input: {
   return "member";
 }
 
-export function renderInboundChannelMessage(
-  event: Pick<
-    ChannelEvent,
-    | "timestamp"
-    | "platform"
-    | "channelId"
-    | "userId"
-    | "username"
-    | "nickname"
-    | "identity"
-    | "isDirect"
-    | "atSelf"
-    | "isReplyToBot"
-    | "replyTo"
-    | "content"
-  >,
-): string {
+export function formatCanonicalChannelMessage(event: CanonicalChannelMessageInput): string {
   const lines = [
     `[timestamp] ${new Date(event.timestamp).toISOString()}`,
     `[platform/channel] ${event.platform}/${event.channelId}`,
-    `[sender] id=${event.userId} username=${event.username} nickname=${event.nickname ?? event.username} identity=${event.identity ?? "member"}`,
+    `[sender] id=${event.sender.userId} username=${event.sender.username} nickname=${event.sender.nickname ?? event.sender.username} identity=${event.sender.identity ?? "member"}`,
     `[context] direct=${event.isDirect} mention=${event.atSelf} reply=${event.isReplyToBot}`,
   ];
 
